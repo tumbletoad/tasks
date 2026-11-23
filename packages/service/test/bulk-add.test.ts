@@ -9,11 +9,13 @@ import { CLI_NAME } from "@ttasks/brand";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
 import { toolCaller } from "../src/mcp/index.ts";
 import { dateIn, localTimeZone } from "../src/ops/dates.ts";
-import { opCall, type Caller } from "../src/ops/index.ts";
+import { opCall, type Binding, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
 type Json = Record<string, unknown>;
 let w: ContractWorld & { root: string };
+/** A bridge of no launch, in the world's one space, as its bind settles it. */
+const inSpace = (): Binding => ({ kind: "none", space: w.space, named: false });
 const LONG = 180_000;
 
 beforeAll(async () => {
@@ -39,10 +41,12 @@ async function refusal(op: string, input: Json, caller: Caller = AGENT): Promise
 }
 /** What an agent reads back from a tool. */
 async function tool(name: string, args: Json): Promise<string> {
-  const result = await toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 })(
-    name,
-    args,
-  );
+  const result = await toolCaller({
+    ops: w.service.ops,
+    context: { space: null },
+    conn: 1,
+    binding: inSpace(),
+  })(name, args);
   return result.content[0].text;
 }
 

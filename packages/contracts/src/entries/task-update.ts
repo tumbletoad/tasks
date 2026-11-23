@@ -18,7 +18,7 @@ import {
   SourceInput,
   SummaryInput,
   TaskRef,
-  TaskRefInput,
+  SessionTask,
   TitleInput,
   USER_LIMITS,
   Warnings,
@@ -36,7 +36,7 @@ const CLEARABLE = [
 ] as const;
 
 export const TaskUpdateInput = z.strictObject({
-  task: TaskRefInput.describe("Task ref (M-14) or ID; default: the bound task").optional(),
+  task: SessionTask,
   set: z
     .strictObject({
       title: TitleInput.describe("Title").optional(),

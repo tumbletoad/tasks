@@ -27,7 +27,13 @@ import {
 } from "./define.ts";
 import { isErrorCode } from "./errors.ts";
 import { opSpec } from "./operations.ts";
-import { Base, RequestId } from "./schemas.ts";
+import { Base, RequestId, SessionTask } from "./schemas.ts";
+
+/**
+ * Entries whose optional task never defaults to the session's: they choose what they act on
+ * another way (folder.manage: a project or a task).
+ */
+const OWN_TASK_CHOICE: ReadonlySet<string> = new Set(["folder.manage"]);
 
 export const LIMITS = {
   /** A field description (A3 3.2.1). */
@@ -165,6 +171,17 @@ function checkMetadata(entry: AnyEntry, say: Say): void {
     }
   } else if (entry.agent !== undefined) {
     say("a user-only entry has no agent rules: agents never call it");
+  }
+
+  // An optional task defaults to the session's, which a connection that is no session does not
+  // have: one shared schema says so, and an entry that takes it lists `unbound`.
+  const task = entry.input.shape["task"] as z.ZodType | undefined;
+  const optional = task?.safeParse(undefined).success === true;
+  if (optional && task !== SessionTask && !OWN_TASK_CHOICE.has(entry.name)) {
+    say("an optional task is the shared SessionTask schema from schemas.ts");
+  }
+  if (task === SessionTask && !entry.errors.includes("unbound")) {
+    say("an entry whose task defaults to the session's lists the error unbound");
   }
 
   const seen = new Set<string>();

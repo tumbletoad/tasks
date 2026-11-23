@@ -242,7 +242,12 @@ async function runCorpus(size: number, pool: readonly string[], heavyCount: numb
   await grantHome(w.home, w.path, { instance: "budget-agent", space });
   const context = { space, instance: "budget-agent", app: "test", env: {} };
   const principal = bridgePrincipal(context, w.service.ops.machine.id);
-  const tool = toolCaller({ ops: w.service.ops, context, conn: 1 });
+  const tool = toolCaller({
+    ops: w.service.ops,
+    context,
+    conn: 1,
+    binding: { kind: "none", space, named: false },
+  });
   const texts: { tool: string; args: Json; text: string; isError: boolean }[] = [];
   const mcp = async (name: string, args: Json): Promise<string> => {
     const result = await tool(name, args);
@@ -429,7 +434,13 @@ async function runCorpus(size: number, pool: readonly string[], heavyCount: numb
       };
       const page = (await opCall(
         w.service.ops,
-        { class: "bridge", env: {}, principal, home: "budget-agent" },
+        {
+          class: "bridge",
+          env: {},
+          principal,
+          home: "budget-agent",
+          binding: { kind: "none", space, named: false },
+        },
         { op: "task.get", input: args, space },
       )) as Json;
       const text = await mcp("get_task", args);

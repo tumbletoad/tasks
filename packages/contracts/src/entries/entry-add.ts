@@ -11,14 +11,14 @@ import {
   Replayed,
   RequestId,
   TaskRef,
-  TaskRefInput,
+  SessionTask,
   USER_LIMITS,
   patterns,
 } from "../schemas.ts";
 import { AS_OF_NEXT, requestId } from "./fixture.ts";
 
 export const EntryAddInput = z.strictObject({
-  task: TaskRefInput.describe("Task ref (M-14) or ID; default: the bound task").optional(),
+  task: SessionTask,
   kind: z
     .enum(ENTRY_KINDS_IN)
     .describe("question flags it for the user; note: a note for the user")

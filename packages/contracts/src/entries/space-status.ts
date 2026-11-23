@@ -54,7 +54,7 @@ export const SpaceStatusResult = z.strictObject({
     .describe("The space this session uses"),
   session: z
     .strictObject({
-      state: z.enum(["bound", "unbound", "routine"]).describe("Binding of this session"),
+      state: z.enum(["bound", "unbound"]).describe("bound: this connection is a task's session"),
       task: TaskRef.optional(),
       instance: z.string().describe("Agent instance").optional(),
       app: z.string().describe("Agent app").optional(),
@@ -108,7 +108,8 @@ const row = { lifecycle: "active", status: "open", inbox: false, area: "Client w
 
 export const spaceStatus = defineEntry({
   name: "space.status",
-  summary: "Orientation: date, autonomy, this session's binding, tasks for a folder and counts.",
+  summary:
+    "Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts.",
   kind: "read",
   actors: "agent",
   scope: "space:read",
@@ -125,7 +126,8 @@ export const spaceStatus = defineEntry({
       title: "Orientation and session status",
       description:
         "Call first when a session did not start from a task, and to refresh. Returns the date, " +
-        "autonomy, this session's binding, the tasks matching cwd and counts. include adds " +
+        "autonomy, whether this is a task's session, the tasks matching cwd and counts. " +
+        "include adds " +
         "sections. guide returns a workflow guide instead. You cannot open or run agents: ask " +
         "the user.",
       alwaysLoad: true,
@@ -143,7 +145,7 @@ export const spaceStatus = defineEntry({
         time_zone: "Europe/Lisbon",
         autonomy: "full",
         space: { id: SPACE_ID, name: "Mira", ref_prefix: "M" },
-        session: { state: "unbound", instance: "claude-code", app: "Claude Code CLI" },
+        session: { state: "unbound", instance: "claude-code", app: "claude-code" },
         here: [
           {
             ...M14,
@@ -174,7 +176,7 @@ export const spaceStatus = defineEntry({
           inbox: 0,
           proposals: 0,
         },
-        hint: "Two tasks match this folder. Ask the user which one, then call get_task with task and bind true.",
+        hint: "Two tasks match this folder. Ask the user which one, then pass its task on the calls that act on it.",
       },
     },
     {
@@ -186,7 +188,7 @@ export const spaceStatus = defineEntry({
         time_zone: "Europe/Lisbon",
         autonomy: "full",
         space: { id: SPACE_ID, name: "Mira", ref_prefix: "M" },
-        session: { state: "routine", instance: "codex-work", app: "Codex CLI" },
+        session: { state: "unbound", instance: "codex-work", app: "codex" },
         counts: {
           statuses: STATUS_COUNTS,
           inbox: 0,

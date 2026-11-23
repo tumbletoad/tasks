@@ -42,7 +42,7 @@ let service: RunningService | undefined;
 
 const RUN_CALLS: readonly ToolCall[] = [
   { name: "add_entry", arguments: { text: LOG_MARK, request_id: "runlogentryclaude000001" } },
-  { name: "get_task", arguments: { bind: true } },
+  { name: "get_task", arguments: {} },
 ];
 
 const codeOf = (result: unknown): string | undefined => {
@@ -200,8 +200,16 @@ describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the 
     const lines = commandLines();
     expect(lines).not.toContain("MARKREQ8C3");
     expect(lines).not.toContain(ticket);
-    expect(service?.ops.homes?.may("claude", spaceId, live)).toBe(true);
+    expect(service?.runs.allows("claude", spaceId, live)).toBe(true);
     expect(service?.ops.homes?.may("claude", spaceId)).toBe(false);
+    // While the run runs, its ticket names it, as the session named after it.
+    expect(service?.runs.liveByTicket(ticket)).toEqual({
+      run: live,
+      space: spaceId,
+      task: expect.stringMatching(/^t_/) as unknown,
+      instance: "claude",
+      session: `se_${live.slice("ru_".length)}`,
+    });
 
     const ran = await running;
     expect(ran.code, ran.stdout + ran.stderr).toBe(0);
@@ -237,7 +245,12 @@ describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the 
     ])) as unknown[][] | undefined;
     expect(rows?.[0]).toEqual([expect.objectContaining({ run_id: live })]);
 
-    // Once the run ended, the file's entry no longer opens the space.
+    // Once the run ended, its ticket names nothing, and the file's entry no longer opens the space.
+    await waitFor(
+      () => (service?.runs.liveByTicket(ticket) === undefined ? true : undefined),
+      30_000,
+      "the run's ticket let go",
+    );
     const late = await callTools(entry ?? {}, { calls: [{ name: "status", arguments: {} }], home });
     expect(codeOf(late[0])).toBe("forbidden");
 

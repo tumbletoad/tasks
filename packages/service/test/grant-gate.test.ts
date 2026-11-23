@@ -1,28 +1,27 @@
 // The grant gate (A3 3.7.4, 3.7.8, 3.7.9) on a service in this process with two spaces, Mira and
 // Life. Agent homes are registered and revoked as `ttasks setup agents` does, through the user's
-// `setup/home_grant` and `setup/home_revoke`. Each agent
-// connection is bound as the local endpoint binds an mcp mode connection, and its calls carry what
-// the endpoint's caller carries (the entry's instance as the home); a few go over real ttasks-local/1
-// connections. The negative cases are proved as carefully as the positive ones: a refused call
-// must not touch the other space's reader or writer at all. Fixture text and temporary folders only.
+// `setup/home_grant` and `setup/home_revoke`. Every agent connection is made as a bridge or a shell
+// makes one, through the local endpoint (agents.ts). The negative cases are proved as carefully as
+// the positive ones: a refused call must not touch the other space's reader or writer at all.
+// Fixture text and temporary folders only.
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { CLI_NAME } from "@ttasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
-import { bridgePrincipal, clientOf, instanceOf, renderError } from "../src/mcp/index.ts";
+import { renderError } from "../src/mcp/index.ts";
 import { homeGate } from "../src/hub/home-gate.ts";
 import type { Grant } from "../src/local/index.ts";
+import { grantRefused, MANUAL_INSTANCE, opCall } from "../src/ops/index.ts";
 import {
-  grantRefused,
-  MANUAL_INSTANCE,
-  opCall,
-  type Caller,
-  Slot,
-  type OpsHost,
-  type ServedSpace,
-} from "../src/ops/index.ts";
-import { contractWorld, type ContractWorld } from "./contract/suite.ts";
+  bridge,
+  launchContext,
+  OTHER_INSTANCE,
+  shell,
+  type Agent,
+  type HostPatch,
+} from "./agents.ts";
+import { contractWorld, type ContractWorld, type WorldLaunch } from "./contract/suite.ts";
 import { diagnostics, readLog } from "./harness.ts";
 import { bridgeContext, openMcp, RawMcp, textOf } from "./mcp-helpers.ts";
 import { classSession, errorOf, grantHome, revokeHome } from "./ops-helpers.ts";
@@ -82,67 +81,57 @@ beforeAll(async () => {
     ),
     request_id: rid(),
   });
-  const created = await asUser("space/create", {
-    name: "Life",
-    path: join(w.root, "s", "life"),
-    ref_prefix: "L",
-  });
-  life = String((created["space"] as Json)["id"]);
+  life = await w.other();
   await user("task.add", { tasks: [{ title: "Fixture life task" }], request_id: rid() }, life);
 }, LONG);
 afterAll(async () => {
   await w.close();
 }, LONG);
 
-/** One agent connection, bound and called as the endpoint does it. */
-interface Agent {
-  readonly slot: Slot;
-  readonly binding: Json;
-  call(op: string, input?: Json, options?: { host?: OpsHost }): Promise<Json>;
-  refusal(op: string, input?: Json, options?: { host?: OpsHost }): Promise<ErrorBody>;
-  close(): void;
-}
+/** A3 3.5's grant refusal as a bridge's agent reads it. */
+const GRANT_TEXT = renderError(GRANT);
 
-async function connect(extra: JsonObject): Promise<Agent> {
-  const context = bridgeContext(extra);
-  const connection = { context };
-  const binding = await w.service.bindings.bridge(connection);
-  const slot = w.service.bindings.attach(connection);
-  if (slot === undefined) throw new Error("no slot for the connection");
-  // What mcp/endpoint.ts's toolCaller gives the request path for this connection.
-  const caller: Caller = {
-    class: "bridge",
-    env: {},
-    principal: bridgePrincipal(context, w.service.ops.machine.id),
-    client: clientOf(context),
-    home: instanceOf(context),
-    binding: slot,
-  };
-  const call: Agent["call"] = async (op, input = {}, options = {}) =>
-    (await opCall(options.host ?? w.service.ops, caller, { op, input })) as Json;
-  return {
-    slot,
-    binding,
-    call,
-    refusal: async (op, input = {}, options = {}) => {
-      const error = await call(op, input, options).then(
-        () => undefined,
-        (e: unknown) => e,
-      );
-      if (!(error instanceof AppError)) throw new Error(`${op} was not refused`);
-      return error.toBody();
-    },
-    close: () => {
-      w.service.bindings.closed(slot);
-    },
-  };
-}
+/**
+ * The grant refusal of a bridge that is no session, when its home may use another space now, with
+ * what moves it there: for a hand-made entry a restart, after taking out a space it names; for a
+ * registered home a restart with that space named in its entry.
+ */
+const elsewhere = (
+  name: string,
+  space: string,
+  entry: "hand-made" | "hand-made naming a space" | "registered",
+): string =>
+  renderError({
+    ...GRANT,
+    hint:
+      entry === "registered"
+        ? `It may use the space ${name} now: ask the user to check that the agent's ${PRODUCT_NAME} entry names it (--space ${space}), then to restart the agent app.`
+        : entry === "hand-made naming a space"
+          ? `It may use the space ${name} now: ask the user to take the space out of the agent's ${PRODUCT_NAME} entry, then to restart the agent app.`
+          : `It may use the space ${name} now: ask the user to restart the agent app to work there.`,
+    data: { rule: "grant", space },
+  });
+
+/** A bridge of no launch: the entry of a home, `extra` naming its instance and space. */
+const connect = (extra: JsonObject): Promise<Agent<string>> => bridge(w, bridgeContext(extra));
+
+/** The bridge a launched agent's app starts: the entry of the launch's home, with its ticket. */
+const launched = (launch: WorldLaunch, extra: JsonObject = {}): Promise<Agent<string>> =>
+  bridge(w, { ...launchContext(w.space, launch), ...extra });
+
+/** The refusal text of a bridge's call. */
+const refusedText = async (
+  agent: Agent<string>,
+  op: string,
+  input: Json = {},
+  host?: HostPatch,
+): Promise<string> => (await agent.refusal(op, input, host === undefined ? {} : { host })).text;
 
 /**
  * The request path with `space`'s reader and writer replaced by traps: a call that reads from the
  * space or writes to it touches one, which is recorded and fails the call.
  */
-function trapped(space: string): { host: OpsHost; touched: string[] } {
+function trapped(space: string): { host: HostPatch; touched: string[] } {
   const touched: string[] = [];
   const trap = (what: string): never =>
     new Proxy(
@@ -156,15 +145,14 @@ function trapped(space: string): { host: OpsHost; touched: string[] } {
     ) as never;
   return {
     touched,
-    host: {
-      ...w.service.ops,
+    host: (own) => ({
       spaces: () =>
-        w.service.ops
+        own
           .spaces()
           .map((s) =>
             s.id === space ? { ...s, reader: trap("reader"), writer: trap("writer") } : s,
           ),
-    },
+    }),
   };
 }
 
@@ -214,7 +202,7 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       await grant("home-life", life);
 
       const own = await connect({ instance: "home-life", space: life });
-      expect((await own.call("space.status"))["space"]).toMatchObject({ id: life });
+      expect(await own.call("space.status")).toContain("Space: Life (L)");
       expect(
         await own.call("entry.add", {
           task: "L-1",
@@ -222,9 +210,9 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
           text: "Fixture progress in the granted space.",
           request_id: rid(),
         }),
-      ).toMatchObject({ result: "logged", task: "L-1" });
+      ).toMatch(/^logged \S+ on L-1 /);
       expect((await logOf("L-1", life))[0]?.["author"]).toBe("agent:home-life");
-      own.close();
+      await own.close();
 
       const before = JSON.stringify(await logOf("M-1"));
       for (const [named, why] of [
@@ -234,13 +222,15 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       ] as const) {
         const other = await connect({ instance: "home-life", space: named });
         const { host, touched } = trapped(w.space);
-        for (const [op, input] of CALLS) {
-          expect(await other.refusal(op, withRequest(input), { host }), `${why}: ${op}`).toEqual(
-            GRANT,
+        // receipt.get has no tool: no bridge can call it.
+        // Its entry's space is the one it works in: the refusal names the space its home may use.
+        for (const [op, input] of CALLS.filter(([op]) => op !== "receipt.get")) {
+          expect(await refusedText(other, op, withRequest(input), host), `${why}: ${op}`).toBe(
+            elsewhere("Life", life, "registered"),
           );
         }
         expect(touched, why).toEqual([]);
-        other.close();
+        await other.close();
       }
       // Nothing reached Mira.
       expect(JSON.stringify(await logOf("M-1"))).toBe(before);
@@ -248,7 +238,7 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
   );
 
   test(
-    "a launch reference, a ticket or a task of the other space binds nothing and reads nothing there",
+    "a launch reference, a ticket or a task of the other space makes nothing a session and reads nothing there",
     { timeout: LONG },
     async () => {
       await grant("home-life", life);
@@ -263,32 +253,29 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       // The same home's connection whose entry names Mira: refused before the launch is read.
       const pinned = await connect({ instance: "home-life", space: w.space });
       const { host, touched } = trapped(w.space);
-      expect(await pinned.refusal("task.get", { launch: launch.reference }, { host })).toEqual(
-        GRANT,
+      expect(await refusedText(pinned, "task.get", { launch: launch.reference }, host)).toBe(
+        elsewhere("Life", life, "registered"),
       );
       expect(touched).toEqual([]);
       expect((await evidenceOf(launch.id)).bound_at).toBeUndefined();
 
-      // A ticket of Mira at the bind frame: from an entry with no space (two spaces served, no
-      // default, so nothing is pinned before the ticket) and from one that names Mira.
+      // A ticket of Mira at the bind frame, presented by another home's entry with no space and
+      // with Mira's: neither is the launch's app, so neither is its session.
       const ticketed = await w.launch("M-3");
       const loose = await connect({
         instance: "home-life",
         env: { TTASKS_TICKET: ticketed.ticket },
       });
-      expect(loose.binding["state"]).toBe("unbound");
-      expect(loose.slot.session).toBeUndefined();
+      expect(loose.binding?.["state"]).toBe("unbound");
       const named = await connect({
         instance: "home-life",
         space: w.space,
         env: { TTASKS_TICKET: ticketed.ticket },
       });
-      expect(named.binding["state"]).toBe("unbound");
+      expect(named.binding?.["state"]).toBe("unbound");
       expect(
-        readLog(w.home).filter(
-          (e) =>
-            e["ev"] === "binding.ignored" && e["input"] === "ticket" && e["reason"] === "grant",
-        ).length,
+        readLog(w.home).filter((e) => e["ev"] === "binding.unbound" && e["reason"] === "app")
+          .length,
       ).toBeGreaterThanOrEqual(2);
       expect((await evidenceOf(ticketed.id)).bound_at).toBeUndefined();
 
@@ -297,116 +284,124 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       const id = String((mira["task"] as Json)["id"]);
       const missing = await own.refusal("task.get", { task: id });
       expect(missing.code).toBe("not_found");
-      expect(JSON.stringify(missing)).not.toContain("Fixture task one");
+      expect(missing.text).not.toContain("Fixture task one");
       expect((await own.refusal("task.get", { task: "M-1" })).code).toBe("not_found");
 
-      // Neither the reference nor the ticket was used up: Mira's own home binds with each.
+      // Mira's own home reads the reference, and the launch's own bridge is its session.
       const right = await connect({ instance: "home-mira", space: w.space });
-      expect(await right.call("task.get", { launch: launch.reference })).toMatchObject({
-        bound: true,
-        task: { ref: "M-2" },
-      });
-      const rightTicket = await connect({
-        instance: "home-mira",
-        space: w.space,
-        env: { TTASKS_TICKET: ticketed.ticket },
-      });
-      expect(rightTicket.binding["state"]).toBe("bound");
-      for (const agent of [own, pinned, loose, named, right, rightTicket]) agent.close();
+      const read = await right.call("task.get", { launch: launch.reference });
+      expect(read).toContain("Pass task M-2 on the calls that act on it");
+      const rightTicket = await launched(ticketed);
+      expect(rightTicket.binding?.["state"]).toBe("bound");
+      for (const agent of [own, pinned, loose, named, right, rightTicket]) await agent.close();
     },
   );
 });
 
 describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every connection of its home", () => {
   test(
-    "an open unbound connection, a bound one, one bound by its ticket, a resumed handle, a CLI call acting as the session and a real mcp mode connection: all refused at their next call; registered again, they go on as they were",
+    "an open connection that is no session, a launched agent's bridge and its shell, and a real mcp mode connection: all refused at their next call; registered again, they go on with no reconnect",
     { timeout: LONG },
     async () => {
       const instance = "home-revoke";
       const row = await grant(instance, w.space);
       const unbound = await connect({ instance, space: w.space });
-      expect((await unbound.call("space.status"))["session"]).toMatchObject({ state: "unbound" });
-      const bound = await connect({ instance, space: w.space });
-      expect(await bound.call("task.get", { task: "M-4", bind: true })).toMatchObject({
-        bound: true,
-      });
+      expect(await unbound.call("space.status")).toContain("Session: not bound");
+      // A launched agent: its bridge, and its shell acting as its session. Its home's row is
+      // revoked with the other.
       const launch = await w.launch("M-1");
-      const ticketed = await connect({
-        instance,
-        space: w.space,
-        env: { TTASKS_TICKET: launch.ticket },
-      });
-      expect(ticketed.binding["state"]).toBe("bound");
-      const cli = await classSession(w.home, w.path, "cli-agent", { TTASKS_TICKET: launch.ticket });
+      const ticketed = await launched(launch);
+      expect(ticketed.binding?.["state"]).toBe("bound");
+      const cli = await shell(w, { TTASKS_TICKET: launch.ticket });
       const wire = new RawMcp(
         await openMcp(w.home, w.path, bridgeContext({ space: w.space, instance })),
       );
       try {
-        expect(
-          await cli.call("op/call", { op: "space.status", input: {} }, { timeoutMs: 60_000 }),
-        ).toMatchObject({ session: { state: "bound" } });
+        expect(await cli.call("space.status")).toMatchObject({ session: { state: "bound" } });
         await wire.initialize();
         const status = async () =>
           (await wire.request("tools/call", { name: "status", arguments: {} })).message["result"];
         expect(textOf(await status())).toContain("Space: Mira (M)");
 
-        expect(await revokeHome(w.home, w.path, [row])).toBe(1);
+        expect(await revokeHome(w.home, w.path, [row, launch.row ?? ""])).toBe(2);
 
         for (const [agent, why] of [
-          [unbound, "unbound"],
-          [bound, "bound by task"],
-          [ticketed, "bound by ticket"],
+          [unbound, "no session"],
+          [ticketed, "a session by its ticket"],
         ] as const) {
-          expect(await agent.refusal("space.status"), why).toEqual(GRANT);
+          expect(await refusedText(agent, "space.status"), why).toBe(GRANT_TEXT);
           expect(
-            await agent.refusal("entry.add", {
+            await refusedText(agent, "entry.add", {
               task: "M-1",
               kind: "progress",
               text: "Fixture progress after the revoke.",
               request_id: rid(),
             }),
             why,
-          ).toEqual(GRANT);
+          ).toBe(GRANT_TEXT);
         }
-        const cliRefusal = await cli
-          .call("op/call", { op: "space.status", input: {} }, { timeoutMs: 60_000 })
-          .then(
-            () => undefined,
-            (e: unknown) => errorOf(e),
-          );
-        expect(cliRefusal).toEqual(GRANT);
+        expect((await cli.refusal("space.status")).body).toEqual(GRANT);
         const refused = (await status()) as Json;
         expect(refused["isError"]).toBe(true);
-        expect(textOf(refused)).toBe(renderError(GRANT));
+        expect(textOf(refused)).toBe(GRANT_TEXT);
 
-        // The bound session's handle still restores its binding, and its calls are refused too.
-        bound.close();
-        const resumed = await connect({
-          instance,
-          space: w.space,
-          resume: { handle: bound.binding["handle"] },
-        });
-        expect(resumed.binding["state"]).toBe("bound");
-        expect(await resumed.refusal("task.get")).toEqual(GRANT);
+        // A bridge of the session that connects now is its session too, refused alike.
+        const later = await launched(launch);
+        expect(later.binding?.["state"]).toBe("bound");
+        expect(await refusedText(later, "task.get")).toBe(GRANT_TEXT);
 
-        // Registered again: the connections and the sessions go on as they were.
+        // Registered again: the connections and the session go on as they were.
         await grant(instance, w.space);
-        expect(await resumed.call("task.get")).toMatchObject({ task: { ref: "M-4" } });
+        await grantHome(w.home, w.path, { instance: launch.instance, space: w.space });
+        expect(await later.call("task.get")).toContain("M-1");
+        expect(await unbound.call("space.status")).toContain("Space: Mira (M)");
         expect(
           await ticketed.call("entry.add", {
             kind: "progress",
             text: "Fixture progress, registered again.",
             request_id: rid(),
           }),
-        ).toMatchObject({ task: "M-1" });
-        expect(
-          await cli.call("op/call", { op: "space.status", input: {} }, { timeoutMs: 60_000 }),
-        ).toMatchObject({ session: { state: "bound" } });
+        ).toMatch(/^logged \S+ on M-1 /);
+        expect(await cli.call("space.status")).toMatchObject({ session: { state: "bound" } });
         expect(textOf(await status())).toContain("Space: Mira (M)");
-        for (const agent of [unbound, ticketed, resumed]) agent.close();
+        for (const agent of [unbound, ticketed, later]) await agent.close();
       } finally {
-        cli.close();
+        await cli.close();
         wire.close();
+      }
+    },
+  );
+});
+
+describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every connection of its home", () => {
+  test(
+    "a launched agent's shell finds its own receipt while its home is registered; once the row is revoked the lookup is refused with rule grant before the space's reader is touched",
+    { timeout: LONG },
+    async () => {
+      const launch = await w.launch("M-3");
+      // On main a shell acts as the session its launch's bridge made.
+      const agent = await launched(launch);
+      expect(agent.binding?.["state"]).toBe("bound");
+      const sh = await shell(w, { TTASKS_TICKET: launch.ticket });
+      try {
+        const request = rid();
+        await sh.call("entry.add", {
+          kind: "progress",
+          text: "Fixture progress before the revoke.",
+          request_id: request,
+        });
+        expect(await sh.call("receipt.get", { request })).toMatchObject({
+          found: true,
+          status: "applied",
+        });
+
+        expect(await revokeHome(w.home, w.path, [launch.row ?? ""])).toBe(1);
+        const { host, touched } = trapped(w.space);
+        expect((await sh.refusal("receipt.get", { request }, { host })).body).toEqual(GRANT);
+        expect(touched).toEqual([]);
+      } finally {
+        await sh.close();
+        await agent.close();
       }
     },
   );
@@ -417,41 +412,29 @@ describe("[A3.3.7.grant.precedence] grant and binding: which refusal wins", () =
     "a session in a granted space that names another space gets binding; once its space is no longer granted, every call gets grant, whatever it names",
     { timeout: LONG },
     async () => {
-      const instance = "home-both";
-      const row = await grant(instance, w.space);
       const launch = await w.launch("M-2");
-      const bridge = await connect({
-        instance,
-        space: w.space,
-        env: { TTASKS_TICKET: launch.ticket },
-      });
-      expect(bridge.binding["state"]).toBe("bound");
-      const cli = await classSession(w.home, w.path, "cli-agent", { TTASKS_TICKET: launch.ticket });
-      const call = (space?: string) =>
-        cli
-          .call(
-            "op/call",
-            { op: "space.status", input: {}, ...(space === undefined ? {} : { space }) },
-            { timeoutMs: 60_000 },
-          )
-          .then(
-            () => undefined,
-            (e: unknown) => errorOf(e),
-          );
+      const agent = await launched(launch);
+      expect(agent.binding?.["state"]).toBe("bound");
+      const cli = await shell(w, { TTASKS_TICKET: launch.ticket });
+      const call = (space?: string): Promise<ErrorBody | undefined> =>
+        cli.refusal("space.status", {}, space === undefined ? {} : { space }).then(
+          (refusal) => refusal.body,
+          () => undefined,
+        );
       try {
-        expect(await call()).toBeUndefined();
+        expect(await cli.call("space.status")).toMatchObject({ session: { state: "bound" } });
         expect(await call(life)).toMatchObject({ code: "forbidden", data: { rule: "binding" } });
         // Not even the user's other space by name tells the session anything else.
         expect(await call("Life")).toMatchObject({ code: "forbidden", data: { rule: "binding" } });
 
-        await revokeHome(w.home, w.path, [row]);
+        await revokeHome(w.home, w.path, [launch.row ?? ""]);
         expect(await call()).toEqual(GRANT);
         expect(await call(w.space)).toEqual(GRANT);
         expect(await call(life)).toEqual(GRANT);
-        expect(await bridge.refusal("space.status")).toEqual(GRANT);
+        expect(await refusedText(agent, "space.status")).toBe(GRANT_TEXT);
       } finally {
-        cli.close();
-        bridge.close();
+        await cli.close();
+        await agent.close();
       }
     },
   );
@@ -459,7 +442,7 @@ describe("[A3.3.7.grant.precedence] grant and binding: which refusal wins", () =
 
 describe("[A3.3.7.grant.scope] the unbound writer scope is the home's grant row", () => {
   test(
-    "two connections of the home share it, it holds when the row is replaced or revoked and made again, and it stays the earlier scope once the connection binds: a retry never writes twice",
+    "two connections of the home share it, and it holds when the row is replaced or revoked and made again: a retry never writes twice",
     { timeout: LONG },
     async () => {
       const instance = "home-scope";
@@ -473,29 +456,25 @@ describe("[A3.3.7.grant.scope] the unbound writer scope is the home's grant row"
         request_id: rid(),
       };
       const written = await a.call("entry.add", input);
-      expect(written).toMatchObject({ result: "logged", task: "M-3" });
-      const replayed = { ...written, replayed: true };
-      expect(await b.call("entry.add", input)).toMatchObject(replayed);
+      expect(written).toMatch(/^logged \S+ on M-3 /);
+      const replayed = `${written} (replayed)`;
+      expect(await b.call("entry.add", input)).toBe(replayed);
 
       // Another answer replaces the home's row (setup keeps one live row per home).
       const second = await grant(instance, w.space, "fixture-account");
       expect(second).not.toBe(first);
-      expect(await a.call("entry.add", input)).toMatchObject(replayed);
+      expect(await a.call("entry.add", input)).toBe(replayed);
 
       // Revoked and registered again: a new row, the same scope.
       await revokeHome(w.home, w.path, [second]);
-      expect(await a.refusal("entry.add", input)).toEqual(GRANT);
+      expect(await refusedText(a, "entry.add", input)).toBe(GRANT_TEXT);
       await grant(instance, w.space);
-      expect(await b.call("entry.add", input)).toMatchObject(replayed);
-
-      // Bound now: the unbound scope is its earlier scope (A3 3.7.9).
-      expect(await a.call("task.get", { task: "M-3", bind: true })).toMatchObject({ bound: true });
-      expect(await a.call("entry.add", input)).toMatchObject(replayed);
+      expect(await b.call("entry.add", input)).toBe(replayed);
 
       const log = JSON.stringify(await logOf("M-3"));
       expect(log.split(input.text).length - 1).toBe(1);
-      a.close();
-      b.close();
+      await a.close();
+      await b.close();
     },
   );
 });
@@ -506,23 +485,29 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
     { timeout: LONG },
     async () => {
       const launch = await w.launch("M-4");
-      const stranger = await connect({
-        instance: "never-registered",
-        space: w.space,
-        env: { TTASKS_TICKET: launch.ticket },
-      });
-      expect(stranger.binding["state"]).toBe("unbound");
+      // Another home's bridge inside the launched agent, with its ticket.
+      const stranger = await launched(launch, { instance: "never-registered" });
+      expect(stranger.binding?.["state"]).toBe("unbound");
       const refusal = await stranger.refusal("task.get", { launch: launch.reference });
-      expect(refusal).toEqual(GRANT);
-      expect(refusal.hint).toContain(`${CLI_NAME} setup agents`);
-      stranger.close();
+      expect(refusal.text).toBe(GRANT_TEXT);
+      expect(refusal.text).toContain(`${CLI_NAME} setup agents`);
+      await stranger.close();
 
       // A3 3.7.4: an entry without --instance is `agent:manual`, in the machine's default space.
       // Two spaces and no default yet: neither is the machine's default.
       const manual = await connect({ instance: null, space: w.space });
-      expect(await manual.refusal("space.status")).toEqual(GRANT);
+      expect(await refusedText(manual, "space.status")).toBe(GRANT_TEXT);
+      // The entry setup prints names no space: with no default to take, it is told to set one.
+      const printed = await connect({ instance: null });
+      expect(printed.binding).toEqual({ space: null, state: "unbound" });
+      const none = await printed.refusal("space.status");
+      expect([none.code, none.reason]).toEqual(["space_unavailable", "no_space"]);
+      expect(none.text).toContain(`set a default space (${CLI_NAME} space use`);
+      expect(none.text).toContain("then restart the agent app");
+      expect(none.text).not.toContain("entry");
+      await printed.close();
       await asUser("space/use", { space: w.space });
-      expect((await manual.call("space.status"))["space"]).toMatchObject({ id: w.space });
+      expect(await manual.call("space.status")).toContain("Space: Mira (M)");
       expect(
         await manual.call("entry.add", {
           task: "M-4",
@@ -530,17 +515,29 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
           text: "Fixture progress from a hand-made entry.",
           request_id: rid(),
         }),
-      ).toMatchObject({ result: "logged" });
+      ).toMatch(/^logged /);
       expect((await logOf("M-4"))[0]?.["author"]).toBe("agent:manual");
       // An instance that is not an instance ID is a hand-made entry as well.
+      // In another space each is refused, naming the default it may use. A restart would bind the
+      // space its entry names again, so it is told to take that out.
       const odd = await connect({ instance: "Not An Instance!", space: life });
-      expect(await odd.refusal("space.status")).toEqual(GRANT);
+      expect(await refusedText(odd, "space.status")).toBe(
+        elsewhere("Mira", w.space, "hand-made naming a space"),
+      );
       const manualLife = await connect({ instance: null, space: life });
-      expect(await manualLife.refusal("space.status")).toEqual(GRANT);
-      // Without --space too: the default space is its first call's.
+      expect(await refusedText(manualLife, "space.status")).toBe(
+        elsewhere("Mira", w.space, "hand-made naming a space"),
+      );
+      // Without --space too: the default space when it binds, which is what taking it out gives.
       const plain = await connect({ instance: null });
-      expect((await plain.call("space.status"))["space"]).toMatchObject({ id: w.space });
-      for (const agent of [manual, odd, manualLife, plain]) agent.close();
+      expect(await plain.call("space.status")).toContain("Space: Mira (M)");
+      // When the default moves, a restart is what moves it: the next process takes the new one.
+      await asUser("space/use", { space: life });
+      expect(await refusedText(plain, "space.status")).toBe(elsewhere("Life", life, "hand-made"));
+      const restarted = await connect({ instance: null });
+      expect(await restarted.call("space.status")).toContain("Space: Life (L)");
+      await asUser("space/use", { space: w.space });
+      for (const agent of [manual, odd, manualLife, plain, restarted]) await agent.close();
 
       // Nothing a refused call or a bind carried is in the log or a crash file.
       const homes = join(w.home, "agent-homes");
@@ -557,79 +554,30 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
 
 describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every connection of its home", () => {
   test(
-    "a session is its home's: another home's connection presenting its ticket again binds nothing, and a call on a session is refused once the session's home or the connection's home is not granted",
+    "a session is its home's: another home's connection presenting its ticket is none, and the session's calls stop with its home's row and go on when it is registered again",
     { timeout: LONG },
     async () => {
-      const x = await grant("home-session-x", w.space);
-      const y = await grant("home-session-y", w.space);
+      await grant("home-session-y", w.space);
       const launch = await w.launch("M-2");
-      const own = await connect({
-        instance: "home-session-x",
-        space: w.space,
-        env: { TTASKS_TICKET: launch.ticket },
-      });
-      expect(own.binding["state"]).toBe("bound");
-      own.close();
-      // No connection of the session is open and its agent runs, so rule 2 honours the ticket
-      // again: for the session's own instance only, as a handle is.
-      const other = await connect({
-        instance: "home-session-y",
-        space: w.space,
-        env: { TTASKS_TICKET: launch.ticket },
-      });
-      expect(other.binding["state"]).toBe("unbound");
-      expect(other.slot.session).toBeUndefined();
+      const x = launch.row ?? "";
+      const own = await launched(launch);
+      expect(own.binding?.["state"]).toBe("bound");
+      const mark = readLog(w.home).length;
+      const other = await launched(launch, { instance: "home-session-y" });
+      expect(other.binding?.["state"]).toBe("unbound");
       expect(
-        readLog(w.home).some(
-          (e) =>
-            e["ev"] === "binding.ignored" && e["input"] === "ticket" && e["reason"] === "instance",
-        ),
+        readLog(w.home)
+          .slice(mark)
+          .some((e) => e["ev"] === "binding.unbound" && e["reason"] === "home"),
       ).toBe(true);
-      expect((await other.call("space.status"))["session"]).toMatchObject({ state: "unbound" });
-      other.close();
-      const again = await connect({
-        instance: "home-session-x",
-        space: w.space,
-        env: { TTASKS_TICKET: launch.ticket },
-      });
-      expect(again.binding["state"]).toBe("bound");
-      const session = again.slot.session;
-      if (session === undefined) throw new Error("the session's own home did not bind");
+      expect(await other.call("space.status")).toContain("Session: not bound");
+      await other.close();
 
-      // A slot that carries another home's session (a record made before that rule): its calls
-      // need both homes' rows.
-      const carried = new Slot({
-        kind: "bridge",
-        instance: "home-session-y",
-        origin: "mcp",
-        space: session.space,
-        session,
-      });
-      const call = () =>
-        opCall(
-          w.service.ops,
-          {
-            class: "bridge",
-            env: {},
-            principal: bridgePrincipal(bridgeContext({ instance: "home-session-y" }), "m_x"),
-            home: "home-session-y",
-            binding: carried,
-          },
-          { op: "space.status", input: {} },
-        ).then(
-          () => undefined,
-          (e: unknown) => (e instanceof AppError ? e.toBody() : e),
-        );
-      expect(await call()).toBeUndefined();
       await revokeHome(w.home, w.path, [x]);
-      expect(await call()).toEqual(GRANT);
-      expect(await again.refusal("space.status")).toEqual(GRANT);
-      await grant("home-session-x", w.space);
-      expect(await call()).toBeUndefined();
-      await revokeHome(w.home, w.path, [y]);
-      expect(await call()).toEqual(GRANT);
-      expect((await again.call("space.status"))["session"]).toMatchObject({ state: "bound" });
-      again.close();
+      expect(await refusedText(own, "space.status")).toBe(GRANT_TEXT);
+      await grantHome(w.home, w.path, { instance: launch.instance, space: w.space });
+      expect(await own.call("space.status")).toContain("Session: bound to M-2");
+      await own.close();
     },
   );
 });
@@ -743,8 +691,8 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
       }
       // The home's own row is kept, and its connection works.
       const agent = await connect({ instance: "home-one", space: life });
-      expect((await agent.call("space.status"))["space"]).toMatchObject({ id: life });
-      agent.close();
+      expect(await agent.call("space.status")).toContain("Space: Life (L)");
+      await agent.close();
       // Freed by removing that home (whose entry `--remove` takes out), the instance may be
       // registered for another.
       await revokeHome(w.home, w.path, [first]);
@@ -781,83 +729,79 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
 
 describe("[A3.3.7.grant.space] a home granted one space reaches no other", () => {
   test(
-    "an entry without --space whose machine default is another space is refused at its first call and pins nothing, so the person's fix takes effect at once",
+    "an entry without --space takes the machine's default at its bind and keeps it: refused there with the space its home may use, never moved by a later default; the next bridge process takes the default then",
     { timeout: LONG },
     async () => {
       await grant("home-life", life);
       await asUser("space/use", { space: w.space });
       const agent = await connect({ instance: "home-life" });
-      expect(agent.binding["space"]).toBeNull();
-      expect(await agent.refusal("space.status")).toEqual(GRANT);
-      expect(agent.slot.space).toBeUndefined();
+      expect(agent.binding).toEqual({ space: w.space, state: "unbound" });
+      expect(await refusedText(agent, "space.status")).toBe(elsewhere("Life", life, "registered"));
       await asUser("space/use", { space: life });
-      expect((await agent.call("space.status"))["space"]).toMatchObject({ id: life });
-      expect(agent.slot.space).toBe(life);
-      agent.close();
+      expect(await refusedText(agent, "space.status")).toBe(elsewhere("Life", life, "registered"));
+      // The same process again holds Mira; a new one takes Life.
+      const again = await connect({ instance: "home-life", held_space: w.space });
+      expect(again.binding).toEqual({ space: w.space, state: "unbound" });
+      // An older bridge reconnects with its handle and holds nothing: which space it worked in is
+      // not known, so it gets none rather than the default of now, and is told to restart.
+      const older = await connect({
+        instance: "home-life",
+        resume: { handle: "bh_0123456789abcdefghijkl" },
+      });
+      expect(older.binding).toEqual({ space: null, state: "unbound" });
+      const restart = await older.refusal("space.status");
+      expect([restart.code, restart.reason]).toEqual(["space_unavailable", "no_space"]);
+      expect(restart.text).toContain(`It may use the space Life: ask the user to name it`);
+      await older.close();
+      // A hand-made one with a default: the restart alone settles it.
+      const olderManual = await connect({
+        instance: null,
+        resume: { handle: "bh_0123456789abcdefghijkl" },
+      });
+      const manualRestart = await olderManual.refusal("space.status");
+      expect(manualRestart.reason).toBe("no_space");
+      expect(manualRestart.text).toContain(
+        "restart the agent app: it then works in the default space",
+      );
+      expect(manualRestart.text).not.toContain("space use");
+      await olderManual.close();
+      const fresh = await connect({ instance: "home-life" });
+      expect(fresh.binding).toEqual({ space: life, state: "unbound" });
+      expect(await fresh.call("space.status")).toContain("Space: Life (L)");
+      for (const each of [agent, again, fresh]) await each.close();
     },
   );
 
   test(
-    "a target that does not resolve says nothing of which spaces exist: a name no space has, or no space named and no default, is the grant refusal; a space the home is granted keeps its own answer",
+    "a bridge's space is settled at its bind: an entry naming no space that exists gets none, refused on every call with what settles it; a call never picks one, whatever the default is then",
     { timeout: LONG },
     async () => {
       await grant("home-target", life);
       const unknown = await connect({ instance: "home-target", space: "No Such Space" });
-      expect(await unknown.refusal("space.status")).toEqual(GRANT);
+      expect(unknown.binding).toEqual({ space: null, state: "unbound" });
+      const none = await unknown.refusal("space.status");
+      expect([none.code, none.reason]).toEqual(["space_unavailable", "no_space"]);
+      // A default alone does not settle it: the entry's space is tried first and alone. Its home
+      // is registered, so it is told the space to name.
+      expect(none.text).toContain(`entry names a space this machine has none of, or two of`);
+      expect(none.text).toContain(`It may use the space Life: ask the user to name it`);
+      expect(none.text).not.toContain("take the space out");
+      expect(
+        (await unknown.refusal("space.status", {}, { host: () => ({ defaultSpace: () => life }) }))
+          .reason,
+      ).toBe("no_space");
       // Its home's space by name works.
       const byName = await connect({ instance: "home-target", space: "life" });
-      expect((await byName.call("space.status"))["space"]).toMatchObject({ id: life });
-
-      // No --space: two spaces served, so nothing is pinned at the bind.
+      expect(await byName.call("space.status")).toContain("Space: Life (L)");
+      // No --space: the default (Life) at the bind, whatever the default is at a call.
       const plain = await connect({ instance: "home-target" });
-      const host = (defaultSpace: string | undefined, served = w.service.ops.spaces()) => ({
-        ...w.service.ops,
-        spaces: () => served,
-        defaultSpace: () => defaultSpace,
-      });
-      // No default: neither "name the space" nor how many spaces there are.
-      expect(await plain.refusal("space.status", {}, { host: host(undefined) })).toEqual(GRANT);
-      // A default nobody serves: the home's own space says so, another space does not.
-      const others = w.service.ops.spaces().filter((s) => s.id !== life);
-      expect((await plain.refusal("space.status", {}, { host: host(life, others) })).code).toBe(
-        "space_unavailable",
-      );
+      expect(plain.binding).toEqual({ space: life, state: "unbound" });
       expect(
-        await plain.refusal("space.status", {}, { host: host(`sp_${"2".repeat(26)}`) }),
-      ).toEqual(GRANT);
-      // A name its space shares with a space it may not use: not `ambiguous`, which would say the
-      // other one exists. (An entry that names a name no space had at its bind pins nothing.)
-      const twin = await connect({ instance: "home-target", space: "Twin" });
-      const twins = w.service.ops
-        .spaces()
-        .map((s) => (s.id === life ? { ...s, name: "Twin" } : s))
-        .concat([{ id: `sp_${"3".repeat(26)}`, name: "twin", state: "open" } as ServedSpace]);
-      expect(await twin.refusal("space.status", {}, { host: host(undefined, twins) })).toEqual(
-        GRANT,
-      );
-      // Its own space under that name alone: it is the home's, and it answers.
-      const single = twins.filter((s) => s.id !== `sp_${"3".repeat(26)}`);
-      expect(
-        (await twin.call("space.status", {}, { host: host(undefined, single) }))["space"],
-      ).toMatchObject({ id: life });
-      twin.close();
-      // The default is an ID and matches by ID only, as the request path takes it: a space of the
-      // home's whose name is the default's ID text does not make the default the home's.
-      const mira = w.space;
-      const namedAsMira = (s: ServedSpace): ServedSpace =>
-        s.id === life ? { ...s, name: mira } : s;
-      const withMira = w.service.ops.spaces().map(namedAsMira);
-      const withoutMira = withMira.filter((s) => s.id !== mira);
-      expect(await plain.refusal("space.status", {}, { host: host(mira, withMira) })).toEqual(
-        GRANT,
-      );
-      expect(await plain.refusal("space.status", {}, { host: host(mira, withoutMira) })).toEqual(
-        GRANT,
-      );
-      expect(plain.slot.space).toBeUndefined();
+        await plain.call("space.status", {}, { host: () => ({ defaultSpace: () => undefined }) }),
+      ).toContain("Space: Life (L)");
       // The person still hears what is wrong.
       const person = await opCall(
-        host(undefined),
+        { ...w.service.ops, defaultSpace: () => undefined },
         { class: "cli-interactive", env: {} },
         { op: "space.status", input: {} },
       ).then(
@@ -865,7 +809,60 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
         (e: unknown) => (e instanceof AppError ? e.toBody() : e),
       );
       expect(person).toMatchObject({ code: "invalid_input" });
-      for (const agent of [unknown, byName, plain]) agent.close();
+      for (const agent of [unknown, byName, plain]) await agent.close();
+    },
+  );
+
+  test(
+    "an entry edited by hand is told what works with the default left where it is: a registered home to name its space, a hand-made entry to take a misspelled space out",
+    { timeout: LONG },
+    async () => {
+      await grant("home-edited", life);
+      await asUser("space/use", { space: w.space });
+      const advice = `It may use the space Life: ask the user to name it in the agent's ${PRODUCT_NAME} entry (--space ${life})`;
+      // Its space taken out: it binds the default, Mira, which it may not use.
+      const bare = await connect({ instance: "home-edited" });
+      expect(bare.binding).toEqual({ space: w.space, state: "unbound" });
+      expect(await refusedText(bare, "space.status")).toBe(elsewhere("Life", life, "registered"));
+      // Its space misspelled: no space, and the same advice.
+      const typo = await connect({ instance: "home-edited", space: "Lief" });
+      expect(typo.binding).toEqual({ space: null, state: "unbound" });
+      const none = await typo.refusal("space.status");
+      expect(none.reason).toBe("no_space");
+      expect(none.text).toContain(advice);
+      // Followed, with the default still Mira: the next process works in Life.
+      const fixed = await connect({ instance: "home-edited", space: life });
+      expect(await fixed.call("space.status")).toContain("Space: Life (L)");
+      // A hand-made entry's misspelled space: taking it out gives the default, which it may use.
+      const manualTypo = await connect({ instance: null, space: "Mira typo" });
+      expect((await manualTypo.refusal("space.status")).text).toContain(
+        "take the space out of the entry",
+      );
+      const manualFixed = await connect({ instance: null });
+      expect(await manualFixed.call("space.status")).toContain("Space: Mira (M)");
+      for (const each of [bare, typo, fixed, manualTypo, manualFixed]) await each.close();
+      await asUser("space/use", { space: life });
+    },
+  );
+
+  test(
+    "an entry with an instance whose home has no space it may use, never registered or revoked, gets the grant refusal at its first call, not a hint about the default",
+    { timeout: LONG },
+    async () => {
+      const row = await grant("home-gone", life);
+      expect(await revokeHome(w.home, w.path, [row])).toBe(1);
+      for (const instance of ["never-registered-here", "home-gone"]) {
+        for (const space of ["No Such Space", undefined]) {
+          const agent = await connect({ instance, ...(space === undefined ? {} : { space }) });
+          // With nothing to settle on, the bind gives the default or none; either way the
+          // command that registers the home is what helps.
+          if (space !== undefined) expect(agent.binding).toEqual({ space: null, state: "unbound" });
+          expect(await refusedText(agent, "space.status"), `${instance} ${String(space)}`).toBe(
+            GRANT_TEXT,
+          );
+          await agent.close();
+        }
+      }
     },
   );
 });
@@ -882,12 +879,12 @@ describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every conne
       // first question), or after its actor was registered too (the second).
       for (const yes of [1, 2]) {
         let asked = 0;
-        const host: OpsHost = {
-          ...w.service.ops,
-          homes: { may: () => (asked += 1) <= yes },
-        };
+        const host: HostPatch = () => ({
+          homes: { may: () => (asked += 1) <= yes, spaceOf: () => undefined },
+        });
         expect(
-          await agent.refusal(
+          await refusedText(
+            agent,
             "entry.add",
             {
               task: "M-1",
@@ -895,14 +892,85 @@ describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every conne
               text: "Fixture progress, admitted then revoked.",
               request_id: rid(),
             },
-            { host },
+            host,
           ),
           `revoked after ${String(yes)}`,
-        ).toEqual(GRANT);
+        ).toBe(GRANT_TEXT);
         expect(asked).toBe(yes + 1);
       }
       expect(JSON.stringify(await logOf("M-1"))).toBe(before);
-      agent.close();
+      await agent.close();
+    },
+  );
+});
+
+describe("[A3.3.7.binding.worlds] a world launch is what a click and setup leave, on the home a test names", () => {
+  test(
+    "registered by default, also two at once; without an app, without a row, with its row revoked, or registered for another space when asked; and a bridge inside it that presents another instance",
+    { timeout: LONG },
+    async () => {
+      const live = async () => {
+        const session = await classSession(w.home, w.path, "cli-interactive");
+        try {
+          const answer = (await session.call("setup/homes", {}, { timeoutMs: 60_000 })) as {
+            homes: { instance: string; app: string; home: string; spaces: string[] }[];
+          };
+          return answer.homes;
+        } finally {
+          session.close();
+        }
+      };
+      const recorded = (launch: WorldLaunch) => w.service.launches.host.liveByTicket(launch.ticket);
+      const rowsOf = async (launch: WorldLaunch) =>
+        (await live()).filter((row) => row.instance === launch.instance);
+
+      // Two launches of one task opened at the same time are two launches, each on its own home.
+      const both = await Promise.all([w.launch("M-1"), w.launch("M-1")]);
+      expect(new Set(both.map((l) => l.id)).size).toBe(2);
+      expect(new Set(both.map((l) => l.instance)).size).toBe(2);
+      for (const launch of both) {
+        expect(recorded(launch)).toMatchObject({ launch: launch.id, app: "codex" });
+        expect(await rowsOf(launch)).toHaveLength(1);
+      }
+
+      const registered = await w.launch("M-1");
+      const home = join(w.home, "agent-homes", registered.instance);
+      expect(registered).toMatchObject({ app: "codex", home });
+      expect(recorded(registered)).toMatchObject({ app: "codex", home });
+      expect(await rowsOf(registered)).toEqual([
+        expect.objectContaining({ app: "codex", home, spaces: [w.space] }),
+      ]);
+      expect(launchContext(w.space, registered)).toMatchObject({
+        space: w.space,
+        instance: registered.instance,
+        app: "codex",
+        env: { TTASKS_TICKET: registered.ticket },
+      });
+      expect(launchContext(w.space, registered, { present: "other-instance" })).toMatchObject({
+        instance: OTHER_INSTANCE,
+        app: "codex",
+        env: { TTASKS_TICKET: registered.ticket },
+      });
+
+      const noApp = await w.launch("M-1", { home: "no-app" });
+      expect(noApp.app).toBeUndefined();
+      expect(recorded(noApp)).not.toHaveProperty("app");
+      expect(recorded(noApp)).toMatchObject({ home: noApp.home });
+      expect(await rowsOf(noApp)).toEqual([]);
+
+      const noRow = await w.launch("M-1", { home: "no-row" });
+      expect(recorded(noRow)).toMatchObject({ app: "codex", home: noRow.home });
+      expect(noRow.row).toBeUndefined();
+      expect(await rowsOf(noRow)).toEqual([]);
+
+      const revoked = await w.launch("M-1", { home: "revoked" });
+      expect(recorded(revoked)).toMatchObject({ app: "codex", home: revoked.home });
+      expect(revoked.row).toMatch(/^gr_/);
+      expect(await rowsOf(revoked)).toEqual([]);
+
+      const elsewhere = await w.launch("M-1", { home: "other-space" });
+      expect(recorded(elsewhere)).toMatchObject({ space: w.space, app: "codex" });
+      expect(await rowsOf(elsewhere)).toEqual([expect.objectContaining({ spaces: [life] })]);
     },
   );
 });

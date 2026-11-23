@@ -22,13 +22,15 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { CLI_NAME } from "@ttasks/brand";
 import { registry, type ErrorBody } from "@ttasks/contracts";
-import { SHIM_METHODS, type Attachment, type SpawnPlan } from "@ttasks/launch";
+import { presetSession, SHIM_METHODS, type Attachment, type SpawnPlan } from "@ttasks/launch";
+import type { RpcSession } from "@ttasks/bridge/protocol";
 import type { HttpStart } from "../../src/http/index.ts";
 import { startService, type RunningService, type StartOptions } from "../../src/hub/service.ts";
 import { renderError } from "../../src/mcp/index.ts";
 import { opCall } from "../../src/ops/index.ts";
 import { removeRuntimeDir, serviceEnv, tempRoot } from "../harness.ts";
-import { classSession, grantHome, revokeHome } from "../ops-helpers.ts";
+import { bridge, launchContext } from "../agents.ts";
+import { agentHomeOf, classSession, grantHome, revokeHome } from "../ops-helpers.ts";
 
 /** The request IDs of the registry's examples (contracts' entries/fixture.ts). */
 const requestIdOf = (n: number): string =>
@@ -52,12 +54,6 @@ export interface ContractTransport {
   call(entry: string, input: Record<string, unknown>, actor: Actor): Promise<unknown>;
   /** The folder that stands for the examples' working folder (`contractWorld`'s portal). */
   readonly portal: string;
-  /**
-   * Whether the agent's calls come through a connection that holds a session binding (A3 3.7.3:
-   * MCP's). A connection that cannot bind (the CLI, the UI, a script) resolves a launch reference
-   * for the call only and answers `bound: false`: the example's `bound` holds where it binds.
-   */
-  readonly binds: boolean;
   /** A launch reference for the task in the world, for an example's `launch` (`ContractWorld.launch`). */
   launch(task: string): Promise<string>;
   /** Gives the task the portal as its folder here, as the person does (`ContractWorld.folder`). */
@@ -85,12 +81,16 @@ export interface ContractWorld {
    */
   folder(task: string): Promise<void>;
   /**
-   * A terminal launch of `task` (a reference or ID), opened, dispatched and claimed in this process
-   * as its shim would claim it (the world's terminal keeps the ticket, its process probe says every
-   * process lives), and unless `started` is false its agent started: what a launched agent holds.
-   * With `claimed` false no shim claims it: its Brief reached no agent.
+   * A terminal launch of `task` (a reference or ID) as a real click makes one: on an instance of its
+   * own, with the instance's agent home (`agentHomeOf`) recorded at the click and registered for the
+   * world's space as setup does, unless `home` asks for one of the other homes. Opened, dispatched
+   * and claimed in this process as its shim would claim it (the world's terminal keeps the ticket,
+   * its process probe says every process lives), and unless `started` is false its agent started:
+   * what a launched agent holds. With `claimed` false no shim claims it: its Brief reached no agent.
    */
   launch(task: string, options?: LaunchAsks): Promise<WorldLaunch>;
+  /** A second space, Life (prefix L), made the first time it is asked for. */
+  other(): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -101,12 +101,35 @@ export interface WorldLaunch {
   readonly ticket: string;
   /** The shim's attachment, once claimed. */
   readonly attachment: Attachment | undefined;
+  /** The instance the click chose, and the app and home folder it recorded (none without). */
+  readonly instance: string;
+  readonly app: string | undefined;
+  readonly home: string | undefined;
+  /** The agent-home row the world registered for its home, revoked for `revoked`. */
+  readonly row: string | undefined;
+  /** The session ID the click preset for Claude Code, when asked for. */
+  readonly preset: string | undefined;
 }
 
-/** How far a world launch goes: claimed by its shim, and its agent started (both by default). */
+/**
+ * The agent home a world launch is opened on:
+ * - `registered`: its app and home recorded, and a live row of its instance for the world's space;
+ * - `no-app`: the click recorded its home but no app;
+ * - `no-row`: its app and home recorded, and setup never registered the home;
+ * - `revoked`: registered, then the row revoked as `ttasks setup agents --remove` does;
+ * - `other-space`: registered for the world's second space (`other()`), while the launch is in the
+ *   world's own.
+ */
+export const WORLD_HOMES = ["registered", "no-app", "no-row", "revoked", "other-space"] as const;
+export type WorldHome = (typeof WORLD_HOMES)[number];
+
+/** How far a world launch goes, and on which home: claimed, started and registered by default. */
 export interface LaunchAsks {
   readonly claimed?: boolean;
   readonly started?: boolean;
+  readonly home?: WorldHome;
+  /** The click presets a session ID, as it does for Claude Code in a terminal. */
+  readonly preset?: boolean;
 }
 
 /** The start time the world's process probe reports for every process. */
@@ -174,6 +197,26 @@ export async function contractWorld(
     user.close();
   }
   const space = created.space?.id ?? created.id ?? "";
+  const path = service.endpoint.path;
+  // The person's session that registers the launches' homes, as setup does: one for the world.
+  let setupSession: Promise<RpcSession> | undefined;
+  const person = (): Promise<RpcSession> =>
+    (setupSession ??= classSession(home, path, "cli-interactive"));
+  let otherSpace: Promise<string> | undefined;
+  const other = (): Promise<string> =>
+    (otherSpace ??= (async () => {
+      const operator = await classSession(home, path, "cli-interactive");
+      try {
+        const made = (await operator.call(
+          "space/create",
+          { name: "Life", path: join(temp.root, "s", "life"), ref_prefix: "L" },
+          { timeoutMs: 120_000 },
+        )) as { space: { id: string } };
+        return made.space.id;
+      } finally {
+        operator.close();
+      }
+    })());
   let launches = 0;
   const launch = async (task: string, launchOptions: LaunchAsks = {}): Promise<WorldLaunch> => {
     // In the world's space by its ID: a test may serve more spaces beside it.
@@ -182,27 +225,54 @@ export async function contractWorld(
       { class: "cli-interactive", env: {} },
       { op: "task.get", input: { task, sections: ["history"] }, space },
     )) as { task: { id: string } };
-    launches += 1;
+    // Taken once: launches opened at the same time each keep their own number across the awaits.
+    const number = (launches += 1);
+    // An instance of its own, so a second launch of a task while the first is still opening is a
+    // launch of its own rather than the first one again. One home per instance, as setup has it.
+    const instance = `contract-agent-${String(number)}`;
+    const agent = agentHomeOf(home, instance);
+    const kind = launchOptions.home ?? "registered";
+    let row: string | undefined;
+    if (kind !== "no-app" && kind !== "no-row") {
+      const setup = await person();
+      const where = kind === "other-space" ? await other() : space;
+      row = await grantHome(home, path, { instance, space: where }, setup);
+      if (kind === "revoked" && (await revokeHome(home, path, [row], setup)) !== 1) {
+        throw new Error("the row was not revoked");
+      }
+    }
+    const request = `contract-launch-${String(number).padStart(6, "0")}`;
+    const preset = launchOptions.preset === true ? presetSession(space, request) : undefined;
+    const given = {
+      ...(kind === "no-app" ? { home: agent.home } : agent),
+      ...(preset === undefined ? {} : { preset }),
+    };
     const intent = await service.launches.open(
       space,
       {
         task: read.task.id,
-        // An instance of its own, so a second launch of a task while the first is still opening is
-        // a launch of its own rather than the first one again.
-        instance: `contract-agent-${String(launches)}`,
+        instance,
         route: "terminal",
         place: null,
         taskVersion: 1,
         briefHash: "c".repeat(64),
       },
-      `contract-launch-${String(launches).padStart(6, "0")}`,
+      request,
       WORLD_PLAN,
+      given,
     );
+    const made = {
+      instance,
+      app: kind === "no-app" ? undefined : agent.app,
+      home: agent.home,
+      row,
+      preset,
+    };
     await service.launches.dispatch(space, intent.id);
     const ticket = tickets.get(intent.id);
     if (ticket === undefined) throw new Error("the launch was not dispatched to its terminal");
     if (launchOptions.claimed === false) {
-      return { id: intent.id, reference: intent.reference, ticket, attachment: undefined };
+      return { id: intent.id, reference: intent.reference, ticket, attachment: undefined, ...made };
     }
     const claimed = await service.launches.host.claim(
       { ticket, role: "shim", pid: process.pid, start_time: WORLD_START },
@@ -216,7 +286,13 @@ export async function contractWorld(
       });
       if (started.kind !== "applied") throw new Error("the agent's start was not recorded");
     }
-    return { id: intent.id, reference: intent.reference, ticket, attachment: claimed.attachment };
+    return {
+      id: intent.id,
+      reference: intent.reference,
+      ticket,
+      attachment: claimed.attachment,
+      ...made,
+    };
   };
   let folders = 0;
   const folder = async (task: string): Promise<void> => {
@@ -245,7 +321,9 @@ export async function contractWorld(
     root: temp.root,
     folder,
     launch,
+    other,
     close: async () => {
+      if (setupSession !== undefined) (await setupSession).close();
       await service.stop();
       removeRuntimeDir(service);
       temp.cleanup();
@@ -268,21 +346,17 @@ const LATER: Readonly<Record<string, Later>> = {
     why: "here lists the tasks placed at the working folder, and the world's tasks have folders",
     now: { result: "schema" },
   },
+  "space.status 1": {
+    owner: "a world in which only M-14 changed since the example's time",
+    why: "every task of the world was made after the example's since, so all of them changed",
+    now: { result: "schema" },
+  },
   "launch.open 0": {
     owner: "the step that makes Open use folders",
     why: "the brief's folder line names the task's place, and the world's tasks have folders",
     now: { result: "schema" },
   },
-  "space.status 1": {
-    owner: "M6 (routines)",
-    why: "a routine's session",
-    now: { result: "schema" },
-  },
-  "task.get 3": {
-    owner: "M6 (a routine's launch reference binds the space)",
-    why: "a routine's launch reference",
-    now: { error: "launch_unknown" },
-  },
+
   "task.add 0": {
     owner: "a world whose M-14 holds the ticket jira:LUM-212 and sits in Lumen Health",
     why:
@@ -350,7 +424,7 @@ const refs = (list: unknown, key = "ref"): unknown[] =>
   Array.isArray(list) ? (list as Value[]).map((item) => item[key]) : [];
 
 /** What a result means, per entry: the parts an example documents that a world can reproduce. */
-function meaning(entry: string, value: Value, binds: boolean): unknown {
+function meaning(entry: string, value: Value): unknown {
   switch (entry) {
     case "space.status": {
       const counts = value["counts"] as Value;
@@ -392,8 +466,8 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
       const task = value["task"] as Value;
       return {
         view: value["view"],
-        // Where the connection cannot hold a binding, a call resolves for itself: never bound.
-        bound: binds ? value["bound"] : false,
+        // The transport's connection is no launch's session: a reference reads, never binds.
+        bound: value["bound"],
         task: { ref: task["ref"], lifecycle: task["lifecycle"], title: task["title"] },
         sections: Object.keys(sections).sort(),
         instructions: refs(sections["instructions"]),
@@ -629,10 +703,11 @@ export function grantSuite(name: string, open: () => Promise<GrantTransport>): v
 }
 
 /**
- * A launched agent's session in the world's space whose agent home's row was revoked (A3 3.7.8):
- * the home registered as setup does, the agent's bridge bound by its ticket, then the row revoked
- * as `ttasks setup agents --remove` does. A CLI call carrying the ticket acts as that session, so
- * every one of them is refused with rule grant. The world gets a task M-1 if it has none.
+ * A launched agent's session in the world's space whose agent home's row was revoked: a world
+ * launch on its home registered as setup does, its bridge its session by its ticket through the
+ * local endpoint, then the row revoked as `ttasks setup agents --remove` does. A shell's call
+ * carrying the ticket is that session, so every one of them is refused with rule grant. The world
+ * gets a task M-1 if it has none.
  */
 export async function revokedSession(world: ContractWorld): Promise<{ readonly ticket: string }> {
   const added = (await opCall(
@@ -645,25 +720,13 @@ export async function revokedSession(world: ContractWorld): Promise<{ readonly t
     },
   )) as { tasks: { ref: string }[] };
   const task = added.tasks[0]?.ref ?? "M-1";
-  const instance = "revoked-agent";
-  const row = await grantHome(world.home, world.path, { instance, space: world.space });
   const launch = await world.launch(task);
-  const connection = {
-    context: {
-      space: world.space,
-      instance,
-      app: "test",
-      cwd: null,
-      env: { TTASKS_TICKET: launch.ticket },
-      parent: { pid: process.pid },
-    },
-  };
-  const bound = await world.service.bindings.bridge(connection);
-  if (bound["state"] !== "bound") throw new Error("the agent's bridge did not bind by its ticket");
-  // The bridge goes; its session lives on while the agent runs, and its ticket maps to it.
-  const slot = world.service.bindings.attach(connection);
-  if (slot !== undefined) world.service.bindings.closed(slot);
-  if ((await revokeHome(world.home, world.path, [row])) !== 1) {
+  const agent = await bridge(world, launchContext(world.space, launch));
+  if (agent.binding?.["state"] !== "bound") {
+    throw new Error("the agent's bridge did not bind by its ticket");
+  }
+  await agent.close();
+  if ((await revokeHome(world.home, world.path, [launch.row ?? ""])) !== 1) {
     throw new Error("the home's row was not revoked");
   }
   return { ticket: launch.ticket };
@@ -733,8 +796,8 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             expect(parsed.success, key).toBe(true);
             const value = result as Value;
             if (typeof value["as_of"] === "string") expect(value["as_of"]).toMatch(AS_OF);
-            expect(meaning(entry.name, value, true), key).toEqual(
-              meaning(entry.name, example.output as Value, transport.binds),
+            expect(meaning(entry.name, value), key).toEqual(
+              meaning(entry.name, example.output as Value),
             );
           }
         }

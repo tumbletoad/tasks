@@ -2,9 +2,9 @@
 
 One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
 
-**Done so far:** 73 of 101, and M2.04b, M4.01b and M4.05b outside the base count.
+**Done so far:** 80 of 101, and M2.04b, M4.01b, M4.05b and M6.04h outside the base count. The rows were checked against the code on 2026-11-22.
 
-**Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 11 · M5 14 · M6 16 · M7 2 · total 101. Plus the gates G1 and G2, the grant gate M2.04b, and the conditional steps listed apart.
+**Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 11 · M5 14 · M6 16 · M7 2 · total 101. Plus the gates G1 and G2, the grant gate M2.04b, the rows that hold what a merged step left (an ID that ends in `b`, `t` or `r`), and the conditional steps listed apart.
 
 ## How to read and use it
 
@@ -39,8 +39,14 @@ Gate G2 stays open until lab sessions 1 to 3 have run. Steps behind a G2 predica
 
 Merged steps left these checks for a session:
 - `ttasks setup agents`, then `--apply`, then `--remove` in the real agent homes on a real Windows and a real Linux machine: the apps' own `mcp add` commands write the entry exactly as asked, `codex mcp remove` drops the patched keys with the table, and Codex loads `startup_timeout_sec` and `env_vars` (M2.15).
-- The installed-build migration drill (`pnpm accept m3 --part migration --installed <folder>`) against the Linux build on a real Ubuntu 24.04 machine, before a build with schema 0.2 opens real spaces on it.
+- The installed-build migration drill (`pnpm accept m3 --part migration --installed <folder>`) against an installed build on Windows 11. CI runs it against an installed build on Ubuntu 24.04.
 - The modes T3 Code gives its runtime file and `userdata` folder under umask 002, when the session that observes T3 runs (L05).
+- Open that joins a running session, and Open again after a session ended, with a real terminal and a real agent app (M2.15).
+- Settings > Agent apps in the page against real agent homes (M4.05).
+- A background run with the real Codex and the real Claude Code on Ubuntu 24.04, and Stop on a real agent there (M6.15).
+- `ttasks update --rollback` after a migration on a real install (M6.15).
+
+The session plans for lab sessions 1 to 3 were written before background runs and the product's new name: they are brought up to date before a session is held.
 
 ## M0: the real-machine lab
 
@@ -102,9 +108,10 @@ Merged steps left these checks for a session:
 | M2.12 | HTTP and WebSocket | M1.09 | M | done |
 | M2.13 | Skeleton page | M2.12, M2.05 | M | done |
 | M2.14 | Setup v0 | M2.03 | S | done |
+| M2.10t | T3 Open from the page and the questions before dispatch, the part of M2.10 not built | M2.10, M2.11, M4.06 | M | ready |
 | M2.15 | Real-machine acceptance | all | S RM | todo |
 
-M2.04b is not in the base count.
+M2.04b and M2.10t are not in the base count. Until M2.10t lands, Open on a T3 instance answers `no_route`. M2.07's places were replaced by folders (M4.09, M4.10, M6.16), and M4.11 retires what is left of them. M2.04's binding is replaced under M4.06.
 
 ## M3: durable space (parallel with M4)
 
@@ -117,7 +124,7 @@ M2.04b is not in the base count.
 | M3.05 | Search | M3.01 | M | done |
 | M3.06 | Source keys and dedupe | M3.01 | S | done |
 | M3.07 | Export bundles and restore | M3.01, M1.06 | M | done |
-| M3.08 | Authority, transfer and claim | M3.07 | M | ready |
+| M3.08 | Authority, transfer and claim | M3.07 | M | blocked: the owner's decision on its scope |
 | M3.09 | Synced and network folder detection, read-only modes | M1.08 | S | done |
 | M3.10 | Projection | M3.01 | M | done |
 | M3.11 | Preferences and feature flags | M3.01 | S | done |
@@ -127,7 +134,7 @@ M2.04b is not in the base count.
 | M3.15 | Full crash and model suites | M3.02–M3.14 | M | todo |
 | M3.16 | Scale on Windows and Linux | M3.05, M3.10 | S RM | todo |
 
-M3.13 relies on a CI job that the local checks do not cover. M3.05 is merged, but a space answers a search with words only after the next schema step creates the search tables: M6.01 owns that step.
+M3.13 relies on a CI job that the local checks do not cover. M3.05's search tables come with schema 0.4. Of M3.08 the claim is built, and transfer and the detection of two writing copies are not. Of M3.15 the crash harness runs on every pull request and every night, and the disk-full test, the outside-write check and the model with 3 to 12 actors are not built. A task's delete and restore (M3.04) are in the writer and no command, tool or page action reaches them yet.
 
 ## M4: agent interface (parallel with M3)
 
@@ -140,14 +147,14 @@ M3.13 relies on a CI job that the local checks do not cover. M3.05 is merged, bu
 | M4.04 | Final server instructions | M4.01 | S | done |
 | M4.05 | Setup for remaining apps, doctor | M2.14 | M | done |
 | M4.05b | What M4.05 left: doctor's launch rows and sessions row, a free instance ID in setup | M4.05, M2.04b | S | done |
-| M4.06 | Binding complete | M2.04, M2.04b | M | doing |
+| M4.06 | Binding complete | M2.04, M2.04b | M | done |
 | M4.07 | Source ingestion | M4.01 | S | ready |
 | M4.08 | Interactive agent evals | M4.01–M4.07 | S RM | todo |
 | M4.09 | Folders in the space: storage and operations | M4.01b | M | done |
 | M4.10 | Agent and command-line fields for folders | M4.09 | M | done |
 | M4.11 | Folder follow-ups, the old places retired | M4.10, M6.16, M3.10 | S | todo |
 
-M4.05b and M4.01b are not in the base count.
+M4.05b and M4.01b are not in the base count. M4.06 was built as a redesign in four slices (pull requests 118, 120, 121 and 124) and not as the plan's step: a connection is a launch's or a run's session, or none, decided from the value TTasks issued for it. What stays for the build before the switch (an older bridge's handle, `bridgeUsed` in a launch file) goes once the owner's install is moved. Of M4.03 the framing, the budgets and the user's notes kept whole are built. Notes and log entries name their writer, and the summary, the context, the outcome and the sources carry no such label yet. Related learnings and the secret warning on a write are not built. Until M4.02 lands every agent change is applied in full, and no route changes the autonomy level.
 
 ## M5: the planner UI (parallel with M6)
 
@@ -164,30 +171,38 @@ M4.05b and M4.01b are not in the base count.
 | M5.09 | Receipts, proposals, digest | M5.06, M4.02 | M | todo |
 | M5.10 | Quick capture and search | M5.03, M3.05 | S | done |
 | M5.11 | Settings, flags, keyboard | M5.01, M3.11 | M | done |
-| M5.12 | First-run setup | M5.11, M4.05 | S | doing |
+| M5.12 | First-run setup | M5.11, M4.05 | S | done |
 | M5.13 | UI quality pass | M5.01–M5.12 | M RM | todo |
-| M5.14 | Add project and folders in the page | M4.09, M6.16, M5.06 | M | todo |
+| M5.14 | Add project and folders in the page | M4.09, M6.16, M5.06 | M | done |
+| M5.14b | What M5.14 left: the same folders on another machine after a restore, Settings > Folders, a project's rename and archive in the page | M5.14 | M | ready |
+
+M5.14b is not in the base count. M5.12 merged as a first space and an agent-apps step, not as the plan's seven steps. Of M5.09 the launch receipts and the states of a session and a run are in the thread, and the proposals, the changed dot and the stored digest wait for M4.02 and M4.03.
 
 ## M6: runs, routines and every v1 target (parallel with M5)
 
 | Step | Title | Needs | Size | State |
 |---|---|---|---|---|
 | M6.01 | Run records and states | M2.05 | M | done |
-| M6.02 | Supervisor and limits | M6.01 | M | review |
+| M6.02 | Supervisor and limits | M6.01 | M | done |
 | M6.03 | Run shim | M6.01, M2.08 | M | done |
 | M6.04 | Cancellation | M6.03 | M | done |
 | M6.05 | Stream parsers | M0.11 | S | done |
-| M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | doing |
+| M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | done |
+| M6.06b | What M6.06 left: `run_report` on a run's connection, and asking the person about an approval in Codex's narrower modes, where the driver answers each request itself today | M6.06, M4.06 | S | ready |
 | M6.07 | Routines: Refresh and Wrap-up | M6.06, M4.07 | M | todo |
-| M6.08 | The TTasks work folder | M6.06, M2.11 | S | todo |
-| M6.09 | Run and Refresh UI | M5.07, M6.07, M6.08 | M | todo |
+| M6.08 | The TTasks work folder | M6.06, M2.11 | S | done |
+| M6.09 | Run and Refresh UI | M5.07, M6.07, M6.08 | M | done |
+| M6.09b | What M6.09 left: Refresh in the top bar, Continue interactively | M6.09, M6.07 | S | todo |
 | M6.10 | T3 CLI fallback route | M2.11 | S | done |
 | M6.11 | Best-effort targets, context pack | M2.10 | S | done |
 | M6.12 | Update from a local archive | M1.14 | M | done |
+| M6.12r | Version retirement, the part of M6.12 not built | M6.12 | M | ready |
 | M6.13 | Stable Windows launchers | M6.12 | S | done |
 | M6.14 | Real-run contract evals | M6.07, M4.08 | S RM | todo |
 | M6.15 | Real machines: Refresh, cancel, receipts | M6.01–M6.14 | S RM | todo |
 | M6.16 | Launch and service on folders | M4.09 | M | done |
+
+M6.06b, M6.09b and M6.12r are not in the base count. M6.03 was built another way: the service hosts each run and no run shim exists, so a run ends with the service and keeps its last saved answer. M6.06 became two drivers of the product's own, one for the Codex app server and one for Claude Code, and the Codex parser of M6.05 left with it. M6.02's limits are guidelines a person sets, and no folder lease exists.
 
 ## M7: switch-over (v1)
 
@@ -196,7 +211,7 @@ M4.05b and M4.01b are not in the base count.
 | M7.09 | Rehearsal on the machine that holds the real work data | M5, M6 | S RM | todo |
 | M7.10 | Cutover and 10-day trial | M7.09 | S RM | todo |
 
-The prototype importer and the steps built on it (M7.01 to M7.08 and M7.11) left the plan: agents recreate the first user's tasks with the product's own tools. Their IDs are not reused. In M7 the work is fixing what the rehearsal and the trial find.
+The prototype importer and the steps built on it (M7.01 to M7.08 and M7.11) left the plan: agents recreate the first user's tasks with the product's own tools. Their IDs are not reused. The first user's tasks were recreated that way on 2026-11-17, so the cutover's data move is done. In M7 the work is fixing what the rehearsal and the trial find.
 
 ## Conditional steps
 

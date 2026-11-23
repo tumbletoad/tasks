@@ -20,7 +20,7 @@ import { join, relative } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { MCP_SERVER_KEY } from "@ttasks/brand";
 import { REQUEST_CHARS } from "@ttasks/contracts";
-import type { JsonObject, RpcSession } from "@ttasks/bridge/protocol";
+import type { RpcSession } from "@ttasks/bridge/protocol";
 import {
   briefReference,
   powershellPath,
@@ -29,8 +29,8 @@ import {
   type SpawnedProcess,
 } from "@ttasks/launch";
 import { FAKE_CLI_AGENT, type CliAgentReport } from "@ttasks/testkit";
-import { bridgePrincipal, clientOf, renderResult } from "../src/mcp/index.ts";
-import { opCall, type Caller } from "../src/ops/index.ts";
+import { opCall } from "../src/ops/index.ts";
+import { bridge, type HostPatch } from "./agents.ts";
 import { instanceToml, tempRoot, waitFor } from "./harness.ts";
 import { bridgeContext } from "./mcp-helpers.ts";
 import { classSession, errorOf, grantHome } from "./ops-helpers.ts";
@@ -255,31 +255,22 @@ async function notesOf(r: Rig, task: string): Promise<Note[]> {
   }
 }
 
-/** An agent's MCP connection, as an app's bridge makes it, and its get_task. */
+/** What get_task says to an app's agent that is no session: it names the task on the calls that act on it. */
+const NAMES = "act on it: this connection is not its session";
+/** The line before the person's request in get_task's text. */
+const REQUEST = "Request from the user for this launch:";
+
+/** An agent's MCP connection, as an app's bridge makes it, and the text of its get_task. */
 async function mcpAgent(r: Rig, cwd: string) {
-  const context: JsonObject = bridgeContext({ space: r.lab.spaceId, instance: "app-agent", cwd });
-  const connection = { context };
-  await r.lab.running.bindings.bridge(connection);
-  const slot = r.lab.running.bindings.attach(connection);
-  if (slot === undefined) throw new Error("no slot");
-  const caller: Caller = {
-    class: "bridge",
-    env: {},
-    principal: bridgePrincipal(context, r.lab.running.ops.machine.id),
-    client: clientOf(context),
-    binding: slot,
-  };
-  const getTask = async (input: Record<string, unknown>) =>
-    (await opCall(r.lab.running.ops, caller, { op: "task.get", input })) as {
-      bound: boolean;
-      request?: Request;
-      task: { notes: Note[] };
-    };
+  const served = { service: r.lab.running, home: r.lab.home, path: r.lab.running.endpoint.path };
+  const agent = await bridge(
+    served,
+    bridgeContext({ space: r.lab.spaceId, instance: "app-agent", cwd }),
+  );
   return {
-    getTask,
-    close: () => {
-      r.lab.running.bindings.closed(slot);
-    },
+    getTask: (input: Record<string, unknown>) => agent.call("task.get", input),
+    refusal: (input: Record<string, unknown>) => agent.refusal("task.get", input),
+    close: () => agent.close(),
   };
 }
 
@@ -612,19 +603,17 @@ describe("[A4.5.routes.request] what a person types before Open is on the task a
         await expectOnlyInSpace(r, marker);
 
         const agent = await mcpAgent(r, folder);
-        const got = await agent.getTask({ launch: result.launch.reference });
-        expect(got.bound).toBe(true);
-        expect(got.request).toEqual({ note: result.note, text: words });
+        const text = await agent.getTask({ launch: result.launch.reference });
+        expect(text).toContain(NAMES);
         // The tool's text holds every line whole, as typed, as the person's request.
-        const text = renderResult("task.get", got);
-        expect(text).toContain("Request from the user for this launch:");
+        expect(text).toContain(REQUEST);
         for (const line of words.split("\n")) expect(text).toContain(`  ${line}`);
         // The same call again, and an agent of the app without the tools: the same words.
-        expect((await agent.getTask({ launch: result.launch.reference })).request).toEqual(
-          got.request,
-        );
-        agent.close();
-        expect((await cliShow(r, prefill)).request).toEqual(got.request);
+        const again = await agent.getTask({ launch: result.launch.reference });
+        expect(again).toContain(REQUEST);
+        for (const line of words.split("\n")) expect(again).toContain(`  ${line}`);
+        await agent.close();
+        expect((await cliShow(r, prefill)).request).toEqual({ note: result.note, text: words });
       },
     );
   }
@@ -708,11 +697,10 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
       const agent = await mcpAgent(r, folder);
       // An answer the agent never receives (a call it cancelled) is an answer like the next.
       await agent.getTask({ launch: result.launch.reference });
-      expect((await agent.getTask({ launch: result.launch.reference })).request).toEqual({
-        note: result.note,
-        text: words,
-      });
-      agent.close();
+      const read = await agent.getTask({ launch: result.launch.reference });
+      expect(read).toContain(REQUEST);
+      for (const line of words.split("\n")) expect(read).toContain(`  ${line}`);
+      await agent.close();
 
       // A day and more later, after rounds of the service: the request is on the task.
       r.lab.skew += DAY_MS + 1_000;
@@ -724,7 +712,7 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
   );
 
   test(
-    "a second session with the launch's pointer is refused it; a session that loads the task sees the request as history, with its launch",
+    "every agent that reads the launch's pointer gets the request; one that loads the task by its reference sees it as history, with its launch",
     { timeout: 600_000 },
     async () => {
       opened.length = 0;
@@ -734,27 +722,95 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
       const result = await open(r, { task: task.ref, instance: "desktop", text: "Fix the offset" });
       await r.lab.waitIntent(result.launch.id, (i) => i.state === "dispatched", "Dispatched");
       const own = await mcpAgent(r, folder);
-      expect((await own.getTask({ launch: result.launch.reference })).request?.text).toBe(
-        "Fix the offset",
+      expect(await own.getTask({ launch: result.launch.reference })).toContain(
+        `${REQUEST}\n  Fix the offset`,
       );
       const other = await mcpAgent(r, folder);
-      await expect(other.getTask({ launch: result.launch.reference })).rejects.toMatchObject({
-        code: "launch_used",
+      expect(await other.getTask({ launch: result.launch.reference })).toContain(
+        `${REQUEST}
+  Fix the offset`,
+      );
+      const text = await other.getTask({ task: task.ref });
+      expect(text).not.toContain(REQUEST);
+      expect(text).toContain("Fix the offset");
+      // The note is shown under its own reference, as the original request's.
+      const note = result.note ?? "";
+      expect(note).not.toBe("");
+      const line = text.split("\n").find((l) => l.startsWith(`- ${note} `));
+      expect(line).toContain(`(request for launch ${result.launch.reference} [desktop])`);
+      await own.close();
+      await other.close();
+    },
+  );
+
+  test(
+    "a read by the launch's pointer that fails before its answer is ready marks nothing; the next read marks it Connected",
+    { timeout: 600_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("request-mark");
+      const task = await addTask(r, "folder-mark");
+      const folder = join(r.lab.work, "folder-mark");
+      const result = await open(r, { task: task.ref, instance: "desktop", text: "Fix the offset" });
+      await r.lab.waitIntent(result.launch.id, (i) => i.state === "dispatched", "Dispatched");
+      const served = {
+        service: r.lab.running,
+        home: r.lab.home,
+        path: r.lab.running.endpoint.path,
+      };
+      const agent = await bridge(
+        served,
+        bridgeContext({ space: r.lab.spaceId, instance: "app-agent", cwd: folder }),
+      );
+      // The person's request cannot be read once: the read fails after it found the launch.
+      let failures = 1;
+      const noteFails: HostPatch = (own) => ({
+        spaces: () =>
+          own.spaces().map((s) => {
+            const reader = s.reader;
+            if (reader === undefined) return s;
+            return {
+              ...s,
+              reader: new Proxy(reader, {
+                get(target, key) {
+                  const value: unknown = Reflect.get(target, key, target);
+                  if (key !== "transaction" || typeof value !== "function") {
+                    return typeof value === "function"
+                      ? (value as (...a: unknown[]) => unknown).bind(target)
+                      : value;
+                  }
+                  return (mode: unknown, statements: readonly { readonly sql: string }[]) => {
+                    if (
+                      failures > 0 &&
+                      statements.some((q) => q.sql.includes("n.ordinal = $ordinal"))
+                    ) {
+                      failures -= 1;
+                      return Promise.reject(new Error("the note could not be read"));
+                    }
+                    return (value as (...a: unknown[]) => unknown).call(target, mode, statements);
+                  };
+                },
+              }),
+            };
+          }),
       });
-      const loaded = await other.getTask({ task: task.ref });
-      expect(loaded.request).toBeUndefined();
-      expect(loaded.task.notes).toEqual([
-        expect.objectContaining({
-          ref: result.note,
-          text: "Fix the offset",
-          request_for: [{ launch: result.launch.reference, instance: "desktop" }],
-        }),
-      ]);
-      const text = renderResult("task.get", loaded);
-      expect(text).not.toContain("Request from the user for this launch");
-      expect(text).toContain(`(request for launch ${result.launch.reference} [desktop])`);
-      own.close();
-      other.close();
+      const refused = await agent.refusal(
+        "task.get",
+        { launch: result.launch.reference },
+        { host: noteFails },
+      );
+      expect(refused.code).not.toBe("");
+      expect(failures).toBe(0);
+      const before = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
+      expect(before?.evidence.bound_at).toBeUndefined();
+      expect(before?.state).toBe("dispatched");
+      expect(await agent.call("task.get", { launch: result.launch.reference })).toContain(
+        `${REQUEST}
+  Fix the offset`,
+      );
+      const after = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
+      expect(after?.evidence.bound_at).toBeTypeOf("number");
+      await agent.close();
     },
   );
 
@@ -786,8 +842,8 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
       const state = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
       expect(state?.state).toBe("dispatched");
       const agent = await mcpAgent(r, folder);
-      expect((await agent.getTask({ launch: result.launch.reference })).request).toBeUndefined();
-      agent.close();
+      expect(await agent.getTask({ launch: result.launch.reference })).not.toContain(REQUEST);
+      await agent.close();
       // The folder is still the task's: the undo took the note only.
       const digest = (await r.user.call(
         "op/call",

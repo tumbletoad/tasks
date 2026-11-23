@@ -4,6 +4,7 @@
 // cache, and the contract suite and the grant gate's refusal over MCP for both eras.
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import { offlineReply, parseOffline } from "@ttasks/bridge/mcp";
 import { LocalError, PROTOCOL } from "@ttasks/bridge/protocol";
 import { findEntry, AppError, readsOnly } from "@ttasks/contracts";
@@ -16,7 +17,7 @@ import {
   renderError,
   renderResult,
 } from "../src/mcp/index.ts";
-import { grantRefused, opCall } from "../src/ops/index.ts";
+import { grantRefused, opCall, type Binding } from "../src/ops/index.ts";
 import {
   ContractError,
   contractSuite,
@@ -25,7 +26,7 @@ import {
   type ContractTransport,
   type GrantTransport,
 } from "./contract/suite.ts";
-import { diagnostics, readLog, stateOf } from "./harness.ts";
+import { diagnostics, readLog } from "./harness.ts";
 import {
   bridgeContext,
   libOffline,
@@ -113,8 +114,8 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
         }),
       );
       legacy.add((await replayed.request("tools/list")).result ?? "");
-      // M4.01: connections bound to a task by get_task {task, bind: true}, in both eras. The list
-      // is asked for after the bind, so nothing about the binding can reach it.
+      // M4.01: connections that read a task, in both eras. The list is asked for after the call,
+      // so nothing of the call can reach it.
       await grantHome(w.home, w.path, { instance: "test-agent", space: w.space });
       const user = await classSession(w.home, w.path, "cli-interactive");
       try {
@@ -129,16 +130,18 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
       } finally {
         user.close();
       }
-      const bind = { name: "get_task", arguments: { task: "M-1", bind: true } };
+      const bind = { name: "get_task", arguments: { task: "M-1" } };
       const bound = await raw(w, bridgeContext({ space: w.space }));
       await bound.initialize();
       const call = await bound.request("tools/call", bind);
-      expect(textOf(JSON.parse(call.result ?? "{}"))).toContain("Session: bound to this task");
+      expect(textOf(JSON.parse(call.result ?? "{}"))).toContain(
+        "Pass task M-1 on the calls that act on it",
+      );
       legacy.add((await bound.request("tools/list")).result ?? "");
       const boundModern = await raw(w, bridgeContext({ space: w.space }));
       const modernCall = await boundModern.request("tools/call", modern("2026-07-28", bind));
       expect(textOf(JSON.parse(modernCall.result ?? "{}"))).toContain(
-        "Session: bound to this task",
+        "Pass task M-1 on the calls that act on it",
       );
       modernLists.add((await boundModern.request("tools/list", modern())).result ?? "");
       expect([...legacy]).toEqual([JSON.stringify(offline.tools_list.result)]);
@@ -167,7 +170,7 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
 
 describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding", () => {
   test(
-    "an unbound and a task-bound connection get not_permitted, in both eras and from the CLI, and nothing is written",
+    "a connection that is no session gets not_permitted, in both eras and from the CLI, and nothing is written",
     async () => {
       const w = await opened("rr");
       await grantHome(w.home, w.path, { instance: "test-agent", space: w.space });
@@ -182,9 +185,6 @@ describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding"
         op: "task.add",
         input: { tasks: [{ title: "Fixture task" }], request_id: "fixture-request-rr-0001" },
       });
-      // Each call carries a thread ID of its own, as Codex sends one with every call: recording it
-      // would change the binding records, so they must come out byte for byte as they were.
-      const thread = (n: number) => `019a0000-0000-7000-8000-${String(n).padStart(12, "0")}`;
       const report = (n: number) => ({
         name: "run_report",
         arguments: {
@@ -193,81 +193,21 @@ describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding"
           request_id: `fixture-request-rr-${String(n).padStart(4, "0")}`,
         },
       });
-      const legacyReport = (n: number) => ({ ...report(n), _meta: { threadId: thread(n) } });
-      const modernReport = (n: number) => {
-        const params = modern("2026-07-28", report(n));
-        return { ...params, _meta: { ...(params["_meta"] as Json), threadId: thread(n) } };
-      };
       const refused = (reply: { result?: string | undefined }) => {
         const result = JSON.parse(reply.result ?? "{}") as { isError?: boolean };
         expect(result.isError).toBe(true);
         return textOf(result);
       };
-      // Connections bound to a task by get_task {task, bind: true}, in both eras, and two unbound
-      // ones, all opened before the binding records are read.
-      const bind = { name: "get_task", arguments: { task: "M-1", bind: true } };
-      const bound = await raw(w, bridgeContext({ space: w.space }));
-      await bound.initialize();
-      expect(
-        textOf(JSON.parse((await bound.request("tools/call", bind)).result ?? "{}")),
-      ).toContain("Session: bound to this task");
-      const boundModern = await raw(w, bridgeContext({ space: w.space }));
-      expect(
-        textOf(
-          JSON.parse(
-            (await boundModern.request("tools/call", modern("2026-07-28", bind))).result ?? "{}",
-          ),
-        ),
-      ).toContain("Session: bound to this task");
       const unbound = await raw(w, bridgeContext({ space: w.space }));
       await unbound.initialize();
       const modernUnbound = await raw(w, bridgeContext({ space: w.space }));
-      // A connection that carries two conversations (A3 3.7.5): bound by thread 20's call, then
-      // shared by thread 21's. A call is the session's only when its own ID proves it.
-      const shared = await raw(w, bridgeContext({ space: w.space }));
-      await shared.initialize();
-      expect(
-        textOf(
-          JSON.parse(
-            (await shared.request("tools/call", { ...bind, _meta: { threadId: thread(20) } }))
-              .result ?? "{}",
-          ),
-        ),
-      ).toContain("Session: bound to this task");
-      await shared.request("tools/call", {
-        name: "status",
-        arguments: {},
-        _meta: { threadId: thread(21) },
-      });
-      w.service.bindings.flush();
-      const records = join(stateOf(w.home), "sessions.json");
-      const kept = readFileSync(records);
       const before = await asOf();
-      // Unbound, in both eras.
-      expect(refused(await unbound.request("tools/call", legacyReport(2)))).toMatch(
-        /^error not_permitted: This works only in a run or routine\. Nothing to report outside a run\./u,
+      expect(refused(await unbound.request("tools/call", report(2)))).toMatch(
+        /^error not_permitted: This works only in a run or routine. Nothing to report outside a run./u,
       );
-      expect(refused(await modernUnbound.request("tools/call", modernReport(3)))).toMatch(
-        /^error not_permitted: .* Nothing to report outside a run\./u,
-      );
-      // Bound to a task, in both eras.
-      expect(refused(await bound.request("tools/call", legacyReport(4)))).toMatch(
-        /^error not_permitted: This works only in a run or routine\. This session is bound to a task, not a run\./u,
-      );
-      expect(refused(await boundModern.request("tools/call", modernReport(7)))).toMatch(
-        /^error not_permitted: .* This session is bound to a task, not a run\./u,
-      );
-      // On the shared connection, the bound thread's call and another thread's.
       expect(
-        refused(
-          await shared.request("tools/call", { ...report(8), _meta: { threadId: thread(20) } }),
-        ),
-      ).toMatch(/^error not_permitted: .* This session is bound to a task, not a run\./u);
-      expect(
-        refused(
-          await shared.request("tools/call", { ...report(9), _meta: { threadId: thread(22) } }),
-        ),
-      ).toMatch(/^error not_permitted: .* Nothing to report outside a run\./u);
+        refused(await modernUnbound.request("tools/call", modern("2026-07-28", report(3)))),
+      ).toMatch(/^error not_permitted: .* Nothing to report outside a run./u);
       // The CLI: a person's terminal and an agent's shell are no run either.
       for (const cls of ["cli-interactive", "cli-agent"] as const) {
         const session = await classSession(w.home, w.path, cls, {
@@ -289,17 +229,15 @@ describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding"
           session.close();
         }
       }
-      // Nothing was written: not a report, not even the agent's first act in the space, and nothing
-      // of the calls in the binding records (a thread ID, a last use, an unbound write).
+      // Nothing was written: not a report, not even the agent's first act in the space.
       expect(await asOf()).toBe(before);
-      w.service.bindings.flush();
-      expect(readFileSync(records).equals(kept)).toBe(true);
       // No receipt in the unbound connections' writer scope, which is the agent home's (A3 3.7.9).
       const agent = {
         class: "bridge" as const,
         env: {},
         principal: bridgePrincipal(bridgeContext(), w.service.ops.machine.id),
         home: "test-agent",
+        binding: { kind: "none", space: w.space, named: false } as const,
       };
       for (const request of ["fixture-request-rr-0002", "fixture-request-rr-0003"]) {
         const receipt = (await opCall(w.service.ops, agent, {
@@ -520,16 +458,22 @@ describe("[A3.3.3.mcp.calls] a tool call on the request path, as the connection'
       })) as { sections: { log: { author: string }[] } };
       expect(after.sections.log[0]?.author).toBe("agent:manual");
 
-      // The entry's --space: a space the home is not registered for is refused, never another
-      // (the grant comes first; a granted space no longer served is space_unavailable, as
-      // binding.test.ts shows).
+      // The entry's --space: a space the home is not registered for is refused, never another,
+      // and the refusal names the space it may use (the grant comes first; a granted space no
+      // longer served is space_unavailable, as binding.test.ts shows).
       const d = await raw(w, bridgeContext({ space: "sp_00000000000000000000000000" }));
       await d.initialize();
       const elsewhere = JSON.parse(
         (await d.request("tools/call", { name: "status", arguments: {} })).result ?? "{}",
       ) as Json;
       expect(elsewhere["isError"]).toBe(true);
-      expect(textOf(elsewhere)).toBe(renderError(grantRefused().toBody()));
+      expect(textOf(elsewhere)).toBe(
+        renderError({
+          ...grantRefused().toBody(),
+          hint: `It may use the space Mira now: ask the user to check that the agent's ${PRODUCT_NAME} entry names it (--space ${w.space}), then to restart the agent app.`,
+          data: { rule: "grant", space: w.space },
+        }),
+      );
       const e = await raw(w, bridgeContext({ space: w.space }));
       await e.initialize();
       const here = JSON.parse(
@@ -593,6 +537,13 @@ describe("[A2.3.7.mcp.offline-cache] the service writes the offline cache at eve
 
 const ERROR_TEXT = /^error ([a-z_]+)(?: \([a-z_]+\))?: /;
 
+/** The binding of a connection that is no session, from its bind answer's space. */
+function noSession(answer: unknown): Binding {
+  const space = (answer as { space?: unknown } | null)?.space;
+  if ((answer as { state?: unknown } | null)?.state !== "unbound") throw new Error("a session");
+  return { kind: "none", space: typeof space === "string" ? space : undefined, named: false };
+}
+
 function mcpContract(era: "legacy" | "modern"): () => Promise<ContractTransport> {
   return async () => {
     const w = await contractWorld(`k${era[0] ?? ""}`);
@@ -610,14 +561,13 @@ function mcpContract(era: "legacy" | "modern"): () => Promise<ContractTransport>
     expect(client.getProtocolEra()).toBe(era);
     const user = await classSession(w.home, w.path, "cli-interactive");
     // The structured result to compare the text with comes from the request path in this process,
-    // on the connection's own binding: what the MCP call bound, it is bound to as well.
-    const [binding] = w.service.bindings.open();
-    if (binding === undefined) throw new Error("the MCP connection holds no binding");
+    // as the same connection: no session, in the space its bind answer named.
+    const binding = noSession(session.bound.binding);
     const direct = async (op: string, input: Json): Promise<unknown> => {
       try {
         return await opCall(
           w.service.ops,
-          { class: "bridge", env: {}, principal, client: who, binding },
+          { class: "bridge", env: {}, principal, client: who, home: "contract-agent", binding },
           { op, input },
         );
       } catch (error) {
@@ -627,7 +577,6 @@ function mcpContract(era: "legacy" | "modern"): () => Promise<ContractTransport>
     return {
       portal: w.portal,
       folder: (task) => w.folder(task),
-      binds: true,
       launch: async (task) => (await w.launch(task)).reference,
       call: async (name, input, actor) => {
         const entry = findEntry(name);
@@ -685,7 +634,7 @@ function mcpGrant(era: "legacy" | "modern"): () => Promise<GrantTransport> {
     );
     await client.connect(new SessionTransport(session));
     expect(client.getProtocolEra()).toBe(era);
-    const [binding] = w.service.bindings.open();
+    const binding = noSession(session.bound.binding);
     return {
       refused: async (name, input) => {
         const tool = findEntry(name)?.faces.mcp?.tool;
@@ -698,7 +647,7 @@ function mcpGrant(era: "legacy" | "modern"): () => Promise<GrantTransport> {
                 env: {},
                 principal: bridgePrincipal(context, w.service.ops.machine.id),
                 home: "ungranted-agent",
-                ...(binding === undefined ? {} : { binding }),
+                binding,
               },
               { op: name, input },
             );

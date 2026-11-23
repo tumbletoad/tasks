@@ -1,7 +1,7 @@
 // What the service answers for `ttasks doctor`'s launch rows and sessions row (A3 3.14; A4 3.4.1,
 // 3.7, 3.8; A7 3.11 M4.05b): `doctor/launch` asks the very scope probe a terminal launch uses, once
 // per start, and the environment's own check; `t3/status` says when the token runs out and whether
-// the pairing renews it; `doctor/sessions` counts open and shared connections and dropped records.
+// the pairing renews it; `doctor/sessions` counts the open connections and the sessions among them.
 // Fakes only: a fake spawner for the probe, a fake environment, an in-memory T3 state, fake slots.
 // Nothing real is started, and the temporary folder is removed afterwards.
 import { mkdtempSync, rmSync } from "node:fs";
@@ -19,11 +19,10 @@ import {
   type Spawner,
   type TerminalSettings,
 } from "@ttasks/launch";
-import { sessionFacts } from "../src/binding/index.ts";
+import { Bridges, sessionFacts } from "../src/binding/index.ts";
 import type { Logger } from "../src/hub/log.ts";
 import { t3Host, t3Verbs } from "../src/hub/t3.ts";
 import { LaunchService } from "../src/launch/service.ts";
-import { Slot } from "../src/ops/index.ts";
 
 let base = "";
 
@@ -251,32 +250,43 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
 });
 
 describe("[A3.3.14.doctor.sessions] the service's answer for doctor's sessions row", () => {
-  test("doctor/sessions: open bridge connections, the shared ones by instance, the dropped records", () => {
-    const slot = (instance: string, shared: boolean, kind: "bridge" | "mapped" = "bridge") => {
-      const made = new Slot({ kind, instance, origin: kind === "bridge" ? "mcp" : "cli" });
-      made.shared = shared;
-      return made;
-    };
-    const open = [
-      slot("codex", true),
-      slot("codex", true),
-      slot("claude", false),
-      slot("manual", true),
-      // A CLI call mapped to a session is no connection of an agent app.
-      slot("codex", true, "mapped"),
-    ];
-    expect(sessionFacts({ open: () => open, dropped: 1 })).toEqual({
-      open: 4,
-      shared: [
-        { instance: "codex", count: 2 },
-        { instance: "manual", count: 1 },
-      ],
-      dropped: 1,
+  test("doctor/sessions: the bridge connections open now, and how many are a launch's or a run's session", () => {
+    const home = {
+      launch: { of: "launch", app: "codex", home: undefined },
+      run: { of: "run", run: "ru_00000000000000000000000001", instance: "fixture-runner" },
+    } as const;
+    const bridges = new Bridges({
+      sessions: {
+        // A fixture's value names the kind of session it is, or none.
+        decide: (presented) => {
+          const of = presented.env["TTASKS_TICKET"];
+          if (of !== "launch" && of !== "run") return { kind: "none" };
+          const session = {
+            session: "se_00000000000000000000000001",
+            space: "sp_00000000000000000000000001",
+            task: "t_00000000000000000000000001",
+            home: home[of],
+          };
+          return { kind: "session", by: "ticket", session };
+        },
+        standing: () => ({ kind: "failed" }),
+        live: () => new Map(),
+      },
+      spaces: () => [],
+      defaultSpace: () => undefined,
     });
-    expect(sessionFacts({ open: () => [], dropped: 0 })).toEqual({
-      open: 0,
-      shared: [],
-      dropped: 0,
-    });
+    const connections = ["launch", "launch", "run", "none"].map((of) => ({
+      context: { env: { TTASKS_TICKET: of } },
+    }));
+    for (const connection of connections) bridges.bind(connection);
+    // A connection whose bind was answered counts once its MCP session starts, until it ends.
+    expect(sessionFacts(bridges)).toEqual({ open: 0, sessions: { launch: 0, run: 0 } });
+    for (const connection of connections) bridges.attach(connection);
+    expect(sessionFacts(bridges)).toEqual({ open: 4, sessions: { launch: 2, run: 1 } });
+    bridges.closed(connections[0] ?? {});
+    expect(sessionFacts(bridges)).toEqual({ open: 3, sessions: { launch: 1, run: 1 } });
+    // A connection that never bound is none of them.
+    expect(bridges.attach({ context: {} })).toBeUndefined();
+    expect(sessionFacts(bridges)).toEqual({ open: 3, sessions: { launch: 1, run: 1 } });
   });
 });

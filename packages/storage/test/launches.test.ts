@@ -447,7 +447,6 @@ describe("[A1.5.write.launches] launch records through the write path", () => {
       );
       for (const key of [
         "scope_id",
-        "earlier_scope_id",
         "principal_id",
         "author_id",
         "session_id",

@@ -1,9 +1,10 @@
-// Binding through a real bridge process (A3 3.7.2, 3.7.3, 3.7.6 path A; A2 3.7.5; A7 3.9 M2.04): a
-// terminal launch whose real shim starts a fake agent, and the bridge an agent app would start for
-// it, `ttasks mcp`, with the launch's ticket in its environment and nothing else of the launch. The
-// bridge reads the ticket from its environment into its bind frame, and the service binds the
-// connection before any tool call. Then the service restarts: the bridge reconnects with its
-// binding handle, and the binding is the same. Fixture text and temporary folders only.
+// A launched agent's session through a real bridge process: a terminal launch whose real shim
+// starts a fake agent, and the bridge an agent app would start for it, `ttasks mcp`, with the
+// launch's ticket in its environment and nothing else of the launch. The bridge reads the ticket
+// from its environment into its bind frame, and the service decides at the bind that the
+// connection is the launch's session. Then the service restarts: the bridge binds again with the
+// ticket and the space it holds, and it is the same session, from the launch's record. Fixture
+// text and temporary folders only.
 import { afterEach, describe, expect, test } from "vitest";
 import { grantHome } from "../../packages/service/test/ops-helpers.ts";
 import { ShimLab } from "../../packages/service/test/shim-harness.ts";
@@ -19,37 +20,35 @@ afterEach(async () => {
 const reply = async (bridge: Bridge, name: string, args: Record<string, unknown> = {}) =>
   textOf(await bridge.call(name, args)) ?? "";
 
-describe("[A3.3.7.binding.bridge-process] a launched agent's bridge binds by the ticket in its environment", () => {
+describe("[A3.3.7.binding.bridge-process] a launched agent's bridge is its session by the ticket in its environment", () => {
   test(
-    "bound at the bind frame, its write is the session's; after a service restart its handle resumes the same binding",
+    "its session from the bind frame, its write the session's; after a service restart the same session, and a retry replays",
     { timeout: 300_000 },
     async () => {
-      const lab = await ShimLab.create("bind-bridge");
+      // With its UI listener, so its grants table is service.sqlite's, as an install's is: the
+      // registration is there again the moment the service listens after its restart.
+      const lab = await ShimLab.create("bind-bridge", { http: true });
       labs.push(lab);
-      // The entry's agent home, registered for the space as setup does. The lab's service runs
-      // without its UI listener, so its grants table is this start's own: it is registered again
-      // after the restart below (a `ttasks serve` keeps it in service.sqlite).
-      const register = async () => {
-        await grantHome(lab.home, lab.service?.endpoint.path ?? "", {
-          instance: "fixture-agent",
-          space: lab.spaceId,
-        });
-      };
-      await register();
+      // The entry's agent home, registered for the space as setup does.
+      await grantHome(lab.home, lab.service?.endpoint.path ?? "", {
+        instance: "fixture-agent",
+        space: lab.spaceId,
+      });
       const intent = await lab.launch(lab.plan());
       // The agent runs: its shim reported its start.
       await lab.waitIntent(intent.id, (i) => i.evidence.pid !== undefined, "the agent's start");
       const ticket = lab.tickets.get(intent.id);
       if (ticket === undefined) throw new Error("no ticket");
 
-      // As the agent app starts it: the entry's arguments, the agent's environment with the ticket.
+      // As the agent app starts it: the entry setup wrote for the launch's home, and the agent's
+      // environment with the ticket.
       const command = forwarderCommand([
         "--space",
         lab.spaceId,
         "--instance",
         "fixture-agent",
         "--app",
-        "test",
+        "codex",
       ]);
       const bridge = new Bridge(
         procs.spawn(
@@ -67,11 +66,10 @@ describe("[A3.3.7.binding.bridge-process] a launched agent's bridge binds by the
       });
       expect(logged).toContain("M-1");
 
-      // The service restarts; the shim and the agent keep running, the bridge reconnects with its
-      // handle and keeps its binding (its calls wait for the new service, A2 3.7.5).
+      // The service restarts; the shim and the agent keep running, and the bridge reconnects (its
+      // calls wait for the new service, A2 3.7.5): the same session.
       await lab.stopService();
       await lab.start();
-      await register();
       const after = await reply(bridge, "status");
       expect(after).toContain("Session: bound to M-1");
       // A retry of the first write after the restart replays it: the same session's scope.

@@ -24,8 +24,8 @@ import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { CLI_NAME, envVar, PRODUCT_NAME } from "@ttasks/brand";
-import { ENDED_FOLDER, type Instance } from "@ttasks/launch";
-import { StorageError, type Id } from "@ttasks/storage";
+import type { Instance } from "@ttasks/launch";
+import { StorageError, type Id, type SpaceWriterHandle } from "@ttasks/storage";
 import {
   DEFAULT_CONFIG,
   fatalProblems,
@@ -103,7 +103,7 @@ import {
   type SpaceManagerOptions,
   type SpaceView,
 } from "./spaces.ts";
-import { personSpace, type OpsHost } from "../ops/index.ts";
+import { personSpace, type OpsHost, type ServedSpace } from "../ops/index.ts";
 import { FolderMarkers, MARKS_FILE } from "../ops/marker.ts";
 import { MemoryGrants, type GrantStore } from "../local/index.ts";
 import {
@@ -114,18 +114,14 @@ import {
 } from "../launch/index.ts";
 import { runsWith } from "../runs/agent.ts";
 import { RunService, type RunOptions } from "../runs/service.ts";
-import {
-  Bindings,
-  FileSessionStore,
-  SESSIONS_FILE,
-  type BindingEvent,
-  type SessionStore,
-} from "../binding/index.ts";
+import { Bridges, sessionPort, type BindingEvent } from "../binding/index.ts";
 import { repairIfIdle, supervisorReplaced, type RepairOutcome } from "../version/repair.ts";
 import { UPDATE_JOURNAL } from "../version/journal.ts";
 import { currentVersion } from "../version/switch.ts";
 import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
 import { homeGate } from "./home-gate.ts";
+import { homeRows } from "./home-rows.ts";
+import { namedBy } from "./named.ts";
 import { SeenCalls } from "./agent-homes.ts";
 import { agentAppVerbs, personEnv } from "./agent-apps.ts";
 import { pageFolderVerbs } from "./page-folders.ts";
@@ -233,8 +229,6 @@ export interface StartOptions {
    * in memory, so a test that does not ask for HTTP never binds a port of 7713 to 7733.
    */
   readonly http?: HttpStart;
-  /** Where session records and binding handles are kept. Default: `<state>/sessions.json`. */
-  readonly sessions?: SessionStore;
   /** Background runs: the containers, ttasks-run.exe and the host's times, for tests. */
   readonly runs?: RunOptions;
   /**
@@ -269,8 +263,8 @@ export interface RunningService {
   readonly ops: OpsHost;
   /** Launching (A4 3.6.3, 3.9): each open space's launch machine and the shim's methods. */
   readonly launches: LaunchService;
-  /** Session binding (A3 3.7, M2.04): agent connections' sessions and their binding handles. */
-  readonly bindings: Bindings;
+  /** The bridge connections and their bindings. */
+  readonly bridges: Bridges;
   /** Background runs: the containers' probe, each open space's run host and its recovery. */
   readonly runs: RunService;
   /** Resolves when the registered spaces have each opened or become unavailable. */
@@ -535,7 +529,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       SERVICE_FILE,
       KEY_FILE,
       MACHINE_FILE,
-      SESSIONS_FILE,
       MARKS_FILE,
     ]);
     // T3's machine state (M2.11) is written the same way, in its own folder.
@@ -684,49 +677,50 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // Made before the endpoint listens (its handler table takes the shim's methods), once the
     // socket folder, which holds the launch folders on Linux, has been checked below.
     const launching: { service?: LaunchService } = {};
-    // The grant gate (A3 3.7.8): an agent home's calls and tickets reach only the spaces its live
-    // agent-home rows name, read from the grants table at each call.
-    const registered = homeGate({
+    // The registered spaces as the binds and the request path read them: the space manager's once
+    // the configuration's are handed to it, and until then those of the configuration, opening,
+    // beside any the manager has already. So a bind during startup settles the default and the only
+    // space by registered ID, and a call right after it is told that space is still opening.
+    const spacesHanded = { done: false };
+    const knownSpaces = (): ServedSpace[] => {
+      const served = made.spaces?.served() ?? [];
+      if (spacesHanded.done) return served;
+      const has = new Set(served.map((space) => space.id ?? space.registered));
+      return [
+        ...served,
+        ...config.spaces.filter((space) => space.enabled && !has.has(space.id)).map(openingEntry),
+      ];
+    };
+    // The grant gate: an agent home's calls reach only the spaces its live agent-home rows name,
+    // read from the grants table at each call.
+    const homes = homeGate({
       grants: grantsOf,
-      spaces: () => made.spaces?.served() ?? [],
+      spaces: knownSpaces,
       defaultSpace: () => defaults.get(),
     });
-    // A run's agent was given TTasks's tools by TTasks itself: while the run runs, the run's own
-    // calls may use its space whether or not its home was set up for it. No other connection of
-    // that home may.
-    const homes: typeof registered = {
-      may: (home, space, run) =>
-        registered.may(home, space) || (run !== undefined && runs.allows(home, space, run)),
-    };
-    // Session binding (A3 3.7): the launch side it needs is the launch service's, made below.
-    const bindings = new Bindings({
-      store: options.sessions ?? new FileSessionStore(layout.state),
-      machine: machine.id,
-      homes,
-      spaces: () => made.spaces?.served() ?? [],
-      launches: {
-        // A launch's ticket, else a run's: a run's bridge binds to a session of that run.
-        bridgeTicket: (ticket) =>
-          launching.service?.host.bridgeTicket(ticket) ?? runs.bridgeTicket(ticket),
-        redeemBridge: (ticket) =>
-          launching.service?.host.redeemBridge(ticket) ?? runs.redeemBridge(ticket),
-        agentRuns: (launch) =>
-          (launching.service?.host.agentRuns(launch) ?? false) || runs.agentRuns(launch),
-        confirm: (space, launch, at, folder) => {
-          // A run has no launch record to confirm: its own record says it ran.
-          if (launch.startsWith("ru_")) return Promise.resolve(undefined);
-          const service = launching.service;
-          if (service === undefined) return Promise.reject(new Error("Launching is not ready"));
-          return service.confirmBinding(space, launch, at, folder);
-        },
+    // Who an agent's connection is (binding/): the launch or run its values name, from machine state
+    // and the runs this start holds, and its home's rows. No space has to be open.
+    const sessions = sessionPort({
+      named: (values) => namedBy({ launches: () => launching.service?.host, runs }, values),
+      rows: (app, home) => homeRows({ grants: grantsOf, platform }, app, home),
+      runAllows: (instance, space, run) => runs.allows(instance, space, run),
+      machineDefault: () => homes.machineDefault(),
+      live: (space) => {
+        const counts = new Map(launching.service?.host.liveSessions(space) ?? []);
+        for (const [task, count] of runs.liveSessions(space)) {
+          counts.set(task, (counts.get(task) ?? 0) + count);
+        }
+        return counts;
       },
       log: (event: BindingEvent) => {
         const { ev, ...fields } = event;
         log.log(ev, fields);
       },
-      // The wall clock launching reads (tests move it): a ticket's window and a handle's idle day
-      // are measured on one clock.
-      ...(options.launch?.now === undefined ? {} : { now: options.launch.now }),
+    });
+    const bridges = new Bridges({
+      sessions,
+      spaces: knownSpaces,
+      defaultSpace: () => defaults.get(),
     });
     // What `~` means in a folder here, and TTasks's own data, where no folder is bound.
     let personHome: string | undefined;
@@ -750,12 +744,12 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       ui: undefined as EndpointUi | undefined,
       ops: {
         machine,
-        spaces: () => made.spaces?.served() ?? [],
+        spaces: knownSpaces,
         platform,
         ...(personHome === undefined ? {} : { home: personHome }),
         dataFolder: layout.data,
         markers,
-        bindings,
+        sessions,
         defaultSpace: () => defaults.get(),
         homes,
         resultMismatch: (entry: string) => {
@@ -770,9 +764,20 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
             }
             return service.openTask(request);
           },
+          connected: (
+            space: string,
+            writer: SpaceWriterHandle,
+            launch: string,
+            at: number,
+            folder: string | undefined,
+          ) => {
+            const service = launching.service;
+            if (service === undefined) return Promise.reject(new Error("Launching is not ready"));
+            return service.connected(space, writer, launch, at, folder);
+          },
         },
       },
-      bindings,
+      bridges,
       defaults,
       runs,
       runVerbs: {
@@ -781,7 +786,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           personSpace(
             {
               machine,
-              spaces: () => made.spaces?.served() ?? [],
+              spaces: knownSpaces,
               platform,
               defaultSpace: () => defaults.get(),
             },
@@ -1227,13 +1232,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
             log.log("service.drain_timeout", { stage: "endpoint" });
           }
         }
-        // The bindings' last-seen times not written yet (at most once a minute while running),
-        // while the state folder is still this start's.
-        if (stillOwned()) {
-          step(() => {
-            bindings.flush();
-          });
-        }
         // Bounded, an open in progress included: the drain never waits for a whole open.
         await hosted
           .closeAll(ownershipLost ? LOST_SPACE_CLOSE_MS : undefined)
@@ -1311,6 +1309,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         enabled: space.enabled,
       })),
     );
+    // openAll put the entries in the manager before its first wait: it answers for them now.
+    spacesHanded.done = true;
 
     // Once the registered spaces have settled, each open one gets its launch machine and its
     // recovery (A4 3.9.3), and the sweep and the PID check run every 30 s, and so do the runs'
@@ -1372,7 +1372,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       spaceManager: hosted,
       ops: hub.ops,
       launches,
-      bindings,
+      bridges,
       runs,
       spacesSettled: spacesOpening,
       http: httpRunning,
@@ -1409,18 +1409,33 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
 }
 
 /**
+ * A space of the configuration as binds and calls see it before the space manager has it:
+ * opening, known by the ID and the folder its entry names, with no ID or name of its own yet.
+ */
+export function openingEntry(space: { readonly id: string; readonly path: string }): ServedSpace {
+  return {
+    id: undefined,
+    registered: space.id,
+    name: undefined,
+    folder: space.path,
+    state: "opening",
+    writer: undefined,
+    reader: undefined,
+  };
+}
+
+/**
  * At a clean stop, the per-user runtime folder (`/run/user/<uid>/ttasks-<install>/`, Linux) goes
  * when nothing is left in it: the socket went with the server, and the launch root goes when it
- * holds no launch folder and no ended launch's record. A launch folder is a launch the next start
- * still needs (a live shim reattaches with it, recovery reads it), and an ended record is kept for
- * its day, so a runtime folder that holds either stays, whole. Only
+ * holds no launch folder. A launch folder is a launch the next start still needs (a live shim
+ * reattaches with it, recovery reads it), so a runtime folder that holds one stays, whole. Only
  * empty folders are removed (rmdir), so nothing in them can be lost; anything else there (a socket
  * that is not this start's) keeps the folder too. The fallback under `<state>` is the home's own.
  */
 export function removeIdleRuntime(runtime: Pick<RuntimeNames, "launch" | "runtimeDir">): void {
   const dir = runtime.runtimeDir;
   if (dir === undefined) return;
-  for (const folder of [join(runtime.launch, ENDED_FOLDER), runtime.launch, dir]) {
+  for (const folder of [runtime.launch, dir]) {
     try {
       rmdirSync(folder);
     } catch (error) {

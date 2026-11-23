@@ -89,12 +89,7 @@ const replayed = (result: { readonly replayed?: boolean | undefined }): string =
 // space.status (A3 3.4.2)
 
 function sessionLine(session: Status["session"]): string {
-  const state =
-    session.state === "bound"
-      ? `bound to ${session.task ?? "a task"}`
-      : session.state === "routine"
-        ? "routine"
-        : "not bound";
+  const state = session.state === "bound" ? `bound to ${session.task ?? "a task"}` : "not bound";
   return `Session: ${join(
     state,
     session.instance !== undefined && `instance ${session.instance}`,
@@ -106,12 +101,11 @@ function sessionLine(session: Status["session"]): string {
   )}`;
 }
 
-function statusParts(result: Status, bound?: boolean): Part[] {
+function statusParts(result: Status): Part[] {
   const counts = result.counts;
   const header = fixed(
     `${join(PRODUCT_NAME, withWeekday(result.date), result.time_zone, `autonomy ${result.autonomy}`)} · as_of ${result.as_of}`,
     sessionLine(result.session),
-    bound === true ? "This call bound the session." : undefined,
   );
   // A guide is one workflow text instead of the overview (A3 3.4.2).
   if (result.guide !== undefined) return [header, fixed(...result.guide.split("\n"))];
@@ -247,6 +241,12 @@ function instructionsPart(
   };
 }
 
+/** Whether the reader is the task's session, or names the task on the calls that act on it. */
+const sessionOfRead = (bound: boolean, ref: string): string =>
+  bound
+    ? "Session: this task's, so calls without task act on it"
+    : `Pass task ${ref} on the calls that act on it: this connection is not its session`;
+
 /** Whose request a note was: launches of other sessions, which the reader only learns from. */
 const requestFor = (note: Note): string =>
   note.request_for === undefined || note.request_for.length === 0
@@ -360,7 +360,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
     fixed(
       headerLine(task, result.as_of),
       task.folder === undefined ? undefined : folderLine(task.folder),
-      result.bound ? "Session: bound to this task by this call" : undefined,
+      sessionOfRead(result.bound, task.ref),
     ),
     ...requestPart(result.request, getTask, task.ref),
     instructionsPart(
@@ -444,7 +444,7 @@ function sectionsRendered(
     units,
   });
   const parts: Part[] = [fixed(headerLine(task, result.as_of))];
-  if (result.bound) parts.push(fixed("Session: bound to this task by this call"));
+  parts.push(fixed(sessionOfRead(result.bound, task.ref)));
   parts.push(...requestPart(result.request, getTask, task.ref));
   let byOthers: Note[] = [];
   if (sections.instructions !== undefined) {
@@ -776,9 +776,6 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
     ...(result.guide === undefined ? {} : { max: GUIDE_TOKENS }),
   }),
   "task.get": (result: TaskGet, { getTask }) => {
-    if (result.view === "status") {
-      return { parts: statusParts(result, result.bound), more: STATUS_MORE };
-    }
     const extra = requestTokens(result.request, getTask, result.task.ref);
     if (result.view === "digest") {
       return { ...digestRendered(result, getTask), max: DIGEST_TOKENS, extra };

@@ -10,8 +10,8 @@ import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import type { McpChannel } from "../local/index.ts";
-import type { Bindings } from "../binding/index.ts";
-import { opCall, type OpsHost, type Slot } from "../ops/index.ts";
+import type { Bridges } from "../binding/bridges.ts";
+import { opCall, type Binding, type Caller, type OpsHost } from "../ops/index.ts";
 import { bridgePrincipal, clientOf, instanceOf, spaceOf } from "./principal.ts";
 import { renderError, renderResult, showsWhole } from "./render.ts";
 import { createServer, type ToolCall, type ToolResult } from "./server.ts";
@@ -63,8 +63,8 @@ function eventOf(conn: number, reason: TransportReason): McpEvent {
 
 export interface McpEndpointOptions {
   readonly ops: OpsHost;
-  /** Session binding (M2.04): each connection's slot from its bind. Without it, all are unbound. */
-  readonly bindings?: Bindings;
+  /** Each connection's binding from its bind. Without it, each is none, in its entry's space. */
+  readonly bridges?: Bridges;
   readonly log?: (event: McpEvent) => void;
   /**
    * A tool call went through the request path from this instance and app (the entry's `--instance`
@@ -93,57 +93,43 @@ const INTERNAL = new AppError({
 });
 
 /**
- * The tool calls of one connection: the request path, as the connection's principal, in its space.
- * With a slot (M2.04), the slot decides both: its session's when bound, else the unbound principal
- * in the space it pinned. Without one, the entry's `--space` names the space for each call.
+ * Who a bridge connection's calls come from: who it is by its bind, in the one space that bind
+ * settled. No environment: TTASKS_SPACE is a hint for diagnostics, never a space.
  */
+export function bridgeCaller(context: JsonObject, machine: string, binding: Binding): Caller {
+  const cwd = context["cwd"];
+  return {
+    class: "bridge",
+    env: {},
+    principal: bridgePrincipal(context, machine),
+    client: clientOf(context),
+    // The agent home whose grant rows decide the spaces this connection may use when it is none.
+    home: instanceOf(context),
+    binding,
+    ...(typeof cwd === "string" ? { folder: cwd } : {}),
+  };
+}
+
+/** The tool calls of one connection: the request path, as `bridgeCaller`. No tool names a space. */
 export function toolCaller(options: {
   readonly ops: OpsHost;
   readonly context: JsonObject;
   readonly conn: number;
   readonly log?: (event: McpEvent) => void;
   readonly seen?: McpEndpointOptions["seen"];
-  readonly slot?: Slot;
-  readonly bindings?: Bindings;
+  readonly binding: Binding;
 }): ToolCall {
-  const principal = bridgePrincipal(options.context, options.ops.machine.id);
-  const client = clientOf(options.context);
-  // The agent home whose grant rows decide the spaces this connection may use (A3 3.7.8).
-  const home = instanceOf(options.context);
-  const { slot, bindings } = options;
-  const named = spaceOf(options.context);
-  const cwd = options.context["cwd"];
-  const folder = typeof cwd === "string" ? cwd : undefined;
-  return async (tool, args, thread) => {
+  const caller: Caller = {
+    ...bridgeCaller(options.context, options.ops.machine.id, options.binding),
+    shows: showsWhole,
+  };
+  const { client, folder } = caller;
+  return async (tool, args) => {
     const entry = toolEntry(tool);
     if (entry === undefined) return text(renderError(INTERNAL.toBody()), true);
-    // Codex's per-call thread ID (A3 3.7.2): recorded for a later bind, never a binding itself.
-    // On a connection that carries two conversations, a call whose own ID does not prove the
-    // bound session acts without the binding (A3 3.7.5), in the space the connection pinned.
-    // A run-only tool's ID is not presented: outside a run it is refused before it may act and
-    // leaves no trace (A3 3.4.12), so its slot is chosen as if it were, and nothing is recorded.
-    const native = typeof thread === "string" ? thread : undefined;
-    const binding =
-      slot === undefined || bindings === undefined
-        ? slot
-        : bindings.forCall(slot, "codex", native, entry.actors !== "run");
-    const space = binding === undefined ? (slot?.space ?? named) : undefined;
     try {
-      const result = await opCall(
-        options.ops,
-        // No environment: TTASKS_SPACE is a hint for diagnostics, never a binding (A3 3.7.2).
-        {
-          class: "bridge",
-          env: {},
-          principal,
-          client,
-          home,
-          ...(binding === undefined ? {} : { binding }),
-          shows: showsWhole,
-        },
-        { op: entry.name, input: args, ...(space === undefined ? {} : { space }) },
-      );
-      options.seen?.(client.instance, client.app, folder);
+      const result = await opCall(options.ops, caller, { op: entry.name, input: args });
+      options.seen?.(client?.instance, client?.app, folder);
       return text(renderResult(entry.name, result), false);
     } catch (error) {
       if (error instanceof AppError) return text(renderError(error.toBody()), true);
@@ -158,18 +144,22 @@ export function mcpEndpoint(options: McpEndpointOptions): (channel: McpChannel) 
   return (channel) => {
     const { id: conn, context } = channel.connection;
     const log = options.log;
-    const bindings = options.bindings;
-    // The binding its bind frame resolved (binding/): open from here until the connection ends.
-    const slot = bindings?.attach(channel.connection);
+    const bridges = options.bridges;
+    // The binding its bind frame decided: fixed from here until the connection ends.
+    const binding = bridges?.attach(channel.connection) ?? {
+      kind: "none",
+      space: spaceOf(context),
+      named: spaceOf(context) !== undefined,
+    };
     const transport = new ChannelTransport(channel, {
       init: context["mcp_init"],
       ...(options.limits === undefined ? {} : { limits: options.limits }),
       report: (reason) => log?.(eventOf(conn, reason)),
-      ...(slot === undefined || bindings === undefined
+      ...(bridges === undefined
         ? {}
         : {
             ended: () => {
-              bindings.closed(slot);
+              bridges.closed(channel.connection);
             },
           }),
     });
@@ -179,8 +169,7 @@ export function mcpEndpoint(options: McpEndpointOptions): (channel: McpChannel) 
       conn,
       ...(log === undefined ? {} : { log }),
       ...(options.seen === undefined ? {} : { seen: options.seen }),
-      ...(slot === undefined ? {} : { slot }),
-      ...(bindings === undefined ? {} : { bindings }),
+      binding,
     });
     // serveStdio starts the transport before it returns, so the channel's line handler is set
     // before this hook returns, as the local server asks.

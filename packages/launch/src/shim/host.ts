@@ -7,8 +7,8 @@
 // - A ticket is issued once per intent, when its dispatch starts (A4 3.6.3: the window runs
 //   from Dispatching), and stored as a hash bound to its launch (secrets.ts). Its shim role is
 //   claimed once, within 120 s of issue, by a process that is alive with exactly the start time
-//   the claim names. Its bridge role (M2.04) is redeemed once, within 15 minutes of the agent's
-//   start. A ticket can only ever name its own launch.
+//   the claim names. From the claim until the launch is released it names that live launch for
+//   the agent's tools and shell (`liveByTicket`). A ticket can only ever name its own launch.
 // - The claim goes through `LaunchMachine.claim`, so it is committed (a fresh random claim ID)
 //   before anything leaves for the shim, and refused for a second claim, after the window, on any
 //   other route or state. The reply is the claim's injected step: inside the claim's section it
@@ -27,11 +27,10 @@ import type { LaunchMachine, Observation } from "../machine.ts";
 import type { FolderCheck, ResolveReason } from "../places.ts";
 import type { ProcessProbe } from "../process.ts";
 import { withFolder } from "../routes/argv.ts";
-import type { LaunchIntent } from "../store.ts";
+import { SESSION_UUID, type LaunchIntent } from "../store.ts";
 import { ADDED, agentEnvironment, type AgentBase } from "./environment.ts";
 import {
   checkPlan,
-  ENDED_KEEP_MS,
   isFolderReason,
   keptGiven,
   type ClickGiven,
@@ -56,9 +55,6 @@ import {
   type FailedReason,
   type ReportMethod,
 } from "./wire.ts";
-
-/** A4 3.1: the ticket's bridge role ends 15 minutes after the agent started. */
-export const BRIDGE_WINDOW_MS = 15 * 60_000;
 
 /** A4 3.6.3: a launch folder whose shim is gone or that is older than this is removed. */
 export const FOLDER_MAX_AGE_MS = 24 * 60 * 60_000;
@@ -110,25 +106,33 @@ export type ReportOutcome =
     }
   | { readonly kind: "refused"; readonly reason: HostRefusal };
 
-/** What a ticket presented for its bridge role names (`ShimHost.bridgeTicket`). */
-export interface BridgeTicket {
-  readonly space: string;
-  readonly launch: string;
-  /** The launch's task, or null for a routine's. */
-  readonly task: string | null;
-  /** The bridge role was redeemed before. */
-  readonly used: boolean;
-  /** A first redemption now is inside the window: 15 minutes from the agent's start. */
-  readonly inWindow: boolean;
-}
+/** A launch's ID or a background run's: the two things a session is named after. */
+const SESSION_SOURCE = /^(?:la|ru)_([0-9a-z]{26})$/;
 
 /**
- * The session a launch is: the one it continues, or else one named after the launch itself, `se_`
- * and the launch ID's 26 characters. So the session exists from the click, and a launch of a build
- * that recorded none is still named.
+ * The session a launch or a background run is: the one it continues, or else one named after it,
+ * `se_` and the 26 characters of its `la_` or `ru_` ID. So the session exists from the click (or
+ * the run's start), and a launch of a build that recorded none is still named. IDs are random, so
+ * a launch and a run never share a name.
  */
-export const sessionOf = (intent: Pick<LaunchIntent, "id" | "session">): string =>
-  intent.session ?? `se_${intent.id.slice("la_".length)}`;
+export function sessionOf(of: { readonly id: string; readonly session?: string | null }): string {
+  if (of.session !== undefined && of.session !== null) return of.session;
+  const body = SESSION_SOURCE.exec(of.id)?.[1];
+  if (body === undefined) throw new Error("Only a launch or a run is named as a session");
+  return `se_${body}`;
+}
+
+/** A live launch a value names: its session's facts (`ShimHost.liveByTicket`, `liveByPreset`). */
+export interface LiveLaunch {
+  readonly launch: string;
+  readonly space: string;
+  /** Null for a routine's launch. */
+  readonly task: string | null;
+  readonly session: string;
+  /** The agent's app and home folder as the click recorded them; a launch can lack either. */
+  readonly app?: string;
+  readonly home?: string;
+}
 
 /** Sends the claim's reply to the shim. Resolves once it has left the service. */
 export type SendReply = (reply: ClaimReply, attachment: Attachment) => Promise<void>;
@@ -271,7 +275,6 @@ export class ShimHost {
         hash: secretHash("ticket", launch, ticket),
         issuedAt: this.#now(),
         shimUsed: false,
-        bridgeUsed: false,
       },
     });
     return ticket;
@@ -303,7 +306,6 @@ export class ShimHost {
         hash: secretHash("ticket", launch, ticket),
         issuedAt: this.#now(),
         shimUsed: false,
-        bridgeUsed: false,
       },
     });
     return ticket;
@@ -573,44 +575,41 @@ export class ShimHost {
   }
 
   /**
-   * The ticket's bridge role (A4 3.1), for the binding (A3 3.7.3): once, from the agent's
-   * start until 15 minutes after it, and spent durably before it returns. Returns the launch it
-   * names, or undefined.
+   * The live launch a ticket (`TTASKS_TICKET`) names: claimed (its attachment stored) and not yet
+   * released. A ticket is its hash bound to its launch's ID, so it names only that launch. Every
+   * record is hashed and compared, each in constant time. Machine state only: no space needs to be
+   * open.
    */
-  redeemBridge(ticket: string): { space: string; launch: string } | undefined {
-    const found = this.bridgeTicket(ticket);
-    if (found === undefined || found.used || !found.inWindow) return undefined;
-    const record = this.#records.get(found.launch);
-    if (record?.ticket === undefined || record.ticket.bridgeUsed) return undefined;
-    this.#records.put({ ...record, ticket: { ...record.ticket, bridgeUsed: true } });
-    return { space: record.space, launch: record.launch };
+  liveByTicket(ticket: string): LiveLaunch | undefined {
+    if (typeof ticket !== "string" || !TICKET.test(ticket)) return undefined;
+    const record = this.#byTicket(ticket);
+    return record === undefined ? undefined : this.#live(record);
   }
 
   /**
-   * What a ticket presented for its bridge role names, without spending it: the launch, whether
-   * the role was redeemed before, and whether a first redemption would be inside its window. Only
-   * a launch whose agent runs: the record exists from the claim until the shim reported the
-   * agent's end (or the PID check found it gone), and `agent` from `launch.started`. A3 3.7.3
-   * honours a redeemed ticket again only while the agent runs, which the binding decides from this.
+   * The live launch the click preset `preset` for (`CLAUDE_CODE_SESSION_ID`): claimed and not yet
+   * released, the newest click when more than one is.
    */
-  bridgeTicket(ticket: string): BridgeTicket | undefined {
-    if (typeof ticket !== "string" || !TICKET.test(ticket)) return undefined;
-    const record = this.#byTicket(ticket);
-    if (record?.ticket === undefined || record.agent === undefined) return undefined;
-    if (record.attachment === undefined) return undefined;
-    return {
-      space: record.space,
-      launch: record.launch,
-      task: record.task,
-      used: record.ticket.bridgeUsed,
-      inWindow: !apart(this.#now(), record.agent.startedAt, BRIDGE_WINDOW_MS),
-    };
+  liveByPreset(preset: string): LiveLaunch | undefined {
+    if (typeof preset !== "string" || !SESSION_UUID.test(preset)) return undefined;
+    let found: LaunchFile | undefined;
+    for (const record of this.#records.list()) {
+      if (record.preset !== preset || record.attachment === undefined) continue;
+      if (found === undefined || record.createdAt > found.createdAt) found = record;
+    }
+    return found === undefined ? undefined : this.#live(found);
   }
 
-  /** Whether the launch's agent runs, as its machine state says (`bridgeTicket`'s rule). */
-  agentRuns(launch: string): boolean {
-    const record = this.#records.get(launch);
-    return record?.agent !== undefined && record.attachment !== undefined;
+  #live(record: LaunchFile): LiveLaunch | undefined {
+    if (record.attachment === undefined) return undefined;
+    return {
+      launch: record.launch,
+      space: record.space,
+      task: record.task,
+      session: sessionOf({ id: record.launch, session: record.session ?? null }),
+      ...(record.app === undefined ? {} : { app: record.app }),
+      ...(record.home === undefined ? {} : { home: record.home }),
+    };
   }
 
   /**
@@ -623,6 +622,23 @@ export class ShimHost {
     const held = record?.attachment;
     if (record?.agent === undefined || held === undefined) return false;
     return this.#probe.mayRun?.(held.pid, held.startTime) ?? true;
+  }
+
+  /**
+   * How many of each task's launches in `space` run now, for its live count: a launch counts while
+   * its shim runs and no exit is on disk, so an agent that ended stops counting at once, also
+   * while its shim waits for Enter.
+   */
+  liveSessions(space: string): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const record of this.#records.list()) {
+      if (record.space !== space || record.task === null) continue;
+      if (!this.running(record.launch) || this.#records.readExit(record.launch) !== undefined) {
+        continue;
+      }
+      counts.set(record.task, (counts.get(record.task) ?? 0) + 1);
+    }
+    return counts;
   }
 
   /** The launches of a space whose session runs now (`running`). */
@@ -653,8 +669,8 @@ export class ShimHost {
    * whose agent ended is settled by its `exit.json` (also while the shim still waits for Enter),
    * and one whose process ended without it as lost, and its record goes. A folder nothing more can
    * come from goes too: an unclaimed ticket past its window, a plan never dispatched past the
-   * Prepared limit, anything older than 24 hours without a live shim. So does an ended launch's
-   * record a day after its end. Returns how many launches it settled or removed.
+   * Prepared limit, anything older than 24 hours without a live shim. Returns how many launches it
+   * settled or removed.
    *
    * It decides on each launch's record as it is when it acts, never on a list read before an
    * await: it leaves a launch whose claim is under way to the next round, judges only processes it
@@ -680,7 +696,6 @@ export class ShimHost {
     for (const launch of this.#records.list().map((r) => r.launch)) {
       if (await this.#checkOne(launch, asked, times)) changed += 1;
     }
-    this.#forgetEnded();
     return changed;
   }
 
@@ -697,17 +712,10 @@ export class ShimHost {
     const now = this.#now();
     const held = record.attachment;
     let observation: Observation | undefined;
-    let endedAt = now;
     if (held !== undefined) {
       const exit = this.#records.readExit(launch);
       if (exit !== undefined) {
         observation = exitObservation(exit);
-        // The agent's end as the shim recorded it, also when the service finds it days later.
-        const ended =
-          record.agent === undefined
-            ? this.#records.exitWrittenAt(launch)
-            : record.agent.startedAt + exit.ran_ms;
-        if (ended !== undefined) endedAt = Math.min(ended, now);
       } else {
         // Gone only by the OS's answer about this very process: this PID with this start time
         // was asked about, and the PID no longer names it.
@@ -739,45 +747,16 @@ export class ShimHost {
       // Changed meanwhile (a report, a release): the next round decides on it as it is then.
       if (this.#records.get(launch) !== record) return false;
     }
-    this.release(launch, endedAt);
+    this.release(launch);
     return true;
   }
 
   /**
-   * Removes the launch's machine state: its credential, its ticket and its folder. A launch whose
-   * agent may have been handed its ticket (the claim's reply was about to leave) leaves its ended
-   * record for a day from `endedAt`, the agent's end: none when that day has passed.
+   * Removes the launch's machine state: its credential, its ticket and its folder. From here its
+   * ticket and its preset name nothing.
    */
-  release(launch: string, endedAt: number = this.#now()): void {
-    const record = this.#records.get(launch);
-    const kept = this.#now() - endedAt < ENDED_KEEP_MS;
-    if (kept && record?.ticket !== undefined && record.attachment !== undefined) {
-      try {
-        this.#records.putEnded({
-          format: 1,
-          launch,
-          endedAt,
-          ticket: record.ticket.hash,
-          space: record.space,
-          task: record.task,
-          ...(record.session === undefined ? {} : { session: record.session }),
-          ...(record.home === undefined ? {} : { home: record.home }),
-          ...(record.preset === undefined ? {} : { preset: record.preset }),
-        });
-      } catch {
-        // Without it a request retried after the end is a new one; the credential still goes.
-      }
-    }
+  release(launch: string): void {
     this.#records.remove(launch);
-  }
-
-  /** Removes the ended launches' records a day after their end. */
-  #forgetEnded(): void {
-    try {
-      this.#records.forgetEnded(this.#now() - ENDED_KEEP_MS);
-    } catch {
-      // Not removable now: the next check tries again.
-    }
   }
 }
 

@@ -289,12 +289,6 @@ export type Origin = (typeof ORIGINS)[number];
 export interface Credential {
   /** The writer scope (A3 3.7.9): receipts, rate limits and audit are keyed by it. */
   scope_id: string;
-  /**
-   * The scope this connection wrote under before it bound (A3 3.7.9). The receipt lookup tries it
-   * after `scope_id`, so a retry after binding finds the first result. New receipts go under
-   * `scope_id`.
-   */
-  earlier_scope_id?: string;
   principal_id: Id<"ac">;
   actor_kind: ActorKind;
   /** Who wrote the content. Default: the principal. */
@@ -2083,13 +2077,6 @@ function checkCredential(value: unknown): Credential {
     machine_id: f.id("machine_id", "m"),
     origin: f.oneOf("origin", ORIGINS),
   };
-  if (f.has("earlier_scope_id")) {
-    const earlier = f.raw("earlier_scope_id");
-    if (!isScope(earlier) || earlier === scope) {
-      f.fail("VALIDATION_FAILED", "Expected another writer scope", "earlier_scope_id");
-    }
-    credential.earlier_scope_id = earlier as string;
-  }
   if (f.has("author_id")) credential.author_id = f.id("author_id", "ac");
   if (f.has("session_id")) credential.session_id = f.id("session_id", "se");
   if (f.has("run_id")) credential.run_id = f.id("run_id", "ru");
@@ -2346,12 +2333,7 @@ function checkExecutionRequest(f: Fields, request: CheckedRequest): void {
   if (request.warnings !== undefined) {
     f.fail("VALIDATION_FAILED", "A launch request holds no text: it takes no warnings", "warnings");
   }
-  for (const [field, scope] of [
-    ["actor.scope_id", actor.scope_id],
-    ["actor.earlier_scope_id", actor.earlier_scope_id],
-  ] as const) {
-    if (scope !== undefined && !LAUNCH_SCOPE.test(scope)) {
-      f.fail("VALIDATION_FAILED", "A launch request's writer scope is an ID", field);
-    }
+  if (!LAUNCH_SCOPE.test(actor.scope_id)) {
+    f.fail("VALIDATION_FAILED", "A launch request's writer scope is an ID", "actor.scope_id");
   }
 }

@@ -1657,26 +1657,20 @@ export async function readSpacePreferences(
 // Receipts
 
 /**
- * A request's receipt in a writer scope, else in the connection's earlier scope: `receipt.get`,
- * a read like any other, so through the reader (A1 3.9). It works on a read-only space too, whose
- * receipts came with it from its backup. The writer's own lookup (receipts.ts) is the same query.
+ * A request's receipt in a writer scope: `receipt.get`, a read like any other, so through the
+ * reader (A1 3.9). It works on a read-only space too, whose receipts came with it from its backup.
+ * The writer's own lookup (receipts.ts) is the same query.
  */
 export async function readReceipt(
   reader: WorkerConnection,
   lookup: ReceiptLookup,
 ): Promise<Receipt | undefined> {
-  const scopes =
-    lookup.earlier_scope_id === undefined
-      ? [lookup.scope_id]
-      : [lookup.scope_id, lookup.earlier_scope_id];
-  const rows = await reader.transaction(
-    "deferred",
-    scopes.map((scope) => ({
+  const [row] = (await reader.transaction("deferred", [
+    {
       sql: RECEIPT_SQL,
       mode: "get" as const,
-      params: { scope, request: lookup.request_id },
-    })),
-  );
-  const found = (rows as (Row | null)[]).find((row): row is Row => row !== null);
-  return found === undefined ? undefined : decodeReceipt(found);
+      params: { scope: lookup.scope_id, request: lookup.request_id },
+    },
+  ])) as (Row | null)[];
+  return row === undefined || row === null ? undefined : decodeReceipt(row);
 }

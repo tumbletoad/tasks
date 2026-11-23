@@ -1,13 +1,12 @@
 // The contract suite (contract/suite.ts) over the request path's own faces: ttasks-local/1's
 // `op/call` with real sessions, which reaches the same functions as an in-process call after a JSON
-// round trip, and HTTP as the UI; and the grant gate's refusal on the faces here that carry an agent
-// home's call. MCP and the CLI run both in their own tests.
+// round trip, and HTTP as the UI; and the grant gate's refusal for a shell acting as a session. MCP
+// and the CLI run both in their own tests.
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import { expect } from "vitest";
 import { ERROR_CODES, AppError, routePath, type ErrorBody } from "@ttasks/contracts";
 import { httpRoutes } from "@ttasks/contracts/generated/http-routes.ts";
-import { bridgePrincipal, clientOf, instanceOf } from "../src/mcp/index.ts";
-import { opCall, type Caller } from "../src/ops/index.ts";
+import { opCall } from "../src/ops/index.ts";
 import {
   ContractError,
   contractSuite,
@@ -37,7 +36,6 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, over HTTP as the UI", a
   const transport: ContractTransport = {
     portal: w.portal,
     folder: (task) => w.folder(task),
-    binds: false,
     launch: async (task) => (await w.launch(task)).reference,
     call: async (entry, input) => {
       if (!httpRoutes.some((route) => route.entry === entry)) {
@@ -70,46 +68,7 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, over HTTP as the UI", a
 });
 
 // The grant gate (A3 3.7.8) on the faces here that carry an agent home's call. HTTP carries none:
-// it is the UI's, and the UI is the user.
-grantSuite("the grant gate, in-process, for an MCP connection of a home no row names", async () => {
-  const w = await contractWorld("gi");
-  const context = {
-    space: w.space,
-    instance: "ungranted-agent",
-    app: "test",
-    cwd: null,
-    env: {},
-    parent: { pid: process.pid },
-  };
-  // Bound as the local endpoint binds an mcp mode connection, and called as its tool caller calls.
-  const connection = { context };
-  await w.service.bindings.bridge(connection);
-  const slot = w.service.bindings.attach(connection);
-  const caller: Caller = {
-    class: "bridge",
-    env: {},
-    principal: bridgePrincipal(context, w.service.ops.machine.id),
-    client: clientOf(context),
-    home: instanceOf(context),
-    ...(slot === undefined ? {} : { binding: slot }),
-  };
-  return {
-    refused: async (entry, input) => {
-      try {
-        await opCall(w.service.ops, caller, { op: entry, input });
-        return undefined;
-      } catch (error) {
-        if (error instanceof AppError) return error.toBody();
-        throw error;
-      }
-    },
-    close: async () => {
-      if (slot !== undefined) w.service.bindings.closed(slot);
-      await w.close();
-    },
-  };
-});
-
+// it is the UI's, and the UI is the user. An MCP connection's is mcp.test.ts's.
 grantSuite(
   "the grant gate over ttasks-local/1, for a CLI call acting as a session of a revoked home",
   async () => {
@@ -139,7 +98,6 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, over ttasks-local/1", a
   const transport: ContractTransport = {
     portal: w.portal,
     folder: (task) => w.folder(task),
-    binds: false,
     launch: async (task) => (await w.launch(task)).reference,
     call: async (entry, input, actor) => {
       try {

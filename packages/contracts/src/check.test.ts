@@ -26,7 +26,7 @@ import { agentInputJsonSchema, inputJsonSchema, toJsonSchema } from "./json-sche
 import * as registryModule from "./registry.ts";
 import { registry } from "./registry.ts";
 import { normaliseText, safeLine, safeText } from "./safe-text.ts";
-import { Base, RequestId } from "./schemas.ts";
+import { Base, RequestId, SessionTask } from "./schemas.ts";
 
 const ajv = new Ajv2020({ strict: true, allowUnionTypes: true });
 
@@ -41,7 +41,7 @@ const TaskRef = z
   .describe("Task reference");
 
 const input = z.strictObject({
-  task: TaskRef.max(40).optional(),
+  task: TaskRef.max(40).describe("Task ref (M-14) or ID"),
   text: safeText(200).describe("Note text"),
   pinned: z.boolean().describe("Pin the note").optional(),
   request_id: RequestId,
@@ -1448,6 +1448,30 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
       ]);
     });
 
+    test("an entry whose task defaults to the session's takes the shared schema and lists unbound", () => {
+      const session = input.extend({ task: SessionTask });
+      const unlisted = defineEntry({ ...base, input: session });
+      expect(check(unlisted)).toEqual([
+        "fixture.note: an entry whose task defaults to the session's lists the error unbound",
+      ]);
+      expect(
+        check(defineEntry({ ...base, input: session, errors: [...base.errors, "unbound"] })),
+      ).toEqual([]);
+      // Any other optional task is refused, whatever its words or what it lists: a copy, and the
+      // shared schema described again.
+      for (const task of [
+        TaskRef.max(40).describe("Optional task reference").optional(),
+        SessionTask.describe("Task ref (M-14) or ID"),
+      ]) {
+        const copy = input.extend({ task });
+        expect(
+          check(defineEntry({ ...base, input: copy, errors: [...base.errors, "unbound"] })),
+        ).toEqual([
+          "fixture.note: an optional task is the shared SessionTask schema from schemas.ts",
+        ]);
+      }
+    });
+
     test("a read entry emits no operations and is readable remotely at most", () => {
       const variant = defineEntry({ ...base, kind: "read" });
       expect(check(variant)).toEqual([
@@ -1556,7 +1580,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
     describe("[A3.3.2.3.registry.mixed-actions] an entry with read and write actions (A3 3.2.3)", () => {
       const mixedInput = z.strictObject({
         action: z.enum(["list", "add"]).describe("list reads; add writes"),
-        task: TaskRef.max(40).optional(),
+        task: SessionTask,
         text: safeText(200).describe("Note text").optional(),
         base: Base.optional(),
         request_id: RequestId.optional(),
@@ -1566,6 +1590,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
         ops: ["note.add"],
         actions: { field: "action", reads: ["list"] },
         input: mixedInput,
+        errors: [...base.errors, "unbound"],
         examples: [{ ...example, input: { action: "list" } }],
       });
 
@@ -1636,7 +1661,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           ops: [],
           remote: "read",
           scope: "space:read",
-          errors: ["not_found"],
+          errors: ["not_found", "unbound"],
           input: mixedInput.omit({ request_id: true, base: true }),
         });
         expect(check(read)).toEqual([

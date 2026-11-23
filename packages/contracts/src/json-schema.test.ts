@@ -66,8 +66,7 @@ describe("[A3.5.registry.json-schema] generated JSON Schema and registry metadat
       }
     }
     expect([...shown].sort()).toEqual([...offered].sort());
-    // The digest, the sections and a routine's launch, which returns the status overview.
-    expect([...views].sort()).toEqual(["digest", "sections", "status"]);
+    expect([...views].sort()).toEqual(["digest", "sections"]);
   });
 
   test("a result accepts every value A1 can store, not only what an agent may write", () => {

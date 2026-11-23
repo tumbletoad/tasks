@@ -129,7 +129,7 @@ export interface ConnectionInfo {
 export interface BindAnswer {
   /** The spaces and their states, for the bind result. */
   readonly spaces?: readonly unknown[];
-  /** mcp mode: `{handle, space, state}` (A3 decides it). rpc mode: null. */
+  /** mcp mode: `{space, state}`, who the connection is (binding/). rpc mode: null. */
   readonly binding?: unknown;
   /**
    * The grants row this connection uses. Revoking the row closes the connection (A2 3.2.5). The
