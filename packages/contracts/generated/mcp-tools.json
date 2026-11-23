@@ -590,7 +590,8 @@
           },
           "cursor": {
             "description": "list: the last page's cursor, with the same path and archived",
-            "maxLength": 60,
+            "maxLength": 300,
+            "pattern": "^(?:[0-9A-Za-z]{2,120}.a_[0-9a-hjkmnp-tv-z]{26}(?:.[0-9A-Za-z]{2,120}.p_[0-9a-hjkmnp-tv-z]{26})?|~.[0-9A-Za-z]{2,120}.p_[0-9a-hjkmnp-tv-z]{26})$",
             "type": "string"
           },
           "cwd": {
@@ -605,7 +606,7 @@
             "type": "string"
           },
           "path": {
-            "description": "\"Area\" or \"Area/Project\", by name or slug; list shows that group alone",
+            "description": "\"Area\" or \"Area/Project\" by name, or an ID; list: that area and its projects",
             "maxLength": 250,
             "type": "string"
           },

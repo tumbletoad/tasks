@@ -36,24 +36,31 @@ export const GROUP_ACTIONS = [
  */
 export const GROUP_PAGE = 25;
 
-/** Where the next page starts: the ID of the last group on the page. */
-const GroupCursor = z.string().regex(idPattern("[ap]"));
+const POSITION = "[0-9A-Za-z]{2,120}";
+const B32 = "[0-9a-hjkmnp-tv-z]{26}";
+/**
+ * Where the next page starts: after the last group's place in the list's order, the position and
+ * ID of its area (`~`: none), then of the project.
+ */
+export const GROUP_CURSOR = new RegExp(
+  `^(?:${POSITION}\.a_${B32}(?:\.${POSITION}\.p_${B32})?|~\.${POSITION}\.p_${B32})$`,
+  "u",
+);
+const GroupCursor = z.string().max(300).regex(GROUP_CURSOR);
 
 export const GroupManageInput = z.strictObject({
   action: z.enum(GROUP_ACTIONS).describe("list reads; the others change a group"),
   path: safeLine(250)
-    .describe('"Area" or "Area/Project", by name or slug; list shows that group alone')
+    .describe('"Area" or "Area/Project" by name, or an ID; list: that area and its projects')
     .optional(),
   to: safeLine(120).describe("rename: the new name; move: the new area").optional(),
   folder: FolderInput.describe(
     'create, set_folder: the project\'s folder here, "cwd" or an absolute path',
   ).optional(),
   archived: z.boolean().describe("list: true includes archived areas and projects").optional(),
-  cursor: z
-    .string()
-    .max(60)
-    .describe("list: the last page's cursor, with the same path and archived")
-    .optional(),
+  cursor: GroupCursor.describe(
+    "list: the last page's cursor, with the same path and archived",
+  ).optional(),
   base: GroupBase.optional(),
   request_id: RequestId.optional(),
   mode: Mode,
@@ -61,6 +68,12 @@ export const GroupManageInput = z.strictObject({
 });
 
 const Count = z.int().min(0).max(1_000_000_000);
+
+/** A group whose name alone would name another one too, or holds a slash, is named by its ID. */
+const Ref = z
+  .string()
+  .regex(idPattern("[ap]"))
+  .describe("Its ID, for a path: its name alone does not name it");
 
 const Folder = z.string().describe("Its folder on this machine, the home as ~");
 
@@ -72,6 +85,7 @@ const ProjectRow = z.strictObject({
   folder: Folder.optional(),
   repo: z.string().max(255).describe("The Git repository in its folder, by name").optional(),
   archived: z.literal(true).describe("Archived").optional(),
+  ref: Ref.optional(),
 });
 
 const AreaRow = z.strictObject({
@@ -80,6 +94,7 @@ const AreaRow = z.strictObject({
   name: z.string().describe("Name"),
   active: Count.describe("Active tasks, its projects' included"),
   archived: z.literal(true).describe("Archived").optional(),
+  ref: Ref.optional(),
   projects: z.array(ProjectRow).describe("Its projects on this page"),
 });
 

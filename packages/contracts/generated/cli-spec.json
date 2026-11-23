@@ -336,7 +336,7 @@
         },
         {
           "field": "path",
-          "help": "\"Area\" or \"Area/Project\", by name or slug; list shows that group alone",
+          "help": "\"Area\" or \"Area/Project\" by name, or an ID; list: that area and its projects",
           "name": "path",
           "required": false,
           "type": "string"

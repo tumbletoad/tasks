@@ -721,10 +721,11 @@ function addRendered(result: OutputOf<"task.add">): Rendered {
 type Groups = OutputOf<"group.manage">;
 
 function groupsRendered(result: Groups, organize: string): Rendered {
-  const archived = (g: { archived?: true | undefined }) =>
-    g.archived === true ? ", archived" : "";
+  // A group's facts after its count: archived, and the ID that names it where its name does not.
+  const facts = (g: { archived?: true | undefined; ref?: string | undefined }) =>
+    `${g.archived === true ? ", archived" : ""}${g.ref === undefined ? "" : `, id ${g.ref}`}`;
   const project = (p: Groups["projects"][number]) =>
-    `${p.name}${p.repo === undefined ? "" : ` [${p.repo}]`} (${String(p.active)}${archived(p)}${p.folder === undefined ? "" : `, ${p.folder}`})`;
+    `${p.name}${p.repo === undefined ? "" : ` [${p.repo}]`} (${String(p.active)}${facts(p)}${p.folder === undefined ? "" : `, ${p.folder}`})`;
   const inside = result.followed ?? result.kept ?? [];
   const insideLine =
     inside.length === 0
@@ -748,7 +749,7 @@ function groupsRendered(result: Groups, organize: string): Rendered {
           result.group !== undefined && `${result.group.kind} ${result.group.id}`,
           result.proposal !== undefined && `proposal ${result.proposal}`,
         );
-  // A project a unit, so a cut keeps the first projects of an area rather than none of them.
+  // The request path sizes a page to show whole (Caller.shows); a project a unit all the same.
   return {
     parts: [
       fixed(done, head),
@@ -757,7 +758,7 @@ function groupsRendered(result: Groups, organize: string): Rendered {
         units: [
           ...insideLine,
           ...result.areas.flatMap((area) => [
-            [`${area.name} (${String(area.active)}${archived(area)})`],
+            [`${area.name} (${String(area.active)}${facts(area)})`],
             ...area.projects.map((p) => [`  ${project(p)}`]),
           ]),
           ...(result.projects.length === 0 ? [] : [["No area:"]]),
@@ -768,7 +769,7 @@ function groupsRendered(result: Groups, organize: string): Rendered {
         ? []
         : [
             fixed(
-              `Next page: ${organize} with action list, cursor "${result.cursor}", and the same path and archived.`,
+              `Next page: ${organize} with action list, cursor "${result.cursor}", and the same ${result.action === "list" ? "path and archived" : "archived"}.`,
             ),
           ]),
     ],

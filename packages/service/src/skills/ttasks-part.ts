@@ -57,7 +57,7 @@ const WORKING = [
 ];
 
 const ORGANIZING = [
-  `- The Inbox: ${status} with include ["inbox"]. Areas and projects with active task counts: ${organize} action list, in pages (next: cursor, same path and archived); archived true adds archived ones. Use the names as written.`,
+  `- The Inbox: ${status} with include ["inbox"]. Areas and projects with active task counts: ${organize} action list, in pages (next: cursor, same path and archived); archived true adds archived ones. Use the names as written; a group shown with an id takes it as path.`,
   `- The same work elsewhere: ${search} the task's title words first.`,
   `- While sorting, use ${addEntry} only for what the user must know.`,
   `- Filing: ${updateTask} with area and project by name, a status, and inbox false. Pass base, the as_of of your ${getTask} that showed those fields, and a new request_id.`,

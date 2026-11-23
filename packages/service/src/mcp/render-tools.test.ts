@@ -362,7 +362,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       projects: [],
       total_areas: 1,
       total_projects: 5_000,
-      cursor: `p_${"0".repeat(24)}${String(GROUP_PAGE - 2).padStart(2, "0")}`,
+      cursor: `a0.a_${"0".repeat(26)}.a1.p_${"0".repeat(24)}${String(GROUP_PAGE - 2).padStart(2, "0")}`,
     };
     for (const [name, result] of [
       ["task.search", page],
