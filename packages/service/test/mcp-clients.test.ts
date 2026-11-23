@@ -11,6 +11,7 @@ import { Client as ClientV2 } from "@modelcontextprotocol/client";
 import { StdioClientTransport as StdioV2 } from "@modelcontextprotocol/client/stdio";
 import { Client as ClientV1 } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport as StdioV1 } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { testEnv } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { INSTRUCTIONS } from "../src/mcp/index.ts";
 import { removeRuntimeDir, Services, tempRoot, waitReady, type ServiceJson } from "./harness.ts";
@@ -28,15 +29,6 @@ afterEach(async () => {
   for (const json of runtimeDirs.splice(0)) removeRuntimeDir(json);
   for (const cleanup of cleanups.splice(0)) cleanup();
 });
-
-/** The client's environment: this process's, without TTasks's variables or agent markers. */
-function clientEnv(home: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(process.env)) {
-    if (value !== undefined && !/^(TTASKS_|CLAUDE|CODEX_|T3CODE_)/i.test(name)) env[name] = value;
-  }
-  return { ...env, TTASKS_HOME: home };
-}
 
 type Kind = "v1-legacy" | "v2-legacy" | "v2-auto" | "v2-pin-2026-07-28";
 const KINDS: readonly Kind[] = ["v1-legacy", "v2-legacy", "v2-auto", "v2-pin-2026-07-28"];
@@ -144,7 +136,7 @@ describe("[A3.3.3.mcp.clients] official clients of both eras through ttasks mcp"
       for (const [entry, entryArgs] of Object.entries(entries)) {
         for (const kind of KINDS) {
           const label = `${kind} through ${entry}`;
-          const seen = await useClient(kind, { args: entryArgs, env: clientEnv(home) });
+          const seen = await useClient(kind, { args: entryArgs, env: testEnv({ TTASKS_HOME: home }) });
           expect(seen.tools, label).toEqual([
             "add_entry",
             "add_tasks",

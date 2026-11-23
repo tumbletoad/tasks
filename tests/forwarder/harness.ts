@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { removeRuntimeDirOf } from "../../packages/service/test/harness.ts";
+import { testEnv } from "../../packages/testkit/src/env.ts";
 import type { PeerConfig } from "./peer.ts";
 
 export const REPO = fileURLToPath(new URL("../../", import.meta.url));
@@ -182,19 +183,6 @@ export interface Proc {
   stderr(): string;
 }
 
-/**
- * The environment of a process under test: this process's, without any TTasks variable or agent
- * marker (the suite may itself run inside an agent session), plus `extra`.
- */
-export function cleanEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  const marker = /^(TTASKS_|CLAUDE|CODEX_|T3CODE_)/i;
-  for (const [name, value] of Object.entries(process.env)) {
-    if (!marker.test(name)) env[name] = value;
-  }
-  return { ...env, ...extra };
-}
-
 /** The command that runs the forwarder under test. */
 export function forwarderCommand(args: readonly string[]): { file: string; args: string[] } {
   const bin = process.env["TTASKS_BRIDGE_BIN"];
@@ -257,7 +245,7 @@ export class Procs {
     const proc = this.spawn(
       command.file,
       command.args,
-      cleanEnv({ TTASKS_HOME: home.root, ...options.env }),
+      testEnv({ TTASKS_HOME: home.root, ...options.env }),
       options.cwd,
     );
     return new Bridge(proc);
@@ -271,7 +259,7 @@ export class Procs {
       offline: LIB_OFFLINE,
       ...config,
     };
-    const proc = this.spawn(process.execPath, [PEER, JSON.stringify(full)], cleanEnv());
+    const proc = this.spawn(process.execPath, [PEER, JSON.stringify(full)], testEnv());
     const stdout = proc.child.stdout;
     if (stdout === null) throw new Error("no stdout");
     let out = "";
@@ -290,7 +278,7 @@ export class Procs {
    */
   hub(home: Home): Proc {
     this.#hubHomes.add(home.root);
-    return this.spawn(process.execPath, [HUB], cleanEnv({ TTASKS_HOME: home.root }));
+    return this.spawn(process.execPath, [HUB], testEnv({ TTASKS_HOME: home.root }));
   }
 
   /** Hard-kills one process and waits for its exit. */

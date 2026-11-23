@@ -439,6 +439,9 @@ importers:
       '@ttasks/brand':
         specifier: workspace:*
         version: link:../brand
+      '@ttasks/bridge':
+        specifier: workspace:*
+        version: link:../bridge
       '@ttasks/storage':
         specifier: workspace:*
         version: link:../storage

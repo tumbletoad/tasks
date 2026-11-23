@@ -34,7 +34,7 @@
     },
     {
       "id": "A7.3.3.lint.custom-rules",
-      "title": "The custom lint rules refuse os.tmpdir(), shell: true, .cmd spawns, exec and execSync through any binding, AppData paths in package code, and stdout writes, console and dynamic loads in the bridge",
+      "title": "The custom lint rules refuse os.tmpdir(), shell: true, .cmd spawns, exec and execSync through any binding, AppData paths in package code, stdout writes, console and dynamic loads in the bridge, and a test that removes TTasks's variables by hand instead of through testEnv()",
       "source": "A7 3.3, A2 3.2.2, A4",
       "owner": "M0",
       "kind": "ci",
@@ -1186,6 +1186,13 @@
       "id": "A1.compat.imported-space",
       "title": "A space made by the last build with the prototype importer, holding an import, the person's later change of an imported task and a second import applied and undone, opens as its machine's writer, lists, searches and renders the imported tasks, keeps the undone ones gone, finds a task by its ID in the earlier tool, names the import in a task's history, undoes and redoes a change made now and the one made before, and backs up, exports and restores",
       "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.testkit.clean-env",
+      "title": "testEnv(), the environment of every TTasks process a test starts with a clean one: none of the test shell's TTasks or agent app variables, an Agent Monitor that does not exist unless the test names one, and extra names added, replaced or removed",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -5351,7 +5358,7 @@
     },
     {
       "id": "A5.agents.monitor",
-      "title": "The service's Agent Monitor child against the fake ttam: started on the first ask, hello first, one snapshot per get with distinct IDs, asks while one is out share the next request so busy never comes and is asked again when it does, usage permission passed and applied, not installed (missing, a script, exit 2) and a version that does not fit naming the side to update kept until a recheck, no hello, a line that is no JSON or over 8 MiB, a snapshot of another shape, an exit mid-answer with a growing wait before a new child, a stalled answer marked slow before the child is ended and killed, an idle end by closing its input with output after the end ignored, an end with the service that kills what stays after the grace, a killed service whose TTAM ends by itself, and nothing of a snapshot in the service log; no fake is left after any test",
+      "title": "The service's Agent Monitor child against the fake ttam: started on the first ask, hello first, one snapshot per get with distinct IDs, asks while one is out share the next request so busy never comes and is asked again when it does, usage permission passed and applied, not installed (missing, a script, exit 2) and a version that does not fit naming the side to update kept until a recheck, no hello, a line that is no JSON or over 8 MiB, a snapshot of another shape, an exit mid-answer with a growing wait before a new child, a stalled answer marked slow before the child is ended and killed, an idle end by closing its input with output after the end ignored, an end with the service that kills what stays after the grace, every child owned until its process is gone so a new one starts only after it and close waits for all, a killed service whose TTAM ends by itself, and nothing of a snapshot in the service log; no fake is left after any test",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5372,7 +5379,7 @@
     },
     {
       "id": "A3.3.14.doctor.monitor",
-      "title": "ttasks doctor's monitor row: ttam found on the PATH (an executable only on Windows), a probe that reads only the hello of a child whose input is closed, and the row for found and fitting, not installed, a script, a build without ttam query, a version that does not fit with the side to update, a failed start, and an older service",
+      "title": "ttasks doctor's monitor row: ttam found on the PATH (an executable only on Windows), a probe that reads only the hello of a child whose input is closed, fails one that does not end after its hello, shares one process between doctors and is ended with the service, and the row for found and fitting, not installed, a script, a build without ttam query, a version that does not fit with the side to update, a failed start, a monitor that does not end, and an older service",
       "source": "A3 3.14",
       "owner": "M6",
       "kind": "ci",

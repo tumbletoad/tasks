@@ -29,8 +29,8 @@ import {
   type Row,
   type WorkerConnection,
 } from "@ttasks/storage";
+import { testEnv } from "@ttasks/testkit";
 import { applyEdits, type Edit } from "../src/config/edit.ts";
-import { MONITOR_VARIABLE } from "../src/monitor/index.ts";
 import { canonicalStatePath, installId, RUN_USER_BASE } from "../src/hub/paths.ts";
 
 export const MAIN = fileURLToPath(new URL("../src/hub/main.ts", import.meta.url));
@@ -74,18 +74,9 @@ export interface Proc {
   send(line: string): void;
 }
 
-/**
- * The environment of a service under test: this process's, without any TTasks variable or agent
- * marker that would change the service, and with TTASKS_HOME set.
- */
+/** The environment of a service under test: a test's clean one (testEnv), with TTASKS_HOME set. */
 export function serviceEnv(home: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  for (const [name, value] of Object.entries(process.env)) {
-    if (name.toUpperCase().startsWith("TTASKS_")) continue;
-    env[name] = value;
-  }
-  // No test's service starts the Agent Monitor of the machine that runs it: this names none.
-  return { ...env, TTASKS_HOME: home, [MONITOR_VARIABLE]: join(home, "no-monitor"), ...extra };
+  return testEnv({ TTASKS_HOME: home, ...extra });
 }
 
 /** Starts and stops services, and stops every one it started that still runs. */

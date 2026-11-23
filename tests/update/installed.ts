@@ -24,9 +24,9 @@ import {
 } from "../../packages/service/src/install/context.ts";
 import { checkVersionFolder } from "../../packages/service/src/version/folder.ts";
 import { currentVersion } from "../../packages/service/src/version/switch.ts";
+import { testEnv } from "../../packages/testkit/src/env.ts";
 import {
   HOME_VAR,
-  installEnv,
   installsFolder,
   runInstaller,
   runKey,
@@ -95,7 +95,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
   const stable = stableCommand(root);
   /** The supervisor: `<root>\bin\ttasksw.exe` (Windows). */
   const supervisor = join(root, "bin", `${PRODUCT_ID}w.exe`);
-  const env = () => installEnv();
+  const env = () => testEnv();
 
   const archiveOf = (version: string): string => {
     const release = releases[version];
@@ -253,7 +253,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
     goCount += 1;
     const go = join(work, `go-${String(goCount)}`);
     const child = spawn(process.execPath, [CHILD], {
-      env: installEnv(),
+      env: testEnv(),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
