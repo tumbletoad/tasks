@@ -38,7 +38,11 @@ describe("[A2.3.7.bridge.cli-entry] the router's mcp verb", () => {
   test("ttasks mcp --help is the CLI's help, before any connection; the entries route it the same", () => {
     expect(isBridge(["mcp", "--space", "sp_x"])).toBe(true);
     expect(isBridge(["mcp"])).toBe(true);
-    for (const argv of [["mcp", "--help"], ["mcp", "-h"], ["mcp", "--space", "sp_x", "--help"]]) {
+    for (const argv of [
+      ["mcp", "--help"],
+      ["mcp", "-h"],
+      ["mcp", "--space", "sp_x", "--help"],
+    ]) {
       expect(isBridge(argv), argv.join(" ")).toBe(false);
     }
     for (const file of ["./bin.ts", "./entry.ts"]) {

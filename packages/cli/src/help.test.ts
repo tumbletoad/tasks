@@ -112,7 +112,7 @@ describe("[A2.3.10.cli.help] help for every command", () => {
   });
 
   test("no verb, flag or value a later step brings is offered, in the help or in docs/agents/cli.md", async () => {
-    const rows = LATER.filter((row) => !("audience" in row) || row.audience === undefined);
+    const rows = LATER.filter((row) => !("field" in row) || row.audience !== "agent");
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       const verbs = CLI_SPEC.verbs.filter((verb) => verb.entry === row.entry);

@@ -48,7 +48,10 @@ export const PrefsManageInput = z.strictObject({
       z.strictObject({
         key: z.string().max(64).describe("A key describe lists"),
         value: PrefValue.describe("The new value, a list as keys separated by commas").optional(),
-        reset: z.boolean().describe("Put the key back to its default, instead of a value").optional(),
+        reset: z
+          .boolean()
+          .describe("Put the key back to its default, instead of a value")
+          .optional(),
       }),
     )
     .min(1)
