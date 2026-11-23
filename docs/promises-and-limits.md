@@ -236,7 +236,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   start one. A run may do whatever your agent setup allows, without asking: the network, other
   folders, other agents. An instance's `run_permission` narrows that.
 - Your request reaches the agent over its own connection, never on a command line. A run's
-  answer, or the agent's question when it needs you, is kept in the run's record. A question
+  answer, or the agent's question when it needs you, is kept in the run's record, and so is what
+  the agent had written of its answer when Stop, a restart or its own end cut it short. A question
   from a helper the agent started does not reach you: that helper hears that no one answered.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
@@ -349,6 +350,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   marked as the request of that launch, and backups and exports hold it.
 - Retracting a note does not reach an agent that already read it, a session that already has it,
   or what you copied. The history, backups and exports keep it.
+- When the service or the machine crashes during a run, the run keeps its answer as of the agent's
+  last finished message. What the agent was still writing is only in the run's raw output.
 - Backups and exports are not encrypted. Their protection is that of the disk they are on.
 - Backups sit beside the space on the same disk unless you set another folder for them or copy an
   export elsewhere. A lost disk then loses them with the space.
