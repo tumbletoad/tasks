@@ -70,6 +70,13 @@ function valueAt(input: unknown, path: readonly PropertyKey[]): unknown {
 /** Fields an earlier build took, and the field a caller gives instead now. */
 const RENAMED: Readonly<Record<string, string>> = { place: "folder" };
 
+/**
+ * Fields an earlier build took that no operation takes now: get_task's `bind`, since a launch's
+ * session is decided by the connection. A fixed table, so a refusal names only keys the product
+ * knows, never one a caller made up.
+ */
+const RETIRED: ReadonlySet<string> = new Set(["bind"]);
+
 /** status's guides became skills: what an app that kept the old tool list sends instead. */
 const GUIDE_NOW =
   'guide is now skills: skills ["working-a-task"] for work, ["organizing"] for triage or organize.';
@@ -102,7 +109,8 @@ function overLimit(maximum: unknown, origin: unknown, value: unknown): string {
  * request limit), else `invalid_input`, with each issue's path and a fixed sentence: a limit says
  * how much the field takes and how much it got, a format what it looks like. A field the input
  * leaves out is `Missing`, never a wrong type: the caller gave nothing to be wrong. A field an
- * earlier build took is named with the field that replaced it, so the caller fixes its call.
+ * earlier build took is named with the field that replaced it, or told to leave it out when none
+ * did, so the caller fixes its call.
  * `face` and `entry` say where the caller reads its help: a command names its own.
  */
 export function schemaFailure(
@@ -120,6 +128,7 @@ export function schemaFailure(
   entry?: string,
 ): AppError {
   const renamed: string[] = [];
+  const retired: string[] = [];
   const first = error.issues.slice(0, 20);
   // Only status took guide, and only status takes the skills that replaced it.
   const oldGuide = (issue: (typeof first)[number]) =>
@@ -142,13 +151,24 @@ export function schemaFailure(
       return [{ path, message: `Now ${now}` }];
     }
     if (oldGuide(issue)) return [{ path: "guide", message: "Now skills" }];
-    const old = (issue.keys ?? []).filter((key) => Object.hasOwn(RENAMED, key));
-    if (issue.code === "unrecognized_keys" && old.length > 0) {
-      return old.map((key) => {
-        const now = RENAMED[key] ?? "";
-        renamed.push(`${key} is now ${now}`);
-        return { path: path === "" ? key : `${path}.${key}`, message: `Now ${now}` };
-      });
+    const keys = issue.keys ?? [];
+    const known = keys.filter((key) => Object.hasOwn(RENAMED, key) || RETIRED.has(key));
+    if (issue.code === "unrecognized_keys" && known.length > 0) {
+      const at = (key: string) => (path === "" ? key : `${path}.${key}`);
+      return [
+        ...known.map((key) => {
+          if (RETIRED.has(key)) {
+            retired.push(key);
+            return { path: at(key), message: "No longer taken" };
+          }
+          const now = RENAMED[key] ?? "";
+          renamed.push(`${key} is now ${now}`);
+          return { path: at(key), message: `Now ${now}` };
+        }),
+        ...(known.length < keys.length
+          ? [{ path, message: ISSUE["unrecognized_keys"] ?? "" }]
+          : []),
+      ];
     }
     const format = FORMATS[String(issue.path[issue.path.length - 1])];
     return [
@@ -169,11 +189,15 @@ export function schemaFailure(
   const found = face === "cli" && entry !== undefined ? findEntry(entry) : undefined;
   const verb = found === undefined ? undefined : cliFaces(found)[0]?.verb;
   const help = verb === undefined ? undefined : `Run ${CLI_NAME} help ${verb} for the arguments.`;
-  const hint = guide
-    ? GUIDE_NOW
-    : renamed.length > 0
-      ? `${[...new Set(renamed)].join(", ")}: "cwd", an absolute folder or one under ~.`
-      : help;
+  const fixes = [
+    ...(renamed.length > 0
+      ? [`${[...new Set(renamed)].join(", ")}: "cwd", an absolute folder or one under ~.`]
+      : []),
+    ...(retired.length > 0
+      ? [`${[...new Set(retired)].join(", ")} is no longer taken: leave it out.`]
+      : []),
+  ];
+  const hint = guide ? GUIDE_NOW : fixes.length > 0 ? fixes.join(" ") : help;
   return new AppError({
     code: tooLarge ? "too_large" : "invalid_input",
     message: tooLarge ? "The input is over a limit." : "The input does not match the operation.",
