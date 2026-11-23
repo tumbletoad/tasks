@@ -57,6 +57,26 @@ function keys(lines: readonly string[]): Map<string, string[]> {
   return found;
 }
 
+/**
+ * A skill file's bytes as text, without a byte order mark, or undefined when they are not text in
+ * an encoding the reader takes. Windows PowerShell 5 writes UTF-16 with a byte order mark.
+ */
+export function decodeSkill(bytes: Uint8Array): string | undefined {
+  const utf16 =
+    bytes[0] === 0xff && bytes[1] === 0xfe
+      ? "utf-16le"
+      : bytes[0] === 0xfe && bytes[1] === 0xff
+        ? "utf-16be"
+        : undefined;
+  try {
+    return utf16 === undefined
+      ? utf8.decode(bytes)
+      : new TextDecoder(utf16, { fatal: true }).decode(bytes);
+  } catch {
+    return undefined;
+  }
+}
+
 /** A skill file's bytes as its "when to use" and its text, or why they cannot be used. */
 export function parseSkill(bytes: Uint8Array): Parsed {
   if (bytes.byteLength > SKILL_BYTES) {
@@ -65,25 +85,10 @@ export function parseSkill(bytes: Uint8Array): Parsed {
       problem: `it is ${kib(bytes.byteLength)}, over the limit of ${kib(SKILL_BYTES)}`,
     };
   }
-  let text: string;
-  try {
-    // Windows PowerShell 5 writes UTF-16 with a byte order mark when output goes to a file.
-    const utf16 =
-      bytes[0] === 0xff && bytes[1] === 0xfe
-        ? "utf-16le"
-        : bytes[0] === 0xfe && bytes[1] === 0xff
-          ? "utf-16be"
-          : undefined;
-    text =
-      utf16 === undefined
-        ? utf8.decode(bytes)
-        : new TextDecoder(utf16, { fatal: true }).decode(bytes);
-  } catch {
-    return { ok: false, problem: "it is not UTF-8 text" };
-  }
+  const text = decodeSkill(bytes);
+  if (text === undefined) return { ok: false, problem: "it is not UTF-8 text" };
   if (text.includes("\0")) return { ok: false, problem: "it is not text: it holds a NUL byte" };
   if (text.trim() === "") return { ok: false, problem: "it is empty" };
-  // The decoder has taken off a byte order mark.
   const lines = text.replaceAll("\r\n", "\n").split("\n");
   let description: string | undefined;
   let body = lines;

@@ -178,6 +178,28 @@ describe("[A3.3.6.mcp.skills] ttasks skills", () => {
     }
   });
 
+  test("diff reads a copy saved as UTF-16 as agents get it", async () => {
+    const home = mkdtempSync(join(tmpdir(), "tt-skills-"));
+    try {
+      const file = join(home, "skills", "sizing-effort", "SKILL.md");
+      expect((await run(home, "skills", "copy", "sizing-effort")).code).toBe(0);
+      const today = readFileSync(file, "utf8");
+      rmSync(join(home, "skills", ".copied-from", "sizing-effort.md"));
+      // Windows PowerShell 5 saves UTF-16 with a byte order mark.
+      const text = Buffer.from(`${today}A rule of the user's.\n`.replaceAll("\n", "\r\n"), "utf16le");
+      writeFileSync(file, Buffer.concat([Buffer.from([0xff, 0xfe]), text]));
+
+      const shown = await run(home, "skills", "diff", "sizing-effort");
+      expect(shown.out).toContain("- A rule of the user's.");
+      // Only the user's line differs: the rest decodes to today's default.
+      expect(shown.out.split("\n").filter((line) => /^[-+] /u.test(line))).toEqual([
+        "- A rule of the user's.",
+      ]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test("copy writes into no linked folder", async () => {
     const home = mkdtempSync(join(tmpdir(), "tt-skills-"));
     try {

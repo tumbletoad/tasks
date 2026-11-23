@@ -17,7 +17,7 @@ import shipped from "../../generated/skills.json" with { type: "json" };
 import { isSkillName, kib, parseSkill, SKILL_BYTES, SKILL_FILE } from "./format.ts";
 import { TTASKS_PARTS, type SpaceFacts } from "./ttasks-part.ts";
 
-export { isSkillName, SKILL_BYTES, SKILL_FILE } from "./format.ts";
+export { decodeSkill, isSkillName, SKILL_BYTES, SKILL_FILE } from "./format.ts";
 export type { Size, SpaceFacts } from "./ttasks-part.ts";
 
 /** How long reading the person's skills may take before an answer goes on without them. */

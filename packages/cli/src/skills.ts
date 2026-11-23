@@ -12,6 +12,7 @@ import { CLI_NAME, DATA_FOLDER, PRODUCT_NAME, SKILLS_FOLDER } from "@ttasks/bran
 import { atomicWrite, createFile, makeDir, writeAll } from "@ttasks/files";
 import { hostFacts, LayoutError, resolveLayout } from "@ttasks/service/paths";
 import {
+  decodeSkill,
   DEFAULTS,
   listLine,
   listSkills,
@@ -67,12 +68,15 @@ const COPIED_FROM = ".copied-from";
 
 const copiedFrom = (folder: string, name: string) => join(folder, COPIED_FROM, `${name}.md`);
 
-/** A file's text, or undefined when it is missing, a link, not a regular file or over the limit. */
+/**
+ * A file's text as the skill reader decodes it, or undefined when it is missing, a link, not a
+ * regular file, over the limit or no text.
+ */
 function readText(path: string): string | undefined {
   try {
     const kind = lstatSync(path, { throwIfNoEntry: false });
     if (kind?.isFile() !== true || kind.size > SKILL_BYTES) return undefined;
-    return readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+    return decodeSkill(readFileSync(path))?.replaceAll("\r\n", "\n");
   } catch {
     return undefined;
   }
