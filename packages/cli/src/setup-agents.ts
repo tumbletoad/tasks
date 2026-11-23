@@ -800,6 +800,14 @@ function approvals(views: readonly HomeView[], platform: NodeJS.Platform) {
   });
 }
 
+/** A registered home without its live row: its entry is in place, and apply gives it its access again. */
+const givesAccessBack = (input: SetupInput, view: HomeView): boolean =>
+  view.state === "registered" &&
+  input.rows !== undefined &&
+  !input.rows.some(
+    (r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home),
+  );
+
 async function preview(
   io: Io,
   globals: Globals,
@@ -846,7 +854,9 @@ async function preview(
         homes: items.map(({ view, change }) => ({
           ...viewJson(view),
           ...(change === undefined
-            ? {}
+            ? givesAccessBack(input, view)
+              ? { change: { access: "on" } }
+              : {}
             : typeof change === "string"
               ? { state: "refused", reason: change }
               : {
@@ -876,13 +886,7 @@ async function preview(
     io.stdout(`${String(n)}. ${title(view)}\n`);
     const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
     io.stdout(`   ${view.home.file} (${hash})\n`);
-    const rowless =
-      view.state === "registered" &&
-      input.rows !== undefined &&
-      !input.rows.some(
-        (r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home),
-      );
-    if (rowless) {
+    if (givesAccessBack(input, view)) {
       changes += 1;
       io.stdout(`   registered, and its access is off: apply gives it its access again.\n`);
     } else if (change === undefined) {

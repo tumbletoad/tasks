@@ -236,7 +236,13 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
       expect(off.stdout).toContain("To make this change, run:");
       const back = JSON.parse((await run(["setup", "agents", "--json"], false)).stdout) as {
         apply: string[];
+        homes: { app: string; state: string; change?: unknown }[];
       };
+      // The JSON says the same: the access that apply gives back, for that home alone.
+      expect(back.homes.map((h) => [h.app, h.state, h.change])).toEqual([
+        ["claude-code", "registered", undefined],
+        ["codex", "registered", { access: "on" }],
+      ]);
       expect((await run([...back.apply.slice(1), "--json"])).code).toBe(0);
       expect((await rows()).map((r) => r.app).sort()).toEqual(["claude-code", "codex"]);
 
