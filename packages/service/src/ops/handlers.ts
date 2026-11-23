@@ -2182,6 +2182,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const date = due(set["due"], today, "set.due");
     if (date !== undefined) values["due"] = date;
     if (typeof set["focus"] === "boolean") values["focus"] = set["focus"] ? today : null;
+    // The questions agents asked up to this commit are read: a later one is new.
+    if (set["reviewed"] === true) values["reviewed_at"] = (call.host.now ?? Date.now)();
     const clear = Array.isArray(input["clear"]) ? (input["clear"] as string[]) : [];
     // The folder is a row of its own, set or cleared after the other operations.
     const clearFolder = clear.includes("folder");

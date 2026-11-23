@@ -5,7 +5,7 @@
 import { Refused, type Instance, type Run } from "../api.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { MarkerFact, Msg } from "../row/model.ts";
-import type { RowRun } from "../store/rows.ts";
+import type { RowQuestion, RowRun } from "../store/rows.ts";
 
 /** How a run's entry looks: the one state that asks for attention is `needs_you`. */
 export type RunTone =
@@ -163,15 +163,19 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
   }
 }
 
-/** The row's marker for its newest run: working, or needing the person; none otherwise. */
-export function runMarker(
+/**
+ * The row's marker for what agents ask of the person: its newest run working or needing them, or
+ * else an agent's question that waits for them; none otherwise.
+ */
+export function agentMarker(
   run: RowRun | undefined,
   instances: readonly Instance[],
+  question?: RowQuestion,
 ): MarkerFact | undefined {
-  if (run === undefined) return undefined;
-  const by = runLabel(run, instances);
-  if (run.state === "needs_you") return { kind: "needs_input", by };
-  if (run.state === "working") return { kind: "working", by };
+  const by = run === undefined ? undefined : runLabel(run, instances);
+  if (by !== undefined && run?.state === "needs_you") return { kind: "needs_input", by };
+  if (question !== undefined) return { kind: "needs_input", by: question.by };
+  if (by !== undefined && run?.state === "working") return { kind: "working", by };
   return undefined;
 }
 

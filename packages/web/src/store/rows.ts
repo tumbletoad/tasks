@@ -62,6 +62,16 @@ export interface TaskRow {
   readonly place?: RowPlace;
   /** Its newest background run, while it works or needs the person. */
   readonly run?: RowRun;
+  /** The newest question an agent asked on it that waits for the person. */
+  readonly question?: RowQuestion;
+}
+
+/** An agent's question that waits: its log entry, its agent, and its start (the thread has it all). */
+export interface RowQuestion {
+  readonly ref: string;
+  readonly by: string;
+  readonly text: string;
+  readonly at: number;
 }
 
 /** A task's newest run as its row shows it, and the instance it runs with. */
@@ -123,6 +133,7 @@ const TASK_COLUMNS: ReadonlySet<string> = new Set([
   "sources_more",
   "place",
   "run",
+  "question",
   "waiting_since",
   "finished_at",
 ]);
@@ -371,6 +382,13 @@ const isPlace = (v: unknown): boolean =>
 const isRun = (v: unknown): boolean =>
   isRecord(v) && isString(v["id"]) && isString(v["state"]) && isString(v["instance"]);
 
+const isQuestion = (v: unknown): boolean =>
+  isRecord(v) &&
+  isString(v["ref"]) &&
+  isString(v["by"]) &&
+  isString(v["text"]) &&
+  isNumber(v["at"]);
+
 /**
  * A task's compact row, when it has the fields the page relies on with their types. Its other
  * fields are the service's and are taken as they come: a column the page does not read yet must
@@ -399,7 +417,8 @@ export function taskRow(value: unknown): TaskRow | undefined {
     !optional(v["sources"], isSources) ||
     !optional(v["sources_more"], isNumber) ||
     !optional(v["place"], isPlace) ||
-    !optional(v["run"], isRun)
+    !optional(v["run"], isRun) ||
+    !optional(v["question"], isQuestion)
   ) {
     return undefined;
   }

@@ -63,7 +63,7 @@ MCP tool `add_entry`, "Log on a task": Use often while working: log progress, ev
 | A1 operations | `log.add`, `note.add` |
 | Faces | MCP `add_entry`, CLI `ttasks log`, `ttasks note`, UI |
 | Errors | `invalid_input`, `unbound`, `not_found`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 701, reported |
+| Definition, estimated tokens | 708, reported |
 | Result budget, estimated tokens | typical 40, max 80 |
 
 ### Input
@@ -71,7 +71,7 @@ MCP tool `add_entry`, "Log on a task": Use often while working: log progress, ev
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `task` | string, max 40 | no | Task ref (M-14) or ID; default: this session's task |
-| `kind` | "progress" \| "evidence" \| "decision" \| "blocker" \| "question" \| "note" | no, default `"progress"` | question flags it for the user; note: a note for the user |
+| `kind` | "progress" \| "evidence" \| "decision" \| "blocker" \| "question" \| "note" | no, default `"progress"` | question: the user sees it until they answer; note: a note for the user |
 | `text` | string, max 65536; agents: string, max 2000 | yes | The entry, in Markdown |
 | `links` | object[], max 5 items | no | Links that back the entry |
 | `links[].title` | string, max 200 | yes | Link title |
@@ -2535,6 +2535,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `set.project` | string, max 120 | no | Project name or slug |
 | `set.folder` | string, 1 to 4096 | no | "cwd", an absolute folder or one under ~ |
 | `set.focus` | boolean | no | Star it: on Today until cleared. Only when the user asks |
+| `set.reviewed` | true | no, user only | The user read the agents' questions so far |
 | `clear` | ("summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus")[], max 7 items | no | Fields to clear |
 | `context` | object | no | Change the context |
 | `context.mode` | "append" \| "replace" | yes | append needs no base |

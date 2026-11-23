@@ -1,12 +1,13 @@
 // What the page's snapshot tells a person who comes back: the tasks agents changed in the last
-// seven days, newest first, with who changed each last and when. Against a real space in this
-// thread, with the writer's clock set per request. Fixture text only.
+// seven days, newest first, with who changed each last and when, and on a task's row the
+// question an agent asked that still waits for the person. Against a real space in this thread,
+// with the writer's clock set per request. Fixture text only.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { newId, type Credential, type Id, type Operation } from "@ttasks/storage";
 import { writeFixture, type Fixture } from "@ttasks/storage/write-helpers";
-import { readSnapshot } from "../src/http/feed.ts";
+import { readBatch, readSnapshot } from "../src/http/feed.ts";
 import { readerOf, tempRoot } from "./harness.ts";
 
 let temp: { root: string; cleanup: () => void };
@@ -29,9 +30,12 @@ afterAll(() => {
   temp.cleanup();
 });
 
+/** `ops` as `actor` at `at`; the person's change goes on their undo stack, and an undo has no base. */
 function submit(actor: Credential, ops: Operation[], at: number): void {
   clock = at;
-  const result = fx.writer.submit(fx.request(actor, ops, { base: fx.base() }));
+  const undo = ops.some((op) => op.kind === "undo");
+  const own = actor === fx.human && !undo ? { undoable: true } : {};
+  const result = fx.writer.submit(fx.request(actor, ops, undo ? {} : { base: fx.base(), ...own }));
   if (result.status !== "applied") throw new Error(JSON.stringify(result.error));
 }
 
@@ -83,5 +87,71 @@ describe("[A5.while-away.service.recent] a snapshot holds the tasks agents chang
     expect(
       (await readSnapshot(readerOf(fx.reader), undefined, now + 8 * DAY)).agent_changes,
     ).toEqual([]);
+  });
+});
+
+describe("[A5.while-away.service.question] an agent's question waits on its task's row", () => {
+  test("until the person's note after it or their dismissal; an undo of that brings it back, a new question comes back, and the feed carries the row", async () => {
+    let at = START + 20 * DAY;
+    const next = () => (at += 60_000);
+    const task = newId("t");
+    const rowOf = async () =>
+      (await readSnapshot(readerOf(fx.reader), undefined, at)).tasks.find((t) => t["id"] === task);
+    submit(
+      fx.human,
+      [{ kind: "task.create", id: task, title: "Fixture asks", area: fx.areas.home }],
+      next(),
+    );
+    // The person's own question and an agent's progress wait for nobody.
+    submit(
+      fx.human,
+      [{ kind: "log.add", task, body: "Fixture mine?", log_kind: "question" }],
+      next(),
+    );
+    submit(fx.codex, [{ kind: "log.add", task, body: "Fixture progress" }], next());
+    expect(await rowOf()).not.toHaveProperty("question");
+
+    const head = (await readSnapshot(readerOf(fx.reader), undefined, at)).cursor.seq;
+    const asked = next();
+    submit(
+      fx.codex,
+      [{ kind: "log.add", task, body: "Fixture which one?", log_kind: "question" }],
+      asked,
+    );
+    expect((await rowOf())?.["question"]).toEqual({
+      ref: "l3",
+      by: "Codex · work",
+      text: "Fixture which one?",
+      at: asked,
+    });
+    // The batch of the question carries the task's row with it.
+    const { batch } = await readBatch(readerOf(fx.reader), head);
+    const carried = batch.events.at(-1)?.entities.find((e) => e.type === "task" && e.id === task);
+    expect(carried?.row?.["question"]).toMatchObject({ ref: "l3" });
+
+    // An agent's note answers nothing; the person's does.
+    submit(fx.claude, [{ kind: "note.add", task, body: "Fixture agent note" }], next());
+    expect((await rowOf())?.["question"]).toMatchObject({ ref: "l3" });
+    submit(fx.human, [{ kind: "note.add", task, body: "Fixture answer" }], next());
+    expect(await rowOf()).not.toHaveProperty("question");
+
+    // A later question waits again; the person dismisses it, and Undo brings it back.
+    submit(
+      fx.codex,
+      [{ kind: "log.add", task, body: "Fixture and now?", log_kind: "question" }],
+      next(),
+    );
+    expect((await rowOf())?.["question"]).toMatchObject({ ref: "l4" });
+    submit(fx.human, [{ kind: "task.patch", task, set: { reviewed_at: next() } }], at);
+    expect(await rowOf()).not.toHaveProperty("question");
+    submit(fx.human, [{ kind: "undo" }], next());
+    expect((await rowOf())?.["question"]).toMatchObject({ ref: "l4" });
+    submit(fx.human, [{ kind: "task.patch", task, set: { reviewed_at: next() } }], at);
+    submit(
+      fx.claude,
+      [{ kind: "log.add", task, body: "Fixture one more?", log_kind: "question" }],
+      next(),
+    );
+    expect((await rowOf())?.["question"]).toMatchObject({ ref: "l5", by: "Claude Code · work" });
   });
 });

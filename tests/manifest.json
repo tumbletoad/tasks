@@ -5595,6 +5595,20 @@
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.service.question",
+      "title": "A task's row carries the newest question an agent or a routine logged on it while no note of the person's came after it and their dismissal came before it: not the person's own question, an agent's note does not answer it, the person's note does, a dismissal hides it and its undo brings it back, a later question waits again, and the feed's batch of the question carries the task's row",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.web.question-placed",
+      "title": "On the Agents page an agent's question that waits places its task under Needs you as TTasks' own state, above a run that works, and a task with no question, run or agent is not placed",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }

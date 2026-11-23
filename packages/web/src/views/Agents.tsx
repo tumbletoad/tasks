@@ -1,5 +1,6 @@
 // Agents as far as the page's data allows: first "Needs you", the open tasks whose newest
-// background run stopped to ask the person or whose agent in a terminal waits for them, and
+// background run stopped to ask the person, on which an agent logged a question that waits for
+// them (shown beneath the row, with Dismiss), or whose agent in a terminal waits for them, and
 // "Working", those whose run or agent works now; then "With an agent", the tasks whose agents are
 // in any other state; then "Recent", the tasks an agent or a routine changed in the last seven
 // days, the ones it finished included, newest first, one small heading per day. The
@@ -13,17 +14,23 @@
 // "Routines" and the full history with Revert wait for the service's read of sessions and routines.
 import { useCallback, useContext, useMemo, useSyncExternalStore } from "react";
 import { changeLogOf } from "../app/changes.ts";
+import { classes } from "../app/css.ts";
 import { recentOf } from "../app/views.ts";
 import { Session } from "../context.ts";
+import { useEdits } from "../edit/useEdits.ts";
 import type { Group } from "../groups.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { formatDay, type Clock } from "../row/dates.ts";
+import { focusAfter } from "../row/Row.tsx";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { RowQuestion, TaskRow } from "../store/rows.ts";
 import { mergeAgents, type AgentState } from "./agents-merge.ts";
+import css from "./Computer.module.css";
 import { Computer, TaskAgents } from "./Computer.tsx";
 import { TaskList, type GroupsOf, type HeldRow } from "./TaskList.tsx";
+
+const styles = classes(css, ["question", "asks", "words", "dismiss"]);
 
 /** Agents' changes may touch any task: its rows fade in and are announced like Today's. */
 const ANY = (): boolean => true;
@@ -53,6 +60,7 @@ export interface AgentsProps {
 export function AgentsPage({ task, onExpand }: AgentsProps) {
   const t = useT();
   const { live } = useContext(Session);
+  const edits = useEdits();
   const log = changeLogOf(live);
   const changes = useSyncExternalStore(log.subscribe, log.getEntries);
   const clock = useClock(false);
@@ -74,11 +82,24 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const beneath = useCallback(
     (row: TaskRow) => {
       const listed = merged.tasks.get(row.id)?.agents ?? [];
-      return listed.length === 0 ? undefined : (
-        <TaskAgents agents={listed} current={agents.current} />
+      const question = row.question;
+      if (listed.length === 0 && question === undefined) return undefined;
+      return (
+        <>
+          {question === undefined ? null : (
+            <Question
+              question={question}
+              task={row.ref}
+              onDismiss={() => {
+                edits.dismissQuestion(row);
+              }}
+            />
+          )}
+          {listed.length === 0 ? null : <TaskAgents agents={listed} current={agents.current} />}
+        </>
       );
     },
-    [merged, agents.current],
+    [merged, agents.current, edits],
   );
   const groups = useCallback<GroupsOf>(
     (tasks, held) => {
@@ -140,6 +161,42 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
         beneath={beneath}
       />
       <Computer shown={merged.shown} />
+    </div>
+  );
+}
+
+/**
+ * An agent's question that waits for the person, in its own words: answered by a note on the
+ * task, or set aside with Dismiss.
+ */
+function Question({
+  question,
+  task,
+  onDismiss,
+}: {
+  readonly question: RowQuestion;
+  readonly task: string;
+  readonly onDismiss: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className={styles.question} data-part="question">
+      <p className={styles.asks}>{t("agents.asks", { by: question.by })}</p>
+      <p className={styles.words} dir="auto">
+        {question.text}
+      </p>
+      <button
+        type="button"
+        className={styles.dismiss}
+        data-part="dismiss-question"
+        aria-label={t("agents.dismissLabel", { task })}
+        onClick={(event) => {
+          focusAfter(event.currentTarget);
+          onDismiss();
+        }}
+      >
+        {t("agents.dismiss")}
+      </button>
     </div>
   );
 }

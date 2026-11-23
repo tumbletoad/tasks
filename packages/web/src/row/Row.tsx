@@ -29,7 +29,7 @@ import { useIntl } from "react-intl";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 import { useHasDraft } from "../task/composer.ts";
 import { Expanded } from "../task/Expanded.tsx";
-import { runMarker } from "../task/runs.ts";
+import { agentMarker } from "../task/runs.ts";
 import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
 import type { RowActions } from "./actions.ts";
@@ -405,10 +405,11 @@ function TitleEditor({
   );
 }
 /**
- * After a check-off, focus moves to the next row, or else the previous one, or else the view
- * (A5 3.12): never to a row that is itself leaving.
+ * After a check-off or a dismissed question, focus moves to the next row, or else the previous
+ * one, or else the view (A5 3.12): never to a row that is itself leaving. A row that holds focus
+ * stays where it is, so the row the person acted on is free to move.
  */
-function focusAfter(from: HTMLElement): void {
+export function focusAfter(from: HTMLElement): void {
   const list = from.closest("[data-list]");
   const own = from.closest("li")?.querySelector<HTMLElement>('[data-part="title"]');
   const titles = [...(list?.querySelectorAll<HTMLElement>('[data-part="title"]') ?? [])];
@@ -447,7 +448,7 @@ function RowView({
   const t = useT();
   const intl = useIntl();
   const place = placeFact(task.place);
-  const marker = runMarker(task.run, instances);
+  const marker = agentMarker(task.run, instances, task.question);
   const { live } = useContext(Session);
   const draft = useHasDraft(live.spaceId ?? "", task.id);
   const model = renderRow(

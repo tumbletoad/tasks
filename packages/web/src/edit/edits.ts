@@ -723,6 +723,55 @@ export class Edits {
     );
   }
 
+  /**
+   * The person sets aside the questions agents asked on a task without answering them: one
+   * action, gone from the row at once, and an Undo that brings them back. A question asked after
+   * it waits again. Another tab's dismissal in between is no failure: the questions are set aside.
+   */
+  dismissQuestion(task: TaskRow): void {
+    const sent = this.#sendWith(
+      task.id,
+      ["reviewed_at"],
+      this.#deps.asOf(),
+      (base, request) =>
+        this.#deps.client.task.update({
+          task: task.id,
+          set: { reviewed: true },
+          ...(base === undefined ? {} : { base }),
+          request_id: request,
+        }),
+      { tasks: [{ id: task.id, set: {}, clear: ["question"] }] },
+    );
+    const dismissed: Omit<Toast, "key"> = {
+      kind: "undo",
+      text: { id: "toast.questionDismissed" },
+      action: {
+        label: { id: "toast.undo" },
+        run: () => {
+          void this.undo(sent);
+        },
+      },
+    };
+    const toast = this.#toast(dismissed);
+    void sent.commit.then((commit) => {
+      if (commit !== undefined) this.#fieldsOf.set(commit, ["reviewed_at"]);
+    });
+    void this.#outcome(
+      sent.answer,
+      sent.call,
+      (decision, say, late) => {
+        if (decision.ok) {
+          if (late) say(dismissed);
+          return;
+        }
+        if (this.#deps.failed(decision.error)) return;
+        if ((problemOf(decision.error)?.conflicts.length ?? 0) > 0) say(undefined);
+        else say({ kind: "error", text: { id: "toast.dismissFailed" } });
+      },
+      toast,
+    );
+  }
+
   /** The check-offs of this tab still in their hold, with their writes. */
   readonly #checks = new Map<string, Named>();
 

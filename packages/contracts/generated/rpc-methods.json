@@ -31,7 +31,7 @@
           },
           "kind": {
             "default": "progress",
-            "description": "question flags it for the user; note: a note for the user",
+            "description": "question: the user sees it until they answer; note: a note for the user",
             "enum": [
               "progress",
               "evidence",
@@ -6098,6 +6098,11 @@
                 "description": "Project name or slug",
                 "maxLength": 120,
                 "type": "string"
+              },
+              "reviewed": {
+                "const": true,
+                "description": "The user read the agents' questions so far",
+                "type": "boolean"
               },
               "status": {
                 "description": "A status of the space",

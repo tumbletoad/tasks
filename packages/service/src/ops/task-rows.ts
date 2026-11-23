@@ -1,9 +1,10 @@
 // A task's compact row: the form the change feed carries and the page's lists draw (A5 3.6,
 // 3.15), and the read of finished tasks behind the page's Completed view, which gives the same
 // rows and one line of how each task ended. A column that is null in the space is left out. No
-// body of a note or log entry, no context, outcome or other long text is in it: only what a row
-// shows of the task's children, its first three sources, where it opens on the machine that
-// serves it, and whether its newest background run works or needs the person.
+// context, outcome or other long text is in it: only what a row shows of the task's children,
+// its first three sources, where it opens on the machine that serves it, whether its newest
+// background run works or needs the person, and the start of an agent's question that waits for
+// the person.
 import { isOpenRun, OPEN_RUN_STATES, type RunState } from "@ttasks/contracts/runs";
 import {
   decideLaunchFolder,
@@ -49,8 +50,28 @@ export interface CompactRun {
   readonly instance: string;
 }
 
+/**
+ * The newest question an agent logged on the task that the person has not answered with a note
+ * after it, nor dismissed (`reviewed_at`, set after it): its entry, its agent and its start.
+ */
+export interface CompactQuestion {
+  /** The log entry, such as `l3`. */
+  readonly ref: string;
+  /** The agent's label. */
+  readonly by: string;
+  /** Its first `QUESTION_CHARS` characters. */
+  readonly text: string;
+  readonly at: number;
+}
+
 export type CompactValue =
-  string | number | boolean | readonly CompactSource[] | CompactPlace | CompactRun;
+  | string
+  | number
+  | boolean
+  | readonly CompactSource[]
+  | CompactPlace
+  | CompactRun
+  | CompactQuestion;
 export type CompactRow = Readonly<Record<string, CompactValue>>;
 
 /** The machine the feed looks at folders on: its ID, the person's home there, its platform. */
@@ -70,6 +91,23 @@ const foldersOf = (kind: "task" | "project", owner: string): string =>
   "f.version FROM folders f JOIN machines m ON m.id = f.machine_id WHERE " +
   `f.owner_kind = '${kind}' AND f.owner_id = ${owner} AND f.deleted_at IS NULL ` +
   "ORDER BY f.created_seq DESC, f.id) x)";
+
+/** How much of a waiting question a row carries: the thread has the rest. */
+export const QUESTION_CHARS = 300;
+
+/**
+ * The task's newest question from an agent or a routine that waits: no note of the person's came
+ * after it, and the person's dismissal (the commit that set `reviewed_at`) came before it.
+ */
+const WAITING_QUESTION =
+  "(SELECT json_object('ref', 'l' || q.ordinal, 'by', qa.label, 'text', " +
+  `substr(q.body, 1, ${String(QUESTION_CHARS)}), 'at', q.created_at) FROM log_entries q ` +
+  "JOIN actors qa ON qa.id = q.author_id WHERE q.task_id = t.id AND q.kind = 'question' " +
+  "AND q.deleted_at IS NULL AND qa.kind IN ('agent', 'routine') AND (t.reviewed_at IS NULL " +
+  "OR q.created_seq > COALESCE(json_extract(t.fp, '$.reviewed_at'), 0)) AND NOT EXISTS " +
+  "(SELECT 1 FROM notes n JOIN actors na ON na.id = n.author_id WHERE n.task_id = t.id " +
+  "AND n.deleted_at IS NULL AND na.kind = 'human' AND n.created_seq > q.created_seq) " +
+  "ORDER BY q.created_seq DESC, q.ordinal DESC LIMIT 1)";
 
 /** A run that may still hold processes (contracts' `isOpenRun`). */
 const OPEN_RUN =
@@ -107,7 +145,8 @@ export function taskColumns(folders: boolean): string {
     `AND ts.removed_at IS NULL AND s.deleted_at IS NULL ORDER BY ts.position LIMIT ${String(ROW_SOURCES)}) x) ` +
     "AS x_sources, " +
     "(SELECT count(*) FROM task_sources ts JOIN sources s ON s.id = ts.source_id WHERE " +
-    "ts.task_id = t.id AND ts.removed_at IS NULL AND s.deleted_at IS NULL) AS x_source_count" +
+    "ts.task_id = t.id AND ts.removed_at IS NULL AND s.deleted_at IS NULL) AS x_source_count, " +
+    `${WAITING_QUESTION} AS x_question` +
     (folders
       ? `, ${foldersOf("task", "t.id")} AS x_folders_own, ` +
         `${foldersOf("project", "t.project_id")} AS x_folders_project, ` +
@@ -209,6 +248,19 @@ export function runOf(newest: unknown, open?: unknown): CompactRun | undefined {
   return rowRun(newest) ?? rowRun(open);
 }
 
+/** The waiting question of `x_question`, or nothing. */
+function questionOf(value: unknown): CompactQuestion | undefined {
+  const q = parsed(value);
+  if (!isPlain(q)) return undefined;
+  const { ref, by, text, at } = q;
+  return typeof ref === "string" &&
+    typeof by === "string" &&
+    typeof text === "string" &&
+    typeof at === "number"
+    ? { ref, by, text, at }
+    : undefined;
+}
+
 /** The folders of `x_folders_own` or `x_folders_project`, newest first, with machine names. */
 function foldersFrom(value: unknown, names: Map<string, string>): FolderView[] {
   const list = parsed(value);
@@ -259,6 +311,7 @@ export async function taskRows(
         x_folders_project: projectFolders,
         x_run: newest,
         x_run_open: open,
+        x_question: asked,
         x_reason: reason,
         x_outcome: outcome,
         ref,
@@ -283,6 +336,8 @@ export async function taskRows(
       if (ended !== undefined) out["ending"] = ended;
       const run = runOf(newest, open);
       if (run !== undefined) out["run"] = run;
+      const question = questionOf(asked);
+      if (question !== undefined) out["question"] = question;
       if (here !== undefined) {
         const names = new Map<string, string>();
         const decided = decideLaunchFolder(

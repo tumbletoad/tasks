@@ -557,7 +557,7 @@
         {
           "field": "kind",
           "flag": "--kind",
-          "help": "question flags it for the user; note: a note for the user",
+          "help": "question: the user sees it until they answer; note: a note for the user",
           "repeat": false,
           "required": false,
           "type": "string",
@@ -930,6 +930,15 @@
             "help": "Star it: on Today until cleared. Only when the user asks",
             "key": "focus",
             "type": "boolean"
+          },
+          {
+            "field": "set.reviewed",
+            "help": "The user read the agents' questions so far",
+            "key": "reviewed",
+            "type": "boolean",
+            "values": [
+              true
+            ]
           }
         ]
       },

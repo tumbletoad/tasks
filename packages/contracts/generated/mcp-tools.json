@@ -18,7 +18,7 @@
           },
           "kind": {
             "default": "progress",
-            "description": "question flags it for the user; note: a note for the user",
+            "description": "question: the user sees it until they answer; note: a note for the user",
             "enum": [
               "progress",
               "evidence",
