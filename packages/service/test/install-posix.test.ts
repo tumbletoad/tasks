@@ -640,6 +640,29 @@ describe.skipIf(!posix)(
       );
       expect((await run(fake, "install")).code).toBe(4);
     });
+
+    test("Linux and macOS: a unit or launch agent that starts another install's launcher, or one that is gone, is not on", async () => {
+      for (const platform of ["linux", "darwin"] as const) {
+        const fake = fakeContext({ platform, dir: join(dir, platform), tools: { linger: "yes" } });
+        expect((await run(fake, "install")).code).toBe(0);
+        const startsOf = async (context: FakeContext) =>
+          (
+            JSON.parse((await run(context, "status", { json: true })).io.text()) as {
+              starts: { on: boolean | null; text: string; fix?: string };
+            }
+          ).starts;
+        expect((await startsOf(fake)).on).toBe(true);
+        const elsewhere = join(dir, platform, "other", "current", "bin", "ttasks");
+        const another = await startsOf({ ...fake, ctx: { ...fake.ctx, program: elsewhere } });
+        expect(another.on).toBe(false);
+        expect(another.text).toContain(`the entry starts another install (${fake.ctx.program})`);
+        expect(another.fix).toBe("ttasks service install");
+        rmSync(fake.ctx.program);
+        const gone = await startsOf(fake);
+        expect(gone.on).toBe(false);
+        expect(gone.text).toContain(`the program the entry starts is gone (${fake.ctx.program})`);
+      }
+    });
   },
 );
 

@@ -63,13 +63,16 @@ import {
 import {
   EntryPathError,
   plistNotOurs,
+  plistProgram,
   renderPlist,
   renderRunValue,
   renderUnit,
   runDataNotOurs,
+  runDataProgram,
   runKeys,
   startupApproved,
   unitNotOurs,
+  unitProgram,
   withDelegate,
   type NotOurs,
 } from "./render.ts";
@@ -92,6 +95,8 @@ export interface EntryInfo {
   readonly why?: NotOurs;
   /** Ours and exactly what install writes now. */
   readonly current: boolean;
+  /** For an entry of ours: the program it starts, and whether that is this install's, and there. */
+  readonly runs?: { readonly path: string; readonly launcher: "this" | "another" | "gone" };
 }
 
 type StartupApps = "on" | "off" | "not_set";
@@ -195,30 +200,54 @@ function strictText(bytes: Uint8Array): string | undefined {
 
 /** A unit or plist file at `path`: absent, ours or foreign. A link or a folder there is foreign. */
 function fileEntry(
+  ctx: ServiceContext,
   kind: EntryKind,
   name: string,
   path: string,
   content: string,
   notOurs: (text: string) => NotOurs | undefined,
+  programOf: (text: string) => string | undefined,
 ): Wanted {
   const found = readFound(path);
   let state: EntryInfo["state"] = "absent";
   let why: NotOurs | undefined;
   let current = false;
+  let runs: EntryInfo["runs"];
   if (found.kind === "file") {
     const text = strictText(found.bytes);
     why = text === undefined ? "unusual_text" : notOurs(text);
     state = why === undefined ? "ours" : "foreign";
     current = state === "ours" && found.bytes.equals(Buffer.from(content, "utf8"));
+    if (state === "ours" && text !== undefined) runs = runsOf(ctx, programOf(text));
   } else if (found.kind === "other") {
     state = "foreign";
     why = "not_a_file";
   }
   return {
-    info: { kind, name, where: path, state, ...(why === undefined ? {} : { why }), current },
+    info: {
+      kind,
+      name,
+      where: path,
+      state,
+      ...(why === undefined ? {} : { why }),
+      current,
+      ...(runs === undefined ? {} : { runs }),
+    },
     content,
     observed: { entry: fileMark(found) },
   };
+}
+
+/**
+ * The program an entry of ours starts, as this install's launcher or another's: names compare as
+ * the OS compares them, without case on Windows and macOS.
+ */
+function runsOf(ctx: ServiceContext, path: string | undefined): EntryInfo["runs"] {
+  if (path === undefined) return undefined;
+  const fold = (p: string) => (ctx.platform === "linux" ? p : p.toLowerCase());
+  const launcher =
+    fold(path) !== fold(ctx.program) ? "another" : existsSync(path) ? "this" : "gone";
+  return { path, launcher };
 }
 
 const valueText = (value: RegValue | undefined): string =>
@@ -290,7 +319,15 @@ export async function readEntry(
     case "linux": {
       const text = rendered(() => renderUnit({ program: ctx.program, tasksHome: ctx.layout.home }));
       const dropIns = unitDropIns(ctx.roots.unitDir, ctx.names.unit);
-      const unit = fileEntry("systemd-unit", ctx.names.unit, unitPath(ctx), text, unitNotOurs);
+      const unit = fileEntry(
+        ctx,
+        "systemd-unit",
+        ctx.names.unit,
+        unitPath(ctx),
+        text,
+        unitNotOurs,
+        unitProgram,
+      );
       const observed = { entry: unit.observed.entry, dropIns };
       if (dropIns === "") return { ...unit, observed };
       // A drop-in changes what the unit does, including what enable and disable act on, so a
@@ -310,8 +347,14 @@ export async function readEntry(
           logs: ctx.layout.logs,
         }),
       );
-      return fileEntry("launch-agent", ctx.names.label, plistPath(ctx), text, (found) =>
-        plistNotOurs(found, ctx.names.label),
+      return fileEntry(
+        ctx,
+        "launch-agent",
+        ctx.names.label,
+        plistPath(ctx),
+        text,
+        (found) => plistNotOurs(found, ctx.names.label),
+        plistProgram,
       );
     }
     case "win32": {
@@ -329,6 +372,7 @@ export async function readEntry(
             ? runDataNotOurs(found.data)
             : "not_ours";
       const state = found === undefined ? "absent" : why === undefined ? "ours" : "foreign";
+      const runs = state === "ours" ? runsOf(ctx, runDataProgram(found?.data ?? "")) : undefined;
       return {
         info: {
           kind: "run-value",
@@ -337,6 +381,7 @@ export async function readEntry(
           state,
           ...(why === undefined ? {} : { why }),
           current: state === "ours" && found?.data === value.data,
+          ...(runs === undefined ? {} : { runs }),
         },
         content: value.data,
         observed: { entry: valueText(found), approved: valueText(record) },
@@ -1795,13 +1840,32 @@ export type AutostartAnswer =
 
 const INSTALL = `${CLI_NAME} service install`;
 
+/** An entry of ours that starts another install's launcher, or one that is gone, starts nothing here. */
+function launcherOff(entry: EntryInfo, when: string): AutostartAnswer | undefined {
+  const runs = entry.runs;
+  if (runs === undefined || runs.launcher === "this") return undefined;
+  return runs.launcher === "another"
+    ? {
+        on: false,
+        text: `off: the entry starts another install (${runs.path}), so this install's service does not start ${when}`,
+        fix: INSTALL,
+      }
+    : {
+        on: false,
+        text: `off: the program the entry starts is gone (${runs.path}), so nothing starts the service ${when}`,
+        fix: `install ${PRODUCT_NAME} again, then run ${INSTALL}`,
+      };
+}
+
 /**
- * What the entry and the OS's answers say of autostart. Only this install's own entry counts: a
- * Startup apps record or linger says nothing while there is none, and a unit starts only when
- * systemd has it enabled.
+ * What the entry and the OS's answers say of autostart. Only this install's own entry counts, and
+ * only while it starts this install's launcher and that is there: a Startup apps record or linger
+ * says nothing while there is none, and a unit starts only when systemd has it enabled.
  */
 export function autostartAnswer(entry: EntryInfo, a: Autostart): AutostartAnswer {
   const ours = entry.state === "ours";
+  const launcher = launcherOff(entry, a.kind === "systemd" ? "at sign-in or boot" : "at sign-in");
+  if (ours && launcher !== undefined) return launcher;
   switch (a.kind) {
     case "run":
       if (!ours) {

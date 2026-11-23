@@ -305,6 +305,28 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
     expect(on.text).toContain("  Autostart: on: Windows starts the service when you sign in\n");
   });
 
+  test("autostart is on only while the entry starts this install's launcher, and that is there", async () => {
+    const startsOf = async (context: FakeContext) => {
+      const json = captureIO();
+      expect(await run("status", { json: true }, json, context)).toBe(0);
+      return (JSON.parse(json.text()) as { starts: unknown }).starts;
+    };
+    expect(await run("install", { yes: true }, captureIO())).toBe(0);
+    // The same entry, read by an install whose launcher is elsewhere: it starts the other one.
+    const elsewhere = join(dir, "other", "bin", "ttasksw.exe");
+    expect(await startsOf({ ...fake, ctx: { ...fake.ctx, program: elsewhere } })).toEqual({
+      on: false,
+      text: `off: the entry starts another install (${fake.ctx.program}), so this install's service does not start at sign-in`,
+      fix: "ttasks service install",
+    });
+    rmSync(fake.ctx.program);
+    expect(await startsOf(fake)).toEqual({
+      on: false,
+      text: `off: the program the entry starts is gone (${fake.ctx.program}), so nothing starts the service at sign-in`,
+      fix: "install TTasks again, then run ttasks service install",
+    });
+  });
+
   test("on Linux autostart is on only for this install's unit, and only while systemd has it enabled", () => {
     const unit = {
       kind: "systemd-unit",
@@ -312,6 +334,7 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
       where: "/u",
       state: "ours",
       current: true,
+      runs: { path: "/i/current/bin/ttasks", launcher: "this" },
     } as const;
     const systemd = (enabled: string | null, linger: "yes" | "no" | "unknown") =>
       ({ kind: "systemd", user_manager: true, enabled, active: "active", linger }) as const;
@@ -336,6 +359,21 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
     expect(autostartAnswer(unit, { ...systemd("enabled", "yes"), user_manager: false }).on).toBe(
       false,
     );
+    // An enabled unit or a launch agent of another install's launcher starts nothing of this one.
+    const another = {
+      ...unit,
+      runs: { path: "/j/current/bin/ttasks", launcher: "another" },
+    } as const;
+    expect(autostartAnswer(another, systemd("enabled", "yes"))).toEqual({
+      on: false,
+      text: "off: the entry starts another install (/j/current/bin/ttasks), so this install's service does not start at sign-in or boot",
+      fix: "ttasks service install",
+    });
+    const agent = { ...another, kind: "launch-agent" } as const;
+    expect(autostartAnswer(agent, { kind: "launchd", loaded: true }).on).toBe(false);
+    expect(
+      autostartAnswer({ ...agent, runs: unit.runs }, { kind: "launchd", loaded: true }).on,
+    ).toBe(true);
   });
 
   test("start waits for ready and says so when it does not come; a running service is left alone", async () => {
