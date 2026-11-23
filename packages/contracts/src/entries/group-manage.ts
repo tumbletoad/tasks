@@ -30,18 +30,30 @@ export const GROUP_ACTIONS = [
   "clear_folder",
 ] as const;
 
-/** Areas a list shows, and projects per area (A3 3.4.10: 15 per group). */
-export const GROUP_LIMITS = { areas: 50, projects: 15 } as const;
+/**
+ * Groups a list page holds, areas and projects together. An area a page continues is shown again
+ * above its projects and does not count.
+ */
+export const GROUP_PAGE = 25;
+
+/** Where the next page starts: the ID of the last group on the page. */
+const GroupCursor = z.string().regex(idPattern("[ap]"));
 
 export const GroupManageInput = z.strictObject({
   action: z.enum(GROUP_ACTIONS).describe("list reads; the others change a group"),
   path: safeLine(250)
-    .describe('"Area" or "Area/Project", by name or slug; list: one area')
+    .describe('"Area" or "Area/Project", by name or slug; list shows that group alone')
     .optional(),
   to: safeLine(120).describe("rename: the new name; move: the new area").optional(),
   folder: FolderInput.describe(
     'create, set_folder: the project\'s folder here, "cwd" or an absolute path',
   ).optional(),
+  archived: z.boolean().describe("list: true includes archived areas and projects").optional(),
+  cursor: z
+    .string()
+    .max(60)
+    .describe("list: the last page's cursor, with the same path and archived")
+    .optional(),
   base: GroupBase.optional(),
   request_id: RequestId.optional(),
   mode: Mode,
@@ -59,6 +71,7 @@ const ProjectRow = z.strictObject({
   active: Count.describe("Active tasks"),
   folder: Folder.optional(),
   repo: z.string().max(255).describe("The Git repository in its folder, by name").optional(),
+  archived: z.literal(true).describe("Archived").optional(),
 });
 
 const AreaRow = z.strictObject({
@@ -66,18 +79,19 @@ const AreaRow = z.strictObject({
   slug: z.string().describe("Slug"),
   name: z.string().describe("Name"),
   active: Count.describe("Active tasks, its projects' included"),
-  projects: z.array(ProjectRow).describe("Its active projects, at most 15"),
-  more_projects: Count.describe("Projects left out of the list").optional(),
+  archived: z.literal(true).describe("Archived").optional(),
+  projects: z.array(ProjectRow).describe("Its projects on this page"),
 });
 
 export const GroupManageResult = z.strictObject({
   action: z.enum(GROUP_ACTIONS).describe("The action"),
   as_of: AsOf,
-  areas: z.array(AreaRow).describe("Active areas in the space's order"),
+  areas: z.array(AreaRow).describe("Areas in the space's order, each with its projects"),
   /** Projects without an area (A1 3.4: a project's area is optional). */
-  projects: z.array(ProjectRow).describe("Active projects without an area"),
-  total_areas: Count.describe("Active areas"),
-  total_projects: Count.describe("Active projects"),
+  projects: z.array(ProjectRow).describe("Projects without an area, after every area"),
+  total_areas: Count.describe("Areas the whole list holds"),
+  total_projects: Count.describe("Projects the whole list holds"),
+  cursor: GroupCursor.describe("Pass it for the next page").optional(),
   result: z
     .enum([
       "created",

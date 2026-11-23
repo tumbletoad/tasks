@@ -65,9 +65,11 @@ Usage: `ttasks area <action> [<path>] [<to>] [flags]`
 | Argument | Field | Type | Description |
 |---|---|---|---|
 | `<action>` | `action` | string | list reads; the others change a group |
-| `<path>` | `path` | string | "Area" or "Area/Project", by name or slug; list: one area |
+| `<path>` | `path` | string | "Area" or "Area/Project", by name or slug; list shows that group alone |
 | `<to>` | `to` | string | rename: the new name; move: the new area |
 | `--folder` | `folder` | string | create, set_folder: the project's folder here, "cwd" or an absolute path |
+| `--archived` | `archived` | boolean | list: true includes archived areas and projects |
+| `--cursor` | `cursor` | string | list: the last page's cursor, with the same path and archived |
 | `--mode` | `mode` | "apply" | Always apply in this build |
 
 ## `ttasks brief`

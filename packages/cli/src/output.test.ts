@@ -444,11 +444,11 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] ttasks area and ttasks pref
             projects: [
               { name: "Lumen Health", active: 4, folder: "~/work/lumen", repo: "lumen-web" },
             ],
-            more_projects: 2,
           },
-          { name: "Learning", active: 1, projects: [] },
+          { name: "Learning", active: 1, archived: true, projects: [] },
         ],
-        projects: [{ name: "Loose", active: 0 }],
+        projects: [{ name: "Loose", active: 0, archived: true }],
+        cursor: "p_4g8k2m6q0s4w8y2b6d0f4h8k2m",
       },
       "Mira",
     );
@@ -456,10 +456,10 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] ttasks area and ttasks pref
       [
         "Client work (7)",
         "  Lumen Health [lumen-web] (4)  ~/work/lumen",
-        "  and 2 more projects",
-        "Learning (1)",
+        "Learning (1, archived)",
         "No area",
-        "  Loose (0)",
+        "  Loose (0, archived)",
+        "More: the same command with --cursor p_4g8k2m6q0s4w8y2b6d0f4h8k2m",
         "",
       ].join("\n"),
     );

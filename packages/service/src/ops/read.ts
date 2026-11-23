@@ -1381,21 +1381,22 @@ const ACTIVE_IN = (column: string, owner: string): string =>
   `(SELECT count(*) FROM tasks t WHERE t.${column} = ${owner}.id AND t.lifecycle = 'active' ` +
   "AND t.deleted_at IS NULL)";
 
+const GROUP_COLUMNS = "id, slug, title, lifecycle, deleted_at";
 const AREA_LIST: Statement = {
-  sql:
-    `SELECT a.id, a.slug, a.title, ${ACTIVE_IN("area_id", "a")} AS active FROM areas a ` +
-    "WHERE a.deleted_at IS NULL AND a.lifecycle = 'active' ORDER BY a.position, a.id",
+  sql: `SELECT ${GROUP_COLUMNS}, ${ACTIVE_IN("area_id", "a")} AS active FROM areas a ORDER BY a.position, a.id`,
   mode: "all",
 };
 const PROJECT_LIST: Statement = {
   sql:
-    `SELECT p.id, p.area_id, p.slug, p.title, ${ACTIVE_IN("project_id", "p")} AS active ` +
-    "FROM projects p WHERE p.deleted_at IS NULL AND p.lifecycle = 'active' " +
-    "ORDER BY p.position, p.id",
+    `SELECT ${GROUP_COLUMNS}, area_id, ${ACTIVE_IN("project_id", "p")} AS active ` +
+    "FROM projects p ORDER BY p.position, p.id",
   mode: "all",
 };
 
-/** The space's active areas and projects with their active task counts, in the space's order. */
+/**
+ * The space's areas and projects with their active task counts, in the space's order: archived and
+ * deleted ones too, so a list can say where a page stopped whatever happened to that group since.
+ */
 export async function readGroups(
   reader: WorkerConnection,
 ): Promise<{ space: SpaceFacts; areas: Row[]; projects: Row[] }> {

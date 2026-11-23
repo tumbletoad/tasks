@@ -456,17 +456,18 @@ export function render(entry: string, result: Result, space: string): string {
         lines.push(...insideLines(result));
       }
       // A project a line, with the repository in its folder and the folder on this machine.
+      const archived = (g: Result) => (g["archived"] === true ? ", archived" : "");
       const project = (g: Result) =>
-        `  ${str(g["name"])}${typeof g["repo"] === "string" ? ` [${g["repo"]}]` : ""} (${str(g["active"])})${typeof g["folder"] === "string" ? `  ${g["folder"]}` : ""}`;
+        `  ${str(g["name"])}${typeof g["repo"] === "string" ? ` [${g["repo"]}]` : ""} (${str(g["active"])}${archived(g)})${typeof g["folder"] === "string" ? `  ${g["folder"]}` : ""}`;
       for (const area of (result["areas"] as Result[] | undefined) ?? []) {
-        lines.push(`${str(area["name"])} (${str(area["active"])})`);
+        lines.push(`${str(area["name"])} (${str(area["active"])}${archived(area)})`);
         lines.push(...((area["projects"] as Result[] | undefined) ?? []).map(project));
-        if (typeof area["more_projects"] === "number") {
-          lines.push(`  and ${String(area["more_projects"])} more projects`);
-        }
       }
       const loose = (result["projects"] as Result[] | undefined) ?? [];
       if (loose.length > 0) lines.push("No area", ...loose.map(project));
+      if (typeof result["cursor"] === "string") {
+        lines.push(`More: the same command with --cursor ${result["cursor"]}`);
+      }
       break;
     }
     case "prefs.manage":

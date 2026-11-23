@@ -441,9 +441,18 @@
             ],
             "type": "string"
           },
+          "archived": {
+            "description": "list: true includes archived areas and projects",
+            "type": "boolean"
+          },
           "base": {
             "description": "as_of of the organize list that showed the group, or of your write of it",
             "maxLength": 40,
+            "type": "string"
+          },
+          "cursor": {
+            "description": "list: the last page's cursor, with the same path and archived",
+            "maxLength": 60,
             "type": "string"
           },
           "cwd": {
@@ -467,7 +476,7 @@
             "type": "string"
           },
           "path": {
-            "description": "\"Area\" or \"Area/Project\", by name or slug; list: one area",
+            "description": "\"Area\" or \"Area/Project\", by name or slug; list shows that group alone",
             "maxLength": 250,
             "type": "string"
           },
@@ -522,7 +531,7 @@
             "type": "string"
           },
           "areas": {
-            "description": "Active areas in the space's order",
+            "description": "Areas in the space's order, each with its projects",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -532,23 +541,22 @@
                   "minimum": 0,
                   "type": "integer"
                 },
+                "archived": {
+                  "const": true,
+                  "description": "Archived",
+                  "type": "boolean"
+                },
                 "id": {
                   "description": "Area ID",
                   "pattern": "^a_[0-9a-hjkmnp-tv-z]{26}$",
                   "type": "string"
-                },
-                "more_projects": {
-                  "description": "Projects left out of the list",
-                  "maximum": 1000000000,
-                  "minimum": 0,
-                  "type": "integer"
                 },
                 "name": {
                   "description": "Name",
                   "type": "string"
                 },
                 "projects": {
-                  "description": "Its active projects, at most 15",
+                  "description": "Its projects on this page",
                   "items": {
                     "additionalProperties": false,
                     "properties": {
@@ -557,6 +565,11 @@
                         "maximum": 1000000000,
                         "minimum": 0,
                         "type": "integer"
+                      },
+                      "archived": {
+                        "const": true,
+                        "description": "Archived",
+                        "type": "boolean"
                       },
                       "folder": {
                         "description": "Its folder on this machine, the home as ~",
@@ -610,6 +623,11 @@
           "as_of": {
             "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Pass it for the next page",
+            "pattern": "^[ap]_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
           },
           "followed": {
@@ -736,7 +754,7 @@
             "type": "integer"
           },
           "projects": {
-            "description": "Active projects without an area",
+            "description": "Projects without an area, after every area",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -745,6 +763,11 @@
                   "maximum": 1000000000,
                   "minimum": 0,
                   "type": "integer"
+                },
+                "archived": {
+                  "const": true,
+                  "description": "Archived",
+                  "type": "boolean"
                 },
                 "folder": {
                   "description": "Its folder on this machine, the home as ~",
@@ -811,13 +834,13 @@
             "type": "integer"
           },
           "total_areas": {
-            "description": "Active areas",
+            "description": "Areas the whole list holds",
             "maximum": 1000000000,
             "minimum": 0,
             "type": "integer"
           },
           "total_projects": {
-            "description": "Active projects",
+            "description": "Projects the whole list holds",
             "maximum": 1000000000,
             "minimum": 0,
             "type": "integer"

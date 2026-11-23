@@ -711,8 +711,10 @@ function addRendered(result: OutputOf<"task.add">): Rendered {
 type Groups = OutputOf<"group.manage">;
 
 function groupsRendered(result: Groups, organize: string): Rendered {
+  const archived = (g: { archived?: true | undefined }) =>
+    g.archived === true ? ", archived" : "";
   const project = (p: Groups["projects"][number]) =>
-    `${p.name}${p.repo === undefined ? "" : ` [${p.repo}]`} (${String(p.active)}${p.folder === undefined ? "" : `, ${p.folder}`})`;
+    `${p.name}${p.repo === undefined ? "" : ` [${p.repo}]`} (${String(p.active)}${archived(p)}${p.folder === undefined ? "" : `, ${p.folder}`})`;
   const inside = result.followed ?? result.kept ?? [];
   const insideLine =
     inside.length === 0
@@ -736,6 +738,7 @@ function groupsRendered(result: Groups, organize: string): Rendered {
           result.group !== undefined && `${result.group.kind} ${result.group.id}`,
           result.proposal !== undefined && `proposal ${result.proposal}`,
         );
+  // A project a unit, so a cut keeps the first projects of an area rather than none of them.
   return {
     parts: [
       fixed(done, head),
@@ -743,21 +746,23 @@ function groupsRendered(result: Groups, organize: string): Rendered {
         data: true,
         units: [
           ...insideLine,
-          ...result.areas.map((area) => [
-            `${area.name} (${String(area.active)})`,
-            ...(area.projects.length === 0
-              ? []
-              : [
-                  `  ${area.projects.map(project).join(" · ")}${area.more_projects === undefined ? "" : ` · +${String(area.more_projects)} more`}`,
-                ]),
+          ...result.areas.flatMap((area) => [
+            [`${area.name} (${String(area.active)}${archived(area)})`],
+            ...area.projects.map((p) => [`  ${project(p)}`]),
           ]),
-          ...(result.projects.length === 0
-            ? []
-            : [[`No area: ${result.projects.map(project).join(" · ")}`]]),
+          ...(result.projects.length === 0 ? [] : [["No area:"]]),
+          ...result.projects.map((p) => [`  ${project(p)}`]),
         ],
       },
+      ...(result.cursor === undefined
+        ? []
+        : [
+            fixed(
+              `Next page: ${organize} with action list, cursor "${result.cursor}", and the same path and archived.`,
+            ),
+          ]),
     ],
-    more: `Call ${organize} with action list and the area as path.`,
+    more: `Call ${organize} with action list and one area as path.`,
   };
 }
 

@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   AppError,
+  GROUP_PAGE,
   GroupManageResult,
   opSpec,
   LATER_PREFERENCES,
@@ -40,11 +41,13 @@ let edited: Fixture;
 let organized: Fixture;
 /** A fixture whose groups one call's drafts make. */
 let drafted: Fixture;
+/** A fixture with more groups than a list page holds. */
+let paged: Fixture;
 const clock = Date.UTC(2026, 10, 12, 9, 0, 0);
 
 beforeAll(async () => {
   temp = tempRoot("m401");
-  for (const name of ["fx", "indexed", "plain", "edited", "organized", "drafted"]) {
+  for (const name of ["fx", "indexed", "plain", "edited", "organized", "drafted", "paged"]) {
     mkdirSync(join(temp.root, name));
   }
   drafted = await writeFixture(join(temp.root, "drafted"));
@@ -53,6 +56,7 @@ beforeAll(async () => {
   plain = await writeFixture(join(temp.root, "plain"), { steps: STEPS_0_3 });
   edited = await writeFixture(join(temp.root, "edited"));
   organized = await writeFixture(join(temp.root, "organized"));
+  paged = await writeFixture(join(temp.root, "paged"));
 });
 
 afterAll(() => {
@@ -62,6 +66,7 @@ afterAll(() => {
   edited.close();
   organized.close();
   drafted.close();
+  paged.close();
   temp.cleanup();
 });
 
@@ -404,11 +409,14 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
     );
     expect(one.areas.map((a) => a.name)).toEqual(["Home"]);
     expect(one.total_projects).toBe(0);
-    // Of "Area/Project" the area; an unknown area is not_found, not a group to create.
+    // "Area/Project" is that project under its area; an unknown area is not_found, not a group to
+    // create.
     const narrowed = GroupManageResult.parse(
       await call(fx, script, "group.manage", { action: "list", path: "Lumen/Portal" }),
     );
-    expect(narrowed.areas.map((a) => a.name)).toEqual(["Lumen"]);
+    expect(narrowed.areas.map((a) => [a.name, a.projects.map((p) => p.name)])).toEqual([
+      ["Lumen", ["Portal"]],
+    ]);
     expect(
       await refusal(call(fx, script, "group.manage", { action: "list", path: "Garden" })),
     ).toMatchObject({ code: "not_found", data: { issues: [{ path: "path" }] } });
@@ -425,6 +433,91 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
     const written = rid();
     await add(fx, script, [{ title: "Receipted fixture task" }], written);
     expect(await found(written)).toBe(true);
+  });
+
+  test("every group can be read: page after page, by its exact name, and archived ones when asked", async () => {
+    const list = async (input: Record<string, unknown> = {}) =>
+      GroupManageResult.parse(
+        await call(paged, script, "group.manage", { action: "list", ...input }),
+      );
+    const write = async (input: Record<string, unknown>) =>
+      GroupManageResult.parse(
+        await call(paged, script, "group.manage", { request_id: rid(), ...input }),
+      );
+    const many = Array.from({ length: GROUP_PAGE + 1 }, (_, k) => `Project ${String(k + 1)}`);
+    for (const name of many) await write({ action: "create", path: `Many/${name}` });
+    await add(paged, user, [{ title: "Fixture task in a loose project", project: "Loose" }]);
+    /** Every page of a list, in order. */
+    const pages = async (input: Record<string, unknown> = {}) => {
+      const out = [await list(input)];
+      for (let cursor = out[0]?.cursor; cursor !== undefined; cursor = out.at(-1)?.cursor) {
+        out.push(await list({ ...input, cursor }));
+      }
+      return out;
+    };
+    const names = (page: Awaited<ReturnType<typeof list>>) => [
+      ...page.areas.flatMap((a) => [a.name, ...a.projects.map((p) => `${a.name}/${p.name}`)]),
+      ...page.projects.map((p) => `/${p.name}`),
+    ];
+    const all = await pages();
+    expect(all.length).toBeGreaterThan(1);
+    for (const page of all) {
+      expect(page.areas.length + page.areas.flatMap((a) => a.projects).length).toBeLessThanOrEqual(
+        GROUP_PAGE + 1,
+      );
+    }
+    // A page that starts inside an area shows that area again above the rest of its projects.
+    expect(all[1]?.areas[0]?.name).toBe("Many");
+    const seen = all.flatMap(names).filter((name) => name !== "Many");
+    expect(seen).toEqual([
+      "Lumen",
+      "Lumen/Portal",
+      "Home",
+      ...many.map((name) => `Many/${name}`),
+      "/Loose",
+    ]);
+    expect(all[0]).toMatchObject({ total_areas: 3, total_projects: GROUP_PAGE + 3 });
+    // One area, all of its projects.
+    const area = await pages({ path: "Many" });
+    expect(area.flatMap(names).filter((name) => name !== "Many")).toEqual(
+      many.map((name) => `Many/${name}`),
+    );
+    // An archived project is left out, listed with archived, and found by its exact name.
+    const last = `Many/${many.at(-1) ?? ""}`;
+    const archived = await write({ action: "archive", path: last, base: paged.base() });
+    expect(archived.result).toBe("archived");
+    expect((await pages()).flatMap(names)).not.toContain(last);
+    const withArchived = (await pages({ archived: true })).flatMap((page) => page.areas);
+    expect(
+      withArchived.flatMap((a) => a.projects).find((p) => `Many/${p.name}` === last),
+    ).toMatchObject({ archived: true });
+    const named = await list({ path: last });
+    expect(named.areas.map((a) => [a.name, a.projects.map((p) => [p.name, p.archived])])).toEqual([
+      ["Many", [[many.at(-1), true]]],
+    ]);
+    expect(named.cursor).toBeUndefined();
+    // The answer that found it is the base to unarchive it.
+    expect(await write({ action: "unarchive", path: last, base: named.as_of })).toMatchObject({
+      result: "unarchived",
+    });
+    // An archived area still holding active projects is shown, marked, with them.
+    await write({ action: "archive", path: "Home", base: paged.base() });
+    await write({ action: "archive", path: "Many", base: paged.base() });
+    const shelved = await pages();
+    expect(shelved.flatMap(names)).not.toContain("Home");
+    expect(shelved[0]?.areas.find((a) => a.name === "Many")).toMatchObject({ archived: true });
+    // A page goes on after a group that was archived since; a cursor no group has is refused.
+    const first = await list();
+    await write({ action: "archive", path: "Many/Project 1", base: paged.base() });
+    const second = await list({ cursor: first.cursor });
+    expect([...names(first), ...names(second)].filter((name) => name !== "Many")).toEqual(
+      [...new Set([...names(first), ...names(second)])].filter((name) => name !== "Many"),
+    );
+    expect(
+      await refusal(
+        call(paged, script, "group.manage", { action: "list", cursor: `a_${"0".repeat(26)}` }),
+      ),
+    ).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "cursor" }] } });
   });
 
   test("a write action needs a request_id, a group and, to change one, a base; mode propose waits for M4.02", async () => {

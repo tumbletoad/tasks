@@ -248,7 +248,7 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | A1 operations | `area.create`, `area.patch`, `area.move`, `area.archive`, `project.create`, `project.patch`, `project.move`, `project.archive`, `area.unarchive`, `project.unarchive`, `project.folder_set`, `project.folder_clear` |
 | Faces | MCP `organize`, CLI `ttasks area`, UI |
 | Errors | `invalid_input`, `not_found`, `ambiguous`, `conflict`, `forbidden`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 737, reported |
+| Definition, estimated tokens | 850, reported |
 | Result budget, estimated tokens | typical 400, max 1500 |
 
 ### Input
@@ -256,9 +256,11 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `action` | "list" \| "create" \| "rename" \| "move" \| "archive" \| "unarchive" \| "set_folder" \| "clear_folder" | yes | list reads; the others change a group |
-| `path` | string, max 250 | no | "Area" or "Area/Project", by name or slug; list: one area |
+| `path` | string, max 250 | no | "Area" or "Area/Project", by name or slug; list shows that group alone |
 | `to` | string, max 120 | no | rename: the new name; move: the new area |
 | `folder` | string, 1 to 4096 | no | create, set_folder: the project's folder here, "cwd" or an absolute path |
+| `archived` | boolean | no | list: true includes archived areas and projects |
+| `cursor` | string, max 60 | no | list: the last page's cursor, with the same path and archived |
 | `base` | string, max 40 | no | as_of of the organize list that showed the group, or of your write of it |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
@@ -269,28 +271,31 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 |---|---|---|---|
 | `action` | "list" \| "create" \| "rename" \| "move" \| "archive" \| "unarchive" \| "set_folder" \| "clear_folder" | yes | The action |
 | `as_of` | string | yes | The space's position when this answer was made |
-| `areas` | object[] | yes | Active areas in the space's order |
+| `areas` | object[] | yes | Areas in the space's order, each with its projects |
 | `areas[].id` | string | yes | Area ID |
 | `areas[].slug` | string | yes | Slug |
 | `areas[].name` | string | yes | Name |
 | `areas[].active` | integer, 0 to 1000000000 | yes | Active tasks, its projects' included |
-| `areas[].projects` | object[] | yes | Its active projects, at most 15 |
+| `areas[].archived` | true | no | Archived |
+| `areas[].projects` | object[] | yes | Its projects on this page |
 | `areas[].projects[].id` | string | yes | Project ID |
 | `areas[].projects[].slug` | string | yes | Slug |
 | `areas[].projects[].name` | string | yes | Name |
 | `areas[].projects[].active` | integer, 0 to 1000000000 | yes | Active tasks |
 | `areas[].projects[].folder` | string | no | Its folder on this machine, the home as ~ |
 | `areas[].projects[].repo` | string, max 255 | no | The Git repository in its folder, by name |
-| `areas[].more_projects` | integer, 0 to 1000000000 | no | Projects left out of the list |
-| `projects` | object[] | yes | Active projects without an area |
+| `areas[].projects[].archived` | true | no | Archived |
+| `projects` | object[] | yes | Projects without an area, after every area |
 | `projects[].id` | string | yes | Project ID |
 | `projects[].slug` | string | yes | Slug |
 | `projects[].name` | string | yes | Name |
 | `projects[].active` | integer, 0 to 1000000000 | yes | Active tasks |
 | `projects[].folder` | string | no | Its folder on this machine, the home as ~ |
 | `projects[].repo` | string, max 255 | no | The Git repository in its folder, by name |
-| `total_areas` | integer, 0 to 1000000000 | yes | Active areas |
-| `total_projects` | integer, 0 to 1000000000 | yes | Active projects |
+| `projects[].archived` | true | no | Archived |
+| `total_areas` | integer, 0 to 1000000000 | yes | Areas the whole list holds |
+| `total_projects` | integer, 0 to 1000000000 | yes | Projects the whole list holds |
+| `cursor` | string | no | Pass it for the next page |
 | `result` | "created" \| "exists" \| "renamed" \| "moved" \| "archived" \| "unarchived" \| "folder_set" \| "folder_cleared" \| "no_change" | no | A write: what happened; exists: another project has this folder |
 | `group` | object | no | A write: the group it changed |
 | `group.kind` | "area" \| "project" | yes | Area or project |

@@ -287,6 +287,22 @@
           "type": "string"
         },
         {
+          "field": "archived",
+          "flag": "--archived",
+          "help": "list: true includes archived areas and projects",
+          "repeat": false,
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "field": "cursor",
+          "flag": "--cursor",
+          "help": "list: the last page's cursor, with the same path and archived",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
           "field": "mode",
           "flag": "--mode",
           "help": "Always apply in this build",
@@ -320,7 +336,7 @@
         },
         {
           "field": "path",
-          "help": "\"Area\" or \"Area/Project\", by name or slug; list: one area",
+          "help": "\"Area\" or \"Area/Project\", by name or slug; list shows that group alone",
           "name": "path",
           "required": false,
           "type": "string"

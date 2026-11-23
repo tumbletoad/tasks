@@ -17,7 +17,7 @@ import {
   AppError,
   FINISHED_CURSOR,
   fitsShape,
-  GROUP_LIMITS,
+  GROUP_PAGE,
   isKeyList,
   laterIn,
   AUTONOMY_IN_FORCE,
@@ -2687,6 +2687,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           "Pass base: the as_of of the answer that last listed the group.",
         );
       }
+      if (input["cursor"] !== undefined) throw invalid("cursor", "Only a list takes a cursor");
       return groupWrite(call, action);
     }
     if (input["folder"] !== undefined) throw invalid("folder", "A list takes no folder");
@@ -2699,12 +2700,20 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     } catch (error) {
       throw storageFailure(error);
     }
-    // `path` narrows the list to one area, named as a draft names one (groups.ts); of "Area/Project"
-    // the area. It only looks the area up, so an unknown one is not_found.
-    const area = String(input["path"]).split("/")[0]?.trim() ?? "";
-    const only =
-      names === undefined ? undefined : resolveGroup(names, "area", area, "path", { lookup: true });
-    return groupList(read, only);
+    // `path` narrows the list to the group it names, as a draft names one (groups.ts), archived or
+    // not. It only looks the group up, so an unknown one is not_found.
+    let scope: ListScope = { archived: input["archived"] === true };
+    if (names !== undefined) {
+      const path = groupPath(input);
+      const area = resolveGroup(names, "area", path.area, "path", { lookup: true }) ?? "";
+      const project =
+        path.project === undefined
+          ? undefined
+          : resolveGroup(names, "project", path.project, "path", { lookup: true, area });
+      scope = { ...scope, area, ...(project === undefined ? {} : { project }) };
+    }
+    const cursor = input["cursor"];
+    return groupList(read, typeof cursor === "string" ? { ...scope, after: cursor } : scope);
   },
 
   "folder.manage": async (call) => {
@@ -3025,6 +3034,7 @@ interface WrittenGroup {
 async function groupWrite(call: Call, action: string): Promise<unknown> {
   const { input } = call;
   let path = groupPath(input);
+  const listed: ListScope = { archived: input["archived"] === true };
   const to = typeof input["to"] === "string" ? input["to"].trim() : undefined;
   if ((action === "rename" || action === "move") && (to === undefined || to === "")) {
     throw invalid("to", `Required to ${action}`, action === "move" ? "Name the area." : undefined);
@@ -3075,7 +3085,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     return {
       ...(read === undefined
         ? { areas: [], projects: [], total_areas: 0, total_projects: 0 }
-        : groupList(read, undefined)),
+        : groupList(read, listed)),
       action,
       as_of: result.as_of,
       result: changed ? (GROUP_DONE[action] ?? "no_change") : "no_change",
@@ -3146,7 +3156,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
           if (taken !== undefined) {
             const list = await readGroupsHere(call, readerOf(call.space));
             return {
-              ...groupList(list, undefined),
+              ...groupList(list, listed),
               action,
               as_of: read.space.asOf,
               result: "exists",
@@ -3228,7 +3238,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     throw storageFailure(error);
   }
   return {
-    ...groupList(read, undefined),
+    ...groupList(read, listed),
     action,
     as_of: asOf ?? read.space.asOf,
     result: outcome,
@@ -3238,7 +3248,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   };
 }
 
-/** The space's active areas and projects, and the projects' folders on this machine. */
+/** The space's areas and projects, and the projects' folders on this machine. */
 interface GroupsHere extends Awaited<ReturnType<typeof readGroups>> {
   /** A project's folder here, and the name of the repository it holds, by the project's ID. */
   readonly folders: ReadonlyMap<string, { readonly stored: string; readonly repo?: string }>;
@@ -3287,34 +3297,95 @@ function groupRow(
   };
 }
 
+/** Which groups an organize list holds, and where its page starts. */
+interface ListScope {
+  /** Archived groups too. */
+  readonly archived: boolean;
+  /** One area with its projects; with `project`, the area with that project alone. */
+  readonly area?: string;
+  readonly project?: string;
+  /** The last group of the page before. */
+  readonly after?: string;
+}
+
+/** A group in the list's order: an area, or a project under its area or under none. */
+interface Slot {
+  readonly kind: "area" | "project";
+  readonly row: Row;
+  readonly home?: Row;
+}
+
 /**
- * The areas and their projects (A3 3.4.10), in the space's order: at most GROUP_LIMITS.areas areas,
- * each with at most GROUP_LIMITS.projects projects and the count of those left out, and the
- * projects without an area. `only` keeps one area.
+ * The areas, each followed by its projects, then the projects without an area, in the space's
+ * order and GROUP_PAGE groups a page (A3 3.4.10). A deleted group is never shown, an archived one
+ * when the caller asks for archived groups or names it, and an area whenever it holds a project
+ * shown. The cursor is the page's last group. The order keeps every group, so the next page starts
+ * after it even when it was archived or deleted since.
  */
-function groupList(read: GroupsHere, only: string | undefined): Record<string, unknown> {
-  const areas = read.areas.filter((row) => only === undefined || row["id"] === only);
-  const projectsOf = (area: unknown) => read.projects.filter((p) => p["area_id"] === area);
-  const loose = read.projects.filter(
-    (p) => p["area_id"] === null || !read.areas.some((a) => a["id"] === p["area_id"]),
-  );
-  const project = (row: Row) => groupRow(row, read.folders);
+function groupList(read: GroupsHere, scope: ListScope): Record<string, unknown> {
+  const gone = (row: Row) => row["deleted_at"] !== null && row["deleted_at"] !== undefined;
+  const live = new Set(read.areas.filter((a) => !gone(a)).map((a) => a["id"]));
+  const under = Map.groupBy(read.projects, (p) => (live.has(p["area_id"]) ? p["area_id"] : null));
+  const order: Slot[] = [
+    ...read.areas.flatMap((area): Slot[] => [
+      { kind: "area", row: area },
+      ...(under.get(area["id"]) ?? []).map((row): Slot => ({ kind: "project", row, home: area })),
+    ]),
+    ...(under.get(null) ?? []).map((row): Slot => ({ kind: "project", row })),
+  ];
+  const listed = (row: Row) =>
+    !gone(row) &&
+    (scope.archived ||
+      row["lifecycle"] === "active" ||
+      row["id"] === scope.area ||
+      row["id"] === scope.project);
+  const projectShown = (slot: Slot) =>
+    slot.kind === "project" &&
+    listed(slot.row) &&
+    (scope.project === undefined
+      ? scope.area === undefined || slot.home?.["id"] === scope.area
+      : slot.row["id"] === scope.project);
+  const homes = new Set(order.filter(projectShown).map((slot) => slot.home?.["id"]));
+  const shown = (slot: Slot) =>
+    projectShown(slot) ||
+    (slot.kind === "area" &&
+      (scope.area === undefined || slot.row["id"] === scope.area) &&
+      (listed(slot.row) || (!gone(slot.row) && homes.has(slot.row["id"]))));
+  let start = 0;
+  if (scope.after !== undefined) {
+    start = order.findIndex((slot) => slot.row["id"] === scope.after) + 1;
+    if (start === 0) {
+      throw invalid("cursor", "No group of this space", "List again without cursor.");
+    }
+  }
+  const rest = order.slice(start).filter(shown);
+  const page = rest.slice(0, GROUP_PAGE);
+  const row = (group: Row, folders?: GroupsHere["folders"]) => ({
+    ...groupRow(group, folders),
+    ...(group["lifecycle"] === "active" ? {} : { archived: true }),
+  });
+  const areas: { id: string; projects: unknown[] }[] = [];
+  const projects: unknown[] = [];
+  for (const slot of page) {
+    if (slot.kind === "area") {
+      areas.push({ ...row(slot.row), projects: [] });
+    } else if (slot.home === undefined) {
+      projects.push(row(slot.row, read.folders));
+    } else {
+      // A page that starts inside an area shows that area above the rest of its projects.
+      if (areas.at(-1)?.id !== slot.home["id"]) areas.push({ ...row(slot.home), projects: [] });
+      areas.at(-1)?.projects.push(row(slot.row, read.folders));
+    }
+  }
+  const last = page.at(-1);
   return {
     action: "list",
     as_of: read.space.asOf,
-    areas: areas.slice(0, GROUP_LIMITS.areas).map((row) => {
-      const projects = projectsOf(row["id"]);
-      const more = projects.length - GROUP_LIMITS.projects;
-      return {
-        ...groupRow(row),
-        projects: projects.slice(0, GROUP_LIMITS.projects).map(project),
-        ...(more > 0 ? { more_projects: more } : {}),
-      };
-    }),
-    projects: only === undefined ? loose.slice(0, GROUP_LIMITS.projects).map(project) : [],
-    total_areas: areas.length,
-    total_projects:
-      only === undefined ? read.projects.length : areas.flatMap((a) => projectsOf(a["id"])).length,
+    areas,
+    projects,
+    total_areas: order.filter((slot) => slot.kind === "area" && shown(slot)).length,
+    total_projects: order.filter(projectShown).length,
+    ...(rest.length > page.length && last !== undefined ? { cursor: last.row["id"] } : {}),
   };
 }
 
