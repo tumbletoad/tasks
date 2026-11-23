@@ -320,7 +320,6 @@ export function Thread({
       (a.key < b.key ? -1 : 1),
   );
 
-  if (items.length === 0) return <p className={styles.line}>{t("thread.empty")}</p>;
   // Nothing moves under focus (A5 3.15): an entry that holds focus is not pushed out of the last
   // six by an entry that arrives; the window grows to keep it until focus leaves it.
   const held = focused === undefined ? -1 : items.findIndex((item) => item.key === focused);
@@ -347,6 +346,7 @@ export function Thread({
     // The button went with the last of them: the place stays with the entry.
     if (document.activeElement === document.body) entry.focus({ preventScroll: true });
   });
+  if (items.length === 0) return <p className={styles.line}>{t("thread.empty")}</p>;
   const older = hidden === 0 && partial && onOlder !== undefined;
   return (
     <>

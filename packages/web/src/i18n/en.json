@@ -185,7 +185,7 @@
   "agents.needsYou": "Needs you",
   "agents.asks": "{by} asks",
   "agents.dismiss": "Dismiss",
-  "agents.dismissLabel": "Dismiss the question on {task}",
+  "agents.dismissLabel": "Dismiss the question on {ref}",
   "agents.working": "Working",
   "agents.other": "With an agent",
   "agents.of": "{count, plural, one {# agent on this task} other {# agents on this task}}",

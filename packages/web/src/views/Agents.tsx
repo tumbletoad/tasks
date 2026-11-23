@@ -189,7 +189,7 @@ function Question({
         type="button"
         className={styles.dismiss}
         data-part="dismiss-question"
-        aria-label={t("agents.dismissLabel", { task })}
+        aria-label={t("agents.dismissLabel", { ref: task })}
         onClick={(event) => {
           focusAfter(event.currentTarget);
           onDismiss();
