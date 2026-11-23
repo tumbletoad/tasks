@@ -21,6 +21,7 @@ import type {
   AgentsView,
   MonitorWindow,
 } from "../store/agents.ts";
+import type { TaskAgent } from "./agents-merge.ts";
 import css from "./Computer.module.css";
 
 const styles = classes(css, [
@@ -30,6 +31,8 @@ const styles = classes(css, [
   "note",
   "list",
   "item",
+  "agents",
+  "agent",
   "top",
   "title",
   "state",
@@ -175,25 +178,33 @@ function TaskLink({ task, here }: { readonly task: AgentsTask; readonly here: bo
 
 function SessionItem({
   session,
+  state = session.activity,
   since,
   folder,
   space,
 }: {
   readonly session: AgentsSession;
+  /** What it does, where TTasks knows better than the monitor: a background run's own state. */
+  readonly state?: string;
   readonly since: number;
   /** The folder as this list names it. */
   readonly folder: string | undefined;
-  /** The space on screen. */
-  readonly space: string | undefined;
+  /** The space on screen; null beneath its task's row, which names the task already. */
+  readonly space: string | undefined | null;
 }) {
   const t = useT();
   const age = session.ageMs === null ? undefined : spanOf(session.ageMs + since, t);
+  const beneath = space === null;
   return (
-    <li className={styles.item} data-part="session" data-state={session.activity}>
+    <li
+      className={beneath ? styles.agent : styles.item}
+      data-part={beneath ? "agent" : "session"}
+      data-state={state}
+    >
       <div className={styles.top}>
         <span className={styles.title}>{session.title}</span>
-        <span className={styles.state} data-state={session.activity}>
-          {t("computer.state", { state: session.activity })}
+        <span className={styles.state} data-state={state}>
+          {t("computer.state", { state })}
         </span>
       </div>
       <div className={styles.meta}>
@@ -201,7 +212,7 @@ function SessionItem({
         <span>{session.account}</span>
         {session.folder === null ? null : <span title={session.folder}>{folder}</span>}
         {age === undefined ? null : <span>{t("computer.started", { age })}</span>}
-        {session.task === null ? null : (
+        {session.task === null || beneath ? null : (
           <TaskLink task={session.task} here={session.task.space === space} />
         )}
       </div>
@@ -224,6 +235,58 @@ function SessionItem({
         </ul>
       )}
     </li>
+  );
+}
+
+/**
+ * Every agent of a task, beneath its row, each in its own state with the agents inside it. A
+ * picture that is not current mutes their states, as it mutes "On this computer".
+ */
+export function TaskAgents({
+  agents,
+  current,
+}: {
+  readonly agents: readonly TaskAgent[];
+  readonly current: boolean;
+}) {
+  const t = useT();
+  const { live } = useContext(Session);
+  const { view, at } = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
+  const now = useNow();
+  const since = Math.max(0, Math.max(now, at) - at) + (view?.picture?.ageMs ?? 0);
+  const folders = useMemo(
+    () => folderLabels(agents.flatMap((a) => (a.session?.folder ? [a.session.folder] : []))),
+    [agents],
+  );
+  return (
+    <ul
+      className={styles.agents}
+      aria-label={t("agents.of", { count: agents.length })}
+      data-part="task-agents"
+      data-stale={!current || undefined}
+    >
+      {agents.map((agent) =>
+        agent.session === null ? (
+          <li key={agent.key} className={styles.agent} data-part="agent" data-state={agent.state}>
+            <div className={styles.top}>
+              <span className={styles.title}>{t("agents.kind", { started: agent.started })}</span>
+              <span className={styles.state} data-state={agent.state}>
+                {t("computer.state", { state: agent.state })}
+              </span>
+            </div>
+          </li>
+        ) : (
+          <SessionItem
+            key={agent.key}
+            session={agent.session}
+            state={agent.state}
+            since={since}
+            folder={agent.session.folder === null ? undefined : folders.get(agent.session.folder)}
+            space={null}
+          />
+        ),
+      )}
+    </ul>
   );
 }
 

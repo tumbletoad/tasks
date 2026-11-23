@@ -587,6 +587,97 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
     expect(text("session-task")).toBe("Task M-9");
   });
 
+  test("a task with one, two or three agents is one row, with each of its agents beneath it", async () => {
+    const [one, two, three] = [2, 3, 4].map((n) => task(n));
+    if (!one || !two || !three) throw new Error("no rows");
+    const ran: TaskRow = { ...three, run: { state: "working", instance: "fake-agent" } };
+    await mount([one, two, ran]);
+    const nested = (n: number, activity: AgentsSession["activity"]) => ({
+      key: `n${String(n)}`,
+      kind: "subagent" as const,
+      title: `Inner ${String(n)}`,
+      activity,
+      ageMs: MIN,
+    });
+    const reported = [
+      session(1, { task: linkTo(one), activity: "idle", title: "One idle" }),
+      // Opened twice: one works, the other is idle with an agent inside it that waits.
+      session(2, { task: linkTo(two), activity: "working", title: "Two works", ageMs: 30 * MIN }),
+      session(3, {
+        task: linkTo(two),
+        activity: "idle",
+        title: "Two rests",
+        nested: [nested(1, "waiting")],
+      }),
+      // A background run, which keeps TTasks' own state, and two terminal agents beside it.
+      session(4, { task: linkTo(ran, "run"), activity: "idle", title: "Three runs" }),
+      session(5, { task: linkTo(ran), activity: "shell", title: "Three at a shell" }),
+      session(6, {
+        task: linkTo(ran),
+        activity: "suspended",
+        title: "Three suspended",
+        nested: [nested(2, "working"), nested(3, "idle")],
+      }),
+      session(7, { title: "Agent of no task" }),
+    ];
+    show({ picture: picture(reported, []), trouble: null });
+    // Each task once, placed by what asks most of the person: the waiting agent inside M-3.
+    expect(layout()).toEqual([
+      "H2:Needs you",
+      "M-3",
+      "H2:Working",
+      "M-4",
+      "H2:With an agent",
+      "H3:Idle",
+      "M-2",
+    ]);
+    const beneath = (ref: string) =>
+      [...container.querySelectorAll(`li[data-task="${ref}"] [data-part="agent"]`)].map((li) => [
+        li.querySelector("span")?.textContent,
+        li.querySelector("[data-state]:not(li)")?.textContent,
+      ]);
+    expect(beneath("M-2")).toEqual([["One idle", "Idle"]]);
+    expect(beneath("M-3")).toEqual([
+      ["Two works", "Working"],
+      ["Two rests", "Idle"],
+    ]);
+    expect(beneath("M-4")).toEqual([
+      ["Three runs", "Working"],
+      ["Three at a shell", "At a shell"],
+      ["Three suspended", "Suspended"],
+    ]);
+    // No agent the monitor reports is on neither list, and none is on both.
+    const listed = container.querySelectorAll('[data-part="agent"], [data-part="session"]');
+    expect(listed).toHaveLength(reported.length);
+    expect(container.querySelectorAll('[data-part="nested"]')).toHaveLength(3);
+    expect(sessions().map(([title]) => title)).toEqual(["Agent of no task"]);
+  });
+
+  test("a background run the monitor does not see is listed beside the task's other agents", async () => {
+    const ran: TaskRow = { ...working, run: { state: "needs_you", instance: "fake-agent" } };
+    const gone = task(2);
+    await mount([ran, gone]);
+    show({
+      picture: picture([session(1, { task: linkTo(ran), activity: "working" })], [], {
+        unseen: [linkTo(gone)],
+      }),
+      trouble: null,
+    });
+    expect(layout()).toEqual([
+      "H2:Needs you",
+      "M-1",
+      "H2:With an agent",
+      "H3:Not seen by TTAM",
+      "M-2",
+    ]);
+    const states = (ref: string) =>
+      [...container.querySelectorAll(`li[data-task="${ref}"] [data-part="agent"]`)].map(
+        (li) => li.textContent,
+      );
+    expect(states("M-1")[0]).toBe("Background runNeeds you");
+    expect(states("M-2")).toEqual(["Agent in a terminalNot seen by TTAM"]);
+  });
+
   test("a background run's row keeps TTasks' own state, and its agent is that row", async () => {
     await mount();
     show({

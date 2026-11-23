@@ -4,11 +4,12 @@
 // any other state, under that state; then "Recent", the tasks an agent or a routine changed while
 // this tab followed the space, the ones it finished included, newest first, one small heading per
 // day. The runs' states come from the live rows, the terminal agents' from the Agent Monitor
-// (agents-merge.ts), and each task is in one group. The rows are ordinary rows, so a task expands
-// to its thread, where its runs, Stop and the changes are. A row the monitor put in its group is
-// muted while the monitor's picture is not current. Below them, every other agent on this
-// computer and the plan usage of each account (Computer.tsx). "Routines" and the full history with
-// Revert wait for the service's read of sessions and routines.
+// (agents-merge.ts). A task is in one group, by the agent that asks most of the person, and every
+// one of its agents is listed beneath its row in its own state. The rows are ordinary rows, so a
+// task expands to its thread, where its runs, Stop and the changes are. A row the monitor put in
+// its group is muted while the monitor's picture is not current. Below them, every other agent on
+// this computer and the plan usage of each account (Computer.tsx). "Routines" and the full history
+// with Revert wait for the service's read of sessions and routines.
 import { useCallback, useContext, useMemo, useSyncExternalStore } from "react";
 import { changeLogOf } from "../app/changes.ts";
 import { recentOf } from "../app/views.ts";
@@ -19,8 +20,8 @@ import { formatDay } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
-import { mergeAgents, OTHER_STATES } from "./agents-merge.ts";
-import { Computer } from "./Computer.tsx";
+import { AGENT_STATES, mergeAgents, type AgentState } from "./agents-merge.ts";
+import { Computer, TaskAgents } from "./Computer.tsx";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
 
 /** Agents' changes may touch any task: its rows fade in and are announced like Today's. */
@@ -65,6 +66,9 @@ function keepIn(
     .filter(hasTasks);
 }
 
+/** The states of "With an agent", in its order. */
+const OTHER_STATES = AGENT_STATES.slice(2);
+
 /** The heading of a group of agents' own, by its key. */
 const runTitle = (key: string, t: Translate): string =>
   t(
@@ -94,8 +98,17 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
     () =>
       agents.current
         ? new Set<string>()
-        : new Set([...merged.needs, ...merged.working, ...merged.other.keys()]),
+        : new Set([...merged.tasks].flatMap(([id, placed]) => (placed.own ? [] : [id]))),
     [agents.current, merged],
+  );
+  const beneath = useCallback(
+    (row: TaskRow) => {
+      const listed = merged.tasks.get(row.id)?.agents ?? [];
+      return listed.length === 0 ? undefined : (
+        <TaskAgents agents={listed} current={agents.current} />
+      );
+    },
+    [merged, agents.current],
   );
   const groups = useCallback<GroupsOf>(
     (tasks, held) => {
@@ -103,11 +116,11 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
       // state. Each task once: it leaves Recent while it is in one of them.
       const needs: TaskRow[] = [];
       const working: TaskRow[] = [];
-      const other = new Map<string, TaskRow[]>(OTHER_STATES.map((state) => [state, []]));
+      const other = new Map<AgentState, TaskRow[]>(OTHER_STATES.map((state) => [state, []]));
       for (const row of tasks.values()) {
-        const state = merged.other.get(row.id);
-        if (row.run?.state === "needs_you" || merged.needs.has(row.id)) needs.push(row);
-        else if (row.run?.state === "working" || merged.working.has(row.id)) working.push(row);
+        const state = merged.tasks.get(row.id)?.state;
+        if (state === "waiting") needs.push(row);
+        else if (state === "working") working.push(row);
         else if (state !== undefined) other.get(state)?.push(row);
       }
       const ran = new Set([...needs, ...working, ...[...other.values()].flat()].map((r) => r.id));
@@ -218,6 +231,7 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
         expand={task}
         onExpand={onExpand}
         muted={muted}
+        beneath={beneath}
       />
       <Computer shown={merged.shown} />
     </div>

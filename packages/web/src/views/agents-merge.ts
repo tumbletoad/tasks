@@ -1,66 +1,142 @@
-// Every agent once on the Agents page: an agent the monitor sees that works on a task of this
-// space is shown as that task's row, in the group its state puts it in, and not again under "On
-// this computer". TTasks' record decides what a row is: a background run's state is TTasks' own,
-// and its row stays where the run puts it; an agent in a terminal is where the monitor's state
-// puts it. A terminal agent TTasks holds as running that the monitor has not seen is shown as
-// such, never as idle.
+// Every agent once on the Agents page. A task of this space that agents work on is one row, placed
+// by the agent that asks most of the person, with every one of its agents beneath it in its own
+// state; "On this computer" leaves those agents out. TTasks' record decides what an agent is: a
+// background run's state is TTasks' own, an agent in a terminal's is the monitor's, and a
+// terminal agent TTasks holds as running that the monitor has not seen is shown as such, never
+// as idle.
 import type { AgentsPicture, AgentsSession } from "@ttasks/contracts/monitor";
 import type { TaskRow } from "../store/rows.ts";
 
-/** The states of the third group, in its order: every state but needing the person or working. */
-export const OTHER_STATES = ["idle", "shell", "suspended", "unknown", "unseen"] as const;
-export type OtherState = (typeof OTHER_STATES)[number];
+/** What an agent of a task does, in the page's order: what asks most of the person first. */
+export const AGENT_STATES = [
+  "waiting",
+  "working",
+  "idle",
+  "shell",
+  "suspended",
+  "unknown",
+  "unseen",
+] as const;
+export type AgentState = (typeof AGENT_STATES)[number];
+
+/** One agent of a task, as the list beneath its row shows it. */
+export interface TaskAgent {
+  /** Unique among the task's agents. */
+  readonly key: string;
+  readonly state: AgentState;
+  /** The monitor's session, with the agents inside it; null for one the monitor does not show. */
+  readonly session: AgentsSession | null;
+  readonly started: "run" | "terminal";
+}
+
+/** A task with agents: where it is placed, and its agents. */
+export interface Placed {
+  /** The state of the agent that asks most of the person. */
+  readonly state: AgentState;
+  /** That state is TTasks' own, from a background run's record, and not the monitor's. */
+  readonly own: boolean;
+  /** How long before the picture its oldest agent the monitor sees started; null: none known. */
+  readonly ageMs: number | null;
+  /** Every agent of the task: its run first, then the monitor's as they started. */
+  readonly agents: readonly TaskAgent[];
+}
 
 export interface Merged {
-  /** The tasks an agent in a terminal waits on the person for, by ID. */
-  readonly needs: ReadonlySet<string>;
-  /** The tasks an agent in a terminal works on. */
-  readonly working: ReadonlySet<string>;
-  /** The tasks with an agent in any other state, with that state. */
-  readonly other: ReadonlyMap<string, OtherState>;
-  /** The monitor's sessions shown as a task's row: "On this computer" leaves them out. */
+  /** The tasks of this space with an agent, by ID. */
+  readonly tasks: ReadonlyMap<string, Placed>;
+  /** The monitor's sessions shown beneath a task's row: "On this computer" leaves them out. */
   readonly shown: ReadonlySet<string>;
 }
 
-export const NOTHING_MERGED: Merged = {
-  needs: new Set(),
-  working: new Set(),
-  other: new Map(),
-  shown: new Set(),
-};
+const rank = (state: AgentState): number => AGENT_STATES.indexOf(state);
 
-const otherOf = (activity: AgentsSession["activity"]): OtherState =>
-  activity === "idle" || activity === "shell" || activity === "suspended" ? activity : "unknown";
+/** What a background run does, as its row's record says; undefined: no run on now. */
+const runState = (row: TaskRow): AgentState | undefined =>
+  row.run?.state === "needs_you" ? "waiting" : row.run?.state === "working" ? "working" : undefined;
 
-/** Where the monitor's `picture` puts the tasks of `space` the page holds as `tasks`. */
+const stateOf = (activity: AgentsSession["activity"]): AgentState =>
+  activity === "waiting" ||
+  activity === "working" ||
+  activity === "idle" ||
+  activity === "shell" ||
+  activity === "suspended"
+    ? activity
+    : "unknown";
+
+/** Oldest first; one of no known age after them; then by key, so equal ones keep their order. */
+const byStart = (a: TaskAgent, b: TaskAgent): number =>
+  (b.session?.ageMs ?? -1) - (a.session?.ageMs ?? -1) ||
+  (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+
+/** The agents of each task of `space` the page holds as `rows`, from the monitor's `picture`. */
 export function mergeAgents(
   picture: AgentsPicture | null,
   space: string | undefined,
-  tasks: ReadonlyMap<string, TaskRow>,
+  rows: ReadonlyMap<string, TaskRow>,
 ): Merged {
-  if (picture === null || space === undefined) return NOTHING_MERGED;
-  const needs = new Set<string>();
-  const working = new Set<string>();
-  const other = new Map<string, OtherState>();
+  const found = new Map<string, TaskAgent[]>();
   const shown = new Set<string>();
-  for (const session of picture.sessions) {
-    const task = session.task;
-    if (task?.space !== space) continue;
-    const row = tasks.get(task.id);
-    if (row === undefined) continue;
-    shown.add(session.key);
-    // A background run's row shows TTasks' own state while the run is on; its agent is that row.
-    if (task.started === "run" && row.run !== undefined) continue;
-    if (session.activity === "waiting") needs.add(task.id);
-    else if (session.activity === "working") working.add(task.id);
-    else if (!other.has(task.id)) other.set(task.id, otherOf(session.activity));
-  }
-  for (const task of picture.unseen) {
-    if (task.space === space && tasks.has(task.id) && !other.has(task.id)) {
-      other.set(task.id, "unseen");
+  const add = (task: string, agent: TaskAgent): void => {
+    const list = found.get(task);
+    if (list === undefined) found.set(task, [agent]);
+    else list.push(agent);
+  };
+  if (picture !== null && space !== undefined) {
+    for (const session of picture.sessions) {
+      const task = session.task;
+      if (task?.space !== space) continue;
+      const row = rows.get(task.id);
+      if (row === undefined) continue;
+      shown.add(session.key);
+      const own = task.started === "run" ? runState(row) : undefined;
+      add(task.id, {
+        key: session.key,
+        state: own ?? stateOf(session.activity),
+        session,
+        started: task.started,
+      });
+    }
+    for (const task of picture.unseen) {
+      if (task.space !== space || !rows.has(task.id)) continue;
+      add(task.id, {
+        key: `unseen:${task.id}`,
+        state: "unseen",
+        session: null,
+        started: "terminal",
+      });
     }
   }
-  for (const id of [...needs, ...working]) other.delete(id);
-  for (const id of needs) working.delete(id);
-  return { needs, working, other, shown };
+  const tasks = new Map<string, Placed>();
+  for (const row of rows.values()) {
+    const run = runState(row);
+    const agents = (found.get(row.id) ?? []).sort(byStart);
+    if (run === undefined && agents.length === 0) continue;
+    // TTasks' own run is one of the task's agents, also when the monitor does not see it.
+    const runs = agents.filter((a) => a.started === "run");
+    const listed: TaskAgent[] = [
+      ...(run !== undefined && agents.length > 0 && runs.length === 0
+        ? [{ key: `run:${row.id}`, state: run, session: null, started: "run" as const }]
+        : runs),
+      ...agents.filter((a) => a.started !== "run"),
+    ];
+    // An agent inside a conversation that waits for the person asks as much as its parent would.
+    const states = [
+      ...(run === undefined ? [] : [run]),
+      ...agents.flatMap((a) => [
+        a.state,
+        ...(a.session?.nested ?? []).map((inner) => stateOf(inner.activity)),
+      ]),
+    ];
+    const best = Math.min(...states.map(rank));
+    const ages = agents.flatMap((a) =>
+      a.session === null || a.session.ageMs === null ? [] : [a.session.ageMs],
+    );
+    tasks.set(row.id, {
+      state: AGENT_STATES[best] ?? "unknown",
+      own: run !== undefined && rank(run) === best,
+      ageMs: ages.length === 0 ? null : Math.max(...ages),
+      agents: listed,
+    });
+  }
+  return { tasks, shown };
 }

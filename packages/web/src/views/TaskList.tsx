@@ -14,6 +14,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { Refused, requestId, type Instance, type Receipt, type Run } from "../api.ts";
 import { useToast } from "../app/frame.ts";
@@ -126,6 +127,8 @@ export interface TaskListProps {
   readonly onExpand?: (task: TaskRow | undefined, gone?: boolean) => void;
   /** Tasks whose place in the view comes from a picture that is not current: their rows are muted. */
   readonly muted?: ReadonlySet<string>;
+  /** What a task's row shows beneath its line, such as the agents that work on it. */
+  readonly beneath?: (task: TaskRow) => ReactNode;
 }
 
 export function TaskList({
@@ -140,6 +143,7 @@ export function TaskList({
   expand: wantedRef,
   onExpand,
   muted,
+  beneath,
 }: TaskListProps) {
   const t = useT();
   const say = useToast();
@@ -953,6 +957,7 @@ export function TaskList({
       leaving={leavingOf(item.key)}
       refused={refusals.get(item.key)}
       muted={muted?.has(item.key) === true}
+      beneath={beneath?.(item.task)}
       {...(place.index === undefined ? {} : { index: place.index })}
       {...(place.start === undefined ? {} : { start: place.start })}
       measure={place.measure}
