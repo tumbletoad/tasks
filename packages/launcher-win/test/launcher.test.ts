@@ -6,6 +6,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -14,7 +15,13 @@ import {
 import { join } from "node:path";
 import { rootCertificates } from "node:tls";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { assertReleaseBinary, buildLaunchers, type Launchers } from "../src/build.ts";
+import {
+  assertReleaseBinary,
+  buildLaunchers,
+  compileC,
+  findMsvc,
+  type Launchers,
+} from "../src/build.ts";
 import {
   addVersion,
   runLaunchers,
@@ -153,6 +160,18 @@ describe.runIf(windows)("Windows launchers", () => {
       },
       SLOW,
     );
+
+    test("a build that fails names its step and the tool's exit status, and leaves no object files", () => {
+      const dir = join(work, "fails");
+      mkdirSync(dir);
+      const source = join(dir, "unlinked.c");
+      writeFileSync(source, "void missing(void);\nint main(void) { missing(); return 0; }\n");
+      const out = join(dir, "unlinked.exe");
+      expect(() => compileC(findMsvc(), { source, out, compile: [], link: [] })).toThrow(
+        /the link step for .* failed: link\.exe exited with \d+ \(0x[0-9A-F]+\)\n.*LNK2019/s,
+      );
+      expect(readdirSync(dir).sort()).toEqual(["unlinked.c"]);
+    });
 
     test("the release check refuses a binary with test hooks and passes a release build", () => {
       for (const exe of [hooks.ttasks, hooks.ttasksw]) {
