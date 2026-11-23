@@ -453,9 +453,8 @@ describe.skipIf(!posix)(
       expect(status.io.text()).toContain("  Entry:    ");
       expect(status.io.text()).toContain(": not installed\n");
       expect(status.io.text()).toContain(
-        "  systemd:  no unit of this install, so nothing starts the service at sign-in or boot. To have it start by itself: ttasks service install\n",
+        "  Autostart: off: this install has no unit, so nothing starts the service at sign-in or boot. To have it start by itself: ttasks service install\n",
       );
-      expect(status.io.text()).toContain("  Linger:   on\n");
       expect(status.io.text()).not.toContain("starts at boot");
       expect(status.io.text()).toContain("started by manual");
 
@@ -482,12 +481,22 @@ describe.skipIf(!posix)(
         `systemctl --user enable ${UNIT}`,
         `systemctl --user start ${UNIT}`,
       ]);
-      // Once the unit runs it, status speaks of linger as before, and start goes through systemd.
+      // Once the unit runs it, status speaks of linger, and start goes through systemd.
       const after = await run(fake, "status", {});
       expect(after.io.text()).toContain(
-        "  Linger:   on: the service starts at boot, before you sign in\n",
+        "  Autostart: on: the service starts at boot, before you sign in\n",
       );
       expect(after.io.text()).toContain("  systemd:  enabled, active\n");
+      // A unit the person disabled starts nothing, linger or not.
+      await fake.tools.run("systemctl", ["--user", "disable", UNIT]);
+      const disabled = await run(fake, "status", { json: true });
+      expect(JSON.parse(disabled.io.text())).toMatchObject({
+        starts: { on: false, fix: "ttasks service install" },
+      });
+      expect((await run(fake, "status", {})).io.text()).toContain(
+        "  Autostart: off: systemd has the unit disabled, so it does not start the service at sign-in or boot. To have it start by itself: ttasks service install\n",
+      );
+      expect((await run(fake, "install")).code).toBe(0);
       // A later install with the unit's service running stops nothing.
       const calls = fake.service.events.length;
       expect((await run(fake, "install")).code).toBe(0);

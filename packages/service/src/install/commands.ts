@@ -1784,6 +1784,117 @@ export type Autostart =
   | { readonly kind: "run"; readonly startup_apps: StartupApps }
   | { readonly kind: "launchd"; readonly loaded: boolean };
 
+/**
+ * Whether the OS starts this install's service by itself at sign-in (or boot), in a person's
+ * words, with the command that turns it on when one does. `null`: the OS did not say.
+ */
+export type AutostartAnswer =
+  | { readonly on: true; readonly text: string }
+  | { readonly on: false; readonly text: string; readonly fix?: string }
+  | { readonly on: null; readonly text: string };
+
+const INSTALL = `${CLI_NAME} service install`;
+
+/**
+ * What the entry and the OS's answers say of autostart. Only this install's own entry counts: a
+ * Startup apps record or linger says nothing while there is none, and a unit starts only when
+ * systemd has it enabled.
+ */
+export function autostartAnswer(entry: EntryInfo, a: Autostart): AutostartAnswer {
+  const ours = entry.state === "ours";
+  switch (a.kind) {
+    case "run":
+      if (!ours) {
+        return {
+          on: false,
+          text: "off: this install has no entry, so Windows does not start the service at sign-in",
+          ...(entry.state === "absent" ? { fix: INSTALL } : {}),
+        };
+      }
+      return a.startup_apps === "off"
+        ? {
+            on: false,
+            text: `off: ${PRODUCT_NAME} is turned off in Startup apps (Task Manager), so Windows does not start it at sign-in. Turn it on there to have it start`,
+          }
+        : { on: true, text: "on: Windows starts the service when you sign in" };
+    case "systemd":
+      if (!a.user_manager) {
+        return {
+          on: false,
+          text: "off: this machine has no systemd user manager, so nothing starts the service at sign-in",
+        };
+      }
+      if (!ours) {
+        return {
+          on: false,
+          text: "off: this install has no unit, so nothing starts the service at sign-in or boot",
+          ...(entry.state === "absent" ? { fix: INSTALL } : {}),
+        };
+      }
+      if (a.enabled === null) return { on: null, text: "unknown: systemd did not say" };
+      if (a.enabled !== "enabled") {
+        return {
+          on: false,
+          text: `off: systemd has the unit ${a.enabled}, so it does not start the service at sign-in or boot`,
+          ...(a.enabled === "masked" ? {} : { fix: INSTALL }),
+        };
+      }
+      return a.linger === "yes"
+        ? { on: true, text: "on: the service starts at boot, before you sign in" }
+        : a.linger === "no"
+          ? {
+              on: true,
+              text: "on: the service starts when you sign in. To start it at boot: loginctl enable-linger",
+            }
+          : { on: true, text: "on: the service starts when you sign in" };
+    case "launchd":
+      return ours
+        ? { on: true, text: "on: launchd starts the service when you sign in" }
+        : {
+            on: false,
+            text: "off: this install has no launch agent, so nothing starts the service at sign-in",
+            ...(entry.state === "absent" ? { fix: INSTALL } : {}),
+          };
+  }
+}
+
+/** The answer as one line: its words, and the command that turns autostart on when one does. */
+export function autostartLine(starts: AutostartAnswer): string {
+  return starts.on === false && starts.fix !== undefined
+    ? `${starts.text}. To have it start by itself: ${starts.fix}`
+    : starts.text;
+}
+
+/** The entry, the OS's answers and what they say: `service status` and `doctor` both ask here. */
+export async function autostartStatus(
+  ctx: ServiceContext,
+): Promise<{ entry: EntryInfo; autostart: Autostart; starts: AutostartAnswer }> {
+  const wanted = await readEntry(ctx);
+  let autostart: Autostart;
+  switch (ctx.platform) {
+    case "linux": {
+      const manager = await userManager(ctx);
+      const ask = async (verb: string) =>
+        manager ? word((await ctx.run(SYSTEMCTL, ["--user", verb, ctx.names.unit])).stdout) : null;
+      autostart = {
+        kind: "systemd",
+        user_manager: manager,
+        enabled: await ask("is-enabled"),
+        active: await ask("is-active"),
+        linger: await linger(ctx),
+      };
+      break;
+    }
+    case "win32":
+      autostart = { kind: "run", startup_apps: wanted.startupApps ?? "not_set" };
+      break;
+    case "darwin":
+      autostart = { kind: "launchd", loaded: await launchdLoaded(ctx) };
+      break;
+  }
+  return { entry: wanted.info, autostart, starts: autostartAnswer(wanted.info, autostart) };
+}
+
 export type ServiceAnswer =
   | {
       readonly answers: true;
@@ -1813,6 +1924,8 @@ export interface StatusReport {
   readonly program_present: boolean;
   readonly entry: EntryInfo;
   readonly autostart: Autostart;
+  /** Whether the service starts by itself (autostartAnswer). */
+  readonly starts: AutostartAnswer;
   readonly service: ServiceAnswer;
   /** The version `current` names, which the next start runs; null without one. */
   readonly installed: string | null;
@@ -1843,37 +1956,16 @@ const word = (text: string): string | null => {
 
 /** `ttasks service status`: reads and reports, and changes nothing. */
 export async function serviceStatus(ctx: ServiceContext): Promise<StatusReport> {
-  const wanted = await readEntry(ctx);
-  let autostart: Autostart;
-  switch (ctx.platform) {
-    case "linux": {
-      const manager = await userManager(ctx);
-      const ask = async (verb: string) =>
-        manager ? word((await ctx.run(SYSTEMCTL, ["--user", verb, ctx.names.unit])).stdout) : null;
-      autostart = {
-        kind: "systemd",
-        user_manager: manager,
-        enabled: await ask("is-enabled"),
-        active: await ask("is-active"),
-        linger: await linger(ctx),
-      };
-      break;
-    }
-    case "win32":
-      autostart = { kind: "run", startup_apps: wanted.startupApps ?? "not_set" };
-      break;
-    case "darwin":
-      autostart = { kind: "launchd", loaded: await launchdLoaded(ctx) };
-      break;
-  }
+  const { entry, autostart, starts } = await autostartStatus(ctx);
   return {
     install_id: ctx.installId,
     ttasks_home: ctx.layout.home ?? null,
     platform: ctx.platform,
     program: ctx.program,
     program_present: existsSync(ctx.program),
-    entry: wanted.info,
+    entry,
     autostart,
+    starts,
     service: answer(await ctx.probe()),
     installed: installedVersion(ctx),
   };

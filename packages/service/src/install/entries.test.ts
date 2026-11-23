@@ -19,6 +19,7 @@ import {
   type FakeContext,
 } from "../../test/install-fakes.ts";
 import { blockedMessage, movedMessage } from "../http/messages.ts";
+import { autostartAnswer } from "./commands.ts";
 import { probeService, readServiceRecord } from "./context.ts";
 import { parseServiceArgs, serviceEntry } from "./entries.ts";
 import { RegExe, RegistryError } from "./registry.ts";
@@ -247,7 +248,7 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
     const text = captureIO();
     expect(await run("status", {}, text)).toBe(0);
     expect(text.text()).toContain(
-      "Startup apps: off. TTasks is turned off in Startup apps (Task Manager)",
+      "  Autostart: off: TTasks is turned off in Startup apps (Task Manager), so Windows does not start it at sign-in. Turn it on there to have it start\n",
     );
 
     const reinstall = captureIO();
@@ -273,6 +274,65 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
     const nothing = captureIO();
     expect(await run("uninstall", { yes: true }, nothing)).toBe(0);
     expect(nothing.text()).toContain(`Nothing to remove: ${keys.run} has no value "${RUN_NAME}".`);
+  });
+
+  test("autostart is on only with this install's own entry, and off says what to run", async () => {
+    const statusOf = async () => {
+      const text = captureIO();
+      expect(await run("status", {}, text)).toBe(0);
+      const json = captureIO();
+      expect(await run("status", { json: true }, json)).toBe(0);
+      return { text: text.text(), json: JSON.parse(json.text()) as { starts: unknown } };
+    };
+    // No entry of this install, whatever another program's Startup apps record says.
+    const absent = await statusOf();
+    expect(absent.text).not.toMatch(/Startup apps: on/);
+    expect(absent.json.starts).toEqual({
+      on: false,
+      text: "off: this install has no entry, so Windows does not start the service at sign-in",
+      fix: "ttasks service install",
+    });
+    expect(absent.text).toContain(
+      "  Autostart: off: this install has no entry, so Windows does not start the service at sign-in. To have it start by itself: ttasks service install\n",
+    );
+
+    expect(await run("install", { yes: true }, captureIO())).toBe(0);
+    const on = await statusOf();
+    expect(on.json.starts).toEqual({ on: true, text: "on: Windows starts the service when you sign in" });
+    expect(on.text).toContain("  Autostart: on: Windows starts the service when you sign in\n");
+  });
+
+  test("on Linux autostart is on only for this install's unit, and only while systemd has it enabled", () => {
+    const unit = {
+      kind: "systemd-unit",
+      name: "u",
+      where: "/u",
+      state: "ours",
+      current: true,
+    } as const;
+    const systemd = (enabled: string | null, linger: "yes" | "no" | "unknown") =>
+      ({ kind: "systemd", user_manager: true, enabled, active: "active", linger }) as const;
+    expect(autostartAnswer(unit, systemd("enabled", "no"))).toEqual({
+      on: true,
+      text: "on: the service starts when you sign in. To start it at boot: loginctl enable-linger",
+    });
+    expect(autostartAnswer(unit, systemd("enabled", "yes")).on).toBe(true);
+    // Disabled, linger or not: off, and install enables it again.
+    for (const linger of ["yes", "no"] as const) {
+      expect(autostartAnswer(unit, systemd("disabled", linger))).toEqual({
+        on: false,
+        text: "off: systemd has the unit disabled, so it does not start the service at sign-in or boot",
+        fix: "ttasks service install",
+      });
+    }
+    expect(autostartAnswer(unit, systemd(null, "yes")).on).toBeNull();
+    expect(autostartAnswer({ ...unit, state: "absent" }, systemd("enabled", "yes"))).toMatchObject({
+      on: false,
+      fix: "ttasks service install",
+    });
+    expect(
+      autostartAnswer(unit, { ...systemd("enabled", "yes"), user_manager: false }).on,
+    ).toBe(false);
   });
 
   test("start waits for ready and says so when it does not come; a running service is left alone", async () => {
