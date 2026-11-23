@@ -633,27 +633,44 @@ export class ShimHost {
   }
 
   /**
-   * How many of each task's launches in `space` run now, for its live count: a launch counts while
-   * its shim runs and no exit is on disk, so an agent that ended stops counting at once, also
-   * while its shim waits for Enter.
+   * Whether the launch was made in the copy `copy` of its space, the one served now: a copy shows
+   * only its own launches' sessions as live. None served: none. A record an earlier build wrote
+   * names no copy, and counts for any.
    */
-  liveSessions(space: string): Map<string, number> {
+  madeIn(launch: string, copy: string | undefined): boolean {
+    const record = this.#records.get(launch);
+    return (
+      record !== undefined &&
+      copy !== undefined &&
+      (record.copy === undefined || record.copy === copy)
+    );
+  }
+
+  /**
+   * How many of each task's launches in `space`, made in its copy `copy`, run now, for its live
+   * count: a launch counts while its shim runs and no exit is on disk, so an agent that ended
+   * stops counting at once, also while its shim waits for Enter.
+   */
+  liveSessions(space: string, copy: string | undefined): Map<string, number> {
     const counts = new Map<string, number>();
-    for (const record of this.#records.list()) {
-      if (record.space !== space || record.task === null) continue;
-      if (!this.running(record.launch) || this.#records.readExit(record.launch) !== undefined) {
+    for (const launch of this.runningIn(space, copy)) {
+      const task = this.#records.get(launch)?.task;
+      if (task === null || task === undefined || this.#records.readExit(launch) !== undefined) {
         continue;
       }
-      counts.set(record.task, (counts.get(record.task) ?? 0) + 1);
+      counts.set(task, (counts.get(task) ?? 0) + 1);
     }
     return counts;
   }
 
-  /** The launches of a space whose session runs now (`running`). */
-  runningIn(space: string): string[] {
+  /** The launches of a space, made in its copy `copy`, whose session runs now (`running`). */
+  runningIn(space: string, copy: string | undefined): string[] {
     return this.#records
       .list()
-      .filter((record) => record.space === space && this.running(record.launch))
+      .filter(
+        (record) =>
+          record.space === space && this.madeIn(record.launch, copy) && this.running(record.launch),
+      )
       .map((record) => record.launch);
   }
 
@@ -661,9 +678,13 @@ export class ShimHost {
    * Recovery's look at a claimed terminal launch after a restart (A4 3.9.3, RecoverySteps.observe):
    * `exit.json` finalizes; a shim that is alive with its start time is pending until it re-attaches
    * and reports; one that is gone, or never got its credential, is lost. A check the OS could not
-   * answer is pending, never lost.
+   * answer is pending, never lost. `copy`: the copy of the space whose recovery asks, when it is
+   * known. A launch another copy made (a backup brought it back) is lost in this one: its session
+   * writes there only.
    */
-  async observe(intent: LaunchIntent): Promise<Observation> {
+  async observe(intent: LaunchIntent, copy?: string): Promise<Observation> {
+    const made = this.#records.get(intent.id) !== undefined;
+    if (copy !== undefined && made && !this.madeIn(intent.id, copy)) return { kind: "lost" };
     const exit = this.#records.readExit(intent.id);
     if (exit !== undefined) return exitObservation(exit);
     const held = this.#records.get(intent.id)?.attachment;

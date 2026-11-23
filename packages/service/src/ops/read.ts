@@ -798,6 +798,25 @@ const RUNS_OF_TASK: Statement = {
   mode: "all",
 };
 
+const RUN_BY_ID: Statement = {
+  sql: "SELECT r.*, t.ref AS task_ref FROM runs r LEFT JOIN tasks t ON t.id = r.task_id WHERE r.id = $run",
+  mode: "get",
+};
+
+/** One run's row, with its task's reference, as RUNS_ALL reads it; undefined when there is none. */
+export async function readRunRow(
+  reader: WorkerConnection,
+  run: string,
+): Promise<{ row: Row; ref: string | null } | undefined> {
+  const [space, row] = await snapshot(reader, [SPACE, RUN_BY_ID], { run });
+  if (row === undefined || row === null) return undefined;
+  const ref = (row as Row)["task_ref"];
+  return {
+    row: row as Row,
+    ref: typeof ref === "number" ? formatTaskRef(spaceFacts(space).refPrefix, ref) : null,
+  };
+}
+
 /**
  * The space's newest runs, or a task's (`task`, a `t_` ID), newest first, each row with its task's
  * reference (`task_ref`, formatted). Rows as the runs table holds them.

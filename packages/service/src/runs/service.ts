@@ -49,6 +49,7 @@ import type { ServedSpace } from "../ops/index.ts";
 import {
   readLaunchTask,
   readRestoredRuns,
+  readRunRow,
   readRunRows,
   readTaskRef,
   type TaskFolder,
@@ -497,9 +498,12 @@ export class RunService {
     for (const listener of this.#changed) listener(space);
   }
 
-  /** A space's newest runs, or a task's, each with its task's reference. */
+  /**
+   * A space's newest runs, or a task's, each with its task's reference, as the copy served now
+   * recorded them: also a copy that takes no change.
+   */
   async list(space: string, task?: string): Promise<ListedRun[]> {
-    const served = this.#served(space);
+    const served = this.#readable(space);
     if (served?.reader === undefined) {
       throw refusal("not_served", "The space is not open on this machine.");
     }
@@ -532,15 +536,18 @@ export class RunService {
     space: string,
     run: string,
   ): Promise<{ run: RunRecord; task: string | null; answer: string | null } | undefined> {
-    const record = await this.read(space, run).catch(() => undefined);
-    if (record === undefined) return undefined;
-    const served = this.#served(space);
-    const task =
-      record.task === null || served?.reader === undefined
-        ? null
-        : ((await readTaskRef(served.reader, record.task).catch(() => undefined)) ?? null);
-    const answer = record.result?.text ?? this.live(record).said?.text ?? null;
-    return { run: record, task, answer };
+    const served = this.#readable(space);
+    if (served?.reader === undefined) return undefined;
+    const found = await readRunRow(served.reader, run).catch(() => undefined);
+    if (found === undefined) return undefined;
+    let record: RunRecord;
+    try {
+      record = decodeRun(decodeRunRow(found.row));
+    } catch {
+      return undefined;
+    }
+    const answer = record.result?.text ?? this.live(record, served).said?.text ?? null;
+    return { run: record, task: found.ref, answer };
   }
 
   /**
@@ -560,12 +567,16 @@ export class RunService {
     };
   }
 
-  /** How many of each task's runs in `space` run now, by the host's own state. */
-  liveSessions(space: string): Map<string, number> {
+  /**
+   * How many of each task's runs in `space` run now, by the host's own state, of those started in
+   * its copy `copy`.
+   */
+  liveSessions(space: string, copy: string | undefined): Map<string, number> {
     const host = this.#lanes.get(space)?.host;
     const runs = new Map<string, string>();
     for (const ticket of this.#tickets.values()) {
-      if (ticket.space === space && ticket.task !== null && host?.running(ticket.run) === true) {
+      if (copy === undefined || ticket.space !== space || ticket.copy !== copy) continue;
+      if (ticket.task !== null && host?.running(ticket.run) === true) {
         runs.set(ticket.run, ticket.task);
       }
     }
@@ -621,10 +632,12 @@ export class RunService {
 
   /**
    * What a run's record cannot say: why a queued run waits, as the last round saw it, since when
-   * a running one has written nothing, and what one that started said so far. Each holds only in
-   * the state it is about: a run being stopped is not quiet, a started one does not wait.
+   * a running one has written nothing, and what one that started said so far, while this service
+   * hosts the runs of the copy `space` serves (#hosts). Each holds only in the state it is about:
+   * a run being stopped is not quiet, a started one does not wait.
    */
-  live(run: RunRecord): RunLive {
+  live(run: RunRecord, space: ServedSpace): RunLive {
+    if (!this.#hosts(space)) return {};
     if (run.state === "queued") {
       const waiting = this.#supervisor.waiting(run.id);
       return waiting === undefined ? {} : { waiting };
@@ -766,6 +779,26 @@ export class RunService {
 
   #served(space: string): ServedSpace | undefined {
     return this.#options.spaces().find((s) => s.id === space && isOpen(s));
+  }
+
+  /** The copy that serves `space` now, open or read-only: what its run history is read from. */
+  #readable(space: string): ServedSpace | undefined {
+    return this.#options
+      .spaces()
+      .find((s) => s.id === space && s.reader !== undefined && s.state !== "closed");
+  }
+
+  /**
+   * Whether this service hosts the runs of the copy `space` now: its writer's run host has
+   * recovered. Only then does what the machine knows of a run (why it waits, what it said so far)
+   * belong to that copy's runs: a restored copy, or a claimed one before its recovery, shows them
+   * as they were recorded.
+   */
+  #hosts(space: ServedSpace): boolean {
+    const id = space.id;
+    if (id === undefined || space.writer === undefined) return false;
+    const hosted = this.#hosted.get(id);
+    return hosted?.writer === space.writer && this.#lanes.get(id)?.host === hosted.life.host;
   }
 
   /** What a queued run needs, read now: its task open, its instance and its folder still there. */

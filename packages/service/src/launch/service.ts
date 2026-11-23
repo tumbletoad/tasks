@@ -894,9 +894,12 @@ export class LaunchService {
     };
   }
 
-  /** Whether the launch's session runs now: its shim is here, attached, and its agent started. */
-  running(launch: string): boolean {
-    return this.host.running(launch);
+  /**
+   * Whether the launch's session runs now and belongs to the copy `copy` served now: its shim is
+   * here, attached, its agent started, and its click was made in that copy.
+   */
+  running(launch: string, copy: string | undefined): boolean {
+    return this.host.madeIn(launch, copy) && this.host.running(launch);
   }
 
   /**
@@ -929,9 +932,9 @@ ${instance}`;
   }
 
   /** The launches of a space whose agent runs here now, as the shims say and no end is recorded. */
-  async #sessions(space: string, hosted: { store: SpaceExecutionStore }): Promise<LaunchIntent[]> {
+  async #sessions(space: string, hosted: Launching): Promise<LaunchIntent[]> {
     const read = await Promise.all(
-      this.host.runningIn(space).map((launch) => hosted.store.readIntent(launch)),
+      this.host.runningIn(space, hosted.copy).map((launch) => hosted.store.readIntent(launch)),
     );
     return read.filter(
       (intent): intent is LaunchIntent =>
@@ -1639,7 +1642,7 @@ ${instance}`;
       machine: id,
       steps: { dispatch: (intent) => this.#dispatchStep(intent) },
       recovery: {
-        observe: (intent) => this.host.observe(intent),
+        observe: (intent) => this.host.observe(intent, served.copy),
         // T3 (M2.11): not paired yet, so a T3 launch left open is Unknown.
         grant: () => Promise.resolve(undefined),
         replay: () => Promise.resolve({ kind: "refused" }),

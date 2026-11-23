@@ -14,15 +14,19 @@ export interface HeldSources {
   spaces(): readonly ServedSpace[];
   /** This machine's ID: only its own launches and runs count. */
   readonly machine: string;
-  /** The terminal launches of a space whose agent runs now, as the shims say. */
-  running(space: string): readonly string[];
+  /**
+   * The terminal launches of a space whose agent runs now, as the shims say, of those made in its
+   * copy `copy`.
+   */
+  running(space: string, copy: string | undefined): readonly string[];
   /** Wall clock milliseconds. */
   now(): number;
 }
 
 /**
  * Every session TTasks holds now, read in the folder that serves each space (one at a time,
- * copies.ts). A space that cannot be read holds none this time.
+ * copies.ts). A space that cannot be read holds none this time, and a restored copy that is not
+ * claimed none at all: its sessions are history, never the machine's agents of today.
  */
 export async function heldSessions(sources: HeldSources): Promise<HeldSession[]> {
   const since = sources.now() - HELD_MS;
@@ -34,8 +38,10 @@ export async function heldSessions(sources: HeldSources): Promise<HeldSession[]>
   const read = await Promise.all(
     chosen.map(async (served): Promise<HeldSession[]> => {
       const id = served.id;
-      if (id === undefined || served.reader === undefined) return [];
-      const running = sources.running(id);
+      if (id === undefined || served.reader === undefined || served.restored !== undefined) {
+        return [];
+      }
+      const running = sources.running(id, served.copy);
       const found = await readAgentSessions(served.reader, {
         machine: sources.machine,
         since,

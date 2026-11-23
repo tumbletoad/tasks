@@ -725,9 +725,9 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       rows: (app, home) => homeRows({ grants: grantsOf, platform }, app, home),
       runAllows: (instance, space, run) => runs.allows(instance, space, run),
       machineDefault: () => homes.machineDefault(),
-      live: (space) => {
-        const counts = new Map(launching.service?.host.liveSessions(space) ?? []);
-        for (const [task, count] of runs.liveSessions(space)) {
+      live: (space, copy) => {
+        const counts = new Map(launching.service?.host.liveSessions(space, copy) ?? []);
+        for (const [task, count] of runs.liveSessions(space, copy)) {
           counts.set(task, (counts.get(task) ?? 0) + count);
         }
         return counts;
@@ -785,7 +785,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       heldSessions({
         spaces: knownSpaces,
         machine: machine.id,
-        running: (space) => launching.service?.host.runningIn(space) ?? [],
+        running: (space, copy) => launching.service?.host.runningIn(space, copy) ?? [],
         now: Date.now,
       });
     const hub = {
@@ -1154,7 +1154,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           queueTask: (space, asked) => runs.queueTask(space, asked),
           list: (space, task) => runs.list(space, task),
           stop: (space, run) => runs.stop(space, run),
-          live: (run) => runs.live(run),
+          live: (run, space) => runs.live(run, space),
           onChange: (listener) => runs.onChange(listener),
           runnable: (key) => {
             const instance = instances.find((i) => i.id === key);

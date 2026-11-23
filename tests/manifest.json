@@ -1725,7 +1725,7 @@
     },
     {
       "id": "A4.3.11.9.run.restored",
-      "title": "The runs a backup held open, working or queued, are settled as interrupted by the restore after a claim of the copy and after a restore in place, and none of them starts, also one the person had stopped since; the runs the claimed space queued itself are recovered and tried over a restart as before",
+      "title": "The runs a backup held open, working or queued, are settled as interrupted by the restore after a claim of the copy and after a restore in place, and none of them starts, also one the person had stopped since; a restored copy that is not claimed lists and shows them as recorded, with nothing the machine knows of them now; the runs the claimed space queued itself are recovered and tried over a restart as before",
       "source": "A4 3.11.9, A1 3.18",
       "owner": "M6",
       "kind": "ci",
@@ -4240,6 +4240,22 @@
       "id": "A2.3.10.5.copies.first-load",
       "title": "Open folder answers the copy the folder is served as, and a tab's first subscription for it gets that copy; once another copy is served instead, it gets the word that the copy was replaced and no snapshot",
       "source": "A2 3.10.5, A5 3.15",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.history",
+      "title": "A terminal launch running in the space shows as running there; in a restored copy of a backup made meanwhile its receipt is the recorded one with no live session, and the copy's run history reads on the page and in ttasks run list; a restored copy's runs are read as recorded, with nothing the machine knows of them now",
+      "source": "A2 3.10.5, A5 3.9, A4 3.11.9",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.agents.links.restored",
+      "title": "A restored copy that is not claimed links none of the machine's agents to its tasks: its sessions are not read and no running launch is asked about",
+      "source": "A5 Agents, A2 3.10.5",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

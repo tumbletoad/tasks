@@ -95,6 +95,13 @@ async function start(home: string, runs: StartOptions["runs"]): Promise<RunningS
   return service;
 }
 
+/** The copy that serves the space now, as a run's live view is asked for it. */
+function served(service: RunningService, space: string): ServedSpace {
+  const found = service.ops.spaces().find((s) => s.id === space && s.reader !== undefined);
+  if (found === undefined) throw new Error("the space is not served");
+  return found;
+}
+
 /** A new task of the space, through the request path. */
 async function addTask(home: string, service: RunningService, n: number): Promise<string> {
   const s = await classSession(home, service.endpoint.path, "cli-script");
@@ -465,7 +472,7 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
     const running = await runUntil(service, spaceId, first.id, (r) => r.state === "running", "it");
     const live = await waitFor(
       () => {
-        const now = service.runs.live(running);
+        const now = service.runs.live(running, served(service, spaceId));
         return now.said === undefined ? undefined : now;
       },
       15_000,
@@ -474,15 +481,22 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
     expect(live.said).toEqual({ text: "Still looking.", final: false, cut: false });
     expect(typeof live.quietSince).toBe("number");
     // The host still holds the run while its Stop is on its way: it is stopping, not quiet.
-    const stopping = service.runs.live({ ...running, state: "cancelling" });
+    const stopping = service.runs.live(
+      { ...running, state: "cancelling" },
+      served(service, spaceId),
+    );
     expect(stopping).not.toHaveProperty("quietSince");
     expect(stopping.said?.text).toBe("Still looking.");
-    expect(service.runs.live({ ...running, state: "queued" })).not.toHaveProperty("said");
+    expect(
+      service.runs.live({ ...running, state: "queued" }, served(service, spaceId)),
+    ).not.toHaveProperty("said");
     boxes.finish(first.id);
     const ended = await service.runs.ended(spaceId, first.id);
     expect(ended).toMatchObject({ state: "succeeded" });
     // An ended run's record says it all.
-    expect(ended === undefined ? undefined : service.runs.live(ended)).toEqual({});
+    expect(
+      ended === undefined ? undefined : service.runs.live(ended, served(service, spaceId)),
+    ).toEqual({});
   }, 60_000);
 
   test("the hold names the running run with its task, a new run waits with the reason update, stop_held stops the run with its answer, and closing the hold's connection lets the queue move", async () => {
@@ -531,7 +545,8 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
     const second = await service.runs.start(spaceId, unlimited, "runs-hold-run-000002", command);
     expect(second.limits).toMatchObject({ wallMs: 7 * 60_000, idleMs: 3 * 60_000 });
     await waitFor(
-      () => (service.runs.live(second).waiting === "update" ? true : undefined),
+      () =>
+        service.runs.live(second, served(service, spaceId)).waiting === "update" ? true : undefined,
       15_000,
       "the reason it waits",
     );
@@ -680,6 +695,39 @@ describe("[A4.3.11.9.run.restored] the runs a backup held open never start or go
     await again.runs.tick();
     const tried = await runUntil(again, spaceId, next.id, (r) => r.state !== "queued", "a start");
     expect(tried).toMatchObject({ state: "failed", reason: "spawn_failed" });
+  }, 120_000);
+
+  test("a restored copy that is not claimed lists the backup's runs as it recorded them, with nothing the machine knows of them now, and starts none", async () => {
+    const w = await backedUpRuns("runs-copy");
+    const { user } = w;
+    await user.call("space/close", { space: w.folder }, { timeoutMs: 60_000 });
+    const copy = join(w.root, "spaces", "mira-copy");
+    await user.call(
+      "space/restore",
+      { backup: w.backup, to: copy, of: w.folder },
+      { timeoutMs: 60_000 },
+    );
+    await user.call("space/open", { path: copy }, { timeoutMs: 60_000 });
+    const before = w.boxes.started.length;
+    const listed = (await user.call("runs/list", { space: copy }, { timeoutMs: 60_000 })) as {
+      runs: { id: string; state: string; waiting?: string; quiet_since?: number }[];
+    };
+    const byId = new Map(listed.runs.map((run) => [run.id, run]));
+    expect(byId.get(w.working.id)).toMatchObject({ state: "running" });
+    expect(byId.get(w.queued.id)).toMatchObject({ state: "queued" });
+    for (const run of listed.runs) {
+      expect(run).not.toHaveProperty("waiting");
+      expect(run).not.toHaveProperty("quiet_since");
+    }
+    // The working run's answer in the space itself came after the backup: the copy has none.
+    const shown = (await user.call(
+      "runs/show",
+      { space: copy, run: w.working.id },
+      { timeoutMs: 60_000 },
+    )) as { state: string; answer: string | null };
+    expect(shown).toMatchObject({ state: "running", answer: null });
+    expect(w.boxes.started.length).toBe(before);
+    user.close();
   }, 120_000);
 
   test("a restore in place settles the backup's working and queued runs as restored and starts neither", async () => {

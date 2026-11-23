@@ -2061,7 +2061,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const live =
       here === undefined || here.length === 0
         ? undefined
-        : call.host.sessions?.live(status.space.id);
+        : call.host.sessions?.live(status.space.id, call.space.copy);
     let skillFields: Record<string, unknown>;
     if (reading) {
       // Only the files asked for are read.
@@ -2827,7 +2827,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           ? {}
           : { shows: (page: unknown) => call.caller.shows?.("task.search", page) !== false }),
         live: () =>
-          [...(host.sessions?.live(space) ?? new Map<string, number>())]
+          [...(host.sessions?.live(space, call.space.copy) ?? new Map<string, number>())]
             .filter(([, count]) => count > 0)
             .map(([task]) => task),
         here: async (cwd) => {

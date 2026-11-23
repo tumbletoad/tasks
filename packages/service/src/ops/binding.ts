@@ -91,6 +91,9 @@ export interface SessionPort {
   decide(presented: Presented): Decision;
   /** What a session may do now, read again at every check. */
   standing(home: SessionHome): Standing;
-  /** How many live sessions each task of `space` has: running launches and running runs. */
-  live(space: string): ReadonlyMap<string, number>;
+  /**
+   * How many live sessions each task of `space` has, of those made in the copy `copy` that serves
+   * it: running launches and running runs. A copy shows no other copy's sessions as live.
+   */
+  live(space: string, copy: string | undefined): ReadonlyMap<string, number>;
 }

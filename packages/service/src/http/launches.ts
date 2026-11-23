@@ -63,8 +63,11 @@ export interface UiInstance {
 export interface UiLaunchPort {
   instances(): readonly UiInstance[];
   onChange?(listener: (space: string) => void): () => void;
-  /** Whether the launch's session runs now, as this service follows it. */
-  running?(launch: string): boolean;
+  /**
+   * Whether the launch's session runs now, as this service follows it, and was made in the copy
+   * `copy` of its space.
+   */
+  running?(launch: string, copy: string | undefined): boolean;
   /** The task and agent pairs of a space busy on this machine. */
   busy?(space: string): Promise<readonly UiBusy[]>;
   /** Shows the folder a task opens in here in the file manager (LaunchService.showFolder). */
@@ -106,8 +109,8 @@ export interface UiRunPort {
   ): Promise<RunRecord>;
   list(space: string, task?: string): Promise<readonly { readonly run: RunRecord }[]>;
   stop(space: string, run: string): Promise<RunRecord | undefined>;
-  /** What the run's record cannot say now (RunService.live). */
-  live(run: RunRecord): UiRunLive;
+  /** What the run's record cannot say now, in the copy `space` serves (RunService.live). */
+  live(run: RunRecord, space: ServedSpace): UiRunLive;
   /** Hears each run a person queues or stops, here or with `ttasks run`. */
   onChange?(listener: (space: string) => void): () => void;
 }
@@ -464,11 +467,14 @@ export class UiLaunches {
     const { task } = input;
     if (typeof task !== "string" || !TASK_ID.test(task))
       throw invalid("Expected a task ID.", "task");
-    const reader = this.#space(spaceRef, copy).reader;
+    const space = this.#space(spaceRef, copy);
+    const reader = space.reader;
     if (reader === undefined) throw invalid("The space is not served.", "space");
     const rows = await reader.all(LIST_SQL, { task });
     const port = this.#options.port;
-    const runs = (launch: string): boolean => port?.running?.(launch) ?? false;
+    // Only the copy a launch was made in shows its session as running: a restored copy shows its
+    // launches as they were recorded.
+    const runs = (launch: string): boolean => port?.running?.(launch, space.copy) ?? false;
     return rows.flatMap((r) => receiptOf(r, runs) ?? []).reverse();
   }
 
@@ -501,14 +507,14 @@ export class UiLaunches {
         data: { field: "text" },
       });
     }
-    const space = this.#writable(spaceRef, copy).id ?? "";
-    const queued = await runs.queueTask(space, {
+    const space = this.#writable(spaceRef, copy);
+    const queued = await runs.queueTask(space.id ?? "", {
       task,
       ...(instance === undefined ? {} : { instance }),
       request: words,
       requestId,
     });
-    return uiRun(queued, runs.live(queued));
+    return uiRun(queued, runs.live(queued, space));
   }
 
   /** A task's newest runs, and every older one that may still work, oldest first. */
@@ -521,10 +527,11 @@ export class UiLaunches {
     const { task } = input;
     if (typeof task !== "string" || !TASK_ID.test(task))
       throw invalid("Expected a task ID.", "task");
-    const listed = await runs.list(this.#space(spaceRef, copy).id ?? "", task);
+    const space = this.#space(spaceRef, copy);
+    const listed = await runs.list(space.id ?? "", task);
     return listed
       .filter(({ run }, at) => at < RUNS_SHOWN || isOpenRun(run))
-      .map(({ run }) => uiRun(run, runs.live(run)))
+      .map(({ run }) => uiRun(run, runs.live(run, space)))
       .reverse();
   }
 
