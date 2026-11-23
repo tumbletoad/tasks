@@ -92,6 +92,10 @@ interface Rig {
   readonly release: string;
 }
 
+/** The copy that serves the rig's space now: a launch's session runs only in its own. */
+const copyOf = (r: Rig): string | undefined =>
+  r.lab.running.ops.spaces().find((s) => s.id === r.lab.spaceId && s.reader !== undefined)?.copy;
+
 async function rig(label: string): Promise<Rig> {
   const bin = tempRoot(`${label}-bin`);
   cleanups.push(bin.cleanup);
@@ -514,7 +518,7 @@ describe("[A4.5.routes.request] what a person types before Open is on the task a
       });
       const { launches } = r.lab.running;
       await r.lab.waitIntent(first.launch.id, (i) => i.state === "confirmed", "Confirmed");
-      expect(launches.running(first.launch.id)).toBe(true);
+      expect(launches.running(first.launch.id, copyOf(r))).toBe(true);
       // A page that still showed Ready, or a command line's Open: the running session.
       const late = `${newMarker()} late words ${JOINED}`;
       const third = await open(r, { task: task.ref, instance: "claude", text: late });
@@ -534,14 +538,15 @@ describe("[A4.5.routes.request] what a person types before Open is on the task a
       const another = await open(r, { task: task.ref, instance: "claude", another: true });
       expect(another.launch.id).not.toBe(first.launch.id);
       await waitFor(
-        () => (launches.running(another.launch.id) ? true : undefined),
+        () => (launches.running(another.launch.id, copyOf(r)) ? true : undefined),
         LONG_MS,
         "the second agent running",
       );
       writeFileSync(r.release, "");
       await waitFor(
         () =>
-          launches.running(first.launch.id) || launches.running(another.launch.id)
+          launches.running(first.launch.id, copyOf(r)) ||
+          launches.running(another.launch.id, copyOf(r))
             ? undefined
             : true,
         LONG_MS,

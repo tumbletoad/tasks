@@ -163,6 +163,21 @@ describe("[M6.page.run-words] a run's entry says what is the case and what the p
       values: { limit: "idle" },
     });
   });
+
+  test("a restored copy's run that was open when its backup was made says so, with no Stop and no word of going on", () => {
+    const working = runView(run({ state: "recorded" }), "Codex");
+    expect(working).toMatchObject({ tone: "recorded", stoppable: false });
+    expect(words(working)).toEqual(["Codex was working on it when this backup was made."]);
+    const waiting = runView(run({ state: "recorded", started_at: null }), "Codex");
+    expect(waiting.stoppable).toBe(false);
+    expect(words(waiting)).toEqual(["Codex had not started on it when this backup was made."]);
+    // A claim or a restore in place ended it.
+    const ended = runView(run({ state: "failed", reason: "restored" }), "Codex");
+    expect(ended.stoppable).toBe(false);
+    expect(words(ended)).toEqual([
+      "Interrupted when the space was restored from a backup. Run it again to go on.",
+    ]);
+  });
 });
 
 describe("[M6.page.run-follow] the page shows a run as the service has it", () => {
@@ -232,6 +247,10 @@ describe("[M6.page.run-follow] the page shows a run as the service has it", () =
     });
     expect(
       agentMarker({ id: "ru_1", state: "later", instance: "codex-work" }, instances),
+    ).toBeUndefined();
+    // A restored copy's run was open when its backup was made: nothing of it works now.
+    expect(
+      agentMarker({ id: "ru_1", state: "recorded", instance: "codex-work" }, instances),
     ).toBeUndefined();
     expect(agentMarker(undefined, instances)).toBeUndefined();
     // An agent's question that waits asks for the person, as a run that needs them does.

@@ -237,6 +237,26 @@ export const isOpenRun = (run: { state: RunState; reason: string | null }): bool
   (OPEN_RUN_STATES as readonly RunState[]).includes(run.state) || awaitsConfirmation(run);
 
 /**
+ * The state every read gives a run or a launch that a restored copy, not claimed, records as open:
+ * it was open when the backup was made, and nothing of it runs now. A claim or a restore in place
+ * ends such a record as `restored`, so no copy that takes changes shows one.
+ */
+export const RECORDED = "recorded";
+
+/** The states a read gives a run besides its record's own (RUN_STATES). */
+export const READ_RUN_STATES = [RECORDED] as const;
+
+/** A run's state as a read gives it: its record's, or one of READ_RUN_STATES. */
+export type ReadRunState = RunState | (typeof READ_RUN_STATES)[number];
+
+/**
+ * A task's newest run as its row shows it: working (open), ended asking the person, or a state a
+ * read gives besides its record's, which every row then takes too.
+ */
+export const ROW_RUN_STATES = ["working", "needs_you", ...READ_RUN_STATES] as const;
+export type RowRunState = (typeof ROW_RUN_STATES)[number];
+
+/**
  * The legal transitions. A self edge records evidence and changes no state: the agent's PID on
  * `starting` or `cancelling`, its native ID on `running`. A queued run has no container: a Stop
  * cancels it at once, and one that can no longer start (its task closed, its instance or folder
@@ -289,6 +309,11 @@ export const RUN_REASONS = {
      * service ("Interrupted because TTasks restarted"). The record keeps the last saved answer.
      */
     "service_ended",
+    /**
+     * The space was claimed or restored in place from a backup that held the run open: it belongs to
+     * the space as it was, so it is neither started nor resumed. The record keeps what it had.
+     */
+    "restored",
     // The outcome's reasons other than `success` (OUTCOME_REASONS).
     "agent_error",
     "interrupted",

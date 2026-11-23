@@ -7,9 +7,20 @@ import type { MessageId } from "../i18n/intl.tsx";
 import type { MarkerFact, Msg } from "../row/model.ts";
 import type { RowQuestion, RowRun } from "../store/rows.ts";
 
-/** How a run's entry looks: the one state that asks for attention is `needs_you`. */
+/**
+ * How a run's entry looks: the one state that asks for attention is `needs_you`. `recorded` is a
+ * restored copy's run that was open when its backup was made: nothing of it runs now.
+ */
 export type RunTone =
-  "waiting" | "working" | "stopping" | "done" | "needs_you" | "failed" | "stopped" | "unknown";
+  | "waiting"
+  | "working"
+  | "stopping"
+  | "done"
+  | "needs_you"
+  | "failed"
+  | "stopped"
+  | "unknown"
+  | "recorded";
 
 export interface RunView {
   readonly tone: RunTone;
@@ -81,6 +92,12 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
       ? {}
       : { quiet: msg("run.quiet", { minutes: Math.floor(quietMs / QUIET_SHOWN_MS) }) };
   switch (run.state) {
+    case "recorded":
+      return {
+        tone: "recorded",
+        status: [msg("run.recorded", { label, started: run.started_at === null ? "no" : "yes" })],
+        stoppable: false,
+      };
     case "queued":
       return {
         tone: "waiting",
@@ -139,6 +156,14 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
         return {
           tone: "failed",
           status: [msg("run.notStarted", { reason, label })],
+          stoppable: false,
+        };
+      }
+      if (reason === "restored") {
+        return {
+          tone: "failed",
+          status: [msg("run.restored")],
+          ...said("last"),
           stoppable: false,
         };
       }

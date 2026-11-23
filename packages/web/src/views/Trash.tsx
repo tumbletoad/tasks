@@ -10,6 +10,7 @@ import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { Session } from "../context.ts";
+import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { formatInstant, type Clock } from "../row/dates.ts";
@@ -156,6 +157,11 @@ function TrashList({ q, task, onExpand }: TrashProps & { readonly q: string }) {
           },
           (error: unknown) => {
             if (live.failed(error)) return;
+            const readOnly = readOnlyReason(error);
+            if (readOnly !== undefined) {
+              say(t("edit.notSavedReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }));
+              return;
+            }
             const reason = (error as { data?: { reason?: unknown } }).data?.reason;
             say(
               t(reason === "change_gone" ? "toast.restoreChangeGone" : "toast.restoreChangeFailed"),

@@ -1,5 +1,7 @@
 // The page's requests to its service (A2 3.8.3, 3.8.4): JSON POSTs on the page's own origin, with
-// the bearer token, the build the page was served with, and the tab's space in every call. No
+// the bearer token, the build the page was served with, and the tab's space in every call, with
+// the copy of it the tab loaded once its feed named one: the service refuses a call for a copy it
+// no longer serves (`space_unavailable`, `replaced`), so a tab never writes into another. No
 // cookies, no credentials, no referrer, nothing cached. The token never goes into a URL, and the
 // WebSocket gets a single-use ticket instead (live.ts).
 //
@@ -13,6 +15,19 @@ import { TOKEN_SHAPE } from "./stored.ts";
 /** The headers the service reads (its http/app.ts): names from the identifier, never a display name. */
 const BUILD_HEADER = httpHeader("build");
 const SPACE_HEADER = httpHeader("space");
+const COPY_HEADER = httpHeader("copy");
+
+/** A call refused because the tab's copy of its space is not the one served now. */
+export function isReplaced(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const { code, data } = error as Error & { code?: unknown; data?: unknown };
+  return (
+    code === "space_unavailable" &&
+    typeof data === "object" &&
+    data !== null &&
+    (data as Record<string, unknown>)["reason"] === "replaced"
+  );
+}
 
 /** An instance the page draws a tile for (the service's UiInstance). */
 export interface Instance {
@@ -56,8 +71,15 @@ export interface Run {
   readonly version: number;
 }
 
-export type ReceiptState =
+/** The states a launch's record moves through. */
+export type LaunchState =
   "prepared" | "dispatching" | "dispatched" | "confirmed" | "failed" | "unknown";
+
+/**
+ * A receipt's state: its launch's, or `recorded` for one a restored copy that is not claimed records
+ * as open, which was open when the backup was made and goes on nowhere now.
+ */
+export type ReceiptState = LaunchState | "recorded";
 
 /**
  * An agent app busy with a task on this machine (the service's UiBusy): an Open of it is on its
@@ -77,16 +99,17 @@ export interface Receipt {
   readonly route: string;
   readonly state: ReceiptState;
   readonly reason: string | null;
-  readonly at: Readonly<Partial<Record<ReceiptState, number>>>;
+  readonly at: Readonly<Partial<Record<LaunchState, number>>>;
   /** A terminal launch: the terminal Dispatched and why it was chosen, as fixed words. */
   readonly terminal?: { readonly app: string; readonly source: string };
   /** The note on the task that holds what the person asked the launch's agent, such as `n2`. */
   readonly request?: string;
   /**
-   * A Confirmed launch's session as the service knows it: `running` now, or `ended`. Absent when
-   * it cannot know, which the page never shows as running.
+   * A Confirmed launch's session as the service knows it: `running` now, `ended`, or `restored`
+   * when a claim or a restore in place ended it as a backup's. Absent when it cannot know, which the
+   * page never shows as running.
    */
-  readonly session?: "running" | "ended";
+  readonly session?: "running" | "ended" | "restored";
   /** How long its agent ran, when its end was reported with it. */
   readonly ran_ms?: number;
 }
@@ -126,18 +149,22 @@ export class Refused extends Error {
   readonly said: string | undefined;
   /** The answer's `data`: why, in the service's fixed words. */
   readonly data: Readonly<Record<string, unknown>>;
+  /** The service's next step for the person, when it gave one. */
+  readonly hint: string | undefined;
 
   constructor(
     status: number,
     code: string,
     said?: string,
     data: Readonly<Record<string, unknown>> = {},
+    hint?: string,
   ) {
     super(code);
     this.status = status;
     this.code = code;
     this.said = said;
     this.data = data;
+    this.hint = hint;
   }
 }
 
@@ -145,16 +172,19 @@ export class Refused extends Error {
 export interface MadeSpace {
   readonly id: string;
   readonly name: string;
+  /** The copy of the space the folder is served as: the tab that loads it asks for that copy. */
+  readonly copy?: string;
   /** The space will not reopen after a restart: why, and what to do. */
   readonly notRemembered?: string;
 }
 
 function madeSpace(value: unknown): MadeSpace {
-  const { id, name, not_remembered: line } = (value ?? {}) as Record<string, unknown>;
+  const { id, name, copy, not_remembered: line } = (value ?? {}) as Record<string, unknown>;
   if (typeof id !== "string" || typeof name !== "string") throw new Refused(200, "unknown");
   return {
     id,
     name,
+    ...(typeof copy === "string" && /^[0-9a-f]{24}$/u.test(copy) ? { copy } : {}),
     ...(typeof line === "string" && line.length <= 2000 ? { notRemembered: line } : {}),
   };
 }
@@ -263,25 +293,61 @@ export async function redeem(code: string): Promise<string | null> {
   }
 }
 
-/** A session's calls: its token, the page's build, and the tab's space. */
+/** The entries that only read: a tab that saves nothing more may still send these. */
+export const READ_ENTRIES: ReadonlySet<string> = new Set([
+  "receipt.get",
+  "space.status",
+  "task.finished",
+  "task.get",
+  "task.search",
+  "task.trash",
+]);
+
+/** Whether a call of the tab's space changes it or starts something from it. */
+function changes(path: string): boolean {
+  if (path === "/api/v1/launch/run" || path === "/api/v1/launch/stop") return true;
+  const op = /^\/api\/v1\/op\/(.+)$/u.exec(path)?.[1];
+  return op !== undefined && !READ_ENTRIES.has(op);
+}
+
+/** A session's calls: its token, the page's build, the tab's space and the copy it loaded. */
 export class Api {
   readonly #token: string;
   readonly #build: string;
   readonly #space: () => string | undefined;
+  readonly #copy: () => string | undefined;
+  readonly #ended: () => boolean;
   readonly client: Client;
 
-  constructor(token: string, build: string, space: () => string | undefined) {
+  /**
+   * `ended`: the tab says nothing more is saved from it (its copy of the space is gone). From then
+   * on nothing that would change the space or start something from it leaves the page.
+   */
+  constructor(
+    token: string,
+    build: string,
+    space: () => string | undefined,
+    copy: () => string | undefined = () => undefined,
+    ended: () => boolean = () => false,
+  ) {
     this.#token = token;
     this.#build = build;
     this.#space = space;
+    this.#copy = copy;
+    this.#ended = ended;
     this.client = createClient({ post: (path, body) => this.post(path, body) });
   }
 
   async post(path: string, body: string): Promise<{ status: number; body: string }> {
     const space = this.#space();
+    if (space !== undefined && this.#ended() && changes(path)) {
+      throw new Refused(0, "space_unavailable", undefined, { reason: "replaced" });
+    }
+    const copy = space === undefined ? undefined : this.#copy();
     const headers: Record<string, string> = { Authorization: `Bearer ${this.#token}` };
     if (this.#build !== "") headers[BUILD_HEADER] = this.#build;
     if (space !== undefined) headers[SPACE_HEADER] = space;
+    if (copy !== undefined) headers[COPY_HEADER] = copy;
     const reply = await postJson(path, body, headers);
     if (reply.status === 401) throw new SignedOut();
     if (reply.status === 409 && reply.body.includes('"reason":"build"')) throw new StaleBuild();
@@ -292,19 +358,21 @@ export class Api {
     const reply = await this.post(path, JSON.stringify(input));
     const parsed = JSON.parse(reply.body) as {
       result?: T;
-      error?: { code?: unknown; message?: unknown; data?: unknown };
+      error?: { code?: unknown; message?: unknown; data?: unknown; hint?: unknown };
     };
     if (reply.status !== 200 || parsed.result === undefined) {
       const code = parsed.error?.code;
       const message = parsed.error?.message;
       const data = parsed.error?.data;
+      const hint = parsed.error?.hint;
       throw new Refused(
         reply.status,
         typeof code === "string" ? code : "unknown",
-        typeof message === "string" && message.length <= 500 ? message : undefined,
+        typeof message === "string" && message.length <= 1000 ? message : undefined,
         typeof data === "object" && data !== null && !Array.isArray(data)
           ? (data as Record<string, unknown>)
           : {},
+        typeof hint === "string" && hint.length <= 1000 ? hint : undefined,
       );
     }
     return parsed.result;
@@ -416,9 +484,9 @@ export class Api {
       request_id: id,
     });
     const { launch } = result;
-    const at: Partial<Record<ReceiptState, number>> = {};
+    const at: Partial<Record<LaunchState, number>> = {};
     for (const [state, value] of Object.entries(launch.at)) {
-      if (typeof value === "number") at[state as ReceiptState] = value;
+      if (typeof value === "number") at[state as LaunchState] = value;
     }
     return {
       receipt: {

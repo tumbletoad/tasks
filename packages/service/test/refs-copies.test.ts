@@ -62,12 +62,10 @@ describe("[A1.5.refs.copies] a claimed copy and a restore in place go on from ev
     });
     running.push(service);
     await service.spacesSettled;
-    // Served beside its original, as `ttasks space restore --to` serves a copy.
-    expect(await service.spaceManager.open(copy)).toBe(1);
-    expect(service.spaces().map((s) => s.state)).toEqual(["open", "read_only"]);
-
-    // The person moves to the copy: the original closes, the copy is claimed.
+    // The person moves to the copy: the original closes, the copy opens and is claimed.
     await service.spaceManager.close(0);
+    expect(await service.spaceManager.open(copy)).toBe(1);
+    expect(service.spaces().map((s) => s.state)).toEqual(["closed", "read_only"]);
     await service.spaceManager.claim(1);
     expect((await readFacts(copy)).space.nextRef).toBe(originalNext);
 

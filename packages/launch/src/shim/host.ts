@@ -132,6 +132,8 @@ export interface LiveLaunch {
   /** The agent's app and home folder as the click recorded them; a launch can lack either. */
   readonly app?: string;
   readonly home?: string;
+  /** The copy of the space the click was made in: its session writes there only. */
+  readonly copy?: string;
 }
 
 /** Sends the claim's reply to the shim. Resolves once it has left the service. */
@@ -141,9 +143,14 @@ export interface ShimHostOptions {
   readonly records: RecordStore;
   readonly probe: ProcessProbe;
   readonly platform: NodeJS.Platform;
-  /** The space's launch machine, while the space is open as this machine's. */
+  /**
+   * The space's launch machine, while the space is open as this machine's from the copy `copy`
+   * (a launch's record names the copy its click was made in; none for an earlier build's record):
+   * a launch is never reported into another copy of its space.
+   */
   readonly machine: (
     space: string,
+    copy: string | undefined,
   ) => LaunchMachine | undefined | Promise<LaunchMachine | undefined>;
   /**
    * Where the agent's environment starts for `launch` (environment.ts AgentBase): read at each
@@ -361,7 +368,7 @@ export class ShimHost {
     if (!isPid(pid) || !isStartTime(startTime)) return refused("malformed");
     const found = this.#byTicket(ticket);
     if (found?.ticket === undefined) return refused("unknown");
-    const { launch, space } = found;
+    const { launch, space, copy } = found;
     if (found.ticket.shimUsed) return refused("used");
     const hash = found.ticket.hash;
     const claiming = this.#claiming.get(launch) ?? new Set<string>();
@@ -374,7 +381,7 @@ export class ShimHost {
       // shim may try again (the service answers it as retryable), never a final refusal.
       let machine: LaunchMachine | undefined;
       try {
-        machine = await this.#machine(space);
+        machine = await this.#machine(space, copy);
       } catch {
         return refused("space"); // The space's machine could not be made now (its writer).
       }
@@ -554,7 +561,7 @@ export class ShimHost {
         break;
       }
     }
-    const machine = await this.#machine(record.space);
+    const machine = await this.#machine(record.space, record.copy);
     if (machine === undefined) return refused("space");
     let intent: LaunchIntent | undefined;
     try {
@@ -609,6 +616,7 @@ export class ShimHost {
       session: sessionOf({ id: record.launch, session: record.session ?? null }),
       ...(record.app === undefined ? {} : { app: record.app }),
       ...(record.home === undefined ? {} : { home: record.home }),
+      ...(record.copy === undefined ? {} : { copy: record.copy }),
     };
   }
 
@@ -625,27 +633,44 @@ export class ShimHost {
   }
 
   /**
-   * How many of each task's launches in `space` run now, for its live count: a launch counts while
-   * its shim runs and no exit is on disk, so an agent that ended stops counting at once, also
-   * while its shim waits for Enter.
+   * Whether the launch was made in the copy `copy` of its space, the one served now: a copy shows
+   * only its own launches' sessions as live. None served: none. A record an earlier build wrote
+   * names no copy, and counts for any.
    */
-  liveSessions(space: string): Map<string, number> {
+  madeIn(launch: string, copy: string | undefined): boolean {
+    const record = this.#records.get(launch);
+    return (
+      record !== undefined &&
+      copy !== undefined &&
+      (record.copy === undefined || record.copy === copy)
+    );
+  }
+
+  /**
+   * How many of each task's launches in `space`, made in its copy `copy`, run now, for its live
+   * count: a launch counts while its shim runs and no exit is on disk, so an agent that ended
+   * stops counting at once, also while its shim waits for Enter.
+   */
+  liveSessions(space: string, copy: string | undefined): Map<string, number> {
     const counts = new Map<string, number>();
-    for (const record of this.#records.list()) {
-      if (record.space !== space || record.task === null) continue;
-      if (!this.running(record.launch) || this.#records.readExit(record.launch) !== undefined) {
+    for (const launch of this.runningIn(space, copy)) {
+      const task = this.#records.get(launch)?.task;
+      if (task === null || task === undefined || this.#records.readExit(launch) !== undefined) {
         continue;
       }
-      counts.set(record.task, (counts.get(record.task) ?? 0) + 1);
+      counts.set(task, (counts.get(task) ?? 0) + 1);
     }
     return counts;
   }
 
-  /** The launches of a space whose session runs now (`running`). */
-  runningIn(space: string): string[] {
+  /** The launches of a space, made in its copy `copy`, whose session runs now (`running`). */
+  runningIn(space: string, copy: string | undefined): string[] {
     return this.#records
       .list()
-      .filter((record) => record.space === space && this.running(record.launch))
+      .filter(
+        (record) =>
+          record.space === space && this.madeIn(record.launch, copy) && this.running(record.launch),
+      )
       .map((record) => record.launch);
   }
 
@@ -653,9 +678,13 @@ export class ShimHost {
    * Recovery's look at a claimed terminal launch after a restart (A4 3.9.3, RecoverySteps.observe):
    * `exit.json` finalizes; a shim that is alive with its start time is pending until it re-attaches
    * and reports; one that is gone, or never got its credential, is lost. A check the OS could not
-   * answer is pending, never lost.
+   * answer is pending, never lost. `copy`: the copy of the space whose recovery asks, when it is
+   * known. A launch another copy made (a backup brought it back) is lost in this one: its session
+   * writes there only.
    */
-  async observe(intent: LaunchIntent): Promise<Observation> {
+  async observe(intent: LaunchIntent, copy?: string): Promise<Observation> {
+    const made = this.#records.get(intent.id) !== undefined;
+    if (copy !== undefined && made && !this.madeIn(intent.id, copy)) return { kind: "lost" };
     const exit = this.#records.readExit(intent.id);
     if (exit !== undefined) return exitObservation(exit);
     const held = this.#records.get(intent.id)?.attachment;
@@ -737,7 +766,7 @@ export class ShimHost {
     if (observation !== undefined) {
       let machine: LaunchMachine | undefined;
       try {
-        machine = await this.#machine(record.space);
+        machine = await this.#machine(record.space, record.copy);
         if (machine !== undefined) await machine.report(launch, observation);
       } catch {
         return false; // The store did not answer: the next check tries again.

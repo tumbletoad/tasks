@@ -6,6 +6,7 @@
 // opener is recorded.
 import { createServer as createHttpServer } from "node:http";
 import { createServer, type Server, type Socket } from "node:net";
+import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { blockedMessage, movedMessage } from "@ttasks/service/http/shared";
 import { post, send } from "@ttasks/service/test/http-client";
@@ -74,6 +75,18 @@ describe("[A2.3.9.cli.open] ttasks open", () => {
     const match = URL_SHAPE.exec(opened[0] ?? "");
     const to = decodeURIComponent(match?.[3] ?? "");
     expect(to).toMatch(/^\/s\/sp_[0-9a-z]{26}\/task\/M-1$/);
+    // A folder is no space ID or name: the page's Open folder opens it.
+    for (const folder of [join(w.root, "s", "mira-copy"), "s\\mira-copy"]) {
+      const refused = await runMain(["open", "--space", folder], {
+        home: w.home,
+        tty: true,
+        main: { openUrl },
+      });
+      expect(refused.code).toBe(2);
+      expect(refused.stderr).toContain("--space takes a space ID or name, not a folder");
+      expect(refused.stderr).toContain("choose Open folder in the page's space list");
+    }
+    expect(opened).toHaveLength(1);
     const json = await runMain(["open", "--json"], { home: w.home, tty: true, main: { openUrl } });
     expect(JSON.parse(json.stdout)).toEqual({ opened: true, port: w.port(), moved: false });
     const failed = await runMain(["open"], {

@@ -15,6 +15,8 @@ export interface PageSpacesHost {
   /** The account's home folder: `~` in a folder the page shows or sends. */
   readonly userHome: string | undefined;
   readonly spaces: SpaceVerbsHost;
+  /** The copy a registered space is served as now (SpaceManager.copyOf). */
+  readonly copyOf: (entry: number) => string | undefined;
 }
 
 type Verb = (params: JsonObject, cls: ConnectionClass) => Promise<unknown>;
@@ -35,22 +37,45 @@ const nameOf = (params: JsonObject): string => {
 };
 
 /**
- * A space as the page needs it: its ID and name, and when machine.toml could not record it, the
- * line that says a restart will not reopen it and what to do.
+ * A space as the page needs it: its ID and name, the copy the folder is served as, which the tab
+ * that loads it next asks for, and when machine.toml could not record it, the line that says a
+ * restart will not reopen it and what to do.
  */
-function described(result: unknown): { id: string; name: string; not_remembered?: string } {
+function described(
+  result: unknown,
+  copyOf: (entry: number) => string | undefined,
+): { id: string; name: string; copy?: string; not_remembered?: string } {
   const { space, not_remembered: line } = result as {
-    space?: { id?: unknown; name?: unknown };
+    space?: { id?: unknown; name?: unknown; entry?: unknown };
     not_remembered?: unknown;
   };
   if (typeof space?.id !== "string" || typeof space.name !== "string") {
     throw new AppError({ code: "internal", message: "The space has no ID." });
   }
+  const copy = typeof space.entry === "number" ? copyOf(space.entry) : undefined;
   return {
     id: space.id,
     name: space.name,
+    ...(copy === undefined ? {} : { copy }),
     ...(typeof line === "string" ? { not_remembered: line } : {}),
   };
+}
+
+/**
+ * A refusal as the page shows it: the folders it names under the person's home read with `~`, as
+ * the page shows folders everywhere else.
+ */
+function shownIn(error: unknown, home: string | undefined, platform: NodeJS.Platform): unknown {
+  if (!(error instanceof AppError) || home === undefined || home === "") return error;
+  const p = platform === "win32" ? win32 : posix;
+  const prefix = `${p.resolve(home)}${p.sep}`;
+  const shown = (text: string) => text.replaceAll(prefix, `~${p.sep}`);
+  const body = error.toBody();
+  return new AppError({
+    ...body,
+    message: shown(body.message),
+    ...(body.hint === undefined ? {} : { hint: shown(body.hint) }),
+  });
 }
 
 export function pageSpaceVerbs(host: PageSpacesHost): {
@@ -105,12 +130,16 @@ export function pageSpaceVerbs(host: PageSpacesHost): {
         { name, path, ...(prefix === undefined || prefix === "" ? {} : { ref_prefix: prefix }) },
         cls,
       );
-      return described(result);
+      return described(result, host.copyOf);
     },
     open: async (params, cls) => {
       const path = folderOf(params, "folder");
       if (path === undefined) throw invalid("folder", "Expected a folder");
-      return described(await verb("space/open")({ path }, cls));
+      try {
+        return described(await verb("space/open")({ path }, cls), host.copyOf);
+      } catch (error) {
+        throw shownIn(error, host.userHome, platform);
+      }
     },
   };
 }

@@ -1,15 +1,17 @@
 // Background runs in the service: at start, the probe of this machine's process groups (on Linux
 // it is also when the service moves itself into its unit's `main` cgroup), which decides only how a
 // run's processes are ended: in a process group where one can be made, else as far as TTasks can
-// find them. Then for each space open as this machine's a run host over its execution store, whose
-// recovery settles the space's open runs before any of them is hosted again; and over all of them
-// one supervisor, which starts queued runs within machine.toml's `[runs]` limits, holds new starts
+// find them. Before a space is served as this machine's, the runs a claim or a restore in place
+// brought back open from a backup are ended for good (settleRestored). Then for each space open as
+// this machine's a run host over its execution store, whose recovery settles the space's open runs
+// before any of them is hosted again; and over all of them one supervisor, which starts queued runs within machine.toml's `[runs]` limits, holds new starts
 // while an update waits, and removes old run folders.
 import { dirname, join } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
 import {
   FINAL_RUN_STATES,
+  isOpenRun,
   normaliseRunText,
   RUN_LIMITS,
   type NewRun,
@@ -17,7 +19,7 @@ import {
   type RunRecord,
 } from "@ttasks/contracts/runs";
 import { decodeRun, newTicket, RunRefused, sessionOf, SpaceExecutionStore } from "@ttasks/launch";
-import { decodeRunRow } from "@ttasks/storage";
+import { decodeRunRow, type SpaceWriterHandle } from "@ttasks/storage";
 import {
   containers as platformContainers,
   FallbackContainers,
@@ -44,8 +46,16 @@ import {
 import { DEFAULT_RUN_SETTINGS, type RunSettings } from "../config/machine-toml.ts";
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
+import type { OpeningSpace } from "../hub/spaces.ts";
 import type { ServedSpace } from "../ops/index.ts";
-import { readLaunchTask, readRunRows, readTaskRef, type TaskFolder } from "../ops/read.ts";
+import {
+  readLaunchTask,
+  readRestoredRuns,
+  readRunRow,
+  readRunRows,
+  readTaskRef,
+  type TaskFolder,
+} from "../ops/read.ts";
 import {
   buildRun,
   runAdapter,
@@ -92,9 +102,10 @@ export interface RunServiceOptions extends RunOptions {
   readonly agents?: RunAgents;
 }
 
-/** What a run ticket names: the run its bridge acts for. */
+/** What a run ticket names: the run its bridge acts for, in the copy of its space it started in. */
 interface RunTicket {
   readonly space: string;
+  readonly copy: string | undefined;
   readonly run: string;
   readonly task: string | null;
   readonly instance: string;
@@ -104,6 +115,8 @@ interface RunTicket {
 export interface LiveRun {
   readonly run: string;
   readonly space: string;
+  /** The copy of its space it started in: its session writes there only. */
+  readonly copy?: string;
   /** Null for a routine's run. */
   readonly task: string | null;
   readonly instance: string;
@@ -160,6 +173,11 @@ const ROUND_MS = 30_000;
 
 /** What a run's record cannot say, from this service: see RunService.live. */
 export interface RunLive {
+  /**
+   * The run is open in a restored copy that is not claimed: it was when the backup was made, and
+   * nothing of it runs now. Every view shows it `recorded`.
+   */
+  readonly recorded?: true;
   readonly waiting?: WaitReason;
   /** Wall clock milliseconds since when a running run wrote nothing. */
   readonly quietSince?: number;
@@ -487,9 +505,12 @@ export class RunService {
     for (const listener of this.#changed) listener(space);
   }
 
-  /** A space's newest runs, or a task's, each with its task's reference. */
+  /**
+   * A space's newest runs, or a task's, each with its task's reference, as the copy served now
+   * recorded them: also a copy that takes no change.
+   */
   async list(space: string, task?: string): Promise<ListedRun[]> {
-    const served = this.#served(space);
+    const served = this.#readable(space);
     if (served?.reader === undefined) {
       throw refusal("not_served", "The space is not open on this machine.");
     }
@@ -523,15 +544,18 @@ export class RunService {
     space: string,
     run: string,
   ): Promise<{ run: RunRecord; task: string | null; answer: string | null } | undefined> {
-    const record = await this.read(space, run).catch(() => undefined);
-    if (record === undefined) return undefined;
-    const served = this.#served(space);
-    const task =
-      record.task === null || served?.reader === undefined
-        ? null
-        : ((await readTaskRef(served.reader, record.task).catch(() => undefined)) ?? null);
-    const answer = record.result?.text ?? this.live(record).said?.text ?? null;
-    return { run: record, task, answer };
+    const served = this.#readable(space);
+    if (served?.reader === undefined) return undefined;
+    const found = await readRunRow(served.reader, run).catch(() => undefined);
+    if (found === undefined) return undefined;
+    let record: RunRecord;
+    try {
+      record = decodeRun(decodeRunRow(found.row));
+    } catch {
+      return undefined;
+    }
+    const answer = record.result?.text ?? this.live(record, served).said?.text ?? null;
+    return { run: record, task: found.ref, answer };
   }
 
   /**
@@ -544,18 +568,23 @@ export class RunService {
     return {
       run: found.run,
       space: found.space,
+      ...(found.copy === undefined ? {} : { copy: found.copy }),
       task: found.task,
       instance: found.instance,
       session: sessionOf({ id: found.run }),
     };
   }
 
-  /** How many of each task's runs in `space` run now, by the host's own state. */
-  liveSessions(space: string): Map<string, number> {
+  /**
+   * How many of each task's runs in `space` run now, by the host's own state, of those started in
+   * its copy `copy`.
+   */
+  liveSessions(space: string, copy: string | undefined): Map<string, number> {
     const host = this.#lanes.get(space)?.host;
     const runs = new Map<string, string>();
     for (const ticket of this.#tickets.values()) {
-      if (ticket.space === space && ticket.task !== null && host?.running(ticket.run) === true) {
+      if (copy === undefined || ticket.space !== space || ticket.copy !== copy) continue;
+      if (ticket.task !== null && host?.running(ticket.run) === true) {
         runs.set(ticket.run, ticket.task);
       }
     }
@@ -611,10 +640,13 @@ export class RunService {
 
   /**
    * What a run's record cannot say: why a queued run waits, as the last round saw it, since when
-   * a running one has written nothing, and what one that started said so far. Each holds only in
-   * the state it is about: a run being stopped is not quiet, a started one does not wait.
+   * a running one has written nothing, and what one that started said so far, while this service
+   * hosts the runs of the copy `space` serves (#hosts). Each holds only in the state it is about:
+   * a run being stopped is not quiet, a started one does not wait.
    */
-  live(run: RunRecord): RunLive {
+  live(run: RunRecord, space: ServedSpace): RunLive {
+    if (space.restored !== undefined) return isOpenRun(run) ? { recorded: true } : {};
+    if (!this.#hosts(space)) return {};
     if (run.state === "queued") {
       const waiting = this.#supervisor.waiting(run.id);
       return waiting === undefined ? {} : { waiting };
@@ -697,8 +729,16 @@ export class RunService {
    * land can be tried again; its ticket names it to the bridge from then until it ends.
    */
   async #prepare(lane: Lane, run: RunRecord): Promise<Prepared> {
+    // The copy whose writer hosts the lane: a run never starts from another copy's task.
     const served = this.#served(lane.space);
-    if (served === undefined) throw new Error("The space is not open on this machine");
+    const hosted = this.#hosted.get(lane.space);
+    if (
+      served === undefined ||
+      hosted?.life.host !== lane.host ||
+      hosted.writer !== served.writer
+    ) {
+      throw new Error("The space is not open on this machine");
+    }
     const given = this.#commands.get(run.id);
     const agents = this.#options.agents;
     if (given === undefined && agents !== undefined) {
@@ -720,6 +760,7 @@ export class RunService {
           if (toolsFile !== undefined) this.#files.writePrivate(run.id, TOOLS_FILE, toolsFile);
           this.#tickets.set(ticket, {
             space: lane.space,
+            copy: served.copy,
             run: run.id,
             task: run.task,
             instance: run.instance,
@@ -747,6 +788,26 @@ export class RunService {
 
   #served(space: string): ServedSpace | undefined {
     return this.#options.spaces().find((s) => s.id === space && isOpen(s));
+  }
+
+  /** The copy that serves `space` now, open or read-only: what its run history is read from. */
+  #readable(space: string): ServedSpace | undefined {
+    return this.#options
+      .spaces()
+      .find((s) => s.id === space && s.reader !== undefined && s.state !== "closed");
+  }
+
+  /**
+   * Whether this service hosts the runs of the copy `space` now: its writer's run host has
+   * recovered. Only then does what the machine knows of a run (why it waits, what it said so far)
+   * belong to that copy's runs: a restored copy, or a claimed one before its recovery, shows them
+   * as they were recorded.
+   */
+  #hosts(space: ServedSpace): boolean {
+    const id = space.id;
+    if (id === undefined || space.writer === undefined) return false;
+    const hosted = this.#hosted.get(id);
+    return hosted?.writer === space.writer && this.#lanes.get(id)?.host === hosted.life.host;
   }
 
   /** What a queued run needs, read now: its task open, its instance and its folder still there. */
@@ -805,19 +866,7 @@ export class RunService {
     const writer = served.writer;
     if (writer === undefined) throw new Error("The space has no writer");
     const id = this.#options.machine;
-    const human = await writer.actor("human", "user");
-    const store = new SpaceExecutionStore({
-      writer,
-      spaceId: space,
-      credential: {
-        scope_id: `runs:${id}`,
-        principal_id: human,
-        actor_kind: "human",
-        machine_id: id,
-        origin: "ui",
-      },
-    });
-    const machine = new RunMachine({ store, machine: id });
+    const machine = new RunMachine({ store: await this.#store(space, writer), machine: id });
     const log: RunHostLog = (event, fields) => {
       this.#options.log.log(event, fields);
     };
@@ -837,6 +886,42 @@ export class RunService {
     if (closed()) throw new Error("The space's host was closed");
     this.#lanes.set(space, { space, machine, host });
     return { host, machine };
+  }
+
+  /**
+   * Ends every run the space holds open from before its last claim or restore in place, which a
+   * backup brought back, before the space is served: whichever machine made it, none starts or goes
+   * on. A queued one fails `restored`, as does one that ran (`cancelled` after an accepted Stop).
+   * No process is asked about: one this machine still ran for that record belonged to the copy it
+   * was started in, whose host ends it when that copy is no longer served.
+   */
+  async settleRestored(space: OpeningSpace): Promise<void> {
+    const restored = await readRestoredRuns(space.reader);
+    if (restored.size === 0) return;
+    const machine = new RunMachine({
+      store: await this.#store(space.id, space.writer),
+      machine: this.#options.machine,
+    });
+    for (const id of restored) {
+      const after = await machine.settle(id, { kind: "restored" });
+      if (after !== undefined && isOpenRun(after)) throw new Error("A restored run did not end");
+    }
+  }
+
+  /** The space's execution store over `writer`, writing as the space's human, in runs' scope. */
+  async #store(space: string, writer: SpaceWriterHandle): Promise<SpaceExecutionStore> {
+    const id = this.#options.machine;
+    return new SpaceExecutionStore({
+      writer,
+      spaceId: space,
+      credential: {
+        scope_id: `runs:${id}`,
+        principal_id: await writer.actor("human", "user"),
+        actor_kind: "human",
+        machine_id: id,
+        origin: "ui",
+      },
+    });
   }
 
   #serves(space: string, writer: unknown): boolean {

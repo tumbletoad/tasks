@@ -71,11 +71,12 @@ const taskEvent = (row: ReturnType<typeof task>, seq?: number) => ({
 
 let frames: FakeFrames;
 
-function start(): Live {
+function start(copy?: string): Live {
   const api = { ticket: () => Promise.resolve("t".repeat(32)) } as unknown as Api;
   const live = new Live({
     api,
     route: { space: SPACE },
+    copy,
     build: "",
     onSpace: () => undefined,
     onSignedOut: () => undefined,
@@ -168,6 +169,52 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     socket().drop();
     await vi.advanceTimersByTimeAsync(1_000);
     expect(FakeSocket.all).toHaveLength(3);
+    live.stop();
+  });
+
+  test("a tab resumes with the copy it loaded; a call refused for another copy ends its feed and says so", async () => {
+    const live = start();
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b" });
+    const copy = "c".repeat(24);
+    receive({ ...snapshot(5, [task("a", "One")]), space: { ...snapshot(5).space, copy } });
+    expect(live.copy).toBe(copy);
+    socket().drop();
+    await vi.advanceTimersByTimeAsync(1_000);
+    socket().receive({ type: "hello", build: "b" });
+    expect(socket().sent.at(-1)).toEqual({
+      type: "subscribe",
+      space: SPACE,
+      cursor: cursor(5),
+      copy,
+    });
+    // A write refused because another copy is served now.
+    const replaced = Object.assign(new Error("space_unavailable"), {
+      code: "space_unavailable",
+      data: { reason: "replaced" },
+    });
+    expect(live.failed(replaced)).toBe(true);
+    expect(live.getState().gone).toEqual({ why: "replaced" });
+    expect(live.stopped).toBe(true);
+    expect([...live.getState().tasks.keys()]).toEqual(["a"]);
+    // The feed is over: nothing reconnects, nothing more applies.
+    socket().drop();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(FakeSocket.all).toHaveLength(2);
+    live.stop();
+  });
+
+  test("a tab opened for one copy asks for it in its first subscription, then for the copy it loaded", async () => {
+    const copy = "d".repeat(24);
+    const live = start(copy);
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b" });
+    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: SPACE, copy });
+    receive({ ...snapshot(5, [task("a", "One")]), space: { ...snapshot(5).space, copy } });
+    expect(live.getState().phase).toBe("live");
+    // A fresh snapshot of a loaded tab takes the copy served, and tells the tab if it changed.
+    live.refresh();
+    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: SPACE });
     live.stop();
   });
 

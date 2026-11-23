@@ -57,11 +57,11 @@ describe("[A2.3.10.cli.space-use] ttasks space use: the machine's default space"
     const recover = await user(["recover"]);
     expect(recover.code, recover.stdout + recover.stderr).toBe(0);
     expect(recover.stdout).toBe("Life needs no recovery.\n");
-    // A backup's name is the default space's, also into a new folder.
+    // A backup's name is the default space's, also into a new folder, which is made and not
+    // opened beside the space.
     const copy = await user(["space", "restore", name, "--to", join("s", "life-copy")]);
     expect(copy.code, copy.stdout + copy.stderr).toBe(0);
-    expect(copy.stdout).toMatch(/^Restored Life /mu);
-    expect((await user(["space", "close", join(world.root, "s", "life-copy")])).code).toBe(0);
+    expect(copy.stdout).toMatch(/^Restored into .*life-copy\nLife is open from /u);
     const inPlace = await user(["space", "restore", name, "--in-place"]);
     expect(inPlace.code).toBe(2);
     expect(inPlace.stderr).toContain("does not take the default space");

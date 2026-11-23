@@ -27,7 +27,7 @@
 // after a restart. When it cannot, the answer's `not_remembered` line says why, on stderr.
 import { isAbsolute, resolve } from "node:path";
 import { CLI_NAME } from "@ttasks/brand";
-import { isAmbiguity, onlySpace } from "@ttasks/service/copies";
+import { onlySpace } from "@ttasks/service/copies";
 import { defaultSpaceFolder, hostFacts, resolveLayout } from "@ttasks/service/paths";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
@@ -68,8 +68,9 @@ export const SPACE_HELP = `Usage: ttasks space <command> [arguments] [--json]
 
 <space> is an ID, a name or a folder. Without one: --space, TTASKS_SPACE, the default space
 (ttasks space use), else the one space the service serves; recover takes the space that needs it
-and claim the restored copy. An ID or a name means the copy that takes writes; name a restored
-copy beside it by its folder. <backup> is a file, or a name ttasks space backups prints. A space
+and claim the restored copy. One copy of a space is open at a time: an ID or a name means the
+folder that serves it, and a closed copy is named by its folder. <backup> is a file, or a name
+ttasks space backups prints. A space
 stays open or closed as you left it, also after a restart: the service records it in machine.toml.
 Only the user can run these, from a terminal; list and backups work everywhere.
 `;
@@ -94,6 +95,8 @@ export interface SpaceRow {
   migrated?: Migrated;
   /** An open space whose backups are not working: what happened and what to do. */
   backup?: { why?: string; message?: string };
+  /** A restored copy not claimed: when it was restored, and from which backup file. */
+  restored?: { at: string; backup?: string };
 }
 
 /** Options of a space command: `--name value` or `--flag`. Values are never shown in errors. */
@@ -158,11 +161,12 @@ export function wayOut(row: Pick<SpaceRow, "state" | "reason"> & Partial<SpaceRo
   const backup = [
     "To move the space, restore a backup into a new local folder and claim the copy:",
     `  ${CLI_NAME} space backup <folder>`,
+    `  ${CLI_NAME} space close <folder>`,
     `  ${CLI_NAME} space restore <folder>/backups/<name>.db.gz --to <new folder>`,
     `  ${CLI_NAME} space claim <new folder>`,
     "<name> is the name the backup prints. <new folder> must not exist yet.",
-    "The old folder stays where it is, read-only, and keeps all its files.",
-    `The copy opens at every start from now on. Close the old folder when you no longer need it: ${CLI_NAME} space close <folder>`,
+    "The old folder stays where it is, closed, and keeps all its files.",
+    "The copy opens at every start from now on.",
   ];
   return row.reason === "network_filesystem"
     ? backup
@@ -172,6 +176,22 @@ export function wayOut(row: Pick<SpaceRow, "state" | "reason"> & Partial<SpaceRo
       ];
 }
 
+/**
+ * What a restored copy is, whatever else keeps it from being written. A claim is offered only
+ * where it is taken: a copy read-only for its folder (a synced one) says that way out instead.
+ */
+function restoredLine(row: SpaceRow, restored: NonNullable<SpaceRow["restored"]>): string {
+  const from = restored.backup === undefined ? "" : ` from ${restored.backup}`;
+  const look = `A copy restored ${restored.at}${from}, to look inside.`;
+  return claimable(row)
+    ? `${look} Claim it to make it the space: ${CLI_NAME} space claim <folder>`
+    : look;
+}
+
+/** Whether `space claim` takes the space as it is now. */
+const claimable = (row: Pick<SpaceRow, "state" | "reason">): boolean =>
+  row.state === "read_only" && row.reason === "read_only_copy";
+
 function printSpace(io: Io, row: SpaceRow, verb: string, isDefault = false): void {
   // A space not served since the start (closed, or unavailable) has no name read yet.
   const name = row.name ?? (row.state === "closed" ? "(not open)" : "(unnamed)");
@@ -180,6 +200,7 @@ function printSpace(io: Io, row: SpaceRow, verb: string, isDefault = false): voi
   io.stdout(
     `${verb}${name}${row.ref_prefix === undefined ? "" : ` (${row.ref_prefix})`}  ${state}${id === undefined ? "" : `  ${id}`}${row.folder === undefined ? "" : `  ${row.folder}`}\n`,
   );
+  if (row.restored !== undefined) io.stdout(`  ${restoredLine(row, row.restored)}\n`);
   if (row.message !== undefined) io.stdout(`  ${row.message}\n`);
   if (row.migrated !== undefined) io.stdout(`  ${migratedLine(row.migrated)}\n`);
   if (row.backup?.message !== undefined) io.stdout(`  ${row.backup.message}\n`);
@@ -203,14 +224,14 @@ export interface Unnamed {
    */
   readonly useDefault?: boolean;
   /** When exactly one served space passes this, that one: `recover` finds the space that needs it. */
-  readonly prefer?: (row: Pick<SpaceRow, "state" | "reason">) => boolean;
+  readonly prefer?: (row: Pick<SpaceRow, "state" | "reason" | "restored">) => boolean;
 }
 
 /**
  * The space a command names, in the order op/call takes it: its argument, --space, TTASKS_SPACE,
- * the machine's default space (`ttasks space use`), else the one space the service has. A copy is
- * picked by the one rule for copies (the writable one) and sent by its folder, never its ID, so the
- * service acts on the copy that was chosen here. `ttasks view` names its space the same way.
+ * the machine's default space (`ttasks space use`), else the one space the service has. The
+ * folder that serves it is sent, never its ID, so the service acts on the folder chosen here.
+ * `ttasks view` names its space the same way.
  */
 export async function whichSpace(
   io: Io,
@@ -231,7 +252,7 @@ export async function whichSpace(
     .map((s) => ({ ...s, id: s.id ?? s.registered }));
   const folderOf = (rows: typeof live): string | undefined => {
     const found = onlySpace(rows);
-    return found === "several" || isAmbiguity(found) ? undefined : found?.folder;
+    return found === "several" ? undefined : found?.folder;
   };
   const preferred = unnamed.prefer === undefined ? [] : live.filter(unnamed.prefer);
   if (preferred.length === 1 && preferred[0]?.folder !== undefined) return preferred[0].folder;
@@ -333,7 +354,7 @@ export async function spaceCommand(
           sub === "recover"
             ? (row) => row.reason === "needs_recovery"
             : sub === "claim"
-              ? (row) => row.reason === "read_only_copy"
+              ? (row) => row.restored !== undefined
               : undefined;
         const space = await whichSpace(io, globals, o.positional[0], call, {
           ...(prefer === undefined ? {} : { prefer }),
@@ -453,8 +474,14 @@ export async function spaceCommand(
           if (typeof result["backup"] === "string") {
             io.stdout(`The newest backup that verifies: ${result["backup"]}\n`);
           }
-          printSpace(io, result["space"] as SpaceRow, "Restored ");
-          if (result["read_only_copy"] === true) {
+          // Another folder serves the space: the copy is made, and not opened beside it.
+          if (typeof result["not_opened"] === "string") {
+            io.stdout(`Restored into ${str(result["folder"])}\n${result["not_opened"]}\n`);
+            return;
+          }
+          const space = result["space"] as SpaceRow;
+          printSpace(io, space, "Restored ");
+          if (result["read_only_copy"] === true && claimable(space)) {
             io.stdout(
               `This is a read-only copy. Claim it to write to it: ${CLI_NAME} space claim <folder>\n`,
             );

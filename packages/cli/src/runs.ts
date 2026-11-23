@@ -11,6 +11,7 @@
 // the agent over its protocol, never on a command line TTasks starts. Only the person starts a run,
 // from an interactive command: a run may change anything their agent setup allows, without asking.
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { FINAL_RUN_STATES, RECORDED } from "@ttasks/contracts/runs";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
@@ -39,7 +40,11 @@ your agent setup allows, without asking. Only you can start one, from a terminal
 /** How often --wait looks at the run. */
 const WAIT_EVERY_MS = 1_000;
 
-const FINAL = new Set(["succeeded", "failed", "timed_out", "cancelled", "unknown"]);
+/**
+ * Where --wait stops: a run that ended, or one the copy of the space served now records as open
+ * when its backup was made, which will never move there.
+ */
+const STOPS_WAITING: ReadonlySet<string> = new Set([...FINAL_RUN_STATES, RECORDED]);
 
 type Shown = Record<string, unknown>;
 
@@ -77,6 +82,9 @@ function described(run: Shown): string {
     out.push(
       `Not all of what it started was confirmed ended. End it with: ${CLI_NAME} run stop ${String(run["id"])}`,
     );
+  }
+  if (run["state"] === "recorded") {
+    out.push("It was open when the backup of this restored copy was made. Nothing of it runs now.");
   }
   if (typeof run["error"] === "string") out.push(`The agent said: ${run["error"]}`);
   const refused = run["refused"];
@@ -201,7 +209,7 @@ export async function runCommand(
     io.onInterrupt?.(`The run goes on. See it with: ${CLI_NAME} run show ${id}`);
     for (;;) {
       const shown = await call("runs/show", { ...space, run: id });
-      if (FINAL.has(String(shown["state"]))) {
+      if (STOPS_WAITING.has(String(shown["state"]))) {
         io.stdout(globals.json ? `${JSON.stringify(shown)}\n` : described(shown));
         return shown["state"] === "succeeded" ? 0 : 1;
       }

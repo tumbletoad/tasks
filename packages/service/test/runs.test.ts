@@ -95,6 +95,13 @@ async function start(home: string, runs: StartOptions["runs"]): Promise<RunningS
   return service;
 }
 
+/** The copy that serves the space now, as a run's live view is asked for it. */
+function served(service: RunningService, space: string): ServedSpace {
+  const found = service.ops.spaces().find((s) => s.id === space && s.reader !== undefined);
+  if (found === undefined) throw new Error("the space is not served");
+  return found;
+}
+
 /** A new task of the space, through the request path. */
 async function addTask(home: string, service: RunningService, n: number): Promise<string> {
   const s = await classSession(home, service.endpoint.path, "cli-script");
@@ -465,7 +472,7 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
     const running = await runUntil(service, spaceId, first.id, (r) => r.state === "running", "it");
     const live = await waitFor(
       () => {
-        const now = service.runs.live(running);
+        const now = service.runs.live(running, served(service, spaceId));
         return now.said === undefined ? undefined : now;
       },
       15_000,
@@ -474,15 +481,22 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
     expect(live.said).toEqual({ text: "Still looking.", final: false, cut: false });
     expect(typeof live.quietSince).toBe("number");
     // The host still holds the run while its Stop is on its way: it is stopping, not quiet.
-    const stopping = service.runs.live({ ...running, state: "cancelling" });
+    const stopping = service.runs.live(
+      { ...running, state: "cancelling" },
+      served(service, spaceId),
+    );
     expect(stopping).not.toHaveProperty("quietSince");
     expect(stopping.said?.text).toBe("Still looking.");
-    expect(service.runs.live({ ...running, state: "queued" })).not.toHaveProperty("said");
+    expect(
+      service.runs.live({ ...running, state: "queued" }, served(service, spaceId)),
+    ).not.toHaveProperty("said");
     boxes.finish(first.id);
     const ended = await service.runs.ended(spaceId, first.id);
     expect(ended).toMatchObject({ state: "succeeded" });
     // An ended run's record says it all.
-    expect(ended === undefined ? undefined : service.runs.live(ended)).toEqual({});
+    expect(
+      ended === undefined ? undefined : service.runs.live(ended, served(service, spaceId)),
+    ).toEqual({});
   }, 60_000);
 
   test("the hold names the running run with its task, a new run waits with the reason update, stop_held stops the run with its answer, and closing the hold's connection lets the queue move", async () => {
@@ -531,7 +545,8 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
     const second = await service.runs.start(spaceId, unlimited, "runs-hold-run-000002", command);
     expect(second.limits).toMatchObject({ wallMs: 7 * 60_000, idleMs: 3 * 60_000 });
     await waitFor(
-      () => (service.runs.live(second).waiting === "update" ? true : undefined),
+      () =>
+        service.runs.live(second, served(service, spaceId)).waiting === "update" ? true : undefined,
       15_000,
       "the reason it waits",
     );
@@ -572,5 +587,205 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
     expect(await service.runs.ended(spaceId, second.id)).toMatchObject({ state: "succeeded" });
     await service.stop();
     expect(await holdRuns(service.layout.state, service.installId, env, 15_000)).toBeUndefined();
+  }, 120_000);
+});
+
+describe("[A4.3.11.9.run.restored] the runs a backup held open never start or go on after a claim or a restore in place", () => {
+  /** Fake containers that count the agents started. */
+  const counted = () => {
+    const boxes = fakeBoxes();
+    const started: string[] = [];
+    const containers: Containers = {
+      ...boxes.containers,
+      start: (spec) => {
+        started.push(spec.name);
+        return boxes.containers.start(spec);
+      },
+    };
+    return { ...boxes, containers, started };
+  };
+
+  /**
+   * A space whose backup holds a working run and a queued one, which the person then finished and
+   * stopped in the space itself: the backup's name and both runs.
+   */
+  async function backedUpRuns(label: string) {
+    const set = await setUp(label, "\n[runs]\nat_once = 1\n");
+    const boxes = counted();
+    const service = await start(set.home, { containers: boxes.containers });
+    const command = agent(ANSWERS, set.home);
+    const working = await service.runs.start(
+      set.spaceId,
+      input(await addTask(set.home, service, 1)),
+      `${label}-run-000001`,
+      command,
+    );
+    await runUntil(service, set.spaceId, working.id, (r) => r.state === "running", "working");
+    const queued = await service.runs.start(
+      set.spaceId,
+      input(await addTask(set.home, service, 2)),
+      `${label}-run-000002`,
+      command,
+    );
+    expect((await service.runs.read(set.spaceId, queued.id))?.state).toBe("queued");
+    const user = await classSession(set.home, service.endpoint.path, "cli-interactive");
+    const listed = (await user.call("space/list", {}, { timeoutMs: 60_000 })) as {
+      spaces: { folder: string }[];
+    };
+    const folder = listed.spaces[0]?.folder ?? "";
+    const backup = (await user.call("space/backup", { space: folder }, { timeoutMs: 60_000 })) as {
+      backup: { name: string };
+    };
+    // In the space itself, the queued run is stopped and the working one finishes.
+    expect(await service.runs.stop(set.spaceId, queued.id)).toMatchObject({ state: "cancelled" });
+    boxes.finish(working.id);
+    expect(await service.runs.ended(set.spaceId, working.id)).toMatchObject({
+      state: "succeeded",
+    });
+    return { ...set, boxes, service, user, folder, backup: backup.backup.name, working, queued };
+  }
+
+  test("a claimed copy settles its backup's working and queued runs as restored and starts neither; the runs the claimed space queued itself are recovered and tried over a restart as before", async () => {
+    const w = await backedUpRuns("runs-claim");
+    const { service, user, spaceId } = w;
+    await user.call("space/close", { space: w.folder }, { timeoutMs: 60_000 });
+    const copy = join(w.root, "spaces", "mira-copy");
+    await user.call(
+      "space/restore",
+      { backup: w.backup, to: copy, of: w.folder },
+      { timeoutMs: 60_000 },
+    );
+    const before = w.boxes.started.length;
+    await user.call("space/claim", { space: copy }, { timeoutMs: 60_000 });
+    await service.runs.tick();
+    await service.runs.tick();
+    expect(await service.runs.read(spaceId, w.queued.id)).toMatchObject({
+      state: "failed",
+      reason: "restored",
+    });
+    expect(await service.runs.read(spaceId, w.working.id)).toMatchObject({
+      state: "failed",
+      reason: "restored",
+    });
+    expect(w.boxes.started.length).toBe(before);
+
+    // The claimed space's own runs: one working, one queued behind it, over a restart.
+    const command = agent(ANSWERS, w.home);
+    const own = await service.runs.start(
+      spaceId,
+      input(await addTask(w.home, service, 3)),
+      "runs-claim-run-000003",
+      command,
+    );
+    await runUntil(service, spaceId, own.id, (r) => r.state === "running", "its own run");
+    const next = await service.runs.start(
+      spaceId,
+      input(await addTask(w.home, service, 4)),
+      "runs-claim-run-000004",
+      command,
+    );
+    user.close();
+    await service.stop();
+    const again = await start(w.home, { containers: w.boxes.containers });
+    await again.runs.tick();
+    const ended = await runUntil(again, spaceId, own.id, (r) => r.state !== "running", "recovery");
+    expect(ended).toMatchObject({ state: "failed", reason: "service_ended" });
+    // The queued one is tried as any queued run is after a restart: this fixture's agent command
+    // belonged to the stopped service, so its start fails, and it is never `restored`.
+    await again.runs.tick();
+    const tried = await runUntil(again, spaceId, next.id, (r) => r.state !== "queued", "a start");
+    expect(tried).toMatchObject({ state: "failed", reason: "spawn_failed" });
+  }, 120_000);
+
+  test("a restored copy that is not claimed lists the backup's open runs as recorded, with nothing the machine knows of them now, and starts none", async () => {
+    const w = await backedUpRuns("runs-copy");
+    const { user } = w;
+    await user.call("space/close", { space: w.folder }, { timeoutMs: 60_000 });
+    const copy = join(w.root, "spaces", "mira-copy");
+    await user.call(
+      "space/restore",
+      { backup: w.backup, to: copy, of: w.folder },
+      { timeoutMs: 60_000 },
+    );
+    await user.call("space/open", { path: copy }, { timeoutMs: 60_000 });
+    const before = w.boxes.started.length;
+    const listed = (await user.call("runs/list", { space: copy }, { timeoutMs: 60_000 })) as {
+      runs: { id: string; state: string; waiting?: string; quiet_since?: number }[];
+    };
+    const byId = new Map(listed.runs.map((run) => [run.id, run]));
+    expect(byId.get(w.working.id)).toMatchObject({ state: "recorded" });
+    expect(byId.get(w.queued.id)).toMatchObject({ state: "recorded", started_at: null });
+    for (const run of listed.runs) {
+      expect(run).not.toHaveProperty("waiting");
+      expect(run).not.toHaveProperty("quiet_since");
+    }
+    // The working run's answer in the space itself came after the backup: the copy has none.
+    const shown = (await user.call(
+      "runs/show",
+      { space: copy, run: w.working.id },
+      { timeoutMs: 60_000 },
+    )) as { state: string; answer: string | null };
+    expect(shown).toMatchObject({ state: "recorded", answer: null });
+    expect(w.boxes.started.length).toBe(before);
+    user.close();
+  }, 120_000);
+
+  test("a backup claimed under another machine's identity settles the runs the first machine left open as restored and starts none", async () => {
+    const w = await backedUpRuns("runs-elsewhere");
+    const { user, spaceId } = w;
+    await user.call("space/close", { space: w.folder }, { timeoutMs: 60_000 });
+    const copy = join(w.root, "spaces", "mira-copy");
+    await user.call(
+      "space/restore",
+      { backup: w.backup, to: copy, of: w.folder },
+      { timeoutMs: 60_000 },
+    );
+    user.close();
+    await w.service.stop();
+    // The service starts again as another machine, which claims the copy.
+    writeFileSync(
+      join(stateOf(w.home), "machine.json"),
+      JSON.stringify({
+        machine_id: newId("m"),
+        name: "fixture-other-machine",
+        created_at: "2026-11-16T08:00:00.000Z",
+      }),
+      { mode: 0o600 },
+    );
+    const other = await start(w.home, { containers: w.boxes.containers });
+    const person = await classSession(w.home, other.endpoint.path, "cli-interactive");
+    const before = w.boxes.started.length;
+    await person.call("space/claim", { space: copy }, { timeoutMs: 60_000 });
+    await other.runs.tick();
+    await other.runs.tick();
+    expect(await other.runs.read(spaceId, w.queued.id)).toMatchObject({
+      state: "failed",
+      reason: "restored",
+    });
+    expect(await other.runs.read(spaceId, w.working.id)).toMatchObject({
+      state: "failed",
+      reason: "restored",
+    });
+    expect(w.boxes.started.length).toBe(before);
+    person.close();
+  }, 120_000);
+
+  test("a restore in place settles the backup's working and queued runs as restored and starts neither", async () => {
+    const w = await backedUpRuns("runs-in-place");
+    const { service, user, spaceId } = w;
+    const before = w.boxes.started.length;
+    await user.call("space/restore", { backup: w.backup, space: w.folder }, { timeoutMs: 60_000 });
+    await service.runs.tick();
+    await service.runs.tick();
+    expect(await service.runs.read(spaceId, w.queued.id)).toMatchObject({
+      state: "failed",
+      reason: "restored",
+    });
+    expect(await service.runs.read(spaceId, w.working.id)).toMatchObject({
+      state: "failed",
+      reason: "restored",
+    });
+    expect(w.boxes.started.length).toBe(before);
+    user.close();
   }, 120_000);
 });

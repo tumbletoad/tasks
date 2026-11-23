@@ -4,7 +4,7 @@
 // asking.
 import { RPC_ERROR, RpcError, type JsonObject } from "@ttasks/bridge/protocol";
 import { AppError, RequestId } from "@ttasks/contracts";
-import { RUN_REQUEST_MAX_BYTES, type RunRecord } from "@ttasks/contracts/runs";
+import { RECORDED, RUN_REQUEST_MAX_BYTES, type RunRecord } from "@ttasks/contracts/runs";
 import type { ConnectionClass } from "../local/index.ts";
 import type { UsableSpace } from "../ops/index.ts";
 import type { RunLive, RunService } from "./service.ts";
@@ -29,7 +29,7 @@ export function runView(run: RunRecord, task: string | null, live: RunLive = {})
     id: run.id,
     task,
     instance: run.instance,
-    state: run.state,
+    state: live.recorded === true ? RECORDED : run.state,
     reason: run.reason,
     ...(live.waiting === undefined ? {} : { waiting: live.waiting }),
     ...(live.quietSince === undefined ? {} : { quiet_since: live.quietSince }),
@@ -102,13 +102,17 @@ export function runVerbs(
         requestId,
       });
       const shown = await host.runs.show(served.id, run.id);
-      return runView(shown?.run ?? run, shown?.task ?? null, host.runs.live(shown?.run ?? run));
+      return runView(
+        shown?.run ?? run,
+        shown?.task ?? null,
+        host.runs.live(shown?.run ?? run, served),
+      );
     },
     "runs/list": async (params) => {
       const served = host.space(text(params, "space"));
       const listed = await host.runs.list(served.id, text(params, "task"));
       return {
-        runs: listed.map(({ run, task }) => runView(run, task, host.runs.live(run))),
+        runs: listed.map(({ run, task }) => runView(run, task, host.runs.live(run, served))),
       };
     },
     "runs/show": async (params) => {
@@ -116,7 +120,7 @@ export function runVerbs(
       const shown = await host.runs.show(served.id, runId(params));
       if (shown === undefined) throw noRun();
       return {
-        ...runView(shown.run, shown.task, host.runs.live(shown.run)),
+        ...runView(shown.run, shown.task, host.runs.live(shown.run, served)),
         answer: shown.answer,
         answer_final: shown.run.result?.textFinal === true,
       };

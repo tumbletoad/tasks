@@ -46,6 +46,8 @@ export type RunEnd =
   | { readonly kind: "start_failed"; readonly reason: "spawn_failed" | "start_timed_out" }
   /** The service ended while the run was open; the result holds the last saved answer. */
   | { readonly kind: "service_ended"; readonly result: RunResult | null }
+  /** A claim or a restore in place brought the run back open from a backup: it never goes on. */
+  | { readonly kind: "restored" }
   /** The container could not be confirmed empty. */
   | { readonly kind: "not_confirmed" };
 
@@ -122,6 +124,10 @@ function outcomeMove(result: RunResult): Move {
  * Stop makes every confirmed end `cancelled`.
  */
 export function endMove(run: RunRecord, end: RunEnd): Move | undefined {
+  // A queued run a restore brought back has no container: it ends at once, never to start.
+  if (end.kind === "restored" && run.state === "queued") {
+    return { next: "failed", patch: { reason: "restored" } };
+  }
   if (run.state === "queued") return undefined;
   if (FINAL.has(run.state) && run.state !== "unknown") return undefined;
   if (end.kind === "not_confirmed") {
@@ -129,7 +135,7 @@ export function endMove(run: RunRecord, end: RunEnd): Move | undefined {
       ? undefined
       : { next: "unknown", patch: { reason: "stop_timed_out" } };
   }
-  const result = end.kind === "start_failed" ? null : end.result;
+  const result = end.kind === "start_failed" || end.kind === "restored" ? null : end.result;
   if (run.at.cancelling !== undefined) {
     return { next: "cancelled", ...(result === null ? {} : { patch: { result } }) };
   }
@@ -145,6 +151,8 @@ export function endMove(run: RunRecord, end: RunEnd): Move | undefined {
         next: "failed",
         patch: { reason: "service_ended", ...(result === null ? {} : { result }) },
       };
+    case "restored":
+      return { next: "failed", patch: { reason: "restored" } };
   }
 }
 

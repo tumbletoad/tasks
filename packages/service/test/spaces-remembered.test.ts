@@ -49,6 +49,8 @@ interface Row {
   state: string;
   reason?: string;
   folder: string;
+  message?: string;
+  restored?: { at: string; backup?: string };
 }
 
 async function list(user: RpcSession): Promise<Row[]> {
@@ -272,12 +274,12 @@ describe("[A2.3.1.hub.space-forget] a closed space is forgotten, and keeps its n
         backup: { name: string };
       };
       const copyFolder = join(w.root, "s", "life-copy");
+      await user.call("space/close", { space: lifeFolder }, CALL);
       await user.call(
         "space/restore",
         { backup: backup.backup.name, to: copyFolder, of: lifeFolder },
         CALL,
       );
-      await user.call("space/close", { space: lifeFolder }, CALL);
       await user.call("space/claim", { space: copyFolder }, CALL);
       const forgot = await user.call("space/forget", { space: "Life" }, CALL);
       expect(forgot).toMatchObject({ space: { folder: lifeFolder } });
@@ -369,9 +371,9 @@ describe("[A2.3.1.hub.spaces-not-remembered] a record machine.toml cannot take i
   );
 });
 
-describe("[A2.3.10.5.copies.service] copies of one space served side by side", () => {
+describe("[A2.3.10.5.copies.service] one copy of a space is served at a time", () => {
   test(
-    "a backup restored beside its open original: an ID, a name, the default and the one space mean the original; the folder reaches the copy; a restart keeps both",
+    "a backup restored while its original is open is made but not opened; opening its folder is refused with what is open and what it is; once the original is closed the copy opens read-only as a restored copy, and its ID, its name, the default and the one space mean it; a restart opens only the copy",
     SLOW,
     async () => {
       const w = await world("copies");
@@ -385,49 +387,114 @@ describe("[A2.3.10.5.copies.service] copies of one space served side by side", (
       // M-2 is only in the original: the backup came before it.
       expect((await add(user, "After the backup", "copies-task-0002")).tasks[0]?.ref).toBe("M-2");
 
-      // By the backup's name, as `space backups` prints it, with the space it is of.
+      // By the backup's name, as `space backups` prints it, with the space it is of: the copy is
+      // made, not opened, and the answer says how to look inside it.
       const copyFolder = join(w.root, "s", "mira-copy");
-      const restored = await user.call(
+      const restored = (await user.call(
         "space/restore",
         { backup: backup.backup.name, to: copyFolder, of: mira.folder },
         CALL,
-      );
-      expect(restored).toMatchObject({
-        read_only_copy: true,
-        space: { state: "read_only", reason: "read_only_copy" },
-        remembered: true,
-      });
+      )) as { folder: string; not_opened: string; space?: unknown };
+      expect(restored).toMatchObject({ read_only_copy: true, folder: copyFolder });
+      expect(restored.space).toBeUndefined();
+      expect(restored.not_opened).toContain(`Mira is open from ${mira.folder}`);
+      expect(restored.not_opened).toContain("space close");
+      expect(restored.not_opened).toContain(copyFolder);
+      expect((await list(user)).map((r) => r.folder)).toEqual([mira.folder]);
+      expect(recorded(w).map((s) => s.path)).toEqual([mira.folder]);
 
-      const original = async (space?: string) => {
+      // Opening the copy's folder is refused while the original is open: what is open, what this
+      // folder is, and the way to look inside it. Nothing is registered.
+      const refused = errorOf(
+        await user.call("space/open", { path: copyFolder }, CALL).catch((e: unknown) => e),
+      );
+      expect(refused).toMatchObject({
+        code: "invalid_input",
+        data: { reason: "other_copy_open" },
+      });
+      expect(refused.message).toContain(`Mira is open from ${mira.folder}.`);
+      expect(refused.message).toContain("restored on");
+      expect(refused.message).toContain(`from the backup ${backup.backup.name}.db.gz`);
+      expect(refused.hint).toContain("close Mira first");
+      expect((await list(user)).map((r) => r.folder)).toEqual([mira.folder]);
+      // Everything still means the original.
+      for (const space of [undefined, "Mira", mira.id, mira.folder]) {
         expect(await get(user, "M-2", space)).toMatchObject({ task: { ref: "M-2" } });
-      };
-      for (const space of [undefined, "Mira", "mira", mira.id, mira.folder]) await original(space);
-      // A write without a space goes to the original too.
-      expect((await add(user, "Beside the copy", "copies-task-0003")).tasks[0]?.ref).toBe("M-3");
-      // The default names the space by its ID: the same copy.
+      }
+
+      // The original closed, the copy opens: read-only, a restored copy by its own record, with
+      // the way out. Its ID, its name, the default and the one space mean it now.
+      await user.call("space/close", { space: mira.folder }, CALL);
+      const opened = (await user.call("space/open", { path: copyFolder }, CALL)) as { space: Row };
+      expect(opened.space).toMatchObject({
+        state: "read_only",
+        reason: "read_only_copy",
+        restored: { backup: `${backup.backup.name}.db.gz` },
+      });
+      expect(opened.space.message).toContain("space claim <folder>");
       await user.call("space/use", { space: mira.id }, CALL);
-      await original();
-      // The copy by its folder: it answers reads, and refuses writes as a read-only copy.
-      expect(await get(user, "M-1", copyFolder)).toMatchObject({ task: { ref: "M-1" } });
-      expect(errorOf(await get(user, "M-2", copyFolder).catch((e: unknown) => e)).code).toBe(
-        "not_found",
-      );
-      const write = await add(user, "Into the copy", "copies-task-0004", copyFolder).catch(
-        (e: unknown) => e,
-      );
+      for (const space of [undefined, "Mira", mira.id, copyFolder]) {
+        expect(await get(user, "M-1", space)).toMatchObject({ task: { ref: "M-1" } });
+        expect(errorOf(await get(user, "M-2", space).catch((e: unknown) => e)).code).toBe(
+          "not_found",
+        );
+      }
+      const write = await add(user, "Into the copy", "copies-task-0004").catch((e: unknown) => e);
       expect(errorOf(write)).toMatchObject({
         code: "read_only",
         data: { reason: "read_only_copy" },
       });
+      // Opening the original now is refused the same way, naming the copy that is open.
+      const back = errorOf(
+        await user.call("space/open", { path: mira.folder }, CALL).catch((e: unknown) => e),
+      );
+      expect(back.message).toContain(`Mira is open from ${copyFolder}.`);
+      expect(back.message).toContain("This folder holds another copy of it.");
 
-      // After a restart both are served again; the original, the copy that last wrote, writes.
+      // After a restart only the copy opens: the original was closed by the person.
       const again = await restart(w);
       expect((await list(again)).map((r) => [r.folder, r.state, r.reason])).toEqual([
-        [mira.folder, "open", undefined],
+        [mira.folder, "closed", undefined],
         [copyFolder, "read_only", "read_only_copy"],
       ]);
-      expect(await get(again, "M-3")).toMatchObject({ task: { ref: "M-3" } });
-      expect(await get(again, "M-1", copyFolder)).toMatchObject({ task: { ref: "M-1" } });
+      expect(await get(again, "M-1")).toMatchObject({ task: { ref: "M-1" } });
+    },
+  );
+
+  test(
+    "at a start, two enabled folders of one space: the one that last wrote is served, the other stays closed and says why",
+    SLOW,
+    async () => {
+      const w = await world("both-enabled");
+      const user = await w.user();
+      const [mira] = await list(user);
+      if (mira?.id === undefined) throw new Error("no Mira");
+      const backup = (await user.call("space/backup", { space: mira.folder }, CALL)) as {
+        backup: { name: string };
+      };
+      const copyFolder = join(w.root, "s", "mira-copy");
+      await user.call(
+        "space/restore",
+        { backup: backup.backup.name, to: copyFolder, of: mira.folder },
+        CALL,
+      );
+      // An older build, or a hand edit, left both folders enabled, the copy listed first.
+      await w.stop();
+      writeFileSync(
+        fileOf(w),
+        `[[spaces]]\nid = "${mira.id}"\npath = ${JSON.stringify(copyFolder)}\n\n` +
+          `[[spaces]]\nid = "${mira.id}"\npath = ${JSON.stringify(mira.folder)}\n`,
+      );
+      const again = await restart(w);
+      const rows = await list(again);
+      expect(rows.map((r) => [r.folder, r.state, r.reason])).toEqual([
+        [copyFolder, "closed", "other_copy_open"],
+        [mira.folder, "open", undefined],
+      ]);
+      expect(rows[0]?.message).toContain("Another copy of this space is open on this machine");
+      expect((await add(again, "Into the space", "both-enabled-add-0001")).tasks[0]?.ref).toBe(
+        "M-1",
+      );
     },
   );
 
@@ -513,12 +580,18 @@ describe("[A2.3.10.5.copies.service] copies of one space served side by side", (
       const written = (await add(user, "Only in the copy", "writer-first-add-0002")).tasks[0]?.ref;
       if (written === undefined) throw new Error("not written");
 
-      // The person opens the original again while the copy writes: it cannot take the writer
-      // now, and its entry is enabled, listed before the copy's.
-      const opened = (await user.call("space/open", { path: mira.folder }, CALL)) as {
-        space: Row;
-      };
-      expect(opened.space.state).not.toBe("open");
+      // The person opens the original again while the copy writes: refused, and its entry stays
+      // closed. A hand edit enables it, listed before the copy's.
+      const opened = errorOf(
+        await user.call("space/open", { path: mira.folder }, CALL).catch((e: unknown) => e),
+      );
+      expect(opened.data?.["reason"]).toBe("other_copy_open");
+      expect(recorded(w).map((s) => [s.path, s.enabled])).toEqual([
+        [mira.folder, false],
+        [copyFolder, true],
+      ]);
+      await w.stop();
+      writeFileSync(fileOf(w), tomlOf(w).replace("enabled = false\n", ""));
       expect(recorded(w).map((s) => [s.path, s.enabled])).toEqual([
         [mira.folder, true],
         [copyFolder, true],
@@ -529,7 +602,10 @@ describe("[A2.3.10.5.copies.service] copies of one space served side by side", (
       const again = await restart(w);
       const rows = await list(again);
       expect(rows.find((r) => r.folder === copyFolder)?.state).toBe("open");
-      expect(rows.find((r) => r.folder === mira.folder)?.state).not.toBe("open");
+      expect(rows.find((r) => r.folder === mira.folder)).toMatchObject({
+        state: "closed",
+        reason: "other_copy_open",
+      });
       expect(await get(again, written, mira.id)).toMatchObject({ task: { ref: written } });
       expect(await get(again, written)).toMatchObject({ task: { ref: written } });
     },
@@ -552,13 +628,16 @@ describe("[A2.3.10.5.copies.service] copies of one space served side by side", (
       await user.call("space/claim", { space: copyFolder }, CALL);
       const written = (await add(user, "Only in the copy", "writer-moved-add-0001")).tasks[0]?.ref;
       if (written === undefined) throw new Error("not written");
-      await user.call("space/open", { path: mira.folder }, CALL);
 
-      // Moved by hand while the service is stopped, and machine.toml changed to the new folder.
+      // Moved by hand while the service is stopped, machine.toml changed to the new folder, and
+      // the original enabled again by hand.
       await w.stop();
       const movedFolder = join(w.root, "s", "mira-moved");
       renameSync(copyFolder, movedFolder);
-      writeFileSync(fileOf(w), tomlOf(w).replace(copyFolder, movedFolder));
+      writeFileSync(
+        fileOf(w),
+        tomlOf(w).replace(copyFolder, movedFolder).replace("enabled = false\n", ""),
+      );
       expect(recorded(w).map((s) => s.path)).toEqual([mira.folder, movedFolder]);
       let again = await restart(w);
       expect((await list(again)).find((r) => r.folder === movedFolder)?.state).toBe("open");
@@ -574,13 +653,14 @@ describe("[A2.3.10.5.copies.service] copies of one space served side by side", (
       rmSync(settings);
       mkdirSync(settings);
       await again.call("space/open", { path: movedFolder }, CALL);
-      await again.call("space/open", { path: mira.folder }, CALL);
       rmSync(settings, { recursive: true });
       writeFileSync(settings, kept);
       const recordedAgain = (await again.call("space/open", { path: movedFolder }, CALL)) as {
         space: Row;
       };
       expect(recordedAgain.space.state).toBe("open");
+      await w.stop();
+      writeFileSync(fileOf(w), tomlOf(w).replace("enabled = false\n", ""));
       again = await restart(w);
       expect((await list(again)).find((r) => r.folder === movedFolder)?.state).toBe("open");
       expect(await get(again, written, mira.id)).toMatchObject({ task: { ref: written } });
@@ -599,17 +679,22 @@ describe("[A2.3.10.5.copies.service] copies of one space served side by side", (
         backup: { name: string };
       };
       const copyFolder = join(w.root, "s", "look");
+      await user.call("space/close", { space: mira.folder }, CALL);
       await user.call(
         "space/restore",
         { backup: backup.backup.name, to: copyFolder, of: mira.folder },
         CALL,
       );
+      await user.call("space/close", { space: copyFolder }, CALL);
+      await user.call("space/open", { path: mira.folder }, CALL);
+      // A hand edit enables the copy again, whose folder the person then deleted.
       await w.stop();
+      writeFileSync(fileOf(w), tomlOf(w).replace("enabled = false\n", ""));
       rmSync(copyFolder, { recursive: true, force: true });
       const again = await restart(w);
-      expect((await list(again)).map((r) => [r.folder, r.state, r.reason])).toEqual([
-        [mira.folder, "open", undefined],
-        [copyFolder, "unavailable", "missing"],
+      expect((await list(again)).map((r) => [r.folder, r.state])).toEqual([
+        [mira.folder, "open"],
+        [copyFolder, "closed"],
       ]);
       expect((await add(again, "Without a space", "gone-copy-add-0001")).tasks[0]?.ref).toMatch(
         /^M-\d+$/,

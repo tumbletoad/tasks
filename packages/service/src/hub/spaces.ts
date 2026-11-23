@@ -67,10 +67,18 @@
 // or an open in progress, still runs, and only the end of the process stops a worker for certain.
 // So the manager reports the loss (`onLockLost`) and the service exits 70 at once (service.ts).
 //
+// ONE COPY AT A TIME. A restored copy keeps its original's space ID, so two folders on this machine
+// can hold one space. Only one of them is served at a time: an open of a folder whose space another
+// served folder holds is refused (restored.ts OtherCopyOpen), and at a start the copies of one space are opened
+// one after another, the copy that last wrote first, the first that is served keeping the space and
+// the others staying closed(other_copy_open). So a space's ID always names one folder while it is
+// served, and nothing has to choose between copies.
+//
 // One space failing never stops the service (A2 3.1). Every wait but a migration's is bounded. A
 // close waits for an open in progress only up to its bound; an open still running then releases what it took when it
 // ends, or the process exit does. The lock lives in the space's worker, beside the writer it
 // guards, so a worker that hangs keeps both until the process exits.
+import { createHash } from "node:crypto";
 import { realpathSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { CLI_NAME } from "@ttasks/brand";
@@ -134,6 +142,7 @@ import {
   type FolderCheck,
   type SyncHost,
 } from "./sync-folders.ts";
+import { OtherCopyOpen, restoredOf, type Restored } from "./restored.ts";
 import { wayOutOf } from "./space-ways.ts";
 import { realSyncHost } from "./sync-host.ts";
 import { readOnly, type ServedSpace } from "../ops/index.ts";
@@ -167,6 +176,24 @@ export interface SpaceEntry {
  * the reason given (a read-only copy, another machine's space, a failed migration).
  */
 export type SpaceState = "opening" | "open" | "read_only" | "unavailable" | "closing" | "closed";
+
+/**
+ * Names the copy a space is served from: its folder, its authority and its restore mark. It stays
+ * the same across a restart and a close and open of the same folder, and changes with a claim, a
+ * restore in place, another restore into the folder or another folder. A page sends it back with
+ * each call, so a tab never writes into a copy it did not load.
+ */
+function copyToken(
+  folder: string,
+  epoch: number,
+  incarnation: string,
+  restored: Restored | undefined,
+): string {
+  return createHash("sha256")
+    .update([canonicalFolder(folder), String(epoch), incarnation, restored?.at ?? ""].join("\0"))
+    .digest("hex")
+    .slice(0, 24);
+}
 
 export interface SpaceView {
   /** The entry's index in the registered list. */
@@ -203,6 +230,8 @@ export interface SpaceView {
   readonly migrated?: LastMigration;
   /** An open space whose backups are not working: what happened and what to do. */
   readonly backup?: BackupTroubleView;
+  /** A restored copy that is not claimed: its own record, whatever its state's reason. */
+  readonly restored?: Restored;
   /** What the folder check found (A1 3.2), when it found a sync client or a network file system. */
   readonly folder_check?: {
     readonly verdict: "synced" | "network";
@@ -254,6 +283,19 @@ export interface SpaceManagerOptions {
    * (A1 3.17). Default: BUILD. Tests pass others.
    */
   readonly build?: BuildIdentity;
+  /**
+   * Runs at every open of a space as this machine's, before it is served: ends the runs and
+   * launches the space holds open from before its last claim or restore in place, which a backup
+   * brought back. A failure leaves the space unavailable, so no copy is served writable with them.
+   */
+  readonly settle?: (space: OpeningSpace) => Promise<void>;
+}
+
+/** A space opening as this machine's, its writer and reader open, not served yet. */
+export interface OpeningSpace {
+  readonly id: Id<"sp">;
+  readonly writer: SpaceWriterHandle;
+  readonly reader: WorkerConnection;
 }
 
 /**
@@ -388,6 +430,10 @@ class Hosted {
   writer: SpaceWriterHandle | undefined;
   /** A read-only space's reader, at its revision. */
   reader: WorkerConnection | undefined;
+  /** Its restore mark, read with its name once it is served: a restored copy not claimed. */
+  restored: Restored | undefined;
+  /** The copy it is served as (copyToken), once it is served. */
+  copy: string | undefined;
   /** The space's machine-local backup folder, when one is set. */
   backupDir: string | undefined;
   /** The projection's worker while the space is open as this machine's. */
@@ -491,7 +537,28 @@ class Hosted {
     this.closing = undefined;
     this.check = undefined;
     this.message = undefined;
+    this.restored = undefined;
+    this.copy = undefined;
     this.backups.reset();
+  }
+
+  /**
+   * Whether the folder holds its space on this service now, or is about to: served, opening, or
+   * closing, or in a change (a restore in place, a claim, a recheck) that opens it again.
+   */
+  holds(): boolean {
+    if (this.forgotten) return false;
+    if (this.replacing !== undefined) return true;
+    switch (this.state) {
+      case "open":
+      case "read_only":
+      case "closing":
+        return true;
+      case "opening":
+        return this.busy !== undefined;
+      default:
+        return false;
+    }
   }
 
   /** What a person reads about the state: its own message, else its way out (space-ways.ts). */
@@ -513,6 +580,7 @@ class Hosted {
       ...(this.holder === undefined ? {} : { holder: this.holder }),
       ...(message === undefined ? {} : { message }),
       ...(backup === undefined ? {} : { backup }),
+      ...(this.restored === undefined ? {} : { restored: this.restored }),
       ...(check === undefined || check.verdict === "local"
         ? {}
         : {
@@ -560,10 +628,10 @@ export class SpaceManager {
    * read-only or unavailable, and never rejects: an open that fails in an unforeseen way leaves its
    * space unavailable(open_failed). An entry the person closed (`enabled = false`) is listed,
    * closed, and opens again on `space open`. Spaces open in parallel; copies of one space (one ID)
-   * open one after another, never the one that happens to be faster first: the copy that last
-   * opened as this machine's writer (#writerFirst), then the others in the entries' order. So the
-   * copy the person last wrote to keeps the writer when another could take it (an original listed
-   * before a claimed copy, whose read-only reason has gone).
+   * are tried one after another, never the one that happens to be faster first: the copy that last
+   * opened as this machine's writer (#writerFirst), then the others in the entries' order. The
+   * first that is served is the space, and the others stay closed(other_copy_open) (#begin): the
+   * copy the person last wrote to, also when an original is listed before a claimed copy.
    */
   async openAll(entries: readonly SpaceEntry[]): Promise<void> {
     const start = this.#spaces.length;
@@ -627,7 +695,9 @@ export class SpaceManager {
 
   /**
    * The spaces as the request path sees them (ops/handlers.ts): a writer while the space is open
-   * as this machine's, a reader while it is served.
+   * as this machine's, a reader while it is served. A space closed for a moment by a change that
+   * opens it again (a restore in place, a claim, a recheck) is opening: a call is told to retry,
+   * and a page's feed waits for it.
    */
   served(): ServedSpace[] {
     return this.#spaces
@@ -639,13 +709,16 @@ export class SpaceManager {
           id: space.id,
           registered: space.registered,
           name: space.name,
-          state: space.state,
+          state:
+            space.state === "closed" && space.replacing !== undefined ? "opening" : space.state,
           ...(space.reason === undefined ? {} : { reason: space.reason }),
           ...(message === undefined ? {} : { message }),
           ...(backup === undefined ? {} : { backup: backup.why }),
           writer: space.state === "open" ? space.writer : undefined,
           reader: space.state === "open" || space.state === "read_only" ? space.reader : undefined,
           folder: space.folder,
+          ...(space.restored === undefined ? {} : { restored: space.restored }),
+          ...(space.copy === undefined ? {} : { copy: space.copy }),
         };
       });
   }
@@ -653,6 +726,12 @@ export class SpaceManager {
   /** The folder of a registered space, for the space verbs. */
   folderOf(entry: number): string {
     return this.#space(entry).folder;
+  }
+
+  /** The copy a registered space is served as (copyToken), while it is open or read-only. */
+  copyOf(entry: number): string | undefined {
+    const space = this.#space(entry);
+    return space.state === "open" || space.state === "read_only" ? space.copy : undefined;
   }
 
   /**
@@ -670,6 +749,9 @@ export class SpaceManager {
    * `retryMigration` (the person's `--retry-migration`, A1 3.17): a migration that failed
    * before is tried again at this open, behind a new barrier backup, also when this build failed
    * on this very state. A space served read-only for a failed migration closes and opens again.
+   *
+   * A folder whose space another folder serves now is refused (OtherCopyOpen), and nothing of it is
+   * registered or changed.
    */
   async open(
     path: string,
@@ -685,6 +767,7 @@ export class SpaceManager {
         : other === folder;
     const known = this.#spaces.find((space) => same(space.folder));
     if (known !== undefined) {
+      if (!known.holds()) this.#refuseOtherCopy(id ?? known.registered, known);
       // A forgotten folder opened again is listed again, as any folder opened for the first time.
       known.forgotten = false;
       // A worker that has not ended yet may still hold the space: it gets one close's bound.
@@ -718,6 +801,7 @@ export class SpaceManager {
     const registered = id ?? (await this.#heldBy(folder));
     // Read again: the service may have begun to drain while the folder was read.
     if (this.#isDraining()) throw new StorageError("STORAGE_MISUSE", "The service is stopping");
+    this.#refuseOtherCopy(registered, undefined);
     const space = new Hosted(this.#spaces.length, folder, registered);
     this.#spaces.push(space);
     await this.#begin(space, retry);
@@ -861,13 +945,29 @@ export class SpaceManager {
     );
   }
 
-  /** Reads the served space's name and prefix through its reader, for people's output. */
-  async #learnName(space: Hosted): Promise<void> {
-    const row = await space.reader?.get<{ name?: unknown; ref_prefix?: unknown }>(
-      "SELECT name, ref_prefix FROM space WHERE one = 1",
+  /**
+   * Reads the served space's name and prefix, for people's output, and its restore mark and
+   * authority, which name the copy it is served as (copyToken), through its reader.
+   */
+  async #learnSpace(space: Hosted): Promise<void> {
+    const row = await space.reader?.get<{
+      name?: unknown;
+      ref_prefix?: unknown;
+      transfer?: unknown;
+      authority_epoch?: unknown;
+      authority_incarnation?: unknown;
+    }>(
+      "SELECT name, ref_prefix, transfer, authority_epoch, authority_incarnation FROM space WHERE one = 1",
     );
     if (typeof row?.name === "string") space.name = row.name;
     if (typeof row?.ref_prefix === "string") space.refPrefix = row.ref_prefix;
+    space.restored = restoredOf(row?.transfer);
+    const epoch = row?.authority_epoch;
+    const incarnation = row?.authority_incarnation;
+    space.copy =
+      typeof epoch === "number" && typeof incarnation === "string"
+        ? copyToken(space.folder, epoch, incarnation, space.restored)
+        : undefined;
   }
 
   /**
@@ -1081,11 +1181,36 @@ export class SpaceManager {
     return this.#options.build ?? BUILD;
   }
 
+  /** The folder other than `except` that holds the space `id` now (Hosted.holds), if any. */
+  #holderOf(id: Id<"sp">, except: Hosted | undefined): Hosted | undefined {
+    return this.#spaces.find(
+      (other) => other !== except && (other.id ?? other.registered) === id && other.holds(),
+    );
+  }
+
+  /** Refuses an open of a copy of the space `id` while another folder holds it. */
+  #refuseOtherCopy(id: Id<"sp">, except: Hosted | undefined): void {
+    const holder = this.#holderOf(id, except);
+    if (holder !== undefined) throw new OtherCopyOpen(holder.folder, id, holder.name);
+  }
+
   /**
    * Starts a space's open and records it as the one a close waits for. `retry`: the person asked
-   * for a failed migration to be tried again (A1 3.17).
+   * for a failed migration to be tried again (A1 3.17). While another folder holds the space, the
+   * open does not start: the folder stays closed(other_copy_open).
    */
   #begin(space: Hosted, retry = false): Promise<void> {
+    if (this.#holderOf(space.registered, space) !== undefined) {
+      space.state = "closed";
+      space.reason = "other_copy_open";
+      space.name ??= this.#nameInFolder(space);
+      this.#options.log.log("space.not_opened", {
+        entry: space.index,
+        space: space.registered,
+        reason: "other_copy_open",
+      });
+      return Promise.resolve();
+    }
     const opening = this.#open(space, retry).catch((error: unknown) => {
       if (space.state === "opening") this.#unavailable(space, error);
     });
@@ -1198,7 +1323,7 @@ export class SpaceManager {
       const { conn } = await bounded(worker.openSpaceReader(space.folder), this.#openMs);
       space.reader = conn;
       if (await this.#stopped(space)) return;
-      await this.#learnName(space);
+      await this.#learnSpace(space);
       if (await this.#stopped(space)) return;
     } catch (error) {
       await this.#refused(
@@ -1242,6 +1367,13 @@ export class SpaceManager {
       this.#readOnly(space, "not_authority", undefined, { ms });
       return;
     }
+    try {
+      await this.#options.settle?.({ id: writer.spaceId, writer, reader: space.reader });
+    } catch (error) {
+      await this.#refused(space, error, undefined);
+      return;
+    }
+    if (await this.#stopped(space)) return;
     try {
       recordSeen(this.#options.settingsDir, writer.spaceId, writer.authority);
     } catch {
@@ -1379,7 +1511,7 @@ export class SpaceManager {
         return false;
       }
       space.id = info.spaceId;
-      await this.#learnName(space);
+      await this.#learnSpace(space);
       space.message = reason === "check_failed" ? CHECK_FAILED : folderMessage(check);
       this.#readOnly(space, reason, undefined, { ms: Math.round(performance.now() - t0) });
       if (reason === "synced_folder" && isUnchecked(check)) this.#recheck(space, space.recheckNext);
@@ -1431,7 +1563,7 @@ export class SpaceManager {
       space.reader = conn;
       space.id = info.spaceId;
       if (await this.#stopped(space)) return true;
-      await this.#learnName(space);
+      await this.#learnSpace(space);
       space.message = notTriedMessage(failure);
       this.#readOnly(space, "migration_failed", failure.code, {
         ms: Math.round(performance.now() - t0),
@@ -1537,7 +1669,7 @@ export class SpaceManager {
         if (info.spaceId !== space.registered) throw new UnexpectedSpace();
         space.id = info.spaceId;
         if (await this.#stopped(space)) return;
-        await this.#learnName(space);
+        await this.#learnSpace(space);
         // A failed migration's message tells the person what happened, where the backup is and,
         // once recorded, how it is tried again.
         if (readOnly === "migration_failed" && error instanceof StorageError) {
@@ -1595,7 +1727,7 @@ export class SpaceManager {
       }
       space.id = info.spaceId;
       if (await this.#stopped(space)) return "served";
-      await this.#learnName(space);
+      await this.#learnSpace(space);
       space.message = timedOutMessage(info.revision);
       this.#readOnly(space, "migration_failed", OPEN_TIMED_OUT);
       return "served";

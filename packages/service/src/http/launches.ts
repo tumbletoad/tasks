@@ -19,12 +19,14 @@
 import { AppError, RequestId } from "@ttasks/contracts";
 import {
   isOpenRun,
+  RECORDED,
   RUN_REQUEST_MAX_BYTES,
+  type ReadRunState,
   type RunRecord,
-  type RunState,
 } from "@ttasks/contracts/runs";
 import {
   INSTANCE_KEY,
+  isOpenLaunch,
   isRoute,
   sessionRecord,
   TASK_ID,
@@ -34,9 +36,9 @@ import {
   type OpenResult,
   type Route,
 } from "@ttasks/launch";
-import { findSpace, isAmbiguity } from "../ops/copies.ts";
+import { findSpace, isAmbiguity, spaceChanged } from "../ops/copies.ts";
 import { launchError } from "../ops/handlers.ts";
-import type { OpsHost, ServedSpace } from "../ops/index.ts";
+import { readOnly, type OpsHost, type ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
 import { WORK_ON_IT } from "../runs/agent.ts";
 import type { HttpLog } from "./events.ts";
@@ -63,8 +65,11 @@ export interface UiInstance {
 export interface UiLaunchPort {
   instances(): readonly UiInstance[];
   onChange?(listener: (space: string) => void): () => void;
-  /** Whether the launch's session runs now, as this service follows it. */
-  running?(launch: string): boolean;
+  /**
+   * Whether the launch's session runs now, as this service follows it, and was made in the copy
+   * `copy` of its space.
+   */
+  running?(launch: string, copy: string | undefined): boolean;
   /** The task and agent pairs of a space busy on this machine. */
   busy?(space: string): Promise<readonly UiBusy[]>;
   /** Shows the folder a task opens in here in the file manager (LaunchService.showFolder). */
@@ -106,14 +111,18 @@ export interface UiRunPort {
   ): Promise<RunRecord>;
   list(space: string, task?: string): Promise<readonly { readonly run: RunRecord }[]>;
   stop(space: string, run: string): Promise<RunRecord | undefined>;
-  /** What the run's record cannot say now (RunService.live). */
-  live(run: RunRecord): UiRunLive;
+  /** What the run's record cannot say now, in the copy `space` serves (RunService.live). */
+  live(run: RunRecord, space: ServedSpace): UiRunLive;
   /** Hears each run a person queues or stops, here or with `ttasks run`. */
   onChange?(listener: (space: string) => void): () => void;
 }
 
-/** Why a queued run waits, since when a running one is quiet, and what a started one said so far. */
+/**
+ * Why a queued run waits, since when a running one is quiet, and what a started one said so far;
+ * or that the run is only recorded open, in a restored copy (RunLive).
+ */
 export interface UiRunLive {
+  readonly recorded?: true;
   readonly waiting?: string;
   readonly quietSince?: number;
   readonly said?: { readonly text: string; readonly final: boolean; readonly cut: boolean };
@@ -127,7 +136,8 @@ export interface UiRunLive {
 export interface UiRun {
   readonly id: string;
   readonly instance: string;
-  readonly state: RunState;
+  /** `recorded`: open in a restored copy that is not claimed, so nothing of it runs now. */
+  readonly state: ReadRunState;
   readonly reason: string | null;
   /** Why a queued run waits. */
   readonly waiting?: string;
@@ -163,7 +173,7 @@ export function uiRun(run: RunRecord, live: UiRunLive = {}): UiRun {
   return {
     id: run.id,
     instance: run.instance,
-    state: run.state,
+    state: live.recorded === true ? RECORDED : run.state,
     reason: run.reason,
     ...(waiting === undefined ? {} : { waiting }),
     ...(quietSince === undefined ? {} : { quiet_since: quietSince }),
@@ -200,7 +210,11 @@ export interface UiReceipt {
   readonly reference: string;
   readonly instance: string;
   readonly route: string;
-  readonly state: IntentState;
+  /**
+   * `recorded`: open (isOpenLaunch) in a restored copy that is not claimed, so nothing of it goes
+   * on now; `at` says how far it had come.
+   */
+  readonly state: IntentState | typeof RECORDED;
   readonly reason: string | null;
   /** When it entered each state, milliseconds since 1970. */
   readonly at: Readonly<Partial<Record<IntentState, number>>>;
@@ -214,10 +228,11 @@ export interface UiReceipt {
   readonly request?: string;
   /**
    * A Confirmed launch's session: `running` while this service follows it and it runs, `ended`
-   * once its agent's end was reported. Absent when the service does not know: a link or a T3
-   * launch, a shim that went without a word, a launch of another computer or of an earlier build.
+   * once its agent's end was reported, `restored` once a claim or a restore in place ended it as a
+   * backup's. Absent when the service does not know: a link or a T3 launch, a shim that went
+   * without a word, a launch of another computer or of an earlier build.
    */
-  readonly session?: "running" | "ended";
+  readonly session?: "running" | "ended" | "restored";
   /** How long its agent ran, when its end was reported with it. */
   readonly ran_ms?: number;
 }
@@ -273,11 +288,13 @@ const LIST_SQL =
 /**
  * A `launches` row as the page's receipt, or undefined for a detail that does not parse. `runs`
  * says whether this service follows the launch's session as running now: it counts only for a
- * Confirmed launch whose record names no end.
+ * Confirmed launch whose record names no end. `restored`: the row is read in a restored copy that
+ * is not claimed, where an open launch is `recorded`.
  */
 export function receiptOf(
   row: Record<string, unknown>,
   runs: (launch: string) => boolean = () => false,
+  restored = false,
 ): UiReceipt | undefined {
   let parsed: unknown;
   try {
@@ -307,18 +324,24 @@ export function receiptOf(
   const request = typeof asked === "string" && NOTE_REF.test(asked) ? asked : undefined;
   const id = String(row["id"]);
   const state = String(row["state"]) as IntentState;
+  const route = String(row["route"]);
   const reason = row["reason"];
   const ran = evidence["ran_ms"];
   const ranMs = typeof ran === "number" && Number.isSafeInteger(ran) && ran >= 0 ? ran : undefined;
-  const record = state === "confirmed" ? sessionRecord(evidence) : undefined;
+  const recorded = restored && isOpenLaunch({ state, route, evidence });
+  const record = state === "confirmed" && !recorded ? sessionRecord(evidence) : undefined;
   const session =
-    record === "ended" ? "ended" : record === "open" && runs(id) ? "running" : undefined;
+    record === "ended" || record === "restored"
+      ? record
+      : record === "open" && runs(id)
+        ? "running"
+        : undefined;
   return {
     id,
     reference: String(row["reference"]),
     instance: String(row["instance_id"]),
-    route: String(row["route"]),
-    state,
+    route,
+    state: recorded ? RECORDED : state,
     reason: typeof reason === "string" ? reason : null,
     at,
     ...(terminal === undefined ? {} : { terminal }),
@@ -375,10 +398,10 @@ export class UiLaunches {
   }
 
   /**
-   * The served space a request names (its `TTasks-Space`): an ID or a name, the copy of it that
-   * copies.ts's rule picks among the served copies (A2 3.10.5).
+   * The served space a request names (its `TTasks-Space`): an ID or a name (A2 3.10.5). `copy`, the
+   * copy the page loaded, must be the one served (copies.ts spaceChanged).
    */
-  #space(ref: string | undefined): ServedSpace {
+  #space(ref: string | undefined, copy: string | undefined): ServedSpace {
     if (ref === undefined) throw invalid("Name the space of this tab.", "space");
     const found = findSpace(
       this.#options.host.spaces().filter((s) => s.id !== undefined && s.reader !== undefined),
@@ -386,11 +409,23 @@ export class UiLaunches {
     );
     const space = isAmbiguity(found) ? undefined : found;
     if (space?.reader === undefined || space.id === undefined) {
+      if (copy !== undefined) throw spaceChanged();
       throw new AppError({
         code: "space_unavailable",
         message: "This space cannot open tasks on this machine now.",
       });
     }
+    if (copy !== undefined && space.copy !== copy) throw spaceChanged();
+    return space;
+  }
+
+  /**
+   * The served space a run starts or stops in, which must take changes: a read-only one is refused
+   * with its own reason, as a write to it is.
+   */
+  #writable(ref: string | undefined, copy: string | undefined): ServedSpace {
+    const space = this.#space(ref, copy);
+    if (space.state === "read_only") throw readOnly(space.reason, space.message);
     return space;
   }
 
@@ -398,8 +433,8 @@ export class UiLaunches {
    * The agent apps busy with a task on this machine, for every task of the space: what the
    * page's tiles and Open buttons hold to, whatever receipts a tab has read.
    */
-  async busy(spaceRef: string | undefined): Promise<readonly UiBusy[]> {
-    const space = this.#space(spaceRef).id ?? "";
+  async busy(spaceRef: string | undefined, copy?: string): Promise<readonly UiBusy[]> {
+    const space = this.#space(spaceRef, copy).id ?? "";
     return (await this.#options.port?.busy?.(space)) ?? [];
   }
 
@@ -411,12 +446,13 @@ export class UiLaunches {
   async showFolder(
     spaceRef: string | undefined,
     input: Record<string, unknown>,
+    copy?: string,
   ): Promise<FolderShown> {
     const { task } = input;
     if (typeof task !== "string" || !TASK_ID.test(task)) {
       throw invalid("Expected a task ID.", "task");
     }
-    const space = this.#space(spaceRef);
+    const space = this.#space(spaceRef, copy);
     const show = this.#options.port?.showFolder?.bind(this.#options.port);
     if (show === undefined || space.reader === undefined || space.id === undefined) {
       throw new AppError({
@@ -443,16 +479,24 @@ export class UiLaunches {
   }
 
   /** A task's launch receipts, newest last (at most ten). */
-  async list(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiReceipt[]> {
+  async list(
+    spaceRef: string | undefined,
+    input: Record<string, unknown>,
+    copy?: string,
+  ): Promise<UiReceipt[]> {
     const { task } = input;
     if (typeof task !== "string" || !TASK_ID.test(task))
       throw invalid("Expected a task ID.", "task");
-    const reader = this.#space(spaceRef).reader;
+    const space = this.#space(spaceRef, copy);
+    const reader = space.reader;
     if (reader === undefined) throw invalid("The space is not served.", "space");
     const rows = await reader.all(LIST_SQL, { task });
     const port = this.#options.port;
-    const runs = (launch: string): boolean => port?.running?.(launch) ?? false;
-    return rows.flatMap((r) => receiptOf(r, runs) ?? []).reverse();
+    // Only the copy a launch was made in shows its session as running: a restored copy shows its
+    // open launches as recorded.
+    const runs = (launch: string): boolean => port?.running?.(launch, space.copy) ?? false;
+    const restored = space.restored !== undefined;
+    return rows.flatMap((r) => receiptOf(r, runs, restored) ?? []).reverse();
   }
 
   /**
@@ -460,7 +504,11 @@ export class UiLaunches {
    * or none. A repeat of the same request ID gives the run it queued and starts nothing twice. A
    * run that cannot start here is refused with its reason, and nothing is queued.
    */
-  async run(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiRun> {
+  async run(
+    spaceRef: string | undefined,
+    input: Record<string, unknown>,
+    copy?: string,
+  ): Promise<UiRun> {
     const runs = this.#runs();
     const { task, instance, text, request_id: requestId } = input;
     if (typeof task !== "string" || !TASK_ID.test(task))
@@ -480,26 +528,31 @@ export class UiLaunches {
         data: { field: "text" },
       });
     }
-    const space = this.#space(spaceRef).id ?? "";
-    const queued = await runs.queueTask(space, {
+    const space = this.#writable(spaceRef, copy);
+    const queued = await runs.queueTask(space.id ?? "", {
       task,
       ...(instance === undefined ? {} : { instance }),
       request: words,
       requestId,
     });
-    return uiRun(queued, runs.live(queued));
+    return uiRun(queued, runs.live(queued, space));
   }
 
   /** A task's newest runs, and every older one that may still work, oldest first. */
-  async runs(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiRun[]> {
+  async runs(
+    spaceRef: string | undefined,
+    input: Record<string, unknown>,
+    copy?: string,
+  ): Promise<UiRun[]> {
     const runs = this.#runs();
     const { task } = input;
     if (typeof task !== "string" || !TASK_ID.test(task))
       throw invalid("Expected a task ID.", "task");
-    const listed = await runs.list(this.#space(spaceRef).id ?? "", task);
+    const space = this.#space(spaceRef, copy);
+    const listed = await runs.list(space.id ?? "", task);
     return listed
       .filter(({ run }, at) => at < RUNS_SHOWN || isOpenRun(run))
-      .map(({ run }) => uiRun(run, runs.live(run)))
+      .map(({ run }) => uiRun(run, runs.live(run, space)))
       .reverse();
   }
 
@@ -507,11 +560,15 @@ export class UiLaunches {
    * Stop: a queued run never starts, a working one is asked to stop and its processes are ended
    * after a grace time. Answers at once with the run as it is then.
    */
-  async stop(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiRun> {
+  async stop(
+    spaceRef: string | undefined,
+    input: Record<string, unknown>,
+    copy?: string,
+  ): Promise<UiRun> {
     const runs = this.#runs();
     const { run } = input;
     if (typeof run !== "string" || !RUN_ID.test(run)) throw invalid("Expected a run ID.", "run");
-    const space = this.#space(spaceRef).id ?? "";
+    const space = this.#writable(spaceRef, copy).id ?? "";
     const after = await runs.stop(space, run);
     if (after === undefined) {
       throw new AppError({ code: "not_found", message: "No run has this ID in this space." });

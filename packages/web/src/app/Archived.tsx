@@ -19,8 +19,10 @@ const styles = classes(css, ["act", "line", "words"]);
 
 /**
  * Unarchive a group, with an Undo toast: the group is back in the sidebar, or, for a project whose
- * area stays archived, it is unarchived and stays under Archived with that area. Resolves true once
- * the service has the group live; a refusal is said in a toast.
+ * area stays archived, it is unarchived and stays under Archived with that area. Which of the two
+ * is what the write's answer says of the project's area, so an area archived a moment ago, which
+ * the page has not heard of yet, is still named. Resolves true once the service has the group
+ * live; a refusal is said in a toast.
  */
 export function useUnarchive(): (
   group: Pick<AreaRow | ProjectRow, "id" | "title">,
@@ -32,10 +34,6 @@ export function useUnarchive(): (
   const edits = useEdits();
   return (group, area) => {
     const name = group.title;
-    const back: Msg =
-      area?.lifecycle === "archived"
-        ? { id: "archived.backInArea", values: { name, area: area.title } }
-        : { id: "archived.back", values: { name } };
     return edits
       .write(
         (request, base) =>
@@ -46,7 +44,20 @@ export function useUnarchive(): (
             request_id: request,
             ...(base === undefined ? {} : { base }),
           }),
-        () => back,
+        (result): Msg => {
+          // Known only from its receipt, the answer names no area: the page's own rows say it then.
+          const stays =
+            "receipt" in result
+              ? area?.lifecycle === "archived"
+                ? area.title
+                : undefined
+              : result.group?.area?.archived === true
+                ? result.group.area.name
+                : undefined;
+          return stays === undefined
+            ? { id: "archived.back", values: { name } }
+            : { id: "archived.backInArea", values: { name, area: stays } };
+        },
       )
       .then(
         () => true,

@@ -57,6 +57,28 @@ describe("[A4.5.terminal.receipt] the receipt names the terminal and its source"
   });
 });
 
+describe("[A2.3.10.5.copies.receipt] a launch a backup recorded open says so, and one a claim or a restore in place ended says that", () => {
+  test("recorded: open or opening when the backup was made, never running; restored: interrupted", () => {
+    const ghostty = { app: "ghostty", source: "desktop" };
+    const open = receipt({ state: "recorded", terminal: ghostty, at: { confirmed: 2 } });
+    expect(receiptText(open, "Cx", t)).toBe(
+      "Opened in Ghostty, the desktop's default · open when this backup was made",
+    );
+    expect(entryState(open)).toBe("recorded");
+    expect(receiptText(receipt({ state: "recorded", at: { dispatched: 1 } }), "Cx", t)).toBe(
+      "Was opening in Cx when this backup was made",
+    );
+    const ended = receipt({ state: "confirmed", session: "restored", terminal: ghostty });
+    expect(receiptText(ended, "Cx", t)).toBe(
+      "Opened in Ghostty, the desktop's default · interrupted when the space was restored from a backup",
+    );
+    expect(entryState(ended)).toBe("restored");
+    expect(receiptText(receipt({ state: "failed", reason: "restored" }), "Cx", t)).toBe(
+      "Interrupted when the space was restored from a backup. Open it again to go on.",
+    );
+  });
+});
+
 describe("[A4.5.receipt.folder-reason] a launch its folder stopped says why in the toast's words", () => {
   test("the folder's reason in words, any other reason as its code reads", () => {
     const failed = (reason: string) => receiptText(receipt({ state: "failed", reason }), "Cx", t);

@@ -24,6 +24,11 @@ export interface Session {
   /** Its task (`t_` ID): the default of every call that names none. */
   readonly task: string;
   readonly home: SessionHome;
+  /**
+   * The copy of its space the launch or run was made in (hub/spaces.ts copyToken): once another
+   * copy serves the space, every call is refused. Absent for a launch an earlier build recorded.
+   */
+  readonly copy?: string;
 }
 
 /** A bridge's binding, fixed at its bind. A shell that is no session has none. */
@@ -86,6 +91,9 @@ export interface SessionPort {
   decide(presented: Presented): Decision;
   /** What a session may do now, read again at every check. */
   standing(home: SessionHome): Standing;
-  /** How many live sessions each task of `space` has: running launches and running runs. */
-  live(space: string): ReadonlyMap<string, number>;
+  /**
+   * How many live sessions each task of `space` has, of those made in the copy `copy` that serves
+   * it: running launches and running runs. A copy shows no other copy's sessions as live.
+   */
+  live(space: string, copy: string | undefined): ReadonlyMap<string, number>;
 }

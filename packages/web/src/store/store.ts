@@ -29,6 +29,32 @@ import {
 
 export type Phase = "starting" | "connecting" | "live" | "offline" | "signed_out" | "no_space";
 
+/**
+ * What happened to the copy of the space a tab loaded, so the tab saves nothing more: it was
+ * closed, or another copy is served now (claimed, restored in place, a restored copy, another
+ * folder), or the service refused a call for another copy (`replaced`, nothing more known).
+ */
+export type GoneWhy =
+  "closed" | "claimed" | "restored" | "restored_copy" | "other_folder" | "replaced";
+
+export interface Gone {
+  readonly why: GoneWhy;
+  /** The folder the space is open from now, as the person reads it, when that is known. */
+  readonly folder?: string;
+}
+
+/**
+ * What a snapshot of `now` says happened to the copy `was` a tab loaded; a tab that loaded nothing
+ * yet was opened for another copy than `now`.
+ */
+export function goneOf(was: SpaceHead | undefined, now: SpaceHead): Gone {
+  if (was === undefined) return { why: "replaced" };
+  const folder = now.folder === undefined ? {} : { folder: now.folder };
+  if (now.restored !== undefined) return { why: "restored_copy", ...folder };
+  if (was.folder !== now.folder) return { why: "other_folder", ...folder };
+  return { why: was.restored !== undefined ? "claimed" : "restored", ...folder };
+}
+
 export interface LiveState {
   readonly phase: Phase;
   /** The service runs another build: the page offers a reload. */
@@ -39,6 +65,11 @@ export interface LiveState {
    */
   readonly installed: { readonly version: string; readonly running: string } | undefined;
   readonly space: SpaceHead | undefined;
+  /**
+   * The copy of the space this tab loaded is no longer served: the tab shows it as it was, saves
+   * nothing more, and offers to load what the space is now.
+   */
+  readonly gone: Gone | undefined;
   /** The open tasks: the confirmed rows with this tab's pending writes on top. */
   readonly tasks: ReadonlyMap<string, TaskRow>;
   /** The finished and dropped tasks a question waits on, as `tasks` is made. */
@@ -77,11 +108,16 @@ export type Queued =
   | SnapshotMessage
   | BatchMessage
   | { readonly type: "unreadable" }
-  | { readonly type: "error"; readonly code: string };
+  | { readonly type: "error"; readonly code: string; readonly reason?: string };
 
 export interface StoreOptions {
   /** The tab's space, from its route; a tab opened without one takes the first snapshot's. */
   readonly space?: string | undefined;
+  /**
+   * The copy of the space the tab was opened for: the one the person's Open folder answered. Any
+   * other copy served by its first snapshot is not shown.
+   */
+  readonly copy?: string | undefined;
   readonly frames: FrameClock;
   /** The core asks for a fresh snapshot: the transport subscribes again without a cursor. */
   readonly onResnapshot: (reason: ResnapshotReason) => void;
@@ -89,6 +125,8 @@ export interface StoreOptions {
   readonly onSpace?: (space: string) => void;
   /** A fresh request ID (A1 3.8). */
   readonly newRequest?: () => string;
+  /** The copy the tab loaded is gone (LiveState `gone`): the feed has nothing more to give. */
+  readonly onGone?: () => void;
 }
 
 /** A write sent through the store. */
@@ -127,6 +165,7 @@ export class LiveStore {
     stale: false,
     installed: undefined,
     space: undefined,
+    gone: undefined,
     tasks: new Map(),
     asking: new Map(),
     areas: new Map(),
@@ -137,7 +176,7 @@ export class LiveStore {
 
   constructor(options: StoreOptions) {
     this.#options = options;
-    this.#core = new LiveCore(options.space);
+    this.#core = new LiveCore(options.space, options.copy);
     this.#queue = new FrameQueue(options.frames, (items) => {
       this.#drain(items);
     });
@@ -241,6 +280,28 @@ export class LiveStore {
     this.#queue.clear();
   }
 
+  /** The copy of the space the tab loaded, or was opened for. */
+  get copy(): string | undefined {
+    return this.#core.copy;
+  }
+
+  /** Whether a snapshot of the space was applied. */
+  get loaded(): boolean {
+    return this.#core.loaded;
+  }
+
+  /**
+   * The copy the tab loaded is gone: the rows stay as they were, no message of the feed applies
+   * any more, and the tab says what happened.
+   */
+  gone(gone: Gone): void {
+    if (this.#state.gone !== undefined) return;
+    this.stop();
+    this.#state = { ...this.#state, gone };
+    this.#emit();
+    this.#options.onGone?.();
+  }
+
   /**
    * Sends a write: `send` makes the call with the request ID it is given, `request` when the caller
    * sends the same write again. `overlay` shows at once and stays until the feed confirms the
@@ -282,19 +343,41 @@ export class LiveStore {
   }
 
   #drain(items: readonly Queued[]): void {
+    let ended: Gone | undefined;
+    try {
+      ended = this.#apply(items);
+    } finally {
+      // What came before applies first; then the tab learns its copy is gone.
+      if (ended !== undefined) this.gone(ended);
+    }
+  }
+
+  /** Applies `items` in order, up to one that says the tab's copy is gone: what it says. */
+  #apply(items: readonly Queued[]): Gone | undefined {
     let changes: Change[] = [];
     const requests: string[] = [];
     let reset = false;
     let agentChanges: readonly AgentChange[] | undefined;
     let applied = false;
     let phase: Phase | undefined;
+    let ended: Gone | undefined;
     const before = this.#core.space;
     for (const item of items) {
       if (item.type === "error") {
+        // A tab that showed its space, or was opened for one copy of it, is told it was closed or
+        // that another copy is served, and keeps what it shows.
+        if (this.#core.copy !== undefined) {
+          ended = { why: item.reason === "replaced" ? "replaced" : "closed" };
+          break;
+        }
         phase = "no_space";
         continue;
       }
       const outcome = this.#core.receive(item);
+      if (outcome.kind === "replaced") {
+        ended = goneOf(outcome.was, outcome.now);
+        break;
+      }
       switch (outcome.kind) {
         case "snapshot":
           // What came before a snapshot is superseded by it.
@@ -325,7 +408,7 @@ export class LiveStore {
     const settled = applied && this.#pending.feed(requests, this.#core.cursor);
     if (!reset && changes.length === 0 && !settled) {
       if (phase !== undefined) this.set({ phase });
-      return;
+      return ended;
     }
     const held = this.#core.publish();
     if (held !== undefined) {
@@ -357,6 +440,7 @@ export class LiveStore {
         agentChanges === undefined ? { changes, reset } : { changes, reset, agentChanges };
       for (const listener of this.#changeListeners) listener(frame);
     }
+    return ended;
   }
 
   /** The pending overlays changed: the tasks the views see are made again. */

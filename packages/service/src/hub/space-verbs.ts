@@ -35,8 +35,10 @@
 // open, a restore and a claim leave the space's entry enabled, close leaves it `enabled = false`.
 // An entry opens only as the one space it names (A2 3.2.4).
 //
-// A space is named by its folder, its ID or its name. Which copy of a space an ID or a name means,
-// when a restored copy is served beside its original, is the one rule of ops/copies.ts (A2 3.10.5).
+// A space is named by its folder, its ID or its name. A restored copy has its original's ID, but one
+// folder serves a space at a time (spaces.ts): opening a copy while another is served is refused
+// with what is open and how to look at the copy instead, so an ID or a name always means the folder
+// that serves the space (ops/copies.ts, A2 3.10.5).
 import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
@@ -66,6 +68,7 @@ import {
   type SpaceRecordsHost,
 } from "./space-records.ts";
 import { readSpaceSettings } from "./space-settings.ts";
+import { OtherCopyOpen, restoredOf, type Restored } from "./restored.ts";
 import type { SpaceManager, SpaceView } from "./spaces.ts";
 import type { FolderCheck } from "./sync-folders.ts";
 
@@ -291,6 +294,15 @@ function notClaimable(view: SpaceView): AppError {
       data: { issues: [{ path: "space", message: "Another machine's space" }] },
     });
   }
+  // A restored copy that something else keeps read-only (a synced folder, a newer build): that
+  // comes first, in its own words.
+  if (view.restored !== undefined && view.message !== undefined) {
+    return new AppError({
+      code: "invalid_input",
+      message: `This restored copy cannot be claimed yet. ${view.message}`,
+      data: { issues: [{ path: "space", message: "Read-only for another reason" }] },
+    });
+  }
   return new AppError({
     code: "invalid_input",
     message:
@@ -299,6 +311,72 @@ function notClaimable(view: SpaceView): AppError {
         : "Only a restored copy is claimed, and this space is not one.",
     hint: `${CLI_NAME} space list shows a restored copy as read_only: read_only_copy.`,
     data: { issues: [{ path: "space", message: "Not a restored copy" }] },
+  });
+}
+
+/** When a copy was restored, for a person: the service's local day and time. */
+const restoredWhen = (restored: Restored): string =>
+  new Date(restored.at).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+/** What `folder` holds, for a person: a copy restored when and from which backup, or a copy. */
+function copyWords(folder: string): string {
+  let restored: Restored | undefined;
+  try {
+    const read = readManifest(folder);
+    restored = read.state === "present" ? restoredOf(read.manifest?.transfer) : undefined;
+  } catch {
+    restored = undefined;
+  }
+  if (restored === undefined) return "This folder holds another copy of it.";
+  const from = restored.backup === undefined ? "" : ` from the backup ${restored.backup}`;
+  return `This folder holds a copy of it restored on ${restoredWhen(restored)}${from}.`;
+}
+
+/**
+ * How a person closes the copy that is open, so the command works as printed in any shell: by the
+ * space's name, which means the one folder that serves it; by its ID when another space has that
+ * name too; by its folder when the name is not known.
+ */
+function closeCommand(error: OtherCopyOpen, spaces: readonly SpaceView[]): string {
+  const name = error.spaceName;
+  const shared =
+    name !== undefined &&
+    spaces.some(
+      (view) =>
+        view.name?.toLowerCase() === name.toLowerCase() &&
+        (view.id ?? view.registered) !== error.spaceId,
+    );
+  return command(
+    ["space", "close", shared ? error.spaceId : (name ?? error.open)],
+    "space close <folder>",
+  );
+}
+
+/**
+ * The refusal of an open of `folder` while another folder serves its space (one copy at a time):
+ * what is open, what this folder is, and how to look at it instead.
+ */
+function otherCopyRefusal(
+  error: OtherCopyOpen,
+  folder: string,
+  spaces: readonly SpaceView[],
+): AppError {
+  const name = error.spaceName ?? "This space";
+  const close = closeCommand(error, spaces);
+  return new AppError({
+    code: "invalid_input",
+    message: `${name} is open from ${error.open}. ${copyWords(folder)} Two copies of one space are never open together.`,
+    hint: `To look inside this copy, close ${name} first (${close}), then open this folder again.`,
+    data: {
+      issues: [{ path: "path", message: "Another copy of this space is open" }],
+      reason: "other_copy_open",
+    },
   });
 }
 
@@ -341,11 +419,10 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
   };
 
   /**
-   * A space by folder, ID or name, by the one rule for copies (ops/copies.ts, A2 3.10.5): an
-   * absolute path is a folder and only a folder, so a space whose name looks like a path never
-   * stands in for the space at that path; an ID or a name means the copy that serves it best, the
-   * writable one first, and a read-only copy beside it is reached by its folder. A space not served
-   * yet is found by the ID its entry names; it has no name until it is served.
+   * A space by folder, ID or name (ops/copies.ts, A2 3.10.5): an absolute path is a folder and only
+   * a folder, so a space whose name looks like a path never stands in for the space at that path;
+   * an ID or a name means the folder that serves the space, else the first one listed. A space not
+   * served yet is found by the ID its entry names; it has no name until it is served.
    */
   const find = (wanted: string): SpaceView => {
     const copies = listed().map((view) => ({
@@ -357,7 +434,7 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       folder: manager.folderOf(view.entry),
     }));
     const found = findSpace(copies, wanted);
-    if (isAmbiguity(found)) throw ambiguousError(found);
+    if (isAmbiguity(found)) throw ambiguousError();
     if (found !== undefined) return found.view;
     throw new AppError({
       code: "not_found",
@@ -399,6 +476,40 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
     if (view === undefined)
       throw new AppError({ code: "internal", message: "A space is missing." });
     return view;
+  };
+
+  /**
+   * Serves the copy a restore just made in `folder`. While another folder serves its space, the
+   * copy stays closed and the answer says how to look inside it (one copy at a time). Nothing is
+   * recorded for it then: `space open` of the folder serves and records it.
+   */
+  const openRestored = async (
+    folder: string,
+    id: Id<"sp">,
+    extra: JsonObject,
+  ): Promise<JsonObject> => {
+    let entry: number;
+    try {
+      entry = await manager.open(folder, id);
+    } catch (error) {
+      if (!(error instanceof OtherCopyOpen)) throw error;
+      const name = error.spaceName ?? "The space";
+      const close = closeCommand(error, manager.list());
+      const open = command(["space", "open", folder], "space open <folder>");
+      return {
+        folder,
+        read_only_copy: true,
+        ...extra,
+        not_opened: `${name} is open from ${error.open}, and two copies of one space are never open together, so the copy is not opened. To look inside it, close ${name} first (${close}), then run: ${open}`,
+      };
+    }
+    const view = viewOf(entry);
+    return {
+      space: describe(view),
+      read_only_copy: true,
+      ...extra,
+      ...remember(view, true, { repoint: true }),
+    };
   };
 
   const backupDirOf = (view: SpaceView): string => {
@@ -459,7 +570,15 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       }
       return oneAtATime(async () => {
         try {
-          const entry = await manager.open(folder, undefined, { retryMigration });
+          let entry: number;
+          try {
+            entry = await manager.open(folder, undefined, { retryMigration });
+          } catch (error) {
+            if (error instanceof OtherCopyOpen) {
+              throw otherCopyRefusal(error, folder, manager.list());
+            }
+            throw error;
+          }
           const view = viewOf(entry);
           if (excluded && view.state === "read_only") {
             if (view.reason === "synced_folder") await manager.confirmExcluded(entry);
@@ -688,16 +807,13 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
               spaceId,
               target,
             });
-            const entry = await manager.open(target, spaceOf(restored));
-            const view = viewOf(entry);
-            return {
-              space: describe(view),
-              read_only_copy: true,
-              ...(restored.kind === "restore" && restored.backup !== undefined
+            return await openRestored(
+              target,
+              spaceOf(restored),
+              restored.kind === "restore" && restored.backup !== undefined
                 ? { backup: restored.backup }
-                : {}),
-              ...remember(view, true, { repoint: true }),
-            };
+                : {},
+            );
           });
         } catch (error) {
           throw failure(error);
@@ -727,13 +843,7 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
           return await oneAtATime(async () => {
             refuseNetwork(await manager.checkFolder(target), "to");
             const restored = await runAdmin({ kind: "restore", backupFile: file, target });
-            const entry = await manager.open(target, spaceOf(restored));
-            const view = viewOf(entry);
-            return {
-              space: describe(view),
-              read_only_copy: true,
-              ...remember(view, true, { repoint: true }),
-            };
+            return await openRestored(target, spaceOf(restored), {});
           });
         }
         const view = find(inPlace ?? "");
@@ -777,19 +887,6 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       if (view.state !== "read_only" || view.reason !== "read_only_copy") {
         throw notClaimable(view);
       }
-      // The copy shares its original's space ID, and one space takes writes in one place: an
-      // original still open here holds them.
-      const id = view.id ?? view.registered;
-      const original = manager
-        .list()
-        .find((other) => other.entry !== view.entry && other.id === id && other.state === "open");
-      if (original !== undefined) {
-        throw new AppError({
-          code: "invalid_input",
-          message: `The original of this copy is open on this machine. Close it first, then claim the copy again: ${command(["space", "close", manager.folderOf(original.entry)], "space close <folder>")}`,
-          data: { issues: [{ path: "space", message: "Its original is open" }] },
-        });
-      }
       let change;
       try {
         change = await manager.claim(view.entry);
@@ -797,27 +894,16 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
         throw failure(error);
       }
       // The claimed copy is the space from now on, also after a restart: every other entry of the
-      // space that serves nothing now (a closed or unavailable original) is recorded closed, so the
-      // list shows this copy as the space. Copies served read-only now stay as they are, as the
-      // person left them. That this copy keeps the writer at a start is the space settings'
+      // space (none of them is served while this one is) is recorded closed, so the list shows this
+      // copy as the space. That this copy is the one opened at a start is the space settings'
       // `writer_folder` (spaces.ts openAll), which its open after the claim recorded.
       const claimed = viewOf(view.entry);
-      const keep = manager
-        .list()
-        .filter(
-          (other) =>
-            other.entry !== claimed.entry &&
-            (other.id ?? other.registered) === (claimed.id ?? claimed.registered) &&
-            other.state !== "closed" &&
-            other.state !== "unavailable",
-        )
-        .map((other) => manager.folderOf(other.entry));
       return {
         space: describe(claimed),
         epoch: change.epoch,
         incarnation: change.incarnation,
         warning: CLAIM_WARNING,
-        ...remember(claimed, true, { others: { keep } }),
+        ...remember(claimed, true, { others: { keep: [] } }),
       };
     },
 

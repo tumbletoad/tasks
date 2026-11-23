@@ -17,6 +17,7 @@ import { useLive } from "../store/hooks.ts";
 import { useMachine } from "./machine.ts";
 import css from "./Shell.module.css";
 import { Sidebar } from "./Sidebar.tsx";
+import { SpaceBar } from "./SpaceBar.tsx";
 import { Tips } from "./Tips.tsx";
 import { TopBar } from "./TopBar.tsx";
 import { classes } from "./css.ts";
@@ -35,6 +36,13 @@ const styles = classes(css, [
   "skip",
   "top",
 ]);
+
+/** A toast as a tab that saves nothing more shows it: its words, no action. */
+function withoutAction(toast: Shown | undefined): Shown | undefined {
+  if (toast?.action === undefined) return toast;
+  const { key, kind, text } = toast;
+  return { key, kind, text };
+}
 
 export function Shell({ space }: { readonly space: string }) {
   const t = useT();
@@ -57,6 +65,10 @@ export function Shell({ space }: { readonly space: string }) {
     [],
   );
   const path = useRouterState({ select: (s) => s.location.pathname });
+  // The tab's copy of its space is gone: nothing more is saved from it, so nothing invites a change.
+  const ended = state.gone !== undefined;
+  const endedNow = useRef(ended);
+  endedNow.current = ended;
 
   // A message from any component, with an action when it asks something; the edits' toasts carry
   // their own.
@@ -90,6 +102,7 @@ export function Shell({ space }: { readonly space: string }) {
         if (toastHandle.current?.focusAction() === true) event.preventDefault();
         return;
       }
+      if (endedNow.current && action !== "sheet") return;
       if (action === "undo") void edits.undo();
       else if (action === "redo") void edits.redo();
       else if (action === "new") askField({ kind: "new" });
@@ -109,7 +122,10 @@ export function Shell({ space }: { readonly space: string }) {
   }, [path]);
 
   let content: ReactNode;
-  if (state.phase === "starting" || state.phase === "connecting") {
+  if (state.gone !== undefined && state.space === undefined) {
+    // The bar above says why nothing was loaded.
+    content = null;
+  } else if (state.phase === "starting" || state.phase === "connecting") {
     content = <p className={styles.line}>{t("app.starting")}</p>;
   } else if (state.phase === "no_space") {
     content = <p className={styles.line}>{t("app.noSpace")}</p>;
@@ -138,7 +154,11 @@ export function Shell({ space }: { readonly space: string }) {
               >
                 <MenuIcon />
               </Button>
-              <TopBar space={space} live={state.phase === "live" || state.phase === "offline"} />
+              <TopBar
+                space={space}
+                live={(state.phase === "live" || state.phase === "offline") && !ended}
+                ended={ended}
+              />
             </header>
             {state.stale ? (
               <div className={styles.bar} role="status">
@@ -167,6 +187,7 @@ export function Shell({ space }: { readonly space: string }) {
                 })}
               </div>
             ) : null}
+            <SpaceBar state={state} />
             <main id="main" tabIndex={-1} className={styles.main}>
               {content}
             </main>
@@ -183,7 +204,7 @@ export function Shell({ space }: { readonly space: string }) {
               </Dialog>
             </Modal>
           </ModalOverlay>
-          <Toast toast={toast} onDone={done} handle={toastHandle} />
+          <Toast toast={ended ? withoutAction(toast) : toast} onDone={done} handle={toastHandle} />
           <Sheet space={space} isOpen={sheet} onOpenChange={setSheet} />
           <Tips />
         </div>

@@ -1611,7 +1611,7 @@
     },
     {
       "id": "A4.3.11.run.door",
-      "title": "ttasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of TTasks's tools binds to the run's session and is recorded with the run's ID, only the run's own calls may use its space without the home's registration and only until the run ends, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, also with the ID a start hands out, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, and a missing task is refused",
+      "title": "ttasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of TTasks's tools binds to the run's session and is recorded with the run's ID, only the run's own calls may use its space without the home's registration and only until the run ends, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, also with the ID a start hands out, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, a missing task is refused, and a --wait whose space is then served from a restored copy stops at the run's record there",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -1727,6 +1727,14 @@
       "id": "A4.3.11.9.run.update-hold",
       "title": "An update's hold over the local endpoint, on every OS with containers on no operating system: an agent's connection may not take it; it names the running run with its space and task reference; a run queued meanwhile waits with the reason update; stop_held stops the run, which keeps its answer; and closing the hold's connection, as an updater that died does, lets the queue move",
       "source": "A4 3.11.9, A2 3.12.6, A7 3.13 M6.03",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.9.run.restored",
+      "title": "The runs a backup held open, working or queued, are settled as interrupted by the restore after a claim of the copy, also a claim under another machine's identity, and after a restore in place, and none of them starts, also one the person had stopped since; a restored copy that is not claimed lists and shows them as recorded, with nothing the machine knows of them now; the runs the claimed space queued itself are recovered and tried over a restart as before",
+      "source": "A4 3.11.9, A1 3.18",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4167,6 +4175,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.15.web.store.copy",
+      "title": "A tab keeps the copy of its space it loaded: a snapshot of another copy applies nothing, says what happened (claimed, restored in place, a restored copy or another folder) and stops the feed; the feed ending after the tab showed its space says it was closed and keeps the rows",
+      "source": "A5 3.15, A2 3.10.5",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.15.web.store.queries",
       "title": "Query-level invalidation: a task that starts to match an open Completed view appears in it by a restart that loads as many rows as were shown; one that starts to match an open search offers Refresh, which shows it; shown rows take new values in place; only the newest read applies; a snapshot counts as a change to every query",
       "source": "A7 3.12 M5.02, A5 3.13, A5 3.15",
@@ -4296,7 +4312,7 @@
     },
     {
       "id": "A2.3.10.5.copies.rule",
-      "title": "The one rule for copies of a space: an ID, a name and the one space mean the writable copy, then one opening, then the space read-only for its own reason, then a restored copy, then an unavailable one, then a closed one, never the first listed; a folder names its own copy; two copies equally good are ambiguous with both folders named; a name of two spaces is ambiguous by name",
+      "title": "An ID, a name and the one space mean the entry that serves the space, whatever the order, else the first one listed with its own state; a folder names its own entry; a name two spaces have is ambiguous",
       "source": "A2 3.10.5",
       "owner": "M3",
       "kind": "ci",
@@ -4304,8 +4320,120 @@
     },
     {
       "id": "A2.3.10.5.copies.service",
-      "title": "A backup restored by its printed name beside its open original: no space, the name, the ID, the default and the folder of the original reach the original; the copy's folder reaches the copy, which answers reads and refuses writes as a read-only copy; after a restart both are served and the original, first in machine.toml, takes the writer",
+      "title": "One copy of a space is served at a time: a backup restored while its original is open is made and not opened, with how to look inside it; opening its folder is refused with what is open and what the folder is, and nothing is registered; once the original is closed the copy opens read-only as a restored copy and its ID, name, the default and the one space mean it; at a start with two enabled folders the one that last wrote is served and the other stays closed with why",
       "source": "A2 3.10.5, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.page",
+      "title": "Open folder of a restored copy while its space is open is refused with what is open and what the folder is; once the space is closed the copy opens and the list and the feed say it is a restored copy, with its folder and backup; after a claim the tab's feed gets a snapshot of a new copy, and a write, an undo, a read and a run list with the copy the tab loaded are refused as replaced with nothing written; a tab back with its old copy and cursor gets a snapshot",
+      "source": "A2 3.10.5, A5 3.15, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.session",
+      "title": "An agent's terminal session goes on over a close and an open of its unchanged folder; after a claim of a backup, a note from its bridge and from its shell and a read are refused as replaced, in words that say not to retry and to start the agent again, and the claimed space holds no receipt",
+      "source": "A2 3.10.5, A3 3.7.8, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.launch",
+      "title": "A click checked against the original's writer makes nothing once a backup is claimed, while the same click against the claimed copy's writer is made; the original's shim reporting its agent's end after the claim changes nothing in the claimed copy",
+      "source": "A2 3.10.5, A4 3.9.1, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.first-load",
+      "title": "Open folder answers the copy the folder is served as, and a tab's first subscription for it gets that copy; once another copy is served instead, it gets the word that the copy was replaced and no snapshot",
+      "source": "A2 3.10.5, A5 3.15",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.history",
+      "title": "A terminal launch running in the space shows as running there; in a restored copy of a backup made meanwhile its receipt is the recorded one with no live session, and the copy's run history reads on the page and in ttasks run list; a restored copy's runs are read as recorded, with nothing the machine knows of them now",
+      "source": "A2 3.10.5, A5 3.9, A4 3.11.9",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.recorded",
+      "title": "A backup taken while a working and a waiting run are open on an active, a finished, a dropped and a trashed task, and a terminal session is open: every read of the restored copy opened read-only answers and says recorded, nothing is busy and no session is held; the first reads after a claim and after a restore in place, with no round of recovery between, say restored, as does a claim on another machine, and no session of them is held for the Agents page",
+      "source": "A2 3.10.5, A4 3.9.3, A4 3.11.9, A5 Agents",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.receipt",
+      "title": "A receipt a restored copy records as open says it was open or opening when the backup was made; one a claim or a restore in place ended says it was interrupted by the restore",
+      "source": "A2 3.10.5, A5 3.9",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.agents.links.restored",
+      "title": "A restored copy that is not claimed links none of the machine's agents to its tasks: its sessions are not read and no running launch is asked about",
+      "source": "A5 Agents, A2 3.10.5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.feed-settles",
+      "title": "A tab's feed waits while its space is opened again: a read a claim's close interrupted and a subscription that comes while the copy opens again send nothing, the claimed copy then comes as a snapshot of another copy, and an explicit close is said as one",
+      "source": "A2 3.10.5, A5 3.15",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.15.web.gone-sends-nothing",
+      "title": "A tab that says nothing more is saved from it refuses in the page, as replaced, every write, launch, Run and Stop of its space and sends none of them; a read still goes; the entries it still sends are exactly the registry's reads",
+      "source": "A5 3.15, A2 3.10.5",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.words",
+      "title": "With another space of the same name, the refusal of a second copy and a restore that does not open the copy name the command that closes the open one by the space's ID, which works as printed",
+      "source": "A2 3.10.5, A3 3.5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.e2e",
+      "title": "In Chromium and Firefox against the real service, at 1,440 and 390 px without sideways scroll: Open folder with a restored copy while its space is open is refused with what is open, what the folder is and what to do; a tab whose space is closed says so; the copy opened alone says it is a restored copy with its folder, backup and ways out, in the switcher too; an edit there keeps the words with the reason, Copy and Discard and no Try again, also over a reload; Move to Trash, a row's Restore and Restore these in the Trash say why and move nothing; a claim of the copy tells the open tab, whose Undo then writes nothing and whose top field keeps its words to copy and adds nothing, and loading it again shows the space as it is now",
+      "source": "A2 3.10.5, A5 3.11, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.e2e-first-load",
+      "title": "In Chromium and Firefox against the real service: when another window opens the space's own folder again before a tab loads the copy the person's Open folder answered, the tab says another copy was opened, shows nothing of it, and loads the space as it is now when asked",
+      "source": "A2 3.10.5, A5 3.15",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.e2e-recorded",
+      "title": "In Chromium and Firefox against the real service: a run working when a backup was made shows in the restored copy as working when the backup was made, with no Stop and no word that it goes on, a terminal session the backup recorded as open says it was open then, and the Agents page has the run's task in no live group",
+      "source": "A2 3.10.5, A5 Agents",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5013,6 +5141,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.8.web.leftovers",
+      "title": "When a space opens, kept text under a key that has no task's shape is forgotten; a task that is gone, in the Trash, finished or that the service could not answer for keeps its own",
+      "source": "A5 3.8, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.8.web.kept",
       "title": "Typed text kept under the product's prefix, for the browser or for the tab alone: listed per prefix, removed, kept for the tab's life when storage is full or blocked, and another tab's change heard by its name only",
       "source": "A5 3.8, A7 3.12 M5.07",
@@ -5040,14 +5176,6 @@
       "id": "A5.3.9.web.thread-request",
       "title": "A launch's request shows in the thread as what the person asked its agent: in its session's entry from the click on (Prepared too) and not again as a note, gone with its note after an undo; a launch that did not open offers Open again with it on its newest launch only; a long request folds with More so the state and Open again stay in reach; a request whose session is not listed shows on its own as asked of its agent; a session's request is read whole by its reference, whatever the task holds after it",
       "source": "A5 3.8, A5 3.9",
-      "owner": "M5",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A5.3.8.web.leftovers",
-      "title": "When a space opens, the kept draft and waiting edits of a task the service no longer knows are forgotten; a task in the live rows, a finished one and one the service could not answer for keep theirs",
-      "source": "A5 3.8, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

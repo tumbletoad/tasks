@@ -10,8 +10,11 @@ export type BindingEvent =
   | { readonly ev: "binding.unbound"; readonly reason: UnboundReason };
 
 export interface SessionPortOptions extends DecideSources {
-  /** How many live sessions each task of a space has: running launches and running runs. */
-  live(space: string): ReadonlyMap<string, number>;
+  /**
+   * How many live sessions each task of a space has, of those made in its copy `copy`: running
+   * launches and running runs.
+   */
+  live(space: string, copy: string | undefined): ReadonlyMap<string, number>;
   readonly log?: (event: BindingEvent) => void;
 }
 
@@ -27,6 +30,6 @@ export function sessionPort(options: SessionPortOptions): SessionPort {
       return decision;
     },
     standing: (home) => standing(options, home),
-    live: (space) => options.live(space),
+    live: (space, copy) => options.live(space, copy),
   };
 }

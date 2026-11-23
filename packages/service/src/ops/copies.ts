@@ -1,25 +1,17 @@
-// Which copy of a space an ID or a name means (A2 3.10.5). A restored copy keeps its original's
-// space ID and name, and so does a claimed copy, so one service can serve several copies of one
-// space. Every lookup by ID or name goes through here (an unbound call's space and `--space`, the
-// machine's default, a bridge's pin, the page's feed and routes, the space verbs), so each of them
-// means the same copy:
+// Which space an ID, a name or a folder means (A2 3.10.5). A restored copy keeps its original's
+// space ID and name, but one folder serves a space at a time (hub/spaces.ts, ONE COPY AT A TIME), so
+// nothing chooses between copies: every lookup by ID or name (an unbound call's space and
+// `--space`, the machine's default, a bridge's pin, the page's feed and routes, the space verbs)
+// means the folder that serves the space, or, while none does, the first one listed, whose state
+// says why it is not served.
 //
-// - A folder (an absolute path) names its own copy, in whatever state: the way to reach a copy that
-//   the rule below does not pick.
-// - Among the copies that have the ID, or the copies of the one space that has the name, the copy
-//   that serves it best: the writable one (`open`); else one opening or closing, for a moment
-//   (whose answer is "retry"); else the space read-only for a reason of its own (its folder, a
-//   failed migration, another machine's authority); else a restored copy not claimed yet
-//   (`read_only_copy`); else an unavailable one; else a closed one.
-// - Two copies at the best rank are `ambiguous`, never the first one listed, and the error names
-//   their folders. One service never has two writable copies (storage keeps one writer per space
-//   ID in a process), so that is two read-only copies, or two that are unavailable or closed. Two
-//   copies opening at once are not: either one answers that the space is still opening.
-// - A name that two different spaces have is `ambiguous` too: the ID names one of them.
+// - A folder (an absolute path) names its own entry, in whatever state.
+// - A name that two different spaces have is `ambiguous`: the ID names one of them.
 import { isAbsolute, resolve } from "node:path";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
 
-/** What the rule reads of a space. */
+/** What a lookup reads of a space. */
 export interface Copy {
   /** The ID read from its folder, once served: what an ID names. */
   readonly id: string | undefined;
@@ -34,9 +26,9 @@ export interface Copy {
   readonly folder?: string | undefined;
 }
 
-/** Several candidates: copies of one space at the same rank, or several spaces with one name. */
+/** Several spaces with one name. */
 export interface Ambiguity<S> {
-  readonly ambiguous: "copies" | "name";
+  readonly ambiguous: "name";
   readonly candidates: readonly S[];
 }
 
@@ -46,32 +38,23 @@ export function isAmbiguity<S extends Copy>(found: Found<S>): found is Ambiguity
   return found !== undefined && "ambiguous" in found;
 }
 
-/** How well a copy serves its ID: lower is better. */
-function rankOf(copy: Copy): number {
-  switch (copy.state) {
-    case "open":
-      return 0;
-    case "opening":
-    case "closing":
-      return 1;
-    case "read_only":
-      return copy.reason === "read_only_copy" ? 3 : 2;
-    case "unavailable":
-      return 4;
-    default:
-      return 5;
-  }
-}
+/** Whether the folder serves its space now, or is about to (opening) or just was (closing). */
+const isServed = (copy: Copy): boolean =>
+  copy.state === "open" ||
+  copy.state === "read_only" ||
+  copy.state === "opening" ||
+  copy.state === "closing";
 
-/** The copy an ID means among `copies`, all of one space. */
-export function chooseCopy<S extends Copy>(copies: readonly S[]): Found<S> {
-  if (copies.length <= 1) return copies[0];
-  const best = Math.min(...copies.map(rankOf));
-  const top = copies.filter((copy) => rankOf(copy) === best);
-  // Copies opening or closing at once: either one's answer is "retry in a moment".
-  if (top.length === 1 || best === 1) return top[0];
-  return { ambiguous: "copies", candidates: top };
-}
+/** Among the entries of one space: the one that serves it, else the first listed. */
+const servingOf = <S extends Copy>(copies: readonly S[]): S | undefined =>
+  copies.find(isServed) ?? copies[0];
+
+/**
+ * The entries of the space `id`: by the ID read from each folder, or for one that is being opened
+ * again (a claim, a restore in place), by the ID its entry names.
+ */
+const entriesOf = <S extends Copy>(spaces: readonly S[], id: string): S[] =>
+  spaces.filter((space) => (space.id ?? space.registered) === id);
 
 /** Whether two folders are one, as the OS compares names: case folded on Windows and macOS. */
 export function sameFolder(
@@ -85,8 +68,8 @@ export function sameFolder(
 }
 
 /**
- * The copies of each space among `spaces`, by ID, the entry's ID for a copy not served yet; a space
- * without either is a group of its own.
+ * The entries of each space among `spaces`, by ID, the entry's ID for a copy not served yet; a
+ * space without either is a group of its own.
  */
 function bySpace<S extends Copy>(spaces: readonly S[]): S[][] {
   const groups = new Map<unknown, S[]>();
@@ -108,48 +91,62 @@ export function findSpace<S extends Copy>(spaces: readonly S[], wanted: string):
   if (isAbsolute(wanted)) {
     return spaces.find((space) => space.folder !== undefined && sameFolder(space.folder, wanted));
   }
-  const byId = spaces.filter((space) => space.id === wanted);
-  if (byId.length > 0) return chooseCopy(byId);
+  const byId = entriesOf(spaces, wanted);
+  if (byId.length > 0) return servingOf(byId);
   const folded = wanted.toLowerCase();
   const groups = bySpace(spaces.filter((space) => space.name?.toLowerCase() === folded));
   if (groups.length > 1) return { ambiguous: "name", candidates: groups.flat() };
-  return chooseCopy(groups[0] ?? []);
+  return servingOf(groups[0] ?? []);
 }
 
-/** The copy the space `id` means among `spaces`. */
-export function copyOf<S extends Copy>(spaces: readonly S[], id: string): Found<S> {
-  return chooseCopy(spaces.filter((space) => space.id === id));
+/** The entry of the space `id` among `spaces`: the one that serves it, else the first listed. */
+export function copyOf<S extends Copy>(spaces: readonly S[], id: string): S | undefined {
+  return servingOf(entriesOf(spaces, id));
 }
 
 /**
- * The one space among `spaces` (its copy that the rule picks), when all of them are copies of one
+ * The one space among `spaces` (the entry that serves it), when all of them are entries of one
  * space; `several` when they hold more than one; undefined when there is none.
  */
-export function onlySpace<S extends Copy>(spaces: readonly S[]): Found<S> | "several" {
+export function onlySpace<S extends Copy>(spaces: readonly S[]): S | "several" | undefined {
   const groups = bySpace(spaces);
   if (groups.length > 1) return "several";
-  return chooseCopy(groups[0] ?? []);
+  return servingOf(groups[0] ?? []);
 }
 
-/** `ambiguous` (A3 3.5) for an ambiguity, naming the copies' folders. */
-export function ambiguousError<S extends Copy>(found: Ambiguity<S>, hint?: string): AppError {
-  if (found.ambiguous === "name") {
-    return new AppError({
-      code: "ambiguous",
-      message: "Several spaces have this name.",
-      hint: hint ?? "Name the space by its ID: ttasks space list.",
-    });
-  }
-  const folders = found.candidates.flatMap((copy) =>
-    copy.folder === undefined ? [] : [copy.folder],
-  );
+/**
+ * A page's call for a copy of its space that is not the one served now: the space was closed,
+ * restored in place, claimed, or another folder of it opened since the page loaded it. Nothing of
+ * the call is done, and nothing the page sends is written into a copy it did not show.
+ */
+export function spaceChanged(): AppError {
+  return new AppError({
+    code: "space_unavailable",
+    message: "This space was closed, restored or claimed since this page loaded it.",
+    hint: "Load it again to see it as it is now. No more changes are saved to this space from this page.",
+    data: { reason: "replaced", retryable: false },
+  });
+}
+
+/**
+ * An agent session's call once another copy serves its space than the one its launch or run was
+ * made in (a claim or a restore in place): what the agent read and holds is of that copy, so nothing
+ * of the call is done, and a retry would be refused the same way.
+ */
+export function sessionReplaced(): AppError {
+  return new AppError({
+    code: "space_unavailable",
+    message: "This space was restored since this session began. Nothing of this call was done.",
+    hint: `Do not retry. Tell the user; they start the agent again from the task in ${PRODUCT_NAME}.`,
+    data: { reason: "replaced", retryable: false },
+  });
+}
+
+/** `ambiguous` (A3 3.5) for several spaces with one name. */
+export function ambiguousError(hint?: string): AppError {
   return new AppError({
     code: "ambiguous",
-    message:
-      folders.length === 0
-        ? "Several copies of this space are listed, and none of them takes writes."
-        : `Several copies of this space are listed, and none of them takes writes: ${folders.join(", ")}.`,
-    hint: hint ?? "Name the copy by its folder: --space <folder>.",
-    ...(folders.length === 0 ? {} : { data: { folders } }),
+    message: "Several spaces have this name.",
+    hint: hint ?? "Name the space by its ID: ttasks space list.",
   });
 }

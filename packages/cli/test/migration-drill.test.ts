@@ -189,7 +189,8 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
     );
 
     // A restore of it into a new folder, through the service: a read-only copy that holds the
-    // fixture's counts and last_seq.
+    // fixture's counts and last_seq, opened once the space is closed.
+    expect((await user(["space", "close", folder, "--json"])).code).toBe(0);
     const copyFolder = join(parent, "restored");
     const restored = await user([
       "space",
@@ -212,7 +213,6 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
 
     // The fault is removed. The same build does not try the same state again by itself (A1
     // 3.17): the next open serves it read-only and writes no new barrier backup.
-    expect((await user(["space", "close", folder, "--json"])).code).toBe(0);
     await onClosedSpace(folder, "DROP TRIGGER drill_fault");
     const held = await user(["space", "open", folder, "--json"]);
     expect(held.code, held.stdout + held.stderr).toBe(0);
