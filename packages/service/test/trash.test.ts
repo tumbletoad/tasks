@@ -210,7 +210,7 @@ describe("[A3.trash] the Trash through real requests", () => {
     expect((await trash({ q: gone })).rows[0]?.removed.id).toBe(first);
   });
 
-  test("restoring a change brings back what is still there from it and names the rest; a change the space does not have restores nothing", async () => {
+  test("restoring a change brings back what is still there from it and names the rest; a change the space does not have, or one that moved nothing there, restores nothing", async () => {
     const tasks = [
       await add({ title: "Fixture change one" }),
       await add({ title: "Fixture change two" }),
@@ -236,6 +236,13 @@ describe("[A3.trash] the Trash through real requests", () => {
       request_id: rid(),
     });
     expect(gone).toMatchObject({ code: "not_found", data: { reason: "change_gone" } });
+    // A change that moved nothing there, such as a restore, says so.
+    const four = await add({ title: "Fixture change four" });
+    await remove([four]);
+    const back = (await restore({ tasks: [four] }))["commit"] as string;
+    const none = await refusal("task.delete", { restore: true, change: back, request_id: rid() });
+    expect(none).toMatchObject({ code: "invalid_input" });
+    expect(none.message).toContain("This change moved nothing to the Trash");
   });
 
   test("a restore says where each task is back, and a key another task took meanwhile stays there", async () => {

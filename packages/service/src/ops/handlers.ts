@@ -2776,14 +2776,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         throw storageFailure(error);
       }
       if (found === undefined) throw changeGone();
-      ops = found.tasks.map((task) => ({ kind: "task.restore", task, change: change as Id<"op"> }));
-      if (ops.length === 0) {
-        return {
-          result: "no_change",
-          moved: [],
-          as_of: (await readSpace(readerOf(call.space))).asOf,
-        };
+      // A change that moved nothing there (a restore, an edit) has nothing to bring back.
+      if (found.tasks.length === 0) {
+        throw invalid(
+          "change",
+          "This change moved nothing to the Trash, so nothing was restored",
+          "The Trash shows what is there now, with each change's ID.",
+        );
       }
+      ops = found.tasks.map((task) => ({ kind: "task.restore", task, change: change as Id<"op"> }));
     }
     const result = await submit(call, ops);
     // A task named twice (its reference and its ID) is one task: the operation that moved it

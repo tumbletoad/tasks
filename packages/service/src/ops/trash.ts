@@ -183,8 +183,8 @@ export interface ChangeTasks {
 
 /**
  * The tasks a change moved to the Trash: every task whose tombstone its commit set, whether still
- * there or not. Undefined for a commit the space does not have, such as one from before a backup
- * was restored over it.
+ * there or not, and none whose tombstone it cleared (a restore). Undefined for a commit the space
+ * does not have, such as one from before a backup was restored over it.
  */
 export async function readChangeTasks(
   reader: WorkerConnection,
@@ -196,7 +196,7 @@ export async function readChangeTasks(
       sql:
         "SELECT t.id FROM commits k JOIN changes ch ON ch.seq = k.seq JOIN tasks t ON " +
         "t.id = ch.entity_id WHERE k.id = $id AND ch.entity = 'tasks' AND ch.field = 'deleted' " +
-        "ORDER BY t.ref",
+        "AND json_extract(ch.after, '$.deleted_at') IS NOT NULL ORDER BY t.ref",
       mode: "all",
       params: { id: change },
     },
