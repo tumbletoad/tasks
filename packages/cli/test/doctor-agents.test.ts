@@ -269,10 +269,12 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
       expect(printed.code, printed.stderr).toBe(0);
       const snippet = JSON.parse(printed.stdout) as { files: string[]; text: string };
       expect(snippet.files).toEqual([join(user, ".cursor", "mcp.json")]);
-      // A hand-made entry (A3 3.7.4): no row is kept for it, so it names no instance, and it uses
-      // the machine's default space, the one the grant gate lets such an entry use (A3 3.7.8).
+      // A hand-made entry: no row is kept for it, so it names no instance. It names the machine's
+      // default space, here the only one, the one the grant gate lets such an entry use.
       expect(JSON.parse(snippet.text)).toEqual({
-        mcpServers: { [MCP_SERVER_KEY]: { command: tasks, args: ["mcp", "--app", "cursor"] } },
+        mcpServers: {
+          [MCP_SERVER_KEY]: { command: tasks, args: ["mcp", "--space", space, "--app", "cursor"] },
+        },
       });
       expect(existsSync(join(user, ".cursor"))).toBe(false);
       const named = await run(

@@ -116,6 +116,7 @@ import {
   LaunchFolderUnmarked,
   LaunchUnavailable,
   type Choice,
+  type RegisteredElsewhere,
   type OpenTaskRequest,
   type OpenTaskResult,
 } from "./open.ts";
@@ -292,6 +293,8 @@ export interface LaunchServiceOptions extends LaunchOptions {
   readonly instances?: readonly Instance[] | (() => readonly Instance[]);
   /** The markers in projects' and tasks' folders (marker.ts). None: a launch checks no marker. */
   readonly markers?: FolderMarkers;
+  /** Where a terminal click's agent home is registered, when not for its space. None: nowhere. */
+  readonly registeredElsewhere?: RegisteredElsewhere;
 }
 
 interface Hosted {
@@ -724,6 +727,22 @@ export class LaunchService {
         throw new LaunchFolderUnavailable(where.reason, folder?.stored);
       }
       if (isUncPath(where.folder)) throw this.#unavailable("unc");
+    }
+    // An agent whose home is registered for another space could not use TTasks here: the person
+    // hears it now rather than at its first call, and before anything is asked or written.
+    if (choice.route === "terminal" && instance !== undefined) {
+      const agent = agentHomeOf(instance, this.#options.home, platform);
+      const elsewhere =
+        agent === undefined
+          ? undefined
+          : this.#options.registeredElsewhere?.(agent.app, agent.home, space);
+      if (elsewhere !== undefined) {
+        this.#log("launch.unavailable", "other_space");
+        throw new LaunchUnavailable(
+          "other_space",
+          this.#options.spaces().find((s) => s.id === elsewhere)?.name,
+        );
+      }
     }
     if (choice.route !== "clipboard") {
       await this.#checkMarker(space, task.folder, request.markFolder === true);

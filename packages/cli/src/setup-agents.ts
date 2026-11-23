@@ -15,7 +15,8 @@
 //   ttasks setup agents print --app <name>
 //                                   the entry and the file it belongs in, for an app setup does not
 //                                   manage or a managed file (A3 3.13.7): a hand-made entry, which
-//                                   uses the machine's default space (A3 3.7.8). Writes nothing
+//                                   names the machine's default space, the one such an entry may
+//                                   use. Writes nothing
 //   ttasks setup agents print-block --for claude|agents
 //                                   the instruction block and the file it belongs in, for a managed
 //                                   file's source or an app setup does not write (A3 3.12). Reads no
@@ -505,13 +506,19 @@ export async function agentsCommand(
       case "print-block":
         return printBlock(io, globals, input, parsed.for ?? "claude");
       case "print":
-        // A printed entry is a hand-made one, which uses the machine's default space (print.ts).
+        // A printed entry is a hand-made one, which may use the machine's default space only.
         if (globals.space !== undefined) {
           throw new UsageError(
             "print takes no --space: an entry added by hand uses the machine's default space",
           );
         }
-        return printCommand(io, globals, input, parsed.apps?.[0] as PrintApp);
+        return printCommand(
+          io,
+          globals,
+          input,
+          parsed.apps?.[0] as PrintApp,
+          await printSpace(call, defaultSpace),
+        );
       case "apply": {
         if (mcp && (!isFolder(root) || !exists(input.tasks))) {
           throw new AppError({
@@ -1077,11 +1084,44 @@ function printBlock(io: Io, globals: Globals, input: SetupInput, kind: BlockFor)
   return 0;
 }
 
+/**
+ * The space a printed entry names: the one the grant gate lets a hand-made entry use, the
+ * configured default, else the one space the service serves.
+ */
+async function printSpace(call: Call, machineDefault: string | undefined): Promise<string> {
+  if (machineDefault !== undefined) return machineDefault;
+  const listed = (await call("space/list", {})) as { spaces?: SpaceRow[] };
+  // Copies of one space share its ID, which is what an entry names: one space.
+  const ids = new Set(
+    (listed.spaces ?? []).flatMap((s) => (s.state !== "closed" && s.id ? [s.id] : [])),
+  );
+  const [only] = ids;
+  if (only !== undefined && ids.size === 1) return only;
+  throw new AppError({
+    code: "invalid_input",
+    message:
+      ids.size === 0
+        ? "The service serves no space yet."
+        : "The service serves several spaces and the machine has no default space.",
+    hint:
+      ids.size === 0
+        ? `Create one first: ${CLI_NAME} space create`
+        : `Set the default space the entry is for: ${CLI_NAME} space use <id or name>`,
+    data: { issues: [{ path: "space", message: "Set a default space" }] },
+  });
+}
+
 /** `print --app <name>`: the entry and where it goes. Reads no home and writes nothing. */
-function printCommand(io: Io, globals: Globals, input: SetupInput, app: PrintApp): number {
+function printCommand(
+  io: Io,
+  globals: Globals,
+  input: SetupInput,
+  app: PrintApp,
+  space: string,
+): number {
   let snippet;
   try {
-    snippet = snippetFor(input, app);
+    snippet = snippetFor(input, app, space);
   } catch (error) {
     if (!(error instanceof PrintRefused)) throw error;
     throw new AppError({
