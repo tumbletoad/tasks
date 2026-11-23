@@ -4040,6 +4040,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.15.web.store.copy",
+      "title": "A tab keeps the copy of its space it loaded: a snapshot of another copy applies nothing, says what happened (claimed, restored in place, a restored copy or another folder) and stops the feed; the feed ending after the tab showed its space says it was closed and keeps the rows",
+      "source": "A5 3.15, A2 3.10.5",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.15.web.store.queries",
       "title": "Query-level invalidation: a task that starts to match an open Completed view appears in it by a restart that loads as many rows as were shown; one that starts to match an open search offers Refresh, which shows it; shown rows take new values in place; only the newest read applies; a snapshot counts as a change to every query",
       "source": "A7 3.12 M5.02, A5 3.13, A5 3.15",
@@ -4187,6 +4195,14 @@
       "id": "A2.3.10.5.copies.page",
       "title": "Open folder of a restored copy while its space is open is refused with what is open and what the folder is; once the space is closed the copy opens and the list and the feed say it is a restored copy, with its folder and backup; after a claim the tab's feed gets a snapshot of a new copy, and a write, an undo, a read and a run list with the copy the tab loaded are refused as replaced with nothing written; a tab back with its old copy and cursor gets a snapshot",
       "source": "A2 3.10.5, A5 3.15, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.e2e",
+      "title": "In Chromium and Firefox against the real service, at 1,440 and 390 px without sideways scroll: Open folder with a restored copy while its space is open is refused with what is open, what the folder is and what to do; a tab whose space is closed says so; the copy opened alone says it is a restored copy with its folder, backup and ways out, in the switcher too; an edit there keeps the words with the reason, Copy and Discard and no Try again, also over a reload; a claim of the copy tells the open tab, whose Undo then writes nothing, and loading it again shows the space as it is now",
+      "source": "A2 3.10.5, A5 3.11, A1 3.18",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
