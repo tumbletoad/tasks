@@ -3170,7 +3170,9 @@ function sharedWith(
   const refs = conn
     .prepare(SQL.sharedWith)
     .all({ task, source })
-    .map((row) => formatTaskRef(run.plan.refPrefix, new RowReader("tasks", row).int("ref", "taskRef")));
+    .map((row) =>
+      formatTaskRef(run.plan.refPrefix, new RowReader("tasks", row).int("ref", "taskRef")),
+    );
   return refs.length === 0 ? {} : { shared_with: refs };
 }
 
