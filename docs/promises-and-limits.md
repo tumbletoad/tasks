@@ -303,6 +303,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   Try again sends it against what you saw when you made it, so a change made since is shown to you
   first. Another tab's edit, or a closed tab's, shows with Copy and Discard: to send its words,
   copy them into the field.
+- Ctrl+Z takes back the last change you made, also when a slow save of an earlier one, of any
+  task, would have landed after it: a tab saves your changes in the order you made them, each shown
+  at once.
 - A button on a task's row or card (the box, the star, a move, a status, the area, Move to Trash),
   a search result's included, changes the task as that row shows it. If someone changed it since,
   also while the row stayed under your focus, nothing is overwritten: the page says who changed it.

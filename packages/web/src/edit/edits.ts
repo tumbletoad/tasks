@@ -18,8 +18,10 @@
 // cursor for the store's own row, the row's version for a row the screen holds from earlier (held
 // under focus, kept by a card); an editor that stays open while the person types (the title, a
 // date) takes it when it opens. That is what the person saw.
-// Edits of one task go out one after another: the next waits for the answer to the one before, and
-// for an undo or redo asked before it. A base moves past what the screen showed only over the
+// The tab's writes go out one after another in the order the person made them, whatever the task:
+// the next waits for the answer to the one before. So the service's history holds the person's
+// steps in their order, and Ctrl+Z, which the service resolves to the step applied last, takes
+// back the last thing the person did. A base moves past what the screen showed only over the
 // tab's own commits that directly follow it, or to the tab's own newest write of every field the
 // edit writes (one commit that wrote them all), so the person's quick choices never conflict with
 // each other, and a change someone else made to any of those fields meanwhile still does.
@@ -37,9 +39,9 @@ import type { Overlay } from "../store/pending.ts";
 import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 import type { Changes, Sent } from "../store/store.ts";
 import {
-  allOf,
   ASK_MS,
   Call,
+  KNOWN,
   NotSent,
   Unanswered,
   type Decision,
@@ -476,7 +478,9 @@ export class Edits {
   readonly #listeners = new Set<() => void>();
   readonly #toastListeners = new Set<(toast: Toast | undefined) => void>();
   #state: EditState = { unsaved: new Map(), retrying: new Map(), leaving: new Map() };
-  /** The newest write's turn per task, until its outcome is known: the next edit waits for it. */
+  /** The tab's newest write, undo or redo, until its outcome is known: the next waits for it. */
+  #last: Turn | undefined;
+  /** The newest write's turn per task, until its outcome is known (`sending`). */
   readonly #chains = new Map<string, Turn>();
   /**
    * Per task and field, the `as_of` of the tab's own newest write of it that changed something:
@@ -485,8 +489,6 @@ export class Edits {
   readonly #own = new Map<string, string>();
   /** The `as_of` of every commit the tab made itself (edits, check-offs, undo, redo). */
   readonly #ownCommits = new Set<string>();
-  /** The undo or redo on its way: edits made after it go out after it (`#history`). */
-  #gate: Turn | undefined;
   /** The requests whose decision the page has not seen: the feed naming one is news (`Call.heard`). */
   readonly #calls = new Map<string, Call<unknown>>();
   /** Per task and field, the number of the person's newest edit of it: an older one's refusal is moot. */
@@ -1149,7 +1151,7 @@ export class Edits {
     options: { readonly base?: string | undefined } = {},
   ): Promise<T | WriteReceipt> {
     const seen = options.base ?? this.#deps.asOf();
-    const ahead = allOf(this.#ahead());
+    const ahead = this.#last ?? KNOWN;
     const { turn, made } = this.#turn<T | WriteReceipt>(ahead);
     const sent = this.#deps.write(async (request) => {
       try {
@@ -1180,10 +1182,7 @@ export class Edits {
       }
     });
     this.#mine.add(sent.request);
-    this.#gate = turn;
-    this.#release(sent.answer, () => {
-      if (this.#gate === turn) this.#gate = undefined;
-    });
+    this.#queue(turn, sent.answer);
     return sent.answer.then((value) => {
       // A write that changed nothing has nothing to undo.
       const text = WROTE_NOTHING.has(String(value.result)) ? undefined : said(value);
@@ -1206,10 +1205,12 @@ export class Edits {
   // -------------------------------------------------------------------------------------------
 
   /**
-   * An undo or redo, in the order the person asked: after the edits already on their way (Ctrl+Z
+   * An undo or redo, in the order the person asked: after the writes already on their way (Ctrl+Z
    * takes back the newest of them, never one before it while the newest is still to be sent), and
-   * before any edit made after it, which waits for it (`#sendWith`), so an unnamed undo never takes
-   * back a change the person made after pressing it.
+   * before any write made after it, which waits for it, so an unnamed undo never takes back a
+   * change the person made after pressing it. Unnamed, the service decides the step: the person's
+   * steps from this tab reach it in their order, and a newer one from another tab or the command
+   * line is the person's last as well.
    */
   #history(
     kind: "undo" | "redo",
@@ -1217,7 +1218,7 @@ export class Edits {
     partial: boolean,
     asked: { commit?: string } = {},
   ): { answer: Promise<HistoryResult>; call: Carried<HistoryResult> } {
-    const ahead = allOf(this.#ahead());
+    const ahead = this.#last ?? KNOWN;
     const { turn, made, call: carried } = this.#turn<HistoryResult>(ahead);
     const run = (async (): Promise<HistoryResult> => {
       try {
@@ -1251,16 +1252,16 @@ export class Edits {
         throw error;
       }
     })();
-    this.#gate = turn;
-    this.#release(run, () => {
-      if (this.#gate === turn) this.#gate = undefined;
-    });
+    this.#queue(turn, run);
     return { answer: run, call: carried };
   }
 
-  /** What an undo or redo waits for: every task's newest write, and the undo or redo before it. */
-  #ahead(): Turn[] {
-    return [...this.#chains.values(), ...(this.#gate === undefined ? [] : [this.#gate])];
+  /** `turn` is the tab's newest: what the person does next waits for it, until `answer`'s outcome. */
+  #queue(turn: Turn, answer: Promise<unknown>): void {
+    this.#last = turn;
+    this.#release(answer, () => {
+      if (this.#last === turn) this.#last = undefined;
+    });
   }
 
   /**
@@ -1532,7 +1533,7 @@ export class Edits {
   }
 
   /**
-   * A write of one task through the store, in turn after the task's earlier writes. `call` gets the
+   * A write of one task through the store, in turn after the tab's earlier writes. `call` gets the
    * base (`#baseFor`, decided when it is sent) and the store's request ID.
    */
   #sendWith<T extends { as_of?: string; result?: unknown }>(
@@ -1542,10 +1543,8 @@ export class Edits {
     call: (base: string | undefined, request: string) => Promise<T>,
     overlay?: Overlay,
   ): Write<T> {
-    // Sent once the task's earlier writes and any undo or redo before it have their outcome.
-    const waits = [this.#chains.get(task), this.#gate].filter((turn) => turn !== undefined);
-    const ahead = allOf(waits);
-    const { turn, made, call: mine } = this.#turn<T>(ahead);
+    const ahead = this.#last;
+    const { turn, made, call: mine } = this.#turn<T>(ahead ?? KNOWN);
     const note = (result: T) => {
       // A write that changed nothing wrote no field: its `as_of` is only the head.
       if (typeof result.as_of !== "string" || result.result === "no_change") return;
@@ -1557,7 +1556,7 @@ export class Edits {
       try {
         // The page going away ends the wait as not sent: the edit is kept as not saved and offered
         // after the reload. Sent now, it could arrive before the edit it waits for.
-        if (waits.length > 0) {
+        if (ahead !== undefined) {
           const gone = (this.#deps.leaving ?? (() => pageGone))().then(() => false);
           if (!(await Promise.race([ahead.wait(), gone]))) throw new NotSent();
         }
@@ -1577,6 +1576,7 @@ export class Edits {
       }
     }, overlay);
     this.#mine.add(sent.request);
+    this.#queue(turn, sent.answer);
     this.#chains.set(task, turn);
     this.#release(sent.answer, () => {
       if (this.#chains.get(task) === turn) this.#chains.delete(task);

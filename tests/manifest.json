@@ -5226,7 +5226,7 @@
     },
     {
       "id": "A5.3.11.web.edits",
-      "title": "Every person's edit takes one path: it shows at once as an overlay, carries the applied cursor (or its editor's opening one) as its base, and its toast's Undo names the commit the feed confirmed; two quick edits of one task go out in turn with the newer answer's as_of; a conflict or a failed call keeps the person's value under the field with who changed it, through feed updates, until Apply mine sends it again with a fresh base; an editor hears others' changes after it opened and never the tab's own",
+      "title": "Every person's edit takes one path: it shows at once as an overlay, carries the applied cursor (or its editor's opening one) as its base, and its toast's Undo names the commit the feed confirmed; two quick edits of one task go out in turn with the newer answer's as_of, and edits of different tasks go out in the order the person made them, so Ctrl+Z takes back the last of them, also through Undo, Redo, Undo with a slow save in between; a conflict or a failed call keeps the person's value under the field with who changed it, through feed updates, until Apply mine sends it again with a fresh base; an editor hears others' changes after it opened and never the tab's own",
       "source": "A5 3.11, A5 3.15, A7 3.12 M5.08",
       "owner": "M5",
       "kind": "ci",
@@ -5252,6 +5252,14 @@
       "id": "A5.3.11.e2e.unanswered",
       "title": "In Chromium and Firefox against the real service: Ctrl+Z whose first request never reaches the service does not hold the star clicked after it; the page learns the undo's outcome by its request ID, sends it again, and the star goes out after it, so the undo takes back the priority and the star stays",
       "source": "A5 3.11, A1 3.8",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.11.e2e.undo-order",
+      "title": "In Chromium and Firefox against the real service: with the first save of one task held, the person sets its priority twice and stars another task; Ctrl+Z takes back the star, the last thing they did, and the task's priority stays",
+      "source": "A5 3.11, A5 3.12, A1 3.10.1",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

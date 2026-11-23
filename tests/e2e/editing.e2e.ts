@@ -435,6 +435,62 @@ test.describe("[A5.3.11.e2e.unanswered] An undo that gets no answer does not hol
   });
 });
 
+test.describe("[A5.3.11.e2e.undo-order] Ctrl+Z takes back the last edit the person made, whatever saved first", () => {
+  test("a slow save changes nothing of what Ctrl+Z takes back: after two edits of one task and a star on another, it takes back the star", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const [ref, other] = await addTasks(world, [
+      { title: `Paint the garden fence (${tag})`, area: "home" },
+      { title: `Order the firewood (${tag})`, area: "home" },
+    ]);
+    if (ref === undefined || other === undefined) throw new Error("the tasks were not added");
+    // The first save waits until the person has pressed Ctrl+Z. The page's clock stands still
+    // meanwhile: the page asks about a request held for a few seconds.
+    await page.clock.install();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let asked!: () => void;
+    const sent = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    let saves = 0;
+    await page.route("**/api/v1/op/task.update", async (route) => {
+      saves += 1;
+      if (saves === 1) {
+        asked();
+        await gate;
+      }
+      await route.continue();
+    });
+    await openArea(page, world, "Home");
+    const row = rowOf(page, ref);
+    await row.locator('[data-part="title"]').click();
+    const priority = row.getByRole("radiogroup", { name: "Priority" });
+    await stopClock(page);
+    await priority.getByRole("radio", { name: "P1" }).click();
+    await sent;
+    await priority.getByRole("radio", { name: "P2" }).click();
+    const star = rowOf(page, other).locator('[data-part="star"]');
+    await star.click();
+    await expect(star).toHaveAttribute("aria-pressed", "true");
+    await page.locator("main").focus();
+    await page.keyboard.press("Control+z");
+    release();
+    await page.clock.resume();
+    await expect(toast(page)).toHaveText("Undone");
+    await expect(star).toHaveAttribute("aria-pressed", "false");
+    const starred = async () =>
+      ((await read(world, other)).task as unknown as { focus?: boolean }).focus ?? false;
+    await expect.poll(starred).toBe(false);
+    expect((await read(world, ref)).task.priority).toBe(2);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+});
+
 test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is finished elsewhere stays with the person", () => {
   test("the typed title shows with Copy and Discard, no Try again, and reopened the task takes it", async ({
     page,

@@ -184,6 +184,72 @@ const flush = async () => {
   for (let i = 0; i < 5; i += 1) await vi.advanceTimersByTimeAsync(0);
 };
 
+/**
+ * The person's steps as the service keeps them: a write's step lands when its answer goes out;
+ * Undo takes the step applied last (a redone step counts from its redo) and refuses a named one
+ * that is not it; Redo takes the oldest undone step.
+ */
+class Steps {
+  readonly #steps: { id: string; what: string; done: boolean; applied: number }[] = [];
+  #seq = 10;
+  #held: Promise<void> | undefined;
+
+  constructor(readonly w: World) {
+    for (let i = 0; i < 20; i += 1) {
+      w.answer("task.update", this.#update);
+      w.answer("history.undo", this.#undo);
+      w.answer("history.redo", this.#redo);
+    }
+  }
+
+  /** Holds the next save until the returned function runs: a slow connection. */
+  holdNext(): () => void {
+    let release!: () => void;
+    this.#held = new Promise((resolve) => (release = resolve));
+    return release;
+  }
+
+  /** What is done now, by task and field, in the order the steps landed. */
+  done(): string[] {
+    return this.#steps.filter((s) => s.done).map((s) => s.what);
+  }
+
+  readonly #update = async (input: Record<string, unknown>) => {
+    const held = this.#held;
+    this.#held = undefined;
+    if (held !== undefined) await held;
+    this.#seq += 1;
+    const fields = Object.keys(input["set"] as Record<string, unknown>);
+    this.#steps.push({
+      id: `op_${String(this.#seq)}`,
+      what: `${String(input["task"])} ${fields.join(",")}`,
+      done: true,
+      applied: this.#seq,
+    });
+    return { result: "updated", task: "M-1", fields, as_of: this.w.asOf(this.#seq), warnings: [] };
+  };
+
+  readonly #undo = (input: Record<string, unknown>) => {
+    const top = this.#steps.filter((s) => s.done).sort((a, b) => b.applied - a.applied)[0];
+    if (top === undefined) throw appError("not_found", { cause: "NOTHING_TO_UNDO" });
+    if (input["commit"] !== undefined && input["commit"] !== top.id) {
+      throw appError("conflict", { cause: "INVALID_TRANSITION" });
+    }
+    top.done = false;
+    this.#seq += 1;
+    return { result: "undone", commit: top.id, tasks: [], as_of: this.w.asOf(this.#seq) };
+  };
+
+  readonly #redo = () => {
+    const oldest = this.#steps.find((s) => !s.done);
+    if (oldest === undefined) throw appError("not_found", { cause: "NOTHING_TO_REDO" });
+    oldest.done = true;
+    this.#seq += 1;
+    oldest.applied = this.#seq;
+    return { result: "redone", commit: oldest.id, tasks: [], as_of: this.w.asOf(this.#seq) };
+  };
+}
+
 describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refusals kept, undo by commit", () => {
   test("an edit shows at once, carries the applied cursor as its base, and its toast's Undo names its commit", async () => {
     const w = new World([task(1)]);
@@ -430,6 +496,50 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       ["history.undo", undefined],
       ["task.update", "t_00002"],
     ]);
+  });
+
+  test("Ctrl+Z takes back the person's last edit across tasks, also when a slow save of another task's edit comes before it", async () => {
+    const w = new World([task(1), task(2)]);
+    const steps = new Steps(w);
+    const release = steps.holdNext();
+    w.edits.edit(task(1), priorityChange(1));
+    w.edits.edit(task(1), effortChange("M"));
+    w.edits.edit(task(2), priorityChange(2));
+    // Each shows at once, whatever waits.
+    expect(w.row("t_00002")?.priority).toBe(2);
+    const undone = w.edits.undo();
+    await flush();
+    release();
+    await undone;
+    expect(steps.done()).toEqual(["t_00001 priority", "t_00001 effort"]);
+  });
+
+  test("Undo, Redo, Undo across two tasks with a slow save in the middle: each takes the step the person means", async () => {
+    const w = new World([task(1), task(2)]);
+    const steps = new Steps(w);
+    let release = steps.holdNext();
+    w.edits.edit(task(1), priorityChange(1));
+    w.edits.edit(task(2), priorityChange(2));
+    const first = w.edits.undo();
+    await flush();
+    release();
+    await first;
+    expect(steps.done()).toEqual(["t_00001 priority"]);
+    // Redo brings back what was undone; the next Undo takes back that redone step.
+    await w.edits.redo();
+    expect(steps.done()).toEqual(["t_00001 priority", "t_00002 priority"]);
+    release = steps.holdNext();
+    w.edits.edit(task(1), effortChange("M"));
+    w.edits.edit(task(2), effortChange("S"));
+    const second = w.edits.undo();
+    await flush();
+    release();
+    await second;
+    await w.edits.undo();
+    await w.edits.undo();
+    expect(steps.done()).toEqual(["t_00001 priority"]);
+    await w.edits.undo();
+    expect(steps.done()).toEqual([]);
   });
 
   test("Move to Open right after choosing a status moves past the person's own status change, never over someone else's", async () => {
@@ -1580,10 +1690,11 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     // Asked by the undo's own ID, and sent again with the same ID, which applies it at most once.
     expect(w.calls.find((c) => c.name === "receipt.get")?.input).toEqual({ request: undo });
     expect(requestOf(w, "history.undo", 1)).toBe(undo);
-    // The undo's commit (seq 11) directly follows what the person saw: the bases move past it.
+    // The undo's commit (seq 11) directly follows what the person saw, and the first edit's (12)
+    // follows it: each base moves past the tab's own commits before it.
     expect(w.calls.filter((c) => c.name === "task.update").map((c) => c.input)).toEqual([
       expect.objectContaining({ task: "t_00002", base: w.asOf(11) }),
-      expect.objectContaining({ task: "t_00001", base: w.asOf(11) }),
+      expect.objectContaining({ task: "t_00001", base: w.asOf(12) }),
     ]);
     expect(w.toasts.some((t) => t?.text.id === "toast.undone")).toBe(true);
     expect(w.edits.getState().unsaved.size).toBe(0);
@@ -1903,16 +2014,16 @@ describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives 
     expect(w.lastToast()).toBeUndefined();
 
     // Another edit's toast took the place of the edit's Try again: the late refusal updates the
-    // line under the field and leaves the newer toast alone.
+    // line under the field and leaves the newer toast alone. That edit waits behind the one whose
+    // outcome is unknown, so it is kept as not saved, never sent before it.
     const two = hanging(w, "task.update");
     w.edits.edit(task(2), effortChange("M"));
     await vi.advanceTimersByTimeAsync(ASK_MS);
     await flush();
-    w.answer("task.update", () => updated(w, 12));
     w.edits.edit(task(1), priorityChange(2));
     await flush();
     const newer = w.lastToast();
-    expect(newer?.text.id).toBe("toast.priority");
+    expect(newer?.text).toEqual({ id: "toast.notSaved", values: { field: { id: "field.priority" } } });
     two.reject?.(conflict);
     await flush();
     expect(w.lastToast()).toBe(newer);
