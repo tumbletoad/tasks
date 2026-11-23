@@ -241,6 +241,41 @@ describe("[A3.trash] the Trash through real requests", () => {
     ]);
   });
 
+  test("a restore of a task whose creation was undone is refused for the whole request, and Redo brings it back with its sources and log", async () => {
+    const live = await add({ title: "Fixture live beside an undone one" });
+    await remove([live]);
+    const made = await call("task.add", {
+      tasks: [
+        {
+          title: "Fixture undone with sources",
+          sources: [ticket("fix:TR-21")],
+          log: "Fixture log entry.",
+        },
+      ],
+      request_id: rid(),
+    });
+    const undone = (made["tasks"] as { ref: string; id: string }[])[0];
+    await call("history.undo", { request_id: rid() });
+    for (const named of [[undone?.ref], [undone?.id], [live, undone?.ref]]) {
+      const refused = await refusal("task.delete", {
+        tasks: named,
+        restore: true,
+        base: await asOf(),
+        request_id: rid(),
+      });
+      expect(refused).toMatchObject({ code: "not_found", data: { reason: "creation_undone" } });
+      expect(refused.message).toContain(`${undone?.ref ?? ""}'s creation was undone`);
+      expect(refused.hint).toContain("Redo");
+    }
+    // Nothing moved, the live one included, and Redo brings the task back whole.
+    expect(refs((await trash({ q: live })).rows)).toEqual([live]);
+    await call("history.redo", { request_id: rid() });
+    const back = await call("task.get", { task: undone?.ref, sections: ["sources", "log"] });
+    const sections = back["sections"] as Json;
+    expect((sections["sources"] as Json[]).map((s) => s["key"])).toEqual(["fix:TR-21"]);
+    expect((sections["log"] as Json[]).map((l) => l["text"])).toEqual(["Fixture log entry."]);
+  });
+
   test("a removed task whose agent was opened in a terminal is among the ones still worked on", async () => {
     const a = await add({ title: "Fixture agent still on it" });
     const quiet = await add({ title: "Fixture nobody on it" });

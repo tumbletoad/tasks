@@ -117,6 +117,7 @@ import {
   type ReceiptLookup,
 } from "./receipts.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "./row-state.ts";
+import { inTrashSql } from "./trash.ts";
 import {
   checkRequest,
   FOLDER_OPERATIONS,
@@ -607,6 +608,7 @@ const SQL = {
     "UPDATE task_sources SET removed_at = $at WHERE task_id = $task AND source_id = $source",
   undoOf: "SELECT undo_of FROM commits WHERE seq = $seq",
   commitSeq: "SELECT seq FROM commits WHERE id = $id",
+  inTrash: `SELECT ${inTrashSql("t")} AS yes FROM tasks t WHERE t.id = $id`,
   /** A task's links to live keyed sources, removed ones too, with each source's key. */
   keyedLinks:
     "SELECT ts.*, s.source_key AS k FROM task_sources ts JOIN sources s ON s.id = ts.source_id " +
@@ -1676,6 +1678,20 @@ export class SpaceWriter {
           }
           // A task already as asked is no change: two tabs that both asked get the same answer.
           if ((tombstones.get(target) ?? start?.deleted ?? false) === deleting) return skip;
+          // Only a task removed on purpose comes back (trash.ts): an undone creation is Redo's,
+          // which brings its notes and links with it. The whole request is refused.
+          if (!deleting && !tombstones.has(target)) {
+            const found = conn.prepare(SQL.inTrash).get({ id: target });
+            if (found?.["yes"] !== 1) {
+              throw new RequestProblem({
+                code: "NOT_FOUND",
+                message: "The task's creation was undone: Redo brings it back",
+                op: i,
+                field: "task",
+                reason: "creation_undone",
+              });
+            }
+          }
           // Restoring a change: only a tombstone that change set and nothing since. Provenance, not
           // a base, says so, so a task restored and removed again since stays with the later change.
           if (from !== undefined) {

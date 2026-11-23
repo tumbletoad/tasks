@@ -13,8 +13,10 @@ import {
   folderView,
   formatAsOf,
   formatTaskRef,
+  inTrashSql,
   isId,
   RECEIPT_SQL,
+  removalSeqSql,
   storedPreference,
   type FolderView,
   type LaunchFolder,
@@ -127,14 +129,6 @@ const MATCH =
   "(SELECT id FROM tasks WHERE id = $id OR ref = $ref OR id = (SELECT entity_id FROM aliases " +
   "WHERE namespace = 'planning' AND alias = $alias AND entity_kind = 'task') LIMIT 1)";
 
-/**
- * The commit whose write the tombstone of task `t` holds: its provenance, else its creation. A
- * delete, or that delete again after an undo of a restore or a redo; for a creation that was
- * undone, the undo itself.
- */
-export const removalSeq = (t: string): string =>
-  `coalesce(json_extract(${t}.fp, '$.deleted'), ${t}.created_seq)`;
-
 /** A deleted task's removal: the change that moved it to the Trash. */
 export interface Removal {
   /** The change's commit. */
@@ -166,17 +160,17 @@ export function removalOf(row: Row): Removal | undefined {
             origin: String(row["x_removed_origin"]),
           })
         : "user",
-    undone: row["x_removed_undo"] !== null && row["x_removed_undo"] !== undefined,
+    undone: row["x_in_trash"] !== 1,
   };
 }
 
 const TASK: Statement = {
   sql:
     "SELECT t.*, a.title AS area_title, p.title AS project_title, c.id AS x_removed_change, " +
-    "c.at AS x_removed_at, c.undo_of AS x_removed_undo, c.origin AS x_removed_origin, " +
+    `c.at AS x_removed_at, ${inTrashSql("t")} AS x_in_trash, c.origin AS x_removed_origin, ` +
     "x.kind AS x_removed_kind, x.label AS x_removed_label FROM tasks t " +
     "LEFT JOIN areas a ON a.id = t.area_id LEFT JOIN projects p ON p.id = t.project_id " +
-    `LEFT JOIN commits c ON t.deleted_at IS NOT NULL AND c.seq = ${removalSeq("t")} ` +
+    `LEFT JOIN commits c ON t.deleted_at IS NOT NULL AND c.seq = ${removalSeqSql("t")} ` +
     `LEFT JOIN actors x ON x.id = c.author_id WHERE t.id = ${MATCH}`,
   mode: "get",
 };
@@ -609,7 +603,10 @@ export async function readTask(
   };
 }
 
-/** Who moved the task a reference names to the Trash, with its reference; none if it is not there. */
+/**
+ * The removal of the deleted task a reference names, with its reference: who moved it to the Trash,
+ * or that its creation was undone (`undone`). None for a live task or no task.
+ */
 export async function readRemoval(
   reader: WorkerConnection,
   ref: string,
@@ -622,7 +619,7 @@ export async function readRemoval(
   });
   const task = row as Row | null;
   const removal = task === null ? undefined : removalOf(task);
-  if (task === null || removal === undefined || removal.undone) return undefined;
+  if (task === null || removal === undefined) return undefined;
   return { ref: formatTaskRef(spaceFacts(space).refPrefix, Number(task["ref"])), removal };
 }
 

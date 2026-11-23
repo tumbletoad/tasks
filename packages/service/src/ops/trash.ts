@@ -1,11 +1,8 @@
-// The Trash: the tasks someone moved there on purpose. A task's tombstone holds the provenance of
-// the commit whose write it is (A1 3.10): a delete, or that same delete again after an undo of a
-// restore or a redo of the delete. A creation that was undone holds the undo's own commit instead.
-// That task is not in the Trash: Redo brings it back with its notes and links together, and a
-// restore of it alone would leave them behind and take the Redo away.
-import type { Row, WorkerConnection } from "@ttasks/storage";
+// The Trash: the tasks someone moved there on purpose (storage's trash.ts decides which), read a
+// page at a time, newest change first, each with the change that moved it there.
+import { inTrashSql, removalSeqSql, type Row, type WorkerConnection } from "@ttasks/storage";
 import { byOf } from "./errors.ts";
-import { hasFolderTable, removalSeq } from "./read.ts";
+import { hasFolderTable } from "./read.ts";
 import { OPEN_RUN, taskColumns, taskRows, type CompactRow, type FeedHere } from "./task-rows.ts";
 
 /** What a page of the Trash asks for. */
@@ -68,10 +65,9 @@ function trashSql(request: TrashRequest, folders: boolean): string {
     where.push("(k.seq < $seq OR (k.seq = $seq AND t.ref > $after))");
   return (
     "WITH k AS (SELECT t.id, " +
-    `${removalSeq("t")} AS seq FROM tasks t WHERE t.deleted_at IS NOT NULL), ` +
-    "kept AS (SELECT k.id, k.seq FROM k LEFT JOIN commits c ON c.seq = k.seq WHERE c.undo_of IS NULL), " +
-    "counts AS (SELECT seq, count(*) AS n FROM kept GROUP BY seq), " +
-    "page AS (SELECT k.id, k.seq, t.ref FROM kept k JOIN tasks t ON t.id = k.id " +
+    `${removalSeqSql("t")} AS seq FROM tasks t WHERE ${inTrashSql("t")}), ` +
+    "counts AS (SELECT seq, count(*) AS n FROM k GROUP BY seq), " +
+    "page AS (SELECT k.id, k.seq, t.ref FROM k JOIN tasks t ON t.id = k.id " +
     `${where.length === 0 ? "" : `WHERE ${where.join(" AND ")}`} ` +
     "ORDER BY k.seq DESC, t.ref LIMIT $limit) " +
     `SELECT ${taskColumns(folders)}, page.seq AS x_seq, n.n AS x_count, a.title AS x_area, ` +

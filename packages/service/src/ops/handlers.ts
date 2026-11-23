@@ -857,10 +857,19 @@ async function submit(
   return result;
 }
 
+/** The task a refused operation names, as the request gave it (a reference or an ID). */
+function refusedTask(ops: readonly Operation[], result: WriteResult): string | undefined {
+  const at = result.error?.op;
+  const op = at === undefined ? undefined : ops[at];
+  const task = op !== undefined && "task" in op ? op.task : undefined;
+  return typeof task === "string" ? task : undefined;
+}
+
 /**
- * A write refused because its task is in the Trash: says who moved it there and when, and what
- * to do. An agent is told to tell the person and never to add it again or restore it itself: a
- * task recreated after the person removed it is the mistake the Trash undoes.
+ * A write refused because its task is in the Trash, or a restore because its creation was undone:
+ * says who moved it there and when, or that Redo brings it back, and what to do. An agent is told
+ * to tell the person and never to add it again or restore it itself: a task recreated after the
+ * person removed it is the mistake the Trash undoes.
  */
 async function inTrash(
   call: Call,
@@ -869,15 +878,27 @@ async function inTrash(
   failure: AppError,
 ): Promise<AppError | undefined> {
   const problem = result.error;
-  if (problem?.code !== "DELETED" || problem.field !== "task" || problem.op === undefined) {
-    return undefined;
-  }
-  const op = ops[problem.op];
-  const task = op !== undefined && "task" in op ? op.task : undefined;
-  if (typeof task !== "string") return undefined;
+  const task = refusedTask(ops, result);
+  if (task === undefined) return undefined;
+  const undone = problem?.code === "NOT_FOUND" && problem.reason === "creation_undone";
+  if (!undone && (problem?.code !== "DELETED" || problem.field !== "task")) return undefined;
   const found = await readRemoval(readerOf(call.space), task).catch(() => undefined);
   if (found === undefined) return undefined;
   const { ref, removal } = found;
+  if (undone) {
+    // Not in the Trash: Redo brings it back with its notes and links, which a restore would not.
+    return new AppError({
+      ...failure.toBody(),
+      message: `${ref}'s creation was undone: it is not in the Trash, and nothing was restored.`,
+      hint:
+        call.principal.origin === "cli"
+          ? `Redo brings it back with its notes and links: ${CLI_NAME} redo.`
+          : "Redo brings it back with its notes and links.",
+      data: { ...failure.data, reason: "creation_undone", task: ref },
+    });
+  }
+  // A write to a task whose creation was undone stays plain not_found: it is in no Trash.
+  if (removal.undone) return undefined;
   const who = removal.by === "user" ? "the user" : removal.by;
   const at = new Date(removal.at).toISOString();
   const hint =

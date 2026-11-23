@@ -157,6 +157,34 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     expect(back.results[0]?.status).toBe("updated");
   });
 
+  test("a task whose creation was undone is not restored, alone, by its undo's change or beside another: the request is refused whole and Redo brings it back with its links", () => {
+    const live = task("Renew the passport");
+    remove(live);
+    const a = task("Answer the clinic", [ticket("jira:FIX-7")]);
+    const undo = applied(fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }])));
+    expect(deleted(a)).toBe(true);
+    for (const ops of [
+      [{ kind: "task.restore", task: a }],
+      [{ kind: "task.restore", task: a, change: undo.commit as Id<"op"> }],
+      [
+        { kind: "task.restore", task: live },
+        { kind: "task.restore", task: a },
+      ],
+    ] as Operation[][]) {
+      const refused = send("human", ops);
+      expectStatus(refused, "rejected");
+      expect(refused.error).toMatchObject({
+        code: "NOT_FOUND",
+        field: "task",
+        reason: "creation_undone",
+      });
+    }
+    expect([deleted(live), deleted(a)]).toEqual([true, true]);
+    applied(fx.writer.submit(fx.request(fx.human, [{ kind: "redo" }])));
+    expect(deleted(a)).toBe(false);
+    expect(holders("jira:FIX-7")).toEqual([a]);
+  });
+
   test("a key another active task took meanwhile stays with it: the restored task's link stays removed, and its other links come back", () => {
     const a = task("Answer the clinic", [ticket("jira:FIX-1"), ticket("jira:FIX-2")]);
     remove(a);

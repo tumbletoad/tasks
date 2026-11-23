@@ -23,6 +23,7 @@ import {
   type SearchDocument,
 } from "../src/search/documents.ts";
 import { CHILD_FIELDS, columnsValue, TASK_FIELDS } from "../src/write/fields.ts";
+import { inTrashSql } from "../src/write/trash.ts";
 import {
   applyInversions,
   planInversions,
@@ -1615,6 +1616,15 @@ const property = (seen: Record<string, number>) =>
               ...undoable(s.actor),
             }),
           );
+          // A task whose creation was undone is not in the Trash: Redo brings it back, not this.
+          const trashed = conn
+            .prepare(`SELECT ${inTrashSql("t")} AS yes FROM tasks t WHERE t.id = $id`)
+            .get({ id: picked })?.["yes"];
+          if (s.kind === "restore" && result.status === "rejected" && trashed !== 1) {
+            expect(result.error).toMatchObject({ code: "NOT_FOUND", reason: "creation_undone" });
+            count("an undone creation not restored");
+            continue;
+          }
           expectStatus(result, "applied");
           count(s.kind === "delete" ? "deleted" : "restored");
         } else if (s.kind === "archive" || s.kind === "wrap") {
