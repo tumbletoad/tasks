@@ -170,25 +170,37 @@ describe("[A4.5.routes.opener] the OS's URL opener: one element, defined outcome
     }
   });
 
-  test("an opener that does not end in time is stopped, and its answer is unknown", async () => {
-    const hung = linux({ "/usr/bin/gio": "hang" });
-    expect(await openUrl(URL_, hung.options)).toEqual({ result: "unknown", opener: "gio" });
-    expect(hung.r.stopped).toEqual(["/usr/bin/gio"]);
+  test("an opener that does not end in time is left running: the wait ends, its answer is unknown, and no other opener is tried", async () => {
+    // xdg-open may stay with the application it started, in its process group: ending it could
+    // end that application, with the person's work in it.
+    const fallback = linux({ "/usr/bin/xdg-open": "hang" });
+    expect(await openUrl(URL_, fallback.options)).toEqual({
+      result: "unknown",
+      opener: "xdg-open",
+    });
+    expect(fallback.r.stopped).toEqual([]);
+    // gio may still open it: xdg-open would open a second copy.
+    const hung = linux({ "/usr/bin/gio": "hang", "/usr/bin/xdg-open": 0 });
+    expect(await openFolder("/home/mira/work", hung.options)).toEqual({
+      result: "unknown",
+      opener: "gio",
+    });
+    expect(hung.r.calls.map((c) => c.argv[0])).toEqual(["/usr/bin/gio"]);
+    expect(hung.r.stopped).toEqual([]);
   });
 
-  test("with no deadline given, an opener gets 10 s: not stopped at 9,999 ms, stopped and unknown at 10,000 ms", async () => {
-    const hung = linux({ "/usr/bin/gio": "hang" }, undefined, "default");
+  test("with no deadline given, an opener gets 10 s: no answer at 9,999 ms, unknown at 10,000 ms, and never stopped", async () => {
+    const hung = linux({ "/usr/bin/xdg-open": "hang" }, undefined, "default");
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       let answer: unknown;
       const asked = openUrl(URL_, hung.options).then((opened) => (answer = opened));
       await vi.advanceTimersByTimeAsync(9_999);
       expect(answer).toBeUndefined();
-      expect(hung.r.stopped).toEqual([]);
       await vi.advanceTimersByTimeAsync(1);
       await asked;
-      expect(answer).toEqual({ result: "unknown", opener: "gio" });
-      expect(hung.r.stopped).toEqual(["/usr/bin/gio"]);
+      expect(answer).toEqual({ result: "unknown", opener: "xdg-open" });
+      expect(hung.r.stopped).toEqual([]);
     } finally {
       vi.useRealTimers();
     }

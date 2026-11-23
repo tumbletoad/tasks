@@ -10,7 +10,7 @@
 // - `no_session`: Linux without DISPLAY or WAYLAND_DISPLAY: nothing can show a window. Failed.
 // - `not_started`: no opener could be started at all (each one missing). Failed.
 // - `unknown`: the opener failed in a way that does not say whether anything opened, or did not
-//   end in time. The launch is Unknown ("it may have opened").
+//   end in time, and is left running. The launch is Unknown ("it may have opened").
 // A fallback opener is tried only when the one before it never started (its program is missing),
 // so one launch never opens the URL twice.
 import { win32 } from "node:path";
@@ -176,11 +176,9 @@ async function run(
         });
       }),
     ]);
-    if (ended === "timeout") {
-      // A helper the service started for itself: ended, and its answer is unknown.
-      started.stop();
-      return { result: "unknown", opener: candidate.name };
-    }
+    // Only the wait ends: an opener may stay in the foreground with the application it started,
+    // in its process group, so stopping it could end that application.
+    if (ended === "timeout") return { result: "unknown", opener: candidate.name };
     return { result: candidate.exit?.(ended) ?? "opened", opener: candidate.name };
   }
   return { result: "not_started", opener: "none" };
