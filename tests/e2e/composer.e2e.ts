@@ -938,6 +938,16 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await page.reload();
     await expect(unsaved).toHaveAttribute("data-reason", "failed", { timeout: SLOW_MS });
     await expect(unsaved).toContainText("Not saved");
+    // The control shows the saved value; the line shows the words Try again sends, with Copy.
+    await expect(unsaved.locator('[data-part="unsaved-value"]')).toHaveText("P1");
+    await expect(unsaved.locator('[data-part="copy-mine"]')).toBeVisible();
+    const size = page.viewportSize();
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await unsaved.scrollIntoViewIfNeeded();
+      await picture(page, `lone-kept-priority-${String(width)}.png`);
+    }
+    if (size !== null) await page.setViewportSize(size);
     await unsaved.locator('[data-part="apply-mine"]').click();
     await expect.poll(async () => (await read(world, ref)).task.priority).toBe(1);
     await expect(unsaved).toHaveCount(0);
