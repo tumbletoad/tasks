@@ -127,7 +127,7 @@ describe("[A3.3.4.add.names] names, typos and similar titles", () => {
         answer = resolveGroup(groups, "area", name, "p") ?? "new";
       } catch (error) {
         if (!(error instanceof AppError)) throw error;
-        answer = { code: error.code, suggestions: error.data?.["suggestions"] };
+        answer = { code: error.code, suggestions: error.data["suggestions"] };
       }
       expect(answer, `${name} beside ${areas.map(([title]) => title).join(", ")}`).toEqual(
         expected,
