@@ -150,7 +150,8 @@ export class UngroupedContainers implements Containers {
     const live: Live = { child, pid, exited, done: false };
     const gone = (): void => {
       live.done = true;
-      // The last moment the group's ID is surely the run's: what the agent left in it ends now.
+      // What the agent left in its group ends now: the ID stays the group's while anything is in
+      // it. Once the group is empty the ID is free, and may be another program's.
       if (this.platform === "win32") return;
       try {
         process.kill(-pid, "SIGKILL");
