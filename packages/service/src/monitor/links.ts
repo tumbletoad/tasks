@@ -22,16 +22,19 @@ const sameTask = (a: AgentsTask, b: AgentsTask): boolean => a.space === b.space 
 const joinKey = (provider: string, homeId: string, sessionId: string): string =>
   JSON.stringify([provider, homeId, sessionId]);
 
+type Home = MonitorSnapshot["homes"][number];
+
+/** TTAM's homes with the digest a launch or a run records for each (`homeDigest`). */
+const digested = (snapshot: MonitorSnapshot, platform: NodeJS.Platform) =>
+  snapshot.homes.map((home) => ({ home, digest: homeDigest(platform, home.path) }));
+
 /** TTAM's home of `held`: undefined when it lists none, or more than one, at that path. */
 function homeOf(
-  snapshot: MonitorSnapshot,
+  homes: readonly { readonly home: Home; readonly digest: string }[],
   held: HeldSession,
-  platform: NodeJS.Platform,
-): MonitorSnapshot["homes"][number] | undefined {
-  const homes = snapshot.homes.filter(
-    (h) => h.provider === held.provider && homeDigest(platform, h.path) === held.home,
-  );
-  return homes.length === 1 ? homes[0] : undefined;
+): Home | undefined {
+  const found = homes.filter((h) => h.home.provider === held.provider && h.digest === held.home);
+  return found.length === 1 ? found[0]?.home : undefined;
 }
 
 /** The task each join of app, home and session names; null where two tasks share one. */
@@ -40,9 +43,10 @@ function joined(
   held: readonly HeldSession[],
   platform: NodeJS.Platform,
 ): Map<string, AgentsTask | null> {
+  const homes = digested(snapshot, platform);
   const out = new Map<string, AgentsTask | null>();
   for (const h of held) {
-    const home = homeOf(snapshot, h, platform);
+    const home = homeOf(homes, h);
     if (home === undefined) continue;
     const key = joinKey(h.provider, home.id, h.sessionId);
     const found = out.get(key);
@@ -104,11 +108,12 @@ export class Unseen {
     now: number,
   ): AgentsTask[] {
     const present = new Set(snapshot.agents.map(keyOfAgent));
+    const homes = digested(snapshot, platform);
     const missed = new Map<string, { readonly count: number; readonly since: number }>();
     const out: AgentsTask[] = [];
     for (const h of held) {
       if (!h.running || h.task.started !== "terminal") continue;
-      const home = homeOf(snapshot, h, platform);
+      const home = homeOf(homes, h);
       if (home === undefined || !home.present) continue;
       const key = joinKey(h.provider, home.id, h.sessionId);
       if (present.has(key)) continue;

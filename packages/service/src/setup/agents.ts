@@ -38,7 +38,7 @@
 // Every path, variable and file read goes through the injected input, so tests run on scratch
 // homes with fake commands of their own (testkit's fake-agents.ts).
 import { createHash } from "node:crypto";
-import { lstatSync, rmSync, statSync } from "node:fs";
+import { lstatSync, realpathSync, rmSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
@@ -317,14 +317,26 @@ export function samePath(platform: NodeJS.Platform, a: string, b: string): boole
     : x === y;
 }
 
+/** `path` with its links resolved, when it exists on this machine; else as it is. */
+function physical(platform: NodeJS.Platform, path: string): string {
+  if (platform !== process.platform) return path;
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return path;
+  }
+}
+
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 
 /**
- * An agent home as a launch or a run records it: a digest of its path as `samePath` compares it,
- * so two spellings of one home are one, and a space never holds the path.
+ * An agent home as a launch or a run records it, and as the link to TTAM's homes compares it: a
+ * digest of the folder it really is, its links resolved as TTAM resolves them before it reports a
+ * home, then compared as `samePath` compares paths. A home that does not exist is taken as it is
+ * spelled. A space never holds the path.
  */
 export function homeDigest(platform: NodeJS.Platform, home: string): string {
-  const path = pathOf(platform).resolve(home);
+  const path = pathOf(platform).resolve(physical(platform, home));
   const folded = platform === "win32" || platform === "darwin" ? path.toLowerCase() : path;
   return createHash("sha256").update(`agent-home\0${folded}`).digest("hex");
 }

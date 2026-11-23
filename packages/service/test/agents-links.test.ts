@@ -2,7 +2,15 @@
 // spaces, launches and runs recorded through their operations, and the test kit's fake `ttam`
 // reporting sessions with the IDs those records hold. A link needs the agent app, the home and the
 // session to name one task; the page gets the task, never the session ID. Fixture data only.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentsPicture, AgentsSession } from "@ttasks/contracts/monitor";
@@ -32,20 +40,24 @@ const ID = {
   trashed: "aaaaaaaa-1111-4111-8111-000000000008",
   moved: "aaaaaaaa-1111-4111-8111-000000000009",
   homeless: "aaaaaaaa-1111-4111-8111-00000000000a",
+  linked: "aaaaaaaa-1111-4111-8111-00000000000b",
 } as const;
 
 let w: HttpWorld;
 let dir: string;
 let feed: FeedClient;
 /** The agent homes the instances name in machine.toml. */
-let homes: { claude: string; other: string; twin: string; codex: string };
+let homes: { claude: string; other: string; twin: string; codex: string; linked: string };
 const homeOfInstance = (instance: string): string =>
   ({
     "claude-work": homes.claude,
     "claude-other": homes.other,
     "claude-twin": homes.twin,
     "codex-work": homes.codex,
+    "claude-linked": homes.linked,
   })[instance] ?? "";
+/** Why this machine could not make the link to a home; undefined: it did. */
+let unlinkable: string | undefined;
 const tasks = new Map<string, { id: string; ref: string; space: string }>();
 /** The IDs of the two background runs of the task "Run", the earlier first. */
 let runIds: string[] = [];
@@ -228,7 +240,17 @@ beforeAll(async () => {
     other: join(dir, "claude-other"),
     twin: join(dir, "claude-twin"),
     codex: join(dir, "codex-home"),
+    // A home its instance names through a link: TTAM reports the folder it really is.
+    linked: join(dir, "claude-link"),
   };
+  const real = join(dir, "claude-real");
+  mkdirSync(real);
+  try {
+    // A junction on Windows, which needs no privilege there.
+    symlinkSync(real, homes.linked, process.platform === "win32" ? "junction" : "dir");
+  } catch (error) {
+    unlinkable = `this machine cannot link a folder: ${String(error)}`;
+  }
   const agents = join(dir, "agents.json");
   const fake = fakeTtam({ agents, maxMs: 600_000 });
   const toml = [
@@ -236,6 +258,7 @@ beforeAll(async () => {
     ["claude-other", "claude-cli", { CLAUDE_CONFIG_DIR: homes.other }],
     ["claude-twin", "claude-cli", { CLAUDE_CONFIG_DIR: homes.twin }],
     ["codex-work", "codex-cli", { CODEX_HOME: homes.codex }],
+    ["claude-linked", "claude-cli", { CLAUDE_CONFIG_DIR: homes.linked }],
   ]
     .map(([id, target, env]) =>
       instanceToml({
@@ -282,6 +305,7 @@ beforeAll(async () => {
     "Trashed",
     "Moved",
     "Homeless",
+    "Linked",
   ]) {
     await addTask("Mira", title);
   }
@@ -300,6 +324,7 @@ beforeAll(async () => {
   await launch("Moved", "claude-work", { preset: ID.moved }, false, join(dir, "claude-before"));
   // A record from before the click recorded its home.
   await launch("Homeless", "claude-work", { preset: ID.homeless }, false, null);
+  if (unlinkable === undefined) await launch("Linked", "claude-linked", { preset: ID.linked });
 
   const agent = (row: string, provider: string, home: string, session: string, name: string) =>
     ttamAgent({ row, provider, home, session, name, activity: "working" });
@@ -312,6 +337,7 @@ beforeAll(async () => {
         // Two of TTAM's homes at one path: which one the twin's launch used is not known.
         ttamHome({ id: "twin-a", provider: "claude", path: homes.twin }),
         ttamHome({ id: "twin-b", provider: "claude", path: homes.twin }),
+        ttamHome({ id: "linked-test", provider: "claude", path: realpathSync.native(real) }),
       ],
       agents: [
         agent("a-terminal", "claude", "claude-test", ID.terminal, "Fixture terminal agent"),
@@ -335,6 +361,7 @@ beforeAll(async () => {
         agent("i-trashed", "claude", "claude-test", ID.trashed, "Fixture trashed task"),
         agent("j-moved", "claude", "claude-test", ID.moved, "Fixture moved home"),
         agent("k-homeless", "claude", "claude-test", ID.homeless, "Fixture no home recorded"),
+        agent("l-linked", "claude", "linked-test", ID.linked, "Fixture home through a link"),
         // A Claude session ID of a launch, under Codex: another app's session.
         agent("h-other-app", "codex", "codex-test", ID.terminal, "Fixture other app"),
       ],
@@ -352,7 +379,14 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true, maxRetries: 10 });
 });
 
+/** The newest picture the page was sent, or the next one when it was sent none yet. */
 async function picture(): Promise<AgentsPicture> {
+  const sent = feed.messages
+    .filter((m) => m["type"] === "agents")
+    .map((m) => (m as unknown as { picture: AgentsPicture | null }).picture)
+    .filter((p) => p !== null);
+  const newest = sent.at(-1);
+  if (newest !== undefined) return newest;
   for (;;) {
     const next = (await feed.next((m) => m["type"] === "agents")) as unknown as {
       picture: AgentsPicture | null;
@@ -428,5 +462,14 @@ describe("[A5.agents.links] each agent of the monitor is shown with the task TTa
     expect(sent).not.toContain(JSON.stringify(dir).slice(1, -1));
     const log = readFileSync(w.service.log.path, "utf8");
     for (const id of Object.values(ID)) expect(log).not.toContain(id);
+  }, 120_000);
+
+  test("a home reached through a link is the folder it really is", async (ctx) => {
+    if (unlinkable !== undefined) ctx.skip(unlinkable);
+    const p = await picture();
+    expect(byTitle(p, "Fixture home through a link")?.task).toMatchObject({
+      ...linked("Linked"),
+      started: "terminal",
+    });
   }, 120_000);
 });
