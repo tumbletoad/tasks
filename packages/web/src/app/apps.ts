@@ -130,24 +130,46 @@ export function appliedOf(value: unknown): Applied {
 /** One switch's place: its row and which of the two. */
 export const switchKey = (row: string, part: PartName): string => JSON.stringify([row, part]);
 
-/** Where each switch stands for the person: on or off, as they set it before Apply. */
+/**
+ * The switches the person set apart from how they stand: on or off, until Apply. A switch that is
+ * not in it stands as the view says.
+ */
 export type Choices = ReadonlyMap<string, boolean>;
 
 /**
- * The switches as a person first sees them: as they stand, and, when `propose` is set (the first
- * start), every switch that can be turned on is on, so one press applies the usual choice. A switch
- * with something to know first (one of several Claude Desktop files) is left to the person.
+ * The person's choices as they first see the switches: none in Settings, and at the first start
+ * every switch that can be turned on is on, so one press applies the usual choice. A switch with
+ * something to know first (one of several Claude Desktop files, a home whose tools were turned off
+ * before) is left to the person.
  */
 export function initialChoices(view: AppsView, propose: boolean): Map<string, boolean> {
   const choices = new Map<string, boolean>();
+  if (!propose) return choices;
   for (const row of view.rows) {
     for (const part of ["open", "tools"] as const) {
       const found = row[part];
-      if (found === undefined) continue;
-      const usual = propose && found.change === "add" && found.why === undefined;
-      choices.set(switchKey(row.key, part), usual ? true : found.on);
+      if (found?.change === "add" && found.why === undefined) {
+        choices.set(switchKey(row.key, part), true);
+      }
     }
   }
+  return choices;
+}
+
+/** Whether a switch shows on: the person's choice, else how it stands. */
+export const shownOn = (choices: Choices, row: AppRow | undefined, part: PartName): boolean =>
+  row === undefined ? false : (choices.get(switchKey(row.key, part)) ?? row[part]?.on ?? false);
+
+/** `choices` with one switch set: back to how it stands, it is no longer the person's. */
+function setChoice(
+  choices: Map<string, boolean>,
+  row: AppRow,
+  part: PartName,
+  on: boolean,
+): Map<string, boolean> {
+  const key = switchKey(row.key, part);
+  if (row[part]?.on === on) choices.delete(key);
+  else choices.set(key, on);
   return choices;
 }
 
@@ -163,22 +185,23 @@ export function choose(
   part: PartName,
   on: boolean,
 ): Map<string, boolean> {
-  const choices = new Map(before).set(switchKey(row.key, part), on);
+  const choices = setChoice(new Map(before), row, part, on);
   if (row.app !== "claude-desktop" || part !== "tools" || !on) return choices;
   for (const other of view.rows) {
     const tools = other.tools;
     if (other.key === row.key || other.app !== "claude-desktop" || tools === undefined) continue;
-    if (!tools.on) choices.set(switchKey(other.key, "tools"), false);
+    if (!tools.on) setChoice(choices, other, "tools", false);
   }
   return choices;
 }
 
 /**
  * The person's choices carried over to a newer view (one that came back because something changed
- * since): each switch keeps the person's choice while it can still be made, else stands as it is.
+ * since): each keeps while it can still be made, and every other switch stands as the newer view
+ * says, also one another window turned over meanwhile.
  */
 export function carryChoices(view: AppsView, before: Choices): Map<string, boolean> {
-  const choices = initialChoices(view, false);
+  const choices = new Map<string, boolean>();
   for (const row of view.rows) {
     for (const part of ["open", "tools"] as const) {
       const found = row[part];

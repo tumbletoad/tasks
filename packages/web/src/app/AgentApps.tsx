@@ -14,6 +14,7 @@ import {
   initialChoices,
   pendingOf,
   readApps,
+  shownOn,
   switchKey,
   type AppRow,
   type AppsView,
@@ -252,7 +253,7 @@ export function AgentApps({
                     row={row}
                     part={part}
                     found={found}
-                    on={choices.get(switchKey(row.key, part)) ?? found.on}
+                    on={shownOn(choices, row, part)}
                     busy={busy}
                     onChange={(on) => {
                       turn(row, part, on);

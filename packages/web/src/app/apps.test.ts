@@ -8,6 +8,7 @@ import {
   choose,
   initialChoices,
   pendingOf,
+  shownOn,
   switchKey,
   viewOf,
   type AppsView,
@@ -56,10 +57,10 @@ const VIEW: AppsView = viewOf({
 describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => {
   test("the first start turns on every switch that can be turned on, and Settings shows them as they stand", () => {
     const first = initialChoices(VIEW, true);
-    expect(first.get(switchKey("claude", "open"))).toBe(true);
-    expect(first.get(switchKey("claude", "tools"))).toBe(true);
+    expect(shownOn(first, VIEW.rows[0], "open")).toBe(true);
+    expect(shownOn(first, VIEW.rows[0], "tools")).toBe(true);
     // One that cannot be turned on here stays as it is.
-    expect(first.get(switchKey("desktop", "tools"))).toBe(false);
+    expect(shownOn(first, VIEW.rows[2], "tools")).toBe(false);
     expect(pendingOf(VIEW, first).map((p) => [p.row.key, p.part, p.on])).toEqual([
       ["claude", "open", true],
       ["claude", "tools", true],
@@ -96,6 +97,24 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
     ]);
   });
 
+  test("a newer view takes every switch the person did not touch as it stands now", () => {
+    const [claude] = VIEW.rows;
+    if (claude === undefined) throw new Error("no rows");
+    const offCodex = { ...VIEW.rows[1], open: part(false, "add"), tools: part(false, "add") };
+    const view = viewOf({ ...VIEW, rows: [VIEW.rows[0], offCodex] });
+    const touched = choose(view, initialChoices(view, false), claude, "tools", true);
+    // Another window turned Codex's tools on meanwhile.
+    const newer = viewOf({
+      ...VIEW,
+      rows: [VIEW.rows[0], { ...offCodex, tools: part(true, "remove", "fedcba9876543210") }],
+    });
+    const carried = carryChoices(newer, touched);
+    expect(pendingOf(newer, carried).map((p) => [p.row.key, p.part, p.on])).toEqual([
+      ["claude", "tools", true],
+    ]);
+    expect(shownOn(carried, newer.rows[1], "tools")).toBe(true);
+  });
+
   test("several Claude Desktop files: none is proposed, and turning one on turns off the others that are off", () => {
     const desktop = (key: string, tools: ReturnType<typeof part> & { why?: string }) => ({
       key,
@@ -120,7 +139,7 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
     const other = choose(view, one, b, "tools", true);
     // The last one turned on is the one applied; one that has the tools keeps them.
     expect(pendingOf(view, other).map((p) => [p.row.key, p.on])).toEqual([["b", true]]);
-    expect(other.get(switchKey("c", "tools"))).toBe(true);
+    expect(shownOn(other, view.rows[2], "tools")).toBe(true);
   });
 
   test("an answer of another shape is refused, and an applied one is read with its outcomes", () => {
