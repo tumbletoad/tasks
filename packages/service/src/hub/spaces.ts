@@ -79,20 +79,21 @@
 // ends, or the process exit does. The lock lives in the space's worker, beside the writer it
 // guards, so a worker that hangs keeps both until the process exits.
 import { createHash } from "node:crypto";
-import { realpathSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, realpathSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { CLI_NAME } from "@ttasks/brand";
 import {
+  backupsFolder,
   DATABASE_FILE,
   DEFAULT_DRIVER,
   decodeRevision,
   encodeRevision,
   finishInterruptedRestore,
   formatRevision,
+  isId,
   LATEST_REVISION,
   readManifest,
   RANGES,
-  RETENTION,
   SpaceLockedElsewhere,
   StorageError,
   StorageWorker,
@@ -224,10 +225,10 @@ export interface SpaceView {
    */
   readonly message?: string;
   /**
-   * The newest migration this machine ran on the space, with the backup from just before it: in
-   * described(), for people.
+   * The newest migration this machine ran on the space, with the backup from just before it, and
+   * whether that backup is still in the space's backups folder: in described(), for people.
    */
-  readonly migrated?: LastMigration;
+  readonly migrated?: LastMigration & { readonly backup_listed?: boolean };
   /** An open space whose backups are not working: what happened and what to do. */
   readonly backup?: BackupTroubleView;
   /** A restored copy that is not claimed: its own record, whatever its state's reason. */
@@ -434,6 +435,11 @@ class Hosted {
   restored: Restored | undefined;
   /** The copy it is served as (copyToken), once it is served. */
   copy: string | undefined;
+  /**
+   * The served copy's incarnation, once it is served: the history its backups belong to
+   * (storage's backupHistories).
+   */
+  incarnation: Id<"ai"> | undefined;
   /** The space's machine-local backup folder, when one is set. */
   backupDir: string | undefined;
   /** The projection's worker while the space is open as this machine's. */
@@ -539,6 +545,7 @@ class Hosted {
     this.message = undefined;
     this.restored = undefined;
     this.copy = undefined;
+    this.incarnation = undefined;
     this.backups.reset();
   }
 
@@ -671,18 +678,17 @@ export class SpaceManager {
    * (status, `ttasks space`).
    */
   described(): SpaceView[] {
-    const now = (this.#options.now?.() ?? new Date()).getTime();
     return this.#spaces.map((space) => {
-      const last = readSpaceSettings(
-        this.#options.settingsDir,
-        space.id ?? space.registered,
-      ).lastMigration;
-      // Retention keeps a barrier backup only so long: past that it is not named as one to go to.
+      const settings = readSpaceSettings(this.#options.settingsDir, space.id ?? space.registered);
+      const last = settings.lastMigration;
+      // The backup from before it is sent to only while it is there: a build before this one
+      // removed it after 30 days, and a person may have since. It is in the folder its record
+      // names when the one set for the space was away at the upgrade.
+      const dir = last?.backup_folder ?? settings.backupDir ?? backupsFolder(space.folder);
       const migrated =
-        last?.backup !== undefined &&
-        now - Date.parse(last.at) >= RETENTION.preMigrateDays * 86_400_000
-          ? { from: last.from, to: last.to, at: last.at }
-          : last;
+        last?.backup === undefined
+          ? last
+          : { ...last, backup_listed: existsSync(join(dir, `${last.backup}.db.gz`)) };
       return {
         ...space.view(),
         registered: space.registered,
@@ -726,6 +732,23 @@ export class SpaceManager {
   /** The folder of a registered space, for the space verbs. */
   folderOf(entry: number): string {
     return this.#space(entry).folder;
+  }
+
+  /**
+   * The incarnation of the copy in the entry's folder, whose backups are its history: as served,
+   * else as its space.json names it when that names the entry's space. Undefined when neither says.
+   */
+  incarnationOf(entry: number): Id<"ai"> | undefined {
+    const space = this.#space(entry);
+    if (space.incarnation !== undefined) return space.incarnation;
+    try {
+      const read = readManifest(space.folder);
+      return read.state === "present" && read.manifest?.space_id === space.registered
+        ? read.manifest.authority.incarnation
+        : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /** The copy a registered space is served as (copyToken), while it is open or read-only. */
@@ -852,7 +875,7 @@ export class SpaceManager {
   /**
    * Recovers a space refused with a rollback journal (`ttasks space recover`, A1 3.18): the
    * space closes, storage plays the journal back on a copy and swaps it in under the space's
-   * writer.lock, and the space opens again, also when the recovery failed.
+   * writer.lock, and the space opens again (#replace).
    */
   async recover(entry: number): Promise<{ readonly replaced: boolean }> {
     const space = this.#space(entry);
@@ -964,6 +987,7 @@ export class SpaceManager {
     space.restored = restoredOf(row?.transfer);
     const epoch = row?.authority_epoch;
     const incarnation = row?.authority_incarnation;
+    space.incarnation = isId(incarnation, "ai") ? incarnation : undefined;
     space.copy =
       typeof epoch === "number" && typeof incarnation === "string"
         ? copyToken(space.folder, epoch, incarnation, space.restored)
@@ -1025,8 +1049,8 @@ export class SpaceManager {
   /**
    * Restores `backupFile` in place of the space (A1 3.18): the space closes first, the
    * restore claims the backup with an epoch above every one this machine has seen, under the
-   * space's writer.lock in a worker of its own, and the space opens again, also when the restore
-   * failed. The restore's errors are storage's, content-free.
+   * space's writer.lock in a worker of its own, and the space opens again (#replace). The
+   * restore's errors are storage's, content-free.
    */
   async restoreInPlace(entry: number, backupFile: string): Promise<SpaceChange> {
     const space = this.#space(entry);
@@ -1040,6 +1064,8 @@ export class SpaceManager {
       const refFloor = await this.#refFloor(space, worker);
       const restored = await worker.restoreInPlace(backupFile, space.folder, {
         machineId: this.#options.machine.id,
+        // The folder's own files may no longer say which space it holds: the entry still does.
+        spaceId: space.registered,
         knownEpochs: knownEpochs(settings),
         ...(refFloor === undefined ? {} : { refFloor }),
         holder: this.#holderFacts,
@@ -1252,7 +1278,8 @@ export class SpaceManager {
       this.#unavailable(space, new StorageError("SPACE_NOT_FOUND", ""));
       return;
     }
-    const settings = this.#settingsOf(space.folder);
+    // By the space the entry names: the folder's space.json may be gone (it is written again).
+    const settings = this.#settingsFor(space.registered);
     space.backupDir = settings.backupDir;
 
     // A1 3.2: the folder and every folder above it, at every open. A network file system is never
@@ -1348,6 +1375,10 @@ export class SpaceManager {
           from: encodeRevision(writer.migration.from),
           to: encodeRevision(writer.migration.to),
           backup: writer.migration.backup.name,
+          // The folder set for the space was away: the list says where the backup went.
+          ...(writer.migration.setFolderAway === true
+            ? { backupFolder: dirname(writer.migration.backup.file) }
+            : {}),
         });
       } catch {
         // Only what the space list says about the migration: the migration itself is done.
@@ -1862,7 +1893,8 @@ export class SpaceManager {
   #maintain(space: Hosted, atStart: boolean): void {
     const { maintenance, log } = this.#options;
     const spaceId = space.id;
-    if (maintenance === undefined || spaceId === undefined) return;
+    const { incarnation } = space;
+    if (maintenance === undefined || spaceId === undefined || incarnation === undefined) return;
     const now = (this.#options.now?.() ?? new Date()).getTime();
     const t0 = performance.now();
     const begun = space.backups.begin();
@@ -1870,6 +1902,7 @@ export class SpaceManager {
       .run({
         folder: space.folder,
         spaceId,
+        incarnation,
         ...(space.backupDir === undefined ? {} : { backupDir: space.backupDir }),
         // Only the space's own backups folder, which this service alone writes while it holds
         // the space's writer.lock (maintenance.ts).
@@ -2100,7 +2133,7 @@ export class SpaceManager {
   /**
    * Closes the space, runs `change` in a worker of its own (a restore in place, a claim or a
    * recovery, each under the space's writer.lock), records a new authority this machine has seen,
-   * and opens the space again, also when the change failed.
+   * and opens the space again, also when the change failed, unless the person had closed it.
    */
   async #replace(
     space: Hosted,
@@ -2128,6 +2161,9 @@ export class SpaceManager {
       settings: SpaceSettings,
     ) => Promise<{ spaceId: Id<"sp">; change?: SpaceChange }>,
   ): Promise<SpaceChange | undefined> {
+    // A change that fails leaves a space the person closed, before or meanwhile, closed.
+    const closes = space.closes;
+    const leftClosed = space.state === "closed";
     await this.#close(space, this.#closeMs);
     if (space.stuck) {
       // A worker that did not close may still hold the space: nothing else may change it.
@@ -2135,8 +2171,7 @@ export class SpaceManager {
     }
     // Read again: the service may have begun to drain while the space closed.
     if (this.#isDraining()) throw new StorageError("STORAGE_MISUSE", "The service is stopping");
-    const settings =
-      space.id === undefined ? this.#settingsOf(space.folder) : this.#settingsFor(space.id);
+    const settings = this.#settingsFor(space.registered);
     let outcome: { spaceId: Id<"sp">; change?: SpaceChange } | undefined;
     try {
       const worker = await this.#startWorkerBounded();
@@ -2163,8 +2198,9 @@ export class SpaceManager {
       }
       return outcome.change;
     } finally {
+      const keepClosed = outcome === undefined && (leftClosed || space.closes !== closes);
       // Read again: the service may have begun to drain meanwhile.
-      if (!this.#isDraining()) {
+      if (!this.#isDraining() && !keepClosed) {
         space.reset();
         await this.#begin(space);
       }

@@ -360,7 +360,7 @@ export const EVENTS = {
       entry: "int",
       space: "space",
       leftovers: "int",
-      backup: ["taken", "not_due"],
+      backup: ["taken", "not_due", "away"],
       removed: "int",
       unverified: "int",
       ms: "int",

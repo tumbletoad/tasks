@@ -128,7 +128,10 @@ async function expectRestoresWithIndex(
   const checked = await checkedDriver();
   const listed = listBackups(join(folder, "backups")).backups.find((b) => b.name === backup.name);
   if (listed === undefined) throw new Error("the backup is listed");
-  expect(await verifyBackup(checked, listed)).toEqual(backup.sidecar);
+  expect(await verifyBackup(checked, listed)).toEqual({
+    state: "verified",
+    sidecar: backup.sidecar,
+  });
   const fresh = await freshSchema();
   const copy = await restoreBackup(checked, backup.file, join(folders.make(), "mira"));
   const inPlace = await restoreInPlace(checked, backup.file, folder, { machineId: TEST_MACHINE });
@@ -153,7 +156,10 @@ describe("[A1.5.restore.search-derived] a restore makes the search index again f
     expect((await migrateSpace(checked, folder)).state).toBe("migrated");
     const listed = listBackups(join(folder, "backups")).backups.find((b) => b.name === backup.name);
     if (listed === undefined) throw new Error("the backup is listed");
-    expect(await verifyBackup(checked, listed)).toEqual(backup.sidecar);
+    expect(await verifyBackup(checked, listed)).toEqual({
+      state: "verified",
+      sidecar: backup.sidecar,
+    });
 
     const copy = await restoreBackup(checked, backup.file, join(folders.make(), "mira"));
     expect(copy.revision).toEqual({ major: 0, minor: 3 });

@@ -110,6 +110,11 @@ export interface LastMigration {
   readonly to: string;
   readonly at: string;
   readonly backup?: string;
+  /**
+   * The folder that backup is in, when it is not the one set for the space: that one was not there
+   * at the upgrade (a drive away), so it went to the space's own backups folder.
+   */
+  readonly backup_folder?: string;
 }
 
 const fileOf = (state: string, spaceId: Id<"sp">): string =>
@@ -222,7 +227,7 @@ function failedMigrationOf(value: unknown): FailedMigration | undefined {
 /** `last_migration`, or undefined when any part of it is missing or wrong. */
 function lastMigrationOf(value: unknown): LastMigration | undefined {
   if (!isRecord(value)) return undefined;
-  const { from, to, at, backup } = value;
+  const { from, to, at, backup, backup_folder: folder } = value;
   const fromRevision = revisionOf(from);
   const toRevision = revisionOf(to);
   if (
@@ -242,17 +247,29 @@ function lastMigrationOf(value: unknown): LastMigration | undefined {
     to,
     at: new Date(Date.parse(at)).toISOString(),
     ...(backup === undefined ? {} : { backup }),
+    ...(backup !== undefined &&
+    typeof folder === "string" &&
+    folder.length <= MAX_PATH &&
+    isAbsolute(folder)
+      ? { backup_folder: folder }
+      : {}),
   };
 }
 
 /**
- * Records a migration that succeeded on this machine: from and to (user_version values), and its
- * barrier backup's name. Other fields are kept.
+ * Records a migration that succeeded on this machine: from and to (user_version values), its
+ * barrier backup's name, and its folder when that is not the one set for the space. Other fields
+ * are kept.
  */
 export function recordMigration(
   state: string,
   spaceId: Id<"sp">,
-  migration: { readonly from: number; readonly to: number; readonly backup?: string },
+  migration: {
+    readonly from: number;
+    readonly to: number;
+    readonly backup?: string;
+    readonly backupFolder?: string;
+  },
   now: Date = new Date(),
 ): void {
   const path = fileOf(state, spaceId);
@@ -266,6 +283,7 @@ export function recordMigration(
       to: revisionText(migration.to),
       at: now.toISOString(),
       ...(migration.backup === undefined ? {} : { backup: migration.backup }),
+      ...(migration.backupFolder === undefined ? {} : { backup_folder: migration.backupFolder }),
     },
   };
   atomicWrite(path, `${JSON.stringify(next, null, 2)}\n`);

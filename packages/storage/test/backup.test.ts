@@ -18,6 +18,7 @@ import {
   backupSpace,
   backupSpaceWith,
   BACKUP_TEMP_PREFIX,
+  BackupsFolderAway,
   type BackupPoint,
   type BackupRecord,
 } from "../src/backup/backup.ts";
@@ -305,18 +306,17 @@ describe("[A1.5.backup.verified] the backup and its sidecar", () => {
   });
 
   test.skipIf(process.platform === "win32")(
-    "new folders on the way to the backups folder are synced into their parents",
+    "the space's own backups folder, made by its first backup, is synced into the space's folder",
     async () => {
       const checked = await checkedDriver();
       const { folder } = await createFixtureSpace(folders.make());
-      const parent = folders.make();
-      // A machine-local backup.dir that does not exist yet, two levels below an existing folder.
-      const backupDir = join(parent, "tasks", "mira", "backups");
+      const backupDir = join(folder, "backups");
+      expect(existsSync(backupDir)).toBe(false);
       const synced: string[] = [];
       await backupSpaceWith(
         checked,
         folder,
-        { kind: "manual", backupDir },
+        { kind: "manual" },
         {
           io: {
             ...NODE_IO,
@@ -327,15 +327,31 @@ describe("[A1.5.backup.verified] the backup and its sidecar", () => {
           },
         },
       );
-      // Each new folder's entry lives in its parent: the parent of the first new folder and every
-      // new folder above the backups folder are synced, and the backups folder itself.
-      for (const dir of [parent, join(parent, "tasks"), join(parent, "tasks", "mira"), backupDir]) {
-        expect(synced, dir).toContain(dir);
-      }
+      // A new folder's entry lives in its parent: the space's folder is synced, then the backups
+      // folder itself once a file landed in it.
+      for (const dir of [folder, backupDir]) expect(synced, dir).toContain(dir);
       const at = (dir: string): number => synced.indexOf(dir);
-      expect(at(join(parent, "tasks", "mira"))).toBeLessThan(at(backupDir));
+      expect(at(folder)).toBeLessThan(at(backupDir));
     },
   );
+
+  test("[A1.5.backup.folder-away] a backups folder set for the space that is not there is made by no backup: the backup is refused, and nothing is made on the way", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    // A drive that is not connected, whose path's parent can be written.
+    const drive = join(folders.make(), "drive");
+    const backupDir = join(drive, "tasks", "backups");
+    const error = await expectCode(
+      () => backupSpace(checked, folder, { kind: "daily", backupDir }),
+      "BACKUP_FAILED",
+    );
+    expect(error).toBeInstanceOf(BackupsFolderAway);
+    expect(existsSync(drive)).toBe(false);
+    // Once it is there, the backup goes there.
+    mkdirSync(backupDir, { recursive: true });
+    const made = await backupSpace(checked, folder, { kind: "daily", backupDir });
+    expect(listBackups(backupDir).backups.map((b) => b.name)).toEqual([made.name]);
+  });
 
   test("errors name no path, and a backup of a missing space is SPACE_NOT_FOUND", async () => {
     const checked = await checkedDriver();
@@ -365,7 +381,7 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
     "sidecar-published",
   ];
 
-  test("a crash leaves either a complete backup or leftovers that are never listed as one", async () => {
+  test("a crash leaves either a complete backup or files that are never listed as one", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     await writeCommits(folder, 2);
@@ -399,8 +415,13 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
           join(folders.make(), "mira"),
         );
         expect(restored.space.lastSeq).toBe(2);
+      } else if (point === "data-published") {
+        // The data without its sidecar: listed as such, and kept.
+        expect(
+          listing.backups.map((b) => b.state),
+          point,
+        ).toEqual(["missing_sidecar"]);
       } else {
-        expect(complete, point).toEqual([]);
         expect(listing.backups, point).toEqual([]);
         expect(listing.leftovers.length, point).toBeGreaterThan(0);
       }
@@ -408,10 +429,11 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
       const opened = openSpace(checked, copy, { role: "writer" });
       expect(opened.space.lastSeq).toBe(2);
       opened.conn.close();
-      // The leftovers go, and with them every file that is not a complete backup.
+      // The temporary files go; a backup's data stays, with or without its sidecar.
       removeBackupLeftovers(listing, AFTER_RESTART);
       const left = readdirSync(join(copy, "backups"));
-      expect(left.length, point).toBe(point === "sidecar-published" ? 2 : 0);
+      const kept = { "sidecar-published": 2, "data-published": 1 } as Record<string, number>;
+      expect(left.length, point).toBe(kept[point] ?? 0);
     }
   });
 
@@ -727,7 +749,7 @@ describe("[A1.5.backup.no-replace] a backup publishes its pair without replacing
 });
 
 describe("[A1.5.backup.list] listing a space's backups", () => {
-  test("complete backups newest first, damaged ones by state, leftovers, unknown files untouched", async () => {
+  test("complete backups newest first, damaged ones by state, temporary leftovers, unknown files untouched", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     const dir = join(folder, "backups");
@@ -761,20 +783,21 @@ describe("[A1.5.backup.list] listing a space's backups", () => {
     writeFileSync(join(dir, "daily-20261107T000000.000Z-e1-s0.db.gz"), "orphan");
     writeFileSync(join(dir, "notes.txt"), "someone's own file");
     const listing = listBackups(dir);
+    // The space's one history first, then what belongs to none: a sidecar missing or unreadable.
     expect(listing.backups.map((x) => [x.name, x.state])).toEqual([
-      ["daily-20261106T000000.000Z-e1-s0", "invalid_sidecar"],
       [e.name, "ok"],
-      [d.name, "invalid_sidecar"],
       [c.name, "size_mismatch"],
       [b.name, "missing_data"],
       [a.name, "ok"],
+      ["daily-20261107T000000.000Z-e1-s0", "missing_sidecar"],
+      ["daily-20261106T000000.000Z-e1-s0", "invalid_sidecar"],
+      [d.name, "invalid_sidecar"],
     ]);
-    expect(listing.leftovers).toEqual([
-      `${BACKUP_TEMP_PREFIX}0123456789abcdef.db`,
-      "daily-20261107T000000.000Z-e1-s0.db.gz",
-    ]);
+    expect(listing.backups[4]?.createdAt).toBe(Date.UTC(2026, 10, 7));
+    expect(listing.leftovers).toEqual([`${BACKUP_TEMP_PREFIX}0123456789abcdef.db`]);
     expect(removeBackupLeftovers(listing, AFTER_RESTART)).toEqual(listing.leftovers);
     expect(existsSync(join(dir, "notes.txt"))).toBe(true);
+    expect(existsSync(join(dir, "daily-20261107T000000.000Z-e1-s0.db.gz"))).toBe(true);
     expect(listBackups(join(folder, "missing")).backups).toEqual([]);
   });
 
@@ -813,7 +836,7 @@ describe("[A1.5.backup.list] listing a space's backups", () => {
     expect(listBackups(dir).backups.map((x) => [x.name, x.state])).toEqual([[kept.name, "ok"]]);
   });
 
-  test("a data file is a leftover only when no sidecar is there under any case the disk matches", async () => {
+  test("a data file lacks its sidecar only when none is there under any case the disk matches, and stays", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     const dir = join(folder, "backups");
@@ -831,9 +854,11 @@ describe("[A1.5.backup.list] listing a space's backups", () => {
       expect(existsSync(backup.file)).toBe(true);
       await restoreBackup(checked, backup.file, join(folders.make(), "mira"));
     } else {
-      // The restore would not find it either: the data is a leftover, the stranger stays.
-      expect(listing.leftovers).toEqual([`${backup.name}.db.gz`]);
-      expect(existsSync(upper)).toBe(true);
+      // The restore would not find it either: the data is listed without its sidecar, and stays.
+      expect(listing.backups.map((x) => [x.name, x.state])).toEqual([
+        [backup.name, "missing_sidecar"],
+      ]);
+      expect(existsSync(upper) && existsSync(backup.file)).toBe(true);
     }
   });
 
@@ -849,11 +874,12 @@ describe("[A1.5.backup.list] listing a space's backups", () => {
     const data = "daily-20261113T031500.000Z-e1-s0.db.gz";
     writeFileSync(join(dir, data), readFileSync(backup.file));
     const listing = listBackups(dir);
-    expect(listing.leftovers).toEqual([copy, data]);
+    expect(listing.leftovers).toEqual([copy]);
     expect(removeBackupLeftovers(listing)).toEqual([]);
     expect(existsSync(join(dir, copy)) && existsSync(join(dir, data))).toBe(true);
     expect(removeBackupLeftovers(listing, { now: Date.now() + 30 * 60_000 })).toEqual([]);
-    expect(removeBackupLeftovers(listing, AFTER_RESTART)).toEqual([copy, data]);
+    expect(removeBackupLeftovers(listing, AFTER_RESTART)).toEqual([copy]);
+    expect(existsSync(join(dir, data))).toBe(true);
   });
 
   test("a name from disk with a time out of range is ignored, never a crash", () => {

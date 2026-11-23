@@ -374,8 +374,15 @@ export function serve(
           const outcome = await migrateOpened(checked, opened, settings, migrateSeams);
           if (outcome.state === "failed") throw outcome.error;
           if (outcome.state === "migrated") {
-            const { from, to, backup, seqs, manifestWritten } = outcome;
-            migration = { from, to, backup, seqs, manifestWritten };
+            const { from, to, backup, seqs, manifestWritten, setFolderAway } = outcome;
+            migration = {
+              from,
+              to,
+              backup,
+              seqs,
+              manifestWritten,
+              ...(setFolderAway === undefined ? {} : { setFolderAway }),
+            };
             ready = { ...opened, revision: to, readOnlyReasons: [] };
           }
         }
@@ -533,6 +540,7 @@ export function serve(
           backupFile,
           folder,
           machineId,
+          spaceId,
           knownEpochs,
           refFloor,
           holder,
@@ -548,6 +556,7 @@ export function serve(
               dir,
               {
                 machineId,
+                ...(spaceId === undefined ? {} : { spaceId }),
                 knownEpochs,
                 ...(refFloor === undefined ? {} : { refFloor }),
                 ...optional(rest),
