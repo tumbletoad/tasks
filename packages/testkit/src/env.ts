@@ -4,13 +4,9 @@
 // is removed (a test run inside an agent app must not make every call an agent's), and the Agent
 // Monitor named is a file that does not exist, so no service a test starts runs the `ttam` of the
 // machine. A test of the monitor names the test kit's fake in `extra`.
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { ENV_PREFIX, envVar } from "@ttasks/brand";
 import { isAgentMarker } from "@ttasks/bridge/protocol";
-
-/** An Agent Monitor that does not exist. */
-export const NO_MONITOR = join(dirname(fileURLToPath(import.meta.url)), "no-monitor");
+import { NO_MONITOR } from "./no-monitor.ts";
 
 const AGENT_APP = /^(CLAUDE|CODEX_|T3CODE_)/iu;
 
@@ -23,7 +19,10 @@ export function testEnv(
 ): Record<string, string> {
   const windows = process.platform === "win32";
   const key = (name: string) => (windows ? name.toUpperCase() : name);
-  const given = { [envVar("MONITOR")]: NO_MONITOR, ...extra };
+  const given: Readonly<Record<string, string | undefined>> = {
+    [envVar("MONITOR")]: NO_MONITOR,
+    ...extra,
+  };
   const replaced = new Set(Object.keys(given).map(key));
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) {

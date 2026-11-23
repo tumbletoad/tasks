@@ -364,9 +364,10 @@ export class UserEnvironment implements EnvironmentSource {
    */
   async check(take: boolean): Promise<EnvironmentCheck> {
     if (!this.#posix) {
-      const base = await this.#registryBase().catch(
-        (): AgentBase => ({ kind: "service", env: this.#o.serviceEnv }),
-      );
+      const base = await this.#registryBase().catch((): AgentBase => ({
+        kind: "service",
+        env: this.#o.serviceEnv,
+      }));
       return { kind: "registry", read: base.kind === "user", base };
     }
     this.#load();

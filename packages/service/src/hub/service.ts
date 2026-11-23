@@ -124,12 +124,7 @@ import { homeRows } from "./home-rows.ts";
 import { namedBy } from "./named.ts";
 import { SeenCalls } from "./agent-homes.ts";
 import { agentAppVerbs, personEnv } from "./agent-apps.ts";
-import {
-  findMonitor,
-  Monitor,
-  MONITOR_VARIABLE,
-  type MonitorCommand,
-} from "../monitor/index.ts";
+import { findMonitor, Monitor, MONITOR_VARIABLE, type MonitorCommand } from "../monitor/index.ts";
 import { pageFolderVerbs } from "./page-folders.ts";
 import { pageSpaceVerbs } from "./page-spaces.ts";
 import { within } from "./wait.ts";

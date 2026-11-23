@@ -489,7 +489,9 @@ describe("[A3.3.14.doctor.monitor] where ttam comes from, and whether it fits", 
       const fake = fakeTtam({ log, ...(mode === undefined ? {} : { mode }) });
       return { ok: true, file: fake.file, args: fake.args, env: process.env, cwd: dir };
     };
-    const pids = () => [...new Set(readJsonLines(log).map((line) => (line as { pid: number }).pid))];
+    const pids = () => [
+      ...new Set(readJsonLines(log).map((line) => (line as { pid: number }).pid)),
+    ];
     return { monitor, command, log, pids };
   }
 

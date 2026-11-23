@@ -2,7 +2,7 @@
 // script, a build without `ttam query`, a version that does not fit (naming the side to update),
 // a failed start, and an older service that does not answer. None fails the report.
 import { describe, expect, test } from "vitest";
-import { monitorCheck } from "../src/doctor-monitor.ts";
+import { monitorCheck } from "../src/doctor-launch.ts";
 
 const BUILD = { version: "0.1.0", build: "0123456789ab" };
 

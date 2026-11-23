@@ -136,7 +136,10 @@ describe("[A3.3.3.mcp.clients] official clients of both eras through ttasks mcp"
       for (const [entry, entryArgs] of Object.entries(entries)) {
         for (const kind of KINDS) {
           const label = `${kind} through ${entry}`;
-          const seen = await useClient(kind, { args: entryArgs, env: testEnv({ TTASKS_HOME: home }) });
+          const seen = await useClient(kind, {
+            args: entryArgs,
+            env: testEnv({ TTASKS_HOME: home }),
+          });
           expect(seen.tools, label).toEqual([
             "add_entry",
             "add_tasks",

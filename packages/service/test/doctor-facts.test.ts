@@ -168,7 +168,7 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
 
     // Windows: no scopes, the registry's answer, and the person's Console Host over Windows
     // Terminal. The registry is read once: the other rows get what the check read.
-    const unread = { kind: "service" as const, env: { Path: "C:\service" } };
+    const unread = { kind: "service" as const, env: { Path: "C:\\service" } };
     const registry = environment({ kind: "registry", read: false, base: unread });
     const windows = launches("win32", 0, registry);
     const windowsReport = await windows.service.doctor(false);

@@ -266,9 +266,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
       ...(run.arm === undefined ? {} : { arm: run.arm }),
       go,
       stable,
-      env: Object.fromEntries(
-        Object.entries(env()).filter((entry): entry is [string, string] => entry[1] !== undefined),
-      ),
+      env: env(),
       ...(run.selfTest === undefined ? {} : { selfTest: run.selfTest }),
       ...(run.restartWaitMs === undefined ? {} : { restartWaitMs: run.restartWaitMs }),
     };

@@ -11,7 +11,7 @@
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { envVar } from "@ttasks/brand";
-import { NO_MONITOR } from "./env.ts";
+import { NO_MONITOR } from "./no-monitor.ts";
 
 process.env[envVar("MONITOR")] = NO_MONITOR;
 

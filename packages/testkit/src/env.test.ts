@@ -3,7 +3,8 @@
 import { existsSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { NO_MONITOR, testEnv } from "./env.ts";
+import { testEnv } from "./env.ts";
+import { NO_MONITOR } from "./no-monitor.ts";
 
 const set = ["TTASKS_HOME", "TTASKS_MONITOR", "CLAUDECODE", "CODEX_THREAD_ID", "KF_KEPT"];
 const before = new Map(set.map((name) => [name, process.env[name]]));

@@ -137,8 +137,16 @@ describe("[A4.5.environment.doctor] doctor's check of the agent's environment", 
     const failed: Capture = () => Promise.resolve({ kind: "timeout", ms: 5_000 });
     // Unread, the base is the service's own environment.
     const service = { kind: "service", env: { SystemRoot: "C:\\Windows" } };
-    expect(await windows(failed).check(false)).toEqual({ kind: "registry", read: false, base: service });
+    expect(await windows(failed).check(false)).toEqual({
+      kind: "registry",
+      read: false,
+      base: service,
+    });
     const thrown: Capture = () => Promise.reject(new Error("spawn failed"));
-    expect(await windows(thrown).check(true)).toEqual({ kind: "registry", read: false, base: service });
+    expect(await windows(thrown).check(true)).toEqual({
+      kind: "registry",
+      read: false,
+      base: service,
+    });
   });
 });
