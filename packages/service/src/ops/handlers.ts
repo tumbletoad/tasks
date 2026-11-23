@@ -1611,7 +1611,12 @@ function pastAt(call: Call, value: unknown, path: string): number | undefined {
   return at;
 }
 
-function sourceFields(source: Record<string, unknown>, path: string): SourceFields {
+/**
+ * A source as the writer takes it. Its date is a real date; a request an earlier build accepted
+ * with one this build refuses (a mail header's date, February 30) is a retry the writer replays,
+ * so it is read as that build read it rather than refused.
+ */
+function sourceFields(call: Call, source: Record<string, unknown>, path: string): SourceFields {
   const fields: SourceFields = {
     kind: source["kind"] as SourceFields["kind"],
     title: String(source["title"]),
@@ -1622,7 +1627,8 @@ function sourceFields(source: Record<string, unknown>, path: string): SourceFiel
     if (typeof value === "string" && (key === "key" || value !== "")) fields[key] = value;
   }
   if (typeof source["at"] === "string") {
-    const at = sourceInstant(source["at"]);
+    const read = Date.parse(source["at"]);
+    const at = call.replay && !Number.isNaN(read) ? read : sourceInstant(source["at"]);
     if (at === undefined) {
       throw invalid(
         `${path}.at`,
@@ -2298,7 +2304,7 @@ function draftOps(
   sources.forEach((source, k) => {
     const at = `${path}.sources.${String(k)}`;
     sourcePaths.set(start + ops.length, at);
-    ops.push({ kind: "source.add", task: id, source: sourceFields(source, at) });
+    ops.push({ kind: "source.add", task: id, source: sourceFields(call, source, at) });
   });
   return ops;
 }
@@ -2708,7 +2714,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     added.forEach((source, k) => {
       const at = `add_sources.${String(k)}`;
       sourcePaths.set(ops.length, at);
-      ops.push({ kind: "source.add", task, source: sourceFields(source, at) });
+      ops.push({ kind: "source.add", task, source: sourceFields(call, source, at) });
     });
     const detach = strings(input["remove_sources"]);
     const putBack = strings(input["put_back_sources"]);

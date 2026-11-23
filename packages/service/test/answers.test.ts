@@ -6,9 +6,10 @@
 import { mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { AppError, type ErrorBody } from "@ttasks/contracts";
+import { AppError, findEntry, parseInput, type ErrorBody } from "@ttasks/contracts";
+import { intentFingerprint, newId, type Id } from "@ttasks/storage";
 import { toolCaller } from "../src/mcp/index.ts";
-import { opCall, type Binding, type Caller } from "../src/ops/index.ts";
+import { opCall, principalOf, type Binding, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
 type Json = Record<string, unknown>;
@@ -327,6 +328,102 @@ describe("[A3.answers.replay-meanwhile] a retry gets the first answer, whatever 
       request_id: rid(),
     });
     expect(await call("history.undo", undo, USER)).toEqual({ ...first, replayed: true });
+  });
+});
+
+describe("[A3.answers.retry-first] a request answered before is answered again before today's rules read it", () => {
+  /** The agent's shell as the writer knows it: its actor and its writer scope. */
+  async function script() {
+    const writer = w.service.ops.spaces().find((s) => s.id === w.space)?.writer;
+    if (writer === undefined) throw new Error("the world's space has no writer");
+    const principal = principalOf("cli-script", w.service.ops.machine.id);
+    const actor = {
+      scope_id: principal.scope,
+      principal_id: await writer.actor("agent", principal.label),
+      actor_kind: "agent" as const,
+      machine_id: w.service.ops.machine.id as Id<"m">,
+      origin: "cli" as const,
+    };
+    return { writer, actor };
+  }
+
+  /**
+   * A one-task import as the build before this one decided it: the request it sent to the writer,
+   * its intent the input as that build parsed it, the source's date read by Date.parse.
+   */
+  async function earlierImport(at: string): Promise<{ input: Json; task: Id<"t"> }> {
+    const { writer, actor } = await script();
+    const input = {
+      tasks: [{ title: `Dated ${at}`, sources: [{ kind: "email", title: "Fixture mail", at }] }],
+      request_id: rid(),
+    };
+    const entry = findEntry("task.add");
+    if (entry === undefined) throw new Error("task.add is no entry");
+    const parsed = parseInput(entry, "agent", input);
+    if (!parsed.success) throw new Error("the earlier input does not parse");
+    const task = newId("t");
+    const first = await writer.submit({
+      space_id: w.space,
+      request_id: input.request_id,
+      actor,
+      intent: { entry: "task.add", input: parsed.data },
+      ops: [
+        { kind: "task.create", id: task, title: `Dated ${at}`, inbox: true },
+        {
+          kind: "source.add",
+          task,
+          source: { kind: "email", title: "Fixture mail", at: Date.parse(at) },
+        },
+      ],
+    });
+    expect(first.status).toBe("applied");
+    return { input, task };
+  }
+
+  test("an import an earlier build accepted with a date this build refuses, sent again, is answered and adds nothing", async () => {
+    for (const at of ["Mon, 2 Mar 2026", "2026-02-30"]) {
+      const { input, task } = await earlierImport(at);
+      const before = await asOf();
+      const retry = await call("task.add", input);
+      expect(retry).toMatchObject({ replayed: true, tasks: [{ result: "created", id: task }] });
+      expect(await call("task.add", input)).toEqual(retry);
+      expect(await asOf()).toBe(before);
+      // The same date under a new request ID is a new request: this build's rule refuses it.
+      expect(await refusal("task.add", { ...input, request_id: rid() })).toMatchObject({
+        code: "invalid_input",
+        data: { issues: [{ path: "tasks.0.sources.0.at" }] },
+      });
+    }
+  });
+
+  test("a request whose answer was kept is answered from it, also when its input breaks a rule of this build", async () => {
+    const { writer, actor } = await script();
+    // A title as long as an earlier, wider limit allowed: this build refuses it for an agent.
+    const input = { tasks: [{ title: "T".repeat(300) }], request_id: rid() };
+    const task = newId("t");
+    const first = await writer.submit({
+      space_id: w.space,
+      request_id: input.request_id,
+      actor,
+      intent: { entry: "task.add", input },
+      ops: [{ kind: "task.create", id: task, title: "T".repeat(300), inbox: true }],
+    });
+    expect(first.status).toBe("applied");
+    const fingerprint = intentFingerprint({
+      space_id: w.space,
+      entry: "task.add",
+      input,
+      reason: null,
+    });
+    const answer = { as_of: first.as_of, tasks: [{ result: "created", id: task }], warnings: [] };
+    await writer.keep(
+      { scope_id: actor.scope_id, request_id: input.request_id, fingerprint },
+      { sent: fingerprint, result: answer },
+    );
+    expect(await call("task.add", input)).toEqual({ ...answer, replayed: true });
+    expect(await refusal("task.add", { ...input, request_id: rid() })).toMatchObject({
+      code: "too_large",
+    });
   });
 });
 

@@ -2676,6 +2676,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.answers.retry-first",
+      "title": "A request answered before is answered again before this build's rules read its input: an import an earlier build accepted with a mail header's date or February 30 is replayed and adds nothing, while a new request with that date is refused at its field, and a request whose answer was kept is answered from it also when its input breaks a rule of this build",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.answers.groups",
       "title": "An import makes an area or a project only for the drafts it adds: a draft that finds its task by key makes none of the groups it names and its answer announces none, and a group named by a matched draft and an added one is made once, for the added one",
       "owner": "M2",
