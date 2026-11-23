@@ -14,7 +14,8 @@ import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
 import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
 import { Thread } from "../task/Thread.tsx";
-import { keepTitleDraft, readTitleDraft } from "../unsent.ts";
+import { keepTitleDraft, readTitleDraft, unsavedKeeper } from "../unsent.ts";
+import { priorityChange, waitingChange } from "../edit/change.ts";
 import type { DetailLog } from "../task/detail.ts";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
@@ -629,20 +630,24 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
   });
 
   test("an edit kept from before the space was restored is not sent again: its line says why, shows the value, and offers Copy and Discard", async () => {
-    // Kept by a page of the space's earlier history: another incarnation than the screen's. It is
-    // the only kept edit (earlier tests leave theirs in the browser's storage).
+    // Kept by this tab before a reload, on a page of the space's earlier history: another
+    // incarnation than the screen's. It is the only kept edit.
     localStorage.clear();
-    const name = `${PRODUCT_ID}.unsaved.${SPACE.id}.t_00001.priority`;
-    localStorage.setItem(
-      name,
-      JSON.stringify({
-        task: "t_00001",
-        ref: "M-1",
-        field: "priority",
-        reason: "failed",
-        base: "1.10.zzzzzzzz",
-        source: { kind: "priority", level: 1 },
-      }),
+    unsavedKeeper(SPACE.id).save(
+      new Map([
+        [
+          "t_00001 priority",
+          {
+            id: crypto.randomUUID(),
+            task: "t_00001",
+            ref: "M-1",
+            field: "priority",
+            change: priorityChange(1),
+            reason: "failed",
+            base: "1.10.zzzzzzzz",
+          },
+        ],
+      ]),
     );
     try {
       mount(<TaskList view="open" filter={OPEN} empty="" />);
@@ -658,73 +663,155 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
       act(() => {
         line?.querySelector<HTMLElement>('[data-part="keep-theirs"]')?.click();
       });
-      expect(localStorage.getItem(name)).toBeNull();
+      expect(Object.keys(localStorage).filter((key) => key.includes(".t_00001."))).toEqual([]);
       expect(updates).toEqual([]);
     } finally {
-      localStorage.removeItem(name);
+      localStorage.clear();
     }
   });
 
-  test("this tab's refused edit of a field and another tab's both show under it, each with its value: Discard takes only its own, Try again sends the other tab's", async () => {
-    localStorage.clear();
-    (api.client.task as { update: unknown }).update = (input: Record<string, unknown>) => {
-      updates.push(input);
-      return Promise.reject(Object.assign(new Error("down"), { code: "internal", data: {} }));
+  describe("kept edits of who it waits on", () => {
+    /** Each update waits until the test refuses it: `refuse()` the oldest one still waiting. */
+    const held: ((error: Error) => void)[] = [];
+    const refuse = (error: Error = Object.assign(new Error("down"), { code: "internal" })) => {
+      held.shift()?.(error);
     };
-    const name = `${PRODUCT_ID}.unsaved.${SPACE.id}.t_00001.waiting_on.0b7f7c2e-5f1a-4c1e-9d55-3a8f0e6b9c11`;
-    const theirs = JSON.stringify({
-      id: "0b7f7c2e-5f1a-4c1e-9d55-3a8f0e6b9c11",
-      tab: "othertab",
-      task: "t_00001",
-      ref: "M-1",
-      field: "waiting_on",
-      reason: "failed",
-      base: "1.10.01234567",
-      source: { kind: "waiting", person: "Ben Ito" },
+    const conflict = () =>
+      Object.assign(new Error("conflict"), {
+        code: "conflict",
+        data: {
+          cause: "VERSION_CONFLICT",
+          conflicts: [
+            {
+              task: "M-1",
+              field: "waiting_on",
+              value: "Ben Ito",
+              version: 2,
+              by: "Codex",
+              at: new Date().toISOString(),
+            },
+          ],
+        },
+      });
+    /** The browser's kept edits of the field: each name with its value. */
+    const keptHere = () =>
+      Object.fromEntries(
+        Object.keys(localStorage)
+          .filter((key) => key.includes(`.${SPACE.id}.t_00001.waiting_on`))
+          .sort()
+          .map((key) => [key, localStorage.getItem(key)]),
+      );
+    const card = () => container.querySelector('li[data-key="t_00001"]');
+    const lines = () => [...(card()?.querySelectorAll('[data-part="unsaved"]') ?? [])];
+    const valueOf = (line: Element | undefined) =>
+      line?.querySelector('[data-part="unsaved-value"]')?.textContent;
+
+    beforeEach(() => {
+      localStorage.clear();
+      held.length = 0;
+      (api.client.task as { update: unknown }).update = (input: Record<string, unknown>) => {
+        updates.push(input);
+        return new Promise((_, reject) => held.push(reject));
+      };
     });
-    try {
+    afterEach(() => {
+      localStorage.clear();
+    });
+
+    /** The card of a waiting task, with this tab's edit of who it waits on refused. */
+    const refusedHere = async (words: string) => {
       mount(<TaskList view="open" filter={OPEN} empty="" />);
-      apply(snapshot([task(1, { status: "waiting" })]));
+      apply(snapshot([task(1, { status: "waiting", waiting_on: "Dee Park" })]));
       expand("t_00001");
       const field = waitingField("t_00001");
       act(() => {
         field?.focus();
       });
-      type(field, "Ana Reyes");
+      type(field, words);
       press(field, "Enter");
       await settle();
-      // The other tab's refusal lands while this card is open.
-      act(() => {
-        localStorage.setItem(name, theirs);
-        window.dispatchEvent(new StorageEvent("storage", { key: name, newValue: theirs }));
-      });
-      const card = container.querySelector('li[data-key="t_00001"]');
-      const lines = () => [...(card?.querySelectorAll('[data-part="unsaved"]') ?? [])];
-      const valueOf = (line: Element | undefined) =>
-        line?.querySelector('[data-part="unsaved-value"]')?.textContent;
-      expect(lines().map(valueOf)).toEqual(["Ana Reyes", "Ben Ito"]);
-      act(() => {
-        lines()[0]?.querySelector<HTMLElement>('[data-part="keep-theirs"]')?.click();
-      });
-      expect(lines().map(valueOf)).toEqual(["Ben Ito"]);
-      expect(localStorage.getItem(name)).toBe(theirs);
-      act(() => {
-        lines()[0]?.querySelector<HTMLElement>('[data-part="apply-mine"]')?.click();
-      });
+      refuse();
       await settle();
+      return field;
+    };
+
+    test("another tab's kept edits show their words, where they came from, Copy and Discard, and nothing that sends them; Try again on this tab's own leaves them as they were, while on its way and refused again", async () => {
+      await refusedHere("Ana Reyes");
+      // Two other tabs' refusals of the same field.
+      act(() => {
+        for (const [n, words] of [
+          [2, "Ben Ito"],
+          [3, "Cleo"],
+        ] as const) {
+          unsavedKeeper(SPACE.id).save(
+            new Map([
+              [
+                "t_00001\u0000waiting_on",
+                {
+                  id: crypto.randomUUID(),
+                  task: "t_00001",
+                  ref: "M-1",
+                  field: "waiting_on",
+                  change: waitingChange(words),
+                  reason: "failed",
+                  base: `1.${String(n)}.01234567`,
+                },
+              ],
+            ]),
+          );
+        }
+      });
+      const values = () => [valueOf(lines()[0]), ...lines().slice(1).map(valueOf).sort()];
+      expect(values()).toEqual(["Ana Reyes", "Ben Ito", "Cleo"]);
+      for (const line of lines().slice(1)) {
+        expect(line.textContent).toContain("Typed in another tab");
+        expect(line.querySelector('[data-part="copy-mine"]')).not.toBeNull();
+        expect(line.querySelector('[data-part="keep-theirs"]')).not.toBeNull();
+      }
+      const before = keptHere();
+      expect(Object.keys(before)).toHaveLength(3);
+      // Every button that sends a line leaves the others' words in the browser.
+      const sending = card()?.querySelectorAll<HTMLElement>('[data-part="apply-mine"]') ?? [];
+      expect(sending).toHaveLength(1);
+      for (const button of sending) {
+        act(() => {
+          button.click();
+        });
+        await settle();
+        expect(keptHere()).toEqual(before);
+      }
+      // Try again sends the base the person made the edit at.
       expect(updates.at(-1)).toMatchObject({
-        set: { waiting_on: "Ben Ito" },
+        set: { waiting_on: "Ana Reyes" },
         base: "1.10.01234567",
       });
-      // Refused again, it is kept once, as this tab's own now.
-      expect(lines()).toHaveLength(1);
-      expect(
-        lines()[0]?.querySelector('[data-part="apply-mine"]')?.getAttribute("aria-label"),
-      ).toContain("Ben Ito");
-      expect(localStorage.getItem(name)).toBeNull();
-    } finally {
-      localStorage.clear();
-    }
+      // Refused again: the same kept edit, once, and the other tabs' as they were.
+      refuse();
+      await settle();
+      expect(keptHere()).toEqual(before);
+      expect(values()).toEqual(["Ana Reyes", "Ben Ito", "Cleo"]);
+      // Discard on another tab's line takes only its words.
+      const gone = valueOf(lines()[2]);
+      act(() => {
+        lines()[2]?.querySelector<HTMLElement>('[data-part="keep-theirs"]')?.click();
+      });
+      expect(values()).toEqual(["Ana Reyes", "Ben Ito", "Cleo"].filter((v) => v !== gone));
+    });
+
+    test("a lone kept edit of this tab, under a field that shows the saved value, shows its words with Copy; its Try again is named by the field", async () => {
+      const field = await refusedHere(
+        "Ana Reyes of the north office, who signs the lease for the new hall",
+      );
+      expect(field?.value).toBe("Dee Park");
+      const [line] = lines();
+      expect(valueOf(line)).toBe(
+        "Ana Reyes of the north office, who signs the lease for the new hall",
+      );
+      expect(line?.querySelector('[data-part="copy-mine"]')).not.toBeNull();
+      expect(line?.querySelector('[data-part="apply-mine"]')?.getAttribute("aria-label")).toBe(
+        "Try again: who it waits on",
+      );
+    });
   });
 
   test("a title a reload brought back whose save was on its way: when the title arrives as those words, the editor closes and lets them go", async () => {

@@ -752,7 +752,7 @@ function RowView({
           {/* A title the person typed while the task was finished stays readable, with Copy and
               Discard; Try again only once the task is active again (A5 3.11). */}
           {expanded ? (
-            <Unsaved task={task.id} field="title" finished={!active} trashed={trashed} withValue />
+            <Unsaved task={task.id} field="title" finished={!active} trashed={trashed} />
           ) : null}
           {/* What another tab is typing, or what was typed before the task was finished. */}
           {expanded ? (

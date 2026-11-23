@@ -162,7 +162,7 @@ function UnsavedFact({
   if (useUnsaved(task, field).length === 0) return null;
   return (
     <Fact label={label}>
-      <Unsaved task={task} field={field} finished trashed={trashed} withValue />
+      <Unsaved task={task} field={field} finished trashed={trashed} />
     </Fact>
   );
 }

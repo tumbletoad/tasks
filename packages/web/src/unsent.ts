@@ -26,6 +26,7 @@ const titlePrefix = (space: string, task: string) => `title.${space}.${task}.`;
 /** Each refused edit under its own ID; an empty ID is an earlier build's, one per field. */
 const editName = (space: string, task: string, field: string, id: string) =>
   `unsaved.${space}.${task}.${field}${id === "" ? "" : `.${id}`}`;
+const editNames = (space: string): string[] => browserKept.names(`unsaved.${space}.`);
 const KINDS = ["draft.", "note.", "title.", "unsaved."] as const;
 
 const listeners = new Set<() => void>();
@@ -333,8 +334,7 @@ function editAt(space: string, name: string): (KeptEdit & { readonly tab?: strin
 
 /** Every edit kept for `space`, of every tab, in a fixed order. */
 function keptEditsOf(space: string): KeptEdit[] {
-  return browserKept
-    .names(`unsaved.${space}.`)
+  return editNames(space)
     .sort()
     .flatMap((name) => {
       const kept = editAt(space, name);
@@ -344,7 +344,9 @@ function keptEditsOf(space: string): KeptEdit[] {
 
 /**
  * The tab's edits that wait, kept for the browser per space. A tab writes only the edits it made,
- * and removes only what it kept or took on itself, and only while that value is still there.
+ * and changes or removes one only while the browser still holds what the tab kept there. An edit
+ * another tab kept, or an earlier build, is never this tab's: it is listed (`useKeptEdits`), and
+ * the person copies or discards it.
  */
 export function unsavedKeeper(space: string): UnsavedKeeper {
   /** What this tab kept or took on, by name, with the value it kept or read. */
@@ -353,18 +355,17 @@ export function unsavedKeeper(space: string): UnsavedKeeper {
     load() {
       const found: Unsaved[] = [];
       const fields = new Set<string>();
-      for (const name of browserKept.names(`unsaved.${space}.`).sort()) {
+      for (const name of editNames(space).sort()) {
         const kept = editAt(space, name);
         // Not one of ours: it is removed, so it is never read again as anything.
         if (kept === undefined) {
           browserKept.keep(name, undefined);
           continue;
         }
-        // This tab's own from before a reload, or an earlier build's, one per field. The others
-        // are other tabs' (or a copy of this one's): they show beside it (`useKeptEdits`).
+        // This tab's own from before a reload, one per field. A copy of this tab keeps the others.
         const { unsaved, value, tab } = kept;
         const field = `${unsaved.task}.${unsaved.field}`;
-        if ((tab ?? TAB) !== TAB || fields.has(field)) continue;
+        if (tab !== TAB || unsaved.id === "" || fields.has(field)) continue;
         fields.add(field);
         found.push(unsaved);
         known.set(name, { unsaved, value });
@@ -378,16 +379,13 @@ export function unsavedKeeper(space: string): UnsavedKeeper {
       >();
       for (const each of new Set(unsaved.values())) {
         const name = editName(space, each.task, each.field, each.id);
-        const before = known.get(name);
-        if (before !== undefined) {
-          next.set(name, { unsaved: each, value: before.value });
-          continue;
-        }
-        // Another tab's edit sent again from here stays as it was kept until it is decided.
-        const stored = browserKept.read(name);
-        const value = stored ?? keptOf(each);
-        if (stored === undefined && value !== undefined) browserKept.keep(name, value);
-        next.set(name, { unsaved: each, value });
+        const before = known.get(name)?.value;
+        const value = keptOf(each);
+        // New, or the same edit refused again: written only over what this tab kept there.
+        if (value !== before && browserKept.read(name) === before) {
+          browserKept.keep(name, value);
+          next.set(name, { unsaved: each, value });
+        } else next.set(name, { unsaved: each, value: before });
       }
       for (const [name, { value }] of known) {
         if (!next.has(name) && browserKept.read(name) === value) browserKept.keep(name, undefined);

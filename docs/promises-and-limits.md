@@ -263,8 +263,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 - A field edit that failed or conflicted stays visible until you decide what to do with it, also
   after a reload, and so does one still waiting behind your previous edit when the page closed.
-  Each tab's is kept on its own: two tabs' edits of one field both show under it. Try again sends
-  it against what you saw when you made it, so a change made since is shown to you first.
+  Each tab's is kept on its own: two tabs' edits of one field both show under it, with their words.
+  Try again sends it against what you saw when you made it, so a change made since is shown to you
+  first. Another tab's edit, or a closed tab's, shows with Copy and Discard: to send its words,
+  copy them into the field.
 - A field sends only what you typed in it. Going in and out of a field without typing sends
   nothing, and it then shows what is saved, also a change someone made while you were in it.
 - Pressing Note or Run again after its answer was lost, also after a reload, makes one note or

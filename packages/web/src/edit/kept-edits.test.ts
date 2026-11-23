@@ -59,6 +59,9 @@ const stored = () =>
   Object.keys(localStorage)
     .filter((key) => key.startsWith(`${PRODUCT_ID}.unsaved.`))
     .sort();
+/** The name an edit with an ID is kept under. */
+const keptName = (task: string, field: string, id: string) =>
+  `${PRODUCT_ID}.unsaved.${SPACE}.${task}.${field}.${id}`;
 
 beforeEach(() => {
   localStorage.clear();
@@ -186,7 +189,7 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
     localStorage.setItem(name("tk_10", "title"), "not json");
     // An ID that is no ID, under the name it would have.
     localStorage.setItem(
-      `${name("tk_14", "title")}.x`,
+      keptName("tk_14", "title", "x"),
       JSON.stringify({
         id: "x",
         task: "tk_14",
@@ -209,7 +212,7 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
     );
     const back = unsavedKeeper(SPACE).load();
     expect(back.map((u) => u.task)).toEqual([good.task]);
-    expect(stored()).toEqual([`${name(good.task, "priority")}.${good.id}`]);
+    expect(stored()).toEqual([keptName(good.task, "priority", good.id)]);
     expect(changeOf({ kind: "title", title: "" })).toBeUndefined();
     expect(changeOf(null)).toBeUndefined();
   });
@@ -223,16 +226,16 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
     const second = unsaved(effortChange("S"), 2);
     other.save(asMap([second]));
     other.save(new Map());
-    expect(stored()).toEqual([`${PRODUCT_ID}.unsaved.${SPACE}.tk_00001.title.${first.id}`]);
+    expect(stored()).toEqual([keptName("tk_00001", "title", first.id)]);
     // A reload reads it; the person discards it there, and it is gone for every tab.
     const reloaded = unsavedKeeper(SPACE);
     expect(reloaded.load().map((u) => u.task)).toEqual(["tk_00001"]);
     reloaded.save(new Map());
     expect(stored()).toEqual([]);
-    // Two tabs read one edit an earlier build kept; the second keeps a newer one in its place. The
-    // first discards the edit it read, and the newer one stays.
+    // An edit an earlier build kept is no tab's own: no reload takes it, no tab's save removes it.
+    const legacy = `${PRODUCT_ID}.unsaved.${SPACE}.tk_00004.title`;
     localStorage.setItem(
-      `${PRODUCT_ID}.unsaved.${SPACE}.tk_00004.title`,
+      legacy,
       JSON.stringify({
         task: "tk_00004",
         ref: "M-4",
@@ -242,18 +245,11 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
       }),
     );
     const tabA = unsavedKeeper(SPACE);
-    const tabB = unsavedKeeper(SPACE);
-    expect(tabA.load()).toHaveLength(1);
-    expect(tabB.load()).toHaveLength(1);
-    tabB.save(asMap([unsaved(titleChange("Newer"), 4)]));
+    expect(tabA.load()).toEqual([]);
+    tabA.save(asMap([unsaved(titleChange("Newer"), 4)]));
     tabA.save(new Map());
-    expect(
-      unsavedKeeper(SPACE)
-        .load()
-        .map((u) => u.change.source),
-    ).toEqual([titleChange("Newer").source]);
-    tabB.save(new Map());
-    expect(stored()).toEqual([]);
+    expect(stored()).toEqual([legacy]);
+    localStorage.removeItem(legacy);
     // A task gone for good takes its edits with it.
     tab.save(asMap([unsaved(titleChange("Again"), 3), unsaved(priorityChange(1), 3)]));
     forgetTask(SPACE, "tk_00003");
@@ -276,7 +272,7 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
     ]);
   });
 
-  test("an edit an earlier build kept, under the field's name alone, is found, listed and let go", () => {
+  test("an edit an earlier build kept, under the field's name alone, is listed and let go, and no tab takes it as its own", () => {
     const name = `${PRODUCT_ID}.unsaved.${SPACE}.tk_00001.waiting_on`;
     const value = JSON.stringify({
       task: "tk_00001",
@@ -286,11 +282,7 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
       source: waitingChange("Ana").source,
     });
     localStorage.setItem(name, value);
-    expect(
-      unsavedKeeper(SPACE)
-        .load()
-        .map((u) => [u.id, u.change.shown]),
-    ).toEqual([["", "Ana"]]);
+    expect(unsavedKeeper(SPACE).load()).toEqual([]);
     const listed = unsentOf(SPACE);
     expect(listed).toMatchObject([{ kind: "edit", task: "tk_00001", id: "", shown: "Ana" }]);
     expect(unsentTasks(SPACE)).toEqual(["tk_00001"]);
