@@ -91,6 +91,8 @@ test.describe("[A7.3.12.m5-10.e2e.capture] A capture shows its shortcuts before 
     await open(page, world, "/inbox");
     const field = adding(page);
     await expect(field).toBeEnabled();
+    // Tomorrow from the page's today, which may turn before Enter: either day is right.
+    const tomorrow = [day(1)];
     await field.fill(`Order the ${word} paint tomorrow p2 #home/garden *`);
     const chips = panel(page).getByRole("listitem");
     await expect(chips).toHaveText([/^Due /, "P2", "Home › Garden", "Starred"]);
@@ -108,9 +110,10 @@ test.describe("[A7.3.12.m5-10.e2e.capture] A capture shows its shortcuts before 
     // Enter in the add mode never searched.
     await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/inbox$`));
     const task = await taskTitled(world, word, `Order the ${word} paint p2`);
+    tomorrow.push(day(1));
+    expect(tomorrow).toContain(task.due);
     expect(task).toMatchObject({
       priority: 4,
-      due: day(1),
       area: "Home",
       project: "Garden",
       focus: true,

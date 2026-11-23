@@ -134,6 +134,7 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
     await expect(page.locator('[data-part="due-preview"]')).toHaveText("Not a date");
     await page.keyboard.press("Enter");
     await expect(field).toBeVisible();
+    const plus3 = day(3);
     await field.fill("+3d");
     await expect(page.locator('[data-part="due-preview"]')).not.toHaveText("Not a date");
     await page.keyboard.press("Enter");
@@ -141,13 +142,12 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
     await expect(due).toBeFocused();
     await expect(due).not.toHaveText("No date");
 
-    // The service has all three.
-    await expect
-      .poll(async () => {
-        const { task } = await read(world, ref);
-        return [task.priority, task.effort, task.due];
-      })
-      .toEqual([2, "L", day(3)]);
+    // The service has all three: the date counted from the page's today, which may have turned.
+    await expect(async () => {
+      const { task } = await read(world, ref);
+      expect([task.priority, task.effort]).toEqual([2, "L"]);
+      expect([plus3, day(3)]).toContain(task.due);
+    }).toPass();
     // And a reload shows them.
     await page.reload();
     await expect(priority.getByRole("radio", { name: "P2" })).toHaveAttribute(
@@ -230,19 +230,24 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
     const body = row.locator('[data-part="expanded"]');
     const due = body.locator('[data-part="due"]');
 
-    // The person sets tomorrow; then an agent sets another day.
+    // The person sets tomorrow, from the page's today, which may have turned; then an agent sets
+    // another day.
     await due.click();
+    const tomorrow = day(1);
     await page.getByRole("button", { name: "Tomorrow" }).click();
-    await expect.poll(async () => (await read(world, ref)).task.due).toBe(day(1));
-    await agentSets(world, ref, { due: day(10) });
-    await expect.poll(async () => (await read(world, ref)).task.due).toBe(day(10));
+    await expect(async () => {
+      expect([tomorrow, day(1)]).toContain((await read(world, ref)).task.due);
+    }).toPass();
+    const agents = day(10);
+    await agentSets(world, ref, { due: agents });
+    await expect.poll(async () => (await read(world, ref)).task.due).toBe(agents);
 
     // Undo: the field is the agent's now, so nothing is overwritten unseen. The toast says who.
     await page.locator("main").focus();
     await page.keyboard.press("Control+z");
     await expect(toast(page)).toContainText("changed the due date at");
     await expect(toastAction(page)).toHaveText("Restore mine");
-    expect((await read(world, ref)).task.due).toBe(day(10));
+    expect((await read(world, ref)).task.due).toBe(agents);
     // Restore mine puts back what the undo would have: the date before the person's edit.
     await toastAction(page).click();
     await expect.poll(async () => (await read(world, ref)).task.due).toBe(first);
@@ -251,16 +256,20 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
     // and the person's pick is a conflict that keeps their value one click away.
     await due.click();
     await expect(page.locator('[data-part="due-field"]')).toBeFocused();
-    await agentSets(world, ref, { due: day(12) });
+    const later = day(12);
+    await agentSets(world, ref, { due: later });
     await expect(page.locator('[data-part="remote"]')).toContainText("Changed by", {
       timeout: SLOW_MS,
     });
+    const week = day(7);
     await page.getByRole("button", { name: "In a week" }).click();
     const unsaved = body.locator('[data-part="unsaved"]');
     await expect(unsaved).toContainText("just now", { timeout: SLOW_MS });
-    expect((await read(world, ref)).task.due).toBe(day(12));
+    expect((await read(world, ref)).task.due).toBe(later);
     await unsaved.locator('[data-part="apply-mine"]').click();
-    await expect.poll(async () => (await read(world, ref)).task.due).toBe(day(7));
+    await expect(async () => {
+      expect([week, day(7)]).toContain((await read(world, ref)).task.due);
+    }).toPass();
     await expect(unsaved).toHaveCount(0);
   });
 });

@@ -30,6 +30,8 @@ function day(days: number) {
   const pad = (n: number) => String(n).padStart(2, "0");
   const name = (options: Intl.DateTimeFormatOptions) => date.toLocaleDateString("en", options);
   return {
+    /** Its first moment. */
+    start: new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime(),
     iso: `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
     /** Today's date as the page shows it: "Thursday 12 November". */
     full: `${name({ weekday: "long" })} ${String(date.getDate())} ${name({ month: "long" })}`,
@@ -105,6 +107,77 @@ async function openToday(page: Page, world: World): Promise<void> {
 const countIn = async (link: Locator): Promise<number> =>
   Number(/: ([\d,]+)/.exec((await link.getAttribute("aria-label")) ?? "")?.[1]?.replace(",", ""));
 
+/**
+ * The day the page shows as its today. A run can cross midnight, and the page notices a new day
+ * a moment after it comes, so the expectations follow this day, not the one the test began on.
+ */
+async function shownDay(page: Page): Promise<ReturnType<typeof day>> {
+  const text = await page.locator('[data-part="date"]').textContent();
+  const shown = [0, -1, 1].map(day).find((d) => d.full === text);
+  if (shown === undefined) throw new Error(`the page shows "${String(text)}" as today`);
+  return shown;
+}
+
+/** The first moment of the week `of` is in: Monday, as the page counts weeks. */
+function weekOf(of: ReturnType<typeof day>): number {
+  const monday = new Date(of.start);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return monday.getTime();
+}
+
+/** A task this test finished: the service committed it between these two times. */
+interface Finished {
+  readonly from: number;
+  readonly to: number;
+}
+
+async function finish(world: World, ref: string): Promise<Finished> {
+  const base = await asOf(world, ref);
+  const from = Date.now();
+  await world.op(world.mira.id, "task.finish", { task: ref, base });
+  return { from, to: Date.now() };
+}
+
+/** Done this week's count, and the week of the day the page showed it for. */
+async function doneNow(page: Page, done: Locator): Promise<{ count: number; week: number }> {
+  let read = { count: Number.NaN, week: 0 };
+  await expect(async () => {
+    const week = weekOf(await shownDay(page));
+    const count = await countIn(done);
+    expect(count).not.toBeNaN();
+    expect(weekOf(await shownDay(page))).toBe(week);
+    read = { count, week };
+  }).toPass({ timeout: SLOW_MS });
+  return read;
+}
+
+/**
+ * Waits until Done this week counts what this test finished since `before`: in the same week one
+ * more for each, and in a week that began since then only those finished in it.
+ */
+async function expectDone(
+  page: Page,
+  done: Locator,
+  before: { count: number; week: number },
+  finished: readonly Finished[],
+): Promise<void> {
+  await expect(async () => {
+    const week = weekOf(await shownDay(page));
+    await expect(done).toHaveAttribute("aria-label", /^Done this week: [\d,]+, \d+ today$/, {
+      timeout: 1_000,
+    });
+    const count = await countIn(done);
+    if (week === before.week) {
+      expect(count).toBe(before.count + finished.length);
+      return;
+    }
+    const surely = finished.filter((f) => f.from >= week).length;
+    const maybe = finished.filter((f) => f.from < week && f.to >= week).length;
+    expect(count).toBeGreaterThanOrEqual(surely);
+    expect(count).toBeLessThanOrEqual(surely + maybe);
+  }).toPass({ timeout: SLOW_MS });
+}
+
 test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its sections", () => {
   test("no task in two sections, the date once, the numbers live and linked, the expanded task held, Changes", async ({
     page,
@@ -116,10 +189,12 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
     await openToday(page, world);
 
     // Today's date, once on the screen.
-    const today = day(0);
-    await expect(page.locator('[data-part="date"]')).toHaveText(today.full);
     await expect(row(page, tasks.star)).toBeVisible({ timeout: SLOW_MS });
-    expect((await shownText(page)).split(today.full)).toHaveLength(2);
+    await expect(async () => {
+      const today = day(0).full;
+      await expect(page.locator('[data-part="date"]')).toHaveText(today, { timeout: 1_000 });
+      expect((await shownText(page)).split(today)).toHaveLength(2);
+    }).toPass({ timeout: SLOW_MS });
     // No heading above the sections: the sidebar and the tab's title name the view.
     await expect(page.locator("main h1")).toHaveCount(0);
 
@@ -133,17 +208,10 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
     const places = await numbers
       .getByRole("link")
       .evaluateAll((links) => links.map((l) => Math.round(l.getBoundingClientRect().left)));
-    const before = await countIn(done);
+    const before = await doneNow(page, done);
     // A task is finished while the page is open: the count follows, and nothing moves.
-    await world.op(world.mira.id, "task.finish", {
-      task: tasks.renew,
-      base: await asOf(world, tasks.renew),
-    });
-    await expect(done).toHaveAttribute(
-      "aria-label",
-      new RegExp(`^Done this week: ${String(before + 1)}, \\d+ today$`),
-      { timeout: SLOW_MS },
-    );
+    const finished = [await finish(world, tasks.renew)];
+    await expectDone(page, done, before, finished);
     expect(
       await numbers
         .getByRole("link")
@@ -206,26 +274,35 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
     await page.goBack();
     // Due today to what is open and due today: a task finished today is not counted, nor listed.
     const due = numbers.getByRole("link", { name: /^Due today: / });
-    const dueToday = await countIn(due);
+    // Due today counts for the day the page shows: read with it, and the deposit is due on it.
+    let dueDay = day(0);
+    let dueToday = Number.NaN;
+    await expect(async () => {
+      dueDay = await shownDay(page);
+      dueToday = await countIn(due);
+      expect(dueToday).not.toBeNaN();
+      expect((await shownDay(page)).iso).toBe(dueDay.iso);
+    }).toPass({ timeout: SLOW_MS });
     const paid = (await world.op(world.mira.id, "task.add", {
-      tasks: [{ title: `Pay the deposit (${tag})`, area: "home", due: today.iso }],
+      tasks: [{ title: `Pay the deposit (${tag})`, area: "home", due: dueDay.iso }],
     })) as Added;
     const deposit = paid.tasks[0]?.ref ?? "";
-    await world.op(world.mira.id, "task.finish", {
-      task: deposit,
-      base: await asOf(world, deposit),
-    });
+    finished.push(await finish(world, deposit));
     // The page has heard of both once Done this week counts the deposit: the page may hear of
     // the add before the finish, and Due today then says one more for a moment.
-    await expect(done).toHaveAttribute(
-      "aria-label",
-      new RegExp(`^Done this week: ${String(before + 2)}, \\d+ today$`),
-      { timeout: SLOW_MS },
-    );
-    await expect(due).toHaveAttribute("aria-label", `Due today: ${String(dueToday)}`);
+    await expectDone(page, done, before, finished);
+    // On the same day the count is as it was. A day that began since counts other tasks: then the
+    // list it leads to is the measure, and the deposit is in neither.
+    let dueNow = dueToday;
+    await expect(async () => {
+      const shown = await shownDay(page);
+      dueNow = await countIn(due);
+      if (shown.iso === dueDay.iso) expect(dueNow).toBe(dueToday);
+      else expect(dueNow).not.toBeNaN();
+    }).toPass({ timeout: SLOW_MS });
     await due.click();
     await expect(page).toHaveURL(/\/search\?q=due%3Atoday/);
-    await expect(page.locator("main li[data-key]")).toHaveCount(dueToday, { timeout: SLOW_MS });
+    await expect(page.locator("main li[data-key]")).toHaveCount(dueNow, { timeout: SLOW_MS });
     await expect(row(page, deposit)).toHaveCount(0);
     await page.goBack();
     await numbers.getByRole("link", { name: /^Waiting on others: / }).click();

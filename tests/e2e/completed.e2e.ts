@@ -33,6 +33,22 @@ const largestSetSize = (page: Page) =>
     ),
   );
 
+/** When the newest finished task was finished, as the service keeps it. */
+async function newestFinish(world: World): Promise<number> {
+  const read = (await world.op(world.mira.id, "task.finished", { limit: 1 })) as {
+    rows: { finished_at?: unknown }[];
+  };
+  const at = read.rows[0]?.finished_at;
+  if (typeof at !== "number") throw new Error("the space has no finished task");
+  return at;
+}
+
+/** The local calendar month `at` is in, as the list groups by it. */
+const monthOf = (at: number): number => {
+  const date = new Date(at);
+  return date.getFullYear() * 12 + date.getMonth();
+};
+
 /** Each mounted row's title and the line under it (its ending, else its summary). */
 const linesOf = (page: Page) =>
   page.evaluate(() =>
@@ -246,7 +262,9 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
     await picture(page, "completed-end.png");
 
     // A task finished while the list is open joins its month at the top, saying how it ended. The
-    // list read again holds every row it showed: the month is one larger at once.
+    // list read again holds every row it showed: the month is one larger at once. The sample was
+    // made when the worker started: a month that began since holds the task alone.
+    const sampled = monthOf(await newestFinish(finished));
     const task = finished.task;
     const read = (await finished.op(finished.mira.id, "task.get", { task: task.ref })) as {
       as_of: string;
@@ -256,7 +274,10 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
       outcome: "Finished while Completed was open.\nThe rest of the outcome.",
       base: read.as_of,
     });
-    await expect.poll(() => largestSetSize(page), { timeout: SLOW_MS }).toBe(monthSize + 1);
+    const joins = monthOf(await newestFinish(finished)) === sampled;
+    await expect
+      .poll(() => largestSetSize(page), { timeout: SLOW_MS })
+      .toBe(joins ? monthSize + 1 : monthSize);
     await expect(more).toHaveCount(0);
     // The month's first row is the task just finished: Home, then the next group.
     await expect(async () => {
@@ -265,6 +286,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
       await expect(focused).toHaveAttribute("data-task", task.ref, { timeout: 1_000 });
     }).toPass({ timeout: SLOW_MS });
     await expect(focused).toHaveAttribute("aria-posinset", "1");
+    await expect(focused).toHaveAttribute("aria-setsize", String(joins ? monthSize + 1 : 1));
     await expect(focused.locator("[data-part='ending'] > [dir]")).toHaveText(
       "Finished while Completed was open.",
     );
