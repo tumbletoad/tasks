@@ -178,6 +178,28 @@ describe("[A1.5.restore.own-space] a restore takes only a backup of the space it
   );
 });
 
+describe("[A1.5.restore.failed-keeps-state] a restore in place that fails leaves the space as the person left it", () => {
+  test(
+    "a closed space stays closed after a restore in place from a backup that is not there",
+    async () => {
+      const machine = newId("m");
+      const { home, spaces } = setUp("closed-restore", machine);
+      const work = await fixtureSpace(join(spaces, "work"), machine);
+      const { user } = await start(home, [work.folder]);
+      await call(user, "space/close", { space: work.folder });
+      expect((await rowOf(user, work.folder))?.state).toBe("closed");
+      await refused(
+        call(user, "space/restore", {
+          backup: "manual-20261101T000000.000Z-e1-s0",
+          space: work.folder,
+        }),
+      );
+      expect((await rowOf(user, work.folder))?.state).toBe("closed");
+    },
+    SLOW,
+  );
+});
+
 describe("[A1.5.backup.own-folder] the daily backup goes to the folder this machine set for the space", () => {
   test(
     "also when the space's space.json is gone and the open writes it again",

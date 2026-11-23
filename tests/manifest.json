@@ -991,6 +991,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.restore.failed-keeps-state",
+      "title": "Through the service, a restore in place that fails leaves a space the person closed closed",
+      "source": "A1 3.18, A2 3.1",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.restore.crash-windows",
       "title": "A crash at each point of a restore in place leaves the old space, the claimed new one, or a missing space that finishInterruptedRestore completes; never an unclaimed or half-built space under the space's name",
       "source": "A1 3.18, A1 5",

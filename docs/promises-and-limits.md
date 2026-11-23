@@ -101,7 +101,7 @@ the behaviour it describes, and keep each one to a sentence or two.
 ## Your spaces on this machine
 
 - A space you create, open, restore or claim opens again after a restart, and one you close stays
-  closed. TTasks never takes a space off its list by itself.
+  closed, also when a restore over it fails. TTasks never takes a space off its list by itself.
 - Recording this keeps your own comments and settings in the configuration file. When the file
   cannot be written, TTasks says so and names the command that records it once the file is fixed.
 - When several copies of one space are on this machine, TTasks opens one of them at a time:

@@ -844,7 +844,7 @@ export class SpaceManager {
   /**
    * Recovers a space refused with a rollback journal (`ttasks space recover`, A1 3.18): the
    * space closes, storage plays the journal back on a copy and swaps it in under the space's
-   * writer.lock, and the space opens again, also when the recovery failed.
+   * writer.lock, and the space opens again (#replace).
    */
   async recover(entry: number): Promise<{ readonly replaced: boolean }> {
     const space = this.#space(entry);
@@ -1017,8 +1017,8 @@ export class SpaceManager {
   /**
    * Restores `backupFile` in place of the space (A1 3.18): the space closes first, the
    * restore claims the backup with an epoch above every one this machine has seen, under the
-   * space's writer.lock in a worker of its own, and the space opens again, also when the restore
-   * failed. The restore's errors are storage's, content-free.
+   * space's writer.lock in a worker of its own, and the space opens again (#replace). The
+   * restore's errors are storage's, content-free.
    */
   async restoreInPlace(entry: number, backupFile: string): Promise<SpaceChange> {
     const space = this.#space(entry);
@@ -2095,7 +2095,7 @@ export class SpaceManager {
   /**
    * Closes the space, runs `change` in a worker of its own (a restore in place, a claim or a
    * recovery, each under the space's writer.lock), records a new authority this machine has seen,
-   * and opens the space again, also when the change failed.
+   * and opens the space again, also when the change failed, unless the person had closed it.
    */
   async #replace(
     space: Hosted,
@@ -2123,6 +2123,9 @@ export class SpaceManager {
       settings: SpaceSettings,
     ) => Promise<{ spaceId: Id<"sp">; change?: SpaceChange }>,
   ): Promise<SpaceChange | undefined> {
+    // A change that fails leaves a space the person closed, before or meanwhile, closed.
+    const closes = space.closes;
+    const leftClosed = space.state === "closed";
     await this.#close(space, this.#closeMs);
     if (space.stuck) {
       // A worker that did not close may still hold the space: nothing else may change it.
@@ -2157,8 +2160,9 @@ export class SpaceManager {
       }
       return outcome.change;
     } finally {
+      const keepClosed = outcome === undefined && (leftClosed || space.closes !== closes);
       // Read again: the service may have begun to drain meanwhile.
-      if (!this.#isDraining()) {
+      if (!this.#isDraining() && !keepClosed) {
         space.reset();
         await this.#begin(space);
       }
