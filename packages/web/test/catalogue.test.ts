@@ -82,6 +82,7 @@ const SAMPLE = {
   restore: "P3",
   field: "the due date",
   at: Date.UTC(2026, 10, 12, 9, 40),
+  backup: "daily-20261112T030000.000Z-e1-s42.db.gz",
   filters: "status:open p<=2",
   message: "Unknown filter colour.",
   open: 3,

@@ -45,6 +45,15 @@ import {
   type Turn,
 } from "./calls.ts";
 import { joinChanges, restoreChange, type Change, type Field } from "./change.ts";
+import { readOnlyReason, readOnlyWhy } from "./read-only.ts";
+
+/** What a toast says of a write the space refused because it takes no change; else undefined. */
+function readOnlyText(error: unknown): Msg | undefined {
+  const reason = readOnlyReason(error);
+  return reason === undefined
+    ? undefined
+    : { id: "edit.notSavedReadOnly", values: { why: readOnlyWhy(reason) } };
+}
 
 /** How long a checked-off row stays where it is (A5 3.12). */
 export const HOLD_MS = 4_000;
@@ -652,9 +661,10 @@ export class Edits {
         say({
           kind: "error",
           text:
-            conflict === undefined
+            readOnlyText(decision.error) ??
+            (conflict === undefined
               ? { id: "toast.checkFailed" }
-              : { id: "toast.checkConflict", values: whoOf(conflict.by) },
+              : { id: "toast.checkConflict", values: whoOf(conflict.by) }),
         });
       },
       toast,
@@ -701,9 +711,10 @@ export class Edits {
         say({
           kind: "error",
           text:
-            conflict === undefined
+            readOnlyText(decision.error) ??
+            (conflict === undefined
               ? { id: "toast.reopenFailed" }
-              : { id: "toast.reopenConflict", values: whoOf(conflict.by) },
+              : { id: "toast.reopenConflict", values: whoOf(conflict.by) }),
         });
       },
       toast,
@@ -1086,8 +1097,9 @@ export class Edits {
   ): void {
     if (this.#deps.failed(error)) return;
     const problem = problemOf(error);
-    if (problem === undefined) {
-      say({ kind: "error", text: { id: "toast.undoFailed" } });
+    const readOnly = readOnlyText(error);
+    if (problem === undefined || readOnly !== undefined) {
+      say({ kind: "error", text: readOnly ?? { id: "toast.undoFailed" } });
       return;
     }
     // The commit it met, named: Restore mine and Undo the rest act on that one only, never on
@@ -1359,9 +1371,14 @@ export class Edits {
             id: "toast.changedBy",
             values: { ...whoOf(conflict.by), field: { id: words ?? "field.other" } },
           };
-    // A finished task takes no edit until it is reopened, nor a deleted one until it is restored:
-    // no action that would only fail again. The value waits under its fact or the title, with
-    // Copy (Facts.tsx, Row.tsx).
+    // A finished task takes no edit until it is reopened, nor a deleted one until it is restored,
+    // nor a space that takes no change at all: no action that would only fail again. The value
+    // waits under its fact or the title, with Copy (Facts.tsx, Row.tsx, Unsaved.tsx).
+    const readOnly = readOnlyText(error);
+    if (readOnly !== undefined) {
+      say({ kind: "error", text: readOnly });
+      return lines;
+    }
     if (problem?.cause === "TASK_NOT_ACTIVE" || problem?.cause === "DELETED") {
       say({ kind: "error", text });
       return lines;

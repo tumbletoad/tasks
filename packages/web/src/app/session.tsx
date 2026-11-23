@@ -53,7 +53,14 @@ export function SpaceSession({
   machine.current = control;
   const [value, setValue] = useState<SessionValue | undefined>(undefined);
   useEffect(() => {
-    const api = new Api(auth.token, auth.build, () => space);
+    // Every call names the copy of the space the feed loaded, once it did.
+    const loaded: { live?: Live } = {};
+    const api = new Api(
+      auth.token,
+      auth.build,
+      () => space,
+      () => loaded.live?.copy,
+    );
     const live = new Live({
       api,
       route: { space },
@@ -64,13 +71,18 @@ export function SpaceSession({
         machine.current.receive(preferences);
       },
     });
+    loaded.live = live;
     // Today's Changes counts from the session's start, whichever view the tab opens on.
     changeLogOf(live);
     setValue({ api, live });
-    // Once the space is live, the kept text of its tasks that are gone for good is forgotten.
+    // Once the space is live, the kept text of its tasks that are gone for good is forgotten. A
+    // space that takes no change (a restored copy, an older one) is no proof a task is gone: what
+    // it lacks may be in the copy the text was typed in, so nothing is forgotten there.
     const stopWatching = live.subscribe(() => {
-      if (live.getState().phase !== "live") return;
+      const state = live.getState();
+      if (state.phase !== "live") return;
       stopWatching();
+      if (state.space?.read_only !== undefined || state.space?.restored !== undefined) return;
       void forgetGone(space, api, (task) => live.getState().tasks.has(task));
     });
     live.start();

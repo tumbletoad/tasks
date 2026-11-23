@@ -115,7 +115,14 @@ function run(actions: readonly Action[]): Record<Outcome["kind"] | "skipped_even
   let sub = new ModelSubscription(model);
   let net: Message[] = [];
   const seen: Message[] = [];
-  const counts = { snapshot: 0, applied: 0, ignored: 0, resnapshot: 0, skipped_events: 0 };
+  const counts = {
+    snapshot: 0,
+    applied: 0,
+    ignored: 0,
+    resnapshot: 0,
+    replaced: 0,
+    skipped_events: 0,
+  };
 
   const subscribe = () => {
     sub = new ModelSubscription(model);
@@ -256,7 +263,14 @@ function run(actions: readonly Action[]): Record<Outcome["kind"] | "skipped_even
 
 describe("[A5.3.15.web.store.interleavings] the live store's core against a model of the feed", () => {
   test("any interleaving applied in order equals the snapshot at that point, or asks for one", () => {
-    const totals = { snapshot: 0, applied: 0, ignored: 0, resnapshot: 0, skipped_events: 0 };
+    const totals = {
+      snapshot: 0,
+      applied: 0,
+      ignored: 0,
+      resnapshot: 0,
+      replaced: 0,
+      skipped_events: 0,
+    };
     fc.assert(
       fc.property(fc.array(actionArb, { minLength: 1, maxLength: 200, size: "max" }), (actions) => {
         const counts = run(actions);
@@ -266,7 +280,10 @@ describe("[A5.3.15.web.store.interleavings] the live store's core against a mode
     );
     // The runs reached every path: batches applied, repeats and old messages ignored, overlaps
     // skipped in part, fresh snapshots asked for and taken.
-    for (const count of Object.values(totals)) expect(count).toBeGreaterThan(0);
+    // The model's snapshots are of one copy of the space, so none is another's.
+    const { replaced, ...reached } = totals;
+    expect(replaced).toBe(0);
+    for (const count of Object.values(reached)) expect(count).toBeGreaterThan(0);
   });
 
   test("an orderly feed never needs a fresh snapshot beyond its withheld rows", () => {

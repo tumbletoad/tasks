@@ -21,7 +21,7 @@
 // Each tab has its own socket and subscription, to the space its route names. Two tabs on two
 // spaces never share one.
 import type { Api } from "../api.ts";
-import { SignedOut, StaleBuild } from "../api.ts";
+import { isReplaced, SignedOut, StaleBuild } from "../api.ts";
 import type { PageRoute } from "../route.ts";
 import { AgentsFeed } from "./agents.ts";
 import { browserAttention, type Attention } from "./browser-attention.ts";
@@ -80,6 +80,9 @@ export class Live {
         if (!this.#greeting) this.#subscribe(undefined);
       },
       onSpace: options.onSpace,
+      onGone: () => {
+        this.#ended();
+      },
     });
   }
 
@@ -98,6 +101,11 @@ export class Live {
   /** The tab's space ID, once known. Every API call names it. */
   get spaceId(): string | undefined {
     return this.store.space;
+  }
+
+  /** The copy of the space the tab loaded, once its first snapshot named it. Every call names it. */
+  get copy(): string | undefined {
+    return this.store.copy;
   }
 
   /**
@@ -178,7 +186,10 @@ export class Live {
     this.#ws?.close(1000);
   }
 
-  /** The service refused the token or the build: the page's state says so. */
+  /**
+   * The service refused the token, the build, or the copy of the space the tab loaded: the page's
+   * state says so.
+   */
   failed(error: unknown): boolean {
     if (error instanceof SignedOut) {
       this.#signedOut();
@@ -188,7 +199,20 @@ export class Live {
       this.#stale();
       return true;
     }
+    if (isReplaced(error)) {
+      this.store.gone({ why: "replaced" });
+      return true;
+    }
     return false;
+  }
+
+  /** The copy the tab loaded is gone: nothing more is asked of the service, and no feed. */
+  #ended(): void {
+    this.#stopped = true;
+    this.#unattend?.();
+    clearTimeout(this.#retry);
+    this.#ws?.close(1000);
+    this.agents.cut();
   }
 
   /** The service runs another build than this page: it shows the reload bar until a reload. */
@@ -296,6 +320,9 @@ export class Live {
     const space = this.store.space;
     if (space !== undefined) message["space"] = space;
     if (cursor !== undefined) message["cursor"] = cursor;
+    // The copy the tab loaded: another one served now answers with a snapshot, never batches.
+    const copy = this.store.copy;
+    if (cursor !== undefined && copy !== undefined) message["copy"] = copy;
     // Without a socket, the next `hello` subscribes: from no cursor while a snapshot is awaited.
     if (this.#ws?.readyState === 1) this.#ws.send(JSON.stringify(message));
   }

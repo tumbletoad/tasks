@@ -17,6 +17,7 @@ import { useLive } from "../store/hooks.ts";
 import { useMachine } from "./machine.ts";
 import css from "./Shell.module.css";
 import { Sidebar } from "./Sidebar.tsx";
+import { SpaceBar } from "./SpaceBar.tsx";
 import { Tips } from "./Tips.tsx";
 import { TopBar } from "./TopBar.tsx";
 import { classes } from "./css.ts";
@@ -165,6 +166,7 @@ export function Shell({ space }: { readonly space: string }) {
                 })}
               </div>
             ) : null}
+            <SpaceBar state={state} />
             <main id="main" tabIndex={-1} className={styles.main}>
               {content}
             </main>

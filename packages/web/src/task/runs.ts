@@ -142,6 +142,14 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
           stoppable: false,
         };
       }
+      if (reason === "restored") {
+        return {
+          tone: "failed",
+          status: [msg("run.restored")],
+          ...said("last"),
+          stoppable: false,
+        };
+      }
       if (reason === "service_ended") {
         return {
           tone: "failed",

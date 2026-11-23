@@ -53,6 +53,23 @@ function described(result: unknown): { id: string; name: string; not_remembered?
   };
 }
 
+/**
+ * A refusal as the page shows it: the folders it names under the person's home read with `~`, as
+ * the page shows folders everywhere else.
+ */
+function shownIn(error: unknown, home: string | undefined, platform: NodeJS.Platform): unknown {
+  if (!(error instanceof AppError) || home === undefined || home === "") return error;
+  const p = platform === "win32" ? win32 : posix;
+  const prefix = `${p.resolve(home)}${p.sep}`;
+  const shown = (text: string) => text.replaceAll(prefix, `~${p.sep}`);
+  const body = error.toBody();
+  return new AppError({
+    ...body,
+    message: shown(body.message),
+    ...(body.hint === undefined ? {} : { hint: shown(body.hint) }),
+  });
+}
+
 export function pageSpaceVerbs(host: PageSpacesHost): {
   readonly propose: Verb;
   readonly create: Verb;
@@ -110,7 +127,11 @@ export function pageSpaceVerbs(host: PageSpacesHost): {
     open: async (params, cls) => {
       const path = folderOf(params, "folder");
       if (path === undefined) throw invalid("folder", "Expected a folder");
-      return described(await verb("space/open")({ path }, cls));
+      try {
+        return described(await verb("space/open")({ path }, cls));
+      } catch (error) {
+        throw shownIn(error, host.userHome, platform);
+      }
     },
   };
 }

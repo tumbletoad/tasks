@@ -924,6 +924,31 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     expect(w.lastToast()?.action).toBeUndefined();
   });
 
+  test("an edit or a check-off the space refuses because it takes no change keeps the value and says why, with no Try again", async () => {
+    const w = new World([task(1), task(2)]);
+    const readOnly = () => {
+      throw appError("read_only", { reason: "read_only_copy", retryable: false });
+    };
+    w.answer("task.update", readOnly);
+    w.edits.edit(task(1), titleChange("Words the person typed"));
+    await flush();
+    expect(w.edits.unsaved("t_00001", "title")?.change.set).toEqual({
+      title: "Words the person typed",
+    });
+    const why = {
+      id: "edit.notSavedReadOnly",
+      values: { why: { id: "space.readOnlyWhy", values: { reason: "read_only_copy" } } },
+    };
+    expect(w.lastToast()).toMatchObject({ kind: "error", text: why });
+    expect(w.lastToast()?.action).toBeUndefined();
+
+    w.answer("task.finish", readOnly);
+    w.edits.checkOff(task(2));
+    await flush();
+    expect(w.lastToast()).toMatchObject({ kind: "error", text: why });
+    expect(w.lastToast()?.action).toBeUndefined();
+  });
+
   test("an editor hears who else changed a field after it opened, never the tab's own writes", async () => {
     const w = new World([task(1)]);
     const mark = w.edits.mark();

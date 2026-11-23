@@ -339,12 +339,19 @@ function copyWords(folder: string): string {
 }
 
 /**
+ * How a person closes the copy that is open: by the space's name, which means the one folder that
+ * serves it, so the command works as printed in any shell; by its folder when the name is not known.
+ */
+const closeCommand = (error: OtherCopyOpen): string =>
+  command(["space", "close", error.spaceName ?? error.open], "space close <folder>");
+
+/**
  * The refusal of an open of `folder` while another folder serves its space (one copy at a time):
  * what is open, what this folder is, and how to look at it instead.
  */
 function otherCopyRefusal(error: OtherCopyOpen, folder: string): AppError {
   const name = error.spaceName ?? "This space";
-  const close = command(["space", "close", error.open], "space close <folder>");
+  const close = closeCommand(error);
   return new AppError({
     code: "invalid_input",
     message: `${name} is open from ${error.open}. ${copyWords(folder)} Two copies of one space are never open together.`,
@@ -470,7 +477,7 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
     } catch (error) {
       if (!(error instanceof OtherCopyOpen)) throw error;
       const name = error.spaceName ?? "The space";
-      const close = command(["space", "close", error.open], "space close <folder>");
+      const close = closeCommand(error);
       const open = command(["space", "open", folder], "space open <folder>");
       return {
         folder,

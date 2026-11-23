@@ -37,7 +37,9 @@ import {
   type BusyOf,
   type FolderRefusal,
 } from "../row/launch.ts";
+import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { contextFor, type Grouping, type RowView } from "../row/model.ts";
+import { sayMsg } from "../row/say.ts";
 import type { OpenWith, RowActions } from "../row/actions.ts";
 import type { Clock } from "../row/dates.ts";
 import { Row } from "../row/Row.tsx";
@@ -727,6 +729,13 @@ export function TaskList({
                 loadReceipts(task.id);
                 return undefined;
               }
+              // A space that takes no change: why, and no Try again, which could not work.
+              const readOnly = readOnlyReason(error);
+              if (readOnly !== undefined) {
+                refuse(task.id, undefined);
+                say(t("row.openReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }));
+                return undefined;
+              }
               // Its agent could not use the tools in this space: Settings is where that changes.
               const home = homeRefusal(error);
               if (home !== undefined) {
@@ -810,7 +819,14 @@ export function TaskList({
             return copy === undefined ? false : toClipboard(copy, pack);
           })
           .catch((error: unknown) => {
-            if (!live.failed(error)) say(t("row.copyFailed"));
+            // The service made no brief: nothing reached the clipboard to be refused there.
+            if (live.failed(error)) return false;
+            const readOnly = readOnlyReason(error);
+            say(
+              readOnly === undefined
+                ? t("row.copyNotMade")
+                : t("row.copyReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }),
+            );
             return false;
           });
       },
@@ -863,6 +879,11 @@ export function TaskList({
               loadRuns(task.id);
               return undefined;
             }
+            const readOnly = readOnlyReason(error);
+            if (readOnly !== undefined) {
+              say(t("run.readOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }));
+              return undefined;
+            }
             const refused = runRefusal(error);
             if (refused.reason === "folder_missing" && refused.folder !== undefined) {
               refuse(task.id, { reason: "path_missing", folder: refused.folder });
@@ -891,7 +912,14 @@ export function TaskList({
           })
           .catch((error: unknown) => {
             answered();
-            if (!live.failed(error)) say(t("run.stopFailed"));
+            if (!live.failed(error)) {
+              const readOnly = readOnlyReason(error);
+              say(
+                readOnly === undefined
+                  ? t("run.stopFailed")
+                  : t("run.stopReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }),
+              );
+            }
             loadRuns(task.id);
           });
       },

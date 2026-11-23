@@ -71,8 +71,18 @@
 
 .space {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+}
+
+.where {
+  flex: 1 1 100%;
+  padding: 0 8px 4px 28px;
+  color: var(--k-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  overflow-wrap: anywhere;
 }
 
 .pick {

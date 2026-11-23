@@ -2,6 +2,7 @@
 // with what is open and what the folder is; a restored copy says so in the list and the feed; and a
 // tab's calls name the copy it loaded, so after a claim or a close nothing the tab sends lands in
 // another copy. Services run in this process on temporary homes; fixture data only.
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import { afterEach, describe, expect, test } from "vitest";
@@ -73,7 +74,9 @@ describe("[A2.3.10.5.copies.page] a tab shows one copy of its space and writes o
         code: "invalid_input",
         data: { reason: "other_copy_open" },
       });
-      expect(refused.error?.message).toContain(`Mira is open from ${mira.folder}.`);
+      // The folders read as the page shows them: the home as `~`.
+      expect(refused.error?.message).toMatch(/^Mira is open from \S*mira\. This folder holds /u);
+      expect(refused.error?.message).not.toContain(homedir());
       expect(refused.error?.message).toContain("restored on");
       expect(refused.error?.hint).toContain("close Mira first");
 

@@ -9,8 +9,11 @@
 // list is read when the switcher appears, each time it opens, when the tab is shown again and every
 // few minutes while it is shown, so the mark comes and goes with the backups.
 //
+// A restored copy is marked as one, with its folder, whatever else keeps it read-only.
+//
 // New space and Open folder open the same form as the first start, over the page; the space it
-// makes or opens is where the tab goes next.
+// makes or opens is where the tab goes next. A folder whose space is open from another folder is
+// refused there with the service's words: what is open, what the folder is, what to do.
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Button, Dialog, DialogTrigger, Modal, ModalOverlay, Popover } from "react-aria-components";
@@ -51,6 +54,7 @@ const styles = classes(css, [
   "trigger",
   "add",
   "adds",
+  "where",
 ]);
 const sheet = classes(setup, ["dialog", "modal", "overlay"]);
 
@@ -171,7 +175,11 @@ export function SpaceSwitcher({
                               <span className={styles.title} dir="auto">
                                 {item.name}
                               </span>
-                              {item.state === "read_only" ? (
+                              {item.restored !== undefined ? (
+                                <span className={styles.state} data-part="restored-copy">
+                                  {t("space.restoredCopy")}
+                                </span>
+                              ) : item.state === "read_only" ? (
                                 <span className={styles.state}>{t("space.readOnly")}</span>
                               ) : null}
                             </Link>
@@ -197,6 +205,14 @@ export function SpaceSwitcher({
                             >
                               {t("space.makeDefault")}
                             </Button>
+                          )}
+                          {item.restored === undefined ? null : (
+                            <span className={styles.where} dir="auto">
+                              {t("space.restoredIn", {
+                                at: Date.parse(item.restored.at),
+                                folder: item.folder ?? "",
+                              })}
+                            </span>
                           )}
                         </li>
                       );
@@ -256,6 +272,12 @@ export function SpaceSwitcher({
               onMade={(made) => {
                 setAdding(undefined);
                 if (made.notRemembered !== undefined) say(made.notRemembered);
+                // A folder of the tab's own space (its copy opened after the space was closed):
+                // the tab loads it afresh, as the session it had was of the copy that closed.
+                if (made.id === space) {
+                  location.assign(`/s/${encodeURIComponent(made.id)}/${LANDING}`);
+                  return;
+                }
                 void navigate({ to: "/s/$space/$view", params: { space: made.id, view: LANDING } });
               }}
             />

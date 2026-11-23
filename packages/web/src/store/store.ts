@@ -28,6 +28,28 @@ import {
 
 export type Phase = "starting" | "connecting" | "live" | "offline" | "signed_out" | "no_space";
 
+/**
+ * What happened to the copy of the space a tab loaded, so the tab saves nothing more: it was
+ * closed, or another copy is served now (claimed, restored in place, a restored copy, another
+ * folder), or the service refused a call for another copy (`replaced`, nothing more known).
+ */
+export type GoneWhy =
+  "closed" | "claimed" | "restored" | "restored_copy" | "other_folder" | "replaced";
+
+export interface Gone {
+  readonly why: GoneWhy;
+  /** The folder the space is open from now, as the person reads it, when that is known. */
+  readonly folder?: string;
+}
+
+/** What a snapshot of `now` says happened to the copy `was` a tab loaded. */
+export function goneOf(was: SpaceHead, now: SpaceHead): Gone {
+  const folder = now.folder === undefined ? {} : { folder: now.folder };
+  if (now.restored !== undefined) return { why: "restored_copy", ...folder };
+  if (was.folder !== now.folder) return { why: "other_folder", ...folder };
+  return { why: was.restored !== undefined ? "claimed" : "restored", ...folder };
+}
+
 export interface LiveState {
   readonly phase: Phase;
   /** The service runs another build: the page offers a reload. */
@@ -38,6 +60,11 @@ export interface LiveState {
    */
   readonly installed: { readonly version: string; readonly running: string } | undefined;
   readonly space: SpaceHead | undefined;
+  /**
+   * The copy of the space this tab loaded is no longer served: the tab shows it as it was, saves
+   * nothing more, and offers to load what the space is now.
+   */
+  readonly gone: Gone | undefined;
   /** The open tasks: the confirmed rows with this tab's pending writes on top. */
   readonly tasks: ReadonlyMap<string, TaskRow>;
   readonly areas: ReadonlyMap<string, AreaRow>;
@@ -84,6 +111,8 @@ export interface StoreOptions {
   readonly onSpace?: (space: string) => void;
   /** A fresh request ID (A1 3.8). */
   readonly newRequest?: () => string;
+  /** The copy the tab loaded is gone (LiveState `gone`): the feed has nothing more to give. */
+  readonly onGone?: () => void;
 }
 
 /** A write sent through the store. */
@@ -121,6 +150,7 @@ export class LiveStore {
     stale: false,
     installed: undefined,
     space: undefined,
+    gone: undefined,
     tasks: new Map(),
     areas: new Map(),
     projects: new Map(),
@@ -234,6 +264,23 @@ export class LiveStore {
     this.#queue.clear();
   }
 
+  /** The copy of the space the tab loaded, once its first snapshot named it. */
+  get copy(): string | undefined {
+    return this.#core.copy;
+  }
+
+  /**
+   * The copy the tab loaded is gone: the rows stay as they were, no message of the feed applies
+   * any more, and the tab says what happened.
+   */
+  gone(gone: Gone): void {
+    if (this.#state.gone !== undefined) return;
+    this.stop();
+    this.#state = { ...this.#state, gone };
+    this.#emit();
+    this.#options.onGone?.();
+  }
+
   /**
    * Sends a write: `send` makes the call with the request ID it is given, `request` when the caller
    * sends the same write again. `overlay` shows at once and stays until the feed confirms the
@@ -275,18 +322,39 @@ export class LiveStore {
   }
 
   #drain(items: readonly Queued[]): void {
+    let ended: Gone | undefined;
+    try {
+      ended = this.#apply(items);
+    } finally {
+      // What came before applies first; then the tab learns its copy is gone.
+      if (ended !== undefined) this.gone(ended);
+    }
+  }
+
+  /** Applies `items` in order, up to one that says the tab's copy is gone: what it says. */
+  #apply(items: readonly Queued[]): Gone | undefined {
     let changes: Change[] = [];
     const requests: string[] = [];
     let reset = false;
     let applied = false;
     let phase: Phase | undefined;
+    let ended: Gone | undefined;
     const before = this.#core.space;
     for (const item of items) {
       if (item.type === "error") {
+        // A tab that showed its space is told it was closed, and keeps what it shows.
+        if (this.#core.copy !== undefined) {
+          ended = { why: "closed" };
+          break;
+        }
         phase = "no_space";
         continue;
       }
       const outcome = this.#core.receive(item);
+      if (outcome.kind === "replaced") {
+        ended = goneOf(outcome.was, outcome.now);
+        break;
+      }
       switch (outcome.kind) {
         case "snapshot":
           // What came before a snapshot is superseded by it.
@@ -316,7 +384,7 @@ export class LiveStore {
     const settled = applied && this.#pending.feed(requests, this.#core.cursor);
     if (!reset && changes.length === 0 && !settled) {
       if (phase !== undefined) this.set({ phase });
-      return;
+      return ended;
     }
     const held = this.#core.publish();
     if (held !== undefined) {
@@ -344,6 +412,7 @@ export class LiveStore {
       for (const listener of this.#touchListeners) listener({ tasks: touched, launches, reset });
       for (const listener of this.#changeListeners) listener({ changes, reset });
     }
+    return ended;
   }
 
   /** The pending overlays changed: the tasks the views see are made again. */

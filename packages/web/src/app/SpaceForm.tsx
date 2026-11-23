@@ -86,7 +86,7 @@ function Field({
   );
 }
 
-/** What the service said when it refused, or the page's own words. */
+/** What the service said when it refused, with its next step, or the page's own words. */
 function useFailure(): (error: unknown, fallback: string) => string | undefined {
   const auth = useAuth();
   return (error, fallback) => {
@@ -94,7 +94,8 @@ function useFailure(): (error: unknown, fallback: string) => string | undefined 
       auth.signedOut();
       return undefined;
     }
-    return error instanceof Refused && error.said !== undefined ? error.said : fallback;
+    if (!(error instanceof Refused) || error.said === undefined) return fallback;
+    return error.hint === undefined ? error.said : `${error.said} ${error.hint}`;
   };
 }
 

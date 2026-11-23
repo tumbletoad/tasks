@@ -168,6 +168,50 @@ export interface SpaceHead {
   readonly id: string;
   readonly name: string;
   readonly ref_prefix: string;
+  /**
+   * The copy of the space the snapshot was read from (the service's copy token). A tab's calls
+   * name the copy it loaded, and the service refuses them once another copy is served.
+   */
+  readonly copy?: string;
+  /** The space's folder, as the person reads it (the home as `~`). */
+  readonly folder?: string;
+  /** The space takes no change: why, a fixed word, and the service's words with the way out. */
+  readonly read_only?: { readonly reason: string; readonly message?: string };
+  /** A restored copy not claimed: when it was restored, and the backup file it came from. */
+  readonly restored?: { readonly at: string; readonly backup?: string };
+}
+
+/** A restored copy's record, checked by its shape. */
+function restoredOf(value: unknown): SpaceHead["restored"] {
+  if (!isRecord(value) || !isString(value["at"])) return undefined;
+  return {
+    at: value["at"],
+    ...(isString(value["backup"]) ? { backup: value["backup"] } : {}),
+  };
+}
+
+/** Why the space takes no change, checked by its shape. */
+function readOnlyOf(value: unknown): SpaceHead["read_only"] {
+  if (!isRecord(value) || !isString(value["reason"])) return undefined;
+  return {
+    reason: value["reason"],
+    ...(isString(value["message"]) ? { message: value["message"] } : {}),
+  };
+}
+
+/** The `space` of a snapshot, checked by its shape. */
+function headOf(space: Record<string, unknown> & { id: string }): SpaceHead {
+  const readOnly = readOnlyOf(space["read_only"]);
+  const restored = restoredOf(space["restored"]);
+  return {
+    id: space.id,
+    name: isString(space["name"]) ? space["name"] : "",
+    ref_prefix: isString(space["ref_prefix"]) ? space["ref_prefix"] : "",
+    ...(isString(space["copy"]) ? { copy: space["copy"] } : {}),
+    ...(isString(space["folder"]) ? { folder: space["folder"] } : {}),
+    ...(readOnly === undefined ? {} : { read_only: readOnly }),
+    ...(restored === undefined ? {} : { restored }),
+  };
 }
 
 /** The applied-through cursor (A1 3.7): the space's authority and the last seq accounted for. */
@@ -563,11 +607,7 @@ export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" 
       if (!isRecord(space) || !isString(space["id"]) || cursor === undefined) return undefined;
       return {
         type: "snapshot",
-        space: {
-          id: space["id"],
-          name: isString(space["name"]) ? space["name"] : "",
-          ref_prefix: isString(space["ref_prefix"]) ? space["ref_prefix"] : "",
-        },
+        space: headOf({ ...space, id: space["id"] }),
         cursor,
         tasks: rowsOf(value["tasks"], taskRow),
         areas: rowsOf(value["areas"], areaRow),
