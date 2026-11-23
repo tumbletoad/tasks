@@ -200,7 +200,7 @@ export function TaskPage({ task }: { readonly task: string }) {
               area_id: [...state.areas.values()].find((a) => a.title === known.facts.area)?.id,
             });
   // The route's space, which may name one copy: the snapshot's ID would mean the space's other one.
-  const space = live.spaceId;
+  const space = live.address;
   const ref = row?.ref ?? (known !== undefined && "facts" in known ? known.facts.ref : task);
   useEffect(() => {
     if (resolved?.kind === "gone") say(t("task.gone"));

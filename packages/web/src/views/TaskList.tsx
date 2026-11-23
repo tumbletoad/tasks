@@ -690,7 +690,7 @@ export function TaskList({
         { text, request, another = false }: OpenWith = {},
       ) => {
         const key = `open\n${task.id}\n${instance.key}`;
-        const name = openName(live.spaceId ?? "", task.id, instance.key);
+        const name = openName(live.address ?? "", task.id, instance.key);
         const asked = openAsked(another, text, request);
         const launch = (markFolder: boolean): Promise<Receipt | undefined> => {
           watched.current.add(task.id);
@@ -708,7 +708,7 @@ export function TaskList({
               refuse(task.id, undefined);
               shown(task, receipt);
               loadBusy();
-              const space = live.spaceId;
+              const space = live.address;
               if (text !== undefined && space !== undefined && opened.note !== undefined) {
                 savedWords(space, task.id, text);
               }
@@ -837,7 +837,7 @@ export function TaskList({
       run: (task, instance, text) => {
         watched.current.add(task.id);
         const asked = `${instance.key}\n${text ?? ""}`;
-        const name = runName(live.spaceId ?? "", task.id);
+        const name = runName(live.address ?? "", task.id);
         const id = unansweredRuns.idFor(name, asked);
         return api
           .startRun(task.id, instance.key, id, text)
@@ -910,7 +910,7 @@ export function TaskList({
         else edits.checkOff(task);
       },
       ask: (task, field) => {
-        if (live.spaceId !== undefined) askFor(live.spaceId, task.id, field);
+        if (live.address !== undefined) askFor(live.address, task.id, field);
       },
       current: (task) => {
         setCurrent(task.id);

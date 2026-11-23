@@ -154,7 +154,8 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     expect(live.getState().phase).toBe("live");
     expect(live.getState().space?.read_only).toEqual(why);
     // Its kept text is kept under the copy's address, apart from the original's.
-    expect(live.spaceId).toBe(copy);
+    expect(live.address).toBe(copy);
+    expect(live.spaceId).toBe(SPACE);
     // A gap asks again for the copy, never for the space's ID (which means the original).
     receive(batch(7, 8));
     expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: copy });

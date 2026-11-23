@@ -88,7 +88,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const { singleKeys } = useMachine();
   const mac = useMemo(isMac, []);
   const keyLabel = useKeyLabel();
-  const space = live.spaceId ?? "";
+  const space = live.address ?? "";
   const field = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState(() => readDraft(space, task.id));
   /** The text on screen, for answers that arrive later. */

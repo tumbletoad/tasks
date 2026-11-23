@@ -121,7 +121,7 @@ export function TodayPage({ task, onExpand }: TodayProps) {
 function useFinished(clock: Clock): FinishedCounts | undefined {
   const { api, live } = useContext(Session);
   const { today, timeZone } = clock;
-  const day = `${live.spaceId ?? ""} ${today} ${timeZone}`;
+  const day = `${live.address ?? ""} ${today} ${timeZone}`;
   const [found, setFound] = useState<{ day: string; counts: FinishedCounts } | undefined>();
   useEffect(() => {
     let alive = true;
@@ -181,7 +181,7 @@ function Day({
   const t = useT();
   const intl = useIntl();
   const { live } = useContext(Session);
-  const space = live.spaceId ?? "";
+  const space = live.address ?? "";
   const date = t("row.fullDate", {
     weekday: formatDay(clock.today, clock.locale, { weekday: "long" }),
     day: Number(clock.today.slice(8, 10)),

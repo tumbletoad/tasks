@@ -95,12 +95,17 @@ export class Live {
     return this.store.onChanges(listener);
   }
 
-  /**
-   * The tab's space as its route names it (one copy's address, or the space's ID), else the first
-   * snapshot's ID: what its feed subscribes to, and what the text it keeps is kept under, so a
-   * restored copy and its original never share a draft.
-   */
+  /** The tab's space ID, once known: what the service's rows name a space by. */
   get spaceId(): string | undefined {
+    return this.store.space;
+  }
+
+  /**
+   * The tab's space as its route names it (one copy's address, or the space's ID), else its ID:
+   * what its feed subscribes to, what its links name, and what the text it keeps is kept under,
+   * so a restored copy and its original never share a draft.
+   */
+  get address(): string | undefined {
     return this.#options.route.space ?? this.store.space;
   }
 
@@ -297,7 +302,7 @@ export class Live {
 
   #subscribe(cursor: Cursor | undefined): void {
     const message: Record<string, unknown> = { type: "subscribe" };
-    const space = this.spaceId;
+    const space = this.address;
     if (space !== undefined) message["space"] = space;
     if (cursor !== undefined) message["cursor"] = cursor;
     // Without a socket, the next `hello` subscribes: from no cursor while a snapshot is awaited.
