@@ -220,7 +220,7 @@ Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 | `--remove-source` | `remove_sources` | string | Source keys or URLs to unlink (repeatable) |
 | `--reason` | `reason` | string | Why, shown in history |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
-| `title=` | `set.title` | string | Title |
+| `title=` | `set.title` | string | Title: read skill writing-tasks first |
 | `summary=` | `set.summary` | string | One line: the next step |
 | `status=` | `set.status` | string | A status of the space |
 | `inbox=` | `set.inbox` | boolean | In the Inbox |

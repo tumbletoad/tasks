@@ -171,7 +171,13 @@ import {
   type DigestFolder,
 } from "./task-view.ts";
 import { readFinished } from "./task-rows.ts";
-import { listSkills, readSkills, servedText, type Skill } from "../skills/index.ts";
+import {
+  listSkills,
+  readSkills,
+  servedText,
+  type Catalog,
+  type Skill,
+} from "../skills/index.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
 export interface ServedSpace {
@@ -1872,6 +1878,12 @@ function withLinks(text: string, links: unknown): string {
 const drafts = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
 
+/** The list a session's first call gives: every skill, and the folders it did not read. */
+const listFields = ({ skills, unread }: Catalog): Record<string, unknown> => ({
+  skills: skills.map(skillRow),
+  ...(unread === 0 ? {} : { skills_unread: unread }),
+});
+
 /** A skill as an answer lists it: its name, when to read it, and why the user's file is unused. */
 function skillRow(skill: Skill): Record<string, unknown> {
   const file = skill.path === undefined ? "The user's file" : `The user's file ${skill.path}`;
@@ -1941,7 +1953,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...(read.missing.length === 0 ? {} : { missing: read.missing }),
       };
     } else {
-      skillFields = { skills: (await listSkills(call.host.skillsFolder)).skills.map(skillRow) };
+      skillFields = listFields(await listSkills(call.host.skillsFolder));
     }
     return {
       as_of: status.space.asOf,
@@ -2084,7 +2096,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     }
     // A read by launch is a session's first call: it lists the skills, as status does.
     if (launch !== undefined) {
-      answer["skills"] = (await listSkills(call.host.skillsFolder)).skills.map(skillRow);
+      Object.assign(answer, listFields(await listSkills(call.host.skillsFolder)));
     }
     // Connected only once the agent has its whole answer, the person's request included.
     if (launch !== undefined) await markConnected(call, launch);

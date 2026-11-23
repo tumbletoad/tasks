@@ -10,6 +10,7 @@ import {
   SourceOutput,
   SessionTask,
   SkillRow,
+  SkillsUnread,
   TaskRow,
   WrapState,
   patterns,
@@ -261,6 +262,7 @@ export const TaskGetResult = z.union([
     task: TaskDetail.describe("The task"),
     notes: NamedNotes,
     skills: Skills,
+    skills_unread: SkillsUnread,
   }),
   z.strictObject({
     view: z.literal("sections").describe("The sections asked for, in full"),
@@ -272,6 +274,7 @@ export const TaskGetResult = z.union([
     before: z.string().describe("Paging token for the rest").optional(),
     notes: NamedNotes,
     skills: Skills,
+    skills_unread: SkillsUnread,
   }),
 ]);
 

@@ -341,6 +341,14 @@ export const SkillRow = z.strictObject({
   text: z.string().describe("The skill: the user's instructions, when asked for").optional(),
 });
 
+/** The user's skill folders a list does not read, past its cap. */
+export const SkillsUnread = z
+  .int()
+  .min(1)
+  .max(1_000_000)
+  .describe("Skill folders not read, past the cap: one is read only by its name")
+  .optional();
+
 /** An instant in milliseconds since the epoch. */
 const Millis = z.int().min(-8_640_000_000_000_000).max(8_640_000_000_000_000);
 /** A commit's sequence number, or a count. */

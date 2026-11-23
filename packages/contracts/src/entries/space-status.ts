@@ -7,6 +7,7 @@ import {
   SKILL_NAME,
   SKILL_NAME_CHARS,
   SkillRow,
+  SkillsUnread,
   TaskRef,
   TaskRow,
   idPattern,
@@ -115,6 +116,7 @@ export const SpaceStatusResult = z.strictObject({
     .describe("The sections asked for with include")
     .optional(),
   skills: z.array(SkillRow).describe("The user's skills: read one with skills").optional(),
+  skills_unread: SkillsUnread,
   asked: z
     .array(SkillRow)
     .max(MAX_SKILLS)

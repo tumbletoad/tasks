@@ -396,7 +396,8 @@ export function listLine(name: string, when: string | undefined, unused: boolean
 
 /**
  * The list of skills a session's first call ends with: at most SKILL_LIST_ROWS lines and
- * SKILL_LIST_BYTES in all, and a line that counts the rest. Empty without skills.
+ * SKILL_LIST_BYTES in all, a line that counts the rest, and one that counts the folders the list
+ * did not read. Empty without skills.
  */
 export function listText(
   skills: readonly {
@@ -405,15 +406,24 @@ export function listText(
     readonly problem?: string | undefined;
   }[],
   status: string,
+  unread = 0,
 ): string {
   if (skills.length === 0) return "";
   const more = (rest: number) =>
-    `  +${String(rest)} more, not listed here: the user lists them all with ${CLI_NAME} skills.`;
+    `  +${String(rest)} more, not listed here: the user lists them with ${CLI_NAME} skills.`;
+  const notRead =
+    unread > 0
+      ? [
+          `  +${String(unread)} more of the user's skill folders were not read: one past the first ${String(SKILL_FOLDERS)} is read only by its name.`,
+        ]
+      : [];
   const lines = [
     `Skills, the user's ways of working: before you act, read the ones that apply with ${status} skills [names].`,
   ];
-  // Room for the closing line, whatever its count.
-  const room = SKILL_LIST_BYTES - utf8Bytes(more(skills.length)) - 1;
+  // Room for the closing lines, whatever the count.
+  const room =
+    SKILL_LIST_BYTES -
+    [more(skills.length), ...notRead].reduce((sum, line) => sum + 1 + utf8Bytes(line), 0);
   let used = utf8Bytes(lines[0] ?? "");
   for (const skill of skills.slice(0, SKILL_LIST_ROWS)) {
     const line = listLine(skill.name, skill.when, skill.problem !== undefined);
@@ -423,6 +433,7 @@ export function listText(
   }
   const shown = lines.length - 1;
   if (shown < skills.length) lines.push(more(skills.length - shown));
+  lines.push(...notRead);
   return lines.join("\n");
 }
 

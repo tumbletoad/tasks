@@ -12,7 +12,7 @@ import type { WriteRequest } from "@ttasks/storage";
 import { toolCaller } from "../src/mcp/index.ts";
 import { opCall, type Binding, type Caller, type OpsHost } from "../src/ops/index.ts";
 import { DATA_WORD } from "../src/mcp/text.ts";
-import { DEFAULTS, USER_LABEL } from "../src/skills/index.ts";
+import { DEFAULTS, SKILL_FOLDERS, USER_LABEL } from "../src/skills/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { grantHome } from "./ops-helpers.ts";
 
@@ -358,6 +358,21 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
       expect(named(read["skills"], "ticket-export")).toBeDefined();
       // A read by task is no first call: no list.
       expect(await call("task.get", { task: ref })).not.toHaveProperty("skills");
+    },
+    LONG,
+  );
+
+  test(
+    "status and a read by launch count the folders the list did not read",
+    async () => {
+      for (let n = 0; n < SKILL_FOLDERS + 2; n += 1) {
+        writeSkill(`own-${String(n).padStart(3, "0")}`, "A skill.\n");
+      }
+      expect((await call("space.status", {}))["skills_unread"]).toBe(2);
+      expect(await statusText({})).toMatch(/\+2 more of the user's skill folders were not read/u);
+      const [ref = ""] = await add("A task opened with many skills");
+      const launch = await w.launch(ref);
+      expect((await call("task.get", { launch: launch.reference }))["skills_unread"]).toBe(2);
     },
     LONG,
   );

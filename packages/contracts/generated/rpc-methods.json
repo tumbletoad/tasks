@@ -2641,6 +2641,12 @@
             },
             "type": "array"
           },
+          "skills_unread": {
+            "description": "Skill folders not read, past the cap: one is read only by its name",
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": "integer"
+          },
           "space": {
             "additionalProperties": false,
             "description": "The space this session uses",
@@ -3982,6 +3988,12 @@
                 },
                 "type": "array"
               },
+              "skills_unread": {
+                "description": "Skill folders not read, past the cap: one is read only by its name",
+                "maximum": 1000000,
+                "minimum": 1,
+                "type": "integer"
+              },
               "task": {
                 "additionalProperties": false,
                 "description": "The task",
@@ -5239,6 +5251,12 @@
                 },
                 "type": "array"
               },
+              "skills_unread": {
+                "description": "Skill folders not read, past the cap: one is read only by its name",
+                "maximum": 1000000,
+                "minimum": 1,
+                "type": "integer"
+              },
               "task": {
                 "additionalProperties": false,
                 "description": "The task",
@@ -6016,7 +6034,7 @@
                 "type": "string"
               },
               "title": {
-                "description": "Title",
+                "description": "Title: read skill writing-tasks first",
                 "maxLength": 300,
                 "type": "string"
               },

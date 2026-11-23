@@ -869,7 +869,7 @@
         "keys": [
           {
             "field": "set.title",
-            "help": "Title",
+            "help": "Title: read skill writing-tasks first",
             "key": "title",
             "type": "string"
           },

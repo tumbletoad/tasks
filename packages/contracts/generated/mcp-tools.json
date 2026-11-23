@@ -989,7 +989,7 @@
                 "type": "string"
               },
               "title": {
-                "description": "Title",
+                "description": "Title: read skill writing-tasks first",
                 "maxLength": 200,
                 "type": "string"
               },

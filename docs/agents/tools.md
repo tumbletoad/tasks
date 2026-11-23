@@ -1007,6 +1007,7 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `skills[].when` | string | no | When to read it |
 | `skills[].problem` | string | no | Why the user's file for it is not used |
 | `skills[].text` | string | no | The skill: the user's instructions, when asked for |
+| `skills_unread` | integer, 1 to 1000000 | no | Skill folders not read, past the cap: one is read only by its name |
 | `asked` | object[], max 6 items | no | The skills asked for, with their text or why they cannot be used |
 | `asked[].name` | string | yes | Skill name |
 | `asked[].when` | string | no | When to read it |
@@ -1826,6 +1827,7 @@ When `view` is `"digest"`:
 | `skills[].when` | string | no | When to read it |
 | `skills[].problem` | string | no | Why the user's file for it is not used |
 | `skills[].text` | string | no | The skill: the user's instructions, when asked for |
+| `skills_unread` | integer, 1 to 1000000 | no | Skill folders not read, past the cap: one is read only by its name |
 
 When `view` is `"sections"`:
 
@@ -1936,6 +1938,7 @@ When `view` is `"sections"`:
 | `skills[].when` | string | no | When to read it |
 | `skills[].problem` | string | no | Why the user's file for it is not used |
 | `skills[].text` | string | no | The skill: the user's instructions, when asked for |
+| `skills_unread` | integer, 1 to 1000000 | no | Skill folders not read, past the cap: one is read only by its name |
 
 ### Examples
 
@@ -2422,7 +2425,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
 | Faces | MCP `update_task`, CLI `ttasks set`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict` |
-| Definition, estimated tokens | 1701, reported |
+| Definition, estimated tokens | 1717, reported |
 | Result budget, estimated tokens | typical 80, max 400 |
 
 ### Input
@@ -2431,7 +2434,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 |---|---|---|---|
 | `task` | string, max 40 | no | Task ref (M-14) or ID; default: this session's task |
 | `set` | object | no | Fields to change |
-| `set.title` | string, max 300; agents: string, max 200 | no | Title |
+| `set.title` | string, max 300; agents: string, max 200 | no | Title: read skill writing-tasks first |
 | `set.summary` | string, max 400; agents: string, max 240 | no | One line: the next step |
 | `set.status` | string, max 40 | no | A status of the space |
 | `set.inbox` | boolean | no | In the Inbox |
