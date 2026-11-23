@@ -547,10 +547,10 @@ export interface SourceUnlink {
 }
 
 /**
- * `source.relink`: brings back a link that `source.unlink` removed, as the same pair with its role
- * and position. When another active task holds the source's key now, the key stays there: the task
- * gets the source as plain context instead, its key as the reference, as `source.add` links a key
- * held elsewhere. A live link is unchanged. Needs the link's version or a base.
+ * `source.relink`: brings back a link that `source.unlink` removed, as the same pair with its role,
+ * position and version. While another active task holds the source's key it is a conflict on that
+ * task's link: captures of the item go there. A live link is unchanged. Needs the link's version
+ * or a base.
  */
 export interface SourceRelink {
   kind: "source.relink";

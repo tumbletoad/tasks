@@ -125,7 +125,6 @@ import {
   isHistoryOperation,
   LAUNCH_FAIL_REASONS,
   LAUNCH_UNKNOWN_REASONS,
-  LINK_ROLES,
   normaliseStored,
   REQUEST_ID,
   RequestProblem,
@@ -600,14 +599,6 @@ const SQL = {
     "UPDATE task_sources SET removed_at = NULL WHERE task_id = $task AND source_id = $source",
   removeLink:
     "UPDATE task_sources SET removed_at = $at WHERE task_id = $task AND source_id = $source",
-  /** Every task linked to a source, live or removed: who holds its key. */
-  linksOfSource:
-    "SELECT l.task_id, l.removed_at, t.lifecycle, t.deleted_at FROM task_sources l " +
-    "JOIN tasks t ON t.id = l.task_id WHERE l.source_id = $source ORDER BY t.ref",
-  /** A live source the task has as plain context for a key another task holds. */
-  plainOf:
-    "SELECT 1 FROM task_sources l JOIN sources s ON s.id = l.source_id WHERE l.task_id = $task " +
-    "AND l.removed_at IS NULL AND s.deleted_at IS NULL AND s.source_key IS NULL AND s.ref = $key",
   undoOf: "SELECT undo_of FROM commits WHERE seq = $seq",
   linkVersions:
     "UPDATE task_sources SET version = $seq, fv = $fv, fp = $fp " +
@@ -1793,59 +1784,38 @@ export class SpaceWriter {
               );
             }
           }
-          const active = (t: Id<"t">, own: unknown): boolean =>
-            (lifecycles.get(t) ?? own) === "active";
-          const holder =
-            op.kind === "source.unlink" ||
-            key === null ||
-            !active(parent, tasks.get(parent)?.lifecycle)
-              ? undefined
-              : conn
-                  .prepare(SQL.linksOfSource)
-                  .all({ source: op.source })
-                  .map((row) => ({
-                    row,
-                    task: new RowReader("task_sources", row).id("task_id", "t"),
-                  }))
-                  .find(({ row, task: other }) => {
-                    if (other === parent) return false;
-                    const linked = links.get(`${other}|${op.source}`) ?? row["removed_at"] === null;
-                    const deleted = tombstones.get(other) ?? row["deleted_at"] !== null;
-                    return linked && !deleted && active(other, row["lifecycle"]);
-                  })?.task;
-          if (holder !== undefined && key !== null) {
-            // The key stays with the task that holds it now: this one gets the source back as
-            // plain context, its key as the reference, as source.add links a key held elsewhere.
-            if (conn.prepare(SQL.plainOf).get({ task: parent, key }) !== undefined) {
-              return { i, op, target: op.source, task: parent, touches: [], record, skip: true };
+          if (op.kind === "source.relink" && key !== null) {
+            // A link has one identity: while another active task holds its key, captures of the
+            // item go there, and putting this link back would make a second holder. Refused,
+            // naming each holder's link; one the request itself made has no row to name.
+            const holders = dedupe.match([key], false).active.filter((other) => other !== parent);
+            const touches: Touch[] = [];
+            for (const holder of holders) {
+              const held = drafts.has(holder)
+                ? undefined
+                : conn.prepare(SQL.link).get({ task: holder, source: op.source });
+              if (held === undefined || held["removed_at"] !== null) {
+                return problem(
+                  "INVALID_TRANSITION",
+                  "Another task of the request holds the source's key",
+                  i,
+                  "source",
+                );
+              }
+              task(holder, "source");
+              const heldId = `${holder}|${op.source}`;
+              starts.set(rowKey("task_sources", heldId), linkState(held));
+              touches.push({
+                entity: "task_sources",
+                id: heldId,
+                field: "removed",
+                task: holder,
+                held: true,
+              });
             }
-            const ref = r.optText("ref");
-            const who = r.optText("who");
-            const url = r.optText("url");
-            const sent = source["at"];
-            const plain: Operation = {
-              kind: "source.add",
-              task: op.task,
-              source: {
-                kind: r.text("kind") as SourceFields["kind"],
-                title: r.text("title"),
-                ref: ref ?? key,
-                ...(who === null ? {} : { who }),
-                ...(url === null ? {} : { url }),
-                ...(typeof sent === "number" ? { at: sent } : {}),
-              },
-              role: new RowReader("task_sources", link).oneOf("role", LINK_ROLES),
-            };
-            dedupe.plain(key, parent);
-            return {
-              i,
-              op: plain,
-              target: newId("s", random),
-              task: parent,
-              touches: [],
-              record: { task: parent, ...inputOf(plain, "task") },
-              heldBy: holder,
-            };
+            if (touches.length > 0) {
+              return { i, op, target: op.source, task: parent, touches, record };
+            }
           }
           links.set(id, op.kind === "source.relink");
           if (key !== null) {

@@ -1,6 +1,7 @@
 // Detaching a source from a task and putting it back (`source.unlink`, `source.relink`): the link
-// is removed and brought back as the same pair, the source and every other link stay, a key held
-// elsewhere by then stays there, and undo and redo take either step back. Fixture text only.
+// is removed and brought back as the same pair, the source and every other link stay, put back is
+// refused while another active task holds the key, and undo and redo take either step back. Fixture
+// text only.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
 import {
@@ -213,43 +214,102 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
     expect(link(a, fix1)["removed_at"]).toBeNull();
     applied(unlink(a, fix1));
     expect(link(a, fix1)["removed_at"]).not.toBeNull();
-    // Put back on a finished task restores the link as it was, also beside an active holder: a
-    // finished task makes no second active holder.
-    const c = capture([ticket("jira:FIX-1")]);
     applied(relink(a, fix1));
-    expect(holders("jira:FIX-1")).toEqual([a, c].sort());
+    expect(holders("jira:FIX-1")).toEqual([a]);
   });
 
-  test("put back while another active task holds the key: the key stays there, the task gets the source as context", () => {
+  test("put back while another active task holds the key is a conflict on that task's link, and nothing is copied", () => {
     const a = capture([{ ...ticket("jira:FIX-1"), who: "Ana", url: "https://jira.example/FIX-1" }]);
     const fix1 = sourceOf("jira:FIX-1");
     applied(unlink(a, fix1));
     const c = capture([ticket("jira:FIX-1")]);
     const cRef = `M-${String(one("SELECT ref FROM tasks WHERE id = $c", { c }))}`;
-    const back = applied(relink(a, fix1));
-    expect(back.results[0]).toMatchObject({ status: "created", task: a, held_by: cRef });
-    // The original link stays detached; a plain source, the key as its reference, is linked.
-    expect(link(a, fix1)["removed_at"]).not.toBeNull();
-    const plain = fx.reader
-      .prepare(
-        "SELECT s.* FROM task_sources ts JOIN sources s ON s.id = ts.source_id " +
-          "WHERE ts.task_id = $a AND ts.removed_at IS NULL",
-      )
-      .all({ a });
-    expect(plain).toMatchObject([
-      { source_key: null, ref: "jira:FIX-1", title: "Ticket jira:FIX-1", who: "Ana" },
+    const sources = Number(one("SELECT count(*) FROM sources"));
+    const refused = relink(a, fix1);
+    expectStatus(refused, "conflict");
+    expect(refused.conflicts).toMatchObject([
+      { entity: "task_sources", id: `${c}|${fix1}`, task: c, ref: cRef, field: "removed" },
     ]);
+    // Nothing changed: the link stays detached, no second source or link was made.
+    expect(link(a, fix1)["removed_at"]).not.toBeNull();
+    expect(Number(one("SELECT count(*) FROM sources"))).toBe(sources);
+    expect(Number(one("SELECT count(*) FROM task_sources WHERE task_id = $a", { a }))).toBe(1);
     expect(holders("jira:FIX-1")).toEqual([c]);
-    // Putting it back again changes nothing.
-    expectStatus(relink(a, fix1), "unchanged");
-    // The next capture still goes to C.
+    // A finished task is refused alike: reopened, it would be a second holder.
+    applied(send("codex", [{ kind: "task.complete", task: a }], { base: fx.base() }));
+    expectStatus(relink(a, fix1), "conflict");
+    applied(send("codex", [{ kind: "task.reopen", task: a }], { base: fx.base() }));
+    // Once C no longer holds the key, put back works and captures find A again.
+    applied(send("codex", [{ kind: "task.complete", task: c }], { base: fx.base() }));
+    applied(relink(a, fix1));
+    expect(link(a, fix1)["removed_at"]).toBeNull();
     const next = newId("t");
     const found = send("codex", [
       { kind: "task.create", id: next, title: "Answer again" },
       { kind: "source.add", task: next, source: ticket("jira:FIX-1") },
     ]);
     expectStatus(found, "unchanged");
-    expect(found.results[0]).toMatchObject({ status: "existing", task: c });
+    expect(found.results[0]).toMatchObject({ status: "existing", task: a });
+  });
+
+  test("a holder that detached the source itself, or was deleted, holds the key no more", () => {
+    const a = capture([ticket("jira:FIX-1")]);
+    const fix1 = sourceOf("jira:FIX-1");
+    applied(unlink(a, fix1));
+    const c = capture([ticket("jira:FIX-1")]);
+    applied(unlink(c, fix1));
+    applied(relink(a, fix1));
+    expect(holders("jira:FIX-1")).toEqual([a]);
+    applied(unlink(a, fix1));
+    applied(relink(c, fix1));
+    applied(send("human", [{ kind: "task.delete", task: c }], { base: fx.base() }));
+    applied(relink(a, fix1));
+    expect(holders("jira:FIX-1").filter((t) => t === a)).toEqual([a]);
+  });
+
+  test("a put back made from a base before a later detach is a conflict", () => {
+    const a = capture([ticket("jira:FIX-1")]);
+    const fix1 = sourceOf("jira:FIX-1");
+    applied(unlink(a, fix1));
+    const first = fx.base();
+    applied(relink(a, fix1));
+    applied(unlink(a, fix1));
+    const stale = relink(a, fix1, "human", { base: first });
+    expectStatus(stale, "conflict");
+    expect(stale.conflicts).toMatchObject([{ entity: "task_sources", id: `${a}|${fix1}` }]);
+    expect(link(a, fix1)["removed_at"]).not.toBeNull();
+  });
+
+  test("one request judges holders on what it built so far: a task it creates with the key keeps a put back out", () => {
+    const a = capture([ticket("jira:FIX-1")]);
+    const fix1 = sourceOf("jira:FIX-1");
+    applied(unlink(a, fix1));
+    const b = newId("t");
+    const refused = send(
+      "codex",
+      [
+        { kind: "task.create", id: b, title: "Other work" },
+        { kind: "source.add", task: b, source: ticket("jira:FIX-1") },
+        { kind: "source.relink", task: a, source: fix1 },
+      ],
+      { base: fx.base() },
+    );
+    expectStatus(refused, "rejected");
+    expect(refused.error).toMatchObject({ code: "INVALID_TRANSITION", op: 2, field: "source" });
+    expect(holders("jira:FIX-1")).toEqual([]);
+    // Put back first, then the capture: the capture finds A.
+    const found = send(
+      "codex",
+      [
+        { kind: "source.relink", task: a, source: fix1 },
+        { kind: "task.create", id: b, title: "Other work" },
+        { kind: "source.add", task: b, source: ticket("jira:FIX-1") },
+      ],
+      { base: fx.base() },
+    );
+    expectStatus(found, "applied");
+    expect(found.results[1]).toMatchObject({ status: "existing", task: a });
+    expect(holders("jira:FIX-1")).toEqual([a]);
   });
 
   test("an agent detaches a link, and the person puts it back", () => {
