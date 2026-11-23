@@ -38,3 +38,25 @@ export function titleDraftTasks(space: string): string[] {
   const prefix = `title.${space}.`;
   return browserKept.names(prefix).map((name) => name.slice(prefix.length));
 }
+
+/**
+ * The page is going away (a reload, a close): a browser may take focus from the field then, and
+ * that is no leaving of it. A navigation that did not happen ends with the person's next key or
+ * pointer.
+ */
+let unloading = false;
+if (typeof window !== "undefined") {
+  const going = () => {
+    unloading = true;
+  };
+  const staying = () => {
+    unloading = false;
+  };
+  window.addEventListener("beforeunload", going);
+  window.addEventListener("pagehide", going);
+  window.addEventListener("pageshow", staying);
+  window.addEventListener("pointerdown", staying, { capture: true });
+  window.addEventListener("keydown", staying, { capture: true });
+}
+
+export const pageLeaving = (): boolean => unloading;

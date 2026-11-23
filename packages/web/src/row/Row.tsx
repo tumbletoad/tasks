@@ -36,7 +36,7 @@ import type { RowActions } from "./actions.ts";
 import { tileClick, type BusyOf, type FolderRefusal } from "./launch.ts";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
-import { keepTitleDraft, readTitleDraft, TITLE_MAX } from "./title-draft.ts";
+import { keepTitleDraft, pageLeaving, readTitleDraft, TITLE_MAX } from "./title-draft.ts";
 import {
   ChevronUpIcon,
   ClockIcon,
@@ -416,8 +416,9 @@ function TitleEditor({
           }
         }}
         onBlur={(event) => {
-          // The window lost focus (another app, another tab): the field keeps it for its return.
-          if (!document.hasFocus()) return;
+          // The window lost focus (another app, another tab) or the page goes away: the field
+          // keeps what was typed for its return.
+          if (!document.hasFocus() || pageLeaving()) return;
           // Focus went to another control: it stays there. Nowhere: back to the title.
           finish(true, event.relatedTarget === null);
         }}
