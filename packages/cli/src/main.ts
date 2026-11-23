@@ -19,7 +19,7 @@ import { briefCommand, type BriefOptions } from "./brief.ts";
 import { folderVerb } from "./folders.ts";
 import { CLI_BUILD, readServiceRecord, stateDir } from "./connect.ts";
 import { doctor, type DoctorOptions } from "./doctor.ts";
-import { helpText, shortHelp } from "./help.ts";
+import { helpText, localCommand, shortHelp } from "./help.ts";
 import type { Io } from "./io.ts";
 import { isBridge, runBridge } from "./mcp.ts";
 import { openCommand, servicePortCommand, type OpenOptions } from "./open.ts";
@@ -112,6 +112,12 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
       const topic = command === "help" ? (args[0] ?? (globals.help ? "help" : undefined)) : command;
       io.stdout(helpText(topic));
       return 0;
+    }
+    // A person's input is never dropped unread: a command of its own that does not read it is
+    // refused it. Every generated verb reads it (runVerb).
+    const local = localCommand(command);
+    if (globals.input !== undefined && local !== undefined && local.input !== true) {
+      return printUsage(io, globals.json, `${CLI_NAME} ${command} takes no --input`);
     }
     switch (command) {
       case "version":

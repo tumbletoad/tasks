@@ -37,7 +37,8 @@ export function asAppError(error: unknown): unknown {
     : error;
 }
 
-async function readInput(io: Io, source: string): Promise<Record<string, unknown>> {
+/** `--input`'s JSON object, from its file or stdin. */
+export async function readInput(io: Io, source: string): Promise<Record<string, unknown>> {
   let text: string;
   try {
     text =

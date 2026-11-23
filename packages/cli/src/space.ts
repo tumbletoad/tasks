@@ -228,6 +228,19 @@ export interface Unnamed {
 }
 
 /**
+ * The space a command names itself: its argument, --space, else TTASKS_SPACE. A folder is made
+ * absolute here, so the service never reads it against its own working folder.
+ */
+export function namedSpace(io: Io, globals: Globals, given?: string): string | undefined {
+  const fromEnv = io.env["TTASKS_SPACE"];
+  const named = given ?? globals.space ?? (fromEnv === "" ? undefined : fromEnv);
+  if (named === undefined) return undefined;
+  return isAbsolute(named) || named.includes("/") || named.includes("\\")
+    ? absolute(io, named)
+    : named;
+}
+
+/**
  * The space a command names, in the order op/call takes it: its argument, --space, TTASKS_SPACE,
  * the machine's default space (`ttasks space use`), else the one space the service has. The
  * folder that serves it is sent, never its ID, so the service acts on the folder chosen here.
@@ -240,12 +253,8 @@ export async function whichSpace(
   call: (method: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>,
   unnamed: Unnamed = {},
 ): Promise<string> {
-  const fromEnv = io.env["TTASKS_SPACE"];
-  const named = given ?? globals.space ?? (fromEnv === "" ? undefined : fromEnv);
-  if (named !== undefined)
-    return isAbsolute(named) || named.includes("/") || named.includes("\\")
-      ? absolute(io, named)
-      : named;
+  const named = namedSpace(io, globals, given);
+  if (named !== undefined) return named;
   const result = await call("space/list", {});
   const live = (result["spaces"] as SpaceRow[])
     .filter((s) => s.state !== "closed")

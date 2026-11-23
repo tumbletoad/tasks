@@ -12,11 +12,12 @@
 // from an interactive command: a run may change anything their agent setup allows, without asking.
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { FINAL_RUN_STATES, RECORDED } from "@ttasks/contracts/runs";
-import { UsageError, type Globals } from "./args.ts";
+import { isRequestId, REQUEST_ID_RULE, UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
-import { asAppError, newRequestId } from "./verbs.ts";
+import { namedSpace } from "./space.ts";
+import { asAppError, newRequestId, readInput } from "./verbs.ts";
 
 /** `ttasks run --help` and `ttasks help run`. */
 export const RUN_HELP = `Usage: ${CLI_NAME} run <task> [--instance <id>] [--wait] [<request> | -]
@@ -33,6 +34,8 @@ export const RUN_HELP = `Usage: ${CLI_NAME} run <task> [--instance <id>] [--wait
   --wait             Wait for the run to end and print its answer
   <request>          Your words for the agent; - reads them from stdin. Without them it works
                      on the task.
+  --input <file>     The start as JSON, - reads it from stdin: task, request, instance and
+                     request_id. Arguments set their fields over it.
 A run has full access unless its instance names a narrower run_permission: it may do whatever
 your agent setup allows, without asking. Only you can start one, from a terminal.
 `;
@@ -74,7 +77,7 @@ const CLEANUP: Readonly<Record<string, string>> = {
 };
 
 /** A run for a person: its line, how its processes ended, then its answer. */
-function described(run: Shown): string {
+export function described(run: Shown): string {
   const out = [runLine(run)];
   const cleanup = typeof run["cleanup"] === "string" ? CLEANUP[run["cleanup"]] : undefined;
   if (cleanup !== undefined) out.push(cleanup);
@@ -101,9 +104,80 @@ function described(run: Shown): string {
         : run["answer_final"] === true
           ? "Answer"
           : "Its last message";
-    out.push("", `${what}:`, answer);
+    const cut =
+      run["answer_cut"] === true
+        ? ` (only its start: it was longer than ${PRODUCT_NAME} keeps)`
+        : "";
+    out.push("", `${what}${cut}:`, answer);
   }
   return `${out.join("\n")}\n`;
+}
+
+/** The fields `--input`'s JSON may give a start, as its arguments do. */
+const START_FIELDS: ReadonlySet<string> = new Set(["task", "request", "instance", "request_id"]);
+
+interface Start {
+  readonly task: string;
+  readonly instance: string | undefined;
+  readonly request: string | undefined;
+  readonly requestId: string | undefined;
+  readonly wait: boolean;
+}
+
+/**
+ * A start from `--input`'s JSON and the arguments, which set their fields over it as with every
+ * other verb: `<task>`, then `<request>` (`-` reads stdin), `--instance`, `--wait`.
+ */
+async function startOf(io: Io, globals: Globals, args: readonly string[]): Promise<Start> {
+  const base = globals.input === undefined ? {} : await readInput(io, globals.input);
+  for (const [field, value] of Object.entries(base)) {
+    if (!START_FIELDS.has(field)) {
+      throw new UsageError(
+        `${CLI_NAME} run takes no ${/^[a-z_]{1,40}$/.test(field) ? field : "such field"} in --input: it takes task, request, instance and request_id`,
+      );
+    }
+    if (typeof value !== "string") throw new UsageError(`--input's ${field} is a text`);
+  }
+  const from = (field: string): string | undefined => base[field] as string | undefined;
+  let instance = from("instance");
+  let wait = false;
+  const words: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i] ?? "";
+    if (arg === "--instance") {
+      instance = args[i + 1];
+      i += 1;
+      if (instance === undefined)
+        throw new UsageError(`${CLI_NAME} run --instance takes an instance ID`);
+    } else if (arg === "--wait") wait = true;
+    else if (arg.startsWith("--"))
+      throw new UsageError(`${CLI_NAME} run takes --instance and --wait`);
+    else words.push(arg);
+  }
+  if (words.length > 2) {
+    throw new UsageError(
+      `${CLI_NAME} run takes the request as one argument: put it in quotes, or use -`,
+    );
+  }
+  const task = words[0] ?? from("task");
+  if (task === undefined)
+    throw new UsageError(`${CLI_NAME} run takes a task, or list, show or stop`);
+  if (instance !== undefined && !/^[a-z0-9][a-z0-9-]{0,31}$/.test(instance)) {
+    throw new UsageError(`${CLI_NAME} run --instance takes an instance ID`);
+  }
+  let request = words[1] ?? from("request");
+  if (words[1] === "-") {
+    if (globals.input === "-") throw new UsageError("Only one argument can read stdin");
+    request = (await io.readStdin()).trim();
+  }
+  const givenId = from("request_id");
+  if (givenId !== undefined && !isRequestId(givenId)) {
+    throw new UsageError(`--input's request_id ${REQUEST_ID_RULE}`);
+  }
+  if (givenId !== undefined && globals.requestId !== undefined && givenId !== globals.requestId) {
+    throw new UsageError("--request-id and --input name two request IDs");
+  }
+  return { task, instance, request, requestId: globals.requestId ?? givenId, wait };
 }
 
 export async function runCommand(
@@ -119,11 +193,15 @@ export async function runCommand(
       timeoutMs: Math.max(globals.timeoutS, 60) * 1000,
     })) as Shown;
   };
-  const space = globals.space === undefined ? {} : { space: globals.space };
+  // Every request of the verb goes to one space: the one the person named, then the one the start
+  // was queued in, so a default that changes meanwhile moves nothing.
+  const named = namedSpace(io, globals);
+  let space: { space?: string } = named === undefined ? {} : { space: named };
   try {
     const [first, ...rest] = args;
-    if (first === undefined)
-      throw new UsageError(`${CLI_NAME} run takes a task, or list, show or stop`);
+    if ((first === "list" || first === "show" || first === "stop") && globals.input !== undefined) {
+      throw new UsageError(`${CLI_NAME} run ${first} takes no --input`);
+    }
     if (first === "list") {
       if (rest.length > 1 || rest.some((a) => a.startsWith("-"))) {
         throw new UsageError(`${CLI_NAME} run list takes at most one <task>`);
@@ -149,34 +227,11 @@ export async function runCommand(
       else io.stdout(first === "show" ? described(shown) : `${runLine(shown)}\n`);
       return 0;
     }
-    // A run of a task.
-    let instance: string | undefined;
-    let wait = false;
-    const words: string[] = [];
-    for (let i = 0; i < rest.length; i += 1) {
-      const arg = rest[i] ?? "";
-      if (arg === "--instance") {
-        instance = rest[i + 1];
-        i += 1;
-        if (instance === undefined || !/^[a-z0-9][a-z0-9-]{0,31}$/.test(instance)) {
-          throw new UsageError(`${CLI_NAME} run --instance takes an instance ID`);
-        }
-      } else if (arg === "--wait") wait = true;
-      else if (arg.startsWith("--"))
-        throw new UsageError(`${CLI_NAME} run takes --instance and --wait`);
-      else words.push(arg);
-    }
-    if (words.length > 1) {
-      throw new UsageError(
-        `${CLI_NAME} run takes the request as one argument: put it in quotes, or use -`,
-      );
-    }
-    const given = words[0];
-    const request = given === "-" ? (await io.readStdin()).trim() : given;
+    const { task, instance, request, requestId: givenId, wait } = await startOf(io, globals, args);
     // A start whose answer was lost may have queued the run: the same request ID finds it and
     // starts nothing twice. A script keeps the ID; a person reads it when a retry is the way out.
-    const requestId = globals.requestId ?? newRequestId();
-    if (globals.requestId === undefined && globals.json && !globals.quiet) {
+    const requestId = givenId ?? newRequestId();
+    if (givenId === undefined && globals.json && !globals.quiet) {
       io.stderr(`request ${requestId}\n`);
     }
     const retry = globals.quiet ? undefined : `Retry with: --request-id ${requestId}\n`;
@@ -185,7 +240,7 @@ export async function runCommand(
       io.onInterrupt?.(retry);
       started = await call("runs/start", {
         ...space,
-        task: first,
+        task,
         ...(instance === undefined ? {} : { instance }),
         ...(request === undefined || request === "" ? {} : { request }),
         request_id: requestId,
@@ -198,6 +253,7 @@ export async function runCommand(
       io.onInterrupt?.(undefined);
     }
     const id = String(started["id"]);
+    if (typeof started["space"] === "string") space = { space: started["space"] };
     if (!wait) {
       if (globals.json) io.stdout(`${JSON.stringify(started)}\n`);
       else {
