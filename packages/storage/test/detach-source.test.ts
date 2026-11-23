@@ -278,6 +278,12 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
     expectStatus(stale, "conflict");
     expect(stale.conflicts).toMatchObject([{ entity: "task_sources", id: `${a}|${fix1}` }]);
     expect(link(a, fix1)["removed_at"]).not.toBeNull();
+    // Captured on C meanwhile: still a conflict, and nothing is linked to A.
+    const c = capture([ticket("jira:FIX-1")]);
+    const sources = Number(one("SELECT count(*) FROM sources"));
+    expectStatus(relink(a, fix1, "human", { base: first }), "conflict");
+    expect(Number(one("SELECT count(*) FROM sources"))).toBe(sources);
+    expect(holders("jira:FIX-1")).toEqual([c]);
   });
 
   test("one request judges holders on what it built so far: a task it creates with the key keeps a put back out", () => {
