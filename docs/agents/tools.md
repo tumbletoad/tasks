@@ -467,7 +467,7 @@ Redo the change you undid last, as long as nobody changed its fields since.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `commit` | string, max 40 | no | The change you mean: refused unless it is the next one to redo |
+| `commit` | string, max 40 | no | The change you mean: refused unless it is one you undid |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 
 ### Output
@@ -480,6 +480,7 @@ Redo the change you undid last, as long as nobody changed its fields since.
 | `task_count` | integer, 0 to 9999999999 | no | How many tasks it changed; absent when they could not be read |
 | `as_of` | string | yes | The space's position when this answer was made |
 | `replayed` | boolean | no | True when a retry returned the stored result |
+| `passed_over` | string[] | no | Older changes it could not redo: they stay, and the next redo tries them again |
 
 ### Examples
 
@@ -961,7 +962,7 @@ When `found` is `true`:
 | `incarnation` | string | yes | The authority incarnation it was decided under |
 | `commit` | string | no | The commit it wrote |
 | `target` | string | no | An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo |
-| `set_aside` | string[] | no | A refused redo's: the later changes set aside with it, which build on it |
+| `passed_over` | string[] | no | A redo's: the undone changes it could not redo, which stay for the next redo |
 | `trash` | string[] | no | An undo or redo's UNDO_CONFLICT: the tasks it would move to the Trash |
 | `results` | object[], max 50 items | yes | One result per operation, the first 50 of an import's |
 | `results[].i` | integer, 0 to 999999 | yes | Index of the operation in the request |

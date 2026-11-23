@@ -4436,6 +4436,7 @@ async function historyResult(
     result: word,
     commit: opAt(result, 0).id,
     ...(tasks === undefined ? {} : { tasks: tasks.refs, task_count: tasks.count }),
+    ...(result.passed === undefined ? {} : { passed_over: result.passed }),
     ...(word === "partial"
       ? {
           unresolved: result.conflicts.map((c) => ({

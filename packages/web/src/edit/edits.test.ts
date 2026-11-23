@@ -1395,23 +1395,17 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     const shown = w.lastToast();
     const name = (by: string) => ({ id: "toast.who", values: { who: "other", by } });
     expect(shown?.text).toEqual({
-      id: "toast.redoSetAside",
+      id: "toast.workMore",
       values: {
-        later: 0,
-        work: {
-          id: "toast.workMore",
-          values: {
-            first: {
-              id: "toast.workNotes",
-              values: { name: name("Codex"), act: "added", count: 100, ref: "M-1" },
-            },
-            second: {
-              id: "toast.workLog",
-              values: { name: name("Claude"), act: "added", count: 1, ref: "M-1" },
-            },
-            count: 1,
-          },
+        first: {
+          id: "toast.workNotes",
+          values: { name: name("Codex"), act: "added", count: 100, ref: "M-1" },
         },
+        second: {
+          id: "toast.workLog",
+          values: { name: name("Claude"), act: "added", count: 1, ref: "M-1" },
+        },
+        count: 1,
       },
     });
     expect(shown?.action?.label).toEqual({ id: "toast.trashAnyway" });

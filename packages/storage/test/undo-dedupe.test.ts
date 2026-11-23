@@ -28,7 +28,7 @@ import {
   applyInversions,
   planInversions,
   readChanges,
-  redoTarget,
+  redoSteps,
   undoTarget,
 } from "../src/write/history.ts";
 import type {
@@ -271,8 +271,6 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
     const made = applied(send("codex", b.ops));
     expect(made.results[0]).toMatchObject({ status: "created", id: b.id });
     const source = String(made.results[1]?.id);
-    // Finished, B still holds the source row: the unique key alone keeps A's redo off.
-    lifecycle("task.complete", b.id);
 
     const seq = lastSeq();
     const refused = redo();
@@ -293,7 +291,11 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
     expect(refused.conflicts).toHaveLength(1);
     expect(lastSeq()).toBe(seq);
     expect(deleted(a.id)).toBe(true);
-    expect(redo().error?.code).toBe("NOTHING_TO_REDO");
+    // Finished, B still holds the source row: the unique key alone keeps A's redo off.
+    lifecycle("task.complete", b.id);
+    const again = redo();
+    expectStatus(again, "conflict");
+    expect(again.conflicts.map((c) => [c.entity, c.id])).toEqual([["sources", source]]);
     expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([b.id]);
   });
 
@@ -330,18 +332,60 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
     expect(refused.conflicts).toHaveLength(1);
     expect(lastSeq()).toBe(seq);
     expect(deleted(a.id)).toBe(true);
-    expect(redo().error?.code).toBe("NOTHING_TO_REDO");
 
-    // With B finished too, another such task comes back beside the finished ones, as dedupe new
-    // makes it.
+    // Once B is finished too, A comes back beside the finished tasks, as dedupe new makes it.
     lifecycle("task.complete", b.id);
-    const c = draft(["jira:FIX-1"], { dedupe: "new" });
-    applied(send("human", c.ops));
-    applied(undo());
     applied(redo());
-    expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([b.id, c.id, y.id].sort());
-    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([c.id]);
-    expect(probe(["jira:FIX-1"]).results[0]).toMatchObject({ status: "existing", id: c.id });
+    expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([a.id, b.id, y.id].sort());
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([a.id]);
+    expect(probe(["jira:FIX-1"]).results[0]).toMatchObject({ status: "existing", id: a.id });
+  });
+
+  test("a creation an active holder keeps from Redo is passed over, the next step is redone, and Redo brings the task back with its notes once the holder is finished", () => {
+    const y = draft(["jira:FIX-1"]);
+    applied(send("codex", y.ops));
+    lifecycle("task.complete", y.id);
+    const other = draft([]);
+    applied(send("human", other.ops));
+    const a = draft(["jira:FIX-1"], { dedupe: "new" });
+    const made = applied(
+      send("human", [...a.ops, { kind: "note.add", task: a.id, body: "Asked twice." }]),
+    );
+    const noted = applied(send("human", [{ kind: "note.add", task: a.id, body: "Called back." }]));
+    applied(
+      send("human", [{ kind: "task.patch", task: other.id, set: { priority: 1 } }], {
+        base: fx.base(),
+      }),
+    );
+    for (let i = 0; i < 3; i += 1) applied(undo());
+    const b = draft(["jira:FIX-1"], { dedupe: "new" });
+    applied(send("codex", b.ops));
+    const liveNotes = (): unknown =>
+      one("SELECT count(*) FROM notes WHERE task_id = $id AND deleted_at IS NULL", { id: a.id });
+
+    // A would be a second active holder, and its later note has no task to go on: both are passed
+    // over, and the edit behind them is redone.
+    const first = applied(redo());
+    expect(first.passed).toEqual([made.commit, noted.commit]);
+    expect(task(other.id)["priority"]).toBe(1);
+    expect(deleted(a.id)).toBe(true);
+    // Not in the Trash: a restore says Redo brings it back, and Redo does once B is finished.
+    const restore = send("human", [{ kind: "task.restore", task: a.id }], { base: fx.base() });
+    expect(restore.error).toMatchObject({ code: "NOT_FOUND", reason: "creation_undone" });
+    lifecycle("task.complete", b.id);
+    applied(redo());
+    expect(deleted(a.id)).toBe(false);
+    expect(liveNotes()).toBe(1);
+    applied(redo());
+    expect(liveNotes()).toBe(2);
+    expect(redo().error?.code).toBe("NOTHING_TO_REDO");
+    // Undo goes back in the order they were redone: the note, A, then the edit.
+    applied(undo());
+    expect(liveNotes()).toBe(1);
+    applied(undo());
+    expect(deleted(a.id)).toBe(true);
+    applied(undo());
+    expect(task(other.id)["priority"]).not.toBe(1);
   });
 
   test("two humans' creates of one key, undone, then redone in either order: the first back holds the key, the other's redo names it", () => {
@@ -412,7 +456,7 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
       ),
     );
 
-  test("a source a redo brings back counts: the redo that revives it beside another's active link is refused", () => {
+  test("a link to a source that is not there is not redone; once the source is back, its redo meets the holder rule", () => {
     // A is finished and B active. The human adds a new keyed source to A; the partner links B to
     // it. The partner undoes, the human undoes (the source is tombstoned), Codex reopens A.
     const a = plainTask();
@@ -425,31 +469,26 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
     applied(undo("human"));
     expect(deleted(a)).toBe(false);
     lifecycle("task.reopen", a);
-    // The partner's redo revives B's link to a tombstoned source: B holds no key yet.
-    const theirs = applied(redo("partner"));
-    expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([]);
-    // The human's redo would bring back the source and A's link: A and B would both be active
-    // holders. The partner's link is the conflict, and nothing is written.
+    // The partner's redo would revive B's link to a source that is not there: refused, naming it.
     const seq = lastSeq();
-    const refused = redo("human");
-    expectStatus(refused, "conflict");
-    expect(refused.error?.code).toBe("UNDO_CONFLICT");
-    expect(refused.conflicts).toMatchObject([
-      {
-        entity: "task_sources",
-        id: `${b}|${source}`,
-        task: b,
-        ref: ref(b),
-        field: "removed",
-        value: null,
-        version: theirs.seq,
-        by: { actor: partner.principal_id },
-      },
-    ]);
-    expect(refused.conflicts).toHaveLength(1);
+    const away = redo("partner");
+    expectStatus(away, "conflict");
+    expect(away.conflicts).toMatchObject([{ entity: "sources", id: source, field: "deleted" }]);
     expect(lastSeq()).toBe(seq);
-    expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([]);
-    expect(redo("human").error?.code).toBe("NOTHING_TO_REDO");
+    // The human's redo brings back the source and A's link: A is its one active holder.
+    applied(redo("human"));
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([a]);
+    // B's link would now make a second active holder: A's link is the conflict.
+    const held = redo("partner");
+    expectStatus(held, "conflict");
+    expect(held.conflicts).toMatchObject([
+      { entity: "task_sources", id: `${a}|${source}`, task: a, ref: ref(a), field: "removed" },
+    ]);
+    // Once A is finished again, B's link comes back, B the one active holder.
+    lifecycle("task.complete", a);
+    applied(redo("partner"));
+    expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([a, b].sort());
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([b]);
   });
 
   test("restores of one plan never make two active holders together: none of them comes back, and each one's lifecycle is named", () => {
@@ -487,10 +526,14 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
     expect(refused.conflicts).toHaveLength(2);
     expect(lastSeq()).toBe(seq);
     expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([]);
-    expect(redo().error?.code).toBe("NOTHING_TO_REDO");
+    // Finished again, A comes back with B, the one active holder.
+    lifecycle("task.complete", a);
+    applied(redo());
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([b]);
+    expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([a, b, y.id].sort());
   });
 
-  test("a create of several tasks with one key, redone after another human's redo reopened one of them, is refused", () => {
+  test("a create of several tasks with one key comes back with one active holder; another human's reopen of one of them waits until then", () => {
     // One request creates T1, finishes it, and creates T2 with the same key: new work after it.
     const t1 = draft(["jira:FIX-1"], { dedupe: "new" });
     const t2 = draft(["jira:FIX-1"]);
@@ -502,25 +545,25 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
     expect(made.results.map((r) => r.status)).toContain("created");
     expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([t1.id, t2.id].sort());
     expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([t2.id]);
-    // The partner reopens T1 and undoes it; the human undoes the create; the partner's redo then
-    // reopens T1 while it is tombstoned (its guard is provenance only, A1 3.10).
+    // The partner reopens T1 and undoes it; the human undoes the create. The partner's redo
+    // would reopen T1 while it is not there: refused, naming T1's tombstone.
     lifecycle("task.reopen", t1.id, "partner");
     applied(undo("partner"));
-    applied(undo("human"));
+    const gone = applied(undo("human"));
     expect(deleted(t1.id) && deleted(t2.id)).toBe(true);
-    const back = applied(redo("partner"));
-    expect(task(t1.id)["lifecycle"]).toBe("active");
-    // The human's redo would bring back two active tasks with the key: neither comes back.
     const seq = lastSeq();
-    const refused = redo("human");
-    expectStatus(refused, "conflict");
-    expect(refused.conflicts).toMatchObject([
-      { entity: "tasks", id: t1.id, field: "lifecycle", version: back.seq },
-      { entity: "tasks", id: t2.id, field: "lifecycle", version: made.seq },
+    const away = redo("partner");
+    expectStatus(away, "conflict");
+    expect(away.conflicts).toMatchObject([
+      { entity: "tasks", id: t1.id, field: "deleted", version: gone.seq },
     ]);
-    expect(refused.conflicts).toHaveLength(2);
     expect(lastSeq()).toBe(seq);
-    expect(deleted(t1.id) && deleted(t2.id)).toBe(true);
+    // The human's redo brings both back, T2 the one active holder; the partner's redo then
+    // reopens T1 beside it, a lifecycle the holder rule does not guard.
+    applied(redo("human"));
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([t2.id]);
+    applied(redo("partner"));
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([t1.id, t2.id].sort());
   });
 
   test("a partial inversion leaves out the restores of a broken key and applies the rest", async () => {
@@ -565,6 +608,7 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
           op: 0,
           refPrefix: "M",
           partial: true,
+          owners: false,
         });
         // The two links would make A and B active holders together: both stay removed, each
         // named by its lifecycle. The log entry is no holder: it comes back.
@@ -1658,7 +1702,14 @@ const property = (seen: Record<string, number>) =>
         } else if (s.kind === "undo" || s.kind === "redo") {
           const principal = as(s.who).principal_id;
           const undo = s.kind === "undo";
-          const target = undo ? undoTarget(conn, principal) : redoTarget(conn, principal);
+          // What an undo takes, or what a redo tries in turn (it redoes the first it can).
+          const newest = undo ? undoTarget(conn, principal) : undefined;
+          const targets = undo
+            ? newest === undefined
+              ? []
+              : [newest]
+            : redoSteps(conn, principal);
+          const target = targets[0];
           const op: Operation =
             s.kind === "undo"
               ? { kind: "undo", ...(s.partial ? { partial: true } : {}) }
@@ -1683,7 +1734,9 @@ const property = (seen: Record<string, number>) =>
           } else if (result.status === "conflict") {
             expect(result.error?.code).toBe("UNDO_CONFLICT");
             count(`${s.kind} conflict`);
-            const inverted = changesAt(conn, undo ? target.seq : (target.undoneBy ?? 0));
+            const inverted = undo
+              ? changesAt(conn, target.seq)
+              : targets.flatMap((t) => changesAt(conn, t.undoneBy ?? 0));
             const own = new Set(inverted.map((c) => c["task_id"]));
             if (undo) archiveKept();
             for (const c of result.conflicts) {
@@ -1745,7 +1798,8 @@ const property = (seen: Record<string, number>) =>
             }
           } else {
             expectStatus(result, "applied");
-            const inverted = changesAt(conn, undo ? target.seq : (target.undoneBy ?? 0));
+            const redone = targets.find((t) => t.id === result?.results[0]?.id);
+            const inverted = changesAt(conn, undo ? target.seq : (redone?.undoneBy ?? 0));
             const rows = expectInversion(conn, before, inverted, result.seq);
             if (s.kind === "undo" && result.conflicts.length > 0) {
               count("partial undo");
@@ -1843,7 +1897,6 @@ describe("[A1.5.history.property] undo and redo with dedupe by source key", () =
       "redo held off by an active holder",
       "redo held off by an active holder of a shared source",
       "redo held off by a taken source key",
-      "redo held off beside the source it brings back",
       "redo held off by its own holders",
       "restored beside a finished holder",
       "second active holder by a lifecycle",

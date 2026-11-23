@@ -216,53 +216,6 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     expect(deleted(a)).toBe(false);
   });
 
-  test("a refused Redo is set aside: the next Redo reaches the step behind it, and the task keeps the note", () => {
-    const a = task("Renew the passport");
-    const b = task("Book the dentist");
-    remove(a);
-    const { commit } = applied(
-      send("human", [{ kind: "task.patch", task: b, set: { title: "Book the dentist twice" } }]),
-    );
-    applied(history("undo"));
-    applied(history("undo"));
-    const note = applied(
-      send("codex", [{ kind: "note.add", task: a, body: "Booked for Tuesday" }]),
-    );
-    const late = history("redo");
-    expectStatus(late, "conflict");
-    expect(late.error?.code).toBe("UNDO_CONFLICT");
-    // Named, as a toast's Redo names it, B's edit is the next step now.
-    applied(fx.writer.submit(fx.request(fx.human, [{ kind: "redo", commit: commit as Id<"op"> }])));
-    expect(row(b)["title"]).toBe("Book the dentist twice");
-    expect(deleted(a)).toBe(false);
-    const kept = fx.reader.prepare("SELECT deleted_at FROM notes WHERE id = $id").get({
-      id: String(note.results[0]?.id),
-    });
-    expect(kept).toEqual({ deleted_at: null });
-    expect(history("redo").error?.code).toBe("NOTHING_TO_REDO");
-  });
-
-  test("a later step that builds on a refused Redo is set aside with it, by name; an independent one is redone", () => {
-    const a = task("Renew the passport");
-    const b = task("Book the dentist");
-    remove(a);
-    const back = applied(restore(a));
-    applied(
-      send("human", [{ kind: "task.patch", task: b, set: { title: "Book the dentist twice" } }]),
-    );
-    for (let i = 0; i < 3; i += 1) applied(history("undo"));
-    expect(deleted(a)).toBe(false);
-    applied(send("codex", [{ kind: "note.add", task: a, body: "Booked for Tuesday" }]));
-    const late = history("redo");
-    expectStatus(late, "conflict");
-    // The restore brought back what the removal took away: without it, it means nothing.
-    expect(late.setAside).toEqual([back.commit]);
-    applied(history("redo"));
-    expect(row(b)["title"]).toBe("Book the dentist twice");
-    expect(deleted(a)).toBe(false);
-    expect(history("redo").error?.code).toBe("NOTHING_TO_REDO");
-  });
-
   test("the person's own steps since do not hold back Redo or Undo of a removal", () => {
     // Redo: a title edit undone and redone after the removal's undo.
     const a = task("Renew the passport");

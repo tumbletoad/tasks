@@ -303,10 +303,10 @@ export interface WriteResult {
    */
   target?: Id<"op">;
   /**
-   * A redo refused with UNDO_CONFLICT is set aside, so that Redo reaches the next step: the later
-   * steps set aside with it because they build on it (history.ts, setAside).
+   * A redo's: the undone steps it tried and could not redo, oldest first. They stay undone, and
+   * the next redo tries them again; `conflicts` says why.
    */
-  setAside?: Id<"op">[];
+  passed?: Id<"op">[];
   /**
    * An undo or redo refused with UNDO_CONFLICT that would move tasks to the Trash: each of them,
    * with its reference. Removing them again does it anyway.
@@ -316,7 +316,8 @@ export interface WriteResult {
   results: OpResult[];
   /**
    * Every conflict of the request together, for `conflict`. For an `applied` partial undo, the
-   * fields it left as others set them (A1 3.10.1).
+   * fields it left as others set them, and for an `applied` redo why it passed over the steps in
+   * `passed` (A1 3.10.1).
    */
   conflicts: FieldConflict[];
   /** Why, for `rejected` and `conflict`. */
@@ -846,12 +847,12 @@ export interface Undo {
 }
 
 /**
- * `redo` (A1 3.10.1): inverts the undo of the principal's oldest undone commit, so the commit's
- * values return with its own provenance. All or nothing. A request holds it alone.
+ * `redo` (A1 3.10.1): inverts the undo of the principal's oldest undone commit it can, so the
+ * commit's values return with its own provenance. All or nothing. A request holds it alone.
  */
 export interface Redo {
   kind: "redo";
-  /** The commit the caller means: refused unless it is the one a redo would bring back. */
+  /** The commit the caller means: refused unless it is one of the principal's undone commits. */
   commit?: Id<"op">;
 }
 

@@ -943,7 +943,7 @@
         "additionalProperties": false,
         "properties": {
           "commit": {
-            "description": "The change you mean: refused unless it is the next one to redo",
+            "description": "The change you mean: refused unless it is one you undid",
             "maxLength": 40,
             "type": "string"
           },
@@ -976,6 +976,15 @@
             "description": "The change undone or redone",
             "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
+          },
+          "passed_over": {
+            "description": "Older changes it could not redo: they stay, and the next redo tries them again",
+            "items": {
+              "description": "A change's commit ID",
+              "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+              "type": "string"
+            },
+            "type": "array"
           },
           "replayed": {
             "description": "True when a retry returned the stored result",
@@ -2090,6 +2099,14 @@
                 "pattern": "^ai_[0-9a-hjkmnp-tv-z]{26}$",
                 "type": "string"
               },
+              "passed_over": {
+                "description": "A redo's: the undone changes it could not redo, which stay for the next redo",
+                "items": {
+                  "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "request": {
                 "description": "The request ID",
                 "pattern": "^[A-Za-z0-9_-]{16,64}$",
@@ -2209,14 +2226,6 @@
                 "maximum": 1000000,
                 "minimum": 1,
                 "type": "integer"
-              },
-              "set_aside": {
-                "description": "A refused redo's: the later changes set aside with it, which build on it",
-                "items": {
-                  "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
-                  "type": "string"
-                },
-                "type": "array"
               },
               "status": {
                 "description": "The overall outcome",

@@ -1,27 +1,31 @@
 // A7 3.10 M3.02 Verify: "ABA property test: undo never changes a field whose version moved. Undo
-// then redo restores the values the commit wrote." Two humans and two agents create tasks and write
-// a few fields of them in random order, the humans' writes on their own undo stacks, and each human
-// undoes (now and then partially) and redoes. Values come from small sets, so an agent often sets a
-// field back to the very value a human wrote: an undo must still refuse it (R2, provenance never
-// equality). A human's create is undone by a tombstone, which every later write of another keeps
-// away, and a write to a tombstoned task is refused. The person also runs tasks (A4 3.11): a run's
-// commits never join a stack and never end a redo, a run keeps its task's create from being undone
-// (A1 3.10), and a tombstoned task takes no run.
+// then redo restores the values the commit wrote." Two humans and two agents create tasks, write a
+// few fields of them, remove and restore them, add notes to them, link them to sources, and create
+// areas and projects in them, in random order, the humans' writes on their own undo stacks, and
+// each human undoes (now and then partially) and redoes. Values, slugs and source keys come from
+// small sets, so an agent often sets a field back to the very value a human wrote (an undo must
+// still refuse it: R2, provenance never equality), takes a slug or a key a human's undone step
+// held, or adds to a task a human's undone removal would hide. The person also runs tasks (A4
+// 3.11): a run's commits never join a stack and never end a redo, a run keeps its task's create
+// from being undone (A1 3.10), and a tombstoned task takes no run.
 //
-// A small reference model predicts every outcome from A1 3.10 and 3.10.1's rules alone: which
-// commit an undo or redo takes from whose stack, which of its rows pass their provenance guard,
-// what a field holds, its fv and its fp after each step, and each stack commit's status. On top of
-// the model's prediction, each undo and redo is checked against the space itself: the only fields
+// A reference model predicts every outcome from A1 3.10 and 3.10.1's rules alone: which commit an
+// undo takes (the step applied last) and which a redo redoes (the oldest undone step it can, the
+// older ones passed over and kept), which of its rows pass their guards (provenance; a key or a
+// slug another live row holds; newer work by another on a row the step would hide; a live child of
+// a row it would un-create; two active holders of one key; a row or its owner out of sight), what
+// each field holds with its fv and its fp after each step, and each stack commit's status. On top
+// of the prediction, each undo and redo is checked against the space itself: the only task fields
 // it changes are rows of the inverted commit whose provenance was the guard; a redo brings back
-// exactly the after-values and the provenance of the commit it redoes; and no field's fv ever moves
-// back. Each run ends with A1's history invariants (write-helpers.ts: checkHistory), among them
-// that every field holds the value its provenance commit wrote.
+// exactly the after-values and the provenance of the commit it redoes; and no field's fv ever
+// moves back. Each run ends with A1's history invariants (write-helpers.ts: checkHistory), among
+// them that every field holds the value its provenance commit wrote.
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
 import { openWriter } from "../src/open.ts";
-import type { Credential, Operation } from "../src/write/request.ts";
+import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
 import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
@@ -39,6 +43,19 @@ const MAX_TASKS = 6;
 const HUMANS = [0, 3] as const;
 const isHuman = (actor: number): boolean => (HUMANS as readonly number[]).includes(actor);
 
+/** The rows the model keeps: a task's fields, and the tombstone of each other row. */
+type Entity = "tasks" | "notes" | "areas" | "projects" | "sources" | "links";
+const TOMBSTONE: Readonly<Record<Entity, string>> = {
+  tasks: "deleted",
+  notes: "deleted",
+  areas: "deleted",
+  projects: "deleted",
+  sources: "deleted",
+  links: "removed",
+};
+/** A tombstone that is set: the row is out of sight. A live row's is "". */
+const GONE = "x";
+
 /** A field's value as the model keeps it: the column that tells it, as text. */
 interface Cell {
   value: string;
@@ -46,14 +63,28 @@ interface Cell {
   fp: number;
 }
 
+/** A row other than a task's fields: what owns it, and the slug or key it holds. */
+interface ModelRow {
+  entity: Entity;
+  id: number;
+  created: number;
+  /** The task its change rows name: a note's or a link's, a source's first link's. */
+  task: number | null;
+  owners: { entity: Entity; id: number }[];
+  /** A source's key, an area's or a project's slug. */
+  key?: string;
+}
+
 interface ModelChange {
-  task: number;
-  field: Field;
+  entity: Entity;
+  id: number;
+  field: string;
+  task: number | null;
   before: string;
   after: string;
   beforeProv: number;
   afterProv: number;
-  /** A create row: inverted by a tombstone (field `deleted`), guarded by every field of the task. */
+  /** A create row: inverted by a tombstone, guarded by every field of its row and its children. */
   create?: true;
 }
 
@@ -63,6 +94,13 @@ interface ModelCommit {
   owner: number | null;
   status: "done" | "undone" | "dead" | null;
   undoneBy: number | null;
+  /** Who wrote it, and as what: a run's commits are the first human's. */
+  by: number;
+  kind: "write" | "undo" | "redo" | "run";
+  /** A redo's commit. */
+  redoOf?: number;
+  /** A run's task. */
+  runTask?: number;
   rows: ModelChange[];
 }
 
@@ -75,6 +113,14 @@ type Step =
   | { kind: "lifecycle"; actor: number; task: number }
   /** A new task, on its creator's stack when a human made it. */
   | { kind: "create"; actor: number }
+  /** Moves a task to the Trash, or brings it back. */
+  | { kind: "remove" | "restore"; actor: number; task: number }
+  | { kind: "note"; actor: number; task: number }
+  /** Links a task to the source of `key`, made when no live source has it. */
+  | { kind: "link"; actor: number; task: number; key: number }
+  | { kind: "area"; actor: number; slug: number }
+  /** A project in one of the live areas (`area` among them), or in none. */
+  | { kind: "project"; actor: number; slug: number; area: number }
   /**
    * An agent sets a field away and back: the value is the same, the write is the agent's. The
    * field is one that the commit the `of` human's next undo (or redo) would invert wrote (`pick`
@@ -99,7 +145,14 @@ type Step =
    */
   | { kind: "run"; newest: number; moves: number }
   /** An undo and a redo of the same human, `times` in a row. */
-  | { kind: "cycle"; who: number; partial: boolean; times: number };
+  | { kind: "cycle"; who: number; partial: boolean; times: number }
+  /**
+   * The sequences a redo passes over: a human removes, restores and edits one task, undoes the
+   * three, and an agent adds a note; or makes an area and a project in it, undoes both, and an
+   * agent takes the area's slug; or links a task to a new source and another task to it, undoes
+   * both, and an agent takes the key. Then the human redoes.
+   */
+  | { kind: "story"; who: number; story: "trash" | "groups" | "links"; task: number; slot: number };
 
 const VALUES: Readonly<Record<Patchable, readonly string[]>> = {
   summary: ["", "Next: compare totals", "Waiting on Tomas"],
@@ -107,6 +160,8 @@ const VALUES: Readonly<Record<Patchable, readonly string[]>> = {
   status: ["open", "waiting"],
   due: ["", "2026-11-20", "2026-11-27"],
 };
+const SLUGS = ["model-a", "model-b"] as const;
+const KEYS = ["model:FIX-1", "model:FIX-2"] as const;
 
 const patch: fc.Arbitrary<Patch> = fc
   .record(
@@ -124,6 +179,7 @@ const patch: fc.Arbitrary<Patch> = fc
 const actor = fc.constantFrom(0, 0, 3, 3, 1, 2);
 const human = fc.constantFrom(...HUMANS);
 const task = fc.nat({ max: MAX_TASKS - 1 });
+const slot = fc.nat({ max: 1 });
 const step: fc.Arbitrary<Step> = fc.oneof(
   {
     arbitrary: fc.record({ kind: fc.constant("write" as const), actor, task, set: patch }),
@@ -134,6 +190,24 @@ const step: fc.Arbitrary<Step> = fc.oneof(
     weight: 2,
   },
   { arbitrary: fc.record({ kind: fc.constant("create" as const), actor }), weight: 3 },
+  {
+    arbitrary: fc.record({
+      kind: fc.constantFrom("remove" as const, "restore" as const),
+      actor,
+      task,
+    }),
+    weight: 2,
+  },
+  { arbitrary: fc.record({ kind: fc.constant("note" as const), actor, task }), weight: 2 },
+  {
+    arbitrary: fc.record({ kind: fc.constant("link" as const), actor, task, key: slot }),
+    weight: 2,
+  },
+  { arbitrary: fc.record({ kind: fc.constant("area" as const), actor, slug: slot }), weight: 1 },
+  {
+    arbitrary: fc.record({ kind: fc.constant("project" as const), actor, slug: slot, area: slot }),
+    weight: 1,
+  },
   {
     arbitrary: fc.record({
       kind: fc.constant("aba" as const),
@@ -151,7 +225,7 @@ const step: fc.Arbitrary<Step> = fc.oneof(
     arbitrary: fc.record({ kind: fc.constant("undo" as const), who: human, partial: fc.boolean() }),
     weight: 5,
   },
-  { arbitrary: fc.record({ kind: fc.constant("redo" as const), who: human }), weight: 3 },
+  { arbitrary: fc.record({ kind: fc.constant("redo" as const), who: human }), weight: 4 },
   {
     arbitrary: fc.record({
       kind: fc.constant("run" as const),
@@ -169,9 +243,19 @@ const step: fc.Arbitrary<Step> = fc.oneof(
     }),
     weight: 2,
   },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("story" as const),
+      who: human,
+      story: fc.constantFrom("trash" as const, "groups" as const, "links" as const),
+      task,
+      slot,
+    }),
+    weight: 2,
+  },
 );
 
-/** The steps a run takes: an `aba` with `then` and a `cycle` stand for several. */
+/** The steps a run takes: an `aba` with `then`, a `cycle` and a `story` stand for several. */
 function expand(s: Step): Step[] {
   if (s.kind === "cycle") {
     return Array.from({ length: s.times }, (): Step[] => [
@@ -185,11 +269,47 @@ function expand(s: Step): Step[] {
       s.on === "undo" ? { kind: "undo", who: s.of, partial: false } : { kind: "redo", who: s.of },
     ];
   }
+  if (s.kind === "story") {
+    const undo = (n: number): Step[] =>
+      Array.from({ length: n }, () => ({ kind: "undo", who: s.who, partial: false }));
+    const redo: Step[] = [
+      { kind: "redo", who: s.who },
+      { kind: "redo", who: s.who },
+    ];
+    const other = (s.task + 1) % START_TASKS;
+    if (s.story === "trash") {
+      return [
+        { kind: "remove", actor: s.who, task: s.task },
+        { kind: "restore", actor: s.who, task: s.task },
+        { kind: "write", actor: s.who, task: s.task, set: { summary: "Next: compare totals" } },
+        ...undo(3),
+        { kind: "note", actor: 1, task: s.task },
+        ...redo,
+      ];
+    }
+    if (s.story === "groups") {
+      return [
+        { kind: "area", actor: s.who, slug: s.slot },
+        { kind: "project", actor: s.who, slug: s.slot, area: -1 },
+        ...undo(2),
+        { kind: "area", actor: 1, slug: s.slot },
+        ...redo,
+      ];
+    }
+    return [
+      { kind: "link", actor: s.who, task: s.task, key: s.slot },
+      { kind: "link", actor: s.who, task: other, key: s.slot },
+      ...undo(2),
+      { kind: "link", actor: 2, task: (s.task + 2) % START_TASKS, key: s.slot },
+      ...redo,
+    ];
+  }
   return [s];
 }
 
-/** A cell, or with `runs` what keeps a create from being undone: one of the task's runs. */
-const key = (task: number, field: Field | "runs"): string => `${String(task)}|${field}`;
+/** A cell's key: a task's field, or another row's tombstone. */
+const key = (entity: Entity, id: number, field: string): string =>
+  `${entity}|${String(id)}|${field}`;
 
 const START: Readonly<Record<Field, string>> = {
   summary: "",
@@ -201,30 +321,80 @@ const START: Readonly<Record<Field, string>> = {
   deleted: "",
 };
 
+/** What an inversion meets, as the writer names it: a row's field, or a task's run. */
+type Named = string;
+
 class Model {
   cells = new Map<string, Cell>();
+  rows = new Map<string, ModelRow>();
   commits = new Map<number, ModelCommit>();
   /** How many runs each task has: a run is never removed. */
   runs = new Map<number, number>();
   tasks = 0;
+  /** How many rows of each kind other than tasks there are: each one's ID is its index. */
+  counts: Record<Exclude<Entity, "tasks">, number> = {
+    notes: 0,
+    areas: 0,
+    projects: 0,
+    sources: 0,
+    links: 0,
+  };
+  /** A link's index by `task|source`. */
+  links = new Map<string, number>();
   lastSeq: number;
 
   constructor(lastSeq: number) {
     this.lastSeq = lastSeq;
   }
 
-  cell(task: number, field: Field): Cell {
-    const found = this.cells.get(key(task, field));
+  cell(entity: Entity, id: number, field: string): Cell {
+    const found = this.cells.get(key(entity, id, field));
     if (found === undefined) throw new Error("no cell");
     return found;
   }
 
+  live(entity: Entity, id: number): boolean {
+    return this.cell(entity, id, TOMBSTONE[entity]).value === "";
+  }
+
   deleted(task: number): boolean {
-    return this.cell(task, "deleted").value !== "";
+    return !this.live("tasks", task);
+  }
+
+  row(entity: Entity, id: number): ModelRow {
+    const found = this.rows.get(`${entity}|${String(id)}`);
+    if (found === undefined) throw new Error("no row");
+    return found;
+  }
+
+  /** Whether a tombstoned task is in the Trash (trash.ts): removed on purpose, not un-created. */
+  inTrash(task: number): boolean {
+    const fp = this.cell("tasks", task, "deleted").fp;
+    return this.deleted(task) && this.commits.get(fp)?.kind !== "undo";
+  }
+
+  /** The live source that holds `key`, if any. */
+  sourceOf(key: string): number | undefined {
+    for (const r of this.rows.values()) {
+      if (r.entity === "sources" && r.key === key && this.live("sources", r.id)) return r.id;
+    }
+    return undefined;
+  }
+
+  slugTaken(entity: "areas" | "projects", slug: string, except: number): boolean {
+    return [...this.rows.values()].some(
+      (r) => r.entity === entity && r.key === slug && r.id !== except && this.live(entity, r.id),
+    );
   }
 
   /** A human's new undoable action ends what that human could redo (A1 3.10.1). */
-  #stack(seq: number, owner: number | null, rows: ModelChange[]): ModelCommit {
+  #stack(
+    seq: number,
+    owner: number | null,
+    rows: ModelChange[],
+    by: number,
+    kind: ModelCommit["kind"] = "write",
+  ): ModelCommit {
     if (owner !== null) {
       for (const c of this.commits.values()) {
         if (c.owner === owner && c.status === "undone") c.status = "dead";
@@ -235,6 +405,8 @@ class Model {
       owner,
       status: owner === null ? null : "done",
       undoneBy: null,
+      by,
+      kind,
       rows,
     };
     this.commits.set(seq, commit);
@@ -242,25 +414,54 @@ class Model {
     return commit;
   }
 
-  /** A run's commit (its create when `task` is given, else a move): on no stack, no cell. */
-  run(task?: number): ModelCommit {
-    if (task !== undefined) this.runs.set(task, (this.runs.get(task) ?? 0) + 1);
-    return this.#stack(this.lastSeq + 1, null, []);
+  /** A run's commit, its create or a move of it: the first human's, on no stack, no cell. */
+  run(task: number, create: boolean): ModelCommit {
+    if (create) this.runs.set(task, (this.runs.get(task) ?? 0) + 1);
+    const commit = this.#stack(this.lastSeq + 1, null, [], 0, "run");
+    commit.runTask = task;
+    return commit;
+  }
+
+  /** A new row of `seq`, live, with its create row. */
+  #made(seq: number, made: Omit<ModelRow, "created">): ModelChange {
+    this.rows.set(`${made.entity}|${String(made.id)}`, { ...made, created: seq });
+    const tomb = TOMBSTONE[made.entity];
+    this.cells.set(key(made.entity, made.id, tomb), { value: "", fv: seq, fp: seq });
+    return {
+      entity: made.entity,
+      id: made.id,
+      field: tomb,
+      task: made.task,
+      before: "",
+      after: "",
+      beforeProv: seq,
+      afterProv: seq,
+      create: true,
+    };
   }
 
   /** Tasks made by one commit, `owner`'s when a human made it. */
-  create(count: number, owner: number | null): ModelCommit {
+  create(count: number, owner: number | null, by: number): ModelCommit {
     const seq = this.lastSeq + 1;
     const rows: ModelChange[] = [];
     for (let n = 0; n < count; n += 1) {
       const task = this.tasks;
       this.tasks += 1;
       for (const field of FIELDS) {
-        this.cells.set(key(task, field), { value: START[field], fv: seq, fp: seq });
+        this.cells.set(key("tasks", task, field), { value: START[field], fv: seq, fp: seq });
       }
-      rows.push({
+      this.rows.set(`tasks|${String(task)}`, {
+        entity: "tasks",
+        id: task,
+        created: seq,
         task,
+        owners: [],
+      });
+      rows.push({
+        entity: "tasks",
+        id: task,
         field: "deleted",
+        task,
         before: "",
         after: "",
         beforeProv: seq,
@@ -268,23 +469,29 @@ class Model {
         create: true,
       });
     }
-    return this.#stack(seq, owner, rows);
+    return this.#stack(seq, owner, rows, by);
   }
 
-  /** A write: one change row per field whose value moves; none is `unchanged`. */
+  /** A write of a row's fields: one change row per field whose value moves. */
   write(
-    task: number,
-    values: Partial<Record<Field, string>>,
+    entity: Entity,
+    id: number,
+    values: Partial<Record<string, string>>,
     owner: number | null,
+    by: number,
   ): ModelCommit | undefined {
     const seq = this.lastSeq + 1;
     const rows: ModelChange[] = [];
-    for (const [field, value] of Object.entries(values) as [Field, string][]) {
-      const cell = this.cell(task, field);
+    const task = entity === "tasks" ? id : this.row(entity, id).task;
+    for (const [field, value] of Object.entries(values)) {
+      if (value === undefined) continue;
+      const cell = this.cell(entity, id, field);
       if (cell.value === value) continue;
       rows.push({
-        task,
+        entity,
+        id,
         field,
+        task,
         before: cell.value,
         after: value,
         beforeProv: cell.fp,
@@ -293,139 +500,345 @@ class Model {
     }
     if (rows.length === 0) return undefined;
     for (const row of rows) {
-      this.cells.set(key(task, row.field), { value: row.after, fv: seq, fp: seq });
+      this.cells.set(key(entity, id, row.field), { value: row.after, fv: seq, fp: seq });
     }
-    return this.#stack(seq, owner, rows);
+    return this.#stack(seq, owner, rows, by);
+  }
+
+  note(task: number, owner: number | null, by: number): ModelCommit {
+    const seq = this.lastSeq + 1;
+    const id = this.counts.notes++;
+    const owners = [{ entity: "tasks" as const, id: task }];
+    return this.#stack(seq, owner, [this.#made(seq, { entity: "notes", id, task, owners })], by);
+  }
+
+  area(slug: string, owner: number | null, by: number): ModelCommit {
+    const seq = this.lastSeq + 1;
+    const id = this.counts.areas++;
+    return this.#stack(
+      seq,
+      owner,
+      [this.#made(seq, { entity: "areas", id, task: null, owners: [], key: slug })],
+      by,
+    );
+  }
+
+  project(slug: string, area: number | null, owner: number | null, by: number): ModelCommit {
+    const seq = this.lastSeq + 1;
+    const id = this.counts.projects++;
+    const owners = area === null ? [] : [{ entity: "areas" as const, id: area }];
+    return this.#stack(
+      seq,
+      owner,
+      [this.#made(seq, { entity: "projects", id, task: null, owners, key: slug })],
+      by,
+    );
+  }
+
+  /**
+   * `source.add` on a task that exists: a link to the live source of the key, made or brought
+   * back, or a new source with its link. Undefined when the link is live already.
+   */
+  link(
+    task: number,
+    sourceKey: string,
+    owner: number | null,
+    by: number,
+  ): { commit: ModelCommit; source: number; made: boolean } | undefined {
+    const seq = this.lastSeq + 1;
+    const found = this.sourceOf(sourceKey);
+    const rows: ModelChange[] = [];
+    const source = found ?? this.counts.sources++;
+    if (found === undefined) {
+      rows.push(
+        this.#made(seq, { entity: "sources", id: source, task, owners: [], key: sourceKey }),
+      );
+    }
+    const pair = `${String(task)}|${String(source)}`;
+    const link = this.links.get(pair);
+    if (link !== undefined) {
+      if (this.live("links", link)) return undefined;
+      const commit = this.write("links", link, { removed: "" }, owner, by);
+      if (commit === undefined) throw new Error("a removed link moves");
+      return { commit, source, made: false };
+    }
+    const id = this.counts.links++;
+    this.links.set(pair, id);
+    const owners = [
+      { entity: "tasks" as const, id: task },
+      { entity: "sources" as const, id: source },
+    ];
+    rows.push(this.#made(seq, { entity: "links", id, task, owners }));
+    return { commit: this.#stack(seq, owner, rows, by), source, made: found === undefined };
+  }
+
+  /** The step applied last: by its newest redo, else its own seq (A1 3.10.1). */
+  lastApplied(commit: ModelCommit): number {
+    let last = commit.seq;
+    for (const c of this.commits.values()) {
+      if (c.kind === "redo" && c.redoOf === commit.seq) last = Math.max(last, c.seq);
+    }
+    return last;
   }
 
   undoTarget(owner: number): ModelCommit | undefined {
     let newest: ModelCommit | undefined;
     for (const c of this.commits.values()) {
-      if (
-        c.owner === owner &&
-        c.status === "done" &&
-        (newest === undefined || c.seq > newest.seq)
-      ) {
-        newest = c;
-      }
+      if (c.owner !== owner || c.status !== "done") continue;
+      if (newest === undefined || this.lastApplied(c) > this.lastApplied(newest)) newest = c;
     }
     return newest;
   }
 
-  redoTarget(owner: number): ModelCommit | undefined {
-    const after = this.undoTarget(owner)?.seq ?? 0;
-    let oldest: ModelCommit | undefined;
+  /** What a redo tries, in order: the human's undone steps, oldest first. */
+  redoSteps(owner: number): ModelCommit[] {
+    return [...this.commits.values()]
+      .filter((c) => c.owner === owner && c.status === "undone")
+      .sort((a, b) => a.seq - b.seq);
+  }
+
+  /** The live rows that `parent` owns, and a task's runs (`runs`), which are always another's. */
+  children(entity: Entity, id: number): ModelRow[] {
+    return [...this.rows.values()].filter(
+      (r) => r.owners.some((o) => o.entity === entity && o.id === id) && this.live(r.entity, r.id),
+    );
+  }
+
+  /** Another's change to `row` (and for a task, to anything of it) after `since` (history.ts). */
+  newer(change: ModelChange, since: number, principal: number): boolean {
     for (const c of this.commits.values()) {
-      if (
-        c.owner === owner &&
-        c.status === "undone" &&
-        c.seq > after &&
-        (oldest === undefined || c.seq < oldest.seq)
-      ) {
-        oldest = c;
+      if (c.seq <= since) continue;
+      if (c.by === principal && (c.owner !== null || c.kind === "undo" || c.kind === "redo")) {
+        continue;
       }
+      if (change.entity === "tasks" && c.runTask === change.id) return true;
+      const touched = c.rows.some((r) =>
+        change.entity === "tasks"
+          ? r.task === change.id
+          : r.entity === change.entity && r.id === change.id,
+      );
+      if (touched) return true;
     }
-    return oldest;
+    return false;
   }
 
   /**
-   * The fields that keep a row from being inverted: a set row's own field unless it holds the
-   * row's write; for a create row, each field of its task that holds another's write, and each of
-   * the task's runs (`runs`), which are always another commit's.
-   */
-  blocking(row: ModelChange): (Field | "runs")[] {
-    if (row.create === true) {
-      return [
-        ...FIELDS.filter((f) => this.cell(row.task, f).fp !== row.afterProv),
-        ...Array.from({ length: this.runs.get(row.task) ?? 0 }, () => "runs" as const),
-      ];
-    }
-    return this.cell(row.task, row.field).fp === row.afterProv ? [] : [row.field];
-  }
-
-  /**
-   * The rows of `rows` that do not pass, and with `partial` their lifecycle or wrap partner; and
-   * the conflicts the writer names, as task|field keys.
+   * The rows of `rows` that do not pass their guards, and with `partial` their lifecycle or wrap
+   * partner; and what the writer names for a plain task field, as task|field keys.
    */
   failing(
     rows: readonly ModelChange[],
-    partial: boolean,
-  ): { failed: Set<ModelChange>; named: string[] } {
-    const failed = new Set(rows.filter((r) => this.blocking(r).length > 0));
-    const named = rows.flatMap((r) => this.blocking(r).map((f) => key(r.task, f)));
-    if (partial) {
+    options: { partial: boolean; creating: number; since: number; principal: number },
+  ): { failed: Set<ModelChange>; named: Named[] } {
+    const failed = new Set<ModelChange>();
+    const named: Named[] = [];
+    for (const r of rows) {
+      const tomb = TOMBSTONE[r.entity];
+      if (r.create === true) {
+        const fields = r.entity === "tasks" ? FIELDS : [tomb];
+        const theirs = fields.filter((f) => this.cell(r.entity, r.id, f).fp !== options.creating);
+        const kids = this.children(r.entity, r.id).filter(
+          (k) =>
+            k.created !== options.creating ||
+            this.cell(k.entity, k.id, TOMBSTONE[k.entity]).fp !== options.creating,
+        );
+        const runs = r.entity === "tasks" ? (this.runs.get(r.id) ?? 0) : 0;
+        if (theirs.length > 0 || kids.length > 0 || runs > 0) failed.add(r);
+        if (r.entity === "tasks") {
+          named.push(...theirs.map((f) => key("tasks", r.id, f)));
+          for (let n = 0; n < runs; n += 1) named.push(key("tasks", r.id, "runs"));
+        }
+        continue;
+      }
+      if (this.cell(r.entity, r.id, r.field).fp !== r.afterProv) {
+        failed.add(r);
+        named.push(key(r.entity, r.id, r.field));
+        continue;
+      }
+      if (r.field !== tomb) continue;
+      if (r.before === "") {
+        const row = this.row(r.entity, r.id);
+        const taken =
+          (r.entity === "sources" &&
+            row.key !== undefined &&
+            this.sourceOf(row.key) !== undefined) ||
+          ((r.entity === "areas" || r.entity === "projects") &&
+            this.slugTaken(r.entity, row.key ?? "", r.id));
+        if (taken) failed.add(r);
+      } else if (this.newer(r, options.since, options.principal)) {
+        failed.add(r);
+      }
+    }
+    if (options.partial) {
       for (const r of rows) {
         const partner =
           r.field === "lifecycle" ? "wrap" : r.field === "wrap" ? "lifecycle" : undefined;
         if (partner === undefined || failed.has(r)) continue;
-        if (rows.some((o) => o.task === r.task && o.field === partner && failed.has(o))) {
+        if (rows.some((o) => o.id === r.id && o.field === partner && failed.has(o))) {
           failed.add(r);
-          named.push(key(r.task, r.field));
+          named.push(key("tasks", r.id, r.field));
         }
       }
     }
     return { failed, named };
   }
 
-  /**
-   * A refused redo's step is set aside, and with it each later undone step of its owner whose redo
-   * writes a field the step's redo writes, or anything of a task whose tombstone it writes.
-   */
-  setAside(step: ModelCommit): void {
-    const written = new Set<string>();
-    const write = (rows: readonly ModelChange[]) => {
-      for (const r of rows) {
-        written.add(key(r.task, r.field));
-        if (r.field === "deleted") written.add(`${String(r.task)}|*`);
+  /** The cells as the inversion of `rows` but `skip` would leave them. */
+  #after(rows: readonly ModelChange[], skip: ReadonlySet<ModelChange>): Map<string, Cell> {
+    const cells = new Map(this.cells);
+    for (const r of rows) {
+      if (skip.has(r)) continue;
+      const tomb = TOMBSTONE[r.entity];
+      if (r.create === true) {
+        cells.set(key(r.entity, r.id, tomb), { value: GONE, fv: 0, fp: 0 });
+      } else {
+        cells.set(key(r.entity, r.id, r.field), { value: r.before, fv: 0, fp: r.beforeProv });
       }
-    };
-    write(this.commits.get(step.undoneBy ?? 0)?.rows ?? []);
-    step.status = "dead";
-    const later = [...this.commits.values()]
-      .filter((c) => c.owner === step.owner && c.status === "undone" && c.seq > step.seq)
-      .sort((a, b) => a.seq - b.seq);
-    for (const c of later) {
-      const rows = this.commits.get(c.undoneBy ?? 0)?.rows ?? [];
-      if (
-        !rows.some((r) => written.has(key(r.task, r.field)) || written.has(`${String(r.task)}|*`))
-      ) {
-        continue;
-      }
-      write(rows);
-      c.status = "dead";
     }
+    return cells;
+  }
+
+  /**
+   * The rules across rows on the state the inversion makes (applyInversions): one active holder
+   * of a key the inversion brings back, and for a redo no row or owner out of sight. Returns the
+   * rows that break one; the writer's partial undo leaves them out and checks again.
+   */
+  broken(
+    rows: readonly ModelChange[],
+    skip: ReadonlySet<ModelChange>,
+    options: { redo: boolean; since: number; named?: Named[] },
+  ): Set<ModelChange> {
+    const cells = this.#after(rows, skip);
+    const live = (entity: Entity, id: number) =>
+      cells.get(key(entity, id, TOMBSTONE[entity]))?.value === "";
+    const out = new Set<ModelChange>();
+    const kept = rows.filter((r) => !skip.has(r));
+    const back = kept.filter(
+      (r) =>
+        r.create !== true &&
+        r.field === TOMBSTONE[r.entity] &&
+        r.before === "" &&
+        (r.entity === "tasks" || r.entity === "links" || r.entity === "sources"),
+    );
+    // One active holder of a key (A1 3.6): the sources the plan touches, by their tasks too.
+    const touched = new Set<number>();
+    for (const r of back) {
+      if (r.entity === "sources") touched.add(r.id);
+      if (r.entity === "links") touched.add(this.row("links", r.id).owners[1]?.id ?? -1);
+      if (r.entity === "tasks") {
+        for (const l of this.rows.values()) {
+          if (l.entity === "links" && l.owners[0]?.id === r.id) touched.add(l.owners[1]?.id ?? -1);
+        }
+      }
+    }
+    for (const source of touched) {
+      const row = this.rows.get(`sources|${String(source)}`);
+      if (row?.key === undefined || !live("sources", source)) continue;
+      const holders = [...this.rows.values()].filter(
+        (l) =>
+          l.entity === "links" &&
+          l.owners[1]?.id === source &&
+          live("links", l.id) &&
+          live("tasks", l.owners[0]?.id ?? -1) &&
+          cells.get(key("tasks", l.owners[0]?.id ?? -1, "lifecycle"))?.value === "active",
+      );
+      if (holders.length < 2) continue;
+      const made = holders.flatMap((l) =>
+        back.filter(
+          (r) =>
+            (r.entity === "tasks" && r.id === l.owners[0]?.id) ||
+            (r.entity === "links" && r.id === l.id),
+        ),
+      );
+      const sourceBack = back.filter((r) => r.entity === "sources" && r.id === source);
+      if (made.length === 0 && sourceBack.length === 0) continue;
+      for (const r of [...made, ...sourceBack]) out.add(r);
+    }
+    if (!options.redo) return out;
+    // A redo writes nothing out of sight (history.ts, ownersLive).
+    const fvOf = (entity: Entity, id: number): number =>
+      this.cell(entity, id, TOMBSTONE[entity]).fv;
+    const byRow = new Map<string, ModelChange[]>();
+    for (const r of kept) {
+      const k = `${r.entity}|${String(r.id)}`;
+      byRow.set(k, [...(byRow.get(k) ?? []), r]);
+    }
+    for (const list of byRow.values()) {
+      const first = list[0];
+      if (first === undefined) continue;
+      const tomb = TOMBSTONE[first.entity];
+      const writes = list.filter((r) => r.field === tomb);
+      if (writes.some((r) => r.create === true || r.before !== "")) continue;
+      const brings = writes.length > 0;
+      const gone = (entity: Entity, id: number, owner: boolean): boolean =>
+        !live(entity, id) && ((brings && owner) || fvOf(entity, id) > options.since);
+      const owners = first.entity === "tasks" ? [] : this.row(first.entity, first.id).owners;
+      const away = [
+        ...(gone(first.entity, first.id, false) ? [first] : []),
+        ...owners.filter((o) => gone(o.entity, o.id, true)),
+      ];
+      if (away.length > 0) {
+        options.named?.push(...away.map((o) => key(o.entity, o.id, TOMBSTONE[o.entity])));
+        for (const r of list) out.add(r);
+      }
+    }
+    return out;
   }
 
   /** Inverts `rows` but `skip` as commit lastSeq + 1 (A1 3.10): a create by its tombstone. */
-  invert(rows: readonly ModelChange[], skip: ReadonlySet<ModelChange>): ModelCommit {
+  invert(
+    rows: readonly ModelChange[],
+    skip: ReadonlySet<ModelChange>,
+    by: number,
+    kind: "undo" | "redo",
+  ): ModelCommit {
     const seq = this.lastSeq + 1;
     const inverted: ModelChange[] = [];
     for (const row of rows) {
       if (skip.has(row)) continue;
-      const cell = this.cell(row.task, row.field);
+      const tomb = TOMBSTONE[row.entity];
       if (row.create === true) {
+        const cell = this.cell(row.entity, row.id, tomb);
+        if (cell.value !== "") continue;
         inverted.push({
+          entity: row.entity,
+          id: row.id,
+          field: tomb,
           task: row.task,
-          field: "deleted",
           before: cell.value,
-          after: "deleted",
+          after: GONE,
           beforeProv: cell.fp,
           afterProv: seq,
         });
-        this.cells.set(key(row.task, "deleted"), { value: "deleted", fv: seq, fp: seq });
+        this.cells.set(key(row.entity, row.id, tomb), { value: GONE, fv: seq, fp: seq });
         continue;
       }
+      const cell = this.cell(row.entity, row.id, row.field);
       inverted.push({
-        task: row.task,
+        entity: row.entity,
+        id: row.id,
         field: row.field,
+        task: row.task,
         before: cell.value,
         after: row.before,
         beforeProv: row.afterProv,
         afterProv: row.beforeProv,
       });
-      this.cells.set(key(row.task, row.field), { value: row.before, fv: seq, fp: row.beforeProv });
+      this.cells.set(key(row.entity, row.id, row.field), {
+        value: row.before,
+        fv: seq,
+        fp: row.beforeProv,
+      });
     }
-    const commit: ModelCommit = { seq, owner: null, status: null, undoneBy: null, rows: inverted };
+    const commit: ModelCommit = {
+      seq,
+      owner: null,
+      status: null,
+      undoneBy: null,
+      by,
+      kind,
+      rows: inverted,
+    };
     this.commits.set(seq, commit);
     this.lastSeq = seq;
     return commit;
@@ -437,16 +850,39 @@ const count = (seen: Seen, label: string): void => {
   seen[label] = (seen[label] ?? 0) + 1;
 };
 
-/** The space's fields of every task, as the model keeps them. */
-function snapshot(fx: Fixture, ids: readonly Id<"t">[]): Map<string, Cell> {
+/** The real IDs of the model's rows. */
+interface Ids {
+  tasks: Id<"t">[];
+  notes: string[];
+  areas: string[];
+  projects: string[];
+  sources: string[];
+  /** A link's `task_id|source_id`. */
+  links: string[];
+}
+
+const TABLE: Readonly<Record<Entity, string>> = {
+  tasks: "tasks",
+  notes: "notes",
+  areas: "areas",
+  projects: "projects",
+  sources: "sources",
+  links: "task_sources",
+};
+
+/** The space's cells of every row the model knows, as the model keeps them. */
+function snapshot(fx: Fixture, ids: Ids): Map<string, Cell> {
   const out = new Map<string, Cell>();
-  ids.forEach((id, task) => {
+  const text = (v: unknown): string =>
+    typeof v === "string" ? v : typeof v === "number" ? String(v) : "";
+  const versions = (t: Record<string, unknown>) => ({
+    fv: JSON.parse(String(t["fv"])) as Record<string, number>,
+    fp: JSON.parse(String(t["fp"])) as Record<string, number>,
+    created: Number(t["created_seq"]),
+  });
+  ids.tasks.forEach((id, task) => {
     const t = fx.reader.prepare("SELECT * FROM tasks WHERE id = $id").get({ id }) ?? {};
-    const fv = JSON.parse(String(t["fv"])) as Record<string, number>;
-    const fp = JSON.parse(String(t["fp"])) as Record<string, number>;
-    const created = Number(t["created_seq"]);
-    const text = (v: unknown): string =>
-      typeof v === "string" ? v : typeof v === "number" ? String(v) : "";
+    const { fv, fp, created } = versions(t);
     const values: Record<Field, string> = {
       summary: text(t["summary"]),
       priority: text(t["priority"]),
@@ -454,20 +890,39 @@ function snapshot(fx: Fixture, ids: readonly Id<"t">[]): Map<string, Cell> {
       due: text(t["due_date"]),
       lifecycle: text(t["lifecycle"]),
       wrap: text(t["wrap_state"]),
-      deleted: t["deleted_at"] === null ? "" : "deleted",
+      deleted: t["deleted_at"] === null ? "" : GONE,
     };
     for (const field of FIELDS) {
-      out.set(key(task, field), {
+      out.set(key("tasks", task, field), {
         value: values[field],
         fv: fv[field] ?? created,
         fp: fp[field] ?? created,
       });
     }
   });
+  for (const entity of ["notes", "areas", "projects", "sources", "links"] as const) {
+    ids[entity].forEach((id, n) => {
+      const [taskId = "", sourceId = ""] = id.split("|");
+      const t =
+        (entity === "links"
+          ? fx.reader
+              .prepare("SELECT * FROM task_sources WHERE task_id = $t AND source_id = $s")
+              .get({ t: taskId, s: sourceId })
+          : fx.reader.prepare(`SELECT * FROM ${TABLE[entity]} WHERE id = $id`).get({ id })) ?? {};
+      const { fv, fp, created } = versions(t);
+      const tomb = TOMBSTONE[entity];
+      const column = entity === "links" ? "removed_at" : "deleted_at";
+      out.set(key(entity, n, tomb), {
+        value: t[column] === null ? "" : GONE,
+        fv: fv[tomb] ?? created,
+        fp: fp[tomb] ?? created,
+      });
+    });
+  }
   return out;
 }
 
-function expectModel(fx: Fixture, ids: readonly Id<"t">[], model: Model): void {
+function expectModel(fx: Fixture, ids: Ids, model: Model): void {
   expect(Object.fromEntries(snapshot(fx, ids))).toEqual(Object.fromEntries(model.cells));
   expect(Number(fx.reader.prepare("SELECT last_seq FROM space").get()?.["last_seq"])).toBe(
     model.lastSeq,
@@ -518,23 +973,17 @@ async function secondHuman(fx: Fixture): Promise<Credential> {
   return { ...fx.human, principal_id: id, scope_id: "cli:partner" };
 }
 
-/**
- * The keys of the conflicts a result names, by task index: a run by its task's, as `runs`. A
- * conflict that counts more rows (`more`) stands for each of them.
- */
-const named = (
-  ids: readonly Id<"t">[],
-  conflicts: readonly { entity: string; id: string; task?: string; field: string; more?: number }[],
-) =>
-  conflicts
-    .flatMap((c) =>
-      Array.from({ length: 1 + (c.more ?? 0) }, () =>
+/** The keys of the task-field conflicts a result names, by task index: a run as its task's. */
+const named = (ids: readonly Id<"t">[], conflicts: WriteResult["conflicts"]): Named[] =>
+  [
+    ...new Set(
+      conflicts.map((c) =>
         c.entity === "runs"
-          ? `${String(ids.indexOf(c.task as Id<"t">))}|runs`
-          : `${String(ids.indexOf(c.id as Id<"t">))}|${c.field}`,
+          ? key("tasks", ids.indexOf(c.task as Id<"t">), "runs")
+          : key("tasks", ids.indexOf(c.id as Id<"t">), c.field),
       ),
-    )
-    .sort();
+    ),
+  ].sort();
 
 const property = (seen: Seen) =>
   fc.asyncProperty(fc.array(step, { minLength: 10, maxLength: 50 }), async (generated) => {
@@ -545,37 +994,74 @@ const property = (seen: Seen) =>
       const actors: Credential[] = [fx.human, fx.codex, fx.claude, await secondHuman(fx)];
       const as = (n: number): Credential => actors[n] ?? fx.codex;
       // The first tasks are Codex's, so the humans' stacks hold only their own actions.
-      const ids: Id<"t">[] = Array.from({ length: START_TASKS }, () => newId("t"));
+      const ids: Ids = {
+        tasks: Array.from({ length: START_TASKS }, () => newId("t")),
+        notes: [],
+        areas: [],
+        projects: [],
+        sources: [],
+        links: [],
+      };
       const made = fx.writer.submit(
         fx.request(
           fx.codex,
-          ids.map((id, n) => ({ kind: "task.create", id, title: `Fixture task ${String(n + 1)}` })),
+          ids.tasks.map((id, n) => ({
+            kind: "task.create",
+            id,
+            title: `Fixture task ${String(n + 1)}`,
+          })),
         ),
       );
       expect(made.status).toBe("applied");
       const model = new Model(made.seq - 1);
-      model.create(START_TASKS, null);
+      model.create(START_TASKS, null, 1);
       expect(model.lastSeq).toBe(made.seq);
+      const commitId = (seq: number): unknown =>
+        fx.reader.prepare("SELECT id FROM commits WHERE seq = $seq").get({ seq })?.["id"];
+      /** A forward request of `who`: a human's joins its stack. */
+      const send = (who: number, ops: Operation[], based = true): WriteResult =>
+        fx.writer.submit(
+          fx.request(as(who), ops, {
+            ...(based ? { base: fx.base() } : {}),
+            ...(isHuman(who) ? { undoable: true } : {}),
+          }),
+        );
+      const owner = (who: number): number | null => (isHuman(who) ? who : null);
+      /** Whether the model names what the writer names: task fields and runs alone. */
+      const plain = (rows: readonly ModelChange[]): boolean =>
+        rows.every(
+          (r) =>
+            r.entity === "tasks" &&
+            (r.create === true
+              ? model.children("tasks", r.id).length === 0
+              : r.field !== "deleted"),
+        );
+      const sorted = (keys: readonly Named[]): Named[] => [...new Set(keys)].sort();
+      /** A forward write the model predicts: applied with a commit, or no change. */
+      const expectWrite = (result: WriteResult, commit: ModelCommit | undefined): void => {
+        expect(result.status, JSON.stringify(result.error)).toBe(
+          commit === undefined ? "unchanged" : "applied",
+        );
+        if (commit !== undefined) expect(result.seq).toBe(commit.seq);
+      };
 
       for (const s of steps) {
         const before = snapshot(fx, ids);
         if (s.kind === "create") {
-          if (ids.length >= MAX_TASKS) continue;
+          if (ids.tasks.length >= MAX_TASKS) continue;
           const id = newId("t");
-          const result = fx.writer.submit(
-            fx.request(
-              as(s.actor),
-              [{ kind: "task.create", id, title: `Fixture task ${String(ids.length + 1)}` }],
-              isHuman(s.actor) ? { undoable: true } : {},
-            ),
+          const result = send(
+            s.actor,
+            [{ kind: "task.create", id, title: `Fixture task ${String(ids.tasks.length + 1)}` }],
+            false,
           );
           expect(result.status, JSON.stringify(result.error)).toBe("applied");
-          ids.push(id);
-          model.create(1, isHuman(s.actor) ? s.actor : null);
+          ids.tasks.push(id);
+          model.create(1, owner(s.actor), s.actor);
         } else if (s.kind === "run") {
           // The execution store's requests: the person's, never undoable (A1 3.6).
-          const task = Math.max(0, ids.length - 1 - s.newest);
-          const id = ids[task] as Id<"t">;
+          const task = Math.max(0, ids.tasks.length - 1 - s.newest);
+          const id = ids.tasks[task] as Id<"t">;
           const created = fx.writer.submit(
             fx.request(fx.human, [
               {
@@ -596,7 +1082,7 @@ const property = (seen: Seen) =>
             count(seen, "run refused on a tombstone");
           } else {
             expect(created.status, JSON.stringify(created.error)).toBe("applied");
-            model.run(task);
+            model.run(task, true);
             count(seen, "run");
             const run = created.results[0]?.id as Id<"ru">;
             const states = ["queued", "starting", "running"] as const;
@@ -618,71 +1104,156 @@ const property = (seen: Seen) =>
                 ]),
               );
               expect(moved.status, JSON.stringify(moved.error)).toBe("applied");
-              model.run();
+              model.run(task, false);
             }
           }
         } else if (s.kind === "aba") {
           // A task the commit wrote or created, and the field it wrote when that is patchable.
-          const rows =
-            (s.on === "undo"
-              ? model.undoTarget(s.of)?.rows
-              : model.commits.get(model.redoTarget(s.of)?.undoneBy ?? 0)?.rows) ?? [];
+          const next =
+            s.on === "undo"
+              ? model.undoTarget(s.of)
+              : model.commits.get(model.redoSteps(s.of)[0]?.undoneBy ?? 0);
+          const rows = (next?.rows ?? []).filter((r) => r.entity === "tasks");
           const row = rows[s.pick % Math.max(rows.length, 1)];
-          const task = row?.task ?? s.task % ids.length;
+          const task = row?.id ?? s.task % ids.tasks.length;
           const field =
             row !== undefined && row.create !== true && Object.hasOwn(VALUES, row.field)
               ? (row.field as Patchable)
               : s.field;
-          // Another human's redo can write a tombstoned task (A1 3.10), never an agent's patch.
+          // A tombstoned task takes no agent's patch.
           if (model.deleted(task)) continue;
-          const id = ids[task] ?? ids[0];
-          const now = model.cell(task, field).value;
+          const id = ids.tasks[task] ?? ids.tasks[0];
+          const now = model.cell("tasks", task, field).value;
           const away = VALUES[field].find((v) => v !== now) ?? now;
           for (const value of [away, now]) {
-            const result = fx.writer.submit(
-              fx.request(as(s.actor), [patchOp(id as Id<"t">, { [field]: value })], {
-                base: fx.base(),
-              }),
-            );
+            const result = send(s.actor, [patchOp(id as Id<"t">, { [field]: value })]);
             expect(result.status, JSON.stringify(result.error)).toBe("applied");
-            model.write(task, { [field]: value }, null);
+            model.write("tasks", task, { [field]: value }, null, s.actor);
           }
         } else if (s.kind === "write" || s.kind === "lifecycle") {
-          const task = s.task % ids.length;
-          const id = ids[task] ?? ids[0];
-          const owner = isHuman(s.actor) ? s.actor : null;
+          const task = s.task % ids.tasks.length;
+          const id = ids.tasks[task] ?? ids.tasks[0];
           let op: Operation;
           let values: Partial<Record<Field, string>>;
           if (s.kind === "write") {
             op = patchOp(id as Id<"t">, s.set);
             values = s.set;
-          } else if (model.cell(task, "lifecycle").value === "active") {
+          } else if (model.cell("tasks", task, "lifecycle").value === "active") {
             op = { kind: "task.complete", task: id as Id<"t"> };
             values = { lifecycle: "completed", wrap: "pending" };
           } else {
             op = { kind: "task.reopen", task: id as Id<"t"> };
             values = { lifecycle: "active", wrap: "" };
           }
-          const result = fx.writer.submit(
-            fx.request(as(s.actor), [op], {
-              base: fx.base(),
-              ...(owner === null ? {} : { undoable: true }),
-            }),
-          );
+          const result = send(s.actor, [op]);
           if (model.deleted(task)) {
             // A tombstoned task takes no write but an undo's or a redo's.
             expect(result.error?.code).toBe("DELETED");
             count(seen, "write refused on a tombstone");
           } else {
-            const ended = [...model.commits.values()].some(
-              (c) => c.owner === owner && owner !== null && c.status === "undone",
-            );
-            const commit = model.write(task, values, owner);
-            expect(result.status, JSON.stringify(result.error)).toBe(
-              commit === undefined ? "unchanged" : "applied",
-            );
+            const ended = model.redoSteps(s.actor).length > 0;
+            const commit = model.write("tasks", task, values, owner(s.actor), s.actor);
+            expectWrite(result, commit);
             if (commit !== undefined && ended) count(seen, "redo ended");
           }
+        } else if (s.kind === "remove" || s.kind === "restore") {
+          const task = s.task % ids.tasks.length;
+          const id = ids.tasks[task] as Id<"t">;
+          // A restore leaves a key another active task took with it: no link to weigh here.
+          const linked = [...model.rows.values()].some(
+            (r) => r.entity === "links" && r.owners[0]?.id === task && model.live("links", r.id),
+          );
+          if (s.kind === "restore" && linked) continue;
+          const result = send(s.actor, [
+            { kind: `task.${s.kind === "remove" ? "delete" : "restore"}`, task: id },
+          ]);
+          if (model.deleted(task) && !model.inTrash(task)) {
+            expect(result.error).toMatchObject({ code: "NOT_FOUND", reason: "creation_undone" });
+            count(seen, "creation undone, not in the Trash");
+            continue;
+          }
+          const commit = model.write(
+            "tasks",
+            task,
+            { deleted: s.kind === "remove" ? GONE : "" },
+            owner(s.actor),
+            s.actor,
+          );
+          expectWrite(result, commit);
+          if (commit !== undefined) count(seen, s.kind === "remove" ? "removed" : "restored");
+        } else if (s.kind === "note") {
+          const task = s.task % ids.tasks.length;
+          const result = send(s.actor, [
+            { kind: "note.add", task: ids.tasks[task] as Id<"t">, body: "Fixture note." },
+          ]);
+          if (model.deleted(task)) {
+            expect(result.error?.code).toBe("DELETED");
+            continue;
+          }
+          const commit = model.note(task, owner(s.actor), s.actor);
+          expectWrite(result, commit);
+          ids.notes.push(String(result.results[0]?.id));
+          count(seen, "note");
+        } else if (s.kind === "link") {
+          const task = s.task % ids.tasks.length;
+          const sourceKey = KEYS[s.key] ?? KEYS[0];
+          const result = send(s.actor, [
+            {
+              kind: "source.add",
+              task: ids.tasks[task] as Id<"t">,
+              source: { kind: "ticket", title: "Fixture ticket", key: sourceKey },
+            },
+          ]);
+          if (model.deleted(task)) {
+            expect(result.error?.code).toBe("DELETED");
+            continue;
+          }
+          const linked = model.link(task, sourceKey, owner(s.actor), s.actor);
+          expectWrite(result, linked?.commit);
+          if (linked === undefined) continue;
+          const source = String(result.results[0]?.id);
+          if (linked.made) ids.sources.push(source);
+          expect(source).toBe(ids.sources[linked.source]);
+          const pair = `${ids.tasks[task] ?? ""}|${source}`;
+          if (!ids.links.includes(pair)) ids.links.push(pair);
+          count(seen, "link");
+        } else if (s.kind === "area" || s.kind === "project") {
+          const slug = `${s.kind === "area" ? "" : "p-"}${SLUGS[s.slug] ?? SLUGS[0]}`;
+          const entity = s.kind === "area" ? "areas" : "projects";
+          const liveAreas = [...model.rows.values()].filter(
+            (r) => r.entity === "areas" && model.live("areas", r.id),
+          );
+          // A story's project goes in the newest area; another, in one of the live ones or none.
+          const area =
+            s.kind === "project"
+              ? s.area < 0
+                ? liveAreas.at(-1)
+                : liveAreas[s.area % (liveAreas.length + 1)]
+              : undefined;
+          const id = s.kind === "area" ? newId("a") : newId("p");
+          const op: Operation =
+            s.kind === "area"
+              ? { kind: "area.create", id: id as Id<"a">, title: "Fixture area", slug }
+              : {
+                  kind: "project.create",
+                  id: id as Id<"p">,
+                  title: "Fixture project",
+                  slug,
+                  ...(area === undefined ? {} : { area: ids.areas[area.id] ?? "" }),
+                };
+          const result = send(s.actor, [op]);
+          if (model.slugTaken(entity, slug, -1)) {
+            expect(result.status).toBe("rejected");
+            count(seen, "slug taken");
+            continue;
+          }
+          const commit =
+            s.kind === "area"
+              ? model.area(slug, owner(s.actor), s.actor)
+              : model.project(slug, area?.id ?? null, owner(s.actor), s.actor);
+          expectWrite(result, commit);
+          ids[entity].push(id);
+          count(seen, s.kind);
         } else if (s.kind === "undo") {
           const target = model.undoTarget(s.who);
           const result = fx.writer.submit(
@@ -691,84 +1262,154 @@ const property = (seen: Seen) =>
           if (target === undefined) {
             expect(result.error?.code).toBe("NOTHING_TO_UNDO");
             count(seen, "NOTHING_TO_UNDO");
-          } else {
-            const guard = model.failing(target.rows, false);
-            const creates = target.rows.some((r) => r.create === true);
-            if (guard.named.some((k) => k.endsWith("|runs"))) count(seen, "create kept by a run");
-            if (guard.failed.size > 0 && !s.partial) {
-              expect(result.status).toBe("conflict");
-              expect(result.error?.code).toBe("UNDO_CONFLICT");
-              expect(named(ids, result.conflicts)).toEqual([...guard.named].sort());
-              count(seen, creates ? "create kept" : "undo conflict");
-              // R2: a field set back to the value the human wrote is still another's write.
-              if (
-                [...guard.failed].some(
-                  (r) => r.create !== true && model.cell(r.task, r.field).value === r.after,
-                )
-              ) {
-                count(seen, "aba refused");
-              }
-            } else {
-              const { failed, named: left } = model.failing(target.rows, s.partial);
-              expect(result.status, JSON.stringify(result.error)).toBe("applied");
-              const u = model.invert(target.rows, failed);
-              target.status = "undone";
-              target.undoneBy = u.seq;
-              expect(result.seq).toBe(u.seq);
-              expect(named(ids, result.conflicts)).toEqual([...left].sort());
-              count(seen, failed.size > 0 ? "partial undo" : "undo");
-              if (s.who === 3) count(seen, "second human's undo");
-              if (target.rows.some((r) => r.create === true && !failed.has(r))) {
-                count(seen, "create undone");
-              }
-              // ABA: the undo changed only rows of the commit whose provenance was the guard.
-              const after = snapshot(fx, ids);
-              for (const [k, cell] of after) {
-                const was = before.get(k);
-                if (was === undefined) throw new Error("no cell");
-                if (cell.value === was.value && cell.fv === was.fv && cell.fp === was.fp) continue;
-                const row = target.rows.find((r) => key(r.task, r.field) === k);
-                expect(row, `${k} changed but the commit never wrote it`).toBeDefined();
-                expect(failed.has(row as ModelChange), `${k} changed against its guard`).toBe(
-                  false,
-                );
-                expect(was.fp, `${k} held another write`).toBe(row?.afterProv);
-              }
+            continue;
+          }
+          const options = {
+            partial: s.partial,
+            creating: target.seq,
+            since: model.lastApplied(target),
+            principal: s.who,
+          };
+          const guard = model.failing(target.rows, { ...options, partial: false });
+          const creates = target.rows.some((r) => r.create === true);
+          if (guard.named.some((k) => k.endsWith("|runs"))) count(seen, "create kept by a run");
+          let skip = s.partial ? model.failing(target.rows, options).failed : guard.failed;
+          let broken = model.broken(target.rows, skip, { redo: false, since: options.since });
+          if (!s.partial && (guard.failed.size > 0 || broken.size > 0)) {
+            expect(result.status).toBe("conflict");
+            expect(result.error?.code).toBe("UNDO_CONFLICT");
+            if (plain(target.rows)) {
+              expect(named(ids.tasks, result.conflicts)).toEqual(sorted(guard.named));
             }
+            count(seen, creates ? "create kept" : "undo conflict");
+            if (target.rows.some((r) => r.field === "deleted" && r.before === "")) {
+              count(seen, "undo of a restore kept by newer work");
+            }
+            // R2: a field set back to the value the human wrote is still another's write.
+            if (
+              [...guard.failed].some(
+                (r) => r.create !== true && model.cell(r.entity, r.id, r.field).value === r.after,
+              )
+            ) {
+              count(seen, "aba refused");
+            }
+            continue;
+          }
+          // A partial undo leaves out what breaks a rule across rows, and checks again.
+          while (broken.size > 0) {
+            skip = new Set([...skip, ...broken]);
+            broken = model.broken(target.rows, skip, { redo: false, since: options.since });
+          }
+          expect(result.status, JSON.stringify(result.error)).toBe("applied");
+          if (plain(target.rows)) {
+            expect(named(ids.tasks, result.conflicts)).toEqual(
+              sorted(model.failing(target.rows, options).named),
+            );
+          }
+          const u = model.invert(target.rows, skip, s.who, "undo");
+          target.status = "undone";
+          target.undoneBy = u.seq;
+          expect(result.seq).toBe(u.seq);
+          expect(result.results[0]?.id).toBe(commitId(target.seq));
+          count(seen, skip.size > 0 ? "partial undo" : "undo");
+          if (s.who === 3) count(seen, "second human's undo");
+          if (target.rows.some((r) => r.create === true && !skip.has(r))) {
+            count(seen, "create undone");
+          }
+          // ABA: the undo changed only rows of the commit whose provenance was the guard.
+          const after = snapshot(fx, ids);
+          for (const [k, cell] of after) {
+            const was = before.get(k);
+            if (was === undefined) continue;
+            if (cell.value === was.value && cell.fv === was.fv && cell.fp === was.fp) continue;
+            const row = target.rows.find((r) => key(r.entity, r.id, r.field) === k);
+            if (row === undefined) {
+              // A create's inversion is its row's tombstone.
+              const created = target.rows.find(
+                (r) => r.create === true && key(r.entity, r.id, TOMBSTONE[r.entity]) === k,
+              );
+              expect(created, `${k} changed but the commit never wrote it`).toBeDefined();
+              continue;
+            }
+            expect(skip.has(row), `${k} changed against its guard`).toBe(false);
+            expect(was.fp, `${k} held another write`).toBe(row.afterProv);
           }
         } else if (s.kind === "redo") {
-          const target = model.redoTarget(s.who);
+          const tried = model.redoSteps(s.who);
           const result = fx.writer.submit(fx.request(as(s.who), [{ kind: "redo" }]));
-          if (target === undefined) {
+          if (tried.length === 0) {
             expect(result.error?.code).toBe("NOTHING_TO_REDO");
             count(seen, "NOTHING_TO_REDO");
-          } else {
+            continue;
+          }
+          // The oldest undone step the guards and the rules across rows let through.
+          const passed: ModelCommit[] = [];
+          const names: Named[] = [];
+          let redone: { target: ModelCommit; undone: ModelCommit } | undefined;
+          for (const target of tried) {
             const undone = model.commits.get(target.undoneBy ?? 0);
             if (undone === undefined) throw new Error("no undo");
-            const guard = model.failing(undone.rows, false);
-            if (guard.failed.size > 0) {
-              expect(result.status).toBe("conflict");
-              expect(result.error?.code).toBe("UNDO_CONFLICT");
-              expect(named(ids, result.conflicts)).toEqual([...guard.named].sort());
-              model.setAside(target);
-              count(seen, "redo conflict");
-            } else {
-              expect(result.status, JSON.stringify(result.error)).toBe("applied");
-              const r = model.invert(undone.rows, new Set());
-              target.status = "done";
-              target.undoneBy = null;
-              expect(result.seq).toBe(r.seq);
-              count(seen, "redo");
-              if (undone.rows.some((w) => w.field === "deleted")) count(seen, "create redone");
-              // Undo then redo restores the values the commit wrote, with its own provenance.
-              const after = snapshot(fx, ids);
-              for (const row of undone.rows) {
-                const wrote = target.rows.find((w) => w.task === row.task && w.field === row.field);
-                const cell = after.get(key(row.task, row.field));
-                expect(cell?.value).toBe(wrote?.after);
-                expect(cell?.fp).toBe(target.seq);
-              }
+            const options = {
+              partial: false,
+              creating: target.seq,
+              since: undone.seq,
+              principal: s.who,
+            };
+            const guard = model.failing(undone.rows, options);
+            const fails =
+              guard.failed.size > 0 ||
+              model.broken(undone.rows, new Set(), { redo: true, since: undone.seq, named: names })
+                .size > 0;
+            if (!fails) {
+              redone = { target, undone };
+              break;
             }
+            passed.push(target);
+            names.push(...guard.named);
+          }
+          const all = passed.flatMap((c) => model.commits.get(c.undoneBy ?? 0)?.rows ?? []);
+          if (passed.length > 0)
+            count(seen, redone === undefined ? "redo conflict" : "redo past a step");
+          if (
+            passed.some((c) =>
+              (model.commits.get(c.undoneBy ?? 0)?.rows ?? []).some(
+                (r) => r.entity !== "tasks" && r.field === TOMBSTONE[r.entity] && r.before === "",
+              ),
+            )
+          ) {
+            count(seen, "redo kept from a row or key");
+          }
+          if (all.some((r) => r.entity === "tasks" && r.field === "deleted" && r.before !== "")) {
+            count(seen, "redo of a removal kept by newer work");
+          }
+          expect(result.passed ?? []).toEqual(passed.map((c) => commitId(c.seq)));
+          if (plain(all)) expect(named(ids.tasks, result.conflicts)).toEqual(sorted(names));
+          if (redone === undefined) {
+            expect(result.status).toBe("conflict");
+            expect(result.error?.code).toBe("UNDO_CONFLICT");
+            continue;
+          }
+          const { target, undone } = redone;
+          expect(result.status, JSON.stringify(result.error)).toBe("applied");
+          expect(result.results[0]?.id).toBe(commitId(target.seq));
+          const r = model.invert(undone.rows, new Set(), s.who, "redo");
+          r.redoOf = target.seq;
+          target.status = "done";
+          target.undoneBy = null;
+          expect(result.seq).toBe(r.seq);
+          count(seen, "redo");
+          if (undone.rows.some((w) => w.entity === "tasks" && w.field === "deleted")) {
+            count(seen, "create redone");
+          }
+          // Undo then redo restores the values the commit wrote, with its own provenance.
+          const after = snapshot(fx, ids);
+          for (const row of undone.rows) {
+            if (row.entity !== "tasks") continue;
+            const wrote = target.rows.find((w) => w.id === row.id && w.field === row.field);
+            const cell = after.get(key("tasks", row.id, row.field));
+            if (wrote === undefined) continue;
+            expect(cell?.value).toBe(wrote.after);
+            expect(cell?.fp).toBe(target.seq);
           }
         }
         // Physical versions only grow.
@@ -784,7 +1425,7 @@ const property = (seen: Seen) =>
   });
 
 describe("[A1.5.history.property] undo and redo against a reference model", () => {
-  test("undo never changes a field whose provenance moved, and undo then redo restores the commit's values", async () => {
+  test("undo never changes a field whose provenance moved, undo then redo restores the commit's values, and redo passes over what it cannot bring back", async () => {
     // A fixed seed, whose runs must reach every outcome, then fresh random runs.
     const seen: Seen = {};
     await fc.assert(property(seen), { numRuns: 60, seed: 20261114 });
@@ -795,6 +1436,9 @@ describe("[A1.5.history.property] undo and redo against a reference model", () =
       "aba refused",
       "redo",
       "redo conflict",
+      "redo past a step",
+      "redo of a removal kept by newer work",
+      "redo kept from a row or key",
       "redo ended",
       "NOTHING_TO_UNDO",
       "NOTHING_TO_REDO",
@@ -803,11 +1447,17 @@ describe("[A1.5.history.property] undo and redo against a reference model", () =
       "create redone",
       "create kept",
       "write refused on a tombstone",
+      "removed",
+      "restored",
+      "note",
+      "link",
+      "area",
+      "project",
       "run",
       "create kept by a run",
     ]) {
       expect(seen[outcome] ?? 0, outcome).toBeGreaterThan(3);
     }
     await fc.assert(property({}), { numRuns: 20 });
-  }, 180_000);
+  }, 300_000);
 });

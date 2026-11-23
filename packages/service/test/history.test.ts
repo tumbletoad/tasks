@@ -231,11 +231,15 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
   );
 
   test(
-    "a refused redo is set aside and says how to do it anyway; the next redo reaches the change behind it",
+    "a redo passes over a removal someone added to since, redoes the change behind it and names the one it passed over; that one stays",
     async () => {
       const a = await add("Fixture task removed first");
       const b = await add("Fixture task edited after");
-      await call("task.delete", { tasks: [a], base: await asOf(), request_id: rid() });
+      const removal = await call("task.delete", {
+        tasks: [a],
+        base: await asOf(),
+        request_id: rid(),
+      });
       await set(b, { summary: "Fixture summary after" });
       await call("history.undo", { request_id: rid() });
       await call("history.undo", { request_id: rid() });
@@ -244,17 +248,19 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
         { task: a, kind: "note", text: "Fixture note since.", request_id: rid() },
         SCRIPT,
       );
-      expect(await refusal("history.redo", { request_id: rid() })).toMatchObject({
-        code: "conflict",
-        hint: `To move ${a} to the Trash anyway, remove it again: ttasks delete ${a}.`,
-        data: { cause: "UNDO_CONFLICT", trash: [a] },
-      });
-      expect(await call("history.redo", { request_id: rid() })).toMatchObject({
+      const redone = await call("history.redo", { request_id: rid() });
+      expect(redone).toMatchObject({
         result: "redone",
         tasks: [b],
+        passed_over: [removal["commit"]],
       });
       expect((await show(b))["summary"]).toBe("Fixture summary after");
       expect((await show(a))["ref"]).toBe(a);
+      // Nothing else can be redone: refused, naming the change it passed over again.
+      expect(await refusal("history.redo", { request_id: rid() })).toMatchObject({
+        code: "conflict",
+        data: { cause: "UNDO_CONFLICT", passed_over: [removal["commit"]] },
+      });
     },
     LONG,
   );
@@ -280,7 +286,7 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
       expect([count(conflicts, "notes"), count(conflicts, "log_entries")]).toEqual([100, 1]);
       expect(conflicts.length).toBeLessThanOrEqual(4);
       expect(conflicts.every((c) => c["by"] === "script")).toBe(true);
-      // The removal is set aside: the next undo reaches the task's creation, which the notes keep,
+      // The removal stays undone: the next undo reaches the task's creation, which the notes keep,
       // and what it leaves is counted the same way.
       const undone = await call("history.undo", { partial: true, request_id: rid() });
       const unresolved = undone["unresolved"] as Json[];

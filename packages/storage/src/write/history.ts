@@ -386,13 +386,15 @@ const SQL = {
   newestDone:
     `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
     "AND undo_status = 'done' ORDER BY seq DESC LIMIT 1",
-  oldestUndone:
+  /** The `done` commit of the principal's newest redo after `$after`, if any. */
+  newestRedone:
+    "SELECT t.seq AS seq, t.id AS id, t.undo_status AS undo_status, t.undone_by AS undone_by " +
+    "FROM commits r JOIN commits t ON t.seq = r.redo_of WHERE r.seq > $after " +
+    "AND r.principal_id = $principal AND r.kind = 'redo' AND t.undo_status = 'done' " +
+    "ORDER BY r.seq DESC LIMIT 1",
+  undone:
     `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
-    "AND undo_status = 'undone' AND seq > $after ORDER BY seq LIMIT 1",
-  laterUndone:
-    `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
-    "AND undo_status = 'undone' AND seq > $seq ORDER BY seq",
-  setAside: "UPDATE commits SET undo_status = 'dead' WHERE seq = $seq",
+    "AND undo_status = 'undone' ORDER BY seq",
   /** The newest redo of commit `$seq`, if any. */
   lastRedo: "SELECT max(seq) AS seq FROM commits WHERE seq > $seq AND redo_of = $seq",
   author:
@@ -538,68 +540,33 @@ function decodeStackCommit(row: Row | undefined): StackCommit | undefined {
   return { seq: r.int("seq", "seq"), id: r.id("id", "op"), undoneBy };
 }
 
-/** What undo takes: the principal's newest `done` commit (A1 3.10.1). */
+/**
+ * What undo takes (A1 3.10.1): the principal's `done` commit applied last, by its newest redo or
+ * else by its own seq. A redo can apply a step before an older one it passed over, so a step's own
+ * seq does not say which came last: a redo after the newest `done` commit does.
+ */
 export function undoTarget(conn: Connection, principal: Id<"ac">): StackCommit | undefined {
-  return decodeStackCommit(conn.prepare(SQL.newestDone).get({ principal }));
+  const newest = decodeStackCommit(conn.prepare(SQL.newestDone).get({ principal }));
+  const after = newest?.seq ?? 0;
+  return decodeStackCommit(conn.prepare(SQL.newestRedone).get({ principal, after })) ?? newest;
 }
 
-/** What redo takes: the oldest `undone` commit newer than the principal's newest `done` one. */
-export function redoTarget(conn: Connection, principal: Id<"ac">): StackCommit | undefined {
-  const after = undoTarget(conn, principal)?.seq ?? 0;
-  return decodeStackCommit(conn.prepare(SQL.oldestUndone).get({ principal, after }));
+/** What redo tries, in this order: the principal's `undone` commits, oldest first (A1 3.10.1). */
+export function redoSteps(conn: Connection, principal: Id<"ac">): StackCommit[] {
+  return conn
+    .prepare(SQL.undone)
+    .all({ principal })
+    .map((row) => {
+      const step = decodeStackCommit(row);
+      if (step === undefined) throw invalidValue("commits", "undo_status");
+      return step;
+    });
 }
 
 /** The commit that last applied a `done` commit's rows: its newest redo, else the commit itself. */
 export function lastApplied(conn: Connection, seq: number): number {
   const redo = conn.prepare(SQL.lastRedo).get({ seq })?.["seq"];
   return typeof redo === "number" ? redo : seq;
-}
-
-/**
- * Sets a refused redo's step aside, so that Redo reaches the step after it: the step is never
- * redone (its rows are `undone`'s rows, `changes`), and neither is a later undone step that builds
- * on it: one whose redo writes a field the step's redo writes, or anything of a row, or of a task,
- * whose tombstone the step's redo sets or clears. Without the step, such a redo would write a row
- * out of sight or name the person's own undo as another's change. Returns those later steps.
- */
-export function setAside(
-  conn: Connection,
-  principal: Id<"ac">,
-  step: StackCommit,
-  changes: readonly StoredChange[],
-): Id<"op">[] {
-  const written = new Set<string>();
-  const write = (rows: readonly StoredChange[]): void => {
-    for (const c of rows) {
-      written.add(`${c.entity}|${c.entityId}|${c.field ?? ""}`);
-      if (isInvertible(c.entity) && c.field === TABLES[c.entity].tombstone) {
-        written.add(`${c.entity}|${c.entityId}`);
-        if (c.entity === "tasks") written.add(`task|${c.entityId}`);
-      }
-    }
-  };
-  const buildsOn = (rows: readonly StoredChange[]): boolean =>
-    rows.some(
-      (c) =>
-        written.has(`${c.entity}|${c.entityId}|${c.field ?? ""}`) ||
-        written.has(`${c.entity}|${c.entityId}`) ||
-        (c.taskId !== null && written.has(`task|${c.taskId}`)),
-    );
-  write(changes);
-  conn.prepare(SQL.setAside).run({ seq: step.seq });
-  const later: Id<"op">[] = [];
-  for (const row of conn.prepare(SQL.laterUndone).all({ principal, seq: step.seq })) {
-    // An undone commit names its undo (decodeStackCommit).
-    const undone = decodeStackCommit(row);
-    const undo = undone?.undoneBy;
-    if (undone === undefined || undo === null || undo === undefined) continue;
-    const rows = readChanges(conn, undo);
-    if (!buildsOn(rows)) continue;
-    write(rows);
-    conn.prepare(SQL.setAside).run({ seq: undone.seq });
-    later.push(undone.id);
-  }
-  return later;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1238,6 +1205,8 @@ export interface ApplyOptions {
   refPrefix: string;
   /** A partial inversion applies what the rules across rows leave; a full one then nothing. */
   partial: boolean;
+  /** A redo's: no row it writes, and no owner of one, is out of sight after it (ownersLive). */
+  owners: boolean;
 }
 
 /** What an inversion wrote: its change rows, in the plan's order, and the tasks it touched. */
@@ -1274,6 +1243,7 @@ export interface Applied {
  *   back, and the conflict names that other folder's path, with who set it.
  * - **A project and what is in it** (groupRules): a deleted project holds no live task and no live
  *   folder, and a task in a project is in that project's area.
+ * - **A redo writes nothing out of sight** (ownersLive, with `owners`).
  *
  * When a rule breaks, the writes roll back to a savepoint, the conflicts are named on the state
  * before the plan, and a partial inversion applies the rest, checked again, since a folder left
@@ -1286,7 +1256,9 @@ export function applyInversions(
   options: ApplyOptions,
 ): Applied | undefined {
   const checked = (inversions: readonly Inversion[]): boolean =>
-    restoresOf(inversions).size > 0 || inversions.some(inGroupRules);
+    (options.owners && inversions.length > 0) ||
+    restoresOf(inversions).size > 0 ||
+    inversions.some(inGroupRules);
   if (!checked(plan.inversions)) return writeInversions(conn, plan.inversions, options);
   const since = plan.applied;
   const refOf = refsOf(conn, options.refPrefix);
@@ -1299,6 +1271,7 @@ export function applyInversions(
     tooManyLearnings(conn, restores, broken);
     sharedFolders(conn, plan.inversions, broken);
     groupRules(conn, plan.inversions, broken, { seq: options.seq, since });
+    if (options.owners) ownersLive(conn, plan.inversions, broken, since);
     if (broken.undone.size === 0) {
       conn.exec("RELEASE restores");
       return applied;
@@ -1590,6 +1563,92 @@ function groupRules(
   }
 }
 
+/** The rows that own a row (A1 3.4): a child's task, a link's source, a group's area, a folder's owner. */
+function ownersOf(entity: InvertibleEntity, raw: Row): { entity: InvertibleEntity; id: string }[] {
+  const of = (owner: InvertibleEntity, id: unknown) =>
+    typeof id === "string" ? [{ entity: owner, id }] : [];
+  switch (entity) {
+    case "tasks":
+      return [...of("areas", raw["area_id"]), ...of("projects", raw["project_id"])];
+    case "projects":
+      return of("areas", raw["area_id"]);
+    case "notes":
+    case "log_entries":
+    case "learnings":
+      return of("tasks", raw["task_id"]);
+    case "task_sources":
+      return [...of("tasks", raw["task_id"]), ...of("sources", raw["source_id"])];
+    case "places":
+    case "folders": {
+      const kind = raw["owner_kind"];
+      const owner = kind === "task" ? "tasks" : kind === "area" ? "areas" : "projects";
+      return of(owner, raw["owner_id"]);
+    }
+    case "sources":
+    case "areas":
+      return [];
+  }
+}
+
+/**
+ * A redo writes nothing out of sight (applyInversions). It never brings back a row whose owner is
+ * not there: a note of a task that is not there, a link to a source in the Trash, a project of an
+ * area that is not there. And it never writes a row, or under an owner, that went out of sight
+ * after the step was undone (`since`): a step before it passed over, or another's removal, took it
+ * away. A row out of sight before that stays as the step and its undo wrote it: a project's move
+ * also sets the area of its tasks in the Trash. Each row the plan writes is checked on the state
+ * the plan made, unless the plan takes the row away itself; one that fails keeps the plan's writes
+ * of it undone, and the row or its owner is named by its tombstone, with who took it away.
+ */
+function ownersLive(
+  conn: Connection,
+  inversions: readonly Inversion[],
+  broken: Broken,
+  since: number,
+): void {
+  const rows = new Map<string, Inversion[]>();
+  for (const i of inversions) {
+    const key = `${i.entity}|${i.id}`;
+    const list = rows.get(key);
+    if (list === undefined) rows.set(key, [i]);
+    else list.push(i);
+  }
+  for (const list of rows.values()) {
+    const first = list[0];
+    if (first === undefined) continue;
+    const { entity, id } = first;
+    const tombstone = TABLES[entity].tombstone;
+    const writes = list.filter((i) => i.field === tombstone);
+    if (writes.some((i) => i.kind === "tombstone" || !isLive(parsed(i.value)))) continue;
+    const back = writes.length > 0;
+    const row = readRow(conn, entity, id);
+    if (row === undefined) throw misuse("A row the plan wrote has gone");
+    /** Out of sight now: for good when a row comes back under it, else when taken away since. */
+    const gone = (state: RowState, of: InvertibleEntity, owner: boolean): boolean => {
+      const field = TABLES[of].tombstone;
+      if (isLive(valueIn(of, state.raw, field))) return false;
+      return (back && owner) || versionOf(state, field) > since;
+    };
+    const named: Broken["named"] = [];
+    if (gone(row, entity, false)) named.push({ entity, id, task: first.task, field: tombstone });
+    for (const owner of ownersOf(entity, row.raw)) {
+      const found = readRow(conn, owner.entity, owner.id);
+      if (found === undefined) throw invalidValue(entity, "owner");
+      if (!gone(found, owner.entity, true)) continue;
+      const task = owner.entity === "tasks" ? (owner.id as Id<"t">) : null;
+      named.push({
+        entity: owner.entity,
+        id: owner.id,
+        task,
+        field: TABLES[owner.entity].tombstone,
+      });
+    }
+    if (named.length === 0) continue;
+    for (const i of list) broken.undone.add(i);
+    broken.named.push(...named);
+  }
+}
+
 /** The entities whose restores a rule across rows counts. */
 const COUNTED = new Set<InvertibleEntity>(["tasks", "task_sources", "sources", "learnings"]);
 
@@ -1607,11 +1666,11 @@ function restoresOf(inversions: readonly Inversion[]): Map<string, Inversion> {
 interface Broken {
   undone: Set<Inversion>;
   /**
-   * A standing holder's link, a holder's lifecycle, a live learning, another's folder, or a
-   * project and what is in it.
+   * A standing holder's link, a holder's lifecycle, a live learning, another's folder, a project
+   * and what is in it, or a row or owner out of sight.
    */
   named: {
-    entity: "tasks" | "task_sources" | "learnings" | "folders" | "projects";
+    entity: InvertibleEntity;
     id: string;
     task: Id<"t"> | null;
     field: string;
