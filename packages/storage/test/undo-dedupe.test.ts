@@ -555,6 +555,7 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
           partial: true,
           op: 0,
           principal: fx.human.principal_id,
+          applied: u.seq,
         });
         expect(plan.conflicts).toEqual([]);
         const done = applyInversions(conn, plan, {

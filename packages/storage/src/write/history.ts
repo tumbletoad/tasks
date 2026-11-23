@@ -23,9 +23,10 @@
 //   redo clears it under that guard.
 // - Setting a tombstone back (a redo of a removal, the undo of a restore) puts a row out of sight
 //   again, a step the person decided before anything done to the row since. Another's change to
-//   the row after the commit inverted, and for a task to anything on it (a field, a note, a log
-//   entry, a link, a run, a folder), keeps it in sight, as a conflict that names that change. The
-//   principal's own steps (its undoable writes, undos and redos) do not count: the person made them.
+//   the row after the step was last applied (its commit, or a redo of it since), and for a task to
+//   anything on it (a field, a note, a log entry, a link, a run, a folder), keeps it in sight, as a
+//   conflict that names that change. The principal's own steps (its undoable writes, undos and
+//   redos) do not count: the person made them.
 // - Clearing a tombstone (a redo of a create's undo, or the undo of a delete) brings a row back. A
 //   source whose key, or a place whose owner and machine, another live row holds now stays
 //   tombstoned, and that row is the conflict: the unique indexes allow one live row each.
@@ -392,6 +393,8 @@ const SQL = {
     `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
     "AND undo_status = 'undone' AND seq > $seq ORDER BY seq",
   setAside: "UPDATE commits SET undo_status = 'dead' WHERE seq = $seq",
+  /** The newest redo of commit `$seq`, if any. */
+  lastRedo: "SELECT max(seq) AS seq FROM commits WHERE seq > $seq AND redo_of = $seq",
   author:
     "SELECT k.at AS at, k.author_id AS actor, a.kind AS kind, a.label AS label, " +
     "k.origin AS origin FROM commits k JOIN actors a ON a.id = k.author_id WHERE k.seq = $seq",
@@ -546,6 +549,12 @@ export function redoTarget(conn: Connection, principal: Id<"ac">): StackCommit |
   return decodeStackCommit(conn.prepare(SQL.oldestUndone).get({ principal, after }));
 }
 
+/** The commit that last applied a `done` commit's rows: its newest redo, else the commit itself. */
+export function lastApplied(conn: Connection, seq: number): number {
+  const redo = conn.prepare(SQL.lastRedo).get({ seq })?.["seq"];
+  return typeof redo === "number" ? redo : seq;
+}
+
 /**
  * Sets a refused redo's step aside, so that Redo reaches the step after it: the step is never
  * redone (its rows are `undone`'s rows, `changes`), and neither is a later undone step that builds
@@ -628,6 +637,8 @@ export interface InversionPlan {
   inversions: Inversion[];
   /** Each field whose guard fails, and each live child row that blocks a create's inversion. */
   conflicts: FieldConflict[];
+  /** PlanOptions.applied: what the rules across rows count from too (applyInversions). */
+  applied: number;
 }
 
 export interface PlanOptions {
@@ -641,6 +652,11 @@ export interface PlanOptions {
   op: number;
   /** Whose undo or redo it is: its own steps since are no newer work (the header). */
   principal: Id<"ac">;
+  /**
+   * The commit that last applied the rows inverted: their own, or a redo of them since. Others'
+   * changes after it are newer work (the header).
+   */
+  applied: number;
 }
 
 const parsed = (json: string): unknown => {
@@ -703,7 +719,7 @@ export function planInversions(
   changes: readonly StoredChange[],
   options: PlanOptions,
 ): InversionPlan {
-  const plan: InversionPlan = { inversions: [], conflicts: [] };
+  const plan: InversionPlan = { inversions: [], conflicts: [], applied: options.applied };
   const rows = new Map<string, RowState>();
   const kids = liveChildren(conn, changes);
   /**
@@ -803,7 +819,7 @@ export function planInversions(
         continue;
       }
       if (field === table.tombstone && !isLive(parsed(restore))) {
-        const newer = newerWork(conn, entity, id, change.seq, options.principal);
+        const newer = newerWork(conn, entity, id, options.applied, options.principal);
         for (const work of newer) blocked(conflict(work.where, work.version));
         if (newer.length > 0) continue;
       }
@@ -1222,7 +1238,7 @@ export function applyInversions(
   const checked = (inversions: readonly Inversion[]): boolean =>
     restoresOf(inversions).size > 0 || inversions.some(inGroupRules);
   if (!checked(plan.inversions)) return writeInversions(conn, plan.inversions, options);
-  const since = Math.min(...plan.inversions.map((i) => i.change.seq));
+  const since = plan.applied;
   for (;;) {
     conn.exec("SAVEPOINT restores");
     const applied = writeInversions(conn, plan.inversions, options);
@@ -1432,8 +1448,8 @@ export function brokenIn(
  * deleted project. The other side is named, with who wrote it: for a task, who put it into the
  * project.
  *
- * A break whose every side the plan set back (`seq`) or is older than the commits it inverts
- * (`since`) is as it was before them: the plan brings back what a person had, also a break that an
+ * A break whose every side the plan set back (`seq`) or is older than the step's latest
+ * application (`since`) is as it was before it: the plan brings back what a person had, also a break that an
  * earlier version let in. Only a side written since by another makes it the plan's.
  */
 function groupRules(

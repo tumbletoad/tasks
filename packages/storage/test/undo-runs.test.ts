@@ -209,6 +209,7 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
           partial: true,
           op: 0,
           principal: fx.human.principal_id,
+          applied: seq,
         });
       } catch (error) {
         problem = error;
@@ -283,6 +284,20 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
       expect.objectContaining({ entity: "runs", id: run, task: id, field: "state" }),
     ]);
     expect(task(id)["deleted_at"]).toBeNull();
+  });
+
+  test("Undo of a redone restore counts only what changed after the Redo", () => {
+    const id = create();
+    const run = String(startRun(id).results[0]?.id);
+    applied(write([{ kind: "task.delete", task: id }]));
+    applied(write([{ kind: "task.restore", task: id }]));
+    applied(undo());
+    // The run makes progress while its task is in the Trash; the person then brings it back.
+    move(run, "queued", "starting");
+    applied(redo());
+    expect(task(id)["deleted_at"]).toBeNull();
+    applied(undo());
+    expect(task(id)["deleted_at"]).not.toBeNull();
   });
 
   test("a task its create's undo tombstoned takes no run, and its redo brings it back without one", () => {

@@ -75,6 +75,7 @@ import {
   applyInversions,
   brokenIn,
   groupBreaks,
+  lastApplied,
   planInversions,
   readChanges,
   redoTarget,
@@ -2699,6 +2700,8 @@ export class SpaceWriter {
       partial,
       op: 0,
       principal,
+      // A redo applies the step's undo again; an undo takes back the step as its last redo made it.
+      applied: undo ? lastApplied(conn, target.seq) : inverted,
     });
     const conflict = (): WriteResult => {
       // A redo is all or nothing (A1 3.10.1), so a refused one is set aside: the next reaches the
