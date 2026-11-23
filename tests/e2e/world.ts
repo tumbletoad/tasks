@@ -17,7 +17,7 @@ import {
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
-import { findEntry } from "../../packages/contracts/src/index.ts";
+import { findEntry, readsOnly } from "../../packages/contracts/src/index.ts";
 import { atomicWrite } from "../../packages/files/src/index.ts";
 import { startTimes } from "../../packages/launch/src/process.ts";
 import { openSpace, type Id } from "../../packages/storage/src/index.ts";
@@ -455,14 +455,15 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       },
       op: async (space, op, input, as = "user") => {
         ops += 1;
+        const entry = findEntry(op);
         return (as === "user" ? life.user : life.agent).call(
           "op/call",
           {
             space,
             op,
-            // Reads take no request ID; every write gets a fresh one.
+            // A call that only reads takes no request ID; every write gets a fresh one.
             input:
-              findEntry(op)?.kind === "read"
+              entry !== undefined && readsOnly(entry, input)
                 ? input
                 : { ...input, request_id: `e2e-world-op-${String(ops).padStart(4, "0")}` },
           },
