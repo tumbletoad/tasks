@@ -113,8 +113,13 @@ export function schemaFailure(
   entry?: string,
 ): AppError {
   const renamed: string[] = [];
-  let guide = false;
-  const issues = error.issues.slice(0, 20).flatMap((issue) => {
+  const first = error.issues.slice(0, 20);
+  const oldGuide = (issue: (typeof first)[number]) =>
+    issue.code === "unrecognized_keys" &&
+    issue.path.length === 0 &&
+    issue.keys?.includes("guide") === true;
+  const guide = first.some(oldGuide);
+  const issues = first.flatMap((issue) => {
     const path = issue.path.map(String).join(".");
     // An old field, or its name in a list of fields such as update_task's clear.
     const value = valueAt(input, issue.path);
@@ -127,10 +132,7 @@ export function schemaFailure(
       renamed.push(`${value} is now ${now}`);
       return [{ path, message: `Now ${now}` }];
     }
-    if (issue.code === "unrecognized_keys" && path === "" && issue.keys?.includes("guide")) {
-      guide = true;
-      return [{ path: "guide", message: "Now skills" }];
-    }
+    if (oldGuide(issue)) return [{ path: "guide", message: "Now skills" }];
     const old = (issue.keys ?? []).filter((key) => Object.hasOwn(RENAMED, key));
     if (issue.code === "unrecognized_keys" && old.length > 0) {
       return old.map((key) => {

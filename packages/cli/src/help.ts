@@ -166,9 +166,10 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
   },
   {
     name: "skills",
-    summary: "List your agents' skills, print one, or copy a default to edit (skills copy)",
+    summary:
+      "List your agents' skills, print one, copy a default to edit, or see what changed in it",
     help: SKILLS_HELP,
-    subcommands: ["show", "copy"],
+    subcommands: ["show", "copy", "diff"],
   },
   {
     name: "mcp",

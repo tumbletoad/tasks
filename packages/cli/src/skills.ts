@@ -120,7 +120,9 @@ function lineDiff(before: string, after: string): string[] {
   const a = before.split("\n");
   const b = after.split("\n");
   // The longest common subsequence from each pair of positions on.
-  const common = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  const common = Array.from({ length: a.length + 1 }, () =>
+    new Array<number>(b.length + 1).fill(0),
+  );
   const at = (i: number, j: number): number => common[i]?.[j] ?? 0;
   for (let i = a.length - 1; i >= 0; i -= 1) {
     const row = common[i] ?? [];
@@ -129,7 +131,7 @@ function lineDiff(before: string, after: string): string[] {
     }
   }
   const lines: string[] = [];
-  for (let i = 0, j = 0; i < a.length || j < b.length; ) {
+  for (let i = 0, j = 0; i < a.length || j < b.length;) {
     if (i < a.length && j < b.length && a[i] === b[j]) {
       lines.push(`  ${a[i] ?? ""}`);
       i += 1;
@@ -145,17 +147,11 @@ function lineDiff(before: string, after: string): string[] {
   const near = (k: number) =>
     lines.slice(Math.max(0, k - 2), k + 3).some((line) => !line.startsWith("  "));
   const shown: string[] = [];
-  let left = false;
   lines.forEach((line, k) => {
-    if (!near(k)) {
-      left = true;
-      return;
-    }
-    if (left) shown.push("...");
-    left = false;
-    shown.push(line);
+    if (near(k)) shown.push(line);
+    // One "..." for each run of lines left out.
+    else if (k === 0 || near(k - 1)) shown.push("...");
   });
-  if (left) shown.push("...");
   return shown;
 }
 
@@ -302,17 +298,21 @@ function copy(io: Io, globals: Globals, folder: string, name: string): number {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     const before = readText(record);
-    if (before === skill.file) return said(false, `Your copy is already at ${path}. It is unchanged.`);
+    if (before === skill.file)
+      return said(false, `Your copy is already at ${path}. It is unchanged.`);
     // A copy still exactly as an older default left it holds none of the person's work.
     if (before !== undefined && readText(path) === before) {
       atomicWrite(path, skill.file, 0o600);
       atomicWrite(record, skill.file, 0o600);
-      return said(true, `Your copy at ${path} was the default as it was, unedited: it is today's default now.`);
+      return said(
+        true,
+        `Your copy at ${path} was the default as it was, unedited: it is today's default now.`,
+      );
     }
     atomicWrite(record, skill.file, 0o600);
     return said(
       false,
-      `Your copy at ${path} is unchanged. It now counts as made from today's default, so ${CLI_NAME} skills marks a change only when the default changes again.`,
+      `Your copy at ${path} is unchanged. It now counts as made from today's default, and is marked again only when the default changes.`,
     );
   }
   try {

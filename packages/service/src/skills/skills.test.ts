@@ -93,11 +93,20 @@ describe("[A3.3.6.mcp.skills] the shipped skills", () => {
       const text = servedText(skill, SCALE) ?? "";
       const part = TTASKS_PARTS[skill.name]?.(SCALE, skill.body ?? "", false);
       if (part === undefined) throw new Error(`${skill.name} has no part of TTasks'`);
-      expect(text.startsWith(`${TTASKS_LABEL}\n${part.ttasks.join("\n")}\n`), skill.name).toBe(true);
+      expect(text.startsWith(`${TTASKS_LABEL}\n${part.ttasks.join("\n")}\n`), skill.name).toBe(
+        true,
+      );
       expect(text.endsWith(`\n\n${USER_LABEL}\n\n${part.body}`), skill.name).toBe(true);
     }
     // A skill of the user's own has no TTasks part, and no heads.
-    const own = { name: "own", origin: "own", description: "", body: "Mine.", path: "", problem: undefined } as const;
+    const own = {
+      name: "own",
+      origin: "own",
+      description: "",
+      body: "Mine.",
+      path: "",
+      problem: undefined,
+    } as const;
     expect(servedText(own, SCALE)).toBe("Mine.");
   });
 });
@@ -130,7 +139,11 @@ describe("[A3.3.6.mcp.skills] sizing-effort in a space", () => {
       .map(({ key }) => key);
 
   test("its part names the space's own sizes, in their order", () => {
-    for (const keys of [["S", "M", "L"], ["XS", "S", "M", "L", "XL"], ["small", "big"]]) {
+    for (const keys of [
+      ["S", "M", "L"],
+      ["XS", "S", "M", "L", "XL"],
+      ["small", "big"],
+    ]) {
       const text = served(keys);
       const part = text.slice(0, text.indexOf("# Sizing effort"));
       expect(named(part, keys)).toEqual(keys);

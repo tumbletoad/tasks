@@ -171,13 +171,7 @@ import {
   type DigestFolder,
 } from "./task-view.ts";
 import { readFinished } from "./task-rows.ts";
-import {
-  listSkills,
-  readSkills,
-  servedText,
-  type Catalog,
-  type Skill,
-} from "../skills/index.ts";
+import { listSkills, readSkills, servedText, type Catalog, type Skill } from "../skills/index.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
 export interface ServedSpace {
