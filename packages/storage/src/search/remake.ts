@@ -4,7 +4,7 @@
 // is never kept or judged: whatever stands under its names is dropped, the tables are made again
 // from the statements the schema steps use at the copy's revision, and they are filled from the
 // copy's tasks (documents.ts rebuildSearchIndex). A copy at a revision before the index gets none.
-// A writer's open brings a sound index's documents up to date instead (repairSearchIndex).
+// The owner's writer open brings a sound index's documents up to date instead (repairSearchIndex).
 import type { Connection } from "../driver.ts";
 import { StorageError } from "../errors.ts";
 import { removeQuietly } from "../files.ts";

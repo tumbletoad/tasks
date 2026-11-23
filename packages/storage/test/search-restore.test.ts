@@ -18,12 +18,16 @@ import {
 } from "../src/search/documents.ts";
 import { repairSearchIndex, searchIndexSound } from "../src/search/remake.ts";
 import { hasSearchTables } from "../src/search/tables.ts";
+import { isId, newId } from "../src/ids.ts";
 import { openSpace } from "../src/space.ts";
 import { StorageWorker } from "../src/worker/client.ts";
+import { SpaceWriter } from "../src/write/writer.ts";
 import { SCHEMA_STEPS } from "../migrations/index.ts";
 import { rawWriter, writeCommits } from "./backup-helpers.ts";
+import { createRequest, ownerCredential } from "./fixture-requests.ts";
 import { STEPS_0_3 } from "./revisions.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
+import { rejection } from "./worker-helpers.ts";
 import { MACHINE } from "./write-helpers.ts";
 
 const folders = tempFolders("search-restore");
@@ -359,4 +363,102 @@ describe("[A1.5.search.repair] a damaged search index is made again and never co
       conn.close();
     }
   });
+
+  test("a writer's open on a machine that does not own the space leaves its index as it is", async () => {
+    const folder = await linkedSpace();
+    forgetSourceWords(folder);
+    const worker = await StorageWorker.start({ driver: "node:sqlite" });
+    try {
+      const elsewhere = await worker.openSpaceWriter(folder, { machine: OTHER_MACHINE });
+      expect(elsewhere.authority.machineId).not.toBe(OTHER_MACHINE.id);
+      expect(elsewhere.searchIndex).toBeUndefined();
+      await elsewhere.close();
+      await read(folder, (conn) => {
+        expect(matching(conn, "copyword")).toEqual([]);
+      });
+      // Its owner's next open brings it up to date.
+      const owner = await worker.openSpaceWriter(folder, { machine: MACHINE });
+      expect(owner.searchIndex).toBe("remade");
+      await owner.close();
+    } finally {
+      await worker.close();
+    }
+    await read(folder, (conn) => {
+      expect(matching(conn, "copyword")).toEqual(titled(conn, "Linked"));
+    });
+  });
+
+  test("a restored copy's index waits for its claim, and the claimed copy's search finds a source's key", async () => {
+    const checked = await checkedDriver();
+    const original = await linkedSpace();
+    const backup = await backupSpace(checked, original, { kind: "manual" });
+    const { folder } = await restoreBackup(checked, backup.file, join(folders.make(), "mira"));
+    // As a restore by a build before source words left it.
+    forgetSourceWords(folder);
+    const worker = await StorageWorker.start({ driver: "node:sqlite" });
+    try {
+      const refused = await rejection(worker.openSpaceWriter(folder, { machine: MACHINE }));
+      expect(refused.code).toBe("SPACE_READ_ONLY_COPY");
+      await read(folder, (conn) => {
+        expect(matching(conn, "copyword")).toEqual([]);
+      });
+      await worker.claimSpace(folder, { machine: MACHINE });
+      // The claim writes only its commit; the copy's first open as a writer, which follows every
+      // claim, brings its index up to date.
+      const claimed = await worker.openSpaceWriter(folder, { machine: MACHINE });
+      expect(claimed.searchIndex).toBe("remade");
+      await claimed.close();
+    } finally {
+      await worker.close();
+    }
+    await read(folder, (conn) => {
+      expect(matching(conn, "tracker:copyword-7")).toEqual(titled(conn, "Linked"));
+      expectIndexOfTasks(conn);
+    });
+  });
 });
+
+/** Another machine than the fixtures' authority. */
+const OTHER_MACHINE = { id: newId("m"), name: "mira-laptop", os: "linux" } as const;
+
+/** A space of this build with one task, `Linked task`, whose ticket's key holds `copyword`. */
+async function linkedSpace(): Promise<string> {
+  const { folder } = await createFixtureSpace(folders.make());
+  const opened = openSpace(await checkedDriver(), folder, { role: "writer" });
+  const owner = opened.conn.prepare("SELECT id FROM actors WHERE kind = 'human'").get()?.["id"];
+  if (!isId(owner, "ac")) throw new Error("the fixture space has no owner");
+  const writer = SpaceWriter.attach(opened, { machine: MACHINE });
+  try {
+    writer.registerMachine();
+    const credential = ownerCredential(owner);
+    const made = writer.submit(createRequest(writer.spaceId, credential, "Linked task"));
+    const task = made.status === "applied" ? made.results[0]?.id : undefined;
+    if (task === undefined) throw new Error(JSON.stringify(made.error));
+    const linked = writer.submit({
+      ...createRequest(writer.spaceId, credential, ""),
+      ops: [
+        {
+          kind: "source.add",
+          task,
+          source: { kind: "ticket", title: "Ticket", key: "tracker:copyword-7" },
+        },
+      ],
+    });
+    expect(linked.status, JSON.stringify(linked.error)).toBe("applied");
+  } finally {
+    writer.close();
+  }
+  return folder;
+}
+
+/** Leaves the closed space's task documents without their source words, as a build before them. */
+function forgetSourceWords(folder: string): void {
+  const conn = new DatabaseSync(join(folder, DATABASE_FILE));
+  try {
+    conn.exec(
+      "UPDATE search_fts SET extra = '' WHERE rowid IN (SELECT doc FROM search_docs WHERE kind = 'task')",
+    );
+  } finally {
+    conn.close();
+  }
+}

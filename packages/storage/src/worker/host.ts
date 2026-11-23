@@ -362,10 +362,12 @@ export function serve(
       ): Promise<OpenedSpaceInfo> => {
         let ready = opened;
         let migration: OpenedSpaceInfo["migration"];
+        // Only the authority writes (A1 3.7). Another machine's writer refuses every request, and
+        // the service serves its space read-only by this same rule: neither a migration nor the
+        // index may change that copy under its owner (in a synced folder, a conflict for them).
+        const owned = opened.space.authority.machineId === machine.id;
         if (opened.readOnlyReasons.includes("older_revision")) {
-          // Only the authority writes (A1 3.7), and a migration writes: another machine's writer
-          // would refuse every request anyway, and must not change the schema under its owner.
-          if (opened.space.authority.machineId !== machine.id) {
+          if (!owned) {
             throw new StorageError(
               "SPACE_NEEDS_MIGRATION",
               "The space needs a migration, which only its authority machine runs",
@@ -386,10 +388,10 @@ export function serve(
             ready = { ...opened, revision: to, readOnlyReasons: [] };
           }
         }
-        // A migration made the index just now. Otherwise damage in it alone is repaired here, so
-        // search works again without the person doing anything: the tasks are the truth.
+        // A migration made the index just now. Otherwise the owner's open repairs or refreshes it
+        // here, so search works without the person doing anything: the tasks are the truth.
         const searchIndex =
-          migration === undefined ? repairSearchIndex(checked, ready.conn, steps) : "sound";
+          owned && migration === undefined ? repairSearchIndex(checked, ready.conn, steps) : "sound";
         // Attached only: the caller registers the machine once the space is claimed. Attach
         // refuses a writer that still has a reason to be read-only.
         writers.set(handle, SpaceWriter.attach(ready, { machine }, writeSeams));
