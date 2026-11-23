@@ -9,6 +9,7 @@ import {
   LOG_KINDS,
   SourceOutput,
   SessionTask,
+  SkillRow,
   TaskRow,
   WrapState,
   patterns,
@@ -239,6 +240,12 @@ const Request = z
   .describe("The user's request for this launch: do it")
   .optional();
 
+/** The user's skills, on a read by launch: the first call of a session opened on a task. */
+const Skills = z
+  .array(SkillRow)
+  .describe("The user's skills: read the ones you need with status skills")
+  .optional();
+
 const NamedNotes = z
   .array(NoteOutput)
   .max(NAMED_NOTES)
@@ -253,6 +260,7 @@ export const TaskGetResult = z.union([
     request: Request,
     task: TaskDetail.describe("The task"),
     notes: NamedNotes,
+    skills: Skills,
   }),
   z.strictObject({
     view: z.literal("sections").describe("The sections asked for, in full"),
@@ -263,6 +271,7 @@ export const TaskGetResult = z.union([
     sections: TaskSections.describe("The sections asked for"),
     before: z.string().describe("Paging token for the rest").optional(),
     notes: NamedNotes,
+    skills: Skills,
   }),
 ]);
 
@@ -366,6 +375,12 @@ export const taskGet = defineEntry({
           more: { instructions: 0, notes: 0, log: 0, sources: 0 },
           version: 1040,
         },
+        skills: [
+          {
+            name: "working-a-task",
+            when: "Use when you work on a task, in a session opened on it or when the user hands you one.",
+          },
+        ],
       },
     },
     {

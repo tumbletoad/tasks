@@ -2301,6 +2301,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.6.mcp.skills",
+      "title": "Skills: every shipped skill in the Agent Skills format and within its size, no user's part names a tool, the list in the first call of both kinds of session, a skill's text with TTasks' part first, the user's copy read anew at every call, an unusable copy falling back with its reason, and a skill of the user's own listed and served",
+      "source": "A3 3.4.2, A3 3.4.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.6.mcp.instructions",
       "title": "The server instructions: ASCII, within the 2,048 characters Claude Code shows, the trigger and start rule within the first 240 characters, every tool they name is a registry tool and every registry tool is named, and the fields and values they name are the tools' own",
       "source": "A3 3.2.5, A3 3.6, A3 5, M0 row A06, A7 3.9 M2.02, A7 3.11 M4.04",
@@ -2333,7 +2341,7 @@
     },
     {
       "id": "A3.3.4.tools.five",
-      "title": "The five tools through the request path: status's here (exact, inside, below, best first, with a hint), its session and the work guide; get_task's digest v0 with A3 3.9.6's limits per part, what it left out counted and its folder, unbound with candidates for cwd, and sections a page at a time; update_task's place clear and context append; add_entry's links; and every field a later step brings refused with that step",
+      "title": "The five tools through the request path: status's here (exact, inside, below, best first, with a hint) and its session; get_task's digest v0 with A3 3.9.6's limits per part, what it left out counted and its folder, unbound with candidates for cwd, and sections a page at a time; update_task's place clear and context append; add_entry's links; and every field a later step brings refused with that step",
       "source": "A3 3.4.2, A3 3.4.4, A3 3.4.6, A3 3.4.7, A3 3.4.8, A3 3.5, A3 3.9.6, A7 3.9 M2.03",
       "owner": "M2",
       "kind": "ci",

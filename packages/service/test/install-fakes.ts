@@ -456,6 +456,7 @@ function dataFolders(data: string) {
     tmp: join(state, "tmp"),
     workdirs: join(state, "workdirs"),
     spaces: join(data, "spaces"),
+    skills: join(data, "skills"),
   };
 }
 

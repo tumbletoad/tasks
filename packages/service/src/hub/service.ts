@@ -748,6 +748,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         platform,
         ...(personHome === undefined ? {} : { home: personHome }),
         dataFolder: layout.data,
+        skillsFolder: layout.skills,
         markers,
         sessions,
         defaultSpace: () => defaults.get(),

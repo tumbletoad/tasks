@@ -8,6 +8,7 @@ planning/
 pnpm-lock.yaml
 packages/contracts/generated/
 packages/bridge/lib/
+packages/service/generated/
 docs/agents/
 dist/
 coverage/

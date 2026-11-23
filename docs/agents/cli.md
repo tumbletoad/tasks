@@ -45,7 +45,7 @@ Usage: `ttasks add <title> [flags]`
 | `--status` | `tasks[].status` | string | A status of the space; default open |
 | `--inbox` | `tasks[].inbox` | boolean | Put it in the Inbox for the user |
 | `-p`, `--priority` | `tasks[].priority` | integer | 1 highest, 4 none |
-| `--effort` | `tasks[].effort` | string | Estimate time and difficulty; default scale S under 30 min, M half a day, L more |
+| `--effort` | `tasks[].effort` | string | A size of the space: read skill sizing-effort first |
 | `--due` | `tasks[].due` | string | ISO date or phrase: fri, +3d |
 | `--waiting-on` | `tasks[].waiting_on` | string | Who or what it waits on |
 | `--focus` | `tasks[].focus` | boolean | Star it for today, only when the user asks |
@@ -225,7 +225,7 @@ Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 | `status=` | `set.status` | string | A status of the space |
 | `inbox=` | `set.inbox` | boolean | In the Inbox |
 | `priority=` | `set.priority` | integer | 1 highest, 4 none |
-| `effort=` | `set.effort` | string | Effort |
+| `effort=` | `set.effort` | string | A size of the space: read skill sizing-effort first |
 | `due=` | `set.due` | string | ISO date or phrase: fri, +3d |
 | `waiting_on=` | `set.waiting_on` | string | Who or what it waits on |
 | `area=` | `set.area` | string | Area name or slug |
@@ -260,7 +260,7 @@ Usage: `ttasks status [flags]`
 |---|---|---|---|
 | `--include` | `include` | "today" \| "week" \| "review" \| "waiting" \| "inbox" \| "changes" | Extra sections, up to 8 rows each (repeatable) |
 | `--since` | `since` | string | For changes: 24h, 7d or an ISO time; default 24h |
-| `--guide` | `guide` | "work" \| "refresh" \| "triage" \| "organize" | Return this workflow guide instead |
+| `--skill` | `skills` | string | Return these skills' text instead (repeatable) |
 
 ## `ttasks undo`
 
