@@ -2,6 +2,8 @@
 // 3.10 M3.02): the user's only, the tasks a change changed back, A1's undo codes as the registry's,
 // with the values "Restore mine" needs in a conflict, and a partial undo's unresolved fields. A
 // service in this process, fixture text and temporary folders only.
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
 import { opCall, type Caller } from "../src/ops/index.ts";
@@ -187,6 +189,36 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
       // A redo is all or nothing: neither the message nor the hint offers an undo.
       expect(conflict.message).not.toMatch(/undo/i);
       expect(conflict.hint).not.toMatch(/undo|partial/i);
+    },
+    LONG,
+  );
+
+  test(
+    "a folder set from a base before Undo brought the cleared one back is a conflict, and the restored folder stays",
+    async () => {
+      const task = await add("Fixture task with a folder");
+      const other = join(w.root, "fixture-history-other");
+      mkdirSync(other, { recursive: true });
+      const folder = async (input: Json): Promise<Json> =>
+        call("folder.manage", { task, ...input, base: await asOf(), request_id: rid() });
+      await folder({ action: "set", folder: w.portal });
+      await folder({ action: "clear" });
+      const empty = await asOf();
+      await call("history.undo", { request_id: rid() });
+      const stale = await call("folder.manage", {
+        task,
+        action: "set",
+        folder: other,
+        base: empty,
+        request_id: rid(),
+      }).then(
+        () => undefined,
+        (e: unknown) => (e instanceof AppError ? e.toBody() : e),
+      );
+      expect(stale).toMatchObject({
+        code: "conflict",
+        data: { conflicts: [{ task, entity: "folders", field: "deleted" }] },
+      });
     },
     LONG,
   );

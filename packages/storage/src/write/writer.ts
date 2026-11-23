@@ -2457,10 +2457,11 @@ export class SpaceWriter {
           if (row !== undefined) {
             // Another folder for the one there: the base covers the folder the caller saw, and
             // with `carry` every folder inside it that moves along, so one set since is not moved
-            // unseen.
+            // unseen. A folder Undo brought back keeps its old path version: the version of its
+            // tombstone says whether the caller saw it.
             const found = decodeFolder(row);
             target = found.id;
-            touches.push(...folderTouches(row, ["path"], parent));
+            touches.push(...folderTouches(row, ["path", "deleted"], parent));
             if (op.carry === true) {
               for (const inside of conn
                 .prepare(FOLDER_SQL.liveOn)
@@ -2469,7 +2470,7 @@ export class SpaceWriter {
                 if (moved.id === found.id) continue;
                 if (carriedTo(moved.path, found.path, op.path, folder.os) === undefined) continue;
                 const owned = moved.ownerKind === "task" ? task(moved.ownerId, "task", true) : null;
-                touches.push(...folderTouches(inside, ["path"], owned));
+                touches.push(...folderTouches(inside, ["path", "deleted"], owned));
               }
             }
           } else {
