@@ -271,6 +271,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A run starts in the space you named, with `--space` or `TTASKS_SPACE`, else in the default
   space, and `--wait` keeps following it there when the default changes. An answer longer than
   TTasks keeps is kept as its start, and showing it says so.
+- Your request reaches the agent as you typed it, every line's indent kept: only the blank lines
+  around it go, and characters that do not show, such as zero-width and direction marks. The
+  composer clears only when it still holds what you sent, so an edit made meanwhile stays.
 - Your request reaches the agent over its own connection, never on a command line. A run's
   answer, or the agent's question when it needs you, is kept in the run's record, and so is what
   the agent had written of its answer when Stop, a restart or its own end cut it short. A question

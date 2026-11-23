@@ -130,7 +130,8 @@ export function runBrief(
   replied: readonly string[] = [],
 ): string {
   const tool = findEntry("task.get")?.faces.mcp?.tool ?? "get_task";
-  const asked = request === null ? WORK_ON_IT : sanitiseComposer(request).text.trim() || WORK_ON_IT;
+  const words = request === null ? "" : sanitiseComposer(request).text;
+  const asked = words.trim() === "" ? WORK_ON_IT : words;
   const questions = replied.flatMap((question) => [
     "",
     "An earlier run on this task stopped to ask the person:",

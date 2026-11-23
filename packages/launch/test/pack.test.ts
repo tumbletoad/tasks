@@ -157,6 +157,14 @@ describe("[A4.5.brief.pack] the context pack: framed task text, the user's notes
     expect(pack.text).toContain("- 2026-11-11 Don't touch the reminders service.");
   });
 
+  test("[A4.3.11.run.brief-as-typed] the person's words keep every line's indent; only blank lines around them go", () => {
+    const pack = renderContextPack({
+      ...BASE,
+      composer: "\n    const a = 1;\n      return a;\n \n",
+    });
+    expect(pack.text).toContain("My request:\n    const a = 1;\n      return a;\n");
+  });
+
   test("a note the user addressed to agents is never cut: over the budget it stays whole and the last line says so", () => {
     const long = `${"Keep this whole. ".repeat(600)}End of the note.`;
     const pack = renderContextPack({

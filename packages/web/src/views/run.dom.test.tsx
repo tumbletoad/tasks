@@ -14,6 +14,7 @@ import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
 import type { SnapshotMessage, TaskRow } from "../store/rows.ts";
+import { readDraft } from "../unsent.ts";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
 
@@ -606,6 +607,49 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
       "Copied",
       "Codex already had this task open or opening. What you typed is saved on the task as a note.",
     ]);
+  });
+});
+
+describe("[M6.page.run-as-typed] Run sends the words as typed, and lets go only of a draft that is what it sent", () => {
+  test("an indented block keeps its indent; a draft edited only in its whitespace while Run is on its way stays", async () => {
+    let answer: () => void = () => undefined;
+    startAnswer = () =>
+      new Promise<Run>((resolve) => {
+        answer = () => {
+          resolve(record({ state: "queued", version: 1 }));
+        };
+      });
+    type("\n    const a = 1;\n      return a;\n");
+    click(1);
+    await settle();
+    expect(started.map((s) => s.text)).toEqual(["    const a = 1;\n      return a;"]);
+    // The person fixes the indent of the last line while the Run is on its way.
+    type("\n    const a = 1;\n    return a;\n");
+    answer();
+    await settle();
+    expect(composer()?.value).toBe("\n    const a = 1;\n    return a;\n");
+    expect(readDraft(SPACE.id, TASK.id)).toBe("\n    const a = 1;\n    return a;\n");
+    // A trailing space is an edit too.
+    startAnswer = () =>
+      new Promise<Run>((resolve) => {
+        answer = () => {
+          resolve(record({ state: "queued", version: 1 }));
+        };
+      });
+    type("Check it");
+    click(1);
+    await settle();
+    type("Check it ");
+    answer();
+    await settle();
+    expect(composer()?.value).toBe("Check it ");
+    // Unchanged, the words go once the service holds them.
+    startAnswer = queued;
+    type("Check that");
+    click(1);
+    await settle();
+    expect(composer()?.value).toBe("");
+    expect(readDraft(SPACE.id, TASK.id)).toBe("");
   });
 });
 
