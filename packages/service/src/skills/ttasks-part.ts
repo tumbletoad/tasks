@@ -79,7 +79,7 @@ const WRITING = [
 ];
 
 const PRIORITY = [
-  `- priority runs from 1 (highest) to 4 (none, the default); due takes an ISO date or a phrase such as fri or +3d; focus stars a task for today.`,
+  `- priority runs from 1 (highest) to 4 (none, the default); due takes an ISO date or a phrase such as fri or +3d; focus stars a task, which stays on Today until the star is cleared.`,
   `- A task you add (${addTasks}, or a follow-up of ${completeTask}): give it the priority the user's part below says. A task that exists: change priority or due with ${updateTask} only when the user asks.`,
   `- Set focus only when the user asks.`,
 ];

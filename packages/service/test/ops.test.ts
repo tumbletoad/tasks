@@ -460,27 +460,36 @@ describe("[A2.3.6.ops.request-path] op/call and op/list", () => {
         const tasks = Array.from({ length: Math.min(25, n - done) }, (_, i) => ({
           title: `Fixture counted ${due} ${String(done + i)}`,
           due,
+          inbox: true,
         }));
         await call(s, "task.add", { tasks, request_id: rid() });
       }
     };
-    const weekOf = async () =>
-      SpaceStatusResult.parse(await call(s, "space.status", { include: ["week"] })).sections?.[0];
-    // The tests above leave a few tasks due this week.
-    const before = (await weekOf())?.total ?? 0;
-    expect(before).toBeLessThan(8);
+    const section = async (name: "inbox" | "week") =>
+      SpaceStatusResult.parse(await call(s, "space.status", { include: [name] })).sections?.[0];
+    // The tests above leave a few tasks in the Inbox and due this week.
+    const before = {
+      inbox: (await section("inbox"))?.total ?? 0,
+      week: (await section("week"))?.total ?? 0,
+    };
+    expect(before.inbox).toBeLessThan(8);
     await add(12, "+3d");
-    const week = await weekOf();
-    expect(week?.tasks).toHaveLength(8);
-    expect(week?.total).toBe(before + 12);
-    expect(week?.more).toBeUndefined();
+    const inbox = await section("inbox");
+    expect(inbox?.tasks).toHaveLength(8);
+    expect(inbox?.total).toBe(before.inbox + 12);
+    expect(inbox?.more).toBeUndefined();
     // Exactly as many as the read takes: all counted, none past it.
-    await add(48 - before - 12, "+4d");
-    const full = await weekOf();
+    await add(48 - before.inbox - 12, "+4d");
+    const full = await section("inbox");
     expect(full).toMatchObject({ total: 48 });
     expect(full?.more).toBeUndefined();
     await add(1, "+4d");
-    expect(await weekOf()).toMatchObject({ total: 48, more: true });
+    expect(await section("inbox")).toMatchObject({ total: 48, more: true });
+    // The week is the page's This week, read whole: every task in it is counted.
+    const week = await section("week");
+    expect(week?.tasks).toHaveLength(8);
+    expect(week).toMatchObject({ total: before.week + 49 - before.inbox });
+    expect(week?.more).toBeUndefined();
   }, 120_000);
 
   test("the user-only space verbs refuse the script and agent classes", async () => {

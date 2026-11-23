@@ -25,7 +25,10 @@ import {
 } from "@ttasks/storage";
 import {
   AppError,
+  dayOf,
   PREFERENCES,
+  weekLastDay,
+  type DayClock,
   preferenceValue,
   readPreference,
   REQUEST_LAUNCHES,
@@ -649,10 +652,11 @@ const STATUS_ORDER: Statement = {
   sql: "SELECT value, schema_ver FROM preferences WHERE key = 'tasks.statuses'",
   mode: "get",
 };
+/** A task counts once, as on the page: in the Inbox by its flag, else under its status (day.ts). */
 const COUNTS: Statement = {
   sql:
     "SELECT status, count(*) AS n FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL " +
-    "GROUP BY status",
+    "AND inbox = 0 GROUP BY status",
   mode: "all",
 };
 const INBOX: Statement = {
@@ -676,20 +680,6 @@ const SECTION_ROWS = 8;
 const SECTION_READ = SECTION_ROWS * 6;
 const SECTION_LIMIT = `LIMIT ${String(SECTION_READ + 1)}`;
 const SECTION_SQL: Readonly<Record<string, Statement>> = {
-  today: {
-    sql:
-      ROW_SQL +
-      "t.lifecycle = 'active' AND (t.due_date <= $today OR t.focus_on = $today) " +
-      `ORDER BY t.priority, t.due_date, t.ref ${SECTION_LIMIT}`,
-    mode: "all",
-  },
-  week: {
-    sql:
-      ROW_SQL +
-      "t.lifecycle = 'active' AND t.due_date > $today AND t.due_date <= $week " +
-      `ORDER BY t.due_date, t.priority, t.ref ${SECTION_LIMIT}`,
-    mode: "all",
-  },
   review: {
     sql:
       ROW_SQL +
@@ -716,6 +706,44 @@ const SECTION_SQL: Readonly<Record<string, Statement>> = {
     mode: "all",
   },
 };
+
+/**
+ * The active tasks Today or the week may hold: starred, or due or planned up to the week's last
+ * day. A due time is read up to `$until`, past that day in any time zone. The rule that decides
+ * is the page's (day.ts), so these sections hold what the person sees there, in that order.
+ */
+const DAY_CANDIDATES: Statement = {
+  sql:
+    ROW_SQL +
+    "t.lifecycle = 'active' AND (t.focus_on IS NOT NULL OR t.due_date <= $last " +
+    "OR t.planned_for <= $last OR t.due_at < $until)",
+  mode: "all",
+};
+const DAY_SECTIONS = new Set(["today", "week"]);
+
+const textOrNull = (value: unknown): string | null => (typeof value === "string" ? value : null);
+const numberOrNull = (value: unknown): number | null => (typeof value === "number" ? value : null);
+
+/** Today's and the week's rows, each in its order. */
+function daySections(rows: readonly Row[], clock: DayClock): Record<"today" | "week", Row[]> {
+  const day = dayOf(
+    rows.map((row) => ({
+      row,
+      id: String(row["id"]),
+      lifecycle: String(row["lifecycle"]),
+      status: String(row["status"]),
+      inbox: row["inbox"] === 1,
+      priority: numberOrNull(row["priority"]),
+      due_date: textOrNull(row["due_date"]),
+      due_at: numberOrNull(row["due_at"]),
+      planned_for: textOrNull(row["planned_for"]),
+      focus_on: textOrNull(row["focus_on"]),
+      created_at: Number(row["created_at"]),
+    })),
+    clock,
+  );
+  return { today: day.today.map((t) => t.row), week: day.week.map((t) => t.row) };
+}
 
 /** The live folders on `$machine` of live projects: `here`'s project folders. */
 const PROJECT_FOLDERS_ON: Statement = {
@@ -862,8 +890,7 @@ export async function readKeyHolders(
 export async function readStatus(
   reader: WorkerConnection,
   options: {
-    readonly today: string;
-    readonly week: string;
+    readonly clock: DayClock;
     readonly since: number;
     readonly include: readonly string[];
     /** Read the active tasks `here` matched, for `here`. */
@@ -887,7 +914,12 @@ export async function readStatus(
   /** The bound task, when one was asked for and it exists. */
   bound: { ref: string; instructions: number } | undefined;
 }> {
-  const include = [...new Set(options.include)].filter((name) => Object.hasOwn(SECTION_SQL, name));
+  const include = [...new Set(options.include)].filter(
+    (name) => DAY_SECTIONS.has(name) || Object.hasOwn(SECTION_SQL, name),
+  );
+  const queried = include.filter((name) => !DAY_SECTIONS.has(name));
+  const day = include.some((name) => DAY_SECTIONS.has(name));
+  const { clock } = options;
   const results = await snapshot(
     reader,
     [
@@ -897,11 +929,13 @@ export async function readStatus(
       INBOX,
       ...(options.bound === undefined ? [] : [BOUND]),
       ...(options.here === undefined ? [] : [HERE_TASKS]),
-      ...include.map((name) => SECTION_SQL[name] as Statement),
+      ...(day ? [DAY_CANDIDATES] : []),
+      ...queried.map((name) => SECTION_SQL[name] as Statement),
     ],
     {
-      today: options.today,
-      week: options.week,
+      last: weekLastDay(clock),
+      // The week's last day ends less than 8 days from now, in any time zone.
+      until: clock.now + 8 * 86_400_000,
       since: options.since,
       ...hereParams(options.here ?? { machine: "", tasks: [], projects: [] }),
       bound: options.bound ?? null,
@@ -910,7 +944,9 @@ export async function readStatus(
   const [space, order, counts, inbox, ...rest] = results;
   const boundRow = options.bound === undefined ? undefined : rest.shift();
   const here = options.here === undefined ? [] : ((rest.shift() ?? []) as Row[]);
-  const found = rest;
+  const days = day ? daySections((rest.shift() ?? []) as Row[], clock) : undefined;
+  const found = new Map(queried.map((name, i) => [name, (rest[i] ?? []) as Row[]]));
+  if (days !== undefined) found.set("today", days.today).set("week", days.week);
   const facts = spaceFacts(space);
   const byStatus = new Map(
     (counts as Row[]).map((row) => [String(row["status"]), Number(row["n"])] as const),
@@ -919,9 +955,10 @@ export async function readStatus(
   for (const key of byStatus.keys()) if (!keys.includes(key)) keys.push(key);
   // A task appears once, in its first section (A3 3.4.2).
   const shown = new Set<unknown>();
-  const sections = include.map((name, i) => {
-    const read = (found[i] ?? []) as Row[];
-    const more = read.length > SECTION_READ;
+  const sections = include.map((name) => {
+    // Today and the week are read whole; the other sections up to their statement's limit.
+    const read = found.get(name) ?? [];
+    const more = read.length > SECTION_READ && !DAY_SECTIONS.has(name);
     const all = more ? read.slice(0, SECTION_READ) : read;
     const rows = all.filter((row) => !shown.has(row["id"]));
     const kept = rows.slice(0, SECTION_ROWS);

@@ -155,7 +155,7 @@ export const TaskDetail = TaskRow.extend({
   summary: z.string().describe("One line: the next step"),
   context: z.string().describe("Markdown context: the first 800 characters"),
   waiting_on: z.string().describe("Who or what it waits on").optional(),
-  focus: z.boolean().describe("Starred for today"),
+  focus: z.boolean().describe("Starred: in Today's Focus until the star is cleared"),
   created: z.string().regex(patterns.instant).describe("When it was created").optional(),
   folder: DigestFolder.describe(
     "Where it opens on this machine; none: in the space's work folder",

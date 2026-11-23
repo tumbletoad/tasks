@@ -36,8 +36,7 @@ function submit(ops: Operation[]): WriteResult {
 
 const status = () =>
   readStatus(readerOf(fx.reader), {
-    today: "2026-11-12",
-    week: "2026-11-19",
+    clock: { today: "2026-11-12", now: Date.UTC(2026, 10, 12, 9), timeZone: "Europe/Lisbon" },
     since: 0,
     include: [],
   });

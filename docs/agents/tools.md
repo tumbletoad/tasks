@@ -1055,11 +1055,11 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `counts` | object | yes | Counts of active tasks |
 | `counts.statuses` | object[] | yes | Active tasks per status, in the space's order |
 | `counts.statuses[].status` | string | yes | Status key |
-| `counts.statuses[].count` | integer, 0 to 1000000000 | yes | Active tasks with it |
+| `counts.statuses[].count` | integer, 0 to 1000000000 | yes | Active tasks with it, outside the Inbox |
 | `counts.inbox` | integer, 0 to 1000000000 | yes | Tasks in the Inbox |
 | `counts.proposals` | integer, 0 to 1000000000 | yes | Pending proposals |
 | `sections` | object[] | no | The sections asked for with include |
-| `sections[].name` | "today" \| "week" \| "review" \| "waiting" \| "inbox" \| "changes" | yes | Section |
+| `sections[].name` | "today" \| "week" \| "review" \| "waiting" \| "inbox" \| "changes" | yes | Section; today and week as Today's Focus and This week on the page |
 | `sections[].tasks` | object[] | yes | Up to 8 tasks |
 | `sections[].tasks[].id` | string | yes | Task ID |
 | `sections[].tasks[].ref` | string | yes | Task reference |
@@ -1345,7 +1345,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | A1 operations | `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `add_tasks`, CLI `ttasks add`, UI |
 | Errors | `invalid_input`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1622, reported |
+| Definition, estimated tokens | 1629, reported |
 | Result budget, estimated tokens | typical 80, max 2000 |
 
 ### Input
@@ -1363,7 +1363,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | `tasks[].effort` | string, max 20 | no | A size of the space: read skill sizing-effort first |
 | `tasks[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `tasks[].waiting_on` | string, max 80 | no | Who or what it waits on |
-| `tasks[].focus` | boolean | no | Star it for today, only when the user asks |
+| `tasks[].focus` | boolean | no | Star it: on Today until cleared. Only when the user asks |
 | `tasks[].created` | string, max 40 | no | When it was created, only for work that existed before: ISO date or instant |
 | `tasks[].folder` | string, 1 to 4096 | no | Its folder: "cwd", an absolute folder or one under ~ |
 | `tasks[].sources` | object[], max 10 items | no | Where it came from |
@@ -1477,7 +1477,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | A1 operations | `task.complete`, `task.archive`, `task.wrap_up`, `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `complete_task`, CLI `ttasks done`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 2019, reported |
+| Definition, estimated tokens | 2026, reported |
 | Result budget, estimated tokens | typical 100, max 1500 |
 
 ### Input
@@ -1499,7 +1499,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].effort` | string, max 20 | no | A size of the space: read skill sizing-effort first |
 | `follow_ups[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `follow_ups[].waiting_on` | string, max 80 | no | Who or what it waits on |
-| `follow_ups[].focus` | boolean | no | Star it for today, only when the user asks |
+| `follow_ups[].focus` | boolean | no | Star it: on Today until cleared. Only when the user asks |
 | `follow_ups[].created` | string, max 40 | no | When it was created, only for work that existed before: ISO date or instant |
 | `follow_ups[].folder` | string, 1 to 4096 | no | Its folder: "cwd", an absolute folder or one under ~ |
 | `follow_ups[].sources` | object[], max 10 items | no | Where it came from |
@@ -1814,7 +1814,7 @@ When `view` is `"digest"`:
 | `task.summary` | string | yes | One line: the next step |
 | `task.context` | string | yes | Markdown context: the first 800 characters |
 | `task.waiting_on` | string | no | Who or what it waits on |
-| `task.focus` | boolean | yes | Starred for today |
+| `task.focus` | boolean | yes | Starred: in Today's Focus until the star is cleared |
 | `task.created` | string | no | When it was created |
 | `task.folder` | object \| object | no | Where it opens on this machine; none: in the space's work folder |
 | `task.folder.path` | string | yes | The folder, the home written as ~ |
@@ -2500,7 +2500,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
 | Faces | MCP `update_task`, CLI `ttasks set`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict` |
-| Definition, estimated tokens | 1717, reported |
+| Definition, estimated tokens | 1724, reported |
 | Result budget, estimated tokens | typical 80, max 400 |
 
 ### Input
@@ -2520,7 +2520,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `set.area` | string, max 120 | no | Area name or slug |
 | `set.project` | string, max 120 | no | Project name or slug |
 | `set.folder` | string, 1 to 4096 | no | "cwd", an absolute folder or one under ~ |
-| `set.focus` | boolean | no | Star it for today, only when the user asks |
+| `set.focus` | boolean | no | Star it: on Today until cleared. Only when the user asks |
 | `clear` | ("summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus")[], max 7 items | no | Fields to clear |
 | `context` | object | no | Change the context |
 | `context.mode` | "append" \| "replace" | yes | append needs no base |

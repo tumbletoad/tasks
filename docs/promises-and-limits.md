@@ -114,6 +114,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - An agent that reaches TTasks through its registered connection reaches only the spaces you
   granted it.
 - A change by an agent or a script is never recorded as yours.
+- An agent that asks what is on for today or this week is told the tasks your Today shows under
+  Focus and This week, in the same order. Its counts and stars are the ones your page shows.
 - Every note is visible to agents.
 - Your skills, the files in `skills/` of TTasks's folder, are your instructions to every agent that
   uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, an

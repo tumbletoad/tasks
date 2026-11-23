@@ -1,7 +1,7 @@
 // `get_task`'s two views (A3 3.4.4, 3.9.6): the digest v0, bounded by A3's limits per part, and a
 // page of the sections asked for (pages.ts). Both are built by the request path from one snapshot,
 // so every face returns the same result; MCP's text is its rendering (mcp/render.ts).
-import { REQUEST_CHARS } from "@ttasks/contracts";
+import { isStarred, REQUEST_CHARS } from "@ttasks/contracts";
 import type { Row } from "@ttasks/storage";
 import { invalid } from "./errors.ts";
 import {
@@ -116,7 +116,7 @@ export function digestOf(
     summary: field("summary", text(row["summary"]), DIGEST_LIMITS.summary),
     context: field("context", text(row["context"]), DIGEST_LIMITS.context),
     ...present("waiting_on", row["waiting_on"]),
-    focus: row["focus_on"] === today,
+    focus: typeof row["focus_on"] === "string" && isStarred({ focus_on: row["focus_on"] }, today),
     ...(typeof row["created_at"] === "number" && Number.isFinite(row["created_at"])
       ? { created: new Date(row["created_at"]).toISOString() }
       : {}),

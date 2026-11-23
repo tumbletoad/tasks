@@ -90,7 +90,7 @@ export const SpaceStatusResult = z.strictObject({
         .array(
           z.strictObject({
             status: z.string().describe("Status key"),
-            count: Count.describe("Active tasks with it"),
+            count: Count.describe("Active tasks with it, outside the Inbox"),
           }),
         )
         .describe("Active tasks per status, in the space's order"),
@@ -101,7 +101,9 @@ export const SpaceStatusResult = z.strictObject({
   sections: z
     .array(
       z.strictObject({
-        name: z.enum(INCLUDE).describe("Section"),
+        name: z
+          .enum(INCLUDE)
+          .describe("Section; today and week as Today's Focus and This week on the page"),
         tasks: z.array(TaskRow).describe("Up to 8 tasks"),
         total: Count.describe("Its tasks not listed in an earlier section"),
         more: z.literal(true).describe("It has more tasks than total says").optional(),

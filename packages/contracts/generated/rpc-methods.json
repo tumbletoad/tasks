@@ -2266,7 +2266,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "count": {
-                      "description": "Active tasks with it",
+                      "description": "Active tasks with it, outside the Inbox",
                       "maximum": 1000000000,
                       "minimum": 0,
                       "type": "integer"
@@ -2446,7 +2446,7 @@
                   "type": "boolean"
                 },
                 "name": {
-                  "description": "Section",
+                  "description": "Section; today and week as Today's Focus and This week on the page",
                   "enum": [
                     "today",
                     "week",
@@ -2760,7 +2760,7 @@
                   "type": "string"
                 },
                 "focus": {
-                  "description": "Star it for today, only when the user asks",
+                  "description": "Star it: on Today until cleared. Only when the user asks",
                   "type": "boolean"
                 },
                 "folder": {
@@ -3094,7 +3094,7 @@
                   "type": "string"
                 },
                 "focus": {
-                  "description": "Star it for today, only when the user asks",
+                  "description": "Star it: on Today until cleared. Only when the user asks",
                   "type": "boolean"
                 },
                 "folder": {
@@ -4075,7 +4075,7 @@
                     "type": "string"
                   },
                   "focus": {
-                    "description": "Starred for today",
+                    "description": "Starred: in Today's Focus until the star is cleared",
                     "type": "boolean"
                   },
                   "folder": {
@@ -5999,7 +5999,7 @@
                 "type": "string"
               },
               "focus": {
-                "description": "Star it for today, only when the user asks",
+                "description": "Star it: on Today until cleared. Only when the user asks",
                 "type": "boolean"
               },
               "folder": {
