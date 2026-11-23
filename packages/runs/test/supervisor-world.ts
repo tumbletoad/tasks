@@ -210,6 +210,7 @@ export class SupervisorWorld {
     };
     return {
       probe: () => Promise.resolve({ available: true, kind: "job" }),
+      kind: () => Promise.resolve("job" as const),
       start: (spec: ContainerSpec): Promise<Contained> => {
         const name = spec.name;
         const run = this.record(name);

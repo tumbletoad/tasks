@@ -22,7 +22,15 @@ export interface ContainerSpec {
   readonly cwd: string;
   /** The program's whole environment. */
   readonly env: Readonly<Record<string, string>>;
+  /** How the run starts, as `kind()` said and its record keeps. Default: as `kind()` says now. */
+  readonly kind?: ContainerKind;
 }
+
+/**
+ * How a run's processes are held: in a group the operating system counts (a cgroup on Linux, a
+ * job on Windows), or as the agent's process tree as TTasks can find it, which nothing counts.
+ */
+export type ContainerKind = "cgroup" | "job" | "tree";
 
 /** How the agent itself ended: its exit code, or the signal that ended it (Linux). */
 export interface AgentExit {
@@ -79,7 +87,7 @@ export type ProbeResult =
   | {
       readonly available: true;
       /** `tree`: no process group; the agent's process tree as TTasks can find it. */
-      readonly kind: "cgroup" | "job" | "tree";
+      readonly kind: ContainerKind;
     }
   | {
       readonly available: false;
@@ -91,6 +99,11 @@ export type ProbeResult =
 export interface ConfirmOptions {
   /** How long to wait for the container to become empty before answering. Default 0. */
   readonly waitMs?: number;
+  /**
+   * How the run started, as its record keeps it: what is asked after a restart. Absent for a run
+   * whose record does not say, one of an earlier build: then an empty group cannot confirm it.
+   */
+  readonly kind?: ContainerKind;
 }
 
 export interface Containers {
@@ -99,6 +112,8 @@ export interface Containers {
    * killing it and seeing it empty: settings alone prove nothing.
    */
   probe(): Promise<ProbeResult>;
+  /** How a run started now is held: recorded with the run before its agent starts. */
+  kind(): Promise<ContainerKind>;
   /**
    * Creates the container and starts the agent inside it. Throws a ContainerError when the name
    * is taken (`exists`), runs cannot be contained here (`unavailable`), or the agent could not be

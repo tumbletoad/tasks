@@ -191,14 +191,18 @@ export class RunMachine {
   }
 
   /**
-   * Commits `queued → starting`, the one move that lets a container start. `began` is true only
-   * for the call that made it; any other gets the record as it is.
+   * Commits `queued → starting`, the one move that lets a container start, with what is known of
+   * the container before it starts: how it will hold the run. `began` is true only for the call
+   * that made it; any other gets the record as it is.
    */
-  begin(id: string): Promise<{ run: RunRecord | undefined; began: boolean }> {
+  begin(
+    id: string,
+    evidence: RunEvidence = {},
+  ): Promise<{ run: RunRecord | undefined; began: boolean }> {
     return this.#section(id, async () => {
       const run = await this.#read(id);
       if (run?.state !== "queued") return { run, began: false };
-      const tried = await this.#try(run, { next: "starting" });
+      const tried = await this.#try(run, { next: "starting", patch: { evidence } });
       return {
         run: tried.run,
         began: tried.kind === "moved" && tried.run?.state === "starting",

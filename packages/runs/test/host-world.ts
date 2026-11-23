@@ -237,6 +237,7 @@ export class World {
     };
     return {
       probe: () => alive(() => ({ available: true as const, kind: "job" as const })),
+      kind: () => alive(() => "job" as const),
       start: (spec) => this.#boundary(life, () => this.#start(spec, life)),
       interrupt: (name) =>
         alive(() => {

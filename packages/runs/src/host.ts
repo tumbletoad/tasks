@@ -24,7 +24,9 @@
 //   it said so far, the words of an answer still being written included. The next start settles
 //   each open run from its saved work: its own result when the work had settled, else the last
 //   saved answer, as `timed_out` once a time limit had fired (saved the moment it fires), else as
-//   `service_ended`.
+//   `service_ended`. It asks about each run's processes as the run's record says they started,
+//   which is recorded with `starting`: a group is counted; without one, nothing of the run is
+//   known alive any more and its end cannot be confirmed.
 // - A late PID, exit or event never revives a stopped run: the record's rules (machine.ts) refuse
 //   it, and a container that starts after its run gave up on it is killed.
 //
@@ -42,6 +44,7 @@ import type {
   AgentExit,
   Confirmation,
   Contained,
+  ContainerKind,
   ContainerSpec,
   Containers,
 } from "./container/index.ts";
@@ -146,6 +149,12 @@ function timer(ms: number, signal: AbortSignal): Promise<void> {
       clearTimeout(handle);
     });
   });
+}
+
+/** How a run's record says its processes started; undefined when it does not say. */
+function kindOf(run: RunRecord): ContainerKind | undefined {
+  const kind = run.evidence.container;
+  return kind === "cgroup" || kind === "job" || kind === "tree" ? kind : undefined;
 }
 
 /**
@@ -329,7 +338,10 @@ export class RunHost {
     const flow = this.#flow(id);
     let begun: { run: RunRecord | undefined; began: boolean };
     try {
-      begun = await this.#machine.begin(id);
+      // How the run's processes will be held is recorded before anything of it starts: recovery
+      // asks the question that fits it.
+      const container = await this.#containers.kind();
+      begun = await this.#machine.begin(id, { container });
     } catch (error) {
       this.#flows.delete(id);
       throw error;
@@ -412,7 +424,7 @@ export class RunHost {
     if (run?.state !== "unknown") return run;
     const flow = this.#flows.get(id);
     if (flow?.startPending === true) return run;
-    const cleanup = endedBy(await this.#recoverContainer(id));
+    const cleanup = endedBy(await this.#recoverContainer(id, kindOf(run)));
     if (cleanup === undefined) return run;
     const end =
       flow?.pending === undefined
@@ -434,7 +446,7 @@ export class RunHost {
     const run = await this.#machine.read(id);
     if (run?.state !== "starting" || this.#flows.has(id)) return run;
     const end: RunEnd = { kind: "start_failed", reason: "start_timed_out" };
-    const confirmed = await this.#recoverContainer(containerName(id));
+    const confirmed = await this.#recoverContainer(containerName(id), kindOf(run));
     if (settles(confirmed)) return this.#settle(id, end);
     const flow = this.#flows.get(id) ?? this.#flow(id);
     flow.pending = end;
@@ -573,12 +585,14 @@ export class RunHost {
     if (open === undefined) {
       return this.#settle(flow.id, { kind: "start_failed", reason: "spawn_failed" });
     }
+    const kind = kindOf(run);
     const spec: ContainerSpec = {
       name,
       command: prepared.command,
       args: prepared.args,
       cwd: prepared.cwd,
       env: prepared.env,
+      ...(kind === undefined ? {} : { kind }),
     };
 
     flow.startPending = true;
@@ -875,13 +889,37 @@ export class RunHost {
     }
   }
 
-  /** From the container's name alone: ends what is left and confirms it empty. */
-  async #recoverContainer(name: string): Promise<Confirmation> {
+  /** From the container's name and kind alone: ends what is left and confirms it empty. */
+  async #recoverContainer(name: string, kind: ContainerKind | undefined): Promise<Confirmation> {
     try {
-      return await this.#containers.recover(name, { waitMs: this.#times.confirmMs });
+      return await this.#containers.recover(name, {
+        waitMs: this.#times.confirmMs,
+        ...(kind === undefined ? {} : { kind }),
+      });
     } catch (error) {
       return { state: "unknown", detail: error instanceof Error ? error.name : "error" };
     }
+  }
+
+  /**
+   * From a run's record alone: looks whether anything of it is left, and ends what is. The
+   * cleanup is `confirmed` when nothing was there, else how what was left ended, or undefined
+   * while that is not known.
+   */
+  async #endLeft(
+    run: RunRecord,
+  ): Promise<{ confirmed: Confirmation; cleanup: RunCleanup | undefined }> {
+    const name = containerName(run.id);
+    const kind = kindOf(run);
+    let left: Confirmation;
+    try {
+      left = await this.#containers.confirmEmpty(name, kind === undefined ? {} : { kind });
+    } catch (error) {
+      left = { state: "unknown", detail: error instanceof Error ? error.name : "error" };
+    }
+    if (left.state === "empty") return { confirmed: left, cleanup: "confirmed" };
+    const confirmed = await this.#recoverContainer(name, kind);
+    return { confirmed, cleanup: endedBy(confirmed) };
   }
 
   /**
@@ -924,15 +962,8 @@ export class RunHost {
    * left, then settle.
    */
   async #reconcile(run: RunRecord): Promise<RunRecord | undefined> {
-    const name = containerName(run.id);
-    let left: Confirmation;
-    try {
-      left = await this.#containers.confirmEmpty(name);
-    } catch (error) {
-      left = { state: "unknown", detail: error instanceof Error ? error.name : "error" };
-    }
-    const confirmed = left.state === "empty" ? left : await this.#recoverContainer(name);
-    const end = this.#serviceEnded(run, left.state === "empty" ? "confirmed" : endedBy(confirmed));
+    const { confirmed, cleanup } = await this.#endLeft(run);
+    const end = this.#serviceEnded(run, cleanup);
     if (settles(confirmed)) return this.#settle(run.id, end);
     const flow = this.#flows.get(run.id) ?? this.#flow(run.id);
     flow.pending = end;

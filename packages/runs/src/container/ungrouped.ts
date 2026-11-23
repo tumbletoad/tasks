@@ -5,13 +5,16 @@
 // counts what it started, so the confirmation is `unconfirmable`: the run settles, and its cleanup
 // says that TTasks ended what it could find.
 //
-// What is found: on Linux the agent's process group (its own, from the start) and every process
-// whose parents lead back to the agent, read from /proc at the kill; on Windows the agent's tree as
-// `taskkill /T` walks it while the agent lives, and then the agent itself by its own handle, which
-// ends it also when taskkill could not. A process that left the group and lost its parent (a
-// daemon) is not found. When the service ends, the agent's stdin ends, which ends an agent that
-// reads its protocol from there; on Windows the agent itself ends with the service too (Node holds
-// its own children in a job), but what the agent started does not.
+// What is found: on Linux and macOS the agent's process group (its own, from the start), and on
+// Linux every process whose parents lead back to the agent, read from /proc at the kill; on Windows
+// the agent's tree as `taskkill /T` walks it while the agent lives, and then the agent itself by its
+// own handle, which ends it also when taskkill could not. The group is signalled only while its ID
+// is the run's: while the agent lives, and once, when its exit is seen, which ends what it left in
+// its group. Later, and after a restart, the ID may be another program's, so no group is
+// signalled. A process that left the group and lost its parent (a daemon) is not found. When the
+// service ends, the agent's stdin ends, which ends an agent that reads its protocol from there; on
+// Windows the agent itself ends with the service too (Node holds its own children in a job), but
+// what the agent started does not.
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,6 +25,7 @@ import {
   DEFAULT_RECOVER_WAIT_MS,
   type AgentExit,
   type ConfirmOptions,
+  type ContainerKind,
   type Confirmation,
   type Contained,
   type Containers,
@@ -106,6 +110,10 @@ export class UngroupedContainers implements Containers {
     this.proc = options.proc ?? "/proc";
   }
 
+  kind(): Promise<ContainerKind> {
+    return Promise.resolve("tree");
+  }
+
   probe(): Promise<ProbeResult> {
     return Promise.resolve({ available: true, kind: "tree" });
   }
@@ -140,9 +148,18 @@ export class UngroupedContainers implements Containers {
     });
     const pid = child.pid ?? -1;
     const live: Live = { child, pid, exited, done: false };
-    void exited.then(() => {
+    const gone = (): void => {
       live.done = true;
-    });
+      // The last moment the group's ID is surely the run's: what the agent left in it ends now.
+      if (this.platform === "win32") return;
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        // Nothing was left in it.
+      }
+    };
+    if (child.exitCode !== null || child.signalCode !== null) gone();
+    else child.once("exit", gone);
     this.live.set(spec.name, live);
     return {
       name: spec.name,
@@ -169,7 +186,10 @@ export class UngroupedContainers implements Containers {
     }
   }
 
-  /** Ends what can be found of the run; the run is forgotten once the agent ended too. */
+  /**
+   * Ends what can be found of the run while its agent lives; once it is gone nothing more can be
+   * found. The run is forgotten once the agent ended too.
+   */
   async kill(name: string): Promise<void> {
     checkName(name);
     const live = this.live.get(name);
@@ -177,8 +197,9 @@ export class UngroupedContainers implements Containers {
     void live.exited.then(() => {
       if (this.live.get(name) === live) this.live.delete(name);
     });
+    if (live.done) return;
     if (this.platform === "win32") {
-      if (!live.done) await this.taskkillTree(live.pid);
+      await this.taskkillTree(live.pid);
       try {
         if (!live.done) live.child.kill("SIGKILL");
       } catch {
@@ -187,7 +208,7 @@ export class UngroupedContainers implements Containers {
       return;
     }
     const found = descendants(parentTable(this.proc), live.pid);
-    for (const pid of [-live.pid, ...(live.done ? [] : [live.pid]), ...found]) {
+    for (const pid of [-live.pid, live.pid, ...found]) {
       try {
         process.kill(pid, "SIGKILL");
       } catch {

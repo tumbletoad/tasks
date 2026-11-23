@@ -61,6 +61,7 @@ async function failedWithoutAnswer(store: RunStore, run: RunRecord): Promise<voi
 /** Containers whose start never answers: a run that reaches one stays starting. */
 const hanging: Containers = {
   probe: () => Promise.resolve({ available: true, kind: "job" }),
+  kind: () => Promise.resolve("job" as const),
   start: () => new Promise<never>(() => undefined),
   interrupt: () => Promise.resolve(false),
   kill: () => Promise.resolve(),
