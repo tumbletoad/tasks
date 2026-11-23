@@ -198,9 +198,11 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
       await w.service.runs.tick();
       await w.service.launches.tick();
 
-      expect(await runsOf(working, inCopy)).toEqual([
-        expect.objectContaining({ id: work.id, state: "recorded", started_at: expect.any(Number) }),
-      ]);
+      const workRuns = await runsOf(working, inCopy);
+      expect(workRuns).toHaveLength(1);
+      const [recordedWork] = workRuns;
+      expect(recordedWork).toMatchObject({ id: work.id, state: "recorded" });
+      expect(recordedWork?.started_at).toEqual(expect.any(Number));
       expect(await runsOf(waiting, inCopy)).toEqual([
         expect.objectContaining({ id: wait.id, state: "recorded", started_at: null }),
       ]);
