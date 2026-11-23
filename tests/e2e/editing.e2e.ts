@@ -485,18 +485,17 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
       action: "list",
     })) as { as_of: string };
     await world.op(world.mira.id, "group.manage", { action: "archive", path: seedlings, base });
+    // The archive has reached the page once its area leaves the sidebar's areas.
+    await expect(
+      page
+        .getByRole("navigation")
+        .locator('[data-group="areas"]')
+        .getByRole("link", { name: new RegExp(`^${seedlings}, `) }),
+    ).toHaveCount(0);
     await pill.focus();
     await page.keyboard.press("Enter");
     await page.keyboard.type(typo);
     const shelved = page.getByRole("option", { name: seedlings, exact: true });
-    await expect(shelved).toHaveAccessibleDescription("archived");
-    // The archive may have reached the page after the list opened, and a list keeps its highlight
-    // when the order changes under it: now that the page knows, the list opens again.
-    await page.keyboard.press("Escape");
-    await page.keyboard.press("Escape");
-    await expect(pill).toBeFocused();
-    await page.keyboard.press("Enter");
-    await page.keyboard.type(typo);
     await expect(shelved).toHaveAccessibleDescription("archived");
     await expect(page.getByRole("option").first()).toHaveText(`New area “${typo}”`);
     await expect(page.getByRole("option").last()).toHaveAccessibleName(seedlings);
