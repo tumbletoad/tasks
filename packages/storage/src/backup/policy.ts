@@ -240,7 +240,11 @@ const streamError = (error: unknown): StorageError =>
  * zlib's codes for input it cannot decompress: damaged data, a stream cut short, a dictionary it
  * does not have. Its others (Z_MEM_ERROR above all) say nothing of the input.
  */
-const ZLIB_BAD_INPUT: ReadonlySet<unknown> = new Set(["Z_DATA_ERROR", "Z_BUF_ERROR", "Z_NEED_DICT"]);
+const ZLIB_BAD_INPUT: ReadonlySet<unknown> = new Set([
+  "Z_DATA_ERROR",
+  "Z_BUF_ERROR",
+  "Z_NEED_DICT",
+]);
 
 const isBadInput = (error: unknown): boolean =>
   ZLIB_BAD_INPUT.has((error as { code?: unknown } | null)?.code);

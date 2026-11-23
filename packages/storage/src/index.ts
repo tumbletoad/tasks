@@ -203,11 +203,11 @@ export {
   type SpaceBackupOptions,
 } from "./backup/backup.ts";
 export {
-  compareNewest,
+  backupHistories,
   listBackups,
-  newestFirst,
   removeBackupLeftovers,
   verifyBackup,
+  type BackupHistory,
   type BackupListing,
   type ListedBackup,
   type ListedState,
@@ -240,7 +240,13 @@ export {
 } from "./restore/restore.ts";
 export { isBundleFile, type RestoreSource } from "./restore/unpack.ts";
 // The ways out of a space whose check failed (A1 3.2).
-export { restoreLatest, rescueSpace, RESCUED_FOLDER, type RescueRecord } from "./restore/rescue.ts";
+export {
+  restoreLatest,
+  rescueSpace,
+  RESCUED_FOLDER,
+  type LatestRestored,
+  type RescueRecord,
+} from "./restore/rescue.ts";
 // Export bundles (M3.07): the exporter, and the reader every side that opens a bundle shares. M3.08
 // builds transfer and import on these.
 export {

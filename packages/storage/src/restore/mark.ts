@@ -128,7 +128,9 @@ export function firstWrite<T>(
     }
   } catch (error) {
     if (backupFault(error) !== "damaged") throw error;
-    throw invalid(`its database refuses the restore's first write (${(error as StorageError).code})`);
+    throw invalid(
+      `its database refuses the restore's first write (${(error as StorageError).code})`,
+    );
   }
 }
 

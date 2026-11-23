@@ -21,6 +21,7 @@
 import { lstatSync, readdirSync, rmSync, type Dirent, type Stats } from "node:fs";
 import { join } from "node:path";
 import { errnoCode, fsCall, fsError } from "../files.ts";
+import type { Id } from "../ids.ts";
 import type { CheckedDriver } from "../startup-check.ts";
 import { BUNDLE_POLICY, type BundlePolicy } from "./policy.ts";
 import {
@@ -71,7 +72,10 @@ export interface BackupListing {
    * same as an empty one: a backups folder set on a drive that is not connected is not there.
    */
   present: boolean;
-  /** Newest first (newestFirst). */
+  /**
+   * By history (backupHistories), the history written to last first, each newest first by the
+   * work it holds; then the backups whose sidecar does not read, the latest first.
+   */
   backups: ListedBackup[];
   /** Names of a backup's temporary files: a crash left them, or a backup is writing them now. */
   leftovers: string[];
@@ -88,27 +92,61 @@ function readFolder(folder: string): Dirent[] | undefined {
 }
 
 /**
- * Orders backups newest first by the work they hold, never by the clock alone: a later
- * incarnation (each claim and restore in place takes an epoch above every one the machine knows),
- * then within one the later commit, and only for the same commit the later time. A clock set back
- * between two backups gives the later work the earlier time, and it is still the newer one.
+ * A HISTORY is one copy's line of work: the backups of one incarnation of a space, which its
+ * sidecars name. Each claim and each restore in place starts a new incarnation, so two copies of a
+ * space claimed apart (two machines with one backups folder, a restore beside the original) write
+ * two histories, whose epochs and commits say nothing of each other: the same epoch and a higher
+ * commit can hold less of a person's work. So backups are ordered, kept and removed only against
+ * backups of their own history, and a choice between histories is said as one.
  */
-export function compareNewest(
-  a: Pick<ListedBackup, "name" | "createdAt" | "epoch" | "seq">,
-  b: Pick<ListedBackup, "name" | "createdAt" | "epoch" | "seq">,
-): number {
-  return (
-    b.epoch - a.epoch ||
-    b.seq - a.seq ||
-    b.createdAt - a.createdAt ||
-    (a.name < b.name ? 1 : a.name > b.name ? -1 : 0)
-  );
+export interface BackupHistory {
+  readonly spaceId: Id<"sp">;
+  readonly incarnation: Id<"ai">;
+  /**
+   * Its backups whose sidecar reads (complete or not), newest first by the work they hold: the
+   * later commit, and only for one commit the later time. A clock set back between two backups
+   * gives the later work the earlier time, and it is still the newer one.
+   */
+  readonly backups: readonly ListedBackup[];
+  /** When its last backup was made, by the clock of the machine that made it. */
+  readonly lastWrittenAt: number;
 }
 
-/** `backups` newest first (compareNewest), as a new array. */
-export const newestFirst = <T extends Pick<ListedBackup, "name" | "createdAt" | "epoch" | "seq">>(
-  backups: readonly T[],
-): T[] => [...backups].sort(compareNewest);
+const byWork = (a: ListedBackup, b: ListedBackup): number =>
+  b.seq - a.seq || b.createdAt - a.createdAt || (a.name < b.name ? 1 : a.name > b.name ? -1 : 0);
+
+const byClock = (a: { name: string; createdAt: number }, b: typeof a): number =>
+  b.createdAt - a.createdAt || (a.name < b.name ? 1 : a.name > b.name ? -1 : 0);
+
+/** The histories of every space in `backups`, the one written to last first. */
+function groupHistories(backups: readonly ListedBackup[]): BackupHistory[] {
+  const groups = new Map<string, ListedBackup[]>();
+  for (const b of backups) {
+    if (b.sidecar === undefined) continue;
+    const key = `${b.sidecar.space_id}/${b.sidecar.incarnation}`;
+    groups.set(key, [...(groups.get(key) ?? []), b]);
+  }
+  return [...groups.values()]
+    .map((members) => {
+      const sidecar = members[0]?.sidecar as BackupSidecar;
+      return {
+        spaceId: sidecar.space_id,
+        incarnation: sidecar.incarnation,
+        backups: members.sort(byWork),
+        lastWrittenAt: Math.max(...members.map((b) => b.createdAt)),
+      };
+    })
+    .sort((a, b) =>
+      byClock(
+        { name: a.backups[0]?.name ?? "", createdAt: a.lastWrittenAt },
+        { name: b.backups[0]?.name ?? "", createdAt: b.lastWrittenAt },
+      ),
+    );
+}
+
+/** The histories of the space `spaceId` in a listing, the one written to last first. */
+export const backupHistories = (listing: BackupListing, spaceId: Id<"sp">): BackupHistory[] =>
+  groupHistories(listing.backups).filter((h) => h.spaceId === spaceId);
 
 /** What is at `path`, without following a link. */
 const look = (path: string): Stats | undefined =>
@@ -170,7 +208,10 @@ export function listBackups(
   return {
     folder: backupDir,
     present: entries !== undefined,
-    backups: newestFirst(backups),
+    backups: [
+      ...groupHistories(backups).flatMap((h) => h.backups),
+      ...backups.filter((b) => b.sidecar === undefined).sort(byClock),
+    ],
     leftovers: leftovers.sort(),
   };
 }

@@ -2,27 +2,33 @@
 // listing and the clock, so the scheduler that calls them (the service's maintenance worker, M1.08)
 // stays a thin loop.
 //
+// - EACH HISTORY ON ITS OWN (list.ts backupHistories): a history is one incarnation's backups, one
+//   copy's line of work. Every rule below runs within one history, and no backup is kept, removed
+//   or found due because of another history's: two copies claimed apart reach the same epochs and
+//   commits with different work.
 // - Daily: at the first idle minute after 03:00 local time, or at start when the last daily backup
-//   is older than 24 hours.
-// - NEWEST IS THE FURTHEST SAVED WORK (list.ts compareNewest): the later incarnation, then the later
-//   commit, and the clock only between backups of one commit. A clock set back gives later work an
-//   earlier date, so a date never decides which of two backups holds more.
-// - Kept: the newest daily backup of each of the 7 most recent local days that have one, the newest
-//   daily backup of each of the 4 most recent local weeks (Monday to Sunday) that have one, and
-//   always the newest complete backup, whatever its date. Only daily backups are ever removed: a
-//   manual backup is the person's, and a pre-migration or pre-import backup may be the last one an
-//   older build reads.
+//   of the copy this machine serves is older than 24 hours.
+// - NEWEST IS THE FURTHEST SAVED WORK within a history: the later commit, and the clock only between
+//   backups of one commit. A clock set back gives later work an earlier date, so a date never decides
+//   which of two backups holds more.
+// - Kept, per history: the newest daily backup of each of the 7 most recent local days that have
+//   one, the newest daily backup of each of the 4 most recent local weeks (Monday to Sunday) that
+//   have one, and always the newest complete backup, whatever its date. So a history no copy writes
+//   any more keeps what the rules kept when it ended. Only daily backups are ever removed: a manual
+//   backup is the person's, and a pre-migration or pre-import backup may be the last one an older
+//   build reads.
 // - Only complete backups (state "ok") of THIS space take part. A backups folder can hold another
 //   space's backups (a machine-local backup.dir set to one folder twice): those are neither kept,
 //   removed nor counted. A backup the listing could not verify is never removed here: a person
-//   looks at it first.
-// - A1's "never the newest verified backup" means a backup that restores: before applyRetention
-//   removes anything, it verifies the newest complete backups, one by one, by a trial restore (the
-//   restore's own steps, its first write included, on a scratch copy: verifyBackup), until one
-//   passes, and keeps that one. Nothing else makes a backup verified. A newer one that does not
-//   verify is kept too, for a person. When none verifies, nothing is removed. A trial that the
-//   surroundings stop (no room for it, a failing disk) says nothing of its backup: the search stops
-//   there, so no older backup becomes the newest that restores, and nothing is removed.
+//   looks at it first, and one whose sidecar does not read belongs to no history.
+// - A1's "never the newest verified backup" means a backup that restores, in each history: before
+//   applyRetention removes anything of a history, it verifies that history's newest complete
+//   backups, one by one, by a trial restore (the restore's own steps, its first write included, on
+//   a scratch copy: verifyBackup), until one passes, and keeps that one. Nothing else makes a backup
+//   verified. A newer one that does not verify is kept too, for a person. When none verifies,
+//   nothing of the history is removed. A trial that could not check its backup (restore/fault.ts:
+//   no room for it, no memory, a failing disk) says nothing of it: the search stops there, so no
+//   older backup becomes the newest that restores, and nothing of the history is removed.
 // - Removal looks at each file again, since the listing may be stale: only the two regular files
 //   of a listed backup are removed, one at a time, never a folder or a link put in their place,
 //   and only while the sidecar still reads as listed and the data still has its size and SHA-256.
@@ -41,8 +47,9 @@ import { fsyncFolder } from "../files.ts";
 import type { Id } from "../ids.ts";
 import type { CheckedDriver } from "../startup-check.ts";
 import {
-  newestFirst,
+  backupHistories,
   verifyBackup,
+  type BackupHistory,
   type BackupListing,
   type ListedBackup,
   type VerifyOptions,
@@ -91,21 +98,34 @@ export function lastLocalHour(clock: LocalClock, hour: number): number {
 
 const createdAt = (b: ListedBackup): number => b.sidecar?.created_at ?? 0;
 
-/** The complete backups of the space `spaceId`, newest first (list.ts compareNewest). */
-const complete = (listing: BackupListing, spaceId: Id<"sp">): ListedBackup[] =>
-  newestFirst(listing.backups.filter((b) => b.state === "ok" && b.sidecar?.space_id === spaceId));
+/** A history's complete backups, newest first by the work they hold. */
+const complete = (history: BackupHistory): ListedBackup[] =>
+  history.backups.filter((b) => b.state === "ok");
+
+/** The space `spaceId`'s histories that hold a complete backup, the one written to last first. */
+const histories = (listing: BackupListing, spaceId: Id<"sp">): BackupHistory[] =>
+  backupHistories(listing, spaceId).filter((h) => complete(h).length > 0);
 
 /**
- * Whether a daily backup is due. `atStart` is the service's start: then a daily backup older than
- * 24 hours is due at once. Otherwise one is due once the local 03:00 has passed since the last.
+ * Whether a daily backup of the copy this machine serves, the incarnation `incarnation`, is due:
+ * only that copy's own history counts. `atStart` is the service's start: then a daily backup older
+ * than 24 hours is due at once. Otherwise one is due once the local 03:00 has passed since the last.
  */
 export function dailyBackupDue(
   listing: BackupListing,
   clock: LocalClock,
-  options: { atStart: boolean; spaceId: Id<"sp">; rules?: RetentionRules },
+  options: {
+    atStart: boolean;
+    spaceId: Id<"sp">;
+    incarnation: Id<"ai">;
+    rules?: RetentionRules;
+  },
 ): boolean {
   const rules = options.rules ?? RETENTION;
-  const dailies = complete(listing, options.spaceId).filter(
+  const own = histories(listing, options.spaceId).find(
+    (h) => h.incarnation === options.incarnation,
+  );
+  const dailies = (own === undefined ? [] : complete(own)).filter(
     (b) => b.sidecar?.kind === "daily" && createdAt(b) <= clock.now,
   );
   const last = Math.max(...dailies.map(createdAt), Number.NEGATIVE_INFINITY);
@@ -125,36 +145,46 @@ export interface RetentionPlan {
   ahead: string[];
 }
 
-/** Which complete backups of the space `spaceId` to keep and which to remove. */
+/**
+ * Which complete backups of the space `spaceId` to keep and which to remove: the rules of the
+ * header, run in each history on its own.
+ */
 export function planRetention(
   listing: BackupListing,
   clock: LocalClock,
   options: { spaceId: Id<"sp">; rules?: RetentionRules },
 ): RetentionPlan {
   const rules = options.rules ?? RETENTION;
-  const all = complete(listing, options.spaceId);
-  // A backup dated after now is kept and counts for nothing: it would take the most recent days
-  // and weeks, and every backup made since the clock came back would go.
-  const ahead = all.filter((b) => createdAt(b) > clock.now).map((b) => b.name);
-  const backups = all.filter((b) => createdAt(b) <= clock.now);
-  const keep = new Set<string>(ahead);
-  const newest = backups[0];
-  if (newest !== undefined) keep.add(newest.name);
-  const offset = clock.utcOffsetMinutes;
-  const dailies = backups.filter((b) => b.sidecar?.kind === "daily");
-  // The most recent `count` local days or weeks by date, and in each the newest by work.
-  const keepNewestPer = (bucket: (ms: number) => number, count: number): void => {
-    const recent = [...new Set(dailies.map((b) => bucket(createdAt(b))))]
-      .sort((a, b) => b - a)
-      .slice(0, count);
-    for (const key of recent) {
-      const first = dailies.find((b) => bucket(createdAt(b)) === key);
-      if (first !== undefined) keep.add(first.name);
-    }
-  };
-  keepNewestPer((ms) => localDay(ms, offset), rules.daily);
-  keepNewestPer((ms) => localWeek(ms, offset), rules.weekly);
-  for (const b of backups) if (b.sidecar?.kind !== "daily") keep.add(b.name);
+  const keep = new Set<string>();
+  const ahead: string[] = [];
+  const all: ListedBackup[] = [];
+  for (const history of histories(listing, options.spaceId)) {
+    const own = complete(history);
+    all.push(...own);
+    // A backup dated after now is kept and counts for nothing: it would take the most recent days
+    // and weeks, and every backup made since the clock came back would go.
+    const future = own.filter((b) => createdAt(b) > clock.now).map((b) => b.name);
+    ahead.push(...future);
+    for (const name of future) keep.add(name);
+    const backups = own.filter((b) => createdAt(b) <= clock.now);
+    const newest = backups[0];
+    if (newest !== undefined) keep.add(newest.name);
+    const offset = clock.utcOffsetMinutes;
+    const dailies = backups.filter((b) => b.sidecar?.kind === "daily");
+    // The most recent `count` local days or weeks by date, and in each the newest by work.
+    const keepNewestPer = (bucket: (ms: number) => number, count: number): void => {
+      const recent = [...new Set(dailies.map((b) => bucket(createdAt(b))))]
+        .sort((a, b) => b - a)
+        .slice(0, count);
+      for (const key of recent) {
+        const first = dailies.find((b) => bucket(createdAt(b)) === key);
+        if (first !== undefined) keep.add(first.name);
+      }
+    };
+    keepNewestPer((ms) => localDay(ms, offset), rules.daily);
+    keepNewestPer((ms) => localWeek(ms, offset), rules.weekly);
+    for (const b of backups) if (b.sidecar?.kind !== "daily") keep.add(b.name);
+  }
   return {
     spaceId: options.spaceId,
     keep: all.filter((b) => keep.has(b.name)).map((b) => b.name),
@@ -163,18 +193,33 @@ export function planRetention(
   };
 }
 
-export interface RetentionResult {
-  /** Names of the backups removed. */
-  removed: string[];
+/** What the trial restores found in one history. */
+export interface HistoryVerdict {
   /** The newest backup that verified in full, kept whatever the plan said. Undefined: none did. */
   verified: string | undefined;
   /** Newer complete backups that did not verify, kept for a person to look at, newest first. */
   unverified: string[];
   /**
-   * The backup whose trial restore stopped for a reason that is not its own, with that reason's code
-   * (none for a bug). Nothing older was tried and nothing was removed.
+   * The backup whose trial restore could not check it (restore/fault.ts), with the code (none for a
+   * bug). Nothing older was tried and nothing of the history was removed.
    */
   unchecked?: { name: string; code?: string };
+}
+
+/**
+ * Names of the backups removed, and what the trial restores found in the history of the copy this
+ * machine serves (`history` in the options).
+ */
+export interface RetentionResult extends HistoryVerdict {
+  removed: string[];
+}
+
+export interface RetentionOptions extends VerifyOptions {
+  /**
+   * The incarnation of the copy this machine serves: its history is always trial restored, and the
+   * result reports it. Default: the history written to last.
+   */
+  history?: Id<"ai">;
 }
 
 /** What tests inject. Not part of the package's interface. */
@@ -250,19 +295,53 @@ async function stillListed(
 }
 
 /**
- * Removes the backups a plan names, once the newest backup that verifies in full is known and
- * kept (A1 3.18: never the newest verified backup). Each removal deletes the sidecar first: a
- * backup without its sidecar is no longer one, so a crash in between leaves a leftover `.db.gz`,
- * never a sidecar without its data. When a sidecar cannot be removed (a file held open on
- * Windows), its data stays too. Only complete backups of the plan's space are removed, never one
- * the plan keeps, one that did not verify, or the verified one, and only while both of their
- * files are still regular files.
+ * The newest of a history's complete backups `backups` (newest first) that verifies in full, with
+ * the newer ones that did not, or the one a trial could not check. Backups dated after now are
+ * passed over: the newest verified backup is one dated at or before now.
+ */
+async function newestThatRestores(
+  checked: CheckedDriver,
+  backups: readonly ListedBackup[],
+  ahead: ReadonlySet<string>,
+  spaceId: Id<"sp">,
+  options: VerifyOptions,
+): Promise<HistoryVerdict> {
+  const unverified: string[] = [];
+  for (const b of backups) {
+    if (ahead.has(b.name)) continue;
+    const verdict = await verifyBackup(checked, b, options);
+    if (verdict.state === "unchecked") {
+      const code = verdict.code === undefined ? {} : { code: verdict.code };
+      return { verified: undefined, unverified, unchecked: { name: b.name, ...code } };
+    }
+    // The sidecar is read again from disk by the verification, and must still name this history.
+    if (
+      verdict.state === "verified" &&
+      verdict.sidecar.space_id === spaceId &&
+      verdict.sidecar.incarnation === b.sidecar?.incarnation
+    ) {
+      return { verified: b.name, unverified };
+    }
+    unverified.push(b.name);
+  }
+  return { verified: undefined, unverified };
+}
+
+/**
+ * Removes the backups a plan names, history by history, each once that history's newest backup
+ * that verifies in full is known and kept (A1 3.18: never the newest verified backup). A history
+ * with nothing to remove is trial restored only when it is the copy's own (`options.history`), for
+ * the result. Each removal deletes the sidecar first: a backup without its sidecar is no longer
+ * one, so a crash in between leaves a leftover `.db.gz`, never a sidecar without its data. When a
+ * sidecar cannot be removed (a file held open on Windows), its data stays too. Only complete
+ * backups of the plan's space are removed, never one the plan keeps, one that did not verify, or
+ * the verified one, and only while both of their files are still regular files.
  */
 export async function applyRetention(
   checked: CheckedDriver,
   listing: BackupListing,
   plan: RetentionPlan,
-  options: VerifyOptions = {},
+  options: RetentionOptions = {},
 ): Promise<RetentionResult> {
   return applyRetentionWith(checked, listing, plan, options, {});
 }
@@ -272,33 +351,38 @@ export async function applyRetentionWith(
   checked: CheckedDriver,
   listing: BackupListing,
   plan: RetentionPlan,
-  options: VerifyOptions,
+  options: RetentionOptions,
   seams: RetentionSeams,
 ): Promise<RetentionResult> {
-  const backups = complete(listing, plan.spaceId);
+  const all = histories(listing, plan.spaceId);
+  const own = options.history ?? all[0]?.incarnation;
   const ahead = new Set(plan.ahead);
-  const unverified: string[] = [];
-  let verified: string | undefined;
-  for (const b of backups) {
-    // Kept whatever happens: the newest verified backup is one dated at or before now.
-    if (ahead.has(b.name)) continue;
-    const verdict = await verifyBackup(checked, b, options);
-    if (verdict.state === "unchecked") {
-      const code = verdict.code === undefined ? {} : { code: verdict.code };
-      return { removed: [], verified: undefined, unverified, unchecked: { name: b.name, ...code } };
-    }
-    // The sidecar is read again from disk by the verification, and must still name this space.
-    if (verdict.state === "verified" && verdict.sidecar.space_id === plan.spaceId) {
-      verified = b.name;
-      break;
-    }
-    unverified.push(b.name);
+  const planned = new Set(plan.remove);
+  let report: HistoryVerdict = { verified: undefined, unverified: [] };
+  const removed: string[] = [];
+  for (const history of all) {
+    const backups = complete(history);
+    const mine = history.incarnation === own;
+    if (!mine && !backups.some((b) => planned.has(b.name))) continue;
+    const verdict = await newestThatRestores(checked, backups, ahead, plan.spaceId, options);
+    if (mine) report = verdict;
+    if (verdict.verified === undefined) continue;
+    const kept = [...plan.keep, ...plan.ahead, verdict.verified, ...verdict.unverified];
+    const removable = new Set(backups.filter((b) => planned.has(b.name)).map((b) => b.name));
+    for (const name of kept) removable.delete(name);
+    removed.push(...(await removeBackups(listing, backups, removable, options, seams)));
   }
-  if (verified === undefined) return { removed: [], verified, unverified };
-  const removable = new Set(plan.remove);
-  for (const name of [...plan.keep, ...plan.ahead, verified, ...unverified]) {
-    removable.delete(name);
-  }
+  return { removed, ...report };
+}
+
+/** Removes the `removable` ones of `backups`, each only while it is still as listed. */
+async function removeBackups(
+  listing: BackupListing,
+  backups: readonly ListedBackup[],
+  removable: ReadonlySet<string>,
+  options: VerifyOptions,
+  seams: RetentionSeams,
+): Promise<string[]> {
   const removed: string[] = [];
   for (const b of backups) {
     if (!removable.has(b.name)) continue;
@@ -324,5 +408,5 @@ export async function applyRetentionWith(
     }
     removed.push(b.name);
   }
-  return { removed, verified, unverified };
+  return removed;
 }

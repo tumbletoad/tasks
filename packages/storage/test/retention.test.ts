@@ -477,7 +477,7 @@ describe("[A1.5.backup.newest-work] the newest backup is the one that holds the 
     expect(plan.remove).toContain(days[0]?.name);
   });
 
-  test("a later incarnation's backup is newer than an earlier incarnation's, whatever their commits and dates", () => {
+  test("two incarnations are two histories: each keeps its own newest, whatever their epochs, commits and dates", () => {
     const now = WED + 12 * HOUR;
     // Restored in place from an older backup (a new epoch), with the clock set back meanwhile.
     const before = listed("daily", now - 2 * HOUR, "ok", SPACE, { epoch: 1, seq: 50 });
@@ -487,11 +487,8 @@ describe("[A1.5.backup.newest-work] the newest backup is the one that holds the 
       { now, utcOffsetMinutes: 0 },
       { spaceId: SPACE, rules: NEWEST_ONLY },
     );
-    expect(plan.keep).toEqual([restored.name]);
-    expect(newestFirst(listing([before, restored]).backups).map((b) => b.name)).toEqual([
-      restored.name,
-      before.name,
-    ]);
+    expect([...plan.keep].sort()).toEqual([before.name, restored.name].sort());
+    expect(plan.remove).toEqual([]);
   });
 
   test("on real files, the backup with the later commit is the newest that restores, and retention keeps it", async () => {
@@ -520,6 +517,98 @@ describe("[A1.5.backup.newest-work] the newest backup is the one that holds the 
     );
     expect(applied).toMatchObject({ verified: later.name, removed: [first.name] });
     expect(existsSync(later.file) && existsSync(later.sidecarFile)).toBe(true);
+  });
+});
+
+describe("[A1.5.backup.histories] no history's backups are judged by another's", () => {
+  /**
+   * Two copies of one space claimed apart into one backups folder, as two machines that restored
+   * the same backup would: each claim takes epoch 2 and a new incarnation. The desktop goes further
+   * (more commits); the laptop's work is its own (tasks the desktop never had) and it was backed up
+   * last. Each made a daily before today's 03:00 (the desktop) or after it (the laptop).
+   */
+  async function twoCopies() {
+    const checked = await checkedDriver();
+    const root = folders.make();
+    const { folder, space } = await createFixtureSpace(root);
+    const shared = join(root, "shared-backups");
+    mkdirSync(shared);
+    const first = await backupSpace(checked, folder, { kind: "manual", backupDir: shared });
+    const copy = async (slug: string) => {
+      const at = join(root, slug);
+      await restoreBackup(checked, first.file, at);
+      const restored = await restoreInPlace(checked, first.file, at, { machineId: TEST_MACHINE });
+      expect(restored.claim.epoch).toBe(2);
+      return { folder: at, incarnation: restored.claim.incarnation };
+    };
+    const desktop = await copy("desktop");
+    const laptop = await copy("laptop");
+    const daily = (from: string, at: number) =>
+      backupSpace(checked, from, { kind: "daily", backupDir: shared, now: () => at });
+    await writeCommits(desktop.folder, 3, "d");
+    const d1 = await daily(desktop.folder, WED - 2 * DAY);
+    await writeCommits(laptop.folder, 2, "l");
+    const l1 = await daily(laptop.folder, WED - DAY);
+    await writeCommits(desktop.folder, 6, "d");
+    const d2 = await daily(desktop.folder, WED + 2 * HOUR);
+    await writeCommits(laptop.folder, 2, "m");
+    const l2 = await daily(laptop.folder, WED + 11 * HOUR);
+    expect(d2.sidecar.epoch).toBe(l2.sidecar.epoch);
+    expect(d2.sidecar.seq).toBeGreaterThan(l2.sidecar.seq);
+    return { checked, space, shared, root, first, desktop, laptop, d1, d2, l1, l2 };
+  }
+
+  const clock = { now: WED + 12 * HOUR, utcOffsetMinutes: 0 };
+
+  test("restore latest takes the newest backup of the served copy's own history; served nowhere, the history written to last, naming the other", async () => {
+    const { checked, space, shared, root, first, desktop, laptop, d2, l2 } = await twoCopies();
+    const target = (name: string) => join(root, name);
+    const ofLaptop = await restoreLatest(checked, shared, space.spaceId, target("a"), {
+      incarnation: laptop.incarnation,
+    });
+    expect(ofLaptop).toMatchObject({ backup: l2.name, own: true });
+    const ofDesktop = await restoreLatest(checked, shared, space.spaceId, target("b"), {
+      incarnation: desktop.incarnation,
+    });
+    expect(ofDesktop).toMatchObject({ backup: d2.name, own: true });
+    const unknown = await restoreLatest(checked, shared, space.spaceId, target("c"));
+    expect(unknown).toMatchObject({ backup: l2.name, own: false });
+    expect(unknown.history.incarnation).toBe(laptop.incarnation);
+    // The others, written to last first: the desktop's, then the original's first backup.
+    expect(unknown.others.map((h) => h.incarnation)).toEqual([
+      desktop.incarnation,
+      first.sidecar.incarnation,
+    ]);
+    expect(unknown.others[0]?.backups[0]?.name).toBe(d2.name);
+  });
+
+  test("a daily of one copy does not make the other's look done, and retention keeps each history's newest", async () => {
+    const { checked, space, shared, desktop, laptop, d1, d2, l1, l2 } = await twoCopies();
+    const listing = listBackups(shared);
+    const due = (incarnation: Id<"ai">) =>
+      dailyBackupDue(listing, clock, { atStart: false, spaceId: space.spaceId, incarnation });
+    expect(due(desktop.incarnation)).toBe(true);
+    expect(due(laptop.incarnation)).toBe(false);
+
+    const plan = planRetention(listing, clock, { spaceId: space.spaceId, rules: NEWEST_ONLY });
+    expect([...plan.remove].sort()).toEqual([d1.name, l1.name].sort());
+    // The desktop's upkeep runs it: each history's newest is trial restored before anything of it
+    // goes, and the laptop's work stays.
+    const applied = await applyRetention(checked, listing, plan, {
+      history: desktop.incarnation,
+    });
+    expect({ ...applied, removed: [...applied.removed].sort() }).toEqual({
+      removed: [d1.name, l1.name].sort(),
+      verified: d2.name,
+      unverified: [],
+    });
+    for (const kept of [d2, l2]) {
+      expect(existsSync(kept.file) && existsSync(kept.sidecarFile), kept.name).toBe(true);
+    }
+    const left = await restoreLatest(checked, shared, space.spaceId, join(folders.make(), "l"), {
+      incarnation: laptop.incarnation,
+    });
+    expect(left.backup).toBe(l2.name);
   });
 });
 

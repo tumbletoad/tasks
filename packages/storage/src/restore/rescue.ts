@@ -2,9 +2,9 @@
 // chosen backup:
 //
 // - restoreLatest: `ttasks space restore latest --to <folder>` restores the newest complete backup
-//   of the space that restores into a new folder, as a read-only copy. The candidates are
-//   restored directly, newest first by the work they hold (backup/list.ts compareNewest), never by
-//   the clock alone: a restore checks its backup in full and runs its first write
+//   of the space that restores into a new folder, as a read-only copy. The candidates are one
+//   history's (backup/list.ts backupHistories), restored directly, newest first by the work they
+//   hold, never by the clock alone: a restore checks its backup in full and runs its first write
 //   (restore.ts), so a newer one that does not restore, or that went away before the restore held
 //   its files (retention, the person), is skipped and kept, never removed, and nothing is unpacked
 //   twice.
@@ -62,7 +62,7 @@ import { checkSpacePath } from "../space-path.ts";
 import type { CheckedDriver } from "../startup-check.ts";
 import { SCHEMA_STEPS } from "../../migrations/index.ts";
 import { makeDurableFolder } from "../backup/backup.ts";
-import { listBackups } from "../backup/list.ts";
+import { backupHistories, listBackups, type BackupHistory } from "../backup/list.ts";
 import { BUNDLE_POLICY, checkFreeSpace, existingFolder, freeBytes } from "../backup/policy.ts";
 import { utcStamp } from "../backup/sidecar.ts";
 import { productTables, type ProductTable } from "../backup/snapshot.ts";
@@ -75,22 +75,39 @@ import {
   type RestoreSeams,
 } from "./restore.ts";
 
+/** What restore latest restored, and the space's other histories it did not take. */
+export interface LatestRestored {
+  restored: RestoredSpace;
+  /** The backup's name. */
+  backup: string;
+  /** The history it is of: the served copy's own, or else the one written to last. */
+  history: BackupHistory;
+  /** Whether that history is the served copy's (`incarnation`). */
+  own: boolean;
+  /** The space's other histories with a complete backup in the folder, written to last first. */
+  others: BackupHistory[];
+}
+
 /**
  * Restores the newest complete backup of `spaceId` in `backupDir` that restores into the new folder
- * `target` (see the header), and names it. Only a damaged candidate (fault.ts) moves on to the
- * next older one. Any other failure stops the restore with its own code, and nothing older is
- * tried: the candidate may be whole, and an older one would bring back older work as if it were
- * the newest (BUNDLE_LIMIT_EXCEEDED for the free space or a size limit, DURABILITY_FAILED for a
- * failing disk, STORAGE_SQL for SQLite out of memory). BACKUP_INVALID when none restores.
+ * `target` (see the header), and names it. Its candidates are one history's (list.ts
+ * backupHistories): that of the copy this machine serves (`incarnation`), whenever it has a
+ * complete backup, never another's in its place; else, a choice the result names along with the
+ * histories it passed over, the one written to last, then the next. Only a damaged candidate
+ * (fault.ts) moves on to the next older one. Any other failure stops the restore with its own
+ * code, and nothing older is tried: the candidate may be whole, and an older one would bring back
+ * older work as if it were the newest (BUNDLE_LIMIT_EXCEEDED for the free space or a size limit,
+ * DURABILITY_FAILED for a failing disk, STORAGE_SQL for SQLite out of memory). BACKUP_INVALID when
+ * none restores.
  */
 export async function restoreLatest(
   checked: CheckedDriver,
   backupDir: string,
   spaceId: Id<"sp">,
   target: string,
-  options: RestoreOptions = {},
+  options: RestoreOptions & { incarnation?: Id<"ai"> } = {},
   seams: RestoreSeams = {},
-): Promise<{ restored: RestoredSpace; backup: string }> {
+): Promise<LatestRestored> {
   const folder = resolve(target);
   if (fsCall(() => !existsSync(dirname(folder)) || !statSync(dirname(folder)).isDirectory())) {
     throw new StorageError(
@@ -101,23 +118,36 @@ export async function restoreLatest(
   if (fsCall(() => existsSync(folder))) {
     throw new StorageError("SPACE_EXISTS", "A space folder is already there");
   }
-  for (const backup of listBackups(backupDir, seams.policy).backups) {
-    if (backup.state !== "ok" || backup.sidecar?.space_id !== spaceId) continue;
-    let restored: RestoredSpace;
-    try {
-      // The backup is read again by the restore, and must still be of this space.
-      restored = await restoreBackupWith(
-        checked,
-        backup.file,
-        folder,
-        { ...options, spaceId },
-        seams,
-      );
-    } catch (error) {
-      if (backupFault(error, backup.file) !== "damaged") throw error;
-      continue;
+  const { incarnation, ...restoreOptions } = options;
+  const histories = backupHistories(listBackups(backupDir, seams.policy), spaceId).filter((h) =>
+    h.backups.some((b) => b.state === "ok"),
+  );
+  const own = histories.find((h) => h.incarnation === incarnation);
+  for (const history of own === undefined ? histories : [own]) {
+    for (const backup of history.backups) {
+      if (backup.state !== "ok") continue;
+      let restored: RestoredSpace;
+      try {
+        // The backup is read again by the restore, and must still be of this space.
+        restored = await restoreBackupWith(
+          checked,
+          backup.file,
+          folder,
+          { ...restoreOptions, spaceId },
+          seams,
+        );
+      } catch (error) {
+        if (backupFault(error, backup.file) !== "damaged") throw error;
+        continue;
+      }
+      return {
+        restored,
+        backup: backup.name,
+        history,
+        own: history === own,
+        others: histories.filter((h) => h !== history),
+      };
     }
-    return { restored, backup: backup.name };
   }
   throw new StorageError("BACKUP_INVALID", "No backup of the space verifies");
 }
