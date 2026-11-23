@@ -11,6 +11,7 @@
 // rule accepts: so the real fixtures here are refused for write by every user, and group write is
 // judged on facts (and on this machine's own folders in group-rule.test.ts).
 import { spawnSync } from "node:child_process";
+import { createServer } from "node:net";
 import {
   accessSync,
   chmodSync,
@@ -20,6 +21,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -32,6 +34,8 @@ import { loadMachineConfig, type UnsafePart } from "../src/config/machine-toml.t
 import { unsafeConfigMessage } from "../src/config/messages.ts";
 import { ServiceExit } from "../src/hub/exit.ts";
 import {
+  atSocketPath,
+  clearSocketPath,
   currentPerson,
   factsOf,
   fixCommand,
@@ -39,6 +43,8 @@ import {
   repairOf,
   shellArg,
   shellPath,
+  socketBlock,
+  socketBlockedMessage,
   unsafeMessage,
   type Need,
   type PathFacts,
@@ -1060,6 +1066,74 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       expect(line).toContain("TTasks does not follow links for its configuration");
       expect(line).not.toContain("chown");
       expect(line).not.toContain("run:");
+    },
+  );
+});
+
+describe("[A2.3.4.hub.stale-recovery] only a socket at the socket's path is the service's to remove", () => {
+  test("nothing, a file and a folder are told apart from a socket, and each is named for the person", () => {
+    const root = temp("at-socket");
+    const path = join(root, "ttasks.sock");
+    expect(atSocketPath(path)).toBe("nothing");
+    writeFileSync(path, "restored\n");
+    expect(atSocketPath(path)).toBe("file");
+    expect(socketBlockedMessage(path, "file")).toBe(
+      `${shellPath(path)} is a file where TTasks's socket goes, so the service does not start. Move it elsewhere, then start the service again.`,
+    );
+    const folder = join(root, "folder.sock");
+    mkdirSync(folder);
+    expect(atSocketPath(folder)).toBe("folder");
+    expect(socketBlockedMessage(folder, "folder")).toContain("is a folder where");
+  });
+
+  test.skipIf(!posix)(
+    "Linux and macOS: a socket something answers on stays, one nobody answers on is removed, a link stays",
+    async () => {
+      const root = temp("at-socket-unix");
+      const path = join(root, "ttasks.sock");
+      const server = createServer((socket) => socket.destroy());
+      const close = () =>
+        new Promise<void>((resolve) => {
+          server.close(() => {
+            resolve();
+          });
+        });
+      await new Promise<void>((resolve) => {
+        server.listen(path, resolve);
+      });
+      try {
+        expect(atSocketPath(path)).toBe("socket");
+        expect(await socketBlock(path)).toBe("live");
+        expect(await clearSocketPath(path)).toBe("live");
+        expect(atSocketPath(path)).toBe("socket");
+        expect(socketBlockedMessage(path, "live")).toBe(
+          `${shellPath(path)} is a socket another program answers on where TTasks's socket goes, so the service does not start. Stop the program that listens there, then start the service again.`,
+        );
+        const link = join(root, "link.sock");
+        symlinkSync(path, link);
+        expect(atSocketPath(link)).toBe("link");
+        expect(await clearSocketPath(link)).toBe("link");
+        expect(lstatSync(link).isSymbolicLink()).toBe(true);
+      } finally {
+        await close();
+      }
+      // A socket its listener left behind: Node removes its own on close, so it is moved first.
+      const left = join(root, "left.sock");
+      const ended = createServer();
+      await new Promise<void>((resolve) => {
+        ended.listen(join(root, "ended.sock"), resolve);
+      });
+      renameSync(join(root, "ended.sock"), left);
+      await new Promise<void>((resolve) => {
+        ended.close(() => {
+          resolve();
+        });
+      });
+      expect(atSocketPath(left)).toBe("socket");
+      expect(await socketBlock(left)).toBeUndefined();
+      expect(await clearSocketPath(left)).toBe("removed");
+      expect(atSocketPath(left)).toBe("nothing");
+      expect(await clearSocketPath(left)).toBeUndefined();
     },
   );
 });

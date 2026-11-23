@@ -268,11 +268,6 @@
                   ],
                   "type": "string"
                 },
-                "missing": {
-                  "const": true,
-                  "description": "No folder is there on this machine now",
-                  "type": "boolean"
-                },
                 "name": {
                   "description": "A project's name",
                   "type": "string"
@@ -310,11 +305,6 @@
                   ],
                   "type": "string"
                 },
-                "missing": {
-                  "const": true,
-                  "description": "No folder is there on this machine now",
-                  "type": "boolean"
-                },
                 "name": {
                   "description": "A project's name",
                   "type": "string"
@@ -335,7 +325,7 @@
             "type": "array"
           },
           "moved": {
-            "description": "Folders inside the old one that moved along: it was moved",
+            "description": "Folders inside the old one that moved along: it was moved, and they are in it",
             "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
@@ -414,10 +404,20 @@
             "type": "string"
           },
           "stayed": {
-            "description": "Folders inside the old one that stayed: it is still there",
+            "description": "Folders inside the old one that stayed",
             "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
+          },
+          "stayed_because": {
+            "description": "Why they stayed: old folder there or unseen, unchecked, or not in the new one",
+            "enum": [
+              "old_folder_there",
+              "old_folder_unseen",
+              "unchecked",
+              "not_in_new_folder"
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -684,11 +684,6 @@
                   ],
                   "type": "string"
                 },
-                "missing": {
-                  "const": true,
-                  "description": "No folder is there on this machine now",
-                  "type": "boolean"
-                },
                 "name": {
                   "description": "A project's name",
                   "type": "string"
@@ -784,11 +779,6 @@
                   ],
                   "type": "string"
                 },
-                "missing": {
-                  "const": true,
-                  "description": "No folder is there on this machine now",
-                  "type": "boolean"
-                },
                 "name": {
                   "description": "A project's name",
                   "type": "string"
@@ -809,7 +799,7 @@
             "type": "array"
           },
           "moved": {
-            "description": "Folders inside the old one that moved along: it was moved",
+            "description": "Folders inside the old one that moved along: it was moved, and they are in it",
             "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
@@ -894,10 +884,20 @@
             "type": "string"
           },
           "stayed": {
-            "description": "Folders inside the old one that stayed: it is still there",
+            "description": "Folders inside the old one that stayed",
             "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
+          },
+          "stayed_because": {
+            "description": "Why they stayed: old folder there or unseen, unchecked, or not in the new one",
+            "enum": [
+              "old_folder_there",
+              "old_folder_unseen",
+              "unchecked",
+              "not_in_new_folder"
+            ],
+            "type": "string"
           },
           "total_areas": {
             "description": "Areas the whole list holds",
@@ -3274,6 +3274,11 @@
                   "description": "The draft's log entry was added",
                   "type": "boolean"
                 },
+                "log_left_out": {
+                  "const": true,
+                  "description": "This request added its log to no task: check the matched task before filing it",
+                  "type": "boolean"
+                },
                 "matched_by": {
                   "description": "How an existing task matched",
                   "enum": [
@@ -3809,6 +3814,15 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "ambiguous": {
+                  "description": "Several active matches: pick one",
+                  "items": {
+                    "description": "Task reference",
+                    "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
                 "held": {
                   "description": "Sources linked without their key, which another task holds",
                   "items": {
@@ -3834,6 +3848,24 @@
                   },
                   "type": "array"
                 },
+                "lifecycle": {
+                  "description": "The matched task's lifecycle",
+                  "enum": [
+                    "active",
+                    "completed",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                "log_added": {
+                  "description": "The draft's log entry was added",
+                  "type": "boolean"
+                },
+                "log_left_out": {
+                  "const": true,
+                  "description": "This request added its log to no task: check the matched task before filing it",
+                  "type": "boolean"
+                },
                 "ref": {
                   "description": "Task reference",
                   "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
@@ -3855,7 +3887,8 @@
               },
               "required": [
                 "result",
-                "title"
+                "title",
+                "log_added"
               ],
               "type": "object"
             },

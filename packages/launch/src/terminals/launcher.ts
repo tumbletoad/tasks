@@ -20,6 +20,8 @@ import {
   type TicketControl,
 } from "./accept.ts";
 import {
+  openerUnit,
+  SCOPE_UNIT,
   scopeCommand,
   scopeProbe,
   scopeUnit,
@@ -119,6 +121,21 @@ export class TerminalLauncher {
   scopes(env: Readonly<Record<string, string>>): Promise<boolean> {
     this.#scopes ??= this.#probe(env);
     return this.#scopes;
+  }
+
+  /**
+   * `argv` for a program the service starts that must outlive it, an OS opener and what it opens:
+   * on Linux in a transient scope of its own when scopes work here, outside the service's unit,
+   * whose stop or update ends every process in it. Elsewhere as it is: the spawner detaches it.
+   */
+  async outside(
+    env: Readonly<Record<string, string>>,
+    argv: readonly string[],
+  ): Promise<readonly string[]> {
+    const run = this.#o.systemdRun;
+    const unit = openerUnit(this.#o.install);
+    if (run === undefined || !SCOPE_UNIT.test(unit) || !(await this.scopes(env))) return argv;
+    return scopeCommand(run, unit, argv);
   }
 
   async #probe(env: Readonly<Record<string, string>>): Promise<boolean> {

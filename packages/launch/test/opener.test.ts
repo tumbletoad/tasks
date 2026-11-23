@@ -3,8 +3,11 @@
 // when the opener before it never started, so one launch never opens a URL twice. No real opener
 // runs and no real link is opened. Fixture data only.
 import { describe, expect, test, vi } from "vitest";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { openFolder, openUrl, type OpenerOptions } from "../src/opener.ts";
+import { DEFAULT_TERMINAL } from "../src/sections.ts";
 import type { SpawnRequest, SpawnedProcess } from "../src/terminals/accept.ts";
+import { TerminalLauncher } from "../src/terminals/launcher.ts";
 
 const URL_ = "claude-cli://open?cwd=%2Fhome%2Fmira%2Fwork&q=TTasks%20task%20M-14";
 
@@ -170,25 +173,108 @@ describe("[A4.5.routes.opener] the OS's URL opener: one element, defined outcome
     }
   });
 
-  test("an opener that does not end in time is stopped, and its answer is unknown", async () => {
-    const hung = linux({ "/usr/bin/gio": "hang" });
-    expect(await openUrl(URL_, hung.options)).toEqual({ result: "unknown", opener: "gio" });
-    expect(hung.r.stopped).toEqual(["/usr/bin/gio"]);
+  test("an opener is never tied to the service: detached on every OS, and on Linux in a scope of its own when scopes work, so a stop or update of the service leaves what it opened", async () => {
+    // Windows: outside the kill-on-close job a normal child is in. macOS: a session of its own.
+    for (const [platform, program, env] of [
+      ["win32", "C:\\Windows\\System32\\rundll32.exe", { SystemRoot: "C:\\Windows" }],
+      ["darwin", "/usr/bin/open", {}],
+    ] as const) {
+      const r = recorder({ [program]: 0 });
+      const options = { platform, env, spawn: r.spawn, cwd: "/" };
+      expect((await openFolder("/work", options)).result).toBe("opened");
+      expect((await openUrl(URL_, options)).result).toBe("opened");
+      expect(r.calls.map((c) => [c.argv[0], c.detached])).toEqual([
+        [program, true],
+        [program, true],
+      ]);
+    }
+
+    // Linux: the service's unit ends every process in it when it stops or updates. The launcher
+    // the service has decides: a scope when its probe says scopes work, else detached only.
+    const linuxWith = async (probe: number) => {
+      const r = recorder({ "/usr/bin/gio": 0, "/usr/bin/systemd-run": probe });
+      const launcher = new TerminalLauncher({
+        platform: "linux",
+        settings: DEFAULT_TERMINAL,
+        install: "0123456789",
+        shimCommand: ["/opt/ttasks/bin/ttasks"],
+        host: () => Promise.reject(new Error("an opener reads no terminal")),
+        systemdRun: "/usr/bin/systemd-run",
+        trueProgram: "/usr/bin/true",
+        spawn: r.spawn,
+      });
+      const { options } = linux({});
+      const env = { DISPLAY: ":0" };
+      const opener: OpenerOptions = {
+        ...options,
+        spawn: r.spawn,
+        outside: (argv) => launcher.outside(env, argv),
+      };
+      expect(await openFolder("/home/mira/work", opener)).toEqual({
+        result: "opened",
+        opener: "gio",
+      });
+      expect(await openUrl(URL_, opener)).toEqual({ result: "opened", opener: "gio" });
+      return r.calls;
+    };
+    const scoped = await linuxWith(0);
+    expect(scoped.map((c) => c.argv.slice(0, 5))).toEqual([
+      ["/usr/bin/systemd-run", "--user", "--scope", "--collect", "--quiet"],
+      ["/usr/bin/systemd-run", "--user", "--scope", "--collect", "--slice=app.slice"],
+      ["/usr/bin/systemd-run", "--user", "--scope", "--collect", "--slice=app.slice"],
+    ]);
+    const [folderCall, urlCall] = scoped.slice(1);
+    expect(folderCall?.argv.slice(5)).toEqual([
+      expect.stringMatching(new RegExp(`^--unit=${PRODUCT_ID}-0123456789-open-[0-9a-f]{16}$`, "u")),
+      "--",
+      "/usr/bin/gio",
+      "open",
+      "/home/mira/work",
+    ]);
+    expect(urlCall?.argv.slice(6)).toEqual(["--", "/usr/bin/gio", "open", URL_]);
+    // Each opener its own unit, so a second one never meets the first while systemd collects it.
+    expect(urlCall?.argv[5]).not.toBe(folderCall?.argv[5]);
+    expect(scoped.every((c) => c.detached)).toBe(true);
+
+    const unscoped = await linuxWith(1);
+    expect(unscoped.map((c) => [c.argv[0], c.detached])).toEqual([
+      ["/usr/bin/systemd-run", true],
+      ["/usr/bin/gio", true],
+      ["/usr/bin/gio", true],
+    ]);
   });
 
-  test("with no deadline given, an opener gets 10 s: not stopped at 9,999 ms, stopped and unknown at 10,000 ms", async () => {
-    const hung = linux({ "/usr/bin/gio": "hang" }, undefined, "default");
+  test("an opener that does not end in time is left running: the wait ends, its answer is unknown, and no other opener is tried", async () => {
+    // xdg-open may stay with the application it started, in its process group: ending it could
+    // end that application, with the person's work in it.
+    const fallback = linux({ "/usr/bin/xdg-open": "hang" });
+    expect(await openUrl(URL_, fallback.options)).toEqual({
+      result: "unknown",
+      opener: "xdg-open",
+    });
+    expect(fallback.r.stopped).toEqual([]);
+    // gio may still open it: xdg-open would open a second copy.
+    const hung = linux({ "/usr/bin/gio": "hang", "/usr/bin/xdg-open": 0 });
+    expect(await openFolder("/home/mira/work", hung.options)).toEqual({
+      result: "unknown",
+      opener: "gio",
+    });
+    expect(hung.r.calls.map((c) => c.argv[0])).toEqual(["/usr/bin/gio"]);
+    expect(hung.r.stopped).toEqual([]);
+  });
+
+  test("with no deadline given, an opener gets 10 s: no answer at 9,999 ms, unknown at 10,000 ms, and never stopped", async () => {
+    const hung = linux({ "/usr/bin/xdg-open": "hang" }, undefined, "default");
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       let answer: unknown;
       const asked = openUrl(URL_, hung.options).then((opened) => (answer = opened));
       await vi.advanceTimersByTimeAsync(9_999);
       expect(answer).toBeUndefined();
-      expect(hung.r.stopped).toEqual([]);
       await vi.advanceTimersByTimeAsync(1);
       await asked;
-      expect(answer).toEqual({ result: "unknown", opener: "gio" });
-      expect(hung.r.stopped).toEqual(["/usr/bin/gio"]);
+      expect(answer).toEqual({ result: "unknown", opener: "xdg-open" });
+      expect(hung.r.stopped).toEqual([]);
     } finally {
       vi.useRealTimers();
     }

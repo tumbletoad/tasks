@@ -6,6 +6,7 @@
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -351,7 +352,7 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
     await markers.mark(task, inner);
     const moved = `${folder}-moved`;
     renameSync(folder, moved);
-    markers.moved(task, inner, join(moved, "inner"));
+    await markers.moved(task, inner, join(moved, "inner"));
     expect(await readMarker(join(moved, "inner"))).toEqual({ state: "owners", owners: [task] });
     // Gone before any launch looked at the new place: only the move told this machine, and the
     // folder there is the one that was marked, so its marker is put back.
@@ -361,6 +362,22 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
     // An undo gives the task its old place back, where an unrelated folder was made since.
     mkdirSync(inner, { recursive: true });
     expect(await markers.check(task, inner)).toEqual({ kind: "missing" });
+  });
+
+  test("a folder that moved along as a copy is remembered as the folder it is at its new place", async () => {
+    const { folder, markers } = fresh();
+    const inner = join(folder, "inner");
+    mkdirSync(inner);
+    await markers.mark(task, inner);
+    // Copied to another place, as a move to another drive is: the copy is another folder by its
+    // identity, and it is the one the task has from now on.
+    const moved = `${folder}-copied`;
+    cpSync(folder, moved, { recursive: true });
+    rmSync(folder, { recursive: true });
+    await markers.moved(task, inner, join(moved, "inner"));
+    // Its marker gone, the folder there is still the one this machine has for the task.
+    rmSync(join(moved, "inner", FOLDER_MARKER), { recursive: true });
+    expect(await markers.check(task, join(moved, "inner"))).toEqual({ kind: "ok" });
   });
 
   test.skipIf(!gitAvailable)(

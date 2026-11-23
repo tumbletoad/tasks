@@ -371,6 +371,13 @@ export class FolderMarkers {
 
   /** Whether the stored folder is a folder here now, where it opens, and its identity. */
   async #folder(stored: string): Promise<{ open: string; identity?: string } | undefined> {
+    const found = await this.#look(stored);
+    return found === "not_answering" ? undefined : found;
+  }
+
+  async #look(
+    stored: string,
+  ): Promise<{ open: string; identity?: string } | undefined | "not_answering"> {
     const open = openPath(stored, this.#home, this.#platform);
     if (open === undefined) return undefined;
     const found = await bounded(async () => {
@@ -381,7 +388,8 @@ export class FolderMarkers {
         return false;
       }
     }, MARKER_MS);
-    if (found === false || found === "not_answering") return undefined;
+    if (found === false) return undefined;
+    if (found === "not_answering") return found;
     return found === true ? { open } : { open, identity: found };
   }
 
@@ -451,14 +459,47 @@ export class FolderMarkers {
   }
 
   /**
-   * A folder that moved with another: its marker moved with it, inside it, so what this machine
-   * marked follows too. The old place stays marked: an undo gives the owner that place back, and
-   * an unrelated folder made there since is still noticed.
+   * Whether the folder at `to` is the one this machine marked for `owner` at `from`, moved: it has
+   * that folder's identity (a rename), or its marker names the owner and it was brought there (a
+   * copy to another drive, or back). A folder this machine marked at `to` for the owner before, and
+   * that is still the same folder by its identity, was not brought: it is the owner's earlier
+   * folder, given back. Without identities to tell the two apart, the marker proves nothing.
    */
-  moved(owner: MarkerOwner, from: string, to: string): void {
-    const key = this.#key(owner, from);
-    if (this.#marks.has(key))
-      this.#marks.set(this.#key(owner, to), true, this.#marks.identity(key));
+  movedTo(owner: MarkerOwner, from: string, to: string): Promise<boolean | "not_answering"> {
+    return this.#turn(async () => {
+      const folder = await this.#look(to);
+      if (folder === undefined) return false;
+      if (folder === "not_answering") return folder;
+      const known = this.#marks.identity(this.#key(owner, from));
+      if (known !== undefined && folder.identity === known) return true;
+      const before = this.#key(owner, to);
+      if (this.#marks.has(before)) {
+        const earlier = this.#marks.identity(before);
+        if (earlier === undefined || folder.identity === undefined) return false;
+        if (earlier === folder.identity) return false;
+      }
+      const read = await bounded(() => readMarker(folder.open), MARKER_MS);
+      // A marker that is there and cannot be read says nothing either way: it could not be checked.
+      if (read === "not_answering" || read.state === "unreadable") return "not_answering";
+      return read.state === "owners" && read.owners.some((o) => same(o, owner));
+    });
+  }
+
+  /**
+   * A folder that moved with another: its marker moved with it, inside it, so what this machine
+   * marked follows too, as the folder it is at its new place: a rename keeps its identity, a move
+   * to another volume gives it a new one, and the old one kept there would later read as a folder
+   * brought from elsewhere. The old place stays marked: an undo gives the owner that place back,
+   * and an unrelated folder made there since is still noticed.
+   */
+  moved(owner: MarkerOwner, from: string, to: string): Promise<void> {
+    return this.#turn(async () => {
+      if (!this.#marks.has(this.#key(owner, from))) return;
+      const folder = await this.#look(to);
+      const identity =
+        folder === undefined || folder === "not_answering" ? undefined : folder.identity;
+      this.#marks.set(this.#key(owner, to), true, identity);
+    });
   }
 
   /**

@@ -309,10 +309,10 @@ test.describe("[A5.trash.e2e.unsent] Every unsent word of a removed task stays, 
     await expect(back.locator('[data-part="composer"]')).toHaveValue(newer, { timeout: SLOW_MS });
     await expect(back.locator('[data-part="kept-note"]')).toContainText(note);
     await expect(back.locator('[data-part="kept-title"]')).toContainText(typed);
-    await expect(back.locator('[data-part="unsaved"] [data-part="copy-mine"]')).toHaveAttribute(
-      "aria-label",
-      "Copy: P1",
+    await expect(back.locator('[data-part="unsaved"] [data-part="unsaved-value"]')).toHaveText(
+      "P1",
     );
+    await expect(back.locator('[data-part="unsaved"] [data-part="copy-mine"]')).toBeVisible();
     await back.locator('[data-part="kept-note"]').scrollIntoViewIfNeeded();
     await both(page, "kept-note");
   });

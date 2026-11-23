@@ -62,7 +62,7 @@ const kept = (page: Page): Promise<Record<string, string>> =>
     for (const storage of [localStorage, sessionStorage]) {
       for (let i = 0; i < storage.length; i += 1) {
         const key = storage.key(i) ?? "";
-        if (/\.(draft|note|top|unsaved|unanswered)\./u.test(key) && key.startsWith(prefix)) {
+        if (/\.(draft|note|top|edit|unsaved|unanswered)\./u.test(key) && key.startsWith(prefix)) {
           found[key] = storage.getItem(key) ?? "";
         }
       }
@@ -938,6 +938,16 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await page.reload();
     await expect(unsaved).toHaveAttribute("data-reason", "failed", { timeout: SLOW_MS });
     await expect(unsaved).toContainText("Not saved");
+    // The control shows the saved value; the line shows the words Try again sends, with Copy.
+    await expect(unsaved.locator('[data-part="unsaved-value"]')).toHaveText("P1");
+    await expect(unsaved.locator('[data-part="copy-mine"]')).toBeVisible();
+    const size = page.viewportSize();
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await unsaved.scrollIntoViewIfNeeded();
+      await picture(page, `lone-kept-priority-${String(width)}.png`);
+    }
+    if (size !== null) await page.setViewportSize(size);
     await unsaved.locator('[data-part="apply-mine"]').click();
     await expect.poll(async () => (await read(world, ref)).task.priority).toBe(1);
     await expect(unsaved).toHaveCount(0);
@@ -985,6 +995,100 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await expect(unsaved.locator('[data-part="unsaved-value"]')).toHaveText(
       `Fix both bike lights (${tag})`,
     );
+    await unsaved.locator('[data-part="keep-theirs"]').click();
+    await expect(unsaved).toHaveCount(0);
+    expect(Object.keys(await kept(page))).toEqual([]);
+  });
+
+  test("two tabs whose renames of one task are both refused keep both: a reload shows each tab's words, and each is saved or discarded on its own", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, { title: `Book the hall (${tag})`, area: "home" });
+    await openTask(page, world, ref);
+    const second = await page.context().newPage();
+    await second.goto(`${world.origin}/s/${world.mira.id}/task/${ref}`);
+    await showsSpace(second, world.mira.name);
+    // The connection is down for both tabs.
+    await page.context().route("**/api/v1/op/task.update", (route) => route.abort());
+    const first = `Book the small hall (${tag})`;
+    const other = `Book the big hall (${tag})`;
+    for (const [tab, words] of [
+      [page, first],
+      [second, other],
+    ] as const) {
+      const row = rowOf(tab, ref);
+      await row.locator('[data-part="title"]').focus();
+      await tab.keyboard.press("F2");
+      await row.locator('[data-part="title-edit"]').fill(words);
+      await tab.keyboard.press("Enter");
+      // This tab's own refusal: the other tab's line may show here already.
+      await expect(row.locator('[data-part="unsaved"]', { hasText: words })).toHaveAttribute(
+        "data-reason",
+        "failed",
+        { timeout: SLOW_MS },
+      );
+    }
+    await page.context().unroute("**/api/v1/op/task.update");
+    await page.reload();
+    const row = rowOf(page, ref);
+    const lines = row.locator('[data-part="unsaved"]');
+    const line = (words: string) =>
+      lines.filter({ has: page.locator('[data-part="unsaved-value"]', { hasText: words }) });
+    await expect(lines.locator('[data-part="unsaved-value"]')).toHaveText([first, other], {
+      timeout: SLOW_MS,
+    });
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await row.scrollIntoViewIfNeeded();
+      await picture(page, `two-kept-titles-${String(width)}.png`);
+    }
+    // The other tab's words are discarded here: they go there too, and this tab's stay.
+    await line(other).locator('[data-part="keep-theirs"]').click();
+    await expect(rowOf(second, ref).locator('[data-part="unsaved"]')).toHaveText(
+      new RegExp(first.replace(/[()]/gu, "\\$&"), "u"),
+      { timeout: SLOW_MS },
+    );
+    await line(first).locator('[data-part="apply-mine"]').click();
+    await expect.poll(async () => (await read(world, ref)).task.title).toBe(first);
+    await expect(lines).toHaveCount(0, { timeout: SLOW_MS });
+    await expect(rowOf(second, ref).locator('[data-part="unsaved"]')).toHaveCount(0, {
+      timeout: SLOW_MS,
+    });
+    await expect.poll(async () => Object.keys(await kept(page))).toEqual([]);
+    await second.close();
+  });
+
+  test("a priority that was not saved before the task was finished stays under its fact with its value, Copy and Discard, after a reload too", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, { title: `Return the drill (${tag})`, area: "home" });
+    await openTask(page, world, ref);
+    const row = rowOf(page, ref);
+    await page.route("**/api/v1/op/task.update", (route) => route.abort());
+    await row
+      .getByRole("radiogroup", { name: "Priority" })
+      .getByRole("radio", { name: "P1" })
+      .click();
+    const unsaved = row.locator('[data-part="unsaved"]');
+    await expect(unsaved).toHaveAttribute("data-reason", "failed", { timeout: SLOW_MS });
+    await page.unroute("**/api/v1/op/task.update");
+    await world.op(world.mira.id, "task.finish", {
+      task: ref,
+      base: (await read(world, ref)).as_of,
+    });
+    await page.reload();
+    await expect(unsaved).toHaveAttribute("data-reason", "finished", { timeout: SLOW_MS });
+    await expect(unsaved.locator('[data-part="unsaved-value"]')).toHaveText("P1");
+    await expect(unsaved.locator('[data-part="copy-mine"]')).toBeVisible();
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await unsaved.scrollIntoViewIfNeeded();
+      await picture(page, `finished-fact-${String(width)}.png`);
+    }
     await unsaved.locator('[data-part="keep-theirs"]').click();
     await expect(unsaved).toHaveCount(0);
     expect(Object.keys(await kept(page))).toEqual([]);

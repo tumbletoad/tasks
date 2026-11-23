@@ -105,6 +105,9 @@ const SAMPLE = {
   max: 20_000,
   sub: "1 today",
   names: "M-14, Billing",
+  stayed: 2,
+  because: "not_in_new_folder",
+  kept: "M-15, Docs",
   opened: "yes",
   limit: "wall",
   ran: "2 min",
@@ -155,6 +158,35 @@ describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {
     );
     expect(intl.formatMessage({ id: "nav.counted" }, { view: "Waiting", count: 2 })).toBe(
       "Waiting, 2 tasks",
+    );
+    // A folder's toast says why the folders inside the old one stayed.
+    const folderSet = (values: Record<string, string | number>) =>
+      intl.formatMessage(
+        { id: "toast.folderSet" },
+        { folder: "~/new", count: 0, names: "", stayed: 0, because: "", kept: "", ...values },
+      );
+    expect(folderSet({ count: 1, names: "M-1" })).toBe(
+      "Folder set to ~/new. 1 folder inside the old one moved along: M-1",
+    );
+    expect(
+      folderSet({
+        count: 1,
+        names: "M-1",
+        stayed: 2,
+        because: "not_in_new_folder",
+        kept: "M-2, Docs",
+      }),
+    ).toBe(
+      "Folder set to ~/new. 1 folder inside the old one moved along: M-1. 2 folders inside the old one are not in the new one and stayed: M-2, Docs",
+    );
+    expect(folderSet({ stayed: 1, because: "old_folder_there", kept: "M-2" })).toBe(
+      "Folder set to ~/new. The old folder is still there, so 1 folder inside it stayed: M-2",
+    );
+    expect(folderSet({ stayed: 1, because: "old_folder_unseen", kept: "M-2" })).toBe(
+      "Folder set to ~/new. The old folder cannot be seen and nothing shows the new one is it, so 1 folder inside it stayed: M-2",
+    );
+    expect(folderSet({ stayed: 2, because: "unchecked", kept: "M-2, Docs" })).toBe(
+      "Folder set to ~/new. A folder could not be checked, so 2 folders inside the old one stayed: M-2, Docs",
     );
     expect(
       intl.formatMessage({ id: "row.desc.late" }, { days: 1, date: "Friday 13 November" }),

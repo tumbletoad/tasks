@@ -2459,18 +2459,19 @@ export class SpaceWriter {
           const touches: Touch[] = [];
           if (row !== undefined) {
             // Another folder for the one there: the base covers the folder the caller saw, and
-            // with `carry` every folder inside it that moves along, so one set since is not moved
-            // unseen. A folder Undo brought back keeps its old path version: the version of its
-            // tombstone says whether the caller saw it.
+            // every folder inside it that moves along, so one set since is not moved unseen. A
+            // folder Undo brought back keeps its old path version: the version of its tombstone
+            // says whether the caller saw it.
             const found = decodeFolder(row);
             target = found.id;
             touches.push(...folderTouches(row, ["path", "deleted"], parent));
-            if (op.carry === true) {
+            if (op.carry !== undefined && op.carry.length > 0) {
+              const carried = new Set(op.carry);
               for (const inside of conn
                 .prepare(FOLDER_SQL.liveOn)
                 .all({ machine: folder.machine })) {
                 const moved = decodeFolder(inside);
-                if (moved.id === found.id) continue;
+                if (moved.id === found.id || !carried.has(moved.ownerId)) continue;
                 if (carriedTo(moved.path, found.path, op.path, folder.os) === undefined) continue;
                 const owned = moved.ownerKind === "task" ? task(moved.ownerId, "task", true) : null;
                 touches.push(...folderTouches(inside, ["path", "deleted"], owned));
@@ -4358,12 +4359,13 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         if (found.path !== op.path) {
           conn.prepare(SQL.folderPath).run({ id: found.id, path: op.path });
           wrote(run, i, "folders", found.id, staged.task, ["path"]);
-          // A moved folder takes every folder inside it along, the rest of each path as it is:
-          // one change, one undo.
-          if (op.carry === true) {
+          // A moved folder takes the folders inside it that moved with it along, the rest of each
+          // path as it is: one change, one undo.
+          if (op.carry !== undefined && op.carry.length > 0) {
+            const carried = new Set(op.carry);
             for (const inside of conn.prepare(FOLDER_SQL.liveOn).all({ machine })) {
               const other = decodeFolder(inside);
-              if (other.id === found.id) continue;
+              if (other.id === found.id || !carried.has(other.ownerId)) continue;
               const moved = carriedTo(other.path, found.path, op.path, os);
               if (moved === undefined || moved === other.path) continue;
               ensureStart(conn, run, "folders", other.id);

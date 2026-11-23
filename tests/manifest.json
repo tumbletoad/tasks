@@ -847,6 +847,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.15.folders.move",
+      "title": "A folder change whose look at the disk does not answer moves no folder inside the old one and says a folder could not be checked: the old folder's look, the new folder's, its marker's, or one folder's inside the new one",
+      "source": "A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.15.folders.repo",
       "title": "The repository a project's folder holds, by name, from the folder's own Git configuration: origin's or the first remote's, none for no remote, a local remote or a folder that is not a checkout, the name alone for an address with a token, and none when the configuration does not answer in time",
       "source": "A1 3.15",
@@ -1563,7 +1571,7 @@
     },
     {
       "id": "A4.5.run.host",
-      "title": "The run host's rules one by one: Stop on a queued run, while the agent runs (an agent that obeys gives its answer, one that ignores it is killed after the grace time), before the agent's PID (recorded, never running) and after the agent exited, a container that refuses to empty (unknown, End by force once it is empty), a start past its time whose late container is ended, a refused start, the idle and wall limits, and the next start after a crash (interrupted with the last saved answer, cancelled after a Stop, unknown while a process refuses to end)",
+      "title": "The run host's rules one by one: Stop on a queued run, while the agent runs (an agent that obeys gives its answer, one that ignores it is killed after the grace time), before the agent's PID (recorded, never running) and after the agent exited, a container that refuses to empty (unknown, End by force once it is empty), a start past its time whose late container is ended, a refused start, the idle and wall limits, the next start after a crash (interrupted with the last saved answer, cancelled after a Stop, unknown while a process refuses to end), and a service that closes while the agent writes its answer saves the words so far, while one that closes after the work settled, before its end was recorded, keeps the work's own end",
       "source": "A4 3.11.2, A4 3.11.8, A4 3.11.9, A7 3.13 M6.01",
       "owner": "M6",
       "kind": "ci",
@@ -1618,7 +1626,14 @@
     },
     {
       "id": "A4.3.11.codex.driver",
-      "title": "The codex driver against a fake app server that speaks exactly the recorded exchanges: the request goes over the protocol, the final answer is the work's, a narrower mode runs in Codex's own sandbox, each server request kind is answered as the permission says while the turn goes on, a blocking question ends the run as needing the person with the question kept, and so does a question the turn ends with, and is kept when the wait for background work is stopped, the thread of an agent the run's agent started is never the run's own and holds the run while it works or until it is closed, a thread the server says works in another folder than the run's is given no work, a server that ends during background work leaves the work unfinished, an unknown request kind gets the protocol's error, Stop during start-up and during a turn, a server that stops answering, background work after the turn, a whole answer after megabytes of other output, and a request that comes after the work settled hears no one answered and changes nothing",
+      "title": "The codex driver against a fake app server that speaks exactly the recorded exchanges: the request goes over the protocol, the final answer is the work's, a narrower mode runs in Codex's own sandbox, each server request kind is answered as the permission says while the turn goes on, a blocking question ends the run as needing the person with the question kept, and so does a question the turn ends with, and is kept when the wait for background work is stopped, the thread of an agent the run's agent started is never the run's own and holds the run while it works or until it is closed, a thread the server says works in another folder than the run's is given no work, a server that ends during background work leaves the work unfinished, an unknown request kind gets the protocol's error, Stop during start-up and during a turn, a server that stops answering, background work after the turn, a whole answer after megabytes of other output, an answer that streams in kept up to its cap while commentary and a helper's words never are, a question in the turn's summary before its own message, and a request that comes after the work settled hears no one answered and changes nothing",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.drivers.answer-orders",
+      "title": "Every driver (codex, claude, claude-print) against one table of the orders in which an agent's words can reach it, each row marked for the drivers whose protocol can say it: what the agent said by the time its work settles is the work's text, unfinished when its message never came whole, when the output ends mid answer, at Stop, after a turn's end without a summary; the answer the turn's summary names wins over a later message, a late piece or spaces; a message that completes after its turn's end, or a question it ends with, is waited for briefly; a message or question of an earlier turn never changes a later one; commentary is never the answer; and work that succeeded never has an empty answer when one was given",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

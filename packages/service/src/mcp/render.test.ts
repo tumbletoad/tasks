@@ -224,6 +224,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
       result: "created",
       ref: `M-${String(100 + n)}`,
       title: cjk(300),
+      log_added: true,
     }));
     finish["replayed"] = true;
     // update_task with every field and warnings.
@@ -672,7 +673,7 @@ describe("[A3.3.10.mcp.framing] stored text and editable names appear only insid
     };
 
     const finish = example("task.finish", 0);
-    finish["follow_ups"] = [{ result: "created", ref: "M-31", title: INJECTION }];
+    finish["follow_ups"] = [{ result: "created", ref: "M-31", title: INJECTION, log_added: false }];
 
     const results: [string, Json][] = [
       ["space.status", status],
