@@ -870,7 +870,7 @@ const ownShapes = (record: HomeRecord): readonly unknown[] => [record.entry, ...
 function whoseIn(home: AgentHome, read: FileRead, record: HomeRecord): "own" | "edited" | "absent" {
   if (read.kind !== "read" || read.entry === undefined) return "absent";
   const { format, servers } = APPS[home.app];
-  return whoseEntry(format, servers, read.text, ownShapes(record));
+  return whoseEntry(format, servers, read.text, ownShapes(record), read.entry);
 }
 
 /** A home as it is now, judged against setup's record of it. */

@@ -94,15 +94,15 @@ function lineBefore(text: string, at: number): string {
  * Whose the entry in `text` is: `own` when it is exactly one of `own` (TTasks's intended entry,
  * and for an earlier build's record the shapes its writers left), and in TOML a table of its own
  * with no comment inside it or on the line right above it; `edited` when it is there otherwise;
- * `absent` when there is none.
+ * `absent` when there is none. `entry` is the entry as the caller parsed it from `text` already.
  */
 export function whoseEntry(
   format: EntryFormat,
   servers: string,
   text: string,
   own: readonly unknown[],
+  entry: unknown = entryIn(format, servers, text),
 ): "own" | "edited" | "absent" {
-  const entry = entryIn(format, servers, text);
   if (entry === undefined) return "absent";
   if (!own.some((wanted) => sameEntry(entry, wanted))) return "edited";
   if (format === "json") return "own";
