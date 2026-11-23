@@ -99,7 +99,7 @@ import {
 } from "../launch/open.ts";
 import type { Session, SessionPort } from "./binding.ts";
 import { checkGrant, grantRefused, standingOf, type HomeGate } from "./grant.ts";
-import { dueDate, localTimeZone, pastInstant } from "./dates.ts";
+import { dueDate, localTimeZone, pastInstant, sourceInstant } from "./dates.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
 import {
   checkFolder,
@@ -1442,8 +1442,14 @@ function sourceFields(source: Record<string, unknown>, path: string): SourceFiel
     if (typeof value === "string" && (key === "key" || value !== "")) fields[key] = value;
   }
   if (typeof source["at"] === "string") {
-    const at = Date.parse(source["at"]);
-    if (Number.isNaN(at)) throw invalid(`${path}.at`, "Not a date and time");
+    const at = sourceInstant(source["at"]);
+    if (at === undefined) {
+      throw invalid(
+        `${path}.at`,
+        "Not a date or an instant",
+        "Use an ISO date, or an instant with its offset such as 2026-03-02T14:05:00Z.",
+      );
+    }
     fields.at = at;
   }
   return fields;

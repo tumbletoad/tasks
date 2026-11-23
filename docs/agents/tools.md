@@ -1473,7 +1473,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | A1 operations | `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `add_tasks`, CLI `ttasks add`, UI |
 | Errors | `invalid_input`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1629, reported |
+| Definition, estimated tokens | 1648, reported |
 | Result budget, estimated tokens | typical 80, max 2000 |
 
 ### Input
@@ -1500,7 +1500,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | `tasks[].sources[].title` | string, max 300; agents: string, max 200 | yes | Subject, chat or ticket title |
 | `tasks[].sources[].who` | string, max 120 | no | Sender or counterpart |
 | `tasks[].sources[].url` | string, max 2048 | no | Link |
-| `tasks[].sources[].at` | string, max 40 | no | When it was sent |
+| `tasks[].sources[].at` | string, max 40 | no | When it was sent: ISO date, or instant with its offset |
 | `tasks[].context` | string, max 65536; agents: string, max 8000 | no | Markdown context |
 | `tasks[].log` | string, max 16384; agents: string, max 2000 | no | Log entry; also added to a matched task that lacks it |
 | `tasks[].on_existing` | "return" \| "add_sources" \| "create_new" | no | When a source key matches; default return |
@@ -1724,7 +1724,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | A1 operations | `task.complete`, `task.archive`, `task.wrap_up`, `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `complete_task`, CLI `ttasks done`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 2026, reported |
+| Definition, estimated tokens | 2045, reported |
 | Result budget, estimated tokens | typical 100, max 1500 |
 
 ### Input
@@ -1755,7 +1755,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].sources[].title` | string, max 300; agents: string, max 200 | yes | Subject, chat or ticket title |
 | `follow_ups[].sources[].who` | string, max 120 | no | Sender or counterpart |
 | `follow_ups[].sources[].url` | string, max 2048 | no | Link |
-| `follow_ups[].sources[].at` | string, max 40 | no | When it was sent |
+| `follow_ups[].sources[].at` | string, max 40 | no | When it was sent: ISO date, or instant with its offset |
 | `follow_ups[].context` | string, max 65536; agents: string, max 8000 | no | Markdown context |
 | `follow_ups[].log` | string, max 16384; agents: string, max 2000 | no | Log entry; also added to a matched task that lacks it |
 | `follow_ups[].on_existing` | "return" \| "add_sources" \| "create_new" | no | When a source key matches; default return |
@@ -2933,7 +2933,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `source.relink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
 | Faces | MCP `update_task`, CLI `ttasks set`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict`, `ambiguous` |
-| Definition, estimated tokens | 1907, reported |
+| Definition, estimated tokens | 1926, reported |
 | Result budget, estimated tokens | typical 80, max 400 |
 
 ### Input
@@ -2965,7 +2965,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `add_sources[].title` | string, max 300; agents: string, max 200 | yes | Subject, chat or ticket title |
 | `add_sources[].who` | string, max 120 | no | Sender or counterpart |
 | `add_sources[].url` | string, max 2048 | no | Link |
-| `add_sources[].at` | string, max 40 | no | When it was sent |
+| `add_sources[].at` | string, max 40 | no | When it was sent: ISO date, or instant with its offset |
 | `remove_sources` | (string, max 2048)[], max 10 items | no | Sources to detach (ID, key or URL): captures stop finding this task |
 | `put_back_sources` | (string, max 2048)[], max 10 items | no | Detached sources to link again; refused on an active task if another has the key |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |

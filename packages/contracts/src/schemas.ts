@@ -148,7 +148,11 @@ export const SourceInput = z.strictObject({
   title: safeLine(USER_LIMITS.sourceTitle).describe("Subject, chat or ticket title"),
   who: safeLine(120).describe("Sender or counterpart").optional(),
   url: z.string().max(USER_LIMITS.url).describe("Link").optional(),
-  at: z.string().max(40).describe("When it was sent").optional(),
+  at: z
+    .string()
+    .max(40)
+    .describe("When it was sent: ISO date, or instant with its offset")
+    .optional(),
 });
 
 /**

@@ -1,11 +1,14 @@
 // What an agent is told about its write is what happened: a retry with the same request ID gets
 // the answer the first call got, also for a write that changed nothing; an import makes groups only
-// for the drafts it adds; a task's history holds that task's changes, every one of them. A service
-// in this process, fixture text and temporary folders only.
+// for the drafts it adds; a task's history holds that task's changes, every one of them; a source's
+// date is a real date, and the answer shows what was stored. A service in this process, fixture
+// text and temporary folders only.
 import { mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { opCall, type Caller } from "../src/ops/index.ts";
+import { AppError, type ErrorBody } from "@ttasks/contracts";
+import { toolCaller } from "../src/mcp/index.ts";
+import { opCall, type Binding, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
 type Json = Record<string, unknown>;
@@ -25,6 +28,25 @@ const USER: Caller = { class: "cli-interactive", env: {} };
 
 async function call(op: string, input: Json, caller: Caller = AGENT): Promise<Json> {
   return (await opCall(w.service.ops, caller, { op, input })) as Json;
+}
+async function refusal(op: string, input: Json, caller: Caller = AGENT): Promise<ErrorBody> {
+  const error = await call(op, input, caller).then(
+    () => undefined,
+    (e: unknown) => e,
+  );
+  if (!(error instanceof AppError)) throw new Error(`${op} was not refused`);
+  return error.toBody();
+}
+/** What an agent reads back from a tool. */
+async function tool(name: string, args: Json): Promise<string> {
+  const binding: Binding = { kind: "none", space: w.space, named: false };
+  const result = await toolCaller({
+    ops: w.service.ops,
+    context: { space: null },
+    conn: 1,
+    binding,
+  })(name, args);
+  return result.content[0].text;
 }
 
 let n = 0;
@@ -277,5 +299,40 @@ describe("[A3.answers.history] a task's history is its own changes, every one of
     expect(seen).toHaveLength(46);
     expect(new Set(seen).size).toBe(46);
     expect([...seen].sort((x, y) => y - x)).toEqual(seen);
+  });
+});
+
+describe("[A3.answers.source-date] a source's date is a date, and the answer shows the one stored", () => {
+  test("February 30 is refused at its field, and nothing is added", async () => {
+    const before = await asOf();
+    const refused = await refusal("task.add", {
+      tasks: [
+        {
+          title: "Dated wrongly",
+          sources: [{ kind: "doc", title: "Fixture document", at: "2026-02-30" }],
+        },
+      ],
+      request_id: rid(),
+    });
+    expect(refused).toMatchObject({
+      code: "invalid_input",
+      data: { issues: [{ path: "tasks.0.sources.0.at" }] },
+    });
+    expect(await asOf()).toBe(before);
+  });
+
+  test("an agent reads back the date its source was stored with", async () => {
+    const added = await call("task.add", {
+      tasks: [
+        {
+          title: "Dated rightly",
+          sources: [{ kind: "doc", title: "Fixture document", at: "2026-02-27T10:00:00+01:00" }],
+        },
+      ],
+      request_id: rid(),
+    });
+    const ref = (added["tasks"] as { ref: string }[])[0]?.ref ?? "";
+    const text = await tool("get_task", { task: ref, sections: ["sources"] });
+    expect(text).toContain("2026-02-27T09:00:00.000Z");
   });
 });

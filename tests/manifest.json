@@ -2683,6 +2683,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.answers.source-date",
+      "title": "A source's date is a real date: February 30 is refused at its field and nothing is added, and an agent reads back the date its source was stored with",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.bulk.one-call",
       "title": "Twenty-five task drafts at every agent limit (new groups, ten keyed sources, a log entry and a folder each, text of three-byte characters) fit in one add_tasks call, and ten such follow-ups in one complete_task",
       "owner": "M2",

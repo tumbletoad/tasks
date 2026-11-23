@@ -237,6 +237,7 @@ type Source = {
   readonly who?: string | undefined;
   readonly url?: string | undefined;
   readonly ref?: string | undefined;
+  readonly at?: string | undefined;
   readonly captures_to?: readonly string[] | undefined;
   readonly captures_more?: number | undefined;
   readonly removed?: { readonly at: string; readonly by: string } | undefined;
@@ -321,6 +322,7 @@ const sourceLine = (source: Source): string =>
     source.key !== undefined && `key ${source.key}`,
     source.ref !== undefined && `ref ${source.ref}`,
     source.url,
+    source.at !== undefined && `at ${source.at}`,
     source.captures_to !== undefined && capturesTo(source.captures_to, source.captures_more),
     source.id,
   )}`;
