@@ -840,6 +840,24 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
     const folders = [...container.querySelectorAll('[data-part="session"] [title]')].map(
       (e) => e.textContent,
     );
-    expect(folders.sort()).toEqual(["api", "play/portal", "work/portal"]);
+    expect(folders.sort()).toEqual(["api", "…/play/portal", "…/work/portal"]);
+  });
+
+  test("a folder's label is bounded, whatever ending two folders share; the tip has the whole path", async () => {
+    await mount();
+    const shared = "clients/northwind-traders-international/appointments-portal-frontend/src";
+    const a = `/home/mira/alpha/${shared}`;
+    const b = `/home/mira/beta/${shared}`;
+    show({
+      picture: picture([session(1, { folder: a }), session(2, { folder: b })]),
+      trouble: null,
+    });
+    const shown = [...container.querySelectorAll<HTMLElement>('[data-part="session"] [title]')];
+    expect(shown.map((e) => e.title).sort()).toEqual([a, b]);
+    for (const label of shown.map((e) => e.textContent)) {
+      expect(label.length).toBeLessThanOrEqual(40);
+      expect(label.startsWith("…")).toBe(true);
+      expect(label.endsWith("/src")).toBe(true);
+    }
   });
 });

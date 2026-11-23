@@ -1,8 +1,9 @@
 // The Agents page with agents linked to their tasks, end to end in Chromium and Firefox against the
 // real service process: the person opens four tasks in the fake agent from the page, and the test
 // kit's fake `ttam` reports three of those sessions by the IDs the launches preset, and one agent
-// of no task. Each task shows once, as its row, in the group its agent's state puts it in; the
-// fourth, which the monitor does not report, is not seen; a picture that is not current mutes
+// of no task. Each task shows once, as its row, in the group its agent's state puts it in, with
+// its agents beneath it (one of them twice, as a conversation resumed in a second terminal is);
+// the fourth, which the monitor does not report, is not seen; a picture that is not current mutes
 // those rows and moves none; and the second space lists the agents with a link that opens their
 // task in its own space. At 1,440 and 390 px in both themes. Fixture data only.
 import { expect, type Page } from "@playwright/test";
@@ -88,15 +89,34 @@ test.describe("[A5.agents.e2e.links] each agent shows once, with its task and it
         rests: await opened(page, world, refs.rests),
         gone: await opened(page, world, refs.gone),
       };
-      const agent = (row: string, id: string, name: string, activity: string) =>
-        ttamAgent({ row, provider: "claude", home: HOME, session: id, name, activity });
+      const agent = (row: string, id: string, name: string, activity: string, folder?: string) =>
+        ttamAgent({
+          row,
+          provider: "claude",
+          home: HOME,
+          session: id,
+          name,
+          activity,
+          ...(folder === undefined ? {} : { folder }),
+        });
+      // Two folders whose long endings are the same: their labels stay short at 390 px.
+      const far = "clients/fixture-traders-international/appointments-portal-frontend/src";
       world.monitorAgents({
         homes: [ttamHome({ id: HOME, provider: "claude", path: world.agentHome })],
         agents: [
           agent("e2e-asks", session.asks, "Fixture session asks", "waiting"),
           agent("e2e-works", session.works, "Fixture session works", "working"),
+          // The same conversation resumed in a second terminal: a second agent on the task.
+          agent("e2e-works-2", session.works, "Fixture session works again", "idle"),
           agent("e2e-rests", session.rests, "Fixture session rests", "idle"),
-          agent("e2e-none", NO_TASK, "Fixture session of no task", "working"),
+          agent(
+            "e2e-none",
+            NO_TASK,
+            "Fixture session of no task",
+            "working",
+            `/fixture/alpha/${far}`,
+          ),
+          agent("e2e-far", NO_TASK, "Fixture session far away", "idle", `/fixture/beta/${far}`),
         ],
       });
 
@@ -128,7 +148,19 @@ test.describe("[A5.agents.e2e.links] each agent shows once, with its task and it
       for (const ref of Object.values(refs)) {
         await expect(page.locator(`main li[data-task="${ref}"]`)).toHaveCount(1);
       }
-      await shots(page, world, "linked");
+      // The task two agents work on is one row, with both beneath it in their own states.
+      const both = rowIn(page, "Working", refs.works).locator('[data-part="agent"]');
+      await expect(both).toHaveCount(2);
+      await expect(both.filter({ hasText: /^Fixture session worksWorking/ })).toHaveCount(1);
+      await expect(both.filter({ hasText: /^Fixture session works againIdle/ })).toHaveCount(1);
+      // A folder's label is bounded; its tip holds the whole path.
+      const labels = computer.locator('[data-part="session"] [title^="/fixture/"]');
+      await expect(labels).toHaveCount(2);
+      for (const label of await labels.allTextContents()) {
+        expect(label.length).toBeLessThanOrEqual(40);
+        expect(label.startsWith("…")).toBe(true);
+      }
+      await shots(page, world, "two-agents");
 
       // Not current: the rows the monitor placed are muted where they are.
       const place = await rowIn(page, "Needs you", refs.asks).boundingBox();
