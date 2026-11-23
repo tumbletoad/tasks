@@ -90,6 +90,11 @@ export interface CliFace {
   readonly fixed?: Readonly<Record<string, unknown>>;
   /** Fields the verb does not offer as arguments. `--input` still reaches them. */
   readonly exclude?: readonly string[];
+  /**
+   * Positionals that a read action of the entry's `actions` puts in another field, an array:
+   * `{ key: "keys" }` makes `ttasks prefs get <key>` read that key.
+   */
+  readonly readInto?: Readonly<Record<string, string>>;
 }
 
 export interface Faces {

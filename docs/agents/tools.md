@@ -650,7 +650,7 @@ Result:
 
 Read and change the space's preferences that are not policy.
 
-MCP tool `preferences`, "Read settings": Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. Policy stays the user's.
+MCP tool `preferences`, "Read settings": Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. A key marked fixed nobody changes in this build. Policy stays the user's.
 
 | Property | Value |
 |---|---|
@@ -662,7 +662,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | A1 operations | `pref.set` |
 | Faces | MCP `preferences`, CLI `ttasks prefs`, UI |
 | Errors | `invalid_input`, `forbidden`, `conflict`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 359, reported |
+| Definition, estimated tokens | 384, reported |
 | Result budget, estimated tokens | typical 600, max 2000 |
 
 ### Input
@@ -673,7 +673,8 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `keys` | (string, max 64)[], max 20 items | no | Keys, or prefixes ending in ".*"; default every key |
 | `set` | object[], 1 to 10 items | no | set: the keys and their new values |
 | `set[].key` | string, max 64 | yes | A key describe lists |
-| `set[].value` | string, max 1024 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64)[], max 20 items \| null | yes | The new value, a list as keys separated by commas; null resets it to its default |
+| `set[].value` | string, max 1024 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64)[], max 20 items | no | The new value, a list as keys separated by commas |
+| `set[].reset` | boolean | no | Put the key back to its default, instead of a value |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 
@@ -692,6 +693,8 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `prefs[].is_default` | boolean | no | The value is the default (get) |
 | `prefs[].writable` | boolean | yes | Whether this caller may change it |
 | `prefs[].policy` | true | no | Policy: the user's own (A3 3.8) |
+| `prefs[].fixed` | true | no | Fixed in this build: nobody changes it |
+| `prefs[].in_force` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | no | What this build does whatever the key says: it does not act on the key yet |
 | `result` | "updated" \| "no_change" | no | What a change did |
 | `changed` | object[] | no | The keys a change changed |
 | `changed[].key` | string | yes | The key |
@@ -736,7 +739,8 @@ Result:
         "backlog"
       ],
       "is_default": true,
-      "writable": false
+      "writable": false,
+      "fixed": true
     }
   ]
 }

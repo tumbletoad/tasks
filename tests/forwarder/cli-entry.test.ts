@@ -128,13 +128,32 @@ describe("[A2.3.7.bridge.cli-entry] ttasks mcp through the CLI's entry", () => {
     { timeout: 60_000 },
     async () => {
       const where = home("cli-usage");
-      for (const args of [["--bogus"], ["--json"], ["--space"], ["--help"]]) {
+      for (const args of [["--bogus"], ["--json"], ["--space"]]) {
         const log = logFile();
         const bridge = tasks(where, ["mcp", ...args], log);
         expect(await bridge.proc.exit, args.join(" ")).toEqual({ code: 2, signal: null });
         expect(bridge.lines, args.join(" ")).toEqual([]);
         expect(bridge.proc.stderr()).toMatch(/^mcp bridge: .*usage:/);
         expect(loaded(log).files).not.toContain("packages/cli/src/main.ts");
+      }
+    },
+  );
+
+  test(
+    "ttasks mcp --help prints the command's help and exits 0, and the bridge does not start",
+    { timeout: 60_000 },
+    async () => {
+      const where = home("cli-help");
+      for (const args of [["--help"], ["-h"], ["--space", "sp_test", "--help"]]) {
+        const log = logFile();
+        const help = tasks(where, ["mcp", ...args], log);
+        expect(await help.proc.exit, args.join(" ")).toEqual({ code: 0, signal: null });
+        expect(help.stray[0], args.join(" ")).toMatch(/^Usage: ttasks mcp /);
+        expect(help.proc.stderr()).toBe("");
+        const bridge = loaded(log).files.filter((file) =>
+          file.startsWith("packages/bridge/src/mcp/"),
+        );
+        expect(bridge, args.join(" ")).toEqual([]);
       }
     },
   );

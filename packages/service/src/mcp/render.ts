@@ -781,7 +781,13 @@ const prefText = (value: unknown): string => JSON.stringify(value);
 function prefsRendered(result: Prefs): Rendered {
   const row = (p: Prefs["prefs"][number]): string[] => {
     const who =
-      p.policy === true ? "policy, the user's" : p.writable ? "you may set it" : "the user's";
+      p.fixed === true
+        ? "fixed in this build"
+        : p.policy === true
+          ? "policy, the user's"
+          : p.writable
+            ? "you may set it"
+            : "the user's";
     if (result.action === "describe") {
       return [
         `${p.key}: ${p.summary ?? ""}`,

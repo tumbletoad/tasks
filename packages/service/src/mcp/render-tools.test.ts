@@ -94,7 +94,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
     // No as_of: the answer shows no task's or group's field, so it is no base for changing one.
     expect(prefs.outside).toEqual(["1 key"]);
     expect(prefs.inside).toEqual([
-      `tasks.statuses = ["open","waiting","review","backlog"] (default) · the user's`,
+      `tasks.statuses = ["open","waiting","review","backlog"] (default) · fixed in this build`,
     ]);
     const set = split(renderResult("prefs.manage", example("prefs.manage", 1)));
     expect(set.outside).toEqual(["updated · 1 key"]);

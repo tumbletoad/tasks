@@ -144,6 +144,8 @@ export interface FlagSpec {
 
 export interface PositionalSpec {
   readonly field: string;
+  /** The array field a read action puts it in instead (`ttasks prefs get <key>`). */
+  readonly readInto?: string;
   readonly help: string;
   readonly name: string;
   readonly required: boolean;
@@ -380,12 +382,11 @@ export async function parseVerb(
       }
       continue;
     }
-    setAt(
-      input,
-      spec.field,
-      typed(await text(token, spec.type), spec.type, undefined, `<${spec.name}>`),
-      false,
-    );
+    const value = typed(await text(token, spec.type), spec.type, undefined, `<${spec.name}>`);
+    const action = verb.actions === undefined ? undefined : input[verb.actions.field];
+    const reads = typeof action === "string" && verb.actions?.reads.includes(action) === true;
+    if (reads && spec.readInto !== undefined) setAt(input, spec.readInto, value, true);
+    else setAt(input, spec.field, value, false);
     any = true;
   }
   // A flag the contract requires is named before the call, as a missing <positional> is: the

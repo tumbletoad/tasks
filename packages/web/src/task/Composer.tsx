@@ -9,7 +9,8 @@
 // Run starts an agent that works on the task in the background, without a window, with the text
 // as its request (without text it works on the task): one button for the first instance that can
 // run, and, when several can, a menu beside it with the others. Its words clear once the service
-// queued the run, which holds them; a refusal keeps them.
+// queued the run, which holds them; a refusal keeps them. A finished task runs nothing: Reopen
+// stands where Run would, on Run's key, until the task is open again.
 //
 // Enter saves a note, Ctrl+Enter opens the first instance and Ctrl+Shift+Enter runs the first
 // that can (keymap.ts): never while an input method composes.
@@ -21,6 +22,7 @@ import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useMachine } from "../app/machine.ts";
 import { Session } from "../context.ts";
+import { useEdits } from "../edit/useEdits.ts";
 import { useT, type MessageId } from "../i18n/intl.tsx";
 import { actionOf, ariaKeys, isMac, keysOf } from "../keys/keymap.ts";
 import { useKeyLabel } from "../keys/labels.ts";
@@ -82,6 +84,7 @@ export interface ComposerProps {
 export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const t = useT();
   const say = useToast();
+  const edits = useEdits();
   const { api, live } = useContext(Session);
   const { singleKeys } = useMachine();
   const mac = useMemo(isMac, []);
@@ -259,6 +262,13 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const runKeys = keysOf("run-first", singleKeys);
   const first = instances[0];
   const [runner, ...others] = runners(instances);
+  const finished = task.lifecycle !== "active";
+  /** Run's key on a finished task: Reopen, the step before any run. A deleted one has neither. */
+  const runOrReopen = (instance: Instance) => {
+    if (task.deleted_at !== undefined) return;
+    if (finished) edits.reopen(task);
+    else run(instance);
+  };
   // A task without a folder of its own runs in the space's work folder, as Open does.
   const runTip = (instance: Instance) =>
     t(task.place === undefined ? "composer.runTipWorkFolder" : "composer.runTip", {
@@ -301,7 +311,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
             // A held key repeats: one press is one run.
             if (event.repeat) return;
             if (runner === undefined) say(t("composer.noRunner"));
-            else run(runner);
+            else runOrReopen(runner);
           }
         }}
       />
@@ -382,7 +392,28 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
             </button>
           );
         })}
-        {runner === undefined ? null : (
+        {runner === undefined || task.deleted_at !== undefined ? null : finished ? (
+          <button
+            type="button"
+            className={styles.button}
+            data-part="reopen-run"
+            aria-keyshortcuts={ariaKeys(runKeys, mac)}
+            aria-description={t("composer.reopenTip")}
+            data-tip={t("composer.reopenTip")}
+            onClick={(event) => {
+              // A double click is one Reopen.
+              if (event.detail > 1) return;
+              edits.reopen(task);
+            }}
+          >
+            {t("fact.reopen")}
+            {runKeys[0] === undefined ? null : (
+              <kbd className={styles.hint} aria-hidden="true">
+                {keyLabel(runKeys[0])}
+              </kbd>
+            )}
+          </button>
+        ) : (
           <span className={styles.runs}>
             <button
               type="button"

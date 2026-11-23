@@ -656,3 +656,62 @@ describe("[M6.page.run-follow] how long a working run has said nothing stays tru
     }
   });
 });
+
+describe("[M6.page.run-finished] a finished task offers Reopen where Run would stand", () => {
+  const reopenButton = () =>
+    container.querySelector<HTMLButtonElement>(
+      `li[data-key="${TASK.id}"] button[data-part="reopen-run"]`,
+    );
+  const push = (tasks: TaskRow[], seq: number) => {
+    act(() => {
+      const at = snapshot();
+      live.store.push({ ...at, cursor: { ...at.cursor, seq }, tasks });
+      live.store.flush();
+    });
+  };
+  let reopened: unknown[];
+
+  /** The task is finished: the live rows do not hold it, and the page reads it for its URL. */
+  beforeEach(async () => {
+    const digest = (await api.client.task.get({ task: TASK.id })) as { task: object };
+    const client = api.client.task as unknown as Record<string, unknown>;
+    client["get"] = () =>
+      Promise.resolve({ ...digest, task: { ...digest.task, lifecycle: "completed" } });
+    reopened = [];
+    client["reopen"] = (input: unknown) => {
+      reopened.push(input);
+      return new Promise(() => undefined);
+    };
+    push([], 11);
+    act(() => {
+      root.unmount();
+    });
+    root = createRoot(container);
+    mount(<TaskList view="open" filter={() => true} empty="" expand={TASK.ref} />, api);
+    await settle();
+  });
+
+  test("Reopen stands where Run would, with Run's key, and a click reopens; Run is back once it is open", async () => {
+    expect(runButton()).toBeNull();
+    expect(reopenButton()?.getAttribute("aria-keyshortcuts")).toMatch(/Shift\+Enter$/);
+    act(() => {
+      reopenButton()?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }),
+      );
+    });
+    await settle();
+    expect(reopened).toEqual([expect.objectContaining({ task: TASK.id })]);
+    push([{ ...TASK, version: 2 }], 12);
+    await settle();
+    expect(reopenButton()).toBeNull();
+    expect(runButton()).not.toBeNull();
+    expect(started).toEqual([]);
+  });
+
+  test("Run's key reopens the finished task and starts no run", async () => {
+    runKeys(false);
+    await settle();
+    expect(reopened).toEqual([expect.objectContaining({ task: TASK.id })]);
+    expect(started).toEqual([]);
+  });
+});

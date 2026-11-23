@@ -17,7 +17,7 @@ import module from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hostFacts, resolveLayout } from "@ttasks/service/paths";
-import { MCP_VERB, runBridge } from "./mcp.ts";
+import { isBridge, runBridge } from "./mcp.ts";
 
 try {
   module.enableCompileCache(join(resolveLayout(hostFacts()).cache, "compile"));
@@ -26,7 +26,7 @@ try {
 }
 
 const argv = process.argv.slice(2);
-if (argv[0] === MCP_VERB) {
+if (isBridge(argv)) {
   // The bridge's timers keep the loop alive by design, so the process ends here.
   process.exit(await runBridge(argv.slice(1)));
 }

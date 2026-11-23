@@ -13,16 +13,16 @@ const LIST_MAX = 20;
 const LIST_TEXT_MAX = 1_024;
 
 /**
- * A preference value in the tool's input: one option per JSON type the tool's keys take, and
- * null, as the schema grammar requires of an input union (A3 3.2.1). The handler then checks the
- * value against its key's own shape in the registry (preferences.ts), never an unrestricted value.
+ * A preference value in the tool's input: one option per JSON type the tool's keys take. The
+ * handler then checks the value against its key's own shape in the registry (preferences.ts),
+ * never an unrestricted value. A reset is `reset`, never a value: on a command line, any word
+ * that meant "the default" would also be a text a key could take.
  */
 const PrefValue = z.union([
   z.string().max(LIST_TEXT_MAX),
   z.int().min(-1_000_000).max(1_000_000),
   z.boolean(),
   z.array(z.string().max(STRING_MAX)).max(LIST_MAX),
-  z.null(),
 ]);
 
 /** A stored or default value in a result: null is a default of none. */
@@ -47,9 +47,11 @@ export const PrefsManageInput = z.strictObject({
     .array(
       z.strictObject({
         key: z.string().max(64).describe("A key describe lists"),
-        value: PrefValue.describe(
-          "The new value, a list as keys separated by commas; null resets it to its default",
-        ),
+        value: PrefValue.describe("The new value, a list as keys separated by commas").optional(),
+        reset: z
+          .boolean()
+          .describe("Put the key back to its default, instead of a value")
+          .optional(),
       }),
     )
     .min(1)
@@ -70,6 +72,10 @@ const PrefRow = z.strictObject({
   is_default: z.boolean().describe("The value is the default (get)").optional(),
   writable: z.boolean().describe("Whether this caller may change it"),
   policy: z.literal(true).describe("Policy: the user's own (A3 3.8)").optional(),
+  fixed: z.literal(true).describe("Fixed in this build: nobody changes it").optional(),
+  in_force: PrefValueOutput.describe(
+    "What this build does whatever the key says: it does not act on the key yet",
+  ).optional(),
 });
 
 export const PrefsManageResult = z.strictObject({
@@ -106,12 +112,17 @@ export const prefsManage = defineEntry({
   output: PrefsManageResult,
   faces: {
     ui: true,
-    cli: { verb: "prefs", positional: ["action", "key", "value"], item: "set" },
+    cli: {
+      verb: "prefs",
+      positional: ["action", "key", "value"],
+      item: "set",
+      readInto: { key: "keys" },
+    },
     mcp: {
       tool: "preferences",
       title: "Read settings",
       description:
-        "Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. Policy stays the user's.",
+        "Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. A key marked fixed nobody changes in this build. Policy stays the user's.",
     },
   },
   budget: { typical: 600, max: 2000 },
@@ -130,6 +141,7 @@ export const prefsManage = defineEntry({
             default: ["open", "waiting", "review", "backlog"],
             is_default: true,
             writable: false,
+            fixed: true,
           },
         ],
       },
