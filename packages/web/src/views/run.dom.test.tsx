@@ -85,6 +85,8 @@ let listed: readonly Run[];
 let stopAnswer: () => Promise<Run>;
 /** The service does not answer: a read of the runs fails as Run does. */
 let down: boolean;
+/** While set, a read of the runs answers once it settles. */
+let runsHeld: Promise<void> | undefined;
 let opens: (Started & { readonly another: boolean })[];
 /** What a read of busy answers. */
 let busyNow: Busy[];
@@ -117,6 +119,7 @@ beforeEach(async () => {
   listed = [];
   reads = 0;
   down = false;
+  runsHeld = undefined;
   startAnswer = () => Promise.resolve(record({ state: "queued", version: 1 }));
   stopAnswer = () => Promise.reject(new TypeError("Failed to fetch"));
   opens = [];
@@ -178,7 +181,9 @@ beforeEach(async () => {
     receipts: () => (down ? lost() : Promise.resolve([])),
     runs: () => {
       reads += 1;
-      return down ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve(listed);
+      const answer = () =>
+        down ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve(listed);
+      return runsHeld === undefined ? answer() : runsHeld.then(answer);
     },
     startRun: (_task: string, _instance: string, id: string, text?: string) => {
       started.push({ id, text });
@@ -628,6 +633,186 @@ describe("[M6.page.run-follow] a Stop that did not reach the service", () => {
     fail(new TypeError("Failed to fetch"));
     await settle();
     expect(stop()).not.toBeNull();
+  });
+});
+
+describe("[M6.page.run-follow] a Stop on its way, and what the service said of it", () => {
+  const entry = () =>
+    container.querySelector<HTMLElement>(`li[data-key="${TASK.id}"] [data-entry="run"]`);
+  const stop = () => entry()?.querySelector<HTMLButtonElement>('[data-part="run-stop"]');
+  const state = () => entry()?.querySelector('[data-part="run-state"]')?.textContent ?? "";
+  let answer: { ok: (run: Run) => void; fail: (error: unknown) => void };
+
+  beforeEach(async () => {
+    listed = [record({ state: "queued", started_at: null, version: 1 })];
+    startAnswer = () => Promise.resolve(record({ state: "queued", started_at: null, version: 1 }));
+    click(1);
+    await settle();
+    stopAnswer = () =>
+      new Promise((ok, fail) => {
+        answer = { ok, fail };
+      });
+    act(() => {
+      stop()?.click();
+    });
+  });
+
+  test("a queued run whose Stop is on its way says it is stopping, not that it stopped; the service's answer says how it ended", async () => {
+    expect(state()).toContain("Stopping");
+    expect(state()).not.toContain("Stopped before it started");
+    expect(stop()).toBeNull();
+    answer.ok(
+      record({
+        state: "cancelled",
+        started_at: null,
+        ended_at: Date.UTC(2026, 10, 1, 10),
+        version: 2,
+      }),
+    );
+    await settle();
+    expect(state()).toContain("Stopped before it started");
+  });
+
+  test("a Stop whose answer never comes is offered again once a read since says the run still waits", async () => {
+    expect(stop()).toBeNull();
+    act(() => {
+      live.store.push({ ...snapshot(), cursor: { ...snapshot().cursor, seq: 12 } });
+      live.store.flush();
+    });
+    await settle();
+    expect(state()).toContain("Waiting to start");
+    expect(stop()).not.toBeNull();
+  });
+
+  test("a Stop whose answer was lost does not say it never arrived: the run shows as the service has it, with its Stop", async () => {
+    answer.fail(new TypeError("Failed to fetch"));
+    await settle();
+    expect(toasts.at(-1)).not.toMatch(/did not reach/u);
+    expect(toasts.at(-1)).toMatch(/may have stopped/u);
+    expect(state()).toContain("Waiting to start");
+    expect(stop()).not.toBeNull();
+  });
+});
+
+describe("[M6.page.run-follow] a read that left before a Stop says nothing of it", () => {
+  test("the run it finds still waiting stays stopping", async () => {
+    listed = [record({ state: "queued", started_at: null, version: 1 })];
+    click(1);
+    await settle();
+    const entry = () =>
+      container.querySelector<HTMLElement>(`li[data-key="${TASK.id}"] [data-entry="run"]`);
+    let release: () => void = () => undefined;
+    runsHeld = new Promise((resolve) => {
+      release = resolve;
+    });
+    act(() => {
+      live.store.push({ ...snapshot(), cursor: { ...snapshot().cursor, seq: 12 } });
+      live.store.flush();
+    });
+    stopAnswer = () => new Promise(() => undefined);
+    act(() => {
+      entry()?.querySelector<HTMLButtonElement>('[data-part="run-stop"]')?.click();
+    });
+    runsHeld = undefined;
+    release();
+    await settle();
+    expect(entry()?.querySelector('[data-part="run-state"]')?.textContent).toContain("Stopping");
+    expect(entry()?.querySelector('[data-part="run-stop"]')).toBeNull();
+  });
+});
+
+describe("[M6.page.run-follow] a read of the runs that failed says so and is read again", () => {
+  const thread = () => container.querySelector<HTMLElement>(`li[data-key="${TASK.id}"]`);
+  const failedLine = () => thread()?.querySelector('[data-part="runs-failed"]');
+  const entry = () => thread()?.querySelector<HTMLElement>('[data-entry="run"]');
+
+  test("a thread with no entries whose read of the runs fails says the runs could not be read, not that nothing is logged", async () => {
+    down = true;
+    act(() => {
+      live.store.push({ ...snapshot(), cursor: { ...snapshot().cursor, seq: 12 } });
+      live.store.flush();
+    });
+    await settle();
+    expect(failedLine()).not.toBeNull();
+    expect(thread()?.textContent).not.toContain("Nothing logged yet.");
+  });
+
+  test("a working run whose next read fails shows that its runs could not be read, and the minute's read brings how it ended", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      listed = [record()];
+      click(1);
+      await settle();
+      expect(entry()?.querySelector('[data-part="run-stop"]')).not.toBeNull();
+      // It finishes; the read its run event asks for fails.
+      listed = [record({ state: "succeeded", ended_at: Date.UTC(2026, 10, 1, 10), version: 5 })];
+      down = true;
+      act(() => {
+        live.store.push({ ...snapshot(), cursor: { ...snapshot().cursor, seq: 12 } });
+        live.store.flush();
+      });
+      await settle();
+      expect(failedLine()).not.toBeNull();
+      down = false;
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      await settle();
+      expect(failedLine()).toBeNull();
+      expect(entry()?.querySelector('[data-part="run-state"]')?.textContent).toContain("Done");
+      expect(entry()?.querySelector('[data-part="run-stop"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("[M6.page.run-follow] a failed read of the runs is tried again while its card is open", () => {
+  test("once the card closes, the minute reads nothing more", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      down = true;
+      act(() => {
+        live.store.push({ ...snapshot(), cursor: { ...snapshot().cursor, seq: 12 } });
+        live.store.flush();
+      });
+      await settle();
+      const title = () =>
+        container.querySelector<HTMLElement>(`li[data-key="${TASK.id}"] [data-part="title"]`);
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      await settle();
+      const open = reads;
+      act(() => {
+        title()?.click();
+      });
+      await settle();
+      act(() => {
+        vi.advanceTimersByTime(180_000);
+      });
+      await settle();
+      expect(reads).toBe(open);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("[M6.page.run-follow] a tab whose copy of the space is gone offers no Stop", () => {
+  test("after the space was restored elsewhere, the old copy's working run keeps its state and loses its Stop", async () => {
+    listed = [record()];
+    click(1);
+    await settle();
+    const stop = () =>
+      container.querySelector(
+        `li[data-key="${TASK.id}"] [data-entry="run"] [data-part="run-stop"]`,
+      );
+    expect(stop()).not.toBeNull();
+    act(() => {
+      live.store.gone({ why: "restored" });
+    });
+    expect(stop()).toBeNull();
   });
 });
 

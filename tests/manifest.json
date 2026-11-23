@@ -2755,7 +2755,7 @@
     },
     {
       "id": "M6.page.run-follow",
-      "title": "The page shows a run as the service has it: a read keeps a newer state and a run queued after the read began; a Stop on its way shows as stopping, and one that did not reach the service leaves the run with its Stop; the row's marker says working or needs you by the instance's label; Run is offered by what the service says an instance can do; a refusal's words come from the service's reason",
+      "title": "The page shows a run as the service has it: a read keeps a newer state and a run queued after the read began; a Stop on its way shows as stopping, a queued one too, and the service's answer says how it ended; one whose answer was lost says it may have stopped and leaves the run as the service last said, with its Stop, and one whose answer never comes is offered again once a read since finds the run waiting or working; a failed read of the runs says so in the thread and is read again with the minute's read while its card is open; a tab whose copy of the space is gone offers no Stop; the row's marker says working or needs you by the instance's label; Run is offered by what the service says an instance can do; a refusal's words come from the service's reason",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2804,7 +2804,7 @@
     },
     {
       "id": "M6.page.e2e.stop",
-      "title": "In the browser: a working run shows in the thread and on the row, the same after a reload and in a second tab; Stop answers at once and then says what was ended; a queued run says why it waits and starts once the other stopped",
+      "title": "In the browser: a working run shows in the thread and on the row, the same after a reload and in a second tab; Stop answers at once and then says what was ended; a queued run says why it waits and starts once the other stopped; a queued run's Stop held on its way says Stopping, and the answer Stopped before it started; a read of the runs that failed says so in the thread",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4827,6 +4827,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.13.e2e.search-now",
+      "title": "In Chromium and Firefox against the real service: a checked-off search result someone reopened and dropped while the page heard nothing; after the fresh snapshot its card says it is read again and offers no Reopen, says so when that read fails, and shows Dropped with Reopen once the next snapshot's read goes through",
+      "source": "A5 3.11, A5 3.13, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-10.e2e.keyboard",
       "title": "In Chromium and Firefox: both modes by keyboard alone (/ and typing, Enter to the first result, the list's arrows and Enter and Escape, / back to the field, Escape out to add mode), the lens and the plus switching with the text carried, and Tab taking the area type-ahead's first suggestion",
       "source": "A5 3.13, A7 3.12 M5.10",
@@ -5146,7 +5154,7 @@
     },
     {
       "id": "A5.3.15.web.expanded-state",
-      "title": "The expanded task's state holds: a lookup of the URL's task that answers after the person chose another row, or a frame that renders with the old URL, changes nothing; an injected row leaves when another task expands and shows a cut title as cut; a fresh snapshot reads the detail again; the title editor saves against the cursor it opened at; Collapse focuses the title; a focused thread entry stays shown while entries arrive",
+      "title": "The expanded task's state holds: a lookup of the URL's task that answers after the person chose another row, or a frame that renders with the old URL, changes nothing; an injected row leaves when another task expands and shows a cut title as cut; a fresh snapshot reads the detail again, and one that leaves the expanded task out shows it as a read says it is now (finished: no star, Reopen) or closes its card when it no longer exists; until that read answers its card says so and offers nothing, a failed read is tried again with the minute's read, and an answer the feed outdated while it was on its way changes nothing; the title editor saves against the cursor it opened at; Collapse focuses the title; a focused thread entry stays shown while entries arrive",
       "source": "A5 3.3, A5 3.7, A5 3.15, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",
@@ -5172,6 +5180,14 @@
       "id": "A5.3.22.web.list-keys",
       "title": "The list's keyboard in a DOM: one row title in the tab order, j and k and the arrows, Home and End, [ and ] move it, Escape collapses the expanded row and focuses its title, rows carry aria-posinset and aria-setsize, and a focused row keeps its element and its place until focus leaves: when it leaves the view, moves to another group, is re-sorted inside its list, or is the view's last row, and a held row stays the current row for the tab order and the keys",
       "source": "A5 3.22, A5 3.21, A5 3.15, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.11.web.row-base",
+      "title": "A row's action goes with the base of the task as its row shows it: an Inbox row held under focus after an agent moved the task to Waiting sends Move to Open against the version it shows, so the service refuses it as a conflict instead of overwriting the agent's change",
+      "source": "A5 3.11, A5 3.15",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5249,6 +5265,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.11.e2e.row-base",
+      "title": "In Chromium and Firefox against the real service: an Inbox row held under focus after an agent moved the task to Waiting and out of the Inbox; Move to Open overwrites nothing and the toast says who changed it",
+      "source": "A5 3.11, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.11.e2e.new-area",
       "title": "In Chromium and Firefox against the real service: the area picker offers a name no area has as a new area, never one an area has in another case; a live area close to a typo comes first and Enter takes it, a new name close to an area is the next choice down, and an archived area comes last, marked, and is never what Enter takes; Enter makes a new area and moves the task into it with Undo, and Ctrl+Z takes back the move, then the area; a filing made elsewhere meanwhile stays, and the toast says the area was added and the task stayed",
       "source": "A5 3.7, A5 3.11",
@@ -5284,6 +5308,14 @@
       "id": "A5.3.13.web.search",
       "title": "Search results: every open match read at once and finished ones a page at a time by the service's cursor, an expired cursor starting the search again with one page more, two groups that keep their rows (the live row when the store holds it), the expanded task kept at its place, the filters alone for a space without the word index, To do split into one group per effort for a search sorted by effort, and the fields that make a change offer a refresh",
       "source": "A5 3.13, A3 3.9.5, A7 3.12 M5.10",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.13.web.search-now",
+      "title": "A search result's controls change the task as the result shows it: Reopen goes with the base of the read that showed the result, not the screen's now; a result whose task a read after a reconnect finds otherwise shows it as the read says, in its place and after its card closes, with the controls that fit it, and Reopen goes with that read's version",
+      "source": "A5 3.11, A5 3.13, A5 3.15",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

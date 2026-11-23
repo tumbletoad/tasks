@@ -236,25 +236,46 @@ export class PagedQuery<R extends { readonly id: string }> {
     );
   }
 
+  /**
+   * A task's row as a read apart from the feed found it (the expanded task read again): the row
+   * the query shows of it takes it in place, as it takes the feed's, when it is newer.
+   */
+  take(task: { readonly id: string; readonly version: number }): void {
+    const rows = this.#taken(this.#state.rows, task.id, task);
+    if (rows !== this.#state.rows) this.#set({ rows });
+  }
+
+  /** `rows` with the task's newest row in place (A5 3.13, 3.15); a read on its way takes it too. */
+  #taken(rows: readonly R[], id: string, after: Readonly<Record<string, unknown>>): readonly R[] {
+    if (this.#state.phase === "loading") {
+      const known = this.#during.get(id);
+      this.#during.set(id, known === undefined ? after : withTaskRow(known, after));
+    }
+    const at = rows.findIndex((r) => r.id === id);
+    const row = rows[at];
+    if (row === undefined) return rows;
+    const next = withTaskRow(row, after);
+    if (next === row) return rows;
+    const copy = [...rows];
+    copy[at] = next;
+    return copy;
+  }
+
   /** One frame's changes from the live store. */
   apply({ changes, reset }: Changes): void {
     if (this.#state.phase === "idle") return;
     let invalid = reset;
-    let rows: R[] | undefined;
+    let rows = this.#state.rows;
     for (const change of changes) {
       if (!invalid && affects(this.def, change)) invalid = true;
-      // A row the query shows takes the feed's row in place (A5 3.13, 3.15); a read on its way
-      // takes it when it answers.
       if (change.after === undefined || change.type !== "task") continue;
-      const after = change.after as unknown as Readonly<Record<string, unknown>>;
-      if (this.#state.phase === "loading") this.#during.set(change.id, after);
-      const at = (rows ?? this.#state.rows).findIndex((r) => r.id === change.id);
-      if (at < 0) continue;
-      rows ??= [...this.#state.rows];
-      const row = rows[at];
-      if (row !== undefined) rows[at] = withTaskRow(row, after);
+      rows = this.#taken(
+        rows,
+        change.id,
+        change.after as unknown as Readonly<Record<string, unknown>>,
+      );
     }
-    if (rows !== undefined) this.#set({ rows });
+    if (rows !== this.#state.rows) this.#set({ rows });
     if (!invalid) return;
     if (this.frozen) {
       this.#stale = true;
