@@ -478,7 +478,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       const url = argv.at(-1) ?? "";
       // Never tied to the service: on Linux in a scope of its own, outside the service's unit.
       expect(opened[0]?.detached).toBe(true);
-      const gio = [expect.stringMatching(/\/gio$/u), "open", url];
+      const gio: unknown[] = [expect.stringMatching(/\/gio$/u), "open", url];
       expect(argv).toEqual(
         WINDOWS
           ? [expect.stringMatching(/rundll32\.exe$/iu), "url.dll,FileProtocolHandler", url]
