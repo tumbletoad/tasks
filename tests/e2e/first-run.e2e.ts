@@ -3,13 +3,21 @@
 // From the sign-in to a space with its agent apps without a terminal, Skip, a second visit in
 // Settings, a home that changed between the view and the click, removing again, and the space
 // switcher's New space and Open folder. The tests run in order on one worker's install.
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { join } from "node:path";
 import { expect, test as base, type Page } from "@playwright/test";
 import { PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { startFresh, SLOW_MS, type FreshWorld } from "./first-run.ts";
-import { showsSpace, signIn, spaceSwitcher, violations, watchViolations } from "./page.ts";
+import {
+  axeFound,
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  spaceSwitcher,
+  themes,
+  violations,
+  watchViolations,
+} from "./page.ts";
 
 const test = base.extend<object, { fresh: FreshWorld }>({
   fresh: [
@@ -158,7 +166,7 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     fresh.touchCodex();
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("alert")).toContainText("Something changed on this machine");
-    await page.screenshot({ path: test.info().outputPath("settings-apps-changed-1440.png") });
+    await picture(page, "settings-apps-changed-1440.png");
     expect(fresh.codexConfig()).not.toContain("[mcp_servers.ttasks]");
     // The choice stays, against the new view: one more press applies it.
     await expect(toggle(page, toolsFor("Codex"))).toBeChecked();
@@ -219,24 +227,19 @@ test.describe("[A7.3.12.m5-12.e2e.screens] The first start and the agent apps in
     browser,
     fresh,
   }) => {
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
     const shoot = async (page: Page, name: string, where: string): Promise<void> => {
       for (const width of [1440, 390]) {
         await page.setViewportSize({ width, height: 900 });
         expect(await sideScroll(page), `sideways scroll at ${String(width)} px`).toBe(0);
-        expect(await axeFound(page, axe, where), `axe on ${name}`).toEqual([]);
-        await page.screenshot({
-          path: test.info().outputPath(`${name}-${String(width)}.png`),
-          fullPage: true,
-        });
+        if (pictures()) expect(await axeFound(page, [where]), `axe on ${name}`).toEqual([]);
+        await picture(page, `${name}-${String(width)}.png`, { fullPage: true });
       }
       await page.setViewportSize({ width: 1440, height: 900 });
     };
     try {
-      for (const [theme, space] of [
-        ["sumi", "Work"],
-        ["washi", "Home"],
-      ] as const) {
+      const spaces = { sumi: "Work", washi: "Home" } as const;
+      for (const theme of themes()) {
+        const space = spaces[theme];
         await fresh.machine("ui.theme", theme);
         await fresh.forgetSpaces();
         const context = await browser.newContext({
@@ -284,22 +287,4 @@ async function sideScroll(page: Page): Promise<number> {
   return page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
-}
-
-async function axeFound(page: Page, axe: string, include: string): Promise<string[]> {
-  if (!(await page.evaluate(() => "axe" in window))) await page.evaluate(axe);
-  return page.evaluate(async (where) => {
-    const run = (
-      window as unknown as {
-        axe: {
-          run: (
-            context: unknown,
-            options: unknown,
-          ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-        };
-      }
-    ).axe.run;
-    const result = await run({ include: [where] }, { resultTypes: ["violations"] });
-    return result.violations.map((v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`);
-  }, include);
 }

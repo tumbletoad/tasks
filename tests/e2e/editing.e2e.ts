@@ -6,20 +6,20 @@
 // since the person's edit, "Apply mine" when it changed while the person's editor was open, axe in
 // both themes with the date popover and a toast open, and the screenshots at 1,440 and 390 px.
 // Dates are relative to the day the test runs, as the service's are.
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { expect, type Locator, type Page } from "@playwright/test";
+import { day, onOneDay } from "./days.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import {
+  axeFound,
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  themes,
+  violations,
+  watchViolations,
+} from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
-
-/** The local calendar day `days` from today, YYYY-MM-DD. */
-function day(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
 
 interface Added {
   readonly tasks: readonly { readonly ref: string }[];
@@ -119,28 +119,29 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
 
     // Due: the pill opens the popover with its field focused; "+3d" previews, Enter applies, and
     // focus comes back to the pill.
-    await tabInto(page, due);
-    await page.keyboard.press("Enter");
-    const field = page.locator('[data-part="due-field"]');
-    await expect(field).toBeFocused();
-    await page.keyboard.type("nonsense");
-    await expect(page.locator('[data-part="due-preview"]')).toHaveText("Not a date");
-    await page.keyboard.press("Enter");
-    await expect(field).toBeVisible();
-    await field.fill("+3d");
-    await expect(page.locator('[data-part="due-preview"]')).not.toHaveText("Not a date");
-    await page.keyboard.press("Enter");
-    await expect(field).toHaveCount(0);
-    await expect(due).toBeFocused();
-    await expect(due).not.toHaveText("No date");
-
-    // The service has all three.
-    await expect
-      .poll(async () => {
-        const { task } = await read(world, ref);
-        return [task.priority, task.effort, task.due];
-      })
-      .toEqual([2, "L", day(3)]);
+    await onOneDay(async (today) => {
+      await tabInto(page, due);
+      await page.keyboard.press("Enter");
+      const field = page.locator('[data-part="due-field"]');
+      await expect(field).toBeFocused();
+      await page.keyboard.type("nonsense");
+      await expect(page.locator('[data-part="due-preview"]')).toHaveText("Not a date");
+      await page.keyboard.press("Enter");
+      await expect(field).toBeVisible();
+      await field.fill("+3d");
+      await expect(page.locator('[data-part="due-preview"]')).not.toHaveText("Not a date");
+      await page.keyboard.press("Enter");
+      await expect(field).toHaveCount(0);
+      await expect(due).toBeFocused();
+      await expect(due).not.toHaveText("No date");
+      // The service has all three, the date three days from today.
+      await expect
+        .poll(async () => {
+          const { task } = await read(world, ref);
+          return [task.priority, task.effort, task.due];
+        })
+        .toEqual([2, "L", day(3, today.start).iso]);
+    });
     // And a reload shows them.
     await page.reload();
     await expect(priority.getByRole("radio", { name: "P2" })).toHaveAttribute(
@@ -209,7 +210,7 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
     world,
   }) => {
     const tag = test.info().project.name;
-    const first = day(5);
+    const first = day(5).iso;
     const [ref] = await addTasks(world, [
       { title: `Renew the parking permit (${tag})`, area: "home", due: first },
     ]);
@@ -224,37 +225,48 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
     const due = body.locator('[data-part="due"]');
 
     // The person sets tomorrow; then an agent sets another day.
-    await due.click();
-    await page.getByRole("button", { name: "Tomorrow" }).click();
-    await expect.poll(async () => (await read(world, ref)).task.due).toBe(day(1));
-    await agentSets(world, ref, { due: day(10) });
-    await expect.poll(async () => (await read(world, ref)).task.due).toBe(day(10));
+    await onOneDay(async (today) => {
+      await due.click();
+      await page.getByRole("button", { name: "Tomorrow" }).click();
+      await expect
+        .poll(async () => (await read(world, ref)).task.due)
+        .toBe(day(1, today.start).iso);
+    });
+    const agents = day(10).iso;
+    await agentSets(world, ref, { due: agents });
+    await expect.poll(async () => (await read(world, ref)).task.due).toBe(agents);
 
     // Undo: the field is the agent's now, so nothing is overwritten unseen. The toast says who.
     await page.locator("main").focus();
     await page.keyboard.press("Control+z");
     await expect(toast(page)).toContainText("changed the due date at");
     await expect(toastAction(page)).toHaveText("Restore mine");
-    expect((await read(world, ref)).task.due).toBe(day(10));
+    expect((await read(world, ref)).task.due).toBe(agents);
     // Restore mine puts back what the undo would have: the date before the person's edit.
     await toastAction(page).click();
     await expect.poll(async () => (await read(world, ref)).task.due).toBe(first);
 
     // The popover takes its base when it opens: an agent's change while it is open is shown there,
     // and the person's pick is a conflict that keeps their value one click away.
-    await due.click();
-    await expect(page.locator('[data-part="due-field"]')).toBeFocused();
-    await agentSets(world, ref, { due: day(12) });
-    await expect(page.locator('[data-part="remote"]')).toContainText("Changed by", {
-      timeout: SLOW_MS,
+    await onOneDay(async (today, attempt) => {
+      await due.click();
+      await expect(page.locator('[data-part="due-field"]')).toBeFocused();
+      // Another day on each attempt: the same one again would change nothing.
+      const later = day(11 + attempt).iso;
+      await agentSets(world, ref, { due: later });
+      await expect(page.locator('[data-part="remote"]')).toContainText("Changed by", {
+        timeout: SLOW_MS,
+      });
+      await page.getByRole("button", { name: "In a week" }).click();
+      const unsaved = body.locator('[data-part="unsaved"]');
+      await expect(unsaved).toContainText("just now", { timeout: SLOW_MS });
+      expect((await read(world, ref)).task.due).toBe(later);
+      await unsaved.locator('[data-part="apply-mine"]').click();
+      await expect
+        .poll(async () => (await read(world, ref)).task.due)
+        .toBe(day(7, today.start).iso);
+      await expect(unsaved).toHaveCount(0);
     });
-    await page.getByRole("button", { name: "In a week" }).click();
-    const unsaved = body.locator('[data-part="unsaved"]');
-    await expect(unsaved).toContainText("just now", { timeout: SLOW_MS });
-    expect((await read(world, ref)).task.due).toBe(day(12));
-    await unsaved.locator('[data-part="apply-mine"]').click();
-    await expect.poll(async () => (await read(world, ref)).task.due).toBe(day(7));
-    await expect(unsaved).toHaveCount(0);
   });
 });
 
@@ -377,7 +389,7 @@ test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is fini
     await expect(line.locator('[data-part="keep-theirs"]')).toBeVisible();
     await expect(line.locator('[data-part="apply-mine"]')).toHaveCount(0);
     await row.scrollIntoViewIfNeeded();
-    await page.screenshot({ path: test.info().outputPath("finished-title.png") });
+    await picture(page, "finished-title.png");
 
     // Reopened, the line offers Try again, which saves it.
     await world.op(world.mira.id, "task.reopen", {
@@ -408,15 +420,14 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
         project: "lumen-portal",
         priority: 2,
         effort: "M",
-        due: day(4),
+        due: day(4).iso,
         status: "waiting",
         waiting_on: "Ana Reyes",
         inbox: false,
       },
     ]);
     if (ref === undefined) throw new Error("the task was not added");
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       const context = await browser.newContext({
         bypassCSP: true,
         viewport: { width: 1440, height: 1000 },
@@ -441,31 +452,14 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
         await row.locator('[data-part="due"]').click();
         await expect(page.locator('[data-part="due-field"]')).toBeFocused();
         await row.scrollIntoViewIfNeeded();
-        await page.screenshot({ path: test.info().outputPath(`editing-${theme}-1440.png`) });
+        await picture(page, `editing-${theme}-1440.png`);
 
-        await page.evaluate(axe);
-        const found = await page.evaluate(async () => {
-          const run = (
-            window as unknown as {
-              axe: {
-                run: (
-                  context: unknown,
-                  options: unknown,
-                ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-              };
-            }
-          ).axe.run;
-          // The popover is portalled to the body, outside the landmarks, as a dialog of its own:
-          // axe's region rule (content inside landmarks) does not apply to it.
-          const result = await run(document, {
-            resultTypes: ["violations"],
-            rules: { region: { enabled: false } },
-          });
-          return result.violations.map(
-            (v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`,
-          );
-        });
-        expect(found, `axe in ${theme}`).toEqual([]);
+        // The popover is portalled to the body, outside the landmarks, as a dialog of its own:
+        // axe's region rule (content inside landmarks) does not apply to it.
+        if (pictures()) {
+          const found = await axeFound(page, undefined, { region: { enabled: false } });
+          expect(found, `axe in ${theme}`).toEqual([]);
+        }
         await page.keyboard.press("Escape");
         await expect(page.locator('[data-part="due-field"]')).toHaveCount(0);
 
@@ -475,10 +469,7 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
         );
         expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
-        await page.screenshot({
-          path: test.info().outputPath(`editing-${theme}-390.png`),
-          fullPage: true,
-        });
+        await picture(page, `editing-${theme}-390.png`, { fullPage: true });
         await row.locator('[data-part="due"]').click();
         const field = page.locator('[data-part="due-field"]');
         await expect(field).toBeFocused();
@@ -487,7 +478,7 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
         await expect(popover).toBeInViewport();
         const box = await popover.boundingBox();
         expect(box === null ? -1 : box.x + box.width).toBeLessThanOrEqual(390);
-        await page.screenshot({ path: test.info().outputPath(`editing-${theme}-390-popover.png`) });
+        await picture(page, `editing-${theme}-390-popover.png`);
       } finally {
         await context.close();
       }

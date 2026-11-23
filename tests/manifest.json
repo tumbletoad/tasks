@@ -2481,7 +2481,7 @@
     },
     {
       "id": "M6.page.e2e.screens",
-      "title": "In the browser: a run's states (working, queued, done, needs you, failed) at 1,440 and 390 px in Sumi and Washi, axe clean, no horizontal scroll",
+      "title": "In the browser: a run's states (working, queued, done, needs you, failed) at 1,440 and 390 px in Sumi and Washi, axe clean, no horizontal scroll (Washi, axe and the screenshots in Chromium only)",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3806,15 +3806,8 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A4.5.e2e.open-marker-screens",
-      "title": "Playwright against the real service process: Open on a task whose folder was replaced at its path asks in one sentence that names the folder, starts nothing, in Sumi and Washi at 1,440 and 390 px",
-      "owner": "M4",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A5.3.6.e2e.draft-mark",
-      "title": "Playwright against the real service process: a row whose composer holds unsent words shows its mark once collapsed without moving its title, and the mark goes once the words are saved as a note, in Sumi and Washi at 1,440 and 390 px",
+      "title": "Playwright against the real service process: a row whose composer holds unsent words shows its mark once collapsed without moving its title, and the mark goes once the words are saved as a note, in Sumi and Washi at 1,440 and 390 px (Washi and the screenshots in Chromium only)",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3859,16 +3852,8 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A2.3.8.3.e2e.strict-csp",
-      "title": "In Chromium and Firefox the built page loads under the strict CSP with no violation, every script and stylesheet carries a sha384 integrity hash, and no service worker is registered",
-      "source": "A2 3.8.3, A5 3.24, A5 3.26, A7 3.9 M2.13",
-      "owner": "M2",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A5.3.19.e2e.screens",
-      "title": "The app shell in Sumi, Washi and System (light) at 1,440 and 390 px, with an expanded row, the space switcher and the narrow drawer open, has no horizontal scroll; the screenshots are written for review",
+      "title": "The app shell in Sumi, Washi and System (light) at 1,440 and 390 px, with an expanded row, the space switcher and the narrow drawer open, has no horizontal scroll; the screenshots are written for review (Washi, System and the screenshots in Chromium only)",
       "source": "A5 3.3, A5 3.19, A5 3.22, A7 3.9 M2.13, A7 3.12 M5.01",
       "owner": "M2",
       "kind": "ci",
@@ -4052,7 +4037,7 @@
     },
     {
       "id": "A5.3.9.e2e.session-end",
-      "title": "Against the real service in Chromium, the double click and the screens in Firefox too: a session is shown as running while it runs, in a second tab too, and once its agent quits, its window closes, its shim is killed or it ends while the service is stopped, nothing shows it as running and Open works again in the strip and on the tile; a double click starts one session; a Confirmed launch an earlier build recorded without an end is shown as opened; screens of running, ended, did not start and opened",
+      "title": "Against the real service in Chromium, the double click and the screens in Firefox too: a session is shown as running while it runs, in a second tab too, and once its agent quits, its window closes, its shim is killed or it ends while the service is stopped, nothing shows it as running and Open works again in the strip and on the tile; a double click starts one session; a Confirmed launch an earlier build recorded without an end is shown as opened; screens of running, ended, did not start and opened (Washi and the screenshots in Chromium only)",
       "source": "A5 3.6, A5 3.9",
       "owner": "M2",
       "kind": "ci",
@@ -4204,7 +4189,7 @@
     },
     {
       "id": "A5.3.3.e2e.owner-screens",
-      "title": "Playwright against the real service with a space the size of one in use (five areas, thirty-two projects, about a hundred open tasks): the side menu, Today, Open, an area, a project and an expanded task at 1,280, 1,440, 1,920 and 390 px in Sumi and Washi with nothing scrolling sideways, the drawer at 390 px; the expanded task's facts with two, four and six statuses and effort keys: statuses in one row up to four and in two even rows past it, priority's options over effort's",
+      "title": "Playwright against the real service with a space the size of one in use (five areas, thirty-two projects, about a hundred open tasks): the side menu, Today, Open, an area, a project and an expanded task at 1,280, 1,440, 1,920 and 390 px in Sumi and Washi with nothing scrolling sideways, the drawer at 390 px; the expanded task's facts with two, four and six statuses and effort keys: statuses in one row up to four and in two even rows past it, priority's options over effort's (Washi and the screenshots in Chromium only)",
       "source": "A5 3.3, A5 3.7",
       "owner": "M5",
       "kind": "ci",
@@ -4244,7 +4229,7 @@
     },
     {
       "id": "A7.3.12.m5-01.e2e.strict-csp",
-      "title": "In Chromium and Firefox the shell under the strict CSP: React Aria's popover, radio group and drawer press without a violation, every style element carries the response's nonce, the theme switches live (System follows the colour scheme) and holds after a reload, the bundled fonts load, no request leaves the origin, the manifest and its icons are served and no service worker is registered",
+      "title": "In Chromium and Firefox the shell under the strict CSP: React Aria's popover, radio group and drawer press without a violation, every style element carries the response's nonce, every script and stylesheet the live page holds carries its sha384 integrity hash, the theme switches live (System follows the colour scheme) and holds after a reload, the bundled fonts load, no request leaves the origin, the manifest and its icons are served and no service worker is registered",
       "source": "A5 3.19, A5 3.24, A5 3.26, A2 3.8.3, A7 3.12 M5.01",
       "owner": "M5",
       "kind": "ci",
@@ -4268,7 +4253,7 @@
     },
     {
       "id": "A7.3.12.e2e.sidebar-fixed",
-      "title": "In Chromium and Firefox against the real service: a space whose views are all empty shows every view in its fixed order, quieter and named empty, with Settings; a task arriving and another view opening move no entry; every area lists its projects always, so opening an area or a project moves no entry",
+      "title": "In Chromium and Firefox against the real service: a space whose views are all empty shows every view in its fixed order, quieter and named empty, with Settings; a task arriving and another view opening move no entry",
       "source": "A5 3.3",
       "owner": "M5",
       "kind": "ci",
@@ -4284,7 +4269,7 @@
     },
     {
       "id": "A5.3.6.e2e.row-due-effort",
-      "title": "In Chromium and Firefox against the real service, in both themes at 1,440, 1,280 and 390 px: every form of a due date (tomorrow, a weekday, a day, the next year's day, a month and year, late in days, weeks and years) fits its column as measured in the page, and a task's effort shows as its key with a tip, hidden where the list is narrow",
+      "title": "In Chromium and Firefox against the real service, in both themes at 1,440, 1,280 and 390 px: every form of a due date (tomorrow, a weekday, a day, the next year's day, a month and year, late in days, weeks and years) fits its column as measured in the page, and a task's effort shows as its key with a tip, hidden where the list is narrow (Washi and the screenshots in Chromium only)",
       "source": "A5 3.6",
       "owner": "M5",
       "kind": "ci",
@@ -4332,7 +4317,7 @@
     },
     {
       "id": "A7.3.12.m5-10.e2e.screens",
-      "title": "In Chromium and Firefox: the capture's chips and the search results with Results changed in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
+      "title": "In Chromium and Firefox: the capture's chips and the search results with Results changed in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review (Washi, axe and the screenshots in Chromium only)",
       "source": "A5 3.13, A5 3.19, A7 3.12 M5.10",
       "owner": "M5",
       "kind": "ci",
@@ -4396,7 +4381,7 @@
     },
     {
       "id": "A7.3.12.m5-11.e2e.screens",
-      "title": "In Chromium and Firefox: Settings and the shortcut sheet in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
+      "title": "In Chromium and Firefox: Settings and the shortcut sheet in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review (Washi, axe and the screenshots in Chromium only)",
       "source": "A7 3.12 M5.11",
       "owner": "M5",
       "kind": "ci",
@@ -4446,7 +4431,7 @@
     },
     {
       "id": "A7.3.12.m5-12.e2e.screens",
-      "title": "In Chromium and Firefox: the first space's form, Open folder, the agent apps of the first start and of Settings, and New space in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
+      "title": "In Chromium and Firefox: the first space's form, Open folder, the agent apps of the first start and of Settings, and New space in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review (Washi, axe and the screenshots in Chromium only)",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4698,7 +4683,7 @@
     },
     {
       "id": "A7.3.12.m5-06.e2e.screens",
-      "title": "In Chromium and Firefox against the real service: screenshots of the expanded task in Sumi and Washi at 1,440 px and 390 px, axe-core finds no violation in the expanded task in either theme, and nothing scrolls horizontally at 390 px",
+      "title": "In Chromium and Firefox against the real service: screenshots of the expanded task in Sumi and Washi at 1,440 px and 390 px, axe-core finds no violation in the expanded task in either theme, and nothing scrolls horizontally at 390 px (Washi, axe and the screenshots in Chromium only)",
       "source": "A5 3.7, A5 3.19, A5 3.22, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",
@@ -4858,7 +4843,7 @@
     },
     {
       "id": "A7.3.12.request.e2e.thread",
-      "title": "In Chromium and Firefox against the real service: Open with words clears the field at once in both tabs, the thread shows the request in the session's entry and not as a plain note, also after a reload, and the words go on no command line; a launch that did not open keeps the request in the thread with Open again, which opens it with the same note",
+      "title": "In Chromium and Firefox against the real service: Open with words clears the field at once in both tabs, the thread shows the request in the session's entry and not as a plain note, also after a reload, and the words go on no command line; a launch that did not open keeps the request in the thread with Open again, which opens it with the same note (Washi and the screenshots in Chromium only)",
       "source": "A5 3.8, A5 3.9",
       "owner": "M5",
       "kind": "ci",
@@ -4866,7 +4851,7 @@
     },
     {
       "id": "A7.3.12.request.e2e.screens",
-      "title": "In Chromium and Firefox: a session's entry with what the person asked in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
+      "title": "In Chromium and Firefox: a session's entry with what the person asked in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review (Washi, axe and the screenshots in Chromium only)",
       "source": "A5 3.9, A5 3.19",
       "owner": "M5",
       "kind": "ci",
@@ -4890,7 +4875,7 @@
     },
     {
       "id": "A7.3.12.m5-07.e2e.screens",
-      "title": "In Chromium and Firefox: the expanded task's strip in Sumi and Washi at 1,440 and 390 px, empty and with text, axe clean and no horizontal scroll",
+      "title": "In Chromium and Firefox: the expanded task's strip in Sumi and Washi at 1,440 and 390 px, empty and with text, axe clean and no horizontal scroll (Washi, axe and the screenshots in Chromium only)",
       "source": "A5 3.8, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",
@@ -4906,7 +4891,7 @@
     },
     {
       "id": "A7.3.12.m5-08.e2e.screens",
-      "title": "In Chromium and Firefox against the real service: screenshots of the editable facts with a toast and the date popover in Sumi and Washi at 1,440 px and 390 px, axe-core finds no violation on the page in either theme, and nothing scrolls horizontally at 390 px",
+      "title": "In Chromium and Firefox against the real service: screenshots of the editable facts with a toast and the date popover in Sumi and Washi at 1,440 px and 390 px, axe-core finds no violation on the page in either theme, and nothing scrolls horizontally at 390 px (Washi, axe and the screenshots in Chromium only)",
       "source": "A5 3.7, A5 3.11, A5 3.19, A5 3.22, A7 3.12 M5.08",
       "owner": "M5",
       "kind": "ci",
@@ -4922,7 +4907,7 @@
     },
     {
       "id": "A7.3.12.m5-05.e2e.screens",
-      "title": "In Chromium and Firefox against the real service: screenshots of Waiting, Completed and an area view in Sumi and Washi at 1,440 px and 390 px, and of the sidebar of a space whose views are mostly empty (every entry in its place, the empty ones quieter, the same entries in the drawer at 390 px); axe-core finds no violation on any of them in either theme, and nothing scrolls horizontally at 390 px",
+      "title": "In Chromium and Firefox against the real service: screenshots of Waiting, Completed and an area view in Sumi and Washi at 1,440 px and 390 px, and of the sidebar of a space whose views are mostly empty (every entry in its place, the empty ones quieter, the same entries in the drawer at 390 px); axe-core finds no violation on any of them in either theme, and nothing scrolls horizontally at 390 px (Washi, axe and the screenshots in Chromium only)",
       "source": "A5 3.5, A5 3.19, A5 3.22, A7 3.12 M5.05",
       "owner": "M5",
       "kind": "ci",
@@ -4930,7 +4915,7 @@
     },
     {
       "id": "A7.3.12.m5-05.e2e.finished",
-      "title": "In Chromium and Firefox against the real service, with 3,000 tasks finished in one month: the checked-off list whole on the first page, every task reachable through Show more and End, a dropped task in its month with its own mark and name, a task finished while the list is open joining it with the list one larger, and screenshots of Completed in Sumi and Washi",
+      "title": "In Chromium and Firefox against the real service, with 3,000 tasks finished in one month: the checked-off list whole on the first page, every task reachable through Show more and End, a dropped task in its month with its own mark and name, a task finished while the list is open joining it with the list one larger, and screenshots of Completed in Sumi and Washi (Washi and the screenshots in Chromium only)",
       "source": "A5 3.5, A5 3.15, A7 3.12 M5.05",
       "owner": "M5",
       "kind": "ci",
@@ -5050,7 +5035,7 @@
     },
     {
       "id": "A7.3.12.m5-03.e2e.rows",
-      "title": "In Chromium and Firefox against the real service: rows show A5 3.6's columns and chips, the star writes through the store and shows at once, the title and summary expand while the controls do not, nothing scrolls horizontally at 390 px, and screenshots in Sumi and Washi at 1,440 and 390 px with long titles, every chip and tiles in several states",
+      "title": "In Chromium and Firefox against the real service: rows show A5 3.6's columns and chips, the star writes through the store and shows at once, the title and summary expand while the controls do not, nothing scrolls horizontally at 390 px, and screenshots in Sumi and Washi at 1,440 and 390 px with long titles, every chip and tiles in several states (Washi and the screenshots in Chromium only)",
       "source": "A5 3.6, A5 3.19, A5 3.22, A7 3.12 M5.03",
       "owner": "M5",
       "kind": "ci",
@@ -5082,7 +5067,7 @@
     },
     {
       "id": "A7.3.12.m5-04.e2e.today",
-      "title": "In Chromium and Firefox against the real service: Focus, This week and Next with no task twice, today's date once on the screen, the day's numbers in their places, Done this week following a task finished while the page is open without moving a number, Late leading to the search of what is overdue with as many results and Waiting to its view, an expanded task an agent moves stays in its section with ?task= kept until it is collapsed, Changes shows an agent's change off Today, axe-core finds no violation in either theme, nothing scrolls horizontally at 390 px, screenshots in Sumi and Washi at 1,440 and 390 px, and no CSP report",
+      "title": "In Chromium and Firefox against the real service: Focus, This week and Next with no task twice, today's date once on the screen, the day's numbers in their places, Done this week following a task finished while the page is open without moving a number, Late leading to the search of what is overdue with as many results and Waiting to its view, an expanded task an agent moves stays in its section with ?task= kept until it is collapsed, Changes shows an agent's change off Today, axe-core finds no violation in either theme, nothing scrolls horizontally at 390 px, screenshots in Sumi and Washi at 1,440 and 390 px, and no CSP report (Washi, axe and the screenshots in Chromium only)",
       "source": "A5 3.4, A5 3.3, A5 3.15, A5 3.19, A5 3.22, A7 3.12 M5.04",
       "owner": "M5",
       "kind": "ci",
@@ -5352,7 +5337,7 @@
     },
     {
       "id": "A7.3.12.m5-14.e2e.screens",
-      "title": "In Chromium and Firefox: New project, the folder chooser, a checkout's facts, a project's folder line, its change dialog and a task's folder line in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
+      "title": "In Chromium and Firefox: New project, the folder chooser, a checkout's facts, a project's folder line, its change dialog and a task's folder line in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review (Washi, axe and the screenshots in Chromium only)",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

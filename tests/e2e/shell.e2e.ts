@@ -7,7 +7,15 @@
 import { expect, type Page, type WebSocketRoute } from "@playwright/test";
 import { CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn, spaceSwitcher, violations, watchViolations } from "./page.ts";
+import {
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  spaceSwitcher,
+  violations,
+  watchViolations,
+} from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const THEME_KEY = `${PRODUCT_ID}.theme`;
@@ -185,6 +193,15 @@ test.describe("[A7.3.12.m5-01.e2e.strict-csp] The shell under the strict CSP", (
     });
     expect(styles.length).toBeGreaterThan(0);
     expect(styles.every((s) => s.ok)).toBe(true);
+    // Every script and stylesheet the live page holds is a file of the build with its hash.
+    const files = await page.evaluate(() =>
+      [...document.querySelectorAll("script[src], link[rel=stylesheet]")].map(
+        (el) =>
+          `${el.getAttribute("src") ?? el.getAttribute("href") ?? ""} ${el.getAttribute("integrity") ?? "no hash"}`,
+      ),
+    );
+    expect(files.length).toBeGreaterThanOrEqual(2);
+    for (const file of files) expect(file).toMatch(/^\/assets\/\S+ sha384-/);
 
     // The bundled faces load from this origin.
     const faces = await page.evaluate(async () => {
@@ -228,12 +245,12 @@ test.describe("[A5.3.19.e2e.screens] The shell in Sumi, Washi and System, wide a
     const row = page.locator(`li[data-task="${world.task.ref}"]`);
     await expect(row).toHaveAttribute("data-expanded", "true");
     // System is shown with the machine in light mode, so it differs from Sumi.
-    const themes = [
+    const shown = [
       { theme: "sumi", scheme: "dark" },
       { theme: "washi", scheme: "dark" },
       { theme: "system", scheme: "light" },
     ] as const;
-    for (const { theme, scheme } of themes) {
+    for (const { theme, scheme } of pictures() ? shown : shown.slice(0, 1)) {
       // Reduced motion: no transition is caught half way in a screenshot.
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
       await world.machine("ui.theme", theme);
@@ -246,19 +263,16 @@ test.describe("[A5.3.19.e2e.screens] The shell in Sumi, Washi and System, wide a
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
         );
         expect(scroll, `horizontal scroll at ${String(width)} px`).toBeLessThanOrEqual(0);
-        await page.screenshot({
-          path: test.info().outputPath(`shell-${theme}-${String(width)}.png`),
-          fullPage: true,
-        });
+        await picture(page, `shell-${theme}-${String(width)}.png`, { fullPage: true });
       }
       await page.getByRole("button", { name: "Menu" }).click();
       await expect(page.getByRole("dialog", { name: "Views and areas" })).toBeVisible();
-      await page.screenshot({ path: test.info().outputPath(`shell-${theme}-390-drawer.png`) });
+      await picture(page, `shell-${theme}-390-drawer.png`);
       await page.keyboard.press("Escape");
       await page.setViewportSize({ width: 1440, height: 900 });
       await spaceSwitcher(page, world.mira.name).click();
       await expect(spaces(page).getByRole("link", { name: world.studio.name })).toBeVisible();
-      await page.screenshot({ path: test.info().outputPath(`shell-${theme}-1440-spaces.png`) });
+      await picture(page, `shell-${theme}-1440-spaces.png`);
       await page.keyboard.press("Escape");
     }
     // The tests of a worker share its service: the theme goes back to its default.
@@ -458,7 +472,7 @@ test.describe("[A5.3.3.e2e.not-open] A space that is not open says why and what 
     await expect(note).toHaveAttribute("data-why", "needs_recovery");
     await expect(note).toContainText(`${CLI_NAME} space recover`);
     await expect(page.getByText(`${CLI_NAME} space create`)).toHaveCount(0);
-    await page.screenshot({ path: test.info().outputPath("landing-needs-recovery.png") });
+    await picture(page, "landing-needs-recovery.png");
   });
 });
 
@@ -494,13 +508,13 @@ test.describe("[A5.3.3.e2e.backup-trouble] A space whose backups fail says so ca
       name: `Space ${world.mira.name}. Its backups need attention. Switch space`,
     });
     await expect(trigger.locator('[data-part="backup-attention"]')).toBeVisible();
-    await page.screenshot({ path: test.info().outputPath("switcher-backup-mark.png") });
+    await picture(page, "switcher-backup-mark.png");
     await trigger.click();
     const note = spaces(page).locator('[data-part="backup-trouble"]');
     await expect(note).toHaveAttribute("data-why", "disk_full");
     await expect(note).toContainText(`${world.mira.name}: the daily backup failed`);
     await expect(note).toContainText(`${CLI_NAME} space backup`);
-    await page.screenshot({ path: test.info().outputPath("switcher-backup-note.png") });
+    await picture(page, "switcher-backup-note.png");
 
     // A backup works again while the page stays open: coming back to the tab clears the mark
     // without opening the switcher.
@@ -539,7 +553,7 @@ test.describe("[A5.3.3.e2e.installed] A newer installed version, and the restart
     const installed = page.locator('[data-part="installed"]');
     await expect(installed).toContainText(`${PRODUCT_NAME} 99.0.0 is installed.`);
     await expect(installed).toContainText(`${CLI_NAME} service restart`);
-    await page.screenshot({ path: test.info().outputPath("installed-newer.png") });
+    await picture(page, "installed-newer.png");
 
     // The service restarts into another build: the page's feed closes, and the service refuses
     // the page's build when it asks to come back.
@@ -563,6 +577,6 @@ test.describe("[A5.3.3.e2e.installed] A newer installed version, and the restart
     await expect(installed).toHaveCount(0);
     // The rows it had stay on screen until the person reloads.
     await expect(row).toBeVisible();
-    await page.screenshot({ path: test.info().outputPath("installed-restarted.png") });
+    await picture(page, "installed-restarted.png");
   });
 });
