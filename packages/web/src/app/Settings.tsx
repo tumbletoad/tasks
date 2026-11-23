@@ -17,6 +17,7 @@ import {
 } from "react-aria-components";
 import { Refused, type TerminalView } from "../api.ts";
 import { Session } from "../context.ts";
+import { spaceIdOf } from "../route.ts";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import { useSheet } from "../keys/Sheet.tsx";
 import { useKeyLabel } from "../keys/labels.ts";
@@ -88,9 +89,10 @@ function Apps() {
   const { space } = useParams({ strict: false });
   const { live } = useContext(Session);
   if (space === undefined) return null;
+  // An agent's entry names the space by its ID, also in a restored copy's tab.
   return (
     <AgentApps
-      space={space}
+      space={spaceIdOf(space)}
       onOpenChanged={() => {
         live.refresh();
       }}
