@@ -86,8 +86,14 @@ export function keptTitles(space: string, task: string): KeptTitle[] {
     .sort((a, b) => Number(b.mine) - Number(a.mine) || (a.tab < b.tab ? -1 : 1));
 }
 
-/** The person lets a kept title go, whichever tab typed it. */
-export function discardTitleDraft(space: string, task: string, tab: string): void {
+/**
+ * The person lets a kept title go, whichever tab typed it. With `typed`, only while it is still
+ * that: a newer one the tab typed since stays.
+ */
+export function discardTitleDraft(space: string, task: string, tab: string, typed?: string): void {
+  if (typed !== undefined && draftOf(browserKept.json(nameOf(space, task, tab)))?.typed !== typed) {
+    return;
+  }
   browserKept.keep(nameOf(space, task, tab), undefined);
   tell();
 }

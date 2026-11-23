@@ -215,6 +215,40 @@ test.describe("[A5.trash.e2e.unsent] Every unsent word of a removed task stays, 
   });
 });
 
+test.describe("[A5.trash.e2e.title] A title being typed stays through a removal", () => {
+  test("a title being typed stays through the task's removal, a page opened meanwhile and its restore: listed at the foot of the Trash, then back in its editor", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const space = world.mira.id;
+    const title = `Plan the move (${tag})`;
+    const ref = await addTask(world, { title, area: "home" });
+    await openTask(page, world, ref);
+    const editor = rowOf(page, ref).getByRole("textbox", { name: "Title" });
+    await rowOf(page, ref).locator('[data-part="title"]').focus();
+    await page.keyboard.press("F2");
+    await expect(editor).toBeFocused();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" in May");
+    const typed = `${title} in May`;
+    // Removed from elsewhere while the words wait; the page opens again, and its cleanup runs.
+    await removeTasks(world, [ref]);
+    await page.goto(`${world.origin}/s/${space}/trash`);
+    await showsSpace(page, world.mira.name);
+    const kept = page.locator('[data-part="unsent-words"][data-kind="title"]');
+    await expect(kept).toContainText(typed, { timeout: SLOW_MS });
+    await expect(kept).toContainText(ref);
+    // Restored: the words come back in the title's editor, unsent.
+    const status = (await world.op(space, "space.status", {})) as { as_of: string };
+    await world.op(space, "task.delete", { tasks: [ref], restore: true, base: status.as_of });
+    await openTask(page, world, ref);
+    await expect(rowOf(page, ref).getByRole("textbox", { name: "Title" })).toHaveValue(typed, {
+      timeout: SLOW_MS,
+    });
+  });
+});
+
 test.describe("[A5.trash.e2e.screens] The Trash in both themes", () => {
   test("the Trash by change at 1,440 px and 390 px in Sumi and Washi, axe clean, nothing wider than the screen", async ({
     browser,

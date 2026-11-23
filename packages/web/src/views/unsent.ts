@@ -1,9 +1,10 @@
 // What this browser holds for a space that the person typed and has not sent: drafts, notes on
-// their way and field edits the service did not take. One enumeration of all of it, so the foot of
-// the Trash lists every kind for a task in the Trash or one the space does not have now, and its
-// Discard removes the one value it shows.
+// their way, titles being typed and field edits the service did not take. One enumeration of all
+// of it, so the foot of the Trash lists every kind for a task in the Trash or one the space does
+// not have now, and its Discard removes the one value it shows.
 import type { Field } from "../edit/change.ts";
 import type { Unsaved } from "../edit/edits.ts";
+import { keptTitles, titleDraftTasks } from "../row/title-draft.ts";
 import { draftTasks, noteTasks, readDraft, readNote, wordsOf } from "../task/composer.ts";
 
 /** A task ID as the service gives one: what is kept under another name is not asked about. */
@@ -19,6 +20,14 @@ export type Unsent =
       readonly text: string;
       /** The note's request ID: its Discard removes that note only. */
       readonly id: string;
+    }
+  | {
+      readonly kind: "title";
+      readonly key: string;
+      readonly task: string;
+      readonly text: string;
+      /** The tab that typed it: its Discard removes that title only. */
+      readonly tab: string;
     }
   | {
       readonly kind: "edit";
@@ -42,6 +51,13 @@ export function unsentOf(space: string, unsaved: Iterable<Unsaved>): Unsent[] {
     const note = readNote(space, task);
     if (TASK_ID.test(task) && note !== undefined) {
       out.push({ kind: "note", key: `${task}:note`, task, text: note.words, id: note.id });
+    }
+  }
+  for (const task of titleDraftTasks(space)) {
+    if (!TASK_ID.test(task)) continue;
+    for (const { tab, draft } of keptTitles(space, task)) {
+      if (draft.typed.trim() === "") continue;
+      out.push({ kind: "title", key: `${task}:title:${tab}`, task, text: draft.typed, tab });
     }
   }
   for (const line of unsaved) {

@@ -126,7 +126,7 @@
   "trash.failed": "The Trash could not be read.",
   "trash.unsent": "Unsent words",
   "trash.unsentNoTask": "A task this space does not have now",
-  "trash.unsentKind": "{kind, select, draft {Draft} note {Note not saved} other {Change not saved}}",
+  "trash.unsentKind": "{kind, select, draft {Draft} note {Note not saved} title {Title being typed} other {Change not saved}}",
   "agents.inTrash": "In the Trash",
   "agents.inTrashTerminal": "In the Trash. Its agent in a terminal goes on until you stop it there",
   "view.empty.agents": "No agent changes in the last 7 days.",

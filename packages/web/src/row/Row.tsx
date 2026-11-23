@@ -523,21 +523,23 @@ function RowView({
   // The title edits in place, for typo fixes (A5 3.7): only an open task's, the one kind the
   // service changes. Editing expands the row, so the card is what is being edited.
   const [editing, setEditing] = useState(false);
+  // In the Trash the title is read, never edited: a kept one waits there with Copy and Discard.
+  const editable = active && !trashed;
   // The row the person moved out of the view (A5 3.5): while focus holds it there with the data it
   // had (3.15 item 6), its move is done, so the button goes. Newer data (an undo) brings it back.
   const [movedFrom, setMovedFrom] = useState<TaskRow | undefined>(undefined);
   const edit = () => {
-    if (task.lifecycle !== "active" || trashed) return;
+    if (!editable) return;
     if (!expanded) actions.expand(task);
     setEditing(true);
   };
   // A title the person was typing when the page went away comes back in its editor with the card.
   const space = live.spaceId ?? "";
   useEffect(() => {
-    if (expanded && task.lifecycle === "active" && readTitleDraft(space, task.id) !== undefined) {
+    if (expanded && editable && readTitleDraft(space, task.id) !== undefined) {
       setEditing(true);
     }
-  }, [expanded, space, task.id, task.lifecycle]);
+  }, [expanded, space, task.id, editable]);
   // The offset is a custom property set through the CSSOM (React's style object), which the CSP's
   // style-src allows; the stylesheet turns it into a transform. Nothing writes a style attribute.
   const position =
@@ -597,7 +599,7 @@ function RowView({
         </span>
         <div className={styles.main}>
           <div className={styles.tline}>
-            {editing ? (
+            {editing && editable ? (
               <TitleEditor
                 task={task}
                 label={t("task.title")}

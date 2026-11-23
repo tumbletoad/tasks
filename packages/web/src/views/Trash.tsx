@@ -17,6 +17,7 @@ import { useClock } from "../row/useClock.ts";
 import { useLive, usePagedQuery } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
 import { onKeptUnder } from "../kept.ts";
+import { discardTitleDraft } from "../row/title-draft.ts";
 import { discardDraft, discardNote } from "../task/composer.ts";
 import { unsentOf, type Unsent } from "./unsent.ts";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
@@ -363,9 +364,11 @@ function UnsentWords() {
     };
     const drafts = onKeptUnder("draft.", again);
     const notes = onKeptUnder("note.", again);
+    const titles = onKeptUnder("title.", again);
     return () => {
       drafts();
       notes();
+      titles();
     };
   }, []);
   const words = space === "" ? [] : unsentOf(space, unsaved.values());
@@ -395,6 +398,7 @@ function UnsentWords() {
   const discard = (word: Unsent): void => {
     if (word.kind === "draft") discardDraft(space, word.task, word.text);
     else if (word.kind === "note") discardNote(space, word.task, word.id);
+    else if (word.kind === "title") discardTitleDraft(space, word.task, word.tab, word.text);
     else if (edits.unsaved(word.task, word.field)?.change.shown === word.text) {
       edits.dismiss(word.task, word.field);
     }

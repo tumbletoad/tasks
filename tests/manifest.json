@@ -2163,6 +2163,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.trash.e2e.title",
+      "title": "A title being typed stays through the task's removal, a page opened meanwhile (whose cleanup runs) and its restore: it is listed at the foot of the Trash with its reference, and after the restore it is back in the title's editor",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.trash.e2e.unsent",
       "title": "Every unsent word of a removed task stays: a note on its way and a newer draft, the task removed from another tab while the note waits, are both listed at the foot of the Trash after a reload with Copy and Discard, and Discard of the note keeps the draft",
       "owner": "M5",
