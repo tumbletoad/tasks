@@ -275,6 +275,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   answer, or the agent's question when it needs you, is kept in the run's record, and so is what
   the agent had written of its answer when Stop, a restart or its own end cut it short. A question
   from a helper the agent started does not reach you: that helper hears that no one answered.
+- A run you start while an earlier run's question waits starts a new conversation with the agent,
+  and is given that question as the agent asked it, then your words. Nothing else of the earlier
+  run's conversation comes along.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
   ends what TTasks could find of it: a process the agent detached from it may live on.

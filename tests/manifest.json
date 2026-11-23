@@ -6163,6 +6163,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.run.reply-brief",
+      "title": "A run queued while an earlier run's question waits starts with that question, as the agent asked it with its options, before the person's words, also when built again after it started; a run queued before the question, after a reply that ran or after the person's note replies to nothing; a run without words hears the question and to work on the task",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.while-away.service.reads",
       "title": "With an agent's question waiting on an active, a completed and a dropped task, every read that returns task rows answers: the snapshot, Completed's both lists, search in each scope, status with every section, and each task's read",
       "owner": "M5",

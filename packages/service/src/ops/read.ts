@@ -43,7 +43,7 @@ import {
 import { sessionRecord } from "@ttasks/launch";
 import { byOf } from "./errors.ts";
 import type { FoldersHere } from "./here.ts";
-import { runAsked } from "./task-rows.ts";
+import { runAsked, runWaits } from "./task-rows.ts";
 
 /** One statement of a read. Only the parameters the statement names are bound. */
 interface Statement {
@@ -1666,6 +1666,39 @@ export async function hasFolderTable(reader: WorkerConnection): Promise<boolean>
   if (Number((found as Row | null)?.["n"] ?? 0) === 0) return false;
   folderReaders.add(reader);
   return true;
+}
+
+const REPLIED_TEXT = "COALESCE(json_extract(r.result, '$.text'), '') AS text";
+
+/**
+ * The questions a run replies to, oldest first, each as the agent asked it: those its task's
+ * earlier runs ended with that waited for the person when it was queued (task-rows.ts's
+ * `runWaits`). `{ task }` asks which wait now, for a run about to be queued.
+ */
+export async function readReplied(
+  reader: WorkerConnection,
+  of: { readonly run: string } | { readonly task: string },
+): Promise<string[]> {
+  const [rows] = await snapshot(
+    reader,
+    [
+      "run" in of
+        ? {
+            sql:
+              `SELECT ${REPLIED_TEXT} FROM runs x JOIN tasks t ON t.id = x.task_id JOIN runs r ON ` +
+              `${runWaits("x.created_seq")} WHERE x.id = $run ORDER BY ${runAsked("r")}`,
+            mode: "all",
+          }
+        : {
+            sql:
+              `SELECT ${REPLIED_TEXT} FROM tasks t JOIN runs r ON ${runWaits()} WHERE t.id = $task ` +
+              `ORDER BY ${runAsked("r")}`,
+            mode: "all",
+          },
+    ],
+    "run" in of ? { run: of.run } : { task: of.task },
+  );
+  return (rows as Row[]).map((row) => String(row["text"]));
 }
 
 /**

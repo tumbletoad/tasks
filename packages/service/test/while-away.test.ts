@@ -19,6 +19,8 @@ import { MACHINE, writeFixture, type Fixture } from "@ttasks/storage/write-helpe
 import { readBatch, readSnapshot } from "../src/http/feed.ts";
 import type { Caller } from "../src/ops/caller.ts";
 import { opCall, type OpsHost } from "../src/ops/index.ts";
+import { readReplied } from "../src/ops/read.ts";
+import { runBrief, WORK_ON_IT } from "../src/runs/agent.ts";
 import { readerOf, tempRoot } from "./harness.ts";
 
 let temp: { root: string; cleanup: () => void };
@@ -322,7 +324,7 @@ describe("[A5.while-away.service.question] the questions agents asked wait on th
 describe("[A5.while-away.service.run-question] a run that ended asking keeps its question on the task's row until it is answered", () => {
   const ui = (): Credential => ({ ...fx.human, scope_id: "ui:fixture", origin: "ui" });
   /** A run of `task` queued now, its ID. */
-  function queue(task: Id<"t">): Id<"ru"> {
+  function queue(task: Id<"t">, request = "Fixture request"): Id<"ru"> {
     clock += 60_000;
     const result = fx.writer.submit(
       fx.request(ui(), [
@@ -332,7 +334,7 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
           instance: "codex-work",
           adapter: "codex",
           place: null,
-          request: "Fixture request",
+          request,
           brief_hash: "a1b2c3d4".repeat(8),
           permission: "full-access",
           limits: { max_turns: 50, wall_ms: 1_800_000, idle_ms: 600_000 },
@@ -451,6 +453,66 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
       questions: [{ ref: later }],
       run: { id: later, state: "needs_you" },
     });
+  });
+
+  test("[A4.3.11.run.reply-brief] the run that carries the reply is given the question it answers, as the agent asked it, before the person's words", async () => {
+    const { task: id } = task();
+    const reader = readerOf(fx.reader);
+    const before = queue(id);
+    const first = queue(id);
+    asks(first);
+    // The brief the run starts with, as buildRun makes it from the run's record.
+    const brief = async (run: Id<"ru">) => {
+      const record = fx.writer.run(run);
+      return runBrief(
+        "M-1",
+        "Fixture runs",
+        record?.request ?? null,
+        await readReplied(reader, { run }),
+      );
+    };
+    expect(await readReplied(reader, { task: id })).toEqual([QUESTION]);
+    const reply = queue(id, "The second one");
+    expect(await brief(reply)).toMatch(
+      /\n\nAn earlier run on this task stopped to ask the person:\n\nFixture which draft\?\n1\. The short one\n2\. The long one\n\nThe person's reply:\n\nThe second one$/u,
+    );
+    // Built again, after a restart or once the question is answered, it is the same brief.
+    move(reply, "starting");
+    move(reply, "running");
+    expect(await brief(reply)).toContain(QUESTION);
+    // A run queued before the question, or after the reply that ran, replies to nothing.
+    expect(await readReplied(reader, { run: before })).toEqual([]);
+    expect(await readReplied(reader, { run: queue(id) })).toEqual([]);
+    // Nor does one after the person's note answered it.
+    const again = queue(id);
+    move(again, "cancelled");
+    move(reply, "succeeded", {
+      result: {
+        ok: true,
+        outcome: "success",
+        exit_code: 0,
+        signal: null,
+        native_id: null,
+        text: "Fixture done",
+        error: null,
+        usage: null,
+        app_tools: null,
+        declined: 0,
+        permission_denials: 0,
+        duration_ms: 1,
+      },
+    });
+    const third = queue(id);
+    asks(third);
+    submit(fx.human, [{ kind: "note.add", task: id, body: "Fixture answer" }], (clock += 60_000));
+    expect(await readReplied(reader, { run: queue(id) })).toEqual([]);
+    // Run without words after a question: the agent hears the question, and to work on the task.
+    const fourth = queue(id);
+    asks(fourth);
+    const plain = await brief(queue(id, WORK_ON_IT));
+    expect(plain).toContain(QUESTION);
+    expect(plain).not.toContain("The person's reply:");
+    expect(plain.endsWith(`\n\n${WORK_ON_IT}`)).toBe(true);
   });
 });
 
