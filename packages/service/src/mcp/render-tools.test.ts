@@ -253,6 +253,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
             title,
             ambiguous: Array.from({ length: 40 }, (_, m) => ref(100 * n + m)),
             log_added: false,
+            log_not_saved: true,
           }
         : n % 3 === 1
           ? {
@@ -299,14 +300,29 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
 
     const finished = {
       ...example("task.finish", 0),
-      follow_ups: Array.from({ length: 10 }, (_, n) => ({ result: "created", ref: ref(n), title })),
+      follow_ups: Array.from({ length: 10 }, (_, n) =>
+        n % 2 === 0
+          ? { result: "created", ref: ref(n), title, log_added: true }
+          : {
+              result: "exists",
+              title,
+              lifecycle: "active",
+              ambiguous: Array.from({ length: 40 }, (_, m) => ref(100 * n + m)),
+              log_added: false,
+              log_not_saved: true,
+            },
+      ),
     };
     expect(entry("task.finish").output.safeParse(finished).success).toBe(true);
     const finishText = renderResult("task.finish", finished);
     expect(resultTokens(finishText)).toBeLessThanOrEqual(max("task.finish"));
-    for (let n = 0; n < 10; n += 1) {
+    for (let n = 0; n < 10; n += 2) {
       expect(finishText).toContain(`follow_ups.${String(n)}: created ${ref(n)}`);
+      expect(finishText).toContain(
+        `follow_ups.${String(n + 1)}: exists, several match: ${ref(100 * (n + 1))}`,
+      );
     }
+    expect(finishText).toContain("add_entry");
     expect(finishText).not.toContain(CJK.slice(0, 4));
   });
 

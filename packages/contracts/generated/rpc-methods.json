@@ -3261,6 +3261,11 @@
                   "description": "The draft's log entry was added",
                   "type": "boolean"
                 },
+                "log_not_saved": {
+                  "const": true,
+                  "description": "Its log entry was saved nowhere: file it",
+                  "type": "boolean"
+                },
                 "matched_by": {
                   "description": "How an existing task matched",
                   "enum": [
@@ -3796,6 +3801,15 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "ambiguous": {
+                  "description": "Several active matches: pick one",
+                  "items": {
+                    "description": "Task reference",
+                    "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
                 "held": {
                   "description": "Sources linked without their key, which another task holds",
                   "items": {
@@ -3821,6 +3835,24 @@
                   },
                   "type": "array"
                 },
+                "lifecycle": {
+                  "description": "The matched task's lifecycle",
+                  "enum": [
+                    "active",
+                    "completed",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                "log_added": {
+                  "description": "The draft's log entry was added",
+                  "type": "boolean"
+                },
+                "log_not_saved": {
+                  "const": true,
+                  "description": "Its log entry was saved nowhere: file it",
+                  "type": "boolean"
+                },
                 "ref": {
                   "description": "Task reference",
                   "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
@@ -3842,7 +3874,8 @@
               },
               "required": [
                 "result",
-                "title"
+                "title",
+                "log_added"
               ],
               "type": "object"
             },

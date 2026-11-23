@@ -290,17 +290,26 @@ function searchLines(result: Result): string[] {
 
 /**
  * A task draft's row (A3 3.4.5): added, or found by its source key (A1 3.6), with the lifecycle it
- * was found in and whether its log entry went there, or the tasks that share its keys.
+ * was found in, or the tasks that share its keys, and whether its log entry was saved. `its` names
+ * the draft: a follow-up's draft is not the task the line is about.
  */
-function draftLine(task: Result, space: string): string {
+function draftLine(task: Result, space: string, its = "its"): string {
   if (task["result"] !== "exists") return `Added ${String(task["ref"])} to ${space}`;
+  const logged =
+    task["log_added"] === true
+      ? ", log entry added"
+      : task["log_not_saved"] === true
+        ? `; ${its} log entry was not saved: add it with ${CLI_NAME} log`
+        : "";
   const ambiguous = task["ambiguous"];
   if (Array.isArray(ambiguous)) {
-    return `Several tasks in ${space} have its source key: ${ambiguous.map(String).join(", ")}`;
+    return `Several tasks in ${space} have ${its} source key: ${ambiguous.map(String).join(", ")}${logged}`;
   }
-  const lifecycle = task["lifecycle"] === "active" ? "" : ` (${String(task["lifecycle"])})`;
-  const logged = task["log_added"] === true ? ", log entry added" : "";
-  return `Found ${String(task["ref"])}${lifecycle} in ${space} by its source key${logged}`;
+  const lifecycle =
+    task["lifecycle"] === undefined || task["lifecycle"] === "active"
+      ? ""
+      : ` (${String(task["lifecycle"])})`;
+  return `Found ${String(task["ref"])}${lifecycle} in ${space} by ${its} source key${logged}`;
 }
 
 /** A change's operation kind as a verb on its task, for the undo's note on a script's change. */
@@ -430,14 +439,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
           : `${dropped ? "Dropped" : "Completed"} ${String(result["task"])} in ${space}${replay(result)}`,
       );
       for (const f of (result["follow_ups"] as Result[] | undefined) ?? []) {
-        const ref = typeof f["ref"] === "string" ? f["ref"] : undefined;
-        lines.push(
-          f["result"] !== "exists"
-            ? `Added ${String(ref)} to ${space}`
-            : ref === undefined
-              ? `Several tasks in ${space} have a follow-up's source key`
-              : `Found ${ref} in ${space} by a follow-up's source key`,
-        );
+        lines.push(draftLine(f, space, "a follow-up's"));
       }
       break;
     }

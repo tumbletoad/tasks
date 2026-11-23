@@ -357,6 +357,82 @@ describe("[A3.3.4.finish.lifecycle] complete_task: done, dropped, learnings and 
   );
 
   test(
+    "a follow-up that matches existing tasks names them and says where its log went: on the one match, or not saved",
+    async () => {
+      const ticket = (k: number) => ({
+        key: `jira:LUM-91${String(k)}`,
+        kind: "ticket",
+        title: `Fixture ticket ${String(k)}`,
+      });
+      const one = await add("Fixture task holding the first ticket", { sources: [ticket(1)] });
+      const two = await add("Fixture task holding the second ticket", { sources: [ticket(2)] });
+      const three = await add("Fixture task finished earlier", { sources: [ticket(3)] });
+      await finish({ task: three }, USER);
+      const parent = await add("Fixture task finished with follow-ups");
+      const logOf = async (task: string) => {
+        const read = TaskGetResult.parse(await call("task.get", { task, sections: ["log"] }));
+        if (read.view !== "sections") throw new Error("not a sections read");
+        return (read.sections.log ?? []).map((entry) => entry.text);
+      };
+      const result = await call("task.finish", {
+        task: parent,
+        outcome: "Fixture outcome with follow-ups.",
+        follow_ups: [
+          {
+            title: "Fixture follow-up of both tickets",
+            sources: [ticket(1), ticket(2)],
+            log: "Fixture log for both tickets.",
+          },
+          {
+            title: "Fixture follow-up of the first ticket",
+            sources: [ticket(1)],
+            log: "Fixture log for the first ticket.",
+          },
+          { title: "Fixture follow-up of the second ticket", sources: [ticket(2)] },
+          {
+            title: "Fixture follow-up of the finished ticket",
+            sources: [ticket(3)],
+            log: "Fixture log for the finished ticket.",
+          },
+        ],
+        base: await asOf(),
+        request_id: rid(),
+      });
+      const done = TaskFinishResult.parse(result);
+      expect(done.result).toBe("completed");
+      expect(done.follow_ups).toEqual([
+        expect.objectContaining({ result: "exists", ambiguous: [one, two], log_not_saved: true }),
+        expect.objectContaining({ result: "exists", ref: one, log_added: true }),
+        expect.objectContaining({ result: "exists", ref: two, log_added: false }),
+        expect.objectContaining({
+          result: "exists",
+          ref: three,
+          lifecycle: "completed",
+          log_not_saved: true,
+        }),
+      ]);
+      // A log entry saved, or none given, is never called not saved.
+      expect(done.follow_ups[1]?.log_not_saved).toBeUndefined();
+      expect(done.follow_ups[2]?.log_not_saved).toBeUndefined();
+      expect(await logOf(one)).toEqual(["Fixture log for the first ticket."]);
+      expect(await logOf(two)).toEqual([]);
+      expect(await logOf(three)).toEqual([]);
+      // The agent's text names the matches and says which log was not saved and what to do.
+      const text = renderResult("task.finish", result);
+      const lines = text.split("\n");
+      const line = (k: number) => lines.find((l) => l.startsWith(`follow_ups.${String(k)}:`)) ?? "";
+      expect(line(0)).toContain(`${one}, ${two}`);
+      expect(line(0)).toContain("log not saved");
+      expect(line(1)).toContain(one);
+      expect(line(1)).toContain("log added");
+      expect(line(2)).not.toContain("log");
+      expect(line(3)).toContain(`${three} · completed · log not saved`);
+      expect(text).toContain("add_entry");
+    },
+    LONG,
+  );
+
+  test(
     "a task reopened and checked off again waits for its wrap-up: is:unwrapped finds it although its earlier outcome stays",
     async () => {
       const task = await add("Fixture task wrapped, reopened and checked off again");

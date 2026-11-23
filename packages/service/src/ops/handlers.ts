@@ -1795,6 +1795,26 @@ function draftOutcome(
 }
 
 /**
+ * What became of the log entry of the draft whose task.create is at `first`. It follows the create
+ * (draftOps): added to a created task or to its one active match (A1 3.6), which the writer reports
+ * as created, unchanged when that task has it already, and left out (existing) when several match
+ * or the match is finished. Left out, it is saved nowhere, and the answer must say so: the caller
+ * holds the only copy.
+ */
+function logAdded(
+  result: WriteResult,
+  draft: Record<string, unknown>,
+  first: number,
+): { log_added: boolean; log_not_saved?: true } {
+  if (typeof draft["log"] !== "string") return { log_added: false };
+  const status = opAt(result, first + 1).status;
+  return {
+    log_added: status === "created",
+    ...(status === "existing" ? { log_not_saved: true } : {}),
+  };
+}
+
+/**
  * The stored titles of the tasks drafts matched, read after the write: a matched task keeps its
  * own title, and an answer that echoed the draft's would hand a caller a title it never had, with
  * an `as_of` that lets an edit replace the one a person gave it. Read later than the write, a
@@ -2390,18 +2410,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const titles = await matchedTitles(call, outcomes);
     return {
       as_of: result.as_of,
-      tasks: list.map((draft, k) => {
-        const first = firsts[k] ?? 0;
-        // The log entry follows the draft's task.create (draftOps): added to a created task, or
-        // to an active match (A1 3.6), which the writer reports as created.
-        const log = typeof draft["log"] === "string" ? opAt(result, first + 1) : undefined;
-        return {
-          ...outcomes[k],
-          title: titles.get(outcomes[k]?.id ?? "") ?? String(draft["title"]),
-          log_added: log?.status === "created",
-          ...heldOf(result, sourcePaths, at(k)),
-        };
-      }),
+      tasks: list.map((draft, k) => ({
+        ...outcomes[k],
+        title: titles.get(outcomes[k]?.id ?? "") ?? String(draft["title"]),
+        ...logAdded(result, draft, firsts[k] ?? 0),
+        ...heldOf(result, sourcePaths, at(k)),
+      })),
       warnings: madeFirst([...sourceWarnings(result, sourcePaths), ...kept]),
       ...replayed(result),
     };
@@ -2784,6 +2798,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         result: outcome.result,
         ...(outcome.ref === undefined ? {} : { ref: outcome.ref }),
         title: titles.get(outcome.id ?? "") ?? String(follow[k]?.["title"]),
+        ...(outcome.result === "exists" ? { lifecycle: outcome.lifecycle } : {}),
+        ...(outcome.ambiguous === undefined ? {} : { ambiguous: outcome.ambiguous }),
+        ...logAdded(result, follow[k] ?? {}, firsts[k] ?? 0),
         ...heldOf(result, sourcePaths, at(k)),
       })),
       ...(warnings.length === 0 ? {} : { warnings }),

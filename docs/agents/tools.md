@@ -1511,6 +1511,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | `tasks[].matched_by` | "source_key" | no | How an existing task matched |
 | `tasks[].ambiguous` | string[] | no | Several active matches: pick one |
 | `tasks[].log_added` | boolean | yes | The draft's log entry was added |
+| `tasks[].log_not_saved` | true | no | Its log entry was saved nowhere: file it |
 | `tasks[].held` | object[] | no | Sources linked without their key, which another task holds |
 | `tasks[].held[].source` | integer, 0 to 9 | yes | Index in the draft's sources |
 | `tasks[].held[].held_by` | string | yes | The task that holds its key |
@@ -1766,6 +1767,10 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].result` | "created" \| "exists" | yes | What happened to the draft |
 | `follow_ups[].ref` | string | no | Task reference |
 | `follow_ups[].title` | string | yes | Title |
+| `follow_ups[].lifecycle` | "active" \| "completed" \| "archived" | no | The matched task's lifecycle |
+| `follow_ups[].ambiguous` | string[] | no | Several active matches: pick one |
+| `follow_ups[].log_added` | boolean | yes | The draft's log entry was added |
+| `follow_ups[].log_not_saved` | true | no | Its log entry was saved nowhere: file it |
 | `follow_ups[].held` | object[] | no | Sources linked without their key, which another task holds |
 | `follow_ups[].held[].source` | integer, 0 to 9 | yes | Index in the draft's sources |
 | `follow_ups[].held[].held_by` | string | yes | The task that holds its key |
@@ -1810,7 +1815,8 @@ Result:
     {
       "result": "created",
       "ref": "M-31",
-      "title": "Check the mobile app for the same time zone bug"
+      "title": "Check the mobile app for the same time zone bug",
+      "log_added": false
     }
   ],
   "as_of": "1.1047.5n0w8k3q"

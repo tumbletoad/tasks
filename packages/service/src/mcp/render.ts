@@ -685,30 +685,44 @@ function searchRendered(result: Search, search: string): Rendered {
 // ---------------------------------------------------------------------------------------------
 // task.add (A3 3.4.5), task.reopen (A3 3.4.9), run.report (A3 3.4.12)
 
-type Added = OutputOf<"task.add">["tasks"][number];
+type Added = OutputOf<"task.add">["tasks"][number] | OutputOf<"task.finish">["follow_ups"][number];
 
 /** At most this many references of an ambiguous match, then how many more. */
 const AMBIGUOUS_SHOWN = 3;
 
 /**
  * What became of the draft at `path` (A3 3.2.5, 3.4.5): created, or matched by its source key,
- * with its reference. Only the product's words and references, so the line is never cut and needs
- * no data block; the draft's title is the caller's own and is not echoed.
+ * with its reference or the references it matched, and whether its log entry was saved. Only the
+ * product's words and references, so the line is never cut and needs no data block; the draft's
+ * title is the caller's own and is not echoed.
  */
 function draftLine(row: Added, path: string): string {
   const refs = row.ambiguous ?? [];
+  const log = row.log_not_saved === true ? "log not saved" : row.log_added && "log added";
   const what =
     row.result === "exists"
       ? row.ambiguous !== undefined
-        ? `exists, several match: ${refs.slice(0, AMBIGUOUS_SHOWN).join(", ")}${refs.length > AMBIGUOUS_SHOWN ? ` and ${String(refs.length - AMBIGUOUS_SHOWN)} more` : ""}`
+        ? join(
+            `exists, several match: ${refs.slice(0, AMBIGUOUS_SHOWN).join(", ")}${refs.length > AMBIGUOUS_SHOWN ? ` and ${String(refs.length - AMBIGUOUS_SHOWN)} more` : ""}`,
+            log,
+          )
         : join(
             `exists ${row.ref ?? ""}`,
             row.lifecycle !== undefined && row.lifecycle !== "active" && row.lifecycle,
-            row.matched_by === "source_key" && "by source key",
-            row.log_added && "log added",
+            "matched_by" in row && row.matched_by === "source_key" && "by source key",
+            log,
           )
       : join(`${row.result} ${row.ref ?? ""}`.trimEnd(), heldCount(row.held));
   return `${path}: ${what.trimEnd()}`;
+}
+
+/** What to do with a log entry no task took: the caller holds the only copy. */
+function unsavedLog(rows: readonly Added[]): string[] {
+  return rows.some((row) => row.log_not_saved === true)
+    ? [
+        `A log not saved is stored nowhere: add it with ${toolOf("entry.add")} to the task it belongs to.`,
+      ]
+    : [];
 }
 
 type Held = readonly { source: number; held_by: string }[] | undefined;
@@ -750,6 +764,7 @@ function addRendered(result: OutputOf<"task.add">): Rendered {
       fixed(
         `${join(`${String(created)} created`, `${String(result.tasks.length - created)} existing`, result.proposal !== undefined && `proposal ${result.proposal}`)}${asOf}${replayed(result)}`,
         ...result.tasks.map((row, k) => draftLine(row, `tasks.${String(k)}`)),
+        ...unsavedLog(result.tasks),
       ),
       { units: result.warnings.map((w) => [`warning: ${w}`]) },
       { units: heldLines(result.tasks, "tasks") },
@@ -943,10 +958,8 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
       parts: [
         fixed(
           `${head} · as_of ${result.as_of}${replayed(result)}`,
-          ...result.follow_ups.map(
-            (f, k) =>
-              `follow_ups.${String(k)}: ${join(`${f.result} ${f.ref ?? ""}`.trimEnd(), heldCount(f.held))}`,
-          ),
+          ...result.follow_ups.map((f, k) => draftLine(f, `follow_ups.${String(k)}`)),
+          ...unsavedLog(result.follow_ups),
           ...(result.warnings ?? []).map((w) => `warning: ${w}`),
         ),
         { units: heldLines(result.follow_ups, "follow_ups") },

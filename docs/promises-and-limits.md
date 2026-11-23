@@ -40,6 +40,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Adding work by a source that an open task or a recently finished one already has finds that task
   and keeps its fields. A task finished longer ago or a deleted one does not stand in the way of
   new work.
+- A log entry given with such work, a finished task's follow-up included, goes on the one open task
+  it found. When it found a finished task or several open ones, the entry is saved nowhere, and the
+  answer names the tasks it found and says so.
 - Work recreated from another tool can keep when each task was created and finished and when each
   log entry was made. A time in the future is refused. Such a task finished long ago is still
   found by its source for the usual number of days after it was recorded here, so a second pass

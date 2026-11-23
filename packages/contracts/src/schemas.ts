@@ -308,6 +308,12 @@ export const InsideFolders = {
   kept: z.array(InsideFolder).max(20).describe("The first of them").optional(),
 };
 
+/** A draft that matched several active tasks by its source keys: none was picked. */
+export const SeveralMatch = z.array(TaskRef).describe("Several active matches: pick one");
+export const LogAdded = z.boolean().describe("The draft's log entry was added");
+/** A draft's log entry that no task took: the caller holds the only copy. */
+export const LogNotSaved = z.literal(true).describe("Its log entry was saved nowhere: file it");
+
 /** A new task's sources whose key another active task holds: each is linked without its key. */
 export const HeldSources = z
   .array(
