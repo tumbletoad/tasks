@@ -265,8 +265,9 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const finished = task.lifecycle !== "active";
   /** Run's key on a finished task: Reopen, the step before any run. A deleted one has neither. */
   const runOrReopen = (instance: Instance) => {
-    if (!finished) run(instance);
-    else if (task.deleted_at === undefined) edits.reopen(task);
+    if (task.deleted_at !== undefined) return;
+    if (finished) edits.reopen(task);
+    else run(instance);
   };
   // A task without a folder of its own runs in the space's work folder, as Open does.
   const runTip = (instance: Instance) =>

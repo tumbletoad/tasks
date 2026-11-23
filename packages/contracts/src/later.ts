@@ -61,7 +61,11 @@ export const LATER_PREFERENCES: readonly {
   readonly step: string;
 }[] = [
   { key: "autonomy.level", inForce: AUTONOMY_IN_FORCE, step: PROPOSALS },
-  { key: "autonomy.agent_tasks_to_inbox", inForce: false, step: PROPOSALS },
+  {
+    key: "autonomy.agent_tasks_to_inbox",
+    inForce: "only an agent's task without an area or project goes to the Inbox",
+    step: PROPOSALS,
+  },
   {
     key: "targets.default",
     inForce: null,

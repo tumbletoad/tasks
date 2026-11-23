@@ -82,14 +82,19 @@ function flagSpec(info: FieldInfo, face: CliFace) {
 
 /**
  * A field as the command line offers it (later.ts): without the values a later step brings, and
- * not at all when the field is one of them or no choice is left, as with `mode` and its `apply`.
+ * not at all when the field is one of them. A value that stays keeps its field, also when it is
+ * the only one left (`--mode apply`): scripts that spell it out keep working.
  */
 function offered(entry: AnyEntry, info: FieldInfo): FieldInfo | undefined {
   const rows = laterFields(entry.name, "user").filter((row) => row.field === info.path);
   if (rows.length === 0) return info;
   if (rows.some((row) => row.value === undefined)) return undefined;
   const values = info.values?.filter((value) => !rows.some((row) => row.value === value));
-  return values === undefined || values.length < 2 ? undefined : { ...info, values };
+  if (values === undefined || values.length === 0) return undefined;
+  // What is left to choose says so itself: the field's own words may be about a value that went.
+  const description =
+    values.length === 1 ? `Always ${String(values[0])} in this build` : info.description;
+  return { ...info, values, description };
 }
 
 /** The operation verbs the command line offers: none of an entry a later step brings. */

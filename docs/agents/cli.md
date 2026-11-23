@@ -37,6 +37,7 @@ Usage: `ttasks add <title> [flags]`
 | Argument | Field | Type | Description |
 |---|---|---|---|
 | `<title>` | `tasks[].title` | string | Title |
+| `--mode` | `mode` | "apply" | Always apply in this build |
 | `--summary` | `tasks[].summary` | string | One line: the next step |
 | `--area` | `tasks[].area` | string | Area name or slug |
 | `--project` | `tasks[].project` | string | Project name or slug |
@@ -67,6 +68,7 @@ Usage: `ttasks area <action> [<path>] [<to>] [flags]`
 | `<path>` | `path` | string | "Area" or "Area/Project", by name or slug; list: one area |
 | `<to>` | `to` | string | rename: the new name; move: the new area |
 | `--folder` | `folder` | string | create, set_folder: the project's folder here, "cwd" or an absolute path |
+| `--mode` | `mode` | "apply" | Always apply in this build |
 
 ## `ttasks brief`
 
@@ -97,6 +99,7 @@ Usage: `ttasks done [<task>] [flags]`
 | `--outcome` | `outcome` | string | What changed and the evidence; agents must give it, in at most 600 characters |
 | `--learning` | `learnings` | string | Lessons reusable beyond this task; a task keeps 20 in all (repeatable) |
 | `--finished` | `finished` | string | When it was done, only for work done before it was recorded: ISO date or instant |
+| `--mode` | `mode` | "apply" | Always apply in this build |
 
 Only through `--input`: `follow_ups`.
 
@@ -156,6 +159,7 @@ Usage: `ttasks prefs <action> [<key>] [<value>] [flags]`
 | `<key>` | `set[].key`; `keys` for describe, get | string | A key describe lists |
 | `<value>` | `set[].value` | string | The new value, a list as keys separated by commas |
 | `--keys` | `keys` | string | Keys, or prefixes ending in ".*"; default every key (repeatable) |
+| `--mode` | `mode` | "apply" | Always apply in this build |
 | `--reset` | `set[].reset` | boolean | Put the key back to its default, instead of a value |
 
 ## `ttasks receipt`
@@ -188,6 +192,7 @@ Usage: `ttasks reopen [<task>] [flags]`
 |---|---|---|---|
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--reason` | `reason` | string | Why it is open again |
+| `--mode` | `mode` | "apply" | Always apply in this build |
 
 ## `ttasks set`
 
@@ -200,6 +205,7 @@ Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--clear` | `clear` | "summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus" | Fields to clear (repeatable) |
 | `--reason` | `reason` | string | Why, shown in history |
+| `--mode` | `mode` | "apply" | Always apply in this build |
 | `title=` | `set.title` | string | Title: read skill writing-tasks first |
 | `summary=` | `set.summary` | string | One line: the next step |
 | `status=` | `set.status` | string | A status of the space |

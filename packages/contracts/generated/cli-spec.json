@@ -109,6 +109,17 @@
       "entry": "task.add",
       "flags": [
         {
+          "field": "mode",
+          "flag": "--mode",
+          "help": "Always apply in this build",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "apply"
+          ]
+        },
+        {
           "field": "tasks[].summary",
           "flag": "--summary",
           "help": "One line: the next step",
@@ -274,6 +285,17 @@
           "repeat": false,
           "required": false,
           "type": "string"
+        },
+        {
+          "field": "mode",
+          "flag": "--mode",
+          "help": "Always apply in this build",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "apply"
+          ]
         }
       ],
       "inputOnly": [],
@@ -428,6 +450,17 @@
           "repeat": false,
           "required": false,
           "type": "string"
+        },
+        {
+          "field": "mode",
+          "flag": "--mode",
+          "help": "Always apply in this build",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "apply"
+          ]
         }
       ],
       "inputOnly": [
@@ -620,6 +653,17 @@
           "type": "string"
         },
         {
+          "field": "mode",
+          "flag": "--mode",
+          "help": "Always apply in this build",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "apply"
+          ]
+        },
+        {
           "field": "set[].reset",
           "flag": "--reset",
           "help": "Put the key back to its default, instead of a value",
@@ -719,6 +763,17 @@
           "repeat": false,
           "required": false,
           "type": "string"
+        },
+        {
+          "field": "mode",
+          "flag": "--mode",
+          "help": "Always apply in this build",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "apply"
+          ]
         }
       ],
       "inputOnly": [],
@@ -768,6 +823,17 @@
           "repeat": false,
           "required": false,
           "type": "string"
+        },
+        {
+          "field": "mode",
+          "flag": "--mode",
+          "help": "Always apply in this build",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "apply"
+          ]
         }
       ],
       "inputOnly": [

@@ -129,6 +129,8 @@ describe("[A2.3.10.cli.help] help for every command", () => {
         const flag = verb.flags.find((f) => f.field === row.field);
         if (row.value === undefined) expect(flag, `${verb.verb} ${row.field}`).toBeUndefined();
         else expect(flag?.values ?? [], `${verb.verb} ${row.field}`).not.toContain(row.value);
+        // What stays keeps working as it was typed: `--mode apply` is still a flag.
+        if (row.field === "mode") expect(flag?.values, verb.verb).toEqual(["apply"]);
         const help = await helpOf(["help", verb.verb]);
         expect(help, `${verb.verb} ${row.field}`).not.toContain(row.value ?? `--${row.field}`);
       }
