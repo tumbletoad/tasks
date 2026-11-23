@@ -27,7 +27,13 @@ export type AdminJob =
       /** Folders no file of the bundle may come from: the secrets folder (A6 3.16.4). */
       readonly secretFolders: readonly string[];
     }
-  | { readonly kind: "restore"; readonly backupFile: string; readonly target: string }
+  | {
+      readonly kind: "restore";
+      readonly backupFile: string;
+      readonly target: string;
+      /** The space the backup must be of, when the person named it. */
+      readonly spaceId?: Id<"sp">;
+    }
   | {
       /** The newest backup of the space that verifies, into a new folder (A1 3.2). */
       readonly kind: "restore-latest";

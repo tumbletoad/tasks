@@ -1032,6 +1032,8 @@ export class SpaceManager {
       const refFloor = await this.#refFloor(space, worker);
       const restored = await worker.restoreInPlace(backupFile, space.folder, {
         machineId: this.#options.machine.id,
+        // The folder's own files may no longer say which space it holds: the entry still does.
+        spaceId: space.registered,
         knownEpochs: knownEpochs(settings),
         ...(refFloor === undefined ? {} : { refFloor }),
         holder: this.#holderFacts,
@@ -1244,7 +1246,8 @@ export class SpaceManager {
       this.#unavailable(space, new StorageError("SPACE_NOT_FOUND", ""));
       return;
     }
-    const settings = this.#settingsOf(space.folder);
+    // By the space the entry names: the folder's space.json may be gone (it is written again).
+    const settings = this.#settingsFor(space.registered);
     space.backupDir = settings.backupDir;
 
     // A1 3.2: the folder and every folder above it, at every open. A network file system is never
@@ -2127,8 +2130,7 @@ export class SpaceManager {
     }
     // Read again: the service may have begun to drain while the space closed.
     if (this.#isDraining()) throw new StorageError("STORAGE_MISUSE", "The service is stopping");
-    const settings =
-      space.id === undefined ? this.#settingsOf(space.folder) : this.#settingsFor(space.id);
+    const settings = this.#settingsFor(space.registered);
     let outcome: { spaceId: Id<"sp">; change?: SpaceChange } | undefined;
     try {
       const worker = await this.#startWorkerBounded();

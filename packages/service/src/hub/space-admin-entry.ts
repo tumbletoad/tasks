@@ -83,7 +83,12 @@ async function run(job: AdminJob): Promise<AdminResult> {
     }
     case "restore": {
       // A backup's `.db.gz` or an export bundle's `.zip`: either restores as a read-only copy.
-      const restored = await restoreBackup(checked, job.backupFile, job.target);
+      const restored = await restoreBackup(
+        checked,
+        job.backupFile,
+        job.target,
+        job.spaceId === undefined ? {} : { spaceId: job.spaceId },
+      );
       return { kind: "restore", spaceId: restored.space.spaceId };
     }
     case "restore-latest": {

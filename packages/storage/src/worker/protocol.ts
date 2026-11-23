@@ -170,6 +170,7 @@ export interface Calls {
       backupFile: string;
       folder: string;
       machineId: Id<"m">;
+      spaceId?: Id<"sp">;
       knownEpochs: number[];
       refFloor?: number;
       appVersion?: string;

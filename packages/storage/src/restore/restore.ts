@@ -89,6 +89,11 @@ export interface RestoreOptions {
   busyTimeoutMs?: number;
   /** Milliseconds since 1970. Default: Date.now. */
   now?: () => number;
+  /**
+   * The space the backup must be of, when the caller knows it: a backup of another space is
+   * refused (SPACE_ID_MISMATCH) before anything takes the target's name.
+   */
+  spaceId?: Id<"sp">;
 }
 
 export interface RestoreInPlaceOptions extends RestoreOptions {
@@ -222,11 +227,12 @@ export async function restoreCopy(
   file: string,
   place: CopyPlace,
   now: number,
-  options: { busyTimeoutMs?: number },
+  options: { busyTimeoutMs?: number; spaceId?: Id<"sp"> },
   seams: RestoreSeams,
 ): Promise<Unpacked> {
   const unpacked = await unpackAny(checked, file, place, busy(options), seams);
   seams.at?.("unpacked");
+  refuseOtherSpace(unpacked.space.spaceId, [options.spaceId]);
   const invalid = isBundleFile(file) ? bundleInvalid : backupInvalid;
   const space = markCopy(
     checked,
@@ -242,6 +248,13 @@ export async function restoreCopy(
 
 const backupInvalid = (why: string): StorageError =>
   new StorageError("BACKUP_INVALID", `The backup does not verify: ${why}`);
+
+/** SPACE_ID_MISMATCH unless the unpacked space is each of the expected ones that is known. */
+function refuseOtherSpace(unpacked: Id<"sp">, expected: readonly (Id<"sp"> | undefined)[]): void {
+  if (expected.some((id) => id !== undefined && id !== unpacked)) {
+    throw new StorageError("SPACE_ID_MISMATCH", "The backup is of another space");
+  }
+}
 
 /** What a verification takes: a restore's seams, and its connections' busy timeout. */
 export interface VerifyOptions extends UnpackSeams {
@@ -384,7 +397,8 @@ const isNextRef = (value: unknown): value is number =>
 /**
  * Restores `backupFile` in place of the space at `folder` and claims it with a new epoch and a new
  * incarnation. The live folder is moved aside to `<slug>.replaced-<utc>`, never deleted. A backup
- * of another space is refused (SPACE_ID_MISMATCH) when the live space's ID can be read.
+ * of another space than `options.spaceId`, or than the live space's ID when it can be read, is
+ * refused (SPACE_ID_MISMATCH).
  */
 export async function restoreInPlace(
   checked: CheckedDriver,
@@ -425,9 +439,8 @@ export async function restoreInPlaceWith(
       seams,
     );
     seams.at?.("unpacked");
-    if (live.spaceId !== undefined && live.spaceId !== unpacked.space.spaceId) {
-      throw new StorageError("SPACE_ID_MISMATCH", "The backup is of another space");
-    }
+    // The live files may no longer say which space they were: the caller's ID still does.
+    refuseOtherSpace(unpacked.space.spaceId, [options.spaceId, live.spaceId]);
     // The claim happens in the staging folder, before the copy takes the space's name: no crash
     // can leave an unclaimed old incarnation in place of the live space. It is this restore's
     // first write (mark.ts firstWrite), after the copy is prepared (prepareCopy).

@@ -533,6 +533,7 @@ export function serve(
           backupFile,
           folder,
           machineId,
+          spaceId,
           knownEpochs,
           refFloor,
           holder,
@@ -548,6 +549,7 @@ export function serve(
               dir,
               {
                 machineId,
+                ...(spaceId === undefined ? {} : { spaceId }),
                 knownEpochs,
                 ...(refFloor === undefined ? {} : { refFloor }),
                 ...optional(rest),

@@ -73,7 +73,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   restored.
 - `ttasks space restore latest` restores the newest backup that restores. When the disk has no
   room for it, it says so and restores no older one in its place.
-- Restoring over a space keeps what was there before.
+- Restoring over a space keeps what was there before, and takes only a backup of that space, also
+  when its files no longer say which space it was. A space's backup list, and a restore by a
+  backup's name, keep to that space's backups in a backups folder spaces share.
 - A restored copy cannot be edited until you make it the current copy.
 - To look inside a backup, restore it into a new folder, close the space, open that folder, look,
   close it, and open the space again. TTasks never opens two copies of one space together, so the

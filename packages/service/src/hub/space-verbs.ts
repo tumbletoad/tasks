@@ -711,24 +711,29 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
     "space/backups": (params) => {
       const view = find(required(params, "space"));
       const dir = backupDirOf(view);
+      const id = view.id ?? view.registered;
       try {
         const listing = listBackups(dir);
         return Promise.resolve({
           folder: dir,
-          backups: listing.backups.map((b) => ({
-            name: b.name,
-            state: b.state,
-            created_at: new Date(b.createdAt).toISOString(),
-            ...(b.sidecar === undefined
-              ? {}
-              : {
-                  kind: b.sidecar.kind,
-                  epoch: b.sidecar.epoch,
-                  seq: b.sidecar.seq,
-                  size: b.sidecar.size,
-                  compressed_size: b.sidecar.compressed_size,
-                }),
-          })),
+          // A backup.dir can be shared: another space's backups are not this one's. One whose
+          // sidecar does not read names no space, and is listed for each.
+          backups: listing.backups
+            .filter((b) => b.sidecar === undefined || b.sidecar.space_id === id)
+            .map((b) => ({
+              name: b.name,
+              state: b.state,
+              created_at: new Date(b.createdAt).toISOString(),
+              ...(b.sidecar === undefined
+                ? {}
+                : {
+                    kind: b.sidecar.kind,
+                    epoch: b.sidecar.epoch,
+                    seq: b.sidecar.seq,
+                    size: b.sidecar.size,
+                    compressed_size: b.sidecar.compressed_size,
+                  }),
+            })),
           leftovers: listing.leftovers,
         });
       } catch (error) {
@@ -824,12 +829,15 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       // bundle's (`.zip`) in its exports folder.
       let file: string;
       const from = inPlace ?? text(params, "of");
+      // The space the backup must be of, when the person named it: a folder of backups can be
+      // shared by spaces. A restore in place checks against its entry's space (spaces.ts).
+      const of = from === undefined ? undefined : find(from);
+      const spaceId = of?.id ?? of?.registered;
       if (isAbsolute(backup)) file = resolve(backup);
-      else if (from !== undefined && /^[A-Za-z0-9._-]+$/.test(backup)) {
-        const space = find(from);
+      else if (of !== undefined && /^[A-Za-z0-9._-]+$/.test(backup)) {
         file = /\.zip$/i.test(backup)
-          ? join(exportsFolder(manager.folderOf(space.entry)), backup)
-          : join(backupDirOf(space), backup.endsWith(".db.gz") ? backup : `${backup}.db.gz`);
+          ? join(exportsFolder(manager.folderOf(of.entry)), backup)
+          : join(backupDirOf(of), backup.endsWith(".db.gz") ? backup : `${backup}.db.gz`);
       } else {
         throw invalid(
           "backup",
@@ -842,7 +850,12 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
           const target = resolve(to);
           return await oneAtATime(async () => {
             refuseNetwork(await manager.checkFolder(target), "to");
-            const restored = await runAdmin({ kind: "restore", backupFile: file, target });
+            const restored = await runAdmin({
+              kind: "restore",
+              backupFile: file,
+              target,
+              ...(spaceId === undefined ? {} : { spaceId }),
+            });
             return await openRestored(target, spaceOf(restored), {});
           });
         }

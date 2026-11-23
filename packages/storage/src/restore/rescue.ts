@@ -109,15 +109,17 @@ export async function restoreLatest(
     if (backup.state !== "ok" || backup.sidecar?.space_id !== spaceId) continue;
     let restored: RestoredSpace;
     try {
-      restored = await restoreBackupWith(checked, backup.file, folder, options, seams);
+      // The backup is read again by the restore, and must still be of this space.
+      restored = await restoreBackupWith(
+        checked,
+        backup.file,
+        folder,
+        { ...options, spaceId },
+        seams,
+      );
     } catch (error) {
       if (!(error instanceof StorageError) || !NOT_THIS_BACKUP.has(error.code)) throw error;
       continue;
-    }
-    // The sidecar was read again by the restore: one that names another space since the listing
-    // leaves its read-only copy for the person, never taken for this space's.
-    if (restored.space.spaceId !== spaceId) {
-      throw new StorageError("SPACE_ID_MISMATCH", "The backup is of another space");
     }
     return { restored, backup: backup.name };
   }
