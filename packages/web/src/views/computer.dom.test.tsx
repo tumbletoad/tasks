@@ -193,6 +193,12 @@ const facts = (element: Element | null | undefined) =>
 
 const headings = () => [...container.querySelectorAll("h2")].map((h) => h.textContent);
 
+/** Whether each part of the monitor shows as not current. */
+const stale = () =>
+  [...container.querySelectorAll<HTMLElement>('[data-part="computer"], [data-part="usage"]')].map(
+    (part) => part.dataset["stale"],
+  );
+
 const sessions = () =>
   [...container.querySelectorAll<HTMLElement>('[data-part="session"]')].map((li) => [
     li.querySelector("span")?.textContent,
@@ -258,21 +264,58 @@ describe("[A5.agents.web-page] the Agents page shows the monitor's every state i
       trouble: { kind: "failed", reason: "exited" },
     });
     expect(text("monitor-status")).toBe(
-      "TTAM stopped answering. If this lasts, run ttam doctor. Not updating: this is what it saw 3 min ago.",
+      "TTAM stopped answering. If this lasts, run ttam doctor. Not updating: this is what TTAM saw 3 min ago.",
     );
     expect(sessions()).toHaveLength(1);
     // Its states no longer look live.
-    expect(container.querySelector<HTMLElement>('[data-part="computer"]')?.dataset["stale"]).toBe(
-      "true",
-    );
+    expect(stale()).toEqual(["true"]);
     show({ picture: picture([session(1)], [], { ageMs: 2 * MIN }), trouble: { kind: "slow" } });
     expect(text("monitor-status")).toBe(
-      "TTAM has not answered for a while. Not updating: this is what it saw 2 min ago.",
+      "TTAM has not answered for a while. Not updating: this is what TTAM saw 2 min ago.",
     );
     show({ picture: picture([session(1)]), trouble: null });
-    expect(
-      container.querySelector<HTMLElement>('[data-part="computer"]')?.dataset["stale"],
-    ).toBeUndefined();
+    expect(stale()).toEqual([undefined, undefined]);
+  });
+
+  test("a picture that is not current mutes both parts, says how old it is, and speaks of nothing now", async () => {
+    await mount();
+    const now = picture([session(1, { activity: "working" })], [account({ refreshing: true })], {
+      ageMs: MIN,
+    });
+    show({ picture: now, trouble: null });
+    expect(text("account")).toContain("Checking now");
+    expect(text("usage-status")).toBeUndefined();
+    // The monitor stops answering: both parts say so, and no check is said to run.
+    show({ picture: now, trouble: { kind: "failed", reason: "exited" } });
+    expect(stale()).toEqual(["true", "true"]);
+    expect(text("usage-status")).toBe("Not updating: this is what TTAM saw 1 min ago.");
+    expect(text("account")).not.toContain("Checking now");
+    // The feed is cut (the service restarts): the page's own bar says why, the parts how old.
+    show({ picture: now, trouble: null });
+    act(() => {
+      live.agents.cut();
+    });
+    expect(stale()).toEqual(["true", "true"]);
+    expect(text("monitor-status")).toBe("Not updating: this is what TTAM saw 1 min ago.");
+    expect(text("usage-status")).toBe("Not updating: this is what TTAM saw 1 min ago.");
+    expect(text("account")).not.toContain("Checking now");
+    // Cut before any picture: it is not looking either.
+    show({ picture: null, trouble: null });
+    act(() => {
+      live.agents.cut();
+    });
+    expect(text("monitor-status")).toBe("Not updating.");
+    // The next view is current again.
+    show({ picture: now, trouble: null });
+    expect(stale()).toEqual([undefined, undefined]);
+    expect(text("account")).toContain("Checking now");
+  });
+
+  test("a monitor slow before its first answer is said in its part, not as the quiet line", async () => {
+    await mount();
+    show({ picture: null, trouble: { kind: "slow" } });
+    expect(text("monitor-note")).toBeUndefined();
+    expect(text("monitor-status")).toBe("TTAM has not answered for a while.");
   });
 
   test("what needs you first, then what works, then the rest as they started; unknown is never idle", async () => {

@@ -143,11 +143,19 @@ export interface AgentsState {
   readonly view: AgentsView | undefined;
   /** performance.now() when it arrived: the picture is that much older now. */
   readonly at: number;
+  /**
+   * The view is the monitor as it is now: the feed that carries it is up and of this page's
+   * build, and the monitor answers. Else the page shows it as it was, never in the present.
+   */
+  readonly current: boolean;
 }
 
-const EMPTY: AgentsState = { view: undefined, at: 0 };
+const EMPTY: AgentsState = { view: undefined, at: 0, current: false };
 
-/** The newest view the tab was sent, for the page to read. */
+/**
+ * The newest view the tab was sent, for the page to read. It is current from its arrival until
+ * the feed is cut, and the next view after a cut is the first that is current again.
+ */
 export class AgentsFeed {
   #state: AgentsState = EMPTY;
   readonly #listeners = new Set<() => void>();
@@ -162,7 +170,12 @@ export class AgentsFeed {
   readonly getState = (): AgentsState => this.#state;
 
   show(view: AgentsView, at = performance.now()): void {
-    this.#set({ view, at });
+    this.#set({ view, at, current: view.trouble === null });
+  }
+
+  /** The feed that carries the view is gone, or of another build: what shows is as it was. */
+  cut(): void {
+    if (this.#state.current) this.#set({ ...this.#state, current: false });
   }
 
   clear(): void {

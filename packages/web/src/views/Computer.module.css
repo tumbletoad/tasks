@@ -195,6 +195,11 @@
   background: var(--k-late);
 }
 
+/* A reading that is not current: the bar keeps its length and loses its colour. */
+.part[data-stale] .fill {
+  background: var(--k-muted);
+}
+
 .figure {
   display: flex;
   flex-wrap: wrap;

@@ -14,7 +14,9 @@
 //   page says that a restart of the service switches to it.
 // - `watch`: while an Agents page is mounted, whether the tab is visible and its window focused,
 //   on every change and after every `hello`; the service asks the Agent Monitor at that pace and
-//   sends `agents`, which the tab keeps in memory until the page unmounts.
+//   sends `agents`, which the tab keeps in memory until the page unmounts. From a lost connection
+//   or a service of another build until the next `agents`, the page shows it as not current. A
+//   page of another build tells nothing: the service may not know the message.
 //
 // Each tab has its own socket and subscription, to the space its route names. Two tabs on two
 // spaces never share one.
@@ -183,10 +185,17 @@ export class Live {
       return true;
     }
     if (error instanceof StaleBuild) {
-      this.store.set({ stale: true });
+      this.#stale();
       return true;
     }
     return false;
+  }
+
+  /** The service runs another build than this page: it shows the reload bar until a reload. */
+  #stale(): void {
+    this.store.set({ stale: true });
+    // It no longer watches, so nothing it shows of the monitor is current.
+    this.agents.cut();
   }
 
   #signedOut(): void {
@@ -234,12 +243,14 @@ export class Live {
         this.store.setInstalled(message.version, this.#running);
       } else if (message.type === "machine") this.#options.onMachine?.(message.preferences);
       else if (message.type === "agents") {
-        if (this.#watching > 0) this.agents.show(message.view);
+        if (this.#watching > 0 && !this.getState().stale) this.agents.show(message.view);
       } else this.store.push(message);
     };
     ws.onclose = (event: CloseEvent) => {
       if (this.#ws !== ws) return;
       this.#ws = undefined;
+      // Until the next connection sends a view, the monitor's is as it was.
+      this.agents.cut();
       if (event.code === CLOSE_SIGNED_OUT) this.#signedOut();
       else this.#again();
     };
@@ -257,8 +268,7 @@ export class Live {
   }
 
   #hello(build: string): void {
-    if (this.#options.build !== "" && build !== this.#options.build)
-      this.store.set({ stale: true });
+    if (this.#options.build !== "" && build !== this.#options.build) this.#stale();
     this.#attempt = 0;
     // What the old socket delivered applies first, so the cursor is the newest the tab has. A gap
     // found there needs no subscription of its own: this one goes without a cursor.

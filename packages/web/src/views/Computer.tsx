@@ -82,19 +82,41 @@ function useNow(): number {
   return now;
 }
 
-/** The sentence of a view's trouble, and of a picture that does not update. */
-function troubleLine(view: AgentsView, t: Translate, since: number): string | undefined {
+/** Without TTAM, or with one that does not fit: the one quiet line that stands for the parts. */
+function noteOf(view: AgentsView, t: Translate): string | undefined {
   const trouble = view.trouble;
-  if (trouble === null) return undefined;
+  if (view.picture !== null || trouble === null) return undefined;
   if (trouble.kind === "not_installed") {
     return t("computer.notInstalled", { why: trouble.reason });
   }
   if (trouble.kind === "does_not_fit") return t("computer.doesNotFit", { update: trouble.update });
-  return t("computer.trouble", {
-    kind: trouble.kind,
-    stale: view.picture === null ? "no" : "yes",
-    age: spanOf(since, t),
-  });
+  return undefined;
+}
+
+/**
+ * The line of "On this computer". A view that is not current says why when the monitor is the
+ * cause (the page's own bar says it for the feed) and how old the picture is; a current one says
+ * what TTAM is doing, or nothing.
+ */
+function statusOf(view: AgentsView, current: boolean, t: Translate, since: number): string {
+  const { picture, trouble } = view;
+  if (!current) {
+    const cause =
+      trouble?.kind === "slow" || trouble?.kind === "failed"
+        ? t("computer.trouble", { kind: trouble.kind })
+        : undefined;
+    const old =
+      picture === null
+        ? cause === undefined
+          ? t("computer.paused")
+          : undefined
+        : t("computer.old", { age: spanOf(since, t) });
+    return [cause, old].filter((line) => line !== undefined).join(" ");
+  }
+  if (picture === null) return t("computer.looking");
+  if (picture.settling) return t("computer.settling");
+  if (picture.sessions.length === 0) return t("computer.empty");
+  return "";
 }
 
 function App({ app, name }: { readonly app: string; readonly name: string }) {
@@ -187,13 +209,16 @@ function WindowLine({
 function AccountItem({
   account,
   since,
+  current,
 }: {
   readonly account: AgentsAccount;
   readonly since: number;
+  readonly current: boolean;
 }) {
   const t = useT();
   const notes = [
-    account.refreshing ? t("computer.refreshing") : undefined,
+    // A check that ran then may have ended since: said only of a current picture.
+    account.refreshing && current ? t("computer.refreshing") : undefined,
     account.failed ? t("computer.checkFailed") : undefined,
     account.unavailable
       ? t("computer.unavailable")
@@ -232,32 +257,23 @@ export function Computer() {
   const t = useT();
   const { live } = useContext(Session);
   useEffect(() => live.watchAgents(), [live]);
-  const { view, at } = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
+  const { view, at, current } = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
   const now = useNow();
   if (view === undefined) return null;
   const picture = view.picture;
   // How much older the picture is now than when the service sent it.
   const since = Math.max(0, Math.max(now, at) - at) + (picture?.ageMs ?? 0);
-  const trouble = troubleLine(view, t, since);
-  // Without TTAM, or with one that does not fit: one quiet line, and no part.
-  if (picture === null && trouble !== undefined && view.trouble?.kind !== "failed") {
+  const note = noteOf(view, t);
+  if (note !== undefined) {
     return (
       <p className={styles.note} data-part="monitor-note">
-        {trouble}
+        {note}
       </p>
     );
   }
-  const status =
-    trouble ??
-    (picture === null
-      ? t("computer.looking")
-      : picture.settling
-        ? t("computer.settling")
-        : picture.sessions.length === 0
-          ? t("computer.empty")
-          : undefined);
-  // A picture that does not update shows its states muted: what worked then may not work now.
-  const stale = trouble !== undefined || undefined;
+  const status = statusOf(view, current, t, since);
+  // A picture that is not current shows both parts muted: what worked then may not work now.
+  const stale = !current || undefined;
   return (
     <>
       <section
@@ -270,7 +286,7 @@ export function Computer() {
           {t("computer.heading")}
         </h2>
         <p className={styles.line} role="status" data-part="monitor-status">
-          {status ?? ""}
+          {status}
         </p>
         {picture === null || picture.sessions.length === 0 ? null : (
           <ul className={styles.list}>
@@ -281,13 +297,24 @@ export function Computer() {
         )}
       </section>
       {picture === null || picture.accounts.length === 0 ? null : (
-        <section className={styles.part} aria-labelledby="usage-heading" data-part="usage">
+        <section
+          className={styles.part}
+          aria-labelledby="usage-heading"
+          data-part="usage"
+          data-stale={stale}
+        >
           <h2 className={styles.heading} id="usage-heading">
             {t("computer.usage")}
           </h2>
+          {/* Said again here: on a narrow screen this part is read far below the other. */}
+          {current ? null : (
+            <p className={styles.line} data-part="usage-status">
+              {t("computer.old", { age: spanOf(since, t) })}
+            </p>
+          )}
           <ul className={styles.list}>
             {picture.accounts.map((account) => (
-              <AccountItem key={account.key} account={account} since={since} />
+              <AccountItem key={account.key} account={account} since={since} current={current} />
             ))}
           </ul>
         </section>

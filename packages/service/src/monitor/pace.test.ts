@@ -1,6 +1,7 @@
 // The pace's rules that need answers the recorded conversations do not hold: several settling
 // answers in a row, launches that come while an answer is on its way, answers that come after
-// the last tab left, a steady clock that moves on while timers wait (a machine that slept). The monitor here answers when the test says, and the clock is virtual.
+// the last tab left, a steady clock that moves on while timers wait (a machine that slept), and a
+// monitor that is slow. The monitor here answers when the test says, and the clock is virtual.
 import type { AgentsView, MonitorSnapshot } from "@ttasks/contracts/monitor";
 import { describe, expect, test } from "vitest";
 import { testClock } from "../../test/clock.ts";
@@ -187,5 +188,38 @@ describe("[A5.agents.pace] a picture nobody asked to keep is dropped", () => {
     const next = s.tab();
     s.pace.watch(next, LOOKED);
     expect(next.views[0]?.picture).not.toBeNull();
+  });
+});
+
+describe("[A5.agents.pace] the slow flag goes with the next answer, never before", () => {
+  test("an old picture is never sent as current between slow and the answer", async () => {
+    const s = setup();
+    await s.reply(false);
+    s.clock.advance(2_000);
+    s.status.slow = true;
+    s.pace.changed();
+    expect(s.views.at(-1)?.trouble).toEqual({ kind: "slow" });
+    const sent = s.views.length;
+    // The monitor clears its flag as the answer arrives, before the pace has the answer.
+    s.status.slow = false;
+    s.pace.changed();
+    expect(s.views).toHaveLength(sent);
+    await s.reply(false, 2);
+    expect(s.views).toHaveLength(sent + 1);
+    expect(s.views.at(-1)?.trouble).toBeNull();
+  });
+
+  test("a failure that follows slow clears it with the failure", async () => {
+    const s = setup();
+    await s.reply(false);
+    s.clock.advance(2_000);
+    s.status.slow = true;
+    s.pace.changed();
+    s.status.slow = false;
+    s.pace.changed();
+    s.asks.at(-1)?.resolve({ ok: false, problem: { kind: "failed", reason: "exited" } });
+    await Promise.resolve();
+    expect(s.views.map((v) => v.trouble?.kind ?? null)).toEqual([null, null, "slow", "failed"]);
+    expect(s.views.at(-1)?.picture).not.toBeNull();
   });
 });

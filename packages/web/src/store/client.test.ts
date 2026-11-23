@@ -418,6 +418,61 @@ describe("[A5.agents.web-watch] the tab tells the service whether it watches the
     live.stop();
   });
 
+  test("a lost feed makes the view not current; the next connection watches again and its view is", async () => {
+    const live = watching(attention(true, true));
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b" });
+    const unwatch = live.watchAgents();
+    socket().receive({ type: "agents", picture: PICTURE, trouble: null });
+    expect(live.agents.getState().current).toBe(true);
+    // The service restarts: the picture stays, as it was.
+    socket().drop(1001);
+    expect(live.agents.getState()).toMatchObject({ current: false, view: { picture: PICTURE } });
+    await vi.advanceTimersByTimeAsync(1_000);
+    socket().receive({ type: "hello", build: "b" });
+    // Told again at once, and still not current until the service's view comes.
+    expect(socket().sent.filter((m) => m["type"] === "watch")).toEqual([
+      { type: "watch", agents: true, visible: true, focused: true },
+    ]);
+    expect(live.agents.getState().current).toBe(false);
+    socket().receive({ type: "agents", picture: null, trouble: null });
+    expect(live.agents.getState()).toMatchObject({ current: true, view: { picture: null } });
+    // A view that says the monitor is in trouble is not current either.
+    socket().receive({ type: "agents", picture: PICTURE, trouble: { kind: "slow" } });
+    expect(live.agents.getState().current).toBe(false);
+    unwatch();
+    live.stop();
+  });
+
+  test("a service of another build: the view is not current, and the page neither watches nor takes one", async () => {
+    const tab = attention(true, true);
+    const live = new Live({
+      api: { ticket: () => Promise.resolve("t".repeat(32)) } as unknown as Api,
+      route: { space: SPACE },
+      build: "b1",
+      onSpace: () => undefined,
+      onSignedOut: () => undefined,
+      frames,
+      attention: tab.port,
+    });
+    live.start();
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b1" });
+    const unwatch = live.watchAgents();
+    socket().receive({ type: "agents", picture: PICTURE, trouble: null });
+    expect(live.agents.getState().current).toBe(true);
+    socket().drop(1001);
+    await vi.advanceTimersByTimeAsync(1_000);
+    socket().receive({ type: "hello", build: "b2" });
+    expect(live.getState().stale).toBe(true);
+    expect(live.agents.getState()).toMatchObject({ current: false, view: { picture: PICTURE } });
+    expect(socket().sent.filter((m) => m["type"] === "watch")).toEqual([]);
+    socket().receive({ type: "agents", picture: PICTURE, trouble: null });
+    expect(live.agents.getState().current).toBe(false);
+    unwatch();
+    live.stop();
+  });
+
   test("a view of another shape is no view", async () => {
     const live = watching(attention(true, true));
     await vi.advanceTimersByTimeAsync(0);

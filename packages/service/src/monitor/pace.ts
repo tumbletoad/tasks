@@ -79,6 +79,7 @@ export class MonitorPace {
   #settlingRun = 0;
   #asking = false;
   #again = false;
+  /** An answer is overdue: raised by the monitor, cleared only with the next answer. */
   #slow = false;
   #ask: ReturnType<PaceTimers> | undefined;
   /** Nobody watches: until then the newest is kept, and an answer after it is not. */
@@ -137,11 +138,13 @@ export class MonitorPace {
     this.#request();
   }
 
-  /** The monitor's status changed: an overdue answer marks the picture as not updating. */
+  /**
+   * The monitor's status changed: an overdue answer marks the picture as not updating. Only the
+   * next answer clears it, so the old picture is never shown as current in between.
+   */
   changed(): void {
-    const slow = this.#options.monitor.status().slow;
-    if (slow === this.#slow) return;
-    this.#slow = slow;
+    if (this.#slow || !this.#options.monitor.status().slow) return;
+    this.#slow = true;
     this.#show();
   }
 

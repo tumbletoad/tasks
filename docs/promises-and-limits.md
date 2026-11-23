@@ -127,7 +127,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 - With an Agents page open, TTasks runs the Agent Monitor (TTAM). It asks TTAM at most every second
   while you look at that page, every 30 seconds while the page is only visible, and not at all
-  otherwise, and ends it ten minutes after the last question and when TTasks stops.
+  otherwise, and ends it ten minutes after the last question and when TTasks stops. When TTAM says
+  it is still looking, TTasks asks again after a second, at most three times in a row.
+- A picture of the agents that is no longer current, because TTAM stopped answering or the page
+  lost its connection to TTasks, is shown muted with its age, never as what runs now.
 - TTAM reads the agent apps' own session files on this computer, for every space, and opens each
   app's sign-in file to tell accounts apart, keeping no secret from it. While you look at the page,
   it may start each agent app's own program for a few seconds, once a minute per account, to ask
