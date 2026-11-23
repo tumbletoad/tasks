@@ -18,12 +18,14 @@ describe("[A5.3.3.web.route] the tab's space comes from its route", () => {
     // The skeleton's task links, and a task without a space (the default space's).
     expect(pagePath(`/s/${SPACE}/t/M-14`)).toBe(`/s/${SPACE}/task/M-14`);
     expect(pagePath("/task/M-14")).toBe("/?task=M-14");
+    // A space the page cannot have still reaches it, so it can say so instead of landing elsewhere.
+    expect(pagePath("/s/Mira/task/M-14")).toBe("/s/Mira/task/M-14");
+    expect(readFragment(`#to=${encodeURIComponent("/s/Mira")}`)).toEqual({ to: "/s/Mira" });
   });
 
   test.each([
     "/s/",
-    "/s/Mira",
-    `/s/${SPACE.toUpperCase()}`,
+    "/s/a b",
     `/s/${SPACE}/area/ar_1/project/pj_2/more`,
     `/s/${SPACE}/task/<script>`,
     `/s/${SPACE}/task/a b`,

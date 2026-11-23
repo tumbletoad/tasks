@@ -9,6 +9,7 @@
 //   /s/<space ID>/task/<ref>       a task of the space, expanded
 //
 // The skeleton's task links (`/s/<space>/t/<ref>`) still land on the task.
+// A space segment that is no space ID is a space the page does not have, and it says so.
 
 export const SPACE_ID = /^sp_[0-9a-z]{26}$/;
 /** A plain path segment: a view, an ID or a task reference. */
@@ -28,7 +29,7 @@ export function pagePath(path: string): string | undefined {
     return `/?task=${parts[1] ?? ""}`;
   }
   const [s, space, ...rest] = parts;
-  if (s !== "s" || space === undefined || !SPACE_ID.test(space)) return undefined;
+  if (s !== "s" || space === undefined || !SEGMENT.test(space)) return undefined;
   if (rest.length > 4 || !rest.every((segment) => SEGMENT.test(segment))) return undefined;
   if (rest.length === 2 && rest[0] === "t") return `/s/${space}/task/${rest[1] ?? ""}`;
   return `/s/${[space, ...rest].join("/")}`;

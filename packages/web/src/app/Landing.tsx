@@ -4,7 +4,7 @@
 // machine with no space open asks for a name and makes one, then shows the agent apps it found,
 // which can be skipped: a space is all a person needs to start.
 import { Link, Navigate, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { SignedOut, type MadeSpace } from "../api.ts";
 import { useT } from "../i18n/intl.tsx";
 import css from "./Landing.module.css";
@@ -26,7 +26,14 @@ import { classes } from "./css.ts";
 
 const styles = classes(css, ["line", "page", "space", "spaces", "start"]);
 
-export function Landing({ task }: { readonly task?: string }) {
+export function Landing({
+  task,
+  unknown = false,
+}: {
+  readonly task?: string;
+  /** The route named a space this machine does not have: say so, and choose nothing for them. */
+  readonly unknown?: boolean;
+}) {
   const t = useT();
   const auth = useAuth();
   const api = useMachineApi();
@@ -54,7 +61,7 @@ export function Landing({ task }: { readonly task?: string }) {
 
   if (list === undefined) return <p className={styles.line}>{t("app.starting")}</p>;
   if (list === "failed") return <p className={styles.line}>{t("space.listFailed")}</p>;
-  const space = landingSpace(list);
+  const space = unknown ? undefined : landingSpace(list);
   if (space !== undefined) {
     return task === undefined ? (
       <Navigate to="/s/$space/$view" params={{ space, view: LANDING }} replace />
@@ -64,9 +71,15 @@ export function Landing({ task }: { readonly task?: string }) {
   }
   const served = list.spaces.filter(isServed);
   const closed = notOpen(list);
-  if (served.length === 0) return <FirstStart closed={closed} />;
+  const note = unknown ? (
+    <p className={styles.line} role="alert" data-part="unknown-space">
+      {t("app.unknownSpace")}
+    </p>
+  ) : null;
+  if (served.length === 0) return <FirstStart closed={closed} note={note} />;
   return (
     <main className={styles.page}>
+      {note}
       <p className={styles.line}>{t("app.pickSpace")}</p>
       <ul className={styles.spaces}>
         {served.map((item) => (
@@ -98,13 +111,20 @@ export function Landing({ task }: { readonly task?: string }) {
 }
 
 /** No space open yet: a name makes one, then the agent apps, then the space itself. */
-function FirstStart({ closed }: { readonly closed: readonly NotOpen[] }) {
+function FirstStart({
+  closed,
+  note,
+}: {
+  readonly closed: readonly NotOpen[];
+  readonly note: ReactNode;
+}) {
   const navigate = useNavigate();
   const [step, setStep] = useState<{ readonly mode: SpaceFormMode } | { readonly made: MadeSpace }>(
     { mode: "new" },
   );
   return (
     <main className={styles.start}>
+      {note}
       <NotOpenNotes spaces={closed} className={styles.line} />
       {"mode" in step ? (
         <SpaceForm
