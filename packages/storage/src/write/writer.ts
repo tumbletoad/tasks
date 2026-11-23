@@ -1209,13 +1209,17 @@ export class SpaceWriter {
     const { at, wall } = this.#clock();
     const judged = this.#judge(conn, request, space, asOf, at, wall);
     // What the caller found before the writer goes with an accepted result and into its receipt,
-    // so a replay says what this answer says (WriteRequest.warnings).
-    const result =
-      request.warnings === undefined ||
-      request.warnings.length === 0 ||
-      (judged.status !== "applied" && judged.status !== "unchanged")
-        ? judged
-        : { ...judged, warnings: [...judged.warnings, ...request.warnings] };
+    // so a replay says what this answer says (WriteRequest.warnings, WriteRequest.answer).
+    const taken = judged.status === "applied" || judged.status === "unchanged";
+    const result: WriteResult = !taken
+      ? judged
+      : {
+          ...judged,
+          ...(request.warnings === undefined || request.warnings.length === 0
+            ? {}
+            : { warnings: [...judged.warnings, ...request.warnings] }),
+          ...(request.answer === undefined ? {} : { answer: request.answer }),
+        };
     // In the request's own transaction: the receipt exists exactly when its commit does.
     writeReceipt(conn, { request, fingerprint, result, at });
     return result;

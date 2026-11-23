@@ -330,6 +330,8 @@ export interface WriteResult {
   /** Why, for `rejected` and `conflict`. */
   error?: WriteProblem;
   warnings: string[];
+  /** The request's `answer`, for `applied` and `unchanged`: from the receipt on a replay. */
+  answer?: Record<string, unknown>;
   /** A retry with the same intent got the stored result of the first decision (A1 3.8). */
   replayed?: true;
 }
@@ -1091,6 +1093,17 @@ export interface WriteRequest {
    * operation) of at most 500 characters, without controls; never task text.
    */
   warnings?: string[];
+  /**
+   * The part of the caller's answer that it decided before the writer, such as the folders a move
+   * carries along or the group a create found: an applied or unchanged result carries it and its
+   * receipt keeps it, so a replay answers what the first call answered, also for a request that
+   * changed nothing. JSON; not part of the intent's fingerprint; never task text.
+   */
+  answer?: Record<string, unknown>;
+  /**
+   * The operations. A registry entry's request may hold none: the caller found that it changes
+   * nothing, and the request is decided `unchanged` so that its answer is kept with its receipt.
+   */
   ops: Operation[];
 }
 
@@ -2297,7 +2310,7 @@ export function checkRequest(value: unknown): CheckedRequest {
   if (!isId(spaceId, "sp")) return fail("VALIDATION_FAILED", "Expected a space ID", "space_id");
   const actor = checkCredential(f.raw("actor"));
   const ops: unknown = f.raw("ops");
-  if (!Array.isArray(ops) || ops.length === 0) {
+  if (!Array.isArray(ops) || (ops.length === 0 && !f.has("intent"))) {
     return fail("VALIDATION_FAILED", "A request has at least one operation", "ops");
   }
   const list = ops as unknown[];
@@ -2322,6 +2335,18 @@ export function checkRequest(value: unknown): CheckedRequest {
   }
   if (f.has("active")) request.active = f.boolean("active");
   if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
+  if (f.has("answer")) {
+    const answer = f.raw("answer");
+    if (
+      !isJsonData(answer) ||
+      typeof answer !== "object" ||
+      answer === null ||
+      Array.isArray(answer)
+    ) {
+      f.fail("VALIDATION_FAILED", "Expected an object of plain JSON data", "answer");
+    }
+    request.answer = answer as Record<string, unknown>;
+  }
   if (request.ops.some(isExecutionOp)) checkExecutionRequest(f, request);
   if (request.ops.some(isHistoryOperation)) checkHistoryRequest(f, request);
   // A1 3.16: the writer reads the space's preferences (statuses, efforts, dedupe's window) once,

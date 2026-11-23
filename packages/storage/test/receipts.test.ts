@@ -165,6 +165,52 @@ describe("[A1.5.write.receipts] a repeated request ID returns the stored result"
     }
   });
 
+  test("what the caller decided before the writer replays with the result, also for a request that changes nothing", () => {
+    const answer = { moved: 1, followed: [{ kind: "task", ref: "M-1", folder: "~/work/new/a" }] };
+    const request = fresh([{ kind: "task.create", title: "Fix the export" }], { answer });
+    const first = fx.writer.submit(request);
+    expectStatus(first, "applied");
+    expect(first.answer).toEqual(answer);
+    // A retry that decided otherwise, or nothing, is the same intent: it gets the first answer.
+    expect(fx.writer.submit({ ...request, answer: { moved: 0 } })).toEqual(replayOf(first));
+    // A request with no operation is kept when it is an entry's: the caller found nothing to do.
+    const intent = { entry: "group.manage", input: { action: "create", path: "Garden" } };
+    const found = { group: { kind: "area", id: newId("a"), name: "Garden" } };
+    const seq = lastSeq();
+    const none = fresh([], { intent, answer: found });
+    const noop = fx.writer.submit(none);
+    expectStatus(noop, "unchanged");
+    expect([noop.results, noop.answer, lastSeq()]).toEqual([[], found, seq]);
+    expect(fx.writer.submit({ ...none, answer: { group: { kind: "area" } } })).toEqual(
+      replayOf(noop),
+    );
+    // Without an intent, a request of no operation is a shape error, decided nowhere.
+    expect(fx.writer.submit(fresh([], { answer: found })).error).toMatchObject({
+      code: "VALIDATION_FAILED",
+      field: "ops",
+    });
+    // A refusal says no answer: nothing happened that the caller's answer could be about.
+    const refusal = fx.writer.submit(
+      fresh([{ kind: "task.patch", task: newId("t"), set: { title: "Gone" } }], { answer }),
+    );
+    expectStatus(refusal, "rejected");
+    expect(refusal.answer).toBeUndefined();
+    for (const bad of [[1], "moved", null]) {
+      const shaped = { ...fresh([{ kind: "task.create", title: "Bad" }]), answer: bad };
+      expect(fx.writer.submit(shaped).error).toMatchObject({
+        code: "VALIDATION_FAILED",
+        field: "answer",
+      });
+    }
+  });
+
+  test("a receipt that keeps no answer, as an earlier build wrote it, replays as it was", () => {
+    const request = fresh([{ kind: "task.create", title: "Fix the export" }]);
+    const first = fx.writer.submit(request);
+    expect(first.answer).toBeUndefined();
+    expect(fx.writer.submit({ ...request, answer: { moved: 1 } })).toEqual(replayOf(first));
+  });
+
   test("a no-op retried after the state changed replays the no-op", () => {
     const task = create();
     const noop = fresh([{ kind: "task.patch", task, set: { title: "Fix the export" } }]);
