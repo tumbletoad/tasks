@@ -73,7 +73,7 @@ const foldersOf = (kind: "task" | "project", owner: string): string =>
   "ORDER BY f.created_seq DESC, f.id) x)";
 
 /** A run that may still hold processes (contracts' `isOpenRun`). */
-const OPEN_RUN =
+export const OPEN_RUN =
   `(r.state IN (${OPEN_RUN_STATES.map((s) => `'${s}'`).join(", ")}) OR ` +
   "(r.state = 'unknown' AND r.reason = 'stop_timed_out'))";
 

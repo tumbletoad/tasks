@@ -12,11 +12,13 @@ import { receiptGet } from "./entries/receipt-get.ts";
 import { runReport } from "./entries/run-report.ts";
 import { spaceStatus } from "./entries/space-status.ts";
 import { taskAdd } from "./entries/task-add.ts";
+import { taskDelete } from "./entries/task-delete.ts";
 import { taskFinish } from "./entries/task-finish.ts";
 import { taskFinished } from "./entries/task-finished.ts";
 import { taskGet } from "./entries/task-get.ts";
 import { taskReopen } from "./entries/task-reopen.ts";
 import { taskSearch } from "./entries/task-search.ts";
+import { taskTrash } from "./entries/task-trash.ts";
 import { taskUpdate } from "./entries/task-update.ts";
 
 /**
@@ -44,6 +46,9 @@ export const registry = [
   historyRedo,
   // After the undo's and redo's examples: its user's change would be the one they take back.
   folderManage,
+  // Last: their examples leave a task of the world in the Trash, which the Trash's example reads.
+  taskDelete,
+  taskTrash,
 ] as const satisfies readonly AnyEntry[];
 
 type Registry = (typeof registry)[number];

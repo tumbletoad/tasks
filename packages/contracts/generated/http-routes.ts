@@ -13,11 +13,13 @@ export const httpRoutes = [
   { entry: "receipt.get", method: "POST", path: "/api/v1/op/receipt.get" },
   { entry: "space.status", method: "POST", path: "/api/v1/op/space.status" },
   { entry: "task.add", method: "POST", path: "/api/v1/op/task.add" },
+  { entry: "task.delete", method: "POST", path: "/api/v1/op/task.delete" },
   { entry: "task.finish", method: "POST", path: "/api/v1/op/task.finish" },
   { entry: "task.finished", method: "POST", path: "/api/v1/op/task.finished" },
   { entry: "task.get", method: "POST", path: "/api/v1/op/task.get" },
   { entry: "task.reopen", method: "POST", path: "/api/v1/op/task.reopen" },
   { entry: "task.search", method: "POST", path: "/api/v1/op/task.search" },
+  { entry: "task.trash", method: "POST", path: "/api/v1/op/task.trash" },
   { entry: "task.update", method: "POST", path: "/api/v1/op/task.update" },
 ] as const;
 

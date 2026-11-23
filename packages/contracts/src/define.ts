@@ -76,7 +76,10 @@ export interface McpFace {
 export interface CliFace {
   /** The verb: `ttasks <verb>`. Lower case, unique. */
   readonly verb: string;
-  /** Scalar fields taken as positional arguments, in order. */
+  /**
+   * Scalar fields taken as positional arguments, in order. The last may be an array of scalars,
+   * which takes every argument left (`ttasks delete M-14 M-15`).
+   */
   readonly positional?: readonly string[];
   /** An object field whose keys are given as `key=value` arguments (`ttasks set M-14 due=fri`). */
   readonly keyValue?: string;

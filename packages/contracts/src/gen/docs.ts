@@ -274,7 +274,10 @@ export function cliMd(entries: readonly AnyEntry[], names: DocNames): string {
     "",
   ];
   for (const v of verbs) {
-    const args = v.positionals.map((p) => (p.required ? `<${p.name}>` : `[<${p.name}>]`));
+    const args = v.positionals.map((p) => {
+      const name = "repeat" in p && p.repeat ? `<${p.name}>...` : `<${p.name}>`;
+      return p.required ? name : `[${name}]`;
+    });
     if (v.keyValue !== undefined) args.push("<key>=<value>...");
     lines.push(`## ${code(`${names.cli} ${v.verb}`)}`, "", v.summary, "");
     lines.push(`Usage: ${code([names.cli, v.verb, ...args, "[flags]"].join(" "))}`, "");

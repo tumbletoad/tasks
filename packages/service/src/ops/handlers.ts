@@ -17,6 +17,7 @@ import {
   AppError,
   FINISHED_CURSOR,
   fitsShape,
+  TRASH_CURSOR,
   GROUP_CURSOR,
   GROUP_PAGE,
   isKeyList,
@@ -137,6 +138,7 @@ import {
   readHereTasks,
   readProjectFolders,
   readMove,
+  readRemoval,
   readReceipt,
   readScriptChange,
   readUndoTarget,
@@ -151,6 +153,7 @@ import {
   readKeyHolders,
   readTaskKeys,
   readTaskRef,
+  readTaskRows,
   readTaskTitles,
   logOf,
   noteOf,
@@ -179,6 +182,7 @@ import {
   type DigestFolder,
 } from "./task-view.ts";
 import { readFinished } from "./task-rows.ts";
+import { readChangeTasks, readTrash } from "./trash.ts";
 import { listSkills, readSkills, servedText, type Catalog, type Skill } from "../skills/index.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
@@ -840,10 +844,68 @@ async function submit(
         hints = { ...hints, VALIDATION_FAILED: allowedHint(keyed, keys[keyed]) };
       }
     }
-    throw resultFailure(result, hints, options.wrapUp, principal.origin, own, options.pathOf);
+    const failure = resultFailure(
+      result,
+      hints,
+      options.wrapUp,
+      principal.origin,
+      own,
+      options.pathOf,
+    );
+    throw (await inTrash(call, ops, result, failure)) ?? failure;
   }
   return result;
 }
+
+/**
+ * A write refused because its task is in the Trash: says who moved it there and when, and what
+ * to do. An agent is told to tell the person and never to add it again or restore it itself: a
+ * task recreated after the person removed it is the mistake the Trash undoes.
+ */
+async function inTrash(
+  call: Call,
+  ops: readonly Operation[],
+  result: WriteResult,
+  failure: AppError,
+): Promise<AppError | undefined> {
+  const problem = result.error;
+  if (problem?.code !== "DELETED" || problem.field !== "task" || problem.op === undefined) {
+    return undefined;
+  }
+  const op = ops[problem.op];
+  const task = op !== undefined && "task" in op ? op.task : undefined;
+  if (typeof task !== "string") return undefined;
+  const found = await readRemoval(readerOf(call.space), task).catch(() => undefined);
+  if (found === undefined) return undefined;
+  const { ref, removal } = found;
+  const who = removal.by === "user" ? "the user" : removal.by;
+  const at = new Date(removal.at).toISOString();
+  const hint =
+    call.principal.actorKind !== "human"
+      ? "Tell the user. Do not add it again or restore it yourself."
+      : call.principal.origin === "cli"
+        ? `Restore it first: ${CLI_NAME} restore ${ref}.`
+        : "Restore it first.";
+  return new AppError({
+    ...failure.toBody(),
+    message: `${ref} is in the Trash: ${who} moved it there at ${at}.`,
+    hint,
+    data: { ...failure.data, reason: "in_trash", task: ref },
+  });
+}
+
+/** A change the space does not have: one from before a backup was restored over the space. */
+function changeGone(): AppError {
+  return new AppError({
+    code: "not_found",
+    message: "The space has no such change: it was restored from a backup since.",
+    hint: "Nothing was restored. The Trash shows what is there now.",
+    data: { field: "change", reason: "change_gone" },
+  });
+}
+
+/** A day, in milliseconds. */
+const DAY_MS = 86_400_000;
 
 const replayed = (result: WriteResult) => (result.replayed === true ? { replayed: true } : {});
 
@@ -2159,10 +2221,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const named = Array.isArray(input["notes"])
       ? (input["notes"] as string[]).map((ref) => Number(ref.slice(1)))
       : undefined;
+    // A task in the Trash reads as it is, marked so: an agent that gets not_found would add it again.
     const read = await readTask(reader, task, {
       machine,
       ...ranges,
       ...(named === undefined ? {} : { named }),
+      trash: true,
     });
     const notes = named === undefined ? {} : { notes: read.named.map(noteOf) };
     // The connection is this task's session: its later calls need no task.
@@ -2618,6 +2682,130 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       status: status ?? "open",
       as_of: result.as_of,
       ...replayed(result),
+    };
+  },
+
+  "task.delete": async (call) => {
+    const { input } = call;
+    const restore = input["restore"] === true;
+    const change = typeof input["change"] === "string" ? input["change"] : undefined;
+    const named = Array.isArray(input["tasks"]) ? (input["tasks"] as string[]) : [];
+    if (change !== undefined && !restore) {
+      throw invalid(
+        "change",
+        "A change is named to restore it",
+        "Pass restore, or leave out change.",
+      );
+    }
+    if (change !== undefined && named.length > 0) {
+      throw invalid("tasks", "Pass tasks or change, not both");
+    }
+    if (change === undefined && named.length === 0) {
+      throw invalid("tasks", "Name the tasks", restore ? "Pass tasks, or change." : "Pass tasks.");
+    }
+    let ops: Operation[];
+    if (change === undefined) {
+      ops = named.map((task) => ({ kind: restore ? "task.restore" : "task.delete", task }));
+    } else {
+      // Every task the change moved, whether still there or not: the writer restores those whose
+      // tombstone it still holds and names the rest, so the answer says how many were back.
+      let found;
+      try {
+        found = await readChangeTasks(readerOf(call.space), change);
+      } catch (error) {
+        throw storageFailure(error);
+      }
+      if (found === undefined) throw changeGone();
+      ops = found.tasks.map((task) => ({ kind: "task.restore", task, change: change as Id<"op"> }));
+      if (ops.length === 0) {
+        return {
+          result: "no_change",
+          moved: [],
+          as_of: (await readSpace(readerOf(call.space))).asOf,
+        };
+      }
+    }
+    const result = await submit(call, ops);
+    const moved = result.results.filter((r) => r.status === "updated");
+    const already = result.results.filter((r) => r.status === "unchanged");
+    const refs = (list: readonly OpResult[]) => [...new Set(list.map(refOf))];
+    // Where each restored task is now, as a list shows it: read after the write, it never turns
+    // an applied answer into an error (afterWrite).
+    const rows =
+      !restore || moved.length === 0
+        ? []
+        : ((await afterWrite(call, (reader) =>
+            readTaskRows(
+              reader,
+              moved.map((r) => r.id),
+            ),
+          )) ?? []);
+    const restored = rows.map((row) => {
+      const op = moved.find((r) => r.id === row["id"]);
+      return {
+        ...row,
+        ...(op?.regrouped === undefined ? {} : { regrouped: op.regrouped }),
+        ...(op?.held_links === undefined ? {} : { held: op.held_links }),
+      };
+    });
+    return {
+      result: moved.length === 0 ? "no_change" : restore ? "restored" : "moved",
+      moved: refs(moved),
+      ...(already.length === 0 ? {} : { already: refs(already) }),
+      ...(restored.length === 0 ? {} : { restored }),
+      ...(result.commit === undefined ? {} : { commit: result.commit }),
+      as_of: result.as_of,
+      ...replayed(result),
+    };
+  },
+
+  "task.trash": async (call) => {
+    const { input, host } = call;
+    let after: { seq: number; ref: number } | undefined;
+    const cursor = input["cursor"];
+    if (cursor !== undefined) {
+      if (typeof cursor !== "string" || !TRASH_CURSOR.test(cursor)) {
+        throw invalid("cursor", "Not a cursor this read gave", "Read from the start again.");
+      }
+      const dot = cursor.indexOf(".");
+      after = { seq: Number(cursor.slice(0, dot)), ref: Number(cursor.slice(dot + 1)) };
+    }
+    const q = typeof input["q"] === "string" ? input["q"].trim() : "";
+    // A reference finds its task, by number, whatever its prefix; anything else is title words.
+    const ref = /^(?:[A-Za-z]{1,6}-)?([1-9][0-9]{0,9})$/u.exec(q);
+    const words = ref === null && q !== "" ? q.toLowerCase().split(/\s+/u) : [];
+    let read;
+    try {
+      read = await readTrash(
+        readerOf(call.space),
+        {
+          words,
+          ref: ref === null ? undefined : Number(ref[1]),
+          // A terminal agent links to its task for a day after its launch last changed (held.ts).
+          working: input["working"] === true ? (call.host.now ?? Date.now)() - DAY_MS : undefined,
+          limit: Number(input["limit"]),
+          after,
+        },
+        {
+          machine: host.machine.id,
+          home: host.home,
+          platform: host.platform ?? process.platform,
+        },
+      );
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    const last = read.entries[read.entries.length - 1];
+    return {
+      rows: read.entries.map((entry) => ({
+        ...entry.row,
+        ...(entry.area === undefined ? {} : { area: entry.area }),
+        ...(entry.project === undefined ? {} : { project: entry.project }),
+        removed: entry.removed,
+      })),
+      ...(read.more && last !== undefined
+        ? { cursor: `${String(last.seq)}.${String(last.ref)}` }
+        : {}),
     };
   },
 

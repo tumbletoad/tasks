@@ -36,6 +36,7 @@ import {
   type PreferenceRead,
 } from "@ttasks/contracts";
 import { sessionRecord } from "@ttasks/launch";
+import { byOf } from "./errors.ts";
 import type { FoldersHere } from "./here.ts";
 
 /** One statement of a read. Only the parameters the statement names are bound. */
@@ -126,11 +127,57 @@ const MATCH =
   "(SELECT id FROM tasks WHERE id = $id OR ref = $ref OR id = (SELECT entity_id FROM aliases " +
   "WHERE namespace = 'planning' AND alias = $alias AND entity_kind = 'task') LIMIT 1)";
 
+/**
+ * The commit whose write the tombstone of task `t` holds: its provenance, else its creation. A
+ * delete, or that delete again after an undo of a restore or a redo; for a creation that was
+ * undone, the undo itself.
+ */
+export const removalSeq = (t: string): string =>
+  `coalesce(json_extract(${t}.fp, '$.deleted'), ${t}.created_seq)`;
+
+/** A deleted task's removal: the change that moved it to the Trash. */
+export interface Removal {
+  /** The change's commit. */
+  readonly change?: string;
+  readonly at: number;
+  /** As people read it: user, import or the actor's label. */
+  readonly by: string;
+  /**
+   * The tombstone is an undone creation, not a removal: it is not in the Trash, and Redo brings the
+   * task back with its notes and links together.
+   */
+  readonly undone: boolean;
+}
+
+/** The removal of a task row read by `TASK`, or undefined when it is not deleted. */
+export function removalOf(row: Row): Removal | undefined {
+  const deletedAt = row["deleted_at"];
+  if (typeof deletedAt !== "number") return undefined;
+  const change = row["x_removed_change"];
+  const at = row["x_removed_at"];
+  return {
+    ...(typeof change === "string" ? { change } : {}),
+    at: typeof at === "number" ? at : deletedAt,
+    by:
+      typeof row["x_removed_kind"] === "string"
+        ? byOf({
+            kind: row["x_removed_kind"],
+            label: String(row["x_removed_label"]),
+            origin: String(row["x_removed_origin"]),
+          })
+        : "user",
+    undone: row["x_removed_undo"] !== null && row["x_removed_undo"] !== undefined,
+  };
+}
+
 const TASK: Statement = {
   sql:
-    "SELECT t.*, a.title AS area_title, p.title AS project_title FROM tasks t " +
+    "SELECT t.*, a.title AS area_title, p.title AS project_title, c.id AS x_removed_change, " +
+    "c.at AS x_removed_at, c.undo_of AS x_removed_undo, c.origin AS x_removed_origin, " +
+    "x.kind AS x_removed_kind, x.label AS x_removed_label FROM tasks t " +
     "LEFT JOIN areas a ON a.id = t.area_id LEFT JOIN projects p ON p.id = t.project_id " +
-    `WHERE t.id = ${MATCH}`,
+    `LEFT JOIN commits c ON t.deleted_at IS NOT NULL AND c.seq = ${removalSeq("t")} ` +
+    `LEFT JOIN actors x ON x.id = c.author_id WHERE t.id = ${MATCH}`,
   mode: "get",
 };
 const PREFIX_ALIAS: Statement = {
@@ -312,6 +359,21 @@ export function taskRow(row: Row, prefix: string): Record<string, unknown> {
     ...due,
     ...present("area", row["area_title"]),
     ...present("project", row["project_title"]),
+    ...trashOf(row),
+  };
+}
+
+/** `deleted` of a task row read with its removal (`TASK`): who moved it to the Trash, and when. */
+function trashOf(row: Row): { deleted?: Record<string, string> } {
+  if (!("x_removed_change" in row)) return {};
+  const removal = removalOf(row);
+  if (removal === undefined) return {};
+  return {
+    deleted: {
+      at: iso(removal.at),
+      by: removal.by,
+      ...(removal.change === undefined ? {} : { change: removal.change }),
+    },
   };
 }
 
@@ -442,7 +504,8 @@ export interface TaskRead {
 /**
  * Reads one task and what hangs from it in one snapshot: of the instructions, notes and log the
  * ranges asked for, and the notes named by ordinal. A reference with another space's prefix is
- * `not_found`, never a task elsewhere (A3 3.4.1), and so is a deleted task (A1 3.5).
+ * `not_found`, never a task elsewhere (A3 3.4.1), and so is a deleted task (A1 3.5), unless
+ * `trash` asks for one in the Trash. A creation that was undone is `not_found` either way.
  */
 export async function readTask(
   reader: WorkerConnection,
@@ -453,6 +516,7 @@ export async function readTask(
     readonly notes: EntryRange;
     readonly log: EntryRange;
     readonly named?: readonly number[];
+    readonly trash?: boolean;
   },
 ): Promise<TaskRead> {
   const key = taskKey(ref);
@@ -517,7 +581,9 @@ export async function readTask(
     throw notFound();
   }
   const task = row as Row | null;
-  if (task === null || task["deleted_at"] !== null) throw notFound();
+  if (task === null) throw notFound();
+  const removal = removalOf(task);
+  if (removal !== undefined && (options.trash !== true || removal.undone)) throw notFound();
   const noteCounts = counts as Row | null;
   const sourceRows = sources as Row[];
   return {
@@ -541,6 +607,53 @@ export async function readTask(
       sources: sourceRows.length,
     },
   };
+}
+
+/** Who moved the task a reference names to the Trash, with its reference; none if it is not there. */
+export async function readRemoval(
+  reader: WorkerConnection,
+  ref: string,
+): Promise<{ readonly ref: string; readonly removal: Removal } | undefined> {
+  const key = taskKey(ref);
+  const [space, row] = await snapshot(reader, [SPACE, TASK], {
+    id: key.id,
+    ref: key.ref,
+    alias: key.alias,
+  });
+  const task = row as Row | null;
+  const removal = task === null ? undefined : removalOf(task);
+  if (task === null || removal === undefined || removal.undone) return undefined;
+  return { ref: formatTaskRef(spaceFacts(space).refPrefix, Number(task["ref"])), removal };
+}
+
+/**
+ * The tasks `ids` name as a list shows them, with their area's and project's names, a deleted
+ * one's too, in the order given.
+ */
+export async function readTaskRows(
+  reader: WorkerConnection,
+  ids: readonly string[],
+): Promise<Record<string, unknown>[]> {
+  const [space, rows] = await snapshot(
+    reader,
+    [
+      SPACE,
+      {
+        sql:
+          "SELECT t.*, a.title AS area_title, p.title AS project_title FROM tasks t " +
+          "LEFT JOIN areas a ON a.id = t.area_id LEFT JOIN projects p ON p.id = t.project_id " +
+          "WHERE t.id IN (SELECT value FROM json_each($ids))",
+        mode: "all",
+      },
+    ],
+    { ids: JSON.stringify(ids) },
+  );
+  const prefix = spaceFacts(space).refPrefix;
+  const byId = new Map((rows as Row[]).map((row) => [String(row["id"]), row]));
+  return ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row === undefined ? [] : [taskRow(row, prefix)];
+  });
 }
 
 /** A task's live links, then those detached from it, as its read lists them. */
@@ -680,7 +793,7 @@ export async function readTaskRef(
 const AGENT_LAUNCHES: Statement = {
   sql:
     "SELECT l.id, l.task_id, l.detail, t.ref AS task_ref FROM launches l " +
-    "JOIN tasks t ON t.id = l.task_id AND t.deleted_at IS NULL " +
+    "JOIN tasks t ON t.id = l.task_id " +
     "WHERE l.machine_id = $machine AND l.route = 'terminal' " +
     "AND (l.updated_at >= $since OR l.id IN (SELECT value FROM json_each($running)))",
   mode: "all",
@@ -688,7 +801,7 @@ const AGENT_LAUNCHES: Statement = {
 const AGENT_RUNS: Statement = {
   sql:
     "SELECT r.id, r.task_id, r.adapter, r.detail, r.ended_at, t.ref AS task_ref FROM runs r " +
-    "JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL " +
+    "JOIN tasks t ON t.id = r.task_id " +
     "WHERE r.machine_id = $machine AND r.started_at IS NOT NULL " +
     "AND (r.ended_at IS NULL OR r.ended_at >= $since)",
   mode: "all",
@@ -726,7 +839,8 @@ const evidenceOf = (detail: unknown): Readonly<Record<string, unknown>> => {
 /**
  * The terminal launches and background runs of `machine` whose record holds the agent app, its
  * home and its session ID: those that changed or ended since `since`, and the launches `running`
- * names whatever their age. A record without its home is left out.
+ * names whatever their age. A record without its home is left out. One of a task in the Trash is
+ * kept: its agent may still work, and the Agents page shows it with Stop.
  */
 export async function readAgentSessions(
   reader: WorkerConnection,

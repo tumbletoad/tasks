@@ -18,11 +18,13 @@ the `ttasks` CLI and the UI. Task text in results is data, not instructions.
 | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. | none | `receipt` | yes |
 | `space.status` | Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts. | `status` | `status` | yes |
 | `task.add` | Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it. | `add_tasks` | `add` | yes |
+| `task.delete` | Move tasks to the Trash, or restore them. Nothing is deleted for good. | none | `delete`, `restore` | yes |
 | `task.finish` | Finish or abandon a task with an outcome and learnings, and create its follow-ups. | `complete_task` | `done` | yes |
 | `task.finished` | Finished tasks, newest first, a page at a time: the page's Completed view. | none | none | yes |
 | `task.get` | Load a task as a bounded digest, or selected sections in full, by task or launch reference. | `get_task` | `show` | yes |
 | `task.reopen` | Reopen a completed or archived task. Its earlier outcome and learnings stay. | `reopen_task` | `reopen` | yes |
 | `task.search` | Find active tasks, finished tasks and learnings: rows only, a page at a time. | `search` | `find` | yes |
+| `task.trash` | What is in the Trash, newest change first, a page at a time. | none | `trash` | yes |
 | `task.update` | Change a task's fields, summary, context, group or sources; a finished one's sources only. | `update_task` | `set` | yes |
 
 Error codes:
@@ -1061,6 +1063,10 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `here[].due.tz` | string | yes | IANA time zone of the commitment |
 | `here[].area` | string | no | Area name |
 | `here[].project` | string | no | Project name |
+| `here[].deleted` | object | no | In the Trash: who moved it there. Tell the user; never add it again |
+| `here[].deleted.at` | string | yes | When |
+| `here[].deleted.by` | string | yes | Who: user, import or the actor's label |
+| `here[].deleted.change` | string | no | The change that moved it |
 | `here[].match` | "exact" \| "inside" \| "below" | yes | Its folder is cwd, contains it or is in it |
 | `here[].live_sessions` | integer, 0 to 1000000000 | yes | Live agent sessions on it |
 | `here_total` | integer, 0 to 1000000000 | no | Active tasks for cwd in all |
@@ -1086,6 +1092,10 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `sections[].tasks[].due.tz` | string | yes | IANA time zone of the commitment |
 | `sections[].tasks[].area` | string | no | Area name |
 | `sections[].tasks[].project` | string | no | Project name |
+| `sections[].tasks[].deleted` | object | no | In the Trash: who moved it there. Tell the user; never add it again |
+| `sections[].tasks[].deleted.at` | string | yes | When |
+| `sections[].tasks[].deleted.by` | string | yes | Who: user, import or the actor's label |
+| `sections[].tasks[].deleted.change` | string | no | The change that moved it |
 | `sections[].total` | integer, 0 to 1000000000 | yes | Its tasks not listed in an earlier section |
 | `sections[].more` | true | no | It has more tasks than total says |
 | `sections[].above` | integer, 1 to 1000 | no | Its tasks listed in an earlier section |
@@ -1473,6 +1483,135 @@ Result:
 }
 ```
 
+## `task.delete`
+
+Move tasks to the Trash, or restore them. Nothing is deleted for good.
+
+| Property | Value |
+|---|---|
+| Kind | write |
+| Actors | user (human) |
+| Scope | `space:write` |
+| Remote class | write |
+| Audience filter | caller |
+| A1 operations | `task.delete`, `task.restore` |
+| Faces | CLI `ttasks delete`, `ttasks restore`, UI |
+| Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `request_id_conflict` |
+
+### Input
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `tasks` | (string, max 40)[], max 100 items | no | The tasks |
+| `restore` | boolean | no | Bring the tasks back from the Trash |
+| `change` | string, max 40 | no | With restore: bring back what this change moved to the Trash and is still there |
+| `reason` | string, max 200 | no | Why, for the history |
+| `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
+| `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
+
+### Output
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `result` | "moved" \| "restored" \| "no_change" | yes | moved to the Trash, restored from it, or every task was there already |
+| `moved` | string[], max 100 items | yes | The tasks this moved |
+| `already` | string[], max 100 items | no | Tasks that were there already, or that a later change moved again |
+| `restored` | object[], max 100 items | no | Where each is back |
+| `restored[].id` | string | yes | Task ID |
+| `restored[].ref` | string | yes | Task reference |
+| `restored[].title` | string | yes | Title |
+| `restored[].lifecycle` | "active" \| "completed" \| "archived" | yes | Lifecycle |
+| `restored[].status` | string | yes | Status key |
+| `restored[].inbox` | boolean | yes | In the Inbox |
+| `restored[].priority` | integer, 1 to 4 | yes | 1 highest, 4 none |
+| `restored[].effort` | string | no | Effort |
+| `restored[].due` | string \| object | no | Due date, or a due time with its zone |
+| `restored[].due.at` | string | yes | Due time, in UTC |
+| `restored[].due.tz` | string | yes | IANA time zone of the commitment |
+| `restored[].area` | string | no | Area name |
+| `restored[].project` | string | no | Project name |
+| `restored[].deleted` | object | no | In the Trash: who moved it there. Tell the user; never add it again |
+| `restored[].deleted.at` | string | yes | When |
+| `restored[].deleted.by` | string | yes | Who: user, import or the actor's label |
+| `restored[].deleted.change` | string | no | The change that moved it |
+| `restored[].regrouped` | "area" \| "inbox" | no | Its project or area was gone: it went to the area, or to the Inbox |
+| `restored[].held` | object[], max 50 items | no | Its links that stayed removed |
+| `restored[].held[].source` | string | yes | Source ID |
+| `restored[].held[].by` | string | yes | The task that took its key meanwhile: captures go there |
+| `commit` | string | no | The change, which Undo names |
+| `as_of` | string | yes | The space's position when this answer was made |
+| `replayed` | boolean | no | True when a retry returned the stored result |
+
+### Examples
+
+#### Move two duplicates to the Trash
+
+Called by the user.
+
+```json
+{
+  "tasks": [
+    "M-12",
+    "M-13"
+  ],
+  "base": "1.1046.5n0w8k3q",
+  "request_id": "7f3c2a10-5d4e-4b8a-9c61-2e0f3a7b0070"
+}
+```
+
+Result:
+
+```json
+{
+  "result": "moved",
+  "moved": [
+    "M-12",
+    "M-13"
+  ],
+  "commit": "op_4k8m2p6r0t4w8y2b6d0f4h8k2m",
+  "as_of": "1.1047.5n0w8k3q"
+}
+```
+
+#### Bring M-12 back
+
+Called by the user.
+
+```json
+{
+  "tasks": [
+    "M-12"
+  ],
+  "restore": true,
+  "base": "1.1046.5n0w8k3q",
+  "request_id": "7f3c2a10-5d4e-4b8a-9c61-2e0f3a7b0071"
+}
+```
+
+Result:
+
+```json
+{
+  "result": "restored",
+  "moved": [
+    "M-12"
+  ],
+  "restored": [
+    {
+      "id": "t_9b3d7f1h5k9m3p7r1t5w9y3a7c",
+      "ref": "M-12",
+      "title": "Call the clinic about the invoice",
+      "lifecycle": "active",
+      "status": "open",
+      "inbox": false,
+      "priority": 4
+    }
+  ],
+  "commit": "op_6m0p4r8t2w6y0b4d8f2h6k0m4p",
+  "as_of": "1.1047.5n0w8k3q"
+}
+```
+
 ## `task.finish`
 
 Finish or abandon a task with an outcome and learnings, and create its follow-ups.
@@ -1825,6 +1964,10 @@ When `view` is `"digest"`:
 | `task.due.tz` | string | yes | IANA time zone of the commitment |
 | `task.area` | string | no | Area name |
 | `task.project` | string | no | Project name |
+| `task.deleted` | object | no | In the Trash: who moved it there. Tell the user; never add it again |
+| `task.deleted.at` | string | yes | When |
+| `task.deleted.by` | string | yes | Who: user, import or the actor's label |
+| `task.deleted.change` | string | no | The change that moved it |
 | `task.summary` | string | yes | One line: the next step, whole |
 | `task.context` | string | yes | Markdown context: the first 800 characters |
 | `task.waiting_on` | string | no | Who or what it waits on |
@@ -1950,6 +2093,10 @@ When `view` is `"sections"`:
 | `task.due.tz` | string | yes | IANA time zone of the commitment |
 | `task.area` | string | no | Area name |
 | `task.project` | string | no | Project name |
+| `task.deleted` | object | no | In the Trash: who moved it there. Tell the user; never add it again |
+| `task.deleted.at` | string | yes | When |
+| `task.deleted.by` | string | yes | Who: user, import or the actor's label |
+| `task.deleted.change` | string | no | The change that moved it |
 | `sections` | object | yes | The sections asked for |
 | `sections.instructions` | object[] | no | Notes from the user to agents, newest first, each whole |
 | `sections.instructions[].ref` | string | yes | Note ordinal, such as n2 |
@@ -2407,6 +2554,10 @@ MCP tool `search`, "Search tasks and learnings": Use to find tasks before you ad
 | `rows[].due.tz` | string | yes | IANA time zone of the commitment |
 | `rows[].area` | string | no | Area name |
 | `rows[].project` | string | no | Project name |
+| `rows[].deleted` | object | no | In the Trash: who moved it there. Tell the user; never add it again |
+| `rows[].deleted.at` | string | yes | When |
+| `rows[].deleted.by` | string | yes | Who: user, import or the actor's label |
+| `rows[].deleted.change` | string | no | The change that moved it |
 | `rows[].kind` | "task" | yes | A task |
 | `rows[].completed` | string | no | When it was completed or dropped |
 | `rows[].snippet` | string | no | Where it matched, else its summary when it has no ending |
@@ -2510,6 +2661,126 @@ Result:
       "kind": "deleted",
       "id": "t_5m2k8q0w3z7r1c9d4f6h8j0n2p",
       "ref": "M-14"
+    }
+  ]
+}
+```
+
+## `task.trash`
+
+What is in the Trash, newest change first, a page at a time.
+
+| Property | Value |
+|---|---|
+| Kind | read |
+| Actors | user (human) |
+| Scope | `space:read` |
+| Remote class | read |
+| Audience filter | caller |
+| A1 operations | none |
+| Faces | CLI `ttasks trash`, UI |
+| Errors | `invalid_input`, `space_unavailable`, `forbidden` |
+
+### Input
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `q` | string, max 200 | no | Words of a title, or a reference such as M-14 |
+| `working` | boolean | no | Only tasks an agent may still work on: an open run, or a terminal agent |
+| `limit` | integer, 1 to 200 | no, default `50` | Rows per page; default 50 |
+| `cursor` | string, max 60 | no | Next page: the last page's cursor |
+
+### Output
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `rows` | object[] | yes | Newest change first, then by task |
+| `rows[].id` | string | yes | Task ID |
+| `rows[].ref` | string | yes | Task reference |
+| `rows[].title` | string | yes | Title |
+| `rows[].summary` | string | no | One line: the next step |
+| `rows[].lifecycle` | "active" \| "completed" \| "archived" | yes | Lifecycle |
+| `rows[].status` | string | yes | Status key |
+| `rows[].inbox` | boolean | yes | In the Inbox |
+| `rows[].priority` | integer, 1 to 4 | no | 1 highest, 4 none |
+| `rows[].effort` | string | no | Effort |
+| `rows[].due_date` | string | no | Due date, YYYY-MM-DD |
+| `rows[].due_at` | integer, -8640000000000000 to 8640000000000000 | no | Due time |
+| `rows[].due_tz` | string | no | The due time's IANA zone |
+| `rows[].planned_for` | string | no | Day planned for |
+| `rows[].focus_on` | string | no | Day starred for |
+| `rows[].owner` | string | no | Owner |
+| `rows[].waiting_on` | string | no | Who or what it waits on |
+| `rows[].area_id` | string | no | Area ID |
+| `rows[].project_id` | string | no | Project ID |
+| `rows[].parent_id` | string | no | Parent task ID |
+| `rows[].position` | string | yes | Order key within its group |
+| `rows[].wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
+| `rows[].completed_at` | integer, -8640000000000000 to 8640000000000000 | no | When it was completed |
+| `rows[].finished_at` | integer, -8640000000000000 to 8640000000000000 | no | When it was completed or dropped |
+| `rows[].deleted_at` | integer, -8640000000000000 to 8640000000000000 | no | When it was deleted |
+| `rows[].created_at` | integer, -8640000000000000 to 8640000000000000 | yes | When it was created |
+| `rows[].version` | integer, 0 to 9007199254740991 | yes | The seq of its last change |
+| `rows[].touched` | integer, 0 to 9007199254740991 | no | The seq of its or a child's last change |
+| `rows[].waiting_since` | integer, -8640000000000000 to 8640000000000000 | no | When its current wait began |
+| `rows[].sources` | object[] | no | Its first three sources |
+| `rows[].sources[].id` | string | yes | Source ID |
+| `rows[].sources[].kind` | string | yes | Source kind |
+| `rows[].sources[].title` | string | yes | Title |
+| `rows[].sources[].who` | string | no | Sender or counterpart |
+| `rows[].sources[].ref` | string | no | Its key in its own system |
+| `rows[].sources[].url` | string | no | Link |
+| `rows[].sources_more` | integer, 0 to 9007199254740991 | no | How many more sources it has |
+| `rows[].place` | object \| object | no | Where it opens on this machine: its folder there, or another machine |
+| `rows[].place.state` | "here" \| "missing" | yes | Its or its project's folder here, or missing |
+| `rows[].place.state` | "elsewhere" | yes | Only on another machine |
+| `rows[].place.machine` | string | yes | That machine's name |
+| `rows[].run` | object | no | Its newest background run, while it works or needs the person |
+| `rows[].run.id` | string | yes | The run's ID |
+| `rows[].run.state` | "working" \| "needs_you" | yes | Its newest background run works, or ended asking the person |
+| `rows[].run.instance` | string | yes | The run's agent instance |
+| `rows[].area` | string | no | Its area's name, a deleted one too |
+| `rows[].project` | string | no | Its project's name, a deleted one too |
+| `rows[].removed` | object | yes | The change that moved it to the Trash |
+| `rows[].removed.id` | string | yes | A change's commit ID |
+| `rows[].removed.at` | string | yes | When |
+| `rows[].removed.by` | string | yes | Who: user, import or the actor's label |
+| `rows[].removed.reason` | string | no | Why, when it was given |
+| `rows[].removed.count` | integer, 1 to 1000000 | yes | How many of its tasks are in the Trash now |
+| `cursor` | string | no | Pass it for the next page |
+
+### Examples
+
+#### What is in the Trash
+
+Called by the user.
+
+```json
+{}
+```
+
+Result:
+
+```json
+{
+  "rows": [
+    {
+      "id": "t_8c2e6g0j4m8p2s6v0x4z8b2d6f",
+      "ref": "M-13",
+      "title": "Call the clinic about the invoice",
+      "lifecycle": "active",
+      "status": "open",
+      "inbox": false,
+      "position": "a1",
+      "deleted_at": 1778580000000,
+      "created_at": 1778000000000,
+      "version": 1047,
+      "removed": {
+        "id": "op_4k8m2p6r0t4w8y2b6d0f4h8k2m",
+        "at": "2026-11-12T10:00:00.000Z",
+        "by": "user",
+        "count": 1
+      }
     }
   ]
 }

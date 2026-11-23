@@ -940,12 +940,17 @@ function checkCliFace(entry: AnyEntry, face: CliFace, say: Say): void {
       say(`item "${face.item}" is not an array-of-objects input field`);
     }
   }
-  for (const name of face.positional ?? []) {
+  const positional = face.positional ?? [];
+  positional.forEach((name, i) => {
     const info = fields.get(name);
-    if (info?.scalar === undefined || (AUTO_FIELDS as readonly string[]).includes(name)) {
+    const rest = i === positional.length - 1 && info?.repeatable !== undefined;
+    if (
+      (info?.scalar === undefined && !rest) ||
+      (AUTO_FIELDS as readonly string[]).includes(name)
+    ) {
       say(`positional "${name}" is not a scalar input field`);
     }
-  }
+  });
   if (face.keyValue !== undefined && keyValueFields(entry, face.keyValue) === undefined) {
     say(`keyValue "${face.keyValue}" is not an object input field`);
   }

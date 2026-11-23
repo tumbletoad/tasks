@@ -127,7 +127,8 @@ function spaceName(session: Session, globals: Globals, result: Record<string, un
 
 /**
  * The read whose `as_of` is the base of a write that has none: for a verb about a task, that task,
- * or without one the session's bound task, as the write itself takes it; else the read action of
+ * or without one the session's bound task, as the write itself takes it; for a verb about several,
+ * the first of them; else the read action of
  * the verb's own entry (a group's change reads the groups, a setting's the settings), which shows
  * the space as the person sees it now. A create makes something new and needs no base: undefined.
  */
@@ -142,6 +143,9 @@ export function baseRead(
   ) {
     return { op: "task.get", input: typeof task === "string" ? { task } : {} };
   }
+  // A verb about several tasks by reference (`ttasks delete M-14 M-15`): the first of them.
+  const [first] = Array.isArray(input["tasks"]) ? (input["tasks"] as unknown[]) : [];
+  if (typeof first === "string") return { op: "task.get", input: { task: first } };
   const actions = verb.actions;
   const read = actions?.reads[0];
   if (actions === undefined || read === undefined || input[actions.field] === "create") {
@@ -253,6 +257,7 @@ export async function runVerb(
           ? render(verb.entry, result, spaceName(open, globals, result), {
               space: globals.space,
               archived: sent["archived"] === true,
+              restore: sent["restore"] === true,
               platform: io.platform,
             })
           : "";

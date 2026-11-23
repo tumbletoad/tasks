@@ -123,6 +123,93 @@ function taskLine(task: Result): string {
   return `${String(task["ref"])}  ${String(task["title"])}  (${parts.join(", ")})`;
 }
 
+/** `refs` as a sentence lists them: "M-20", "M-20 and M-21", "M-20, M-21 and M-22". */
+const listed = (refs: readonly string[]): string =>
+  refs.length < 2 ? refs.join("") : `${refs.slice(0, -1).join(", ")} and ${refs.at(-1) ?? ""}`;
+
+/** Who moved a task to the Trash, as a sentence's subject. */
+const mover = (by: unknown): string => (by === "user" ? "You" : str(by));
+
+/** The list a restored task is back in, and its area and project. */
+function backIn(task: Result): string {
+  const view =
+    task["lifecycle"] === "completed"
+      ? "Completed"
+      : task["lifecycle"] === "archived"
+        ? "Completed, dropped"
+        : task["inbox"] === true
+          ? "the Inbox"
+          : str(task["status"]).charAt(0).toUpperCase() + str(task["status"]).slice(1);
+  const group = [task["area"], task["project"]].filter((name) => typeof name === "string");
+  const why =
+    task["regrouped"] === "area"
+      ? " (its project was deleted)"
+      : task["regrouped"] === "inbox"
+        ? " (its area was deleted)"
+        : "";
+  return `${view}${group.length === 0 ? "" : `, in ${group.join(" / ")}`}${why}`;
+}
+
+/**
+ * What `ttasks delete` and `ttasks restore` did: the tasks moved, where each restored one is
+ * back, a link that stayed with the task that took its key, and the tasks that were there already.
+ */
+function deleteLines(result: Result, space: string, restore: boolean): string[] {
+  const moved = ((result["moved"] as unknown[] | undefined) ?? []).map(str);
+  const already = ((result["already"] as unknown[] | undefined) ?? []).map(str);
+  const lines: string[] = [];
+  if (!restore && moved.length > 0) {
+    lines.push(`Moved ${listed(moved)} to the Trash in ${space}${replay(result)}`);
+  }
+  for (const task of (result["restored"] as Result[] | undefined) ?? []) {
+    lines.push(`${str(task["ref"])} is back in ${backIn(task)}${replay(result)}`);
+    for (const held of (task["held"] as Result[] | undefined) ?? []) {
+      lines.push(
+        `  A source stays with ${str(held["by"])}, which took its key meanwhile: captures go there.`,
+      );
+    }
+  }
+  if (already.length > 0) {
+    const was = already.length === 1 ? "was" : "were";
+    lines.push(
+      restore
+        ? `${listed(already)} ${was} back already, or moved to the Trash again since`
+        : `${listed(already)} ${was} in the Trash already`,
+    );
+  }
+  if (lines.length === 0) lines.push(`Nothing moved in ${space}${replay(result)}`);
+  return lines;
+}
+
+/**
+ * A page of the Trash: one heading per change, who made it and when, with how many of its tasks
+ * are there and its ID for `ttasks restore --change`, then each task and where it was.
+ */
+function trashLines(result: Result, space: string): string[] {
+  const rows = (result["rows"] as Result[] | undefined) ?? [];
+  if (rows.length === 0) return [`Nothing in the Trash in ${space}`];
+  const lines: string[] = [];
+  let change: string | undefined;
+  for (const row of rows) {
+    const removed = (row["removed"] ?? {}) as Result;
+    if (removed["id"] !== change) {
+      change = str(removed["id"]);
+      const count = Number(removed["count"]);
+      const why = typeof removed["reason"] === "string" ? ` · ${removed["reason"]}` : "";
+      lines.push(
+        `${mover(removed["by"])} moved ${String(count)} ${count === 1 ? "task" : "tasks"} here, ${str(removed["at"])}${why} · ${change}`,
+      );
+    }
+    const group = [row["area"], row["project"]].filter((name) => typeof name === "string");
+    lines.push(
+      `  ${str(row["ref"])}  ${str(row["title"])}${group.length === 0 ? "" : `  (${group.join(" / ")})`}`,
+    );
+  }
+  const cursor = result["cursor"];
+  if (typeof cursor === "string") lines.push(`More: ttasks trash --cursor ${cursor}`);
+  return lines;
+}
+
 /** A row's due commitment: a date, or a time with its zone (A1 3.4); empty without one. */
 function dueText(due: unknown): string {
   if (typeof due === "string") return `due ${due}`;
@@ -273,6 +360,8 @@ export interface Asked {
   readonly space?: string | undefined;
   /** `--archived`. */
   readonly archived?: boolean;
+  /** `ttasks restore`, not `ttasks delete`. */
+  readonly restore?: boolean;
   readonly platform?: NodeJS.Platform;
 }
 
@@ -320,6 +409,12 @@ export function render(entry: string, result: Result, space: string, asked: Aske
     case "task.reopen":
       lines.push(`Reopened ${String(result["task"])} in ${space}${replay(result)}`);
       break;
+    case "task.delete":
+      lines.push(...deleteLines(result, space, asked.restore === true));
+      break;
+    case "task.trash":
+      lines.push(...trashLines(result, space));
+      break;
     case "history.undo":
     case "history.redo": {
       const tasks = ((result["tasks"] as unknown[] | undefined) ?? []).map(str);
@@ -354,6 +449,12 @@ export function render(entry: string, result: Result, space: string, asked: Aske
     case "task.get": {
       const task = (result["task"] ?? {}) as Result;
       lines.push(taskLine(task));
+      const trashed = task["deleted"] as Result | undefined;
+      if (trashed !== undefined) {
+        lines.push(
+          `In the Trash: ${mover(trashed["by"])} moved it there at ${str(trashed["at"])}. Restore it with ttasks restore ${str(task["ref"])}`,
+        );
+      }
       // The user's request for the launch named: each line as typed after an indent.
       const request = result["request"] as Result | undefined;
       if (typeof request?.["text"] === "string") {

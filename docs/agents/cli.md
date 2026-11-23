@@ -15,6 +15,7 @@ and `cwd`.
 | `ttasks add` | `task.add` | Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it. |
 | `ttasks area` | `group.manage` | List the areas and projects, or create, rename, move, archive or unarchive one. |
 | `ttasks brief` | `launch.open` | Open a task in an agent app on this machine, or Copy its pointer brief. |
+| `ttasks delete` | `task.delete` | Move tasks to the Trash, or restore them. Nothing is deleted for good. |
 | `ttasks done` | `task.finish` | Finish or abandon a task with an outcome and learnings, and create its follow-ups. |
 | `ttasks find` | `task.search` | Find active tasks, finished tasks and learnings: rows only, a page at a time. |
 | `ttasks log` | `entry.add` | Append to a task's log, or record a note for the user. |
@@ -23,9 +24,11 @@ and `cwd`.
 | `ttasks receipt` | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. |
 | `ttasks redo` | `history.redo` | Redo the change you undid last, as long as nobody changed its fields since. |
 | `ttasks reopen` | `task.reopen` | Reopen a completed or archived task. Its earlier outcome and learnings stay. |
+| `ttasks restore` | `task.delete` | Move tasks to the Trash, or restore them. Nothing is deleted for good. |
 | `ttasks set` | `task.update` | Change a task's fields, summary, context, group or sources; a finished one's sources only. |
 | `ttasks show` | `task.get` | Load a task as a bounded digest, or selected sections in full, by task or launch reference. |
 | `ttasks status` | `space.status` | Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts. |
+| `ttasks trash` | `task.trash` | What is in the Trash, newest change first, a page at a time. |
 | `ttasks undo` | `history.undo` | Undo your newest change in the space, field by field as long as nobody changed it. |
 
 ## `ttasks add`
@@ -87,6 +90,17 @@ Usage: `ttasks brief <task> [flags]`
 | `--pack` | `pack` | boolean | Copy the context pack: the task's text, for an app without the tools |
 | `--mark-folder` | `mark_folder` | boolean | Open although the folder's marker is gone or another's, and mark it |
 | `--another` | `another` | boolean | Start a second session although this app already runs the task here |
+
+## `ttasks delete`
+
+Move tasks to the Trash, or restore them. Nothing is deleted for good.
+
+Usage: `ttasks delete [<tasks>...] [flags]`
+
+| Argument | Field | Type | Description |
+|---|---|---|---|
+| `<tasks>` | `tasks` | string | The tasks |
+| `--reason` | `reason` | string | Why, for the history |
 
 ## `ttasks done`
 
@@ -196,6 +210,20 @@ Usage: `ttasks reopen [<task>] [flags]`
 | `--reason` | `reason` | string | Why it is open again |
 | `--mode` | `mode` | "apply" | Always apply in this build |
 
+## `ttasks restore`
+
+Move tasks to the Trash, or restore them. Nothing is deleted for good.
+
+Usage: `ttasks restore [<tasks>...] [flags]`
+
+Sets `restore: true`.
+
+| Argument | Field | Type | Description |
+|---|---|---|---|
+| `<tasks>` | `tasks` | string | The tasks |
+| `--change` | `change` | string | With restore: bring back what this change moved to the Trash and is still there |
+| `--reason` | `reason` | string | Why, for the history |
+
 ## `ttasks set`
 
 Change a task's fields, summary, context, group or sources; a finished one's sources only.
@@ -251,6 +279,19 @@ Usage: `ttasks status [flags]`
 | `--include` | `include` | "today" \| "week" \| "review" \| "waiting" \| "inbox" \| "changes" | Extra sections, up to 8 rows each (repeatable) |
 | `--since` | `since` | string | For changes: 24h, 7d or an ISO time; default 24h |
 | `--skill` | `skills` | string | Return these skills' text instead (repeatable) |
+
+## `ttasks trash`
+
+What is in the Trash, newest change first, a page at a time.
+
+Usage: `ttasks trash [<q>] [flags]`
+
+| Argument | Field | Type | Description |
+|---|---|---|---|
+| `<q>` | `q` | string | Words of a title, or a reference such as M-14 |
+| `--working` | `working` | boolean | Only tasks an agent may still work on: an open run, or a terminal agent |
+| `--limit` | `limit` | integer | Rows per page; default 50 |
+| `--cursor` | `cursor` | string | Next page: the last page's cursor |
 
 ## `ttasks undo`
 
