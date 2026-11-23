@@ -4,14 +4,8 @@ import { heldAgentSql } from "@ttasks/launch";
 import { inTrashSql, removalSeqSql, type Row, type WorkerConnection } from "@ttasks/storage";
 import { byOf } from "./errors.ts";
 import { hasFolderTable } from "./read.ts";
-import {
-  OPEN_RUN,
-  RUN_WAITS,
-  taskColumns,
-  taskRows,
-  type CompactRow,
-  type FeedHere,
-} from "./task-rows.ts";
+import { OPEN_RUN, RUN_WAITS } from "./questions.ts";
+import { taskColumns, taskRows, type CompactRow, type FeedHere } from "./task-rows.ts";
 
 /** What a page of the Trash asks for. */
 export interface TrashRequest {

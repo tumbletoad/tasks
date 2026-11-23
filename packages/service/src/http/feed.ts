@@ -28,12 +28,11 @@
 import type { PreferenceRead } from "@ttasks/contracts";
 import type { Row, WorkerConnection } from "@ttasks/storage";
 import { hasFolderTable } from "../ops/read.ts";
+import { RUN_WAITS, WAITS } from "../ops/questions.ts";
 import {
   compact,
   taskColumns,
   taskRows,
-  RUN_WAITS,
-  WAITS,
   type CompactRow,
   type FeedHere,
 } from "../ops/task-rows.ts";
