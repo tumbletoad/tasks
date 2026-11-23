@@ -312,8 +312,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   afterwards, writes its own list of spaces back, and the next start follows that list.
 - On a machine that several people sign in to, another person could serve a page at TTasks's
   address while TTasks is stopped.
-- Words you typed for a task the space does not have now, after a backup was restored over it,
-  stay in this browser, listed at the foot of the Trash, until you discard them.
+- Words you typed and did not send for a task in the Trash, or for one the space does not have now,
+  stay in this browser, listed at the foot of the Trash with drafts, notes and field edits, until
+  you discard them.
 - A field edit that could not be saved is kept in this browser. Another browser does not have it,
   clearing the browser's data for the page loses it, and a browser whose storage is blocked or full
   keeps it only until the page is reloaded or closed. When two tabs hold different unsaved values

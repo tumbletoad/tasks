@@ -120,6 +120,27 @@ export function draftTasks(space: string): string[] {
   return browserKept.names(prefix).map((name) => name.slice(prefix.length));
 }
 
+/** The tasks of `space` with a note on its way that the service has not taken. */
+export function noteTasks(space: string): string[] {
+  const prefix = `note.${space}.`;
+  return browserKept.names(prefix).map((name) => name.slice(prefix.length));
+}
+
+/**
+ * Discards the task's draft while it is still `text`, and nothing else: a newer draft typed in
+ * another tab stays, and so does a note on its way.
+ */
+export function discardDraft(space: string, task: string, text: string): void {
+  if (readDraft(space, task) !== text) return;
+  browserKept.keep(nameOf(space, task), undefined);
+  for (const watcher of draftWatchers) watcher();
+}
+
+/** Discards the task's note on its way while it is still the request `id`, and nothing else. */
+export function discardNote(space: string, task: string, id: string): void {
+  if (readNote(space, task)?.id === id) keepNote(space, task, undefined);
+}
+
 export interface Ask {
   readonly space: string;
   readonly task: string;

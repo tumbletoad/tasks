@@ -3,8 +3,10 @@
 // by who moved them and when, with "Restore these"; every row says where its task was and has its
 // own Restore. One field finds an old one by reference or title words across every page. The page
 // reads again whenever the feed restores or removes a task (queries.ts). At its foot: the unsent
-// words of tasks this space does not have now, with Copy and Discard, and what the Trash promises.
+// words of tasks in the Trash or that this space does not have now, with Copy and Discard, and
+// what the Trash promises.
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { Session } from "../context.ts";
@@ -12,9 +14,11 @@ import { useEdits, useEditState } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { formatInstant, type Clock } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
-import { usePagedQuery } from "../store/hooks.ts";
+import { useLive, usePagedQuery } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
-import { draftTasks, keepDraft, readDraft } from "../task/composer.ts";
+import { onKeptUnder } from "../kept.ts";
+import { discardDraft, discardNote } from "../task/composer.ts";
+import { unsentOf, type Unsent } from "./unsent.ts";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
 import { trashGroups, trashSource, type Removal, type TrashedRow } from "./trash.ts";
 import css from "./Trash.module.css";
@@ -28,6 +32,7 @@ const styles = classes(css, [
   "unsent",
   "word",
   "text",
+  "kind",
   "act",
   "foot",
 ]);
@@ -291,21 +296,49 @@ function Where({ row, onRestore }: { readonly row: TrashedRow; readonly onRestor
   );
 }
 
-/** One task's words the space has no task for now: its reference when it was kept, and the text. */
-interface Words {
-  readonly key: string;
-  readonly task: string;
-  readonly ref?: string;
-  readonly text: string;
-  readonly discard: () => void;
-}
+/** Tasks per read of the Trash by task. */
+const PAGE = 200;
+/** Reads of a task's digest at once, for the words of tasks neither listed nor in the Trash. */
+const AT_ONCE = 8;
 
 const isGone = (error: unknown): boolean =>
   typeof error === "object" && error !== null && (error as { code?: unknown }).code === "not_found";
 
 /**
- * The words kept in this browser for tasks the space does not have now: a backup restored over it,
- * or a creation undone. They stay, with Copy and Discard, until the person discards them.
+ * Of `tasks`, none of them in the live store: those in the Trash, with their reference, and those
+ * the space does not have now (null). Every one is asked about. A task the space has outside the
+ * Trash (a finished one) is neither: its words are its card's.
+ */
+async function whereAre(
+  client: Client,
+  tasks: readonly string[],
+): Promise<Map<string, string | null>> {
+  const found = new Map<string, string | null>();
+  for (let at = 0; at < tasks.length; at += PAGE) {
+    const page = await client.task.trash({ tasks: tasks.slice(at, at + PAGE), limit: PAGE });
+    for (const row of page.rows) found.set(row.id, row.ref);
+  }
+  const rest = tasks.filter((task) => !found.has(task));
+  for (let at = 0; at < rest.length; at += AT_ONCE) {
+    await Promise.all(
+      rest.slice(at, at + AT_ONCE).map((task) =>
+        client.task.get({ task }).then(
+          () => undefined,
+          (error: unknown) => {
+            if (isGone(error)) found.set(task, null);
+          },
+        ),
+      ),
+    );
+  }
+  return found;
+}
+
+/**
+ * The words this browser holds for a task in the Trash or one the space does not have now (a
+ * backup restored over it, or a creation undone): drafts, notes on their way and field edits not
+ * taken (unsent.ts). Each stays, with Copy and Discard, until the person discards it; Discard
+ * removes the value shown and nothing else, so a newer one typed in another tab stays.
  */
 function UnsentWords() {
   const t = useT();
@@ -313,78 +346,65 @@ function UnsentWords() {
   const { api, live } = useContext(Session);
   const edits = useEdits();
   const { unsaved } = useEditState();
+  const { tasks: known } = useLive();
   const space = live.spaceId ?? "";
-  const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
-  // A discarded draft is read again as empty at the next render, which this asks for.
-  const [, setDiscarded] = useState(0);
-  // The tasks with kept words, asked about again only when that list changes.
-  const kept = useMemo(
-    () =>
-      [...new Set([...draftTasks(space), ...[...unsaved.values()].map((line) => line.task)])]
-        .filter((task) => task !== "")
-        .sort()
-        .join(" "),
-    [space, unsaved],
-  );
+  // Another tab's draft or note, or a Discard here: read again.
+  const [, setRead] = useState(0);
   useEffect(() => {
-    if (space === "" || kept === "") return;
-    const known = live.getState().tasks;
+    const again = (): void => {
+      setRead((n) => n + 1);
+    };
+    const drafts = onKeptUnder("draft.", again);
+    const notes = onKeptUnder("note.", again);
+    return () => {
+      drafts();
+      notes();
+    };
+  }, []);
+  const words = space === "" ? [] : unsentOf(space, unsaved.values());
+  // The tasks asked about, again only when that list changes.
+  const asked = [...new Set(words.map((word) => word.task))]
+    .filter((task) => !known.has(task))
+    .sort()
+    .join(" ");
+  const [where, setWhere] = useState<ReadonlyMap<string, string | null>>(new Map());
+  useEffect(() => {
+    if (asked === "") return;
     let current = true;
-    const asked = kept
-      .split(" ")
-      .filter((task) => !known.has(task))
-      .slice(0, 20);
-    void Promise.all(
-      asked.map((task) =>
-        api.client.task.get({ task }).then(
-          () => undefined,
-          (error: unknown) => (isGone(error) ? task : undefined),
-        ),
-      ),
-    ).then((found) => {
-      if (current) setGone(new Set(found.filter((task) => task !== undefined)));
-    });
+    whereAre(api.client, asked.split(" ")).then(
+      (found) => {
+        if (current) setWhere(found);
+      },
+      (error: unknown) => {
+        live.failed(error);
+      },
+    );
     return () => {
       current = false;
     };
-  }, [api, live, space, kept]);
-  const words: Words[] = [];
-  for (const task of gone) {
-    const draft = readDraft(space, task);
-    if (draft !== "") {
-      words.push({
-        key: `${task}:draft`,
-        task,
-        text: draft,
-        discard: () => {
-          keepDraft(space, task, "");
-          setDiscarded((n) => n + 1);
-        },
-      });
+  }, [api, live, asked]);
+  const shown = words.filter((word) => where.has(word.task) && !known.has(word.task));
+  if (shown.length === 0) return null;
+  const discard = (word: Unsent): void => {
+    if (word.kind === "draft") discardDraft(space, word.task, word.text);
+    else if (word.kind === "note") discardNote(space, word.task, word.id);
+    else if (edits.unsaved(word.task, word.field)?.change.shown === word.text) {
+      edits.dismiss(word.task, word.field);
     }
-    for (const line of unsaved.values()) {
-      if (line.task !== task) continue;
-      const shown = line.change.shown;
-      if (typeof shown !== "string") continue;
-      words.push({
-        key: `${task}:${line.field}`,
-        task,
-        ref: line.ref,
-        text: shown,
-        discard: () => {
-          edits.dismiss(task, line.field);
-        },
-      });
-    }
-  }
-  if (words.length === 0) return null;
+    setRead((n) => n + 1);
+  };
   return (
     <section className={styles.unsent} aria-label={t("trash.unsent")}>
       <h2 className={list.line}>{t("trash.unsent")}</h2>
       <ul>
-        {words.map((word) => (
-          <li key={word.key} className={styles.word} data-part="unsent-words">
-            <span>{word.ref ?? t("trash.unsentNoTask")}</span>
+        {shown.map((word) => (
+          <li key={word.key} className={styles.word} data-part="unsent-words" data-kind={word.kind}>
+            <span>
+              {where.get(word.task) ??
+                (word.kind === "edit" ? word.ref : undefined) ??
+                t("trash.unsentNoTask")}
+            </span>
+            <span className={styles.kind}>{t("trash.unsentKind", { kind: word.kind })}</span>
             <span className={styles.text} dir="auto">
               {word.text}
             </span>
@@ -404,7 +424,13 @@ function UnsentWords() {
             >
               {t("row.copy")}
             </button>
-            <button type="button" className={styles.act} onClick={word.discard}>
+            <button
+              type="button"
+              className={styles.act}
+              onClick={() => {
+                discard(word);
+              }}
+            >
               {t("edit.discard")}
             </button>
           </li>

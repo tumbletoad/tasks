@@ -158,6 +158,61 @@ test.describe("[A5.trash.e2e] A task taken away and brought back in the page", (
   });
 });
 
+test.describe("[A5.trash.e2e.unsent] Every unsent word of a removed task stays, and Discard takes one", () => {
+  test("a note on its way and a newer draft, the task removed from another tab while the note waits: after a reload the Trash lists both, and Discard of one keeps the other", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const space = world.mira.id;
+    const ref = await addTask(world, { title: `Answer the landlord (${tag})`, area: "home" });
+    await openTask(page, world, ref);
+    const composer = rowOf(page, ref).locator('[data-part="composer"]');
+    // The note's request waits until the task is gone from another tab.
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reached = false;
+    await page.route("**/api/v1/op/entry.add", async (route) => {
+      reached = true;
+      await released;
+      await route.continue();
+    });
+    const note = `Ask about the deposit (${tag})`;
+    const draft = `And the key handover (${tag})`;
+    await composer.fill(note);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => reached).toBe(true);
+    await composer.fill(draft);
+    const other = await page.context().newPage();
+    await openTask(other, world, ref);
+    await rowOf(other, ref).locator('[data-part="move-to-trash"]').click();
+    await expect(rowOf(other, ref).locator('[data-part="in-trash"]')).toBeVisible({
+      timeout: SLOW_MS,
+    });
+    await other.close();
+    // The note reaches the service, which refuses it: the task is in the Trash.
+    const answered = page.waitForResponse("**/api/v1/op/entry.add");
+    release();
+    expect((await answered).status()).toBeGreaterThanOrEqual(400);
+    await page.unroute("**/api/v1/op/entry.add");
+
+    await page.goto(`${world.origin}/s/${space}/trash`);
+    await showsSpace(page, world.mira.name);
+    const unsent = page.locator('[data-part="unsent-words"]');
+    await expect(unsent.filter({ hasText: note })).toHaveAttribute("data-kind", "note", {
+      timeout: SLOW_MS,
+    });
+    await expect(unsent.filter({ hasText: draft })).toHaveAttribute("data-kind", "draft");
+    await expect(unsent.filter({ hasText: note })).toContainText(ref);
+    await unsent.filter({ hasText: note }).getByRole("button", { name: "Discard" }).click();
+    await expect(unsent.filter({ hasText: note })).toHaveCount(0);
+    await page.reload();
+    await expect(unsent.filter({ hasText: draft })).toBeVisible({ timeout: SLOW_MS });
+  });
+});
+
 test.describe("[A5.trash.e2e.screens] The Trash in both themes", () => {
   test("the Trash by change at 1,440 px and 390 px in Sumi and Washi, axe clean, nothing wider than the screen", async ({
     browser,
