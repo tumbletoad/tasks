@@ -38,7 +38,7 @@
 // with a stale space.json, which the next writer rebuilds and a reader reads past. The barrier
 // backup's own crash windows are in backup/backup.ts.
 import { SCHEMA_STEPS } from "../../migrations/index.ts";
-import type { BackupRecord, BackupSeams } from "../backup/backup.ts";
+import { BackupsFolderAway, type BackupRecord, type BackupSeams } from "../backup/backup.ts";
 import { provenBackup } from "../backup/barrier.ts";
 import type { Connection } from "../driver.ts";
 import { misuse, StorageError, type MigrationAttempt } from "../errors.ts";
@@ -62,7 +62,11 @@ import { stepPosition } from "./steps.ts";
 export interface MigrateOptions {
   appVersion?: string;
   busyTimeoutMs?: number;
-  /** Where the barrier backup goes. Default: the space's backups folder. */
+  /**
+   * The backups folder this machine set for the space, where the barrier backup goes. When it is not
+   * there (a drive away), the upgrade does not wait for it: the barrier goes to the space's own
+   * backups folder, and the outcome says so. Default: the space's own backups folder.
+   */
   backupDir?: string;
   /** Milliseconds since 1970. Default: Date.now. */
   now?: () => number;
@@ -101,6 +105,11 @@ export type MigrationOutcome =
       seqs: number[];
       /** False when space.json could not be rewritten: the next writer's open does it. */
       manifestWritten: boolean;
+      /**
+       * The backups folder set for the space (`backupDir`) was not there, so the barrier backup is in
+       * the space's own backups folder.
+       */
+      setFolderAway?: true;
     }
   | {
       state: "failed";
@@ -117,6 +126,9 @@ export type MigrationOutcome =
       /** The verified barrier backup, when it was taken. */
       backup: BackupRecord | undefined;
     };
+
+/** Where a barrier backup is when the folder set for the space's backups was away: no path. */
+const AWAY = ", in the space's own backups folder, since the one set for it is not there";
 
 const causeOf = (error: unknown): string =>
   error instanceof StorageError ? error.code : "an unexpected error";
@@ -198,20 +210,31 @@ export async function migrateOpened(
 
   // Another connection's commit after this point changes data_version (checked inside BEGIN).
   const dataVersion = conn.pragma("data_version");
-  let backup: BackupRecord;
-  try {
-    backup = await provenBackup(
+  const barrier = (backupDir: string | undefined): Promise<BackupRecord> =>
+    provenBackup(
       checked,
       opened.folder,
       {
         kind: "pre-migrate",
         appVersion,
         now,
-        ...(options.backupDir === undefined ? {} : { backupDir: options.backupDir }),
+        ...(backupDir === undefined ? {} : { backupDir }),
         ...(options.busyTimeoutMs === undefined ? {} : { busyTimeoutMs: options.busyTimeoutMs }),
       },
       { ...seams.backup, steps },
     );
+  let backup: BackupRecord;
+  // The folder set for the space's backups is away (a drive not connected): the person keeps
+  // working, behind a barrier in the space's own backups folder (MigrateOptions.backupDir).
+  let setFolderAway = false;
+  try {
+    try {
+      backup = await barrier(options.backupDir);
+    } catch (error) {
+      if (!(error instanceof BackupsFolderAway)) throw error;
+      setFolderAway = true;
+      backup = await barrier(undefined);
+    }
   } catch (error) {
     const code =
       error instanceof StorageError && error.code === "BUNDLE_LIMIT_EXCEEDED"
@@ -247,7 +270,7 @@ export async function migrateOpened(
         changed
           ? "The space changed after its barrier backup, so the migration did not start"
           : `Migration to ${formatRevision(to)} failed (${causeOf(error)}). Your data is unchanged`
-      }. ${stays}. Backup: ${backup.name}`,
+      }. ${stays}. Backup: ${backup.name}${setFolderAway ? AWAY : ""}`,
       { attempt: attempt(backup) },
     );
     return { state: "failed", stage: "migration", from, to, error: failure, backup };
@@ -265,7 +288,15 @@ export async function migrateOpened(
   } catch {
     manifestWritten = false;
   }
-  return { state: "migrated", from, to, backup, seqs, manifestWritten };
+  return {
+    state: "migrated",
+    from,
+    to,
+    backup,
+    seqs,
+    manifestWritten,
+    ...(setFolderAway ? { setFolderAway: true as const } : {}),
+  };
 }
 
 interface StepRun {

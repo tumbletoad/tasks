@@ -567,7 +567,7 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       expect(added).toHaveProperty("tasks");
       const listed = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
       expect(listed[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.5", backup });
-      // Past the time retention keeps a barrier backup, the list no longer names it.
+      // A month later the backup from before is still there, and still named: retention keeps it.
       recordMigration(
         stateOf(home),
         id,
@@ -575,8 +575,18 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
         new Date(Date.now() - 31 * 86_400_000),
       );
       const later = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
-      expect(later[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.5" });
-      expect(later[0]?.["migrated"]).not.toHaveProperty("backup");
+      expect(later[0]?.["migrated"]).toMatchObject({
+        from: "0.1",
+        to: "0.5",
+        backup,
+        backup_listed: true,
+      });
+      // Where an earlier build already removed it, the list still names it, as no longer there.
+      for (const suffix of [".db.gz", ".json"]) {
+        rmSync(join(backupsFolder(space.folder), `${backup ?? ""}${suffix}`));
+      }
+      const gone = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
+      expect(gone[0]?.["migrated"]).toMatchObject({ backup, backup_listed: false });
       await stop(service);
       const after = await dbState(space.folder);
       expect(after.revision).toEqual({ major: 0, minor: 5 });
@@ -639,6 +649,46 @@ async function spaceAt03(folder: string) {
   await writeCommits(created.folder, 3, "early", STEPS_0_3);
   return created;
 }
+
+describe("[A1.5.backup.folder-away] an upgrade whose backups folder set for the space is not there", () => {
+  test(
+    "goes on behind a backup in the space's own folder, makes no folder at the set path, and the space list and a restore by name find that backup",
+    async () => {
+      const { home, spaces } = setUp("away-upgrade");
+      const space = await spaceAt01(join(spaces, "work"));
+      const id = space.space.spaceId;
+      // The drive the folder is on is not connected; the path's parent can be written.
+      const drive = join(spaces, "drive");
+      mkdirSync(join(stateOf(home), SPACES_FOLDER), { recursive: true, mode: 0o700 });
+      writeFileSync(
+        join(stateOf(home), SPACES_FOLDER, `${id}.json`),
+        JSON.stringify({ format: 1, backup: { dir: join(drive, "backups") } }),
+        { mode: 0o600 },
+      );
+      const service = await start(home, space.folder);
+      expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
+      expect(existsSync(drive)).toBe(false);
+      const [backup] = barrierBackups(space.folder);
+      expect(backup).toBeDefined();
+      const user = await session(home, service, "cli-interactive");
+      const listed = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
+      expect(listed[0]?.["migrated"]).toMatchObject({
+        backup,
+        backup_folder: backupsFolder(space.folder),
+        backup_listed: true,
+      });
+      const restored = await call(user, "space/restore", {
+        backup,
+        of: space.folder,
+        to: join(spaces, "copy"),
+      });
+      expect(restored).toMatchObject({ read_only_copy: true });
+      expect(existsSync(join(spaces, "copy", "space.db"))).toBe(true);
+      expect(existsSync(drive)).toBe(false);
+    },
+    LONG,
+  );
+});
 
 describe("[A2.3.1.hub.search-after-migration] word search on a migrated space, a new one, and one whose update failed", () => {
   test(

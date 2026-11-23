@@ -31,6 +31,7 @@ import type { BackupSidecar } from "../backup/sidecar.ts";
 import { checkSnapshot, requireOwnSchema, type SnapshotFacts } from "../backup/snapshot.ts";
 import type { ExportManifest } from "../bundle/export-file.ts";
 import { bundleInvalid, readBundle } from "../bundle/read.ts";
+import { backupFault } from "./fault.ts";
 
 export interface UnpackSeams {
   policy?: BundlePolicy;
@@ -197,7 +198,10 @@ export async function unpackBundle(
 
 const UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
-/** The unpacked database's facts; a database that does not check is the source's fault. */
+/**
+ * The unpacked database's facts. Its bytes matched what the source records, so a finding about its
+ * content (fault.ts) means the source was bad when written; any other failure passes on as itself.
+ */
 function factsOf(
   checked: CheckedDriver,
   db: string,
@@ -207,9 +211,8 @@ function factsOf(
   try {
     return checkSnapshot(checked, db, options.busyTimeoutMs);
   } catch (error) {
-    // Its bytes matched what the source records, so a failing check means it was bad when written.
-    const cause = error instanceof StorageError ? error.code : "an unexpected error";
-    throw invalid(`its database does not check (${cause})`);
+    if (backupFault(error) !== "damaged") throw error;
+    throw invalid(`its database does not check (${(error as StorageError).code})`);
   }
 }
 

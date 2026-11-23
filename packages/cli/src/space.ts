@@ -32,7 +32,7 @@ import { defaultSpaceFolder, hostFacts, resolveLayout } from "@ttasks/service/pa
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
-import { migratedLine, type Migrated } from "./migrations.ts";
+import { local, migratedLine, type Migrated } from "./migrations.ts";
 import { bodyOf, printError, printUsage, str } from "./output.ts";
 import { asAppError } from "./verbs.ts";
 
@@ -54,7 +54,8 @@ export const SPACE_HELP = `Usage: ttasks space <command> [arguments] [--json]
                                            every table as JSON lines
   restore <backup> [<space>] --to <folder> Restore a backup or a bundle into a new folder: a
                                            read-only copy. A <backup> given by its name is one of
-                                           <space>'s
+                                           <space>'s; a file named with <space> or --space must be
+                                           of that space
   restore latest [<space>] --to <folder>   Restore the space's newest backup that verifies
   restore <backup> --in-place [<space>]    Replace the space with the backup, keeping the old
                                            folder. Name the space when several are open: this
@@ -74,6 +75,26 @@ ttasks space backups prints. A space
 stays open or closed as you left it, also after a restart: the service records it in machine.toml.
 Only the user can run these, from a terminal; list and backups work everywhere.
 `;
+
+/**
+ * One copy's backups, as `space backups` and `restore latest` give them: each claim and each restore
+ * in place starts a copy's own history, and two copies' backups say nothing of each other.
+ */
+interface History {
+  readonly incarnation: string;
+  readonly last_written_at: string;
+  readonly newest: string;
+  readonly seq: number;
+  readonly backups: number;
+  readonly this_copy?: boolean;
+}
+
+/** How far a history goes and when it was last written to: what tells two apart for a person. */
+const reach = (h: History): string =>
+  `up to seq ${String(h.seq)}, the last made ${local(h.last_written_at)}`;
+
+const historyLine = (h: History): string =>
+  `${h.this_copy === true ? "This copy's backups" : "Another copy's backups"}, ${reach(h)}`;
 
 export interface SpaceRow {
   entry: number;
@@ -397,11 +418,25 @@ export async function spaceCommand(
         const result = await call("space/backups", { space: await which(o.positional[0]) });
         out(result, () => {
           const backups = result["backups"] as Record<string, unknown>[];
+          const histories = (result["histories"] ?? []) as History[];
           if (backups.length === 0) io.stdout("No backups.\n");
-          for (const b of backups) {
+          const line = (b: Record<string, unknown>): void => {
             io.stdout(
               `${str(b["name"])}  ${str(b["state"])}${b["size"] === undefined ? "" : `  ${str(b["size"])} bytes`}\n`,
             );
+          };
+          // One copy's backups need no heading; several copies' are told apart by when each was
+          // last written to and how far it goes.
+          if (histories.length > 1) {
+            for (const h of histories) {
+              io.stdout(`${historyLine(h)}:\n`);
+              for (const b of backups) if (b["history"] === h.incarnation) line(b);
+            }
+            const loose = backups.filter((b) => b["history"] === undefined);
+            if (loose.length > 0) io.stdout("Whose sidecar does not read, of no known copy:\n");
+            for (const b of loose) line(b);
+          } else {
+            for (const b of backups) line(b);
           }
           for (const name of result["leftovers"] as string[]) io.stdout(`leftover ${name}\n`);
         });
@@ -466,13 +501,32 @@ export async function spaceCommand(
                 ),
               }
             : { to: absolute(io, to) }),
-          // `latest` names the space whose newest verified backup it restores, and a backup's name
-          // the space it is of.
-          ...(to !== undefined && !isFile ? { of: await which(o.positional[1]) } : {}),
+          // `latest` names the space whose newest verified backup it restores, a backup's name the
+          // space it is of, and a backup's file named with a space (its argument or --space) the
+          // space it must be of. A file named alone restores whatever space it holds: TTASKS_SPACE
+          // and the default space are where a terminal works, not a statement about the file.
+          ...(to !== undefined &&
+          (!isFile || o.positional[1] !== undefined || globals.space !== undefined)
+            ? { of: await which(o.positional[1]) }
+            : {}),
         });
         out(result, () => {
           if (typeof result["backup"] === "string") {
+            const history = result["history"] as History | undefined;
+            const others = (result["other_histories"] ?? []) as History[];
+            if (history?.this_copy === false && others.length > 0) {
+              io.stdout(
+                `No backup of this copy of the space is in the folder, so the copy whose backups were made last was taken: ${reach(history)}.\n`,
+              );
+            }
             io.stdout(`The newest backup that verifies: ${result["backup"]}\n`);
+            if (others.length > 0) {
+              const copies =
+                others.length === 1 ? "another copy" : `${String(others.length)} other copies`;
+              io.stdout(
+                `The folder also holds backups of ${copies} of this space, claimed on another machine or replaced by a restore (${others.map(reach).join("; ")}). ${CLI_NAME} space backups lists them; restore one by its name: ${CLI_NAME} space restore <name> <space> --to <folder>\n`,
+              );
+            }
           }
           // Another folder serves the space: the copy is made, and not opened beside it.
           if (typeof result["not_opened"] === "string") {
@@ -501,6 +555,11 @@ export async function spaceCommand(
             `Rescued ${str(rescue["rows"])} rows of ${str(rescue["tables"])} tables into ${str(rescue["file"])}\n`,
           );
           if (failed.length > 0) io.stdout(`Not read to the end: ${failed.join(", ")}\n`);
+          if (rescue["identity"] === "unconfirmed") {
+            io.stdout(
+              "The damaged database no longer says which space it holds: check that these rows are this space's.\n",
+            );
+          }
         });
         return 0;
       }

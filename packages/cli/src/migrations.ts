@@ -11,6 +11,13 @@ export interface Migrated {
   readonly to: string;
   readonly at: string;
   readonly backup?: string;
+  /**
+   * The folder that backup is in when the one set for the space was not there at the upgrade: the
+   * space's own backups folder.
+   */
+  readonly backup_folder?: string;
+  /** Whether that backup is still in the space's backups folder. An older service leaves it out. */
+  readonly backup_listed?: boolean;
 }
 
 interface Row {
@@ -24,17 +31,24 @@ interface Row {
 const pad = (n: number): string => String(n).padStart(2, "0");
 
 /** The local date and time of an ISO instant, to the minute. */
-function local(at: string): string {
+export function local(at: string): string {
   const d = new Date(at);
   return `${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** One sentence: what the migration did, and the backup from just before it. */
+/**
+ * One sentence: what the migration did, and the backup taken just before it. The person is sent to
+ * the list only while the backup is there.
+ */
 export function migratedLine(migrated: Migrated): string {
   const backup =
     migrated.backup === undefined
       ? ""
-      : ` The backup from just before it: ${migrated.backup} (${CLI_NAME} space backups lists it).`;
+      : migrated.backup_listed === false
+        ? ` The backup taken just before it was ${migrated.backup}.`
+        : migrated.backup_folder !== undefined
+          ? ` The backup from just before it: ${migrated.backup}, in ${migrated.backup_folder}, since the backups folder set for the space was not there.`
+          : ` The backup from just before it: ${migrated.backup} (${CLI_NAME} space backups lists it).`;
   return `Updated from schema ${migrated.from} to ${migrated.to} on ${local(migrated.at)}.${backup}`;
 }
 

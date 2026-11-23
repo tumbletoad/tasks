@@ -236,10 +236,18 @@ export function newPrivateFile(dest: string): WriteStream {
 const streamError = (error: unknown): StorageError =>
   error instanceof StorageError ? error : fsError(error);
 
-const isZlibError = (error: unknown): boolean => {
-  const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === "string" && code.startsWith("Z_");
-};
+/**
+ * zlib's codes for input it cannot decompress: damaged data, a stream cut short, a dictionary it
+ * does not have. Its others (Z_MEM_ERROR above all) say nothing of the input.
+ */
+const ZLIB_BAD_INPUT: ReadonlySet<unknown> = new Set([
+  "Z_DATA_ERROR",
+  "Z_BUF_ERROR",
+  "Z_NEED_DICT",
+]);
+
+const isBadInput = (error: unknown): boolean =>
+  ZLIB_BAD_INPUT.has((error as { code?: unknown } | null)?.code);
 
 /**
  * Runs `source` through `stages` into `sink`, which already exists. pipeline owns every stream from
@@ -322,9 +330,8 @@ export async function inflateFile(
         : newPrivateFile(dest);
     await pipeInto(source, [packed, createGunzip(), raw], sink);
   } catch (error) {
-    // A damaged or truncated archive fails in zlib, whose codes start with Z_ (Z_DATA_ERROR,
-    // Z_BUF_ERROR). Its message is dropped like every other native one.
-    if (isZlibError(error)) {
+    // Its message is dropped like every other native one.
+    if (isBadInput(error)) {
       throw new StorageError("BACKUP_INVALID", "The backup does not decompress");
     }
     throw streamError(error);

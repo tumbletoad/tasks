@@ -59,7 +59,7 @@
 //   after every round.
 // - backup-complete-or-absent: every backup with a sidecar is complete and verifies as a restore
 //   would (again whenever its bytes change), every backup that completed is still there, and only
-//   leftovers are incomplete.
+//   leftovers and a data file whose sidecar was never published are incomplete.
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -1363,6 +1363,8 @@ async function checkBackups(
   for (const folder of folders) {
     try {
       for (const backup of listBackups(folder).backups) {
+        // A kill between the publication of the data and of its sidecar leaves this.
+        if (backup.state === "missing_sidecar") continue;
         if (backup.state !== "ok" || backup.sidecar === undefined) {
           found.add("backup-complete-or-absent", `a backup is ${backup.state}`);
           continue;
@@ -1372,9 +1374,14 @@ async function checkBackups(
         // sizes), so a backup whose bytes changed after its check, by any means, is checked again.
         const id = [backup.name, fileHash(backup.file), fileHash(backup.sidecarFile)].join(" ");
         if (verified.has(id)) continue;
-        const sidecar = await verifyBackup(checked, backup, { steps: HARNESS_STEPS });
-        if (sidecar === undefined) {
+        const verdict = await verifyBackup(checked, backup, { steps: HARNESS_STEPS });
+        if (verdict.state === "failed") {
           found.add("backup-complete-or-absent", "a complete backup does not verify");
+        } else if (verdict.state === "unchecked") {
+          found.add(
+            "backup-complete-or-absent",
+            `a complete backup could not be trial restored (${verdict.code ?? "a bug"})`,
+          );
         } else verified.add(id);
       }
     } catch (error) {
