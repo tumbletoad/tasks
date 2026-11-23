@@ -52,6 +52,12 @@ the behaviour it describes, and keep each one to a sentence or two.
   restored.
 - Restoring over a space keeps what was there before.
 - A restored copy cannot be edited until you make it the current copy.
+- To look inside a backup, restore it into a new folder, close the space, open that folder, look,
+  close it, and open the space again. Two copies of one space are never open together, so the
+  page and the command line always show and change the copy you opened, and a restored copy says
+  so, with its folder and the backup it came from.
+- A restore over a space, or a claim of a restored copy, never starts or resumes a background run
+  the backup held open: each is shown as interrupted by the restore.
 - Apart from that clean-up of scheduled backups, TTasks never deletes your data or a backup as a
   side effect of something else.
 - An export that holds text shaped like a known kind of secret, such as an access token or a
@@ -68,8 +74,14 @@ the behaviour it describes, and keep each one to a sentence or two.
   closed. TTasks never takes a space off its list by itself.
 - Recording this keeps your own comments and settings in the configuration file. When the file
   cannot be written, TTasks says so and names the command that records it once the file is fixed.
-- When several copies of one space are on this machine, a command without a folder reaches the
-  copy that takes changes, and after a restart that is still the copy you last changed.
+- When several copies of one space are on this machine, one of them is open at a time: opening
+  another is refused, with what is open and how to switch. After a restart the copy you last
+  changed opens.
+- In a space that takes no change, such as a restored copy or one another machine owns, the page
+  says why before you act and keeps what you typed there to copy, never offering a Try again that
+  cannot work, and never sends it later by itself.
+- A tab whose space was closed, restored or claimed since it loaded says so and saves nothing more;
+  what you typed there stays to copy.
 
 ## Projects and folders
 
