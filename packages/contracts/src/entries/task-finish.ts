@@ -13,7 +13,7 @@ import {
   HeldSources,
   Lifecycle,
   LogAdded,
-  LogNotSaved,
+  LogLeftOut,
   Mode,
   PastInput,
   ProposalId,
@@ -71,7 +71,7 @@ export const TaskFinishResult = z.strictObject({
         lifecycle: Lifecycle.describe("The matched task's lifecycle").optional(),
         ambiguous: SeveralMatch.optional(),
         log_added: LogAdded,
-        log_not_saved: LogNotSaved.optional(),
+        log_left_out: LogLeftOut.optional(),
         held: HeldSources.optional(),
       }),
     )

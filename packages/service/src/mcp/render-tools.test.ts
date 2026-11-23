@@ -253,7 +253,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
             title,
             ambiguous: Array.from({ length: 40 }, (_, m) => ref(100 * n + m)),
             log_added: false,
-            log_not_saved: true,
+            log_left_out: true,
           }
         : n % 3 === 1
           ? {
@@ -309,7 +309,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
               lifecycle: "active",
               ambiguous: Array.from({ length: 40 }, (_, m) => ref(100 * n + m)),
               log_added: false,
-              log_not_saved: true,
+              log_left_out: true,
             },
       ),
     };

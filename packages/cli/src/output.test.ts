@@ -143,12 +143,12 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
         {
           tasks: [
             found,
-            { ...found, lifecycle: "completed", log_added: false, log_not_saved: true },
+            { ...found, lifecycle: "completed", log_added: false, log_left_out: true },
             {
               result: "exists",
               ambiguous: ["M-14", "M-15"],
               log_added: false,
-              log_not_saved: true,
+              log_left_out: true,
             },
             { ...found, log_added: false },
           ],
@@ -157,8 +157,8 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
       ),
     ).toBe(
       "Found M-14 in Mira by its source key, log entry added\n" +
-        "Found M-14 (completed) in Mira by its source key; its log entry was not saved: add it with ttasks log\n" +
-        "Several tasks in Mira have its source key: M-14, M-15; its log entry was not saved: add it with ttasks log\n" +
+        "Found M-14 (completed) in Mira by its source key; this command added its log entry to no task: look at it first, as it may have it already, then add it with ttasks log\n" +
+        "Several tasks in Mira have its source key: M-14, M-15; this command added its log entry to no task: look at them first, as one may have it already, then add it with ttasks log\n" +
         "Found M-14 in Mira by its source key\n",
     );
     // A follow-up found by its source key says the same of the follow-up.
@@ -175,7 +175,7 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
               result: "exists",
               ambiguous: ["M-14", "M-15"],
               log_added: false,
-              log_not_saved: true,
+              log_left_out: true,
             },
           ],
         },
@@ -184,7 +184,7 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     ).toBe(
       "Completed M-9 in Mira\n" +
         "Added M-31 to Mira\n" +
-        "Several tasks in Mira have a follow-up's source key: M-14, M-15; a follow-up's log entry was not saved: add it with ttasks log\n",
+        "Several tasks in Mira have a follow-up's source key: M-14, M-15; this command added a follow-up's log entry to no task: look at them first, as one may have it already, then add it with ttasks log\n",
     );
     expect(
       render("task.update", { result: "updated", task: "M-14", fields: ["summary"] }, "Mira"),

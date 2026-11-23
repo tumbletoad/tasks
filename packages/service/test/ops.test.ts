@@ -595,7 +595,7 @@ describe("[A3.3.4.add.upsert] task.add upserts by source key (A3 3.4.5, A1 3.6)"
         matched_by: "source_key",
         ambiguous: [ref, otherRef],
         log_added: false,
-        log_not_saved: true,
+        log_left_out: true,
       },
     ]);
 

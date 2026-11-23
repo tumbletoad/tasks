@@ -290,19 +290,20 @@ function searchLines(result: Result): string[] {
 
 /**
  * A task draft's row (A3 3.4.5): added, or found by its source key (A1 3.6), with the lifecycle it
- * was found in, or the tasks that share its keys, and whether its log entry was saved. `its` names
+ * was found in, or the tasks that share its keys, and whether its log entry was added. `its` names
  * the draft: a follow-up's draft is not the task the line is about.
  */
 function draftLine(task: Result, space: string, its = "its"): string {
   if (task["result"] !== "exists") return `Added ${String(task["ref"])} to ${space}`;
+  const ambiguous = task["ambiguous"];
+  const several = Array.isArray(ambiguous);
   const logged =
     task["log_added"] === true
       ? ", log entry added"
-      : task["log_not_saved"] === true
-        ? `; ${its} log entry was not saved: add it with ${CLI_NAME} log`
+      : task["log_left_out"] === true
+        ? `; this command added ${its} log entry to no task: look at ${several ? "them" : "it"} first, as ${several ? "one" : "it"} may have it already, then add it with ${CLI_NAME} log`
         : "";
-  const ambiguous = task["ambiguous"];
-  if (Array.isArray(ambiguous)) {
+  if (several) {
     return `Several tasks in ${space} have ${its} source key: ${ambiguous.map(String).join(", ")}${logged}`;
   }
   const lifecycle =

@@ -1796,19 +1796,19 @@ function draftOutcome(
  * What became of the log entry of the draft whose task.create is at `first`. It follows the create
  * (draftOps): added to a created task or to its one active match (A1 3.6), which the writer reports
  * as created, unchanged when that task has it already, and left out (existing) when several match
- * or the match is finished. Left out, it is saved nowhere, and the answer must say so: the caller
- * holds the only copy.
+ * or the match is finished. Left out, the answer must say so: this request added it nowhere, and
+ * the caller may hold the only copy.
  */
 function logAdded(
   result: WriteResult,
   draft: Record<string, unknown>,
   first: number,
-): { log_added: boolean; log_not_saved?: true } {
+): { log_added: boolean; log_left_out?: true } {
   if (typeof draft["log"] !== "string") return { log_added: false };
   const status = opAt(result, first + 1).status;
   return {
     log_added: status === "created",
-    ...(status === "existing" ? { log_not_saved: true } : {}),
+    ...(status === "existing" ? { log_left_out: true } : {}),
   };
 }
 

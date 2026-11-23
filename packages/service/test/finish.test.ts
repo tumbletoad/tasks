@@ -357,7 +357,7 @@ describe("[A3.3.4.finish.lifecycle] complete_task: done, dropped, learnings and 
   );
 
   test(
-    "a follow-up that matches existing tasks names them and says where its log went: on the one match, or not saved",
+    "a follow-up that matches existing tasks names them and says where its log went: on the one match, or to no task by this request",
     async () => {
       const ticket = (k: number) => ({
         key: `jira:LUM-91${String(k)}`,
@@ -401,32 +401,33 @@ describe("[A3.3.4.finish.lifecycle] complete_task: done, dropped, learnings and 
       const done = TaskFinishResult.parse(result);
       expect(done.result).toBe("completed");
       expect(done.follow_ups).toEqual([
-        expect.objectContaining({ result: "exists", ambiguous: [one, two], log_not_saved: true }),
+        expect.objectContaining({ result: "exists", ambiguous: [one, two], log_left_out: true }),
         expect.objectContaining({ result: "exists", ref: one, log_added: true }),
         expect.objectContaining({ result: "exists", ref: two, log_added: false }),
         expect.objectContaining({
           result: "exists",
           ref: three,
           lifecycle: "completed",
-          log_not_saved: true,
+          log_left_out: true,
         }),
       ]);
-      // A log entry saved, or none given, is never called not saved.
-      expect(done.follow_ups[1]?.log_not_saved).toBeUndefined();
-      expect(done.follow_ups[2]?.log_not_saved).toBeUndefined();
+      // A log entry added, or none given, is never called left out.
+      expect(done.follow_ups[1]?.log_left_out).toBeUndefined();
+      expect(done.follow_ups[2]?.log_left_out).toBeUndefined();
       expect(await logOf(one)).toEqual(["Fixture log for the first ticket."]);
       expect(await logOf(two)).toEqual([]);
       expect(await logOf(three)).toEqual([]);
-      // The agent's text names the matches and says which log was not saved and what to do.
+      // The agent's text names the matches, says which log this request did not add, and what to do.
       const text = renderResult("task.finish", result);
       const lines = text.split("\n");
       const line = (k: number) => lines.find((l) => l.startsWith(`follow_ups.${String(k)}:`)) ?? "";
       expect(line(0)).toContain(`${one}, ${two}`);
-      expect(line(0)).toContain("log not saved");
+      expect(line(0)).toContain("log not added here");
       expect(line(1)).toContain(one);
       expect(line(1)).toContain("log added");
       expect(line(2)).not.toContain("log");
-      expect(line(3)).toContain(`${three} · completed · log not saved`);
+      expect(line(3)).toContain(`${three} · completed · log not added here`);
+      expect(text).toContain("Look at the tasks on its line first");
       expect(text).toContain("add_entry");
     },
     LONG,

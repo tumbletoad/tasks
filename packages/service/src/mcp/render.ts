@@ -693,13 +693,13 @@ const AMBIGUOUS_SHOWN = 3;
 
 /**
  * What became of the draft at `path` (A3 3.2.5, 3.4.5): created, or matched by its source key,
- * with its reference or the references it matched, and whether its log entry was saved. Only the
+ * with its reference or the references it matched, and whether its log entry was added. Only the
  * product's words and references, so the line is never cut and needs no data block; the draft's
  * title is the caller's own and is not echoed.
  */
 function draftLine(row: Added, path: string): string {
   const refs = row.ambiguous ?? [];
-  const log = row.log_not_saved === true ? "log not saved" : row.log_added && "log added";
+  const log = row.log_left_out === true ? "log not added here" : row.log_added && "log added";
   const what =
     row.result === "exists"
       ? row.ambiguous !== undefined
@@ -717,11 +717,11 @@ function draftLine(row: Added, path: string): string {
   return `${path}: ${what.trimEnd()}`;
 }
 
-/** What to do with a log entry no task took: the caller holds the only copy. */
-function unsavedLog(rows: readonly Added[]): string[] {
-  return rows.some((row) => row.log_not_saved === true)
+/** What to do with a log entry this request added to no task: a matched one may hold it already. */
+function leftOutLog(rows: readonly Added[]): string[] {
+  return rows.some((row) => row.log_left_out === true)
     ? [
-        `A log not saved is stored nowhere: add it with ${toolOf("entry.add")} to the task it belongs to.`,
+        `A log not added here was added to no task by this request. Look at the tasks on its line first, as one may hold it already, then add it with ${toolOf("entry.add")} where it belongs.`,
       ]
     : [];
 }
@@ -765,7 +765,7 @@ function addRendered(result: OutputOf<"task.add">): Rendered {
       fixed(
         `${join(`${String(created)} created`, `${String(result.tasks.length - created)} existing`, result.proposal !== undefined && `proposal ${result.proposal}`)}${asOf}${replayed(result)}`,
         ...result.tasks.map((row, k) => draftLine(row, `tasks.${String(k)}`)),
-        ...unsavedLog(result.tasks),
+        ...leftOutLog(result.tasks),
       ),
       { units: result.warnings.map((w) => [`warning: ${w}`]) },
       { units: heldLines(result.tasks, "tasks") },
@@ -964,7 +964,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
         fixed(
           `${head} · as_of ${result.as_of}${replayed(result)}`,
           ...result.follow_ups.map((f, k) => draftLine(f, `follow_ups.${String(k)}`)),
-          ...unsavedLog(result.follow_ups),
+          ...leftOutLog(result.follow_ups),
           ...(result.warnings ?? []).map((w) => `warning: ${w}`),
         ),
         { units: heldLines(result.follow_ups, "follow_ups") },

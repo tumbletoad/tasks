@@ -10,7 +10,7 @@ import {
   HeldSources,
   Lifecycle,
   LogAdded,
-  LogNotSaved,
+  LogLeftOut,
   Mode,
   ProposalId,
   Replayed,
@@ -45,7 +45,7 @@ export const TaskAddResult = z.strictObject({
         matched_by: z.enum(["source_key"]).describe("How an existing task matched").optional(),
         ambiguous: SeveralMatch.optional(),
         log_added: LogAdded,
-        log_not_saved: LogNotSaved.optional(),
+        log_left_out: LogLeftOut.optional(),
         held: HeldSources.optional(),
       }),
     )

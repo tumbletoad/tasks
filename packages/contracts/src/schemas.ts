@@ -311,8 +311,13 @@ export const InsideFolders = {
 /** A draft that matched several active tasks by its source keys: none was picked. */
 export const SeveralMatch = z.array(TaskRef).describe("Several active matches: pick one");
 export const LogAdded = z.boolean().describe("The draft's log entry was added");
-/** A draft's log entry that no task took: the caller holds the only copy. */
-export const LogNotSaved = z.literal(true).describe("Its log entry was saved nowhere: file it");
+/**
+ * A draft's log entry that this request added to no task: several match, or the match is finished.
+ * A task may hold it from an earlier call all the same.
+ */
+export const LogLeftOut = z
+  .literal(true)
+  .describe("This request added its log to no task: check the matched task before filing it");
 
 /** A new task's sources whose key another active task holds: each is linked without its key. */
 export const HeldSources = z
