@@ -830,9 +830,10 @@ export class Edits {
         say({
           kind: "error",
           text:
-            conflict === undefined
+            readOnlyText(decision.error) ??
+            (conflict === undefined
               ? { id: "toast.trashFailed", values: { ref: task.ref } }
-              : { id: "toast.trashConflict", values: { ref: task.ref, ...whoOf(conflict.by) } },
+              : { id: "toast.trashConflict", values: { ref: task.ref, ...whoOf(conflict.by) } }),
         });
       },
       toast,
@@ -888,7 +889,13 @@ export class Edits {
           return;
         }
         if (this.#deps.failed(decision.error)) return;
-        say({ kind: "error", text: { id: "toast.restoreFailed", values: { ref: task.ref } } });
+        say({
+          kind: "error",
+          text: readOnlyText(decision.error) ?? {
+            id: "toast.restoreFailed",
+            values: { ref: task.ref },
+          },
+        });
       },
       toast,
     );

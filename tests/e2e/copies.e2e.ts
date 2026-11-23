@@ -1,14 +1,16 @@
 // Looking inside a backup, as a person does it on the page: one copy of the space is open at a
 // time. Open folder with a restored copy while the space is open is refused with what to do; once
 // the space is closed, the copy opens and says it is a restored copy, read-only, with its folder,
-// its backup and the ways out; an edit there keeps the words with the reason and no Try again; a
-// claim of the copy tells the open tab that it was claimed, and the tab writes nothing more, Undo
+// its backup and the ways out; an edit there keeps the words with the reason and no Try again,
+// and Move to Trash and Restore say why and move nothing; a claim of the copy tells the open tab that it was claimed, and the tab writes nothing more, Undo
 // included; a run the backup recorded as working is shown as working then, never now. Pictures at
 // 1,440 and 390 px. Fixture data only.
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { openTask, picture, showsSpace, signIn, spaceSwitcher } from "./page.ts";
 import { CODEX_INSTANCE, SLOW_MS } from "./world.ts";
+
+const toast = (page: Page) => page.locator('[data-part="toast-text"]');
 
 /** No sideways scroll at this width. */
 const sideScroll = (page: Page) =>
@@ -48,6 +50,13 @@ test.describe("[A2.3.10.5.copies.e2e] a person looks inside a backup on the page
       spaces: { id?: string; folder: string }[];
     };
     const spaceFolder = listed.spaces.find((s) => s.id === id)?.folder ?? "";
+    // Two tasks moved to the Trash in one change when the backup is made.
+    const added = (await world.op(id, "task.add", {
+      tasks: [{ title: "Fixture task in the Trash" }, { title: "Fixture task in the Trash too" }],
+    })) as { tasks: { ref: string }[] };
+    const binned = added.tasks.map((task) => task.ref);
+    const status = (await world.op(id, "space.status", {})) as { as_of: string };
+    await world.op(id, "task.delete", { tasks: binned, base: status.as_of });
     const copyFolder = await world.restoreCopy(id);
     // Pictures of what stands, not of what fades in.
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -128,6 +137,29 @@ test.describe("[A2.3.10.5.copies.e2e] a person looks inside a backup on the page
     await pictures(page, "copy-read-only-edit", () => row.scrollIntoViewIfNeeded());
     // A reload keeps the words.
     await page.reload();
+    await showsSpace(page, name);
+    await expect(line.locator('[data-part="unsaved-value"]')).toHaveText(words, {
+      timeout: SLOW_MS,
+    });
+
+    // The Trash takes no change there either: Move to Trash, a row's Restore and Restore these
+    // each say why, and nothing moves.
+    const refused = "Not saved: this is a restored copy";
+    await row.locator('[data-part="move-to-trash"]').click();
+    await expect(toast(page)).toHaveText(refused, { timeout: SLOW_MS });
+    await expect(row.locator('[data-part="in-trash"]')).toHaveCount(0);
+    await page.goto(`${world.origin}/s/${id}/trash`);
+    await showsSpace(page, name);
+    const inTrash = page.locator(`main li[data-task="${binned[0] ?? ""}"]`);
+    await inTrash.locator('[data-part="restore"]').click();
+    await expect(toast(page)).toHaveText(refused, { timeout: SLOW_MS });
+    await expect(inTrash).toBeVisible();
+    await page.getByRole("button", { name: /^Restore these/u }).click();
+    await expect(toast(page)).toHaveText(refused, { timeout: SLOW_MS });
+    await expect(inTrash).toBeVisible();
+    const kept = (await world.op(id, "task.get", { task: ref })) as { task: { title: string } };
+    expect(kept.task.title).toBe(world.task.title);
+    await signIn(page, world, `/s/${id}/task/${ref}`);
     await showsSpace(page, name);
     await expect(line.locator('[data-part="unsaved-value"]')).toHaveText(words, {
       timeout: SLOW_MS,
