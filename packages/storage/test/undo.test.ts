@@ -963,6 +963,47 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     expect(refused.newer).not.toHaveProperty("changes");
   });
 
+  test("Undo, Redo, another's write, Redo, Undo, Redo: Redo passes over the step they changed, and Undo always takes the step applied last", async () => {
+    const other = await partner();
+    const a = create("Renew the passport");
+    const b = create("Book the dentist");
+    const c = create("Water the plants");
+    const priorities = () => [a, b, c].map((id) => task(id)["priority"]);
+    const before = priorities();
+    patch(a, { priority: 1 });
+    patch(b, { priority: 1 });
+    patch(c, { priority: 1 });
+    for (let i = 0; i < 3; i += 1) applied(undo());
+    expect(priorities()).toEqual(before);
+    // Redo: the oldest, A.
+    applied(redo());
+    expect(priorities()).toEqual([1, before[1], before[2]]);
+    // The partner changes B's priority: B cannot be redone.
+    const set = { kind: "task.patch", task: b, set: { priority: 3 } } as Operation;
+    applied(fx.writer.submit(fx.request(other, [set], { base: fx.base(), undoable: true })));
+    // Redo passes over B and redoes C.
+    const second = applied(redo());
+    expect(second.passed).toHaveLength(1);
+    expect(priorities()).toEqual([1, 3, 1]);
+    // Undo takes C, the step applied last, never A.
+    applied(undo());
+    expect(priorities()).toEqual([1, 3, before[2]]);
+    // Redo passes over B again and brings C back.
+    applied(redo());
+    expect(priorities()).toEqual([1, 3, 1]);
+    // The partner takes theirs back: B can be redone now, after C.
+    applied(history({ kind: "undo" }, other));
+    applied(redo());
+    expect(priorities()).toEqual([1, 1, 1]);
+    // Undo goes back in the order applied: B, then C, then A.
+    applied(undo());
+    expect(priorities()).toEqual([1, before[1], 1]);
+    applied(undo());
+    expect(priorities()).toEqual([1, before[1], before[2]]);
+    applied(undo());
+    expect(priorities()).toEqual(before);
+  });
+
   test("Redo never brings back a project whose area is not there: passed over, it comes back after the area", async () => {
     const other = await partner();
     const area = applied(write([{ kind: "area.create", title: "Garden" }]));
