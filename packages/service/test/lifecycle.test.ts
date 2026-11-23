@@ -1,8 +1,17 @@
 // The hub as a process (A2 3.3, 3.4; A7 3.8 M1.08's Verify line). Every service here is a real
 // child process on a temporary TTASKS_HOME. Each test records the PIDs it starts and stops exactly
 // those, and removes its folders by their full names.
-import { existsSync, lstatSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { basename, join } from "node:path";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { openRpc } from "@ttasks/bridge/protocol";
 import { afterEach, describe, expect, test } from "vitest";
 import { EXIT } from "../src/hub/exit.ts";
@@ -236,6 +245,35 @@ describe("[A2.3.4.hub.stale-recovery] a crash leaves what the next start recover
 });
 
 describe("[A2.3.3.hub.exit-codes] exit codes and refusals as a process", () => {
+  test.skipIf(WIN)(
+    "Linux and macOS: a file where the socket goes is kept, and the start refuses with 64 and names it",
+    async () => {
+      const h = home("in-the-way");
+      const first = services.start(h);
+      const json = await waitReady(h, first.pid);
+      runtimeDirs.push(json);
+      first.send("stop");
+      expect((await within(first.exit, EXIT_MS, "stop")).code).toBe(EXIT.ok);
+      const path = json.endpoint?.path ?? "";
+      // A runtime folder restored from a copy (the stop removed the per-user one): a plain file at
+      // the socket's name.
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      writeFileSync(path, "restored");
+
+      const next = services.start(h);
+      expect((await within(next.exit, EXIT_MS, "refusal")).code).toBe(EXIT.refused);
+      expect(readFileSync(path, "utf8")).toBe("restored");
+      expect(next.stderr()).toContain(basename(path));
+      expect(next.stderr()).toContain("is a file where");
+      expect(readServiceJson(h)).toBeUndefined();
+      const stale = readLog(h).filter(
+        (e) => e["ev"] === "service.stale_removed" && e["pid"] === next.pid,
+      );
+      expect(stale).toEqual([]);
+      rmSync(path);
+    },
+    LONG,
+  );
   test(
     "a graceful stop drains and exits 0, removing service.json and the socket file",
     async () => {

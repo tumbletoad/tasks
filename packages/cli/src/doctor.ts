@@ -51,9 +51,17 @@ import {
   hostFacts,
   installId,
   resolveLayout,
+  runtimeNames,
   type Layout,
 } from "@ttasks/service/paths";
-import { judgePath, unsafeMessage, type UnsafeThing } from "@ttasks/service/permissions";
+import {
+  atSocketPath,
+  isPrivateDir,
+  judgePath,
+  socketBlockedMessage,
+  unsafeMessage,
+  type UnsafeThing,
+} from "@ttasks/service/permissions";
 import type { GateFacts } from "@ttasks/service/runtime-gate";
 import type { VersionManifest } from "@ttasks/service/version-folder";
 import { CLI_SPEC, type Globals } from "./args.ts";
@@ -400,10 +408,32 @@ export async function requestCheck(session: Session, spaces: Status["spaces"]): 
   }
 }
 
+/** What stands where the service's socket goes (Linux and macOS), which keeps it from starting. */
+export function socketBlocked(
+  io: Pick<Io, "env" | "platform">,
+  layout: Layout,
+  state: string,
+): string | undefined {
+  if (io.platform === "win32") return undefined;
+  try {
+    const id = installId(canonicalStatePath(realpathSync.native(state), io.platform));
+    const plan = runtimeNames(layout, id, hostFacts(io.env, io.platform), isPrivateDir).endpoint;
+    if (plan.kind !== "unix") return undefined;
+    const holds = atSocketPath(plan.path);
+    return holds === "nothing" || holds === "socket"
+      ? undefined
+      : socketBlockedMessage(plan.path, holds);
+  } catch {
+    // A state folder that cannot be read is the paths row's to report.
+    return undefined;
+  }
+}
+
 /** The checks that talk to the service. */
 async function serviceChecks(
   io: Io,
   state: string,
+  layout: Layout,
   connect: ConnectOptions,
   live: boolean,
 ): Promise<Check[]> {
@@ -411,8 +441,16 @@ async function serviceChecks(
   const launch = await import("./doctor-launch.ts");
   const record = readServiceRecord(state);
   if (record === undefined) {
+    const blocked = socketBlocked(io, layout, state);
     return [
-      { id: "service", status: "fail", detail: "Not running. Start it with: ttasks service start" },
+      {
+        id: "service",
+        status: "fail",
+        detail:
+          blocked === undefined
+            ? "Not running. Start it with: ttasks service start"
+            : `Not running. ${blocked}`,
+      },
       { id: "endpoint", status: "skip", detail: "No service to reach." },
       { id: "spaces", status: "skip", detail: "No service to ask." },
       { id: "requests", status: "skip", detail: "No service to ask." },
@@ -729,7 +767,7 @@ export async function doctor(
   ];
   const after = [
     ...(io.platform === "win32" ? [supervisorCheck(state, layout.crash)] : []),
-    ...(await serviceChecks(io, state, connect, args.includes("--live"))),
+    ...(await serviceChecks(io, state, layout, connect, args.includes("--live"))),
     ...(await candidateRows(io, connect.versionFolder, args.includes("--self-test"), state)),
     // The agent side, loaded only here: it loads setup's engine.
     ...(await (

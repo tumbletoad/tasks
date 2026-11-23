@@ -218,6 +218,47 @@ export function judgePath(
   return problem === undefined ? undefined : { facts, problem };
 }
 
+/**
+ * Whether `dir` is a real folder of this user that no one else can write, the person's own private
+ * group aside (POSIX only).
+ */
+export function isPrivateDir(dir: string): boolean {
+  const person = currentPerson();
+  if (person === undefined) return false;
+  const facts = factsOf(dir, "folder", { followLink: false });
+  return typeof facts === "object" && problemOf(facts, person) === undefined;
+}
+
+/** What is at a Unix socket's path, the path's own link not followed. */
+export type AtSocketPath = "nothing" | "socket" | "file" | "folder" | "link" | "other";
+
+export function atSocketPath(path: string): AtSocketPath {
+  let stat: Stats;
+  try {
+    stat = lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "nothing";
+    throw error;
+  }
+  if (stat.isSocket()) return "socket";
+  if (stat.isSymbolicLink()) return "link";
+  return kindOf(stat);
+}
+
+const IN_THE_WAY: Readonly<Record<Exclude<AtSocketPath, "nothing" | "socket">, string>> = {
+  file: "a file",
+  folder: "a folder",
+  link: "a link",
+  other: "something that is not a socket",
+};
+
+/** Names what stands where the service's socket goes, which only the person may move. */
+export const socketBlockedMessage = (
+  path: string,
+  holds: Exclude<AtSocketPath, "nothing" | "socket">,
+): string =>
+  `${shellPath(path)} is ${IN_THE_WAY[holds]} where ${PRODUCT_NAME}'s socket goes, so the service does not start. Move it elsewhere, then start the service again.`;
+
 /** This process's person, or on Windows one whose group never writes (the words still work). */
 const thisPerson = (): Person => currentPerson() ?? NOBODY_ELSE;
 

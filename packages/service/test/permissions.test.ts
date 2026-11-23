@@ -11,6 +11,7 @@
 // rule accepts: so the real fixtures here are refused for write by every user, and group write is
 // judged on facts (and on this machine's own folders in group-rule.test.ts).
 import { spawnSync } from "node:child_process";
+import { createServer } from "node:net";
 import {
   accessSync,
   chmodSync,
@@ -32,6 +33,7 @@ import { loadMachineConfig, type UnsafePart } from "../src/config/machine-toml.t
 import { unsafeConfigMessage } from "../src/config/messages.ts";
 import { ServiceExit } from "../src/hub/exit.ts";
 import {
+  atSocketPath,
   currentPerson,
   factsOf,
   fixCommand,
@@ -39,6 +41,7 @@ import {
   repairOf,
   shellArg,
   shellPath,
+  socketBlockedMessage,
   unsafeMessage,
   type Need,
   type PathFacts,
@@ -1062,4 +1065,42 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       expect(line).not.toContain("run:");
     },
   );
+});
+
+describe("[A2.3.4.hub.stale-recovery] only a socket at the socket's path is the service's to remove", () => {
+  test("nothing, a file and a folder are told apart from a socket, and each is named for the person", () => {
+    const root = temp("at-socket");
+    const path = join(root, "ttasks.sock");
+    expect(atSocketPath(path)).toBe("nothing");
+    writeFileSync(path, "restored\n");
+    expect(atSocketPath(path)).toBe("file");
+    expect(socketBlockedMessage(path, "file")).toBe(
+      `${shellPath(path)} is a file where TTasks's socket goes, so the service does not start. Move it elsewhere, then start the service again.`,
+    );
+    const folder = join(root, "folder.sock");
+    mkdirSync(folder);
+    expect(atSocketPath(folder)).toBe("folder");
+    expect(socketBlockedMessage(folder, "folder")).toContain("is a folder where");
+  });
+
+  test.skipIf(!posix)("Linux and macOS: a socket and a link to one", async () => {
+    const root = temp("at-socket-unix");
+    const path = join(root, "ttasks.sock");
+    const server = createServer();
+    await new Promise<void>((resolve) => {
+      server.listen(path, resolve);
+    });
+    try {
+      expect(atSocketPath(path)).toBe("socket");
+      const link = join(root, "link.sock");
+      symlinkSync(path, link);
+      expect(atSocketPath(link)).toBe("link");
+    } finally {
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+      });
+    }
+  });
 });
