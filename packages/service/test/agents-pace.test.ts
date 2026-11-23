@@ -8,7 +8,9 @@ import { join } from "node:path";
 import { fakeTtam, readJsonLines } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import type { HttpTimerKind } from "../src/http/index.ts";
-import type { MonitorCommand } from "../src/monitor/index.ts";
+import { DEFAULT_HTTP_LIMITS } from "../src/http/limits.ts";
+import { FeedHub } from "../src/http/ws.ts";
+import type { MonitorCommand, Watcher } from "../src/monitor/index.ts";
 import { testClock, type TestClock } from "./clock.ts";
 import { instanceToml } from "./harness.ts";
 import { post } from "./http-client.ts";
@@ -316,6 +318,71 @@ describe("[A5.agents.pace] the service asks the monitor at the pace of the most 
       expect(p.looked()).toBe(2);
     },
   );
+});
+
+describe("[A5.agents.pace] a tab that stops watching gets nothing more", () => {
+  test("a view queued behind a slow write is dropped when the tab stops watching", async () => {
+    const watchers: Watcher[] = [];
+    const hub = new FeedHub({
+      host: { spaces: () => [] },
+      limits: DEFAULT_HTTP_LIMITS,
+      timers: testClock<HttpTimerKind>({ virtual: "all" }).timers,
+      log: () => undefined,
+      build: { version: "0.0.0", build: "source" },
+      now: () => 0,
+      live: () => true,
+      agents: {
+        watch: (watcher) => {
+          if (!watchers.includes(watcher)) watchers.push(watcher);
+        },
+        leave: () => undefined,
+      },
+    });
+    const sent: Record<string, unknown>[] = [];
+    const writes: (() => void)[] = [];
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    // A peer that reads slowly: each write is done only when the test says.
+    const ws = {
+      bufferedAmount: 0,
+      on: (event: string, handler: (...args: unknown[]) => void) => {
+        handlers.set(event, handler);
+      },
+      send: (text: string, done: () => void) => {
+        sent.push(JSON.parse(text) as Record<string, unknown>);
+        writes.push(done);
+      },
+      ping: () => undefined,
+      close: () => undefined,
+      terminate: () => undefined,
+    };
+    hub.attach(ws as never, "gr_x", 1);
+    const message = (value: unknown) => {
+      handlers.get("message")?.(Buffer.from(JSON.stringify(value)), false);
+    };
+    const views = () => sent.filter((m) => m["type"] === "agents");
+    const view = (n: number) => ({
+      picture: { ageMs: n, settling: false, sessions: [], accounts: [] },
+      trouble: null,
+    });
+    message({ type: "watch", ...LOOKED });
+    const [tab] = watchers;
+    if (tab === undefined) throw new Error("the tab never watched");
+    tab.show(view(1));
+    tab.show(view(2));
+    tab.show(view(3));
+    expect(views()).toHaveLength(1);
+    message({ type: "watch", agents: true, visible: false, focused: false });
+    for (const done of writes.splice(0)) done();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(views()).toHaveLength(1);
+    // A view that comes while it does not watch is not sent either.
+    tab.show(view(4));
+    expect(views()).toHaveLength(1);
+    message({ type: "watch", ...LOOKED });
+    tab.show(view(5));
+    expect(views().map((m) => (m["picture"] as { ageMs: number }).ageMs)).toEqual([1, 5]);
+    handlers.get("close")?.();
+  });
 });
 
 describe("[A5.agents.privacy] nothing the monitor reports leaves the page and the service", () => {

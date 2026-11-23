@@ -152,6 +152,8 @@ class FeedSocket {
   #subscribing = false;
   /** The installed version this page was last told of. */
   #installed: string | undefined;
+  /** The tab shows an Agents page and is visible: only then is it sent the monitor's view. */
+  #agentsWatched = false;
   /** The newest Agents view, waiting while the one before it is handed to the socket. */
   #agentsNext: AgentsView | undefined;
   #agentsSending = false;
@@ -355,6 +357,9 @@ class FeedSocket {
         this.close(WS_CLOSE.badMessage, "bad_message");
         return;
       }
+      // A tab that stops watching gets nothing more, not even a view queued for it.
+      this.#agentsWatched = agents && visible;
+      if (!this.#agentsWatched) this.#agentsNext = undefined;
       this.#hub.options.agents?.watch(this, { agents, visible, focused });
       return;
     }
@@ -385,7 +390,7 @@ class FeedSocket {
 
   /** The Agent Monitor's view for this tab. A tab that reads slowly gets the newest only. */
   show(view: AgentsView): void {
-    if (this.#closed) return;
+    if (this.#closed || !this.#agentsWatched) return;
     this.#agentsNext = view;
     if (!this.#agentsSending) this.#showNext();
   }
@@ -393,7 +398,7 @@ class FeedSocket {
   #showNext(): void {
     const view = this.#agentsNext;
     this.#agentsNext = undefined;
-    if (view === undefined || this.#closed) {
+    if (view === undefined || this.#closed || !this.#agentsWatched) {
       this.#agentsSending = false;
       return;
     }
