@@ -125,6 +125,7 @@ import {
   isHistoryOperation,
   LAUNCH_FAIL_REASONS,
   LAUNCH_UNKNOWN_REASONS,
+  LINK_ROLES,
   normaliseStored,
   REQUEST_ID,
   RequestProblem,
@@ -597,6 +598,17 @@ const SQL = {
     "$seq, $seq, '{}', '{}')",
   reviveLink:
     "UPDATE task_sources SET removed_at = NULL WHERE task_id = $task AND source_id = $source",
+  removeLink:
+    "UPDATE task_sources SET removed_at = $at WHERE task_id = $task AND source_id = $source",
+  /** Every task linked to a source, live or removed: who holds its key. */
+  linksOfSource:
+    "SELECT l.task_id, l.removed_at, t.lifecycle, t.deleted_at FROM task_sources l " +
+    "JOIN tasks t ON t.id = l.task_id WHERE l.source_id = $source ORDER BY t.ref",
+  /** A live source the task has as plain context for a key another task holds. */
+  plainOf:
+    "SELECT 1 FROM task_sources l JOIN sources s ON s.id = l.source_id WHERE l.task_id = $task " +
+    "AND l.removed_at IS NULL AND s.deleted_at IS NULL AND s.source_key IS NULL AND s.ref = $key",
+  undoOf: "SELECT undo_of FROM commits WHERE seq = $seq",
   linkVersions:
     "UPDATE task_sources SET version = $seq, fv = $fv, fp = $fp " +
     "WHERE task_id = $task AND source_id = $source",
@@ -1248,6 +1260,8 @@ export class SpaceWriter {
      * task: the draft's source of that key is linked without the key (Dedupe.decide).
      */
     const heldKeys = new Map<string, Id<"t">>();
+    /** Links earlier operations removed (`false`) or brought back (`true`), by `task|source`. */
+    const links = new Map<string, boolean>();
     /** The log entries earlier operations add, by task and text: a matched draft's same one. */
     const stagedLogs = new Map<string, string>();
     /**
@@ -1746,6 +1760,103 @@ export class SpaceWriter {
             touches,
             record: { task: parent, ...inputOf(op, "task") },
           };
+        }
+        case "source.unlink":
+        case "source.relink": {
+          const parent = task(op.task, "task");
+          const id = `${parent}|${op.source}`;
+          const link = drafts.has(parent)
+            ? undefined
+            : conn.prepare(SQL.link).get({ task: parent, source: op.source });
+          const source = conn.prepare(SQL.source).get({ id: op.source });
+          if (link === undefined || source === undefined || source["deleted_at"] !== null) {
+            return problem("NOT_FOUND", "The task has no link to this source", i, "source");
+          }
+          const record = { task: parent, source: op.source };
+          const live = links.get(id) ?? link["removed_at"] === null;
+          if (op.kind === "source.unlink" ? !live : live) {
+            return { i, op, target: op.source, task: parent, touches: [], record, skip: true };
+          }
+          const start = linkState(link);
+          const r = new RowReader("sources", source);
+          const key = r.optText("source_key");
+          if (op.kind === "source.relink" && !links.has(id)) {
+            // An undo that took back the link's creation removed it: Redo brings it back with the
+            // rest of that change, which a revival here would take away from Redo.
+            const removal = conn.prepare(SQL.undoOf).get({ seq: provenanceOf(start, "removed") });
+            if (removal === undefined || removal["undo_of"] !== null) {
+              return problem(
+                "INVALID_TRANSITION",
+                "The link was removed by undoing its creation: Redo brings it back",
+                i,
+                "source",
+              );
+            }
+          }
+          const active = (t: Id<"t">, own: unknown): boolean =>
+            (lifecycles.get(t) ?? own) === "active";
+          const holder =
+            op.kind === "source.unlink" ||
+            key === null ||
+            !active(parent, tasks.get(parent)?.lifecycle)
+              ? undefined
+              : conn
+                  .prepare(SQL.linksOfSource)
+                  .all({ source: op.source })
+                  .map((row) => ({
+                    row,
+                    task: new RowReader("task_sources", row).id("task_id", "t"),
+                  }))
+                  .find(({ row, task: other }) => {
+                    if (other === parent) return false;
+                    const linked = links.get(`${other}|${op.source}`) ?? row["removed_at"] === null;
+                    const deleted = tombstones.get(other) ?? row["deleted_at"] !== null;
+                    return linked && !deleted && active(other, row["lifecycle"]);
+                  })?.task;
+          if (holder !== undefined && key !== null) {
+            // The key stays with the task that holds it now: this one gets the source back as
+            // plain context, its key as the reference, as source.add links a key held elsewhere.
+            if (conn.prepare(SQL.plainOf).get({ task: parent, key }) !== undefined) {
+              return { i, op, target: op.source, task: parent, touches: [], record, skip: true };
+            }
+            const ref = r.optText("ref");
+            const who = r.optText("who");
+            const url = r.optText("url");
+            const sent = source["at"];
+            const plain: Operation = {
+              kind: "source.add",
+              task: op.task,
+              source: {
+                kind: r.text("kind") as SourceFields["kind"],
+                title: r.text("title"),
+                ref: ref ?? key,
+                ...(who === null ? {} : { who }),
+                ...(url === null ? {} : { url }),
+                ...(typeof sent === "number" ? { at: sent } : {}),
+              },
+              role: new RowReader("task_sources", link).oneOf("role", LINK_ROLES),
+            };
+            dedupe.plain(key, parent);
+            return {
+              i,
+              op: plain,
+              target: newId("s", random),
+              task: parent,
+              touches: [],
+              record: { task: parent, ...inputOf(plain, "task") },
+              heldBy: holder,
+            };
+          }
+          links.set(id, op.kind === "source.relink");
+          if (key !== null) {
+            if (op.kind === "source.relink") dedupe.link(key, parent);
+            else dedupe.unlinked(key, parent);
+          }
+          const startKey = rowKey("task_sources", id);
+          if (!starts.has(startKey)) starts.set(startKey, start);
+          const touch: Touch = { entity: "task_sources", id, field: "removed", task: parent };
+          if (op.link_version !== undefined) touch.linkVersion = op.link_version;
+          return { i, op, target: op.source, task: parent, touches: [touch], record };
         }
         case "task.context_append": {
           // Base-free (A1 3.5): no touch, so no base is needed and two appends commute. The field
@@ -2638,6 +2749,19 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           ...(staged.heldBy === undefined ? {} : { held_by: refOf(staged.heldBy) }),
         };
       }
+      case "source.unlink":
+      case "source.relink": {
+        const task = must(staged.task, "A source link has a task");
+        const link = readRow(conn, "task_sources", `${task}|${staged.target}`);
+        return {
+          i,
+          status,
+          id: staged.target,
+          task,
+          ref: refOf(task),
+          version: new RowReader("task_sources", link).int("version", "seq"),
+        };
+      }
       case "place.set": {
         const place = readRow(conn, "places", staged.target);
         const task = staged.task;
@@ -2916,7 +3040,7 @@ function preconditions(
             code: "BASE_REQUIRED",
             message:
               touch.entity === "task_sources"
-                ? "Reviving a removed link needs its link version or a base"
+                ? "A change of a link needs its link version or a base"
                 : "This change needs the as_of of a read as its base",
             op: staged.i,
             field: touch.entity === "task_sources" ? "link_version" : "base",
@@ -3577,6 +3701,16 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         wrote(run, i, "task_sources", `${task}|${source}`, task, ["removed"]);
       }
       // A live link is unchanged (A1 3.6).
+      return;
+    }
+    case "source.unlink":
+    case "source.relink": {
+      if (staged.skip === true) return;
+      const task = must(staged.task, "A source link has a task");
+      const keys = { task, source: op.source };
+      if (op.kind === "source.unlink") conn.prepare(SQL.removeLink).run({ ...keys, at: run.at });
+      else conn.prepare(SQL.reviveLink).run(keys);
+      wrote(run, i, "task_sources", `${task}|${op.source}`, task, ["removed"]);
       return;
     }
     case "place.set": {

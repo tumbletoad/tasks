@@ -128,6 +128,8 @@ export class Dedupe {
   readonly #holders = new Map<Id<"t">, Holder>();
   /** The tasks the request links each key to, so far. */
   readonly #links = new Map<string, Set<Id<"t">>>();
+  /** The tasks whose link to each key the request removes, of the links at the start. */
+  readonly #unlinked = new Map<string, Set<Id<"t">>>();
   /** The tasks the request links to a source of each key without the key. */
   readonly #plain = new Map<string, Set<Id<"t">>>();
   #drafts = 0;
@@ -173,6 +175,16 @@ export class Dedupe {
     const tasks = this.#links.get(key) ?? new Set();
     tasks.add(task);
     this.#links.set(key, tasks);
+    this.#unlinked.get(key)?.delete(task);
+  }
+
+  /** The request removes `task`'s link to the source of `key`: it no longer holds the key. */
+  unlinked(key: string, task: Id<"t">): void {
+    if (this.#keys.size === 0) return;
+    this.#links.get(key)?.delete(task);
+    const tasks = this.#unlinked.get(key) ?? new Set();
+    tasks.add(task);
+    this.#unlinked.set(key, tasks);
   }
 
   /**
@@ -217,7 +229,10 @@ export class Dedupe {
   match(keys: readonly string[], linkSources: boolean): { active: Id<"t">[]; match?: Match } {
     const found = new Set<Id<"t">>();
     for (const key of keys) {
-      for (const task of this.#startHolders().get(key) ?? []) found.add(task);
+      const unlinked = this.#unlinked.get(key);
+      for (const task of this.#startHolders().get(key) ?? []) {
+        if (unlinked?.has(task) !== true) found.add(task);
+      }
       for (const task of this.#links.get(key) ?? []) found.add(task);
     }
     const holders = [...found].map((id) => ({ id, ...this.#holder(id) })).filter((h) => !h.deleted);

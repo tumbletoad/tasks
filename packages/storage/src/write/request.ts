@@ -535,6 +535,31 @@ export interface SourceAdd {
 }
 
 /**
+ * `source.unlink`: removes one task's link to a source. The source and every other task's link to
+ * it stay, and its key no longer finds this task. A removed link is unchanged. Needs the link's
+ * version or a base.
+ */
+export interface SourceUnlink {
+  kind: "source.unlink";
+  task: string;
+  source: Id<"s">;
+  link_version?: number;
+}
+
+/**
+ * `source.relink`: brings back a link that `source.unlink` removed, as the same pair with its role
+ * and position. When another active task holds the source's key now, the key stays there: the task
+ * gets the source as plain context instead, its key as the reference, as `source.add` links a key
+ * held elsewhere. A live link is unchanged. Needs the link's version or a base.
+ */
+export interface SourceRelink {
+  kind: "source.relink";
+  task: string;
+  source: Id<"s">;
+  link_version?: number;
+}
+
+/**
  * `place.set` (A1 3.6, 3.15): binds the owner's folder on the request's machine, as a root ID and
  * a relative path. The owner is one task, project or area. Changing an existing place needs a
  * base. A2's handler turns an absolute path into these and reads the Git remote (M2.07).
@@ -868,6 +893,8 @@ export type Operation =
   | NoteAdd
   | LogAdd
   | SourceAdd
+  | SourceUnlink
+  | SourceRelink
   | PlaceSet
   | PlaceClear
   | LaunchCreate
@@ -893,6 +920,8 @@ export const OPERATION_KINDS = [
   "note.add",
   "log.add",
   "source.add",
+  "source.unlink",
+  "source.relink",
   "place.set",
   "place.clear",
   "launch.create",
@@ -1213,7 +1242,7 @@ class Fields {
     return value;
   }
 
-  id<P extends "t" | "ac" | "m" | "se" | "ru" | "ro" | "sp" | "la" | "op">(
+  id<P extends "t" | "ac" | "m" | "se" | "ru" | "ro" | "sp" | "la" | "op" | "s">(
     key: string,
     prefix: P,
   ): Id<P> {
@@ -1503,6 +1532,17 @@ function checkOperation(value: unknown, i: number): Operation {
       if (f.has("role")) add.role = f.oneOf("role", LINK_ROLES);
       if (f.has("link_version")) add.link_version = f.int("link_version", 0, RANGES.seq.max);
       op = add;
+      break;
+    }
+    case "source.unlink":
+    case "source.relink": {
+      const link: SourceUnlink | SourceRelink = {
+        kind,
+        task: f.reference("task"),
+        source: f.id("source", "s"),
+      };
+      if (f.has("link_version")) link.link_version = f.int("link_version", 0, RANGES.seq.max);
+      op = link;
       break;
     }
     case "place.set": {
