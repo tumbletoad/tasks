@@ -2883,7 +2883,7 @@
     },
     {
       "id": "A3.5.search.ranking",
-      "title": "Ranking and rows: a task appears once, ranked by its best document with A3 3.9.3's boosts and a snippet from that document; scopes, the learnings scope and the default scope; the last word as a prefix of two characters or more; negated words; filters by area with its projects, priority, focus, id and has:; the order without text; sort:effort and sort:-effort by the space's scale with unsized tasks last, a sort never negated, in an OR or twice; an agent never matches or sees an only-me note; titles and snippets cut at 90 and 100 characters",
+      "title": "Ranking and rows: a task appears once, ranked by its best document with A3 3.9.3's boosts and a snippet from that document; words found in different texts of one task find it together, a phrase only within one text; scopes, the learnings scope and the default scope; the last word as a prefix of two characters or more; negated words; filters by area with its projects, priority, focus, id and has:; the order without text; sort:effort and sort:-effort by the space's scale with unsized tasks last, a sort never negated, in an OR or twice; an agent never matches or sees an only-me note; titles and snippets cut at 90 and 100 characters",
       "source": "A3 3.9.1, A3 3.9.2, A3 3.9.3, A3 3.9.4, A7 3.10 M3.05",
       "owner": "M3",
       "kind": "ci",

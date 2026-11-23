@@ -304,6 +304,43 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(ids(await search({ q: "-rankword", limit: 50 }))).not.toContain(note);
   });
 
+  test("words from different parts of one task find it together; a phrase stays within one text", async () => {
+    const [spread = "", other = ""] = created(
+      submit(fx, [
+        {
+          kind: "task.create",
+          title: "Spread holder",
+          context: "The radarword sits in the context.",
+          area: "lumen",
+        },
+        { kind: "task.create", title: "Radarword only", summary: "Nothing else here." },
+      ]),
+    );
+    submit(fx, [
+      { kind: "log.add", task: spread, body: "violetword in the log" },
+      { kind: "note.add", task: spread, body: "amberword in a note" },
+    ]);
+    expect(ids(await search({ q: "radarword violetword" }))).toEqual([spread]);
+    expect(ids(await search({ q: "violetword amberword radarword" }))).toEqual([spread]);
+    expect(ids(await search({ q: "radarword violetword OR zzznone" }))).toEqual([spread]);
+    expect(ids(await search({ q: "radarword viol" }))).toEqual([spread]);
+    expect(ids(await search({ q: "radarword" })).sort()).toEqual([spread, other].sort());
+    // A phrase is one text's words in order: never across a context and a log.
+    expect(ids(await search({ q: '"radarword violetword"' }))).toEqual([]);
+    expect(ids(await search({ q: '"sits in the context" violetword' }))).toEqual([spread]);
+    // Filters and negations hold as they do for one document.
+    expect(ids(await search({ q: "radarword violetword area:lumen" }))).toEqual([spread]);
+    expect(ids(await search({ q: "radarword violetword -area:lumen" }))).toEqual([]);
+    expect(ids(await search({ q: "radarword violetword -amberword" }))).toEqual([]);
+    // The row's snippet comes from a document that holds one of the words.
+    const row = (await search({ q: "radarword amberword" })).rows[0];
+    expect(String(row?.["snippet"])).toMatch(/radarword|amberword/);
+    // A retracted note no longer lends its words.
+    submit(fx, [{ kind: "note.delete", task: spread, ordinal: 1 }]);
+    expect(ids(await search({ q: "radarword amberword" }))).toEqual([]);
+    expect(ids(await search({ q: "radarword violetword" }))).toEqual([spread]);
+  });
+
   test("filters: an area includes its projects, priority, focus, ids and has:", async () => {
     expect(ids(await search({ q: "rankword area:Lumen" }))).toEqual([lumen]);
     expect(ids(await search({ q: "rankword p<=2" }))).toEqual([starred]);
@@ -501,6 +538,9 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     });
     expect(ids(await search({ q: "privateword" }))).toEqual([hidden]);
     expect(ids(await search({ q: "privateword" }, { audience: "agent" }))).toEqual([]);
+    // Nor through another document of the task that holds the other word.
+    expect(ids(await search({ q: "audience privateword" }))).toEqual([hidden]);
+    expect(ids(await search({ q: "audience privateword" }, { audience: "agent" }))).toEqual([]);
     expect(ids(await search({ q: "audience -privateword" }, { audience: "agent" }))).toEqual([
       hidden,
     ]);
