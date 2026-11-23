@@ -508,9 +508,8 @@ describe("[A3.3.4.folders.agent] update_task's folder", () => {
         request_id: rid(),
       }),
     );
-    // The answer names the task whose folder followed; its words are the tool's to choose.
-    expect(updated.warnings).toHaveLength(1);
-    expect(updated.warnings[0]).toContain(inner?.ref ?? "");
+    // The answer names the task whose folder followed, and where it is now.
+    expect(updated).toMatchObject({ moved: 1, followed: [{ kind: "task", ref: inner?.ref }] });
     expect((await filed(inner?.ref ?? "")).folder).toEqual({
       path: ends(`moved\\${sep}inner`),
       of: "task",

@@ -2982,6 +2982,19 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `fields` | string[] | yes | The fields the call changed |
 | `context` | "appended" \| "replaced" | no | How it changed the context |
 | `as_of` | string | yes | The space's position when this answer was made |
+| `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved, and they are in it |
+| `followed` | object[], max 20 items | no | The first of them |
+| `followed[].kind` | "project" \| "task" | yes | Whose folder it is |
+| `followed[].name` | string | no | A project's name |
+| `followed[].ref` | string | no | Task reference |
+| `followed[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
+| `stayed` | integer, 0 to 1000000 | no | Folders inside the old one that stayed |
+| `stayed_because` | "old_folder_there" \| "old_folder_unseen" \| "unchecked" \| "not_in_new_folder" | no | Why they stayed: old folder there or unseen, unchecked, or not in the new one |
+| `kept` | object[], max 20 items | no | The first of them |
+| `kept[].kind` | "project" \| "task" | yes | Whose folder it is |
+| `kept[].name` | string | no | A project's name |
+| `kept[].ref` | string | no | Task reference |
+| `kept[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
 | `warnings` | string[] | yes | Warnings, one sentence each |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 

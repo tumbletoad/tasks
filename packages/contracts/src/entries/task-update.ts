@@ -10,6 +10,7 @@ import {
   ContextInput,
   Cwd,
   FolderInput,
+  InsideFolders,
   Mode,
   Priority,
   ProposalId,
@@ -101,6 +102,7 @@ export const TaskUpdateResult = z.strictObject({
   context: z.enum(["appended", "replaced"]).describe("How it changed the context").optional(),
   as_of: AsOf,
   proposal: ProposalId.optional(),
+  ...InsideFolders,
   warnings: Warnings,
   replayed: Replayed.optional(),
 });

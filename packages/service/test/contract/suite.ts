@@ -21,7 +21,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { CLI_NAME } from "@ttasks/brand";
-import { registry, type ErrorBody } from "@ttasks/contracts";
+import { readsOnly, registry, type ErrorBody } from "@ttasks/contracts";
 import { presetSession, SHIM_METHODS, type Attachment, type SpawnPlan } from "@ttasks/launch";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import type { HttpStart } from "../../src/http/index.ts";
@@ -63,6 +63,11 @@ export interface ContractTransport {
    * has no examples on it. Default: every entry.
    */
   carries?(entry: string): boolean;
+  /**
+   * The face sends every write a second time itself and checks that answer against the first, as
+   * MCP checks its text against the replayed result. Default: the suite sends it again.
+   */
+  readonly replays?: true;
   close(): Promise<void>;
 }
 
@@ -845,6 +850,15 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             expect(meaning(entry.name, value), key).toEqual(
               meaning(entry.name, example.output as Value),
             );
+            // The same write sent again, as after a lost answer, gets the answer it got (A3 3.4.1).
+            if (
+              transport.replays !== true &&
+              !readsOnly(entry, input) &&
+              typeof input["request_id"] === "string"
+            ) {
+              const again = await transport.call(entry.name, input, actor);
+              expect(again, `${key}: sent again`).toEqual({ ...value, replayed: true });
+            }
           }
         }
       } finally {

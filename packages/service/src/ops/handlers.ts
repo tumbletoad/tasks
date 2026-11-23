@@ -10,7 +10,10 @@
 //   → the contract's result, checked against the entry's output schema, or the error body.
 //
 // A write's result is built from the writer's result and the caller's input only, so a replay of
-// the same request ID gives the same result (A3 3.4.1), marked `replayed`.
+// the same request ID gives the same result (A3 3.4.1), marked `replayed`. What a handler decides
+// before the writer and says in its answer, such as the folders a move carries along or the group
+// a create found, goes to the writer with the request (`submit`'s `answer`), also when nothing
+// changes, and comes back in the writer's result: the first answer and a replay read it there.
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import {
   findEntry,
@@ -109,7 +112,6 @@ import {
   openPath,
   osOf,
   reservedBy,
-  stayedWhy,
   storedForm,
   type BindFacts,
   type Folder,
@@ -772,9 +774,11 @@ function intentInput(input: Record<string, unknown>): Record<string, unknown> {
 /**
  * Sends one request to the space's writer: the operations, the credential from the connection,
  * the base and reason the caller gave, and the intent, whose fingerprint the receipt keeps
- * (A1 3.8). A conflict or refusal becomes its error body. `warnings` are what the handler
- * found before the writer (a place bound without a remote check): the writer keeps them with an
- * accepted result, so they come back in `result.warnings`, and a replay returns the first call's.
+ * (A1 3.8). A conflict or refusal becomes its error body. `warnings` and `answer` are what the
+ * handler decided before the writer (a place bound without a remote check, the folders a move
+ * carries along, the group a create found): the writer keeps them with an accepted result, so
+ * they come back in `result.warnings` and `result.answer`, and a replay returns the first call's.
+ * With no operation, the request changes nothing and is kept all the same, with its answer.
  */
 async function submit(
   call: Call,
@@ -784,6 +788,7 @@ async function submit(
     /** The base when the caller gave none: the handler's own read that decided a value. */
     readonly base?: string;
     readonly warnings?: readonly string[];
+    readonly answer?: Readonly<Record<string, unknown>>;
     /** False for an undo or redo: the stack's own move never joins the stack (A1 3.10.1). */
     readonly undoable?: false;
     /** Hints of the refusals whose remedy differs for this entry (resultFailure). */
@@ -841,6 +846,7 @@ async function submit(
       ...(options.warnings === undefined || options.warnings.length === 0
         ? {}
         : { warnings: [...options.warnings] }),
+      ...(options.answer === undefined ? {} : { answer: { ...options.answer } }),
       intent: { entry: call.entry.name, input: intentInput(input) },
       ops,
     };
@@ -1646,27 +1652,14 @@ function moveAnswer(move: Move): Record<string, unknown> {
   };
 }
 
-/** The same in words, for a tool whose answer has warnings only. */
-function moveWarnings(move: Move): string[] {
-  const names = (list: readonly Follower[]) =>
-    `${list
-      .slice(0, FOLLOWERS_SHOWN)
-      .map((f) => (f.kind === "task" ? f.label : `project ${f.label}`))
-      .join(", ")}${list.length > FOLLOWERS_SHOWN ? ", …" : ""}`;
-  const count = (n: number) => `${String(n)} folder${n === 1 ? "" : "s"}`;
-  const n = move.stayed.length;
-  return [
-    ...(move.moved.length === 0
-      ? []
-      : [
-          `The old folder was moved, so ${count(move.moved.length)} inside it moved along: ${names(move.moved)}.`,
-        ]),
-    ...(n === 0 || move.because === undefined
-      ? []
-      : [
-          `${count(n)} inside the old one ${n === 1 ? "stays where it is" : "stay where they are"}, because ${stayedWhy(move.because, n)}: ${names(move.stayed)}.`,
-        ]),
-  ];
+/** A move's part of an answer as the writer's result keeps it (`moveAnswer`, `submit`). */
+function movedOf(result: WriteResult): Record<string, unknown> {
+  const said = result.answer ?? {};
+  return Object.fromEntries(
+    ["moved", "followed", "stayed", "stayed_because", "kept"].flatMap((field) =>
+      said[field] === undefined ? [] : [[field, said[field]]],
+    ),
+  );
 }
 
 /** What binding an owner's folder on this machine reads first (read.ts). */
@@ -2600,6 +2593,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...(readBase === undefined || !dismissOnly ? {} : { base: readBase }),
         inserted: { at: 0, count: groups.length },
         warnings: made,
+        answer: moveAnswer(move),
         pathOf: (i, field) =>
           ops[i]?.kind === "task.patch" && field !== undefined && /^[a-z_]+$/u.test(field)
             ? `set.${field}`
@@ -2624,11 +2618,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ? { context: append ? ("appended" as const) : ("replaced" as const) }
         : {}),
       as_of: result.as_of,
-      warnings: madeFirst([
-        ...sourceWarnings(result, sourcePaths),
-        ...result.warnings,
-        ...(updated && result.replayed !== true ? moveWarnings(move) : []),
-      ]),
+      ...(updated ? movedOf(result) : {}),
+      warnings: madeFirst([...sourceWarnings(result, sourcePaths), ...result.warnings]),
       ...replayed(result),
     };
   },
@@ -3362,23 +3353,29 @@ async function folderWrite(
     }
     const projectId = newId("p");
     const ops: Operation[] = [];
+    /** A folder another live project has here: that project, rather than a second one for it. */
+    const exists = async (result: WriteResult) => {
+      const holder = result.answer?.["exists"] as { id: string; name: string; folder: string };
+      return {
+        action,
+        result: "exists",
+        owner: {
+          kind: "project",
+          id: holder.id,
+          name: holder.name,
+          ...(await areaOf(call, holder.id)),
+        },
+        folder: holder.folder,
+        as_of: result.as_of,
+        ...replayed(result),
+      };
+    };
     if (!replay) {
       const read = await bindRead(call, "project", projectId);
       const { taken } = await projectFolderChecked(facts, projectId, folder, read);
-      // A folder another live project has here: that project, rather than a second one for it.
       if (taken !== undefined) {
-        return {
-          action,
-          result: "exists",
-          owner: {
-            kind: "project",
-            id: taken.project,
-            name: taken.name,
-            ...(await areaOf(call, taken.project)),
-          },
-          folder: taken.stored,
-          as_of: read.space.asOf,
-        };
+        const holder = { id: taken.project, name: taken.name, folder: taken.stored };
+        return await exists(await submit(call, [], { answer: { exists: holder } }));
       }
     }
     let area: string | undefined;
@@ -3401,6 +3398,7 @@ async function folderWrite(
       { kind: "project.folder_set", project: projectId, path: folder.stored },
     );
     const result = await submit(call, ops);
+    if (result.answer?.["exists"] !== undefined) return await exists(result);
     await markersAfter(call, ops, result);
     const project = result.results.find((r) => isId(r.id, "p"))?.id ?? projectId;
     return {
@@ -3453,7 +3451,7 @@ async function folderWrite(
         ? { kind: "project.folder_clear", project: owner.id }
         : { kind: "task.folder_clear", task: owner.id };
   const cleared = action === "clear" && !replay ? await clearedOf(call, owner) : undefined;
-  const result = await submit(call, [op]);
+  const result = await submit(call, [op], { answer: moveAnswer(move) });
   await markersAfter(call, [op], result, { move, cleared });
   const done = result.results[0];
   const changed = result.status === "applied";
@@ -3479,7 +3477,7 @@ async function folderWrite(
       ...(done?.ref === undefined ? {} : { ref: done.ref }),
     },
     ...(action === "set" ? { folder: must(stored).stored } : {}),
-    ...(changed && result.replayed !== true ? moveAnswer(move) : {}),
+    ...(changed ? movedOf(result) : {}),
     as_of: result.as_of,
     ...replayed(result),
   };
@@ -3613,6 +3611,8 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     // to the writer.
     const result = await submit(call, [{ kind: "area.create", title: path.area ?? path.project }]);
     const read = await afterWrite(call, (reader) => readGroupsHere(call, reader));
+    if (result.answer !== undefined) return answered(read, await groupAnswer(call, action, result));
+    // A receipt of a build that kept no answer: told again from the result and the input.
     const kind = action === "move" || path.project !== undefined ? "project" : "area";
     const last = result.results.at(-1)?.id ?? "";
     const id =
@@ -3695,19 +3695,15 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
           const { taken } = await projectFolderChecked(facts, project, folder, read);
           // A folder another live project has here: that project, rather than a second one for it.
           if (taken !== undefined) {
+            const holder: WrittenGroup = {
+              kind: "project",
+              id: taken.project,
+              name: taken.name,
+              folder: taken.stored,
+            };
+            const result = await submit(call, [], { answer: { result: "exists", group: holder } });
             const list = await readGroupsHere(call, readerOf(call.space));
-            return answered(list, {
-              action,
-              as_of: read.space.asOf,
-              result: "exists",
-              group: {
-                kind: "project",
-                id: taken.project,
-                name: taken.name,
-                folder: taken.stored,
-                ...(await areaOf(call, taken.project)),
-              },
-            });
+            return answered(list, await groupAnswer(call, action, result));
           }
           ops.push({ kind: "project.folder_set", project, path: folder.stored });
           group = { ...group, folder: folder.stored };
@@ -3766,30 +3762,40 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
       );
     }
   }
-  let asOf: string | undefined;
-  let outcome = "no_change";
-  let replay = false;
-  if (ops.length > 0) {
-    const result = await submit(call, ops);
-    await markersAfter(call, ops, result, { move, cleared });
-    asOf = result.as_of;
-    replay = result.replayed === true;
-    if (result.status === "applied") outcome = done;
-  }
+  // A group that exists already changes nothing, and its answer is kept all the same: a retry
+  // after an undo removed the group says so again, and brings nothing back.
+  const result = await submit(call, ops, { answer: { done, group, ...moveAnswer(move) } });
+  await markersAfter(call, ops, result, { move, cleared });
   let read: GroupsHere;
   try {
     read = await readGroupsHere(call, readerOf(call.space));
   } catch (error) {
     throw storageFailure(error);
   }
-  return answered(read, {
+  return answered(read, await groupAnswer(call, action, result));
+}
+
+/**
+ * What organize's write did, from the writer's result and the answer its handler sent with the
+ * request (`groupWrite`): the same for the first call and every replay. `result` is a word the
+ * handler decided itself (`exists`), `done` the word for a write that applied.
+ */
+async function groupAnswer(
+  call: Call,
+  action: string,
+  result: WriteResult,
+): Promise<Record<string, unknown>> {
+  const said = result.answer ?? {};
+  const group = said["group"] as WrittenGroup;
+  const changed = result.status === "applied";
+  return {
     action,
-    as_of: asOf ?? read.space.asOf,
-    result: outcome,
+    as_of: result.as_of,
+    result: said["result"] ?? (changed ? said["done"] : "no_change"),
     group: group.kind === "project" ? { ...group, ...(await areaOf(call, group.id)) } : group,
-    ...(outcome !== "no_change" && !replay ? moveAnswer(move) : {}),
-    ...(replay ? { replayed: true } : {}),
-  });
+    ...(changed ? movedOf(result) : {}),
+    ...replayed(result),
+  };
 }
 
 /** The space's areas and projects, and the projects' folders on this machine. */
@@ -4253,12 +4259,19 @@ async function prefsSet(call: Call): Promise<unknown> {
       );
     }
   }
+  // Each key from the value it had to the one it is given, as the answer says it if the writer
+  // changes that key: kept with the request, so a replay says what changed then.
+  const sets = changes.map(({ p, value }) => ({
+    key: p.key,
+    from: shownValue(p, before.reads.get(p.key)?.value ?? p.default),
+    to: shownValue(p, value ?? p.default),
+  }));
   let result;
   try {
     result = await submit(
       call,
       changes.map(({ p, value }): Operation => ({ kind: "pref.set", key: p.key, value })),
-      { undoable: false },
+      { undoable: false, answer: { changed: sets } },
     );
   } catch (error) {
     throw (await keysInUse(reader, changes)) ?? error;
@@ -4266,18 +4279,16 @@ async function prefsSet(call: Call): Promise<unknown> {
   const after = await read();
   const keys = new Set(changes.map(({ p }) => p.key));
   const asked = TOOL_PREFERENCES.filter((p) => keys.has(p.key));
-  const shown = (p: PreferenceSpec, from: typeof before) =>
-    shownValue(p, from.reads.get(p.key)?.value ?? p.default);
-  const changed = asked
-    .map((p) => ({ key: p.key, from: shown(p, before), to: shown(p, after) }))
-    .filter((c) => JSON.stringify(c.from) !== JSON.stringify(c.to));
+  const said = result.answer?.["changed"] as typeof sets | undefined;
   return {
     action: "set",
     as_of: result.as_of,
     prefs: asked.map((p) => prefRow(p, "get", after.reads.get(p.key), call.principal)),
-    // A replay reads the values as they are now, after the first call: what it changed is gone.
-    result: result.replayed === true || changed.length > 0 ? "updated" : "no_change",
-    ...(result.replayed === true ? {} : { changed }),
+    result: result.status === "applied" ? "updated" : "no_change",
+    // A receipt of a build that kept no answer says only that it changed something.
+    ...(said === undefined
+      ? {}
+      : { changed: said.filter((_, k) => result.results[k]?.status !== "unchanged") }),
     ...replayed(result),
   };
 }

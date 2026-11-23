@@ -2662,6 +2662,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.answers.replay",
+      "title": "A retry with the same request ID gets the answer the first call got: a create of a group that exists, sent again after Undo removed the group, still changes nothing; a project made for a folder another project has names that project again; a folder change of a project or of a task names the folders that moved along again, a project's name as data",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.bulk.one-call",
       "title": "Twenty-five task drafts at every agent limit (new groups, ten keyed sources, a log entry and a folder each, text of three-byte characters) fit in one add_tasks call, and ten such follow-ups in one complete_task",
       "owner": "M2",

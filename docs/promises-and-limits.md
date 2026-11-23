@@ -10,10 +10,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   shown both values and choose.
 - Changes sent together are saved together, or not at all.
 - A change that was reported as saved survives a crash of TTasks.
-- A change sent again with the same request ID after a lost reply is applied once: for an agent,
-  through the same connection, or through the tools and the shell of one agent TTasks opened. The
-  page and the agent tools resend that way by themselves. At the command line, repeat the command
-  with the `--request-id` that the failed command named.
+- A change sent again with the same request ID after a lost reply is applied once, and answered as
+  it was the first time, also when it changed nothing: for an agent, through the same connection,
+  or through the tools and the shell of one agent TTasks opened. The page and the agent tools
+  resend that way by themselves. At the command line, repeat the command with the `--request-id`
+  that the failed command named.
 - Every change keeps what changed and who made it: you, an agent, or a script.
 - Undo and redo never replace someone else's work that came in between, also when that work set a
   value and set it back. Redo passes over a change of yours it cannot bring back and redoes the

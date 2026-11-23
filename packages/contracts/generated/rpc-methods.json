@@ -7527,6 +7527,86 @@
             },
             "type": "array"
           },
+          "followed": {
+            "description": "The first of them",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "folder": {
+                  "description": "Where it is now, the home as ~",
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "Whose folder it is",
+                  "enum": [
+                    "project",
+                    "task"
+                  ],
+                  "type": "string"
+                },
+                "name": {
+                  "description": "A project's name",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "folder"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "kept": {
+            "description": "The first of them",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "folder": {
+                  "description": "Where it is now, the home as ~",
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "Whose folder it is",
+                  "enum": [
+                    "project",
+                    "task"
+                  ],
+                  "type": "string"
+                },
+                "name": {
+                  "description": "A project's name",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "folder"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "moved": {
+            "description": "Folders inside the old one that moved along: it was moved, and they are in it",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
           "proposal": {
             "description": "Proposal ID",
             "pattern": "^pr_[0-9a-hjkmnp-tv-z]{26}$",
@@ -7543,6 +7623,22 @@
               "no_change",
               "review",
               "proposed"
+            ],
+            "type": "string"
+          },
+          "stayed": {
+            "description": "Folders inside the old one that stayed",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stayed_because": {
+            "description": "Why they stayed: old folder there or unseen, unchecked, or not in the new one",
+            "enum": [
+              "old_folder_there",
+              "old_folder_unseen",
+              "unchecked",
+              "not_in_new_folder"
             ],
             "type": "string"
           },

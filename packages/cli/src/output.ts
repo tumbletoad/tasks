@@ -459,6 +459,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
           ? `No change to ${String(result["task"])} in ${space}${replay(result)}`
           : `Updated ${String(result["task"])} in ${space}: ${fields.join(", ")}${replay(result)}`,
       );
+      lines.push(...insideLines(result));
       break;
     }
     case "entry.add":

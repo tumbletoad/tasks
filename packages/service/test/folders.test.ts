@@ -532,9 +532,11 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
         request_id: rid(),
       }),
     );
-    expect(updated.warnings).toContain(
-      `1 folder inside the old one stays where it is, because the old folder is still there: ${inner?.ref ?? ""}.`,
-    );
+    expect(updated).toMatchObject({
+      stayed: 1,
+      stayed_because: "old_folder_there",
+      kept: [{ kind: "task", ref: inner?.ref }],
+    });
   });
 
   test("a project's list names the repository in its folder, never its address", async () => {
