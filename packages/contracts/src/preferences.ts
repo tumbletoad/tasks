@@ -35,7 +35,10 @@ export type ValueShape =
       readonly item: ValueShape;
       readonly min: number;
       readonly max: number;
-      /** Items are unique: as a whole (`self`) or by their `key` field (`key`). */
+      /**
+       * Items are unique: as a whole (`self`), or by their `key` field ignoring case (`key`), as a
+       * person tells sizes apart.
+       */
       readonly unique?: "self" | "key";
     }
   /** Exactly these fields, each required. */
@@ -72,6 +75,9 @@ export const PREFERENCE_VALUE_BYTES = 16 * 1024;
 
 /** A status or effort key, as the writer checks `tasks.status` and `tasks.effort` (A1 3.6). */
 const STATUS_KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
+/** The longest effort key: the scale's and every task input's, so each size can be used. */
+export const EFFORT_KEY_MAX = 20;
+const EFFORT_KEY = new RegExp(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,${String(EFFORT_KEY_MAX - 1)}}$`);
 /** An instance's key in machine.toml (A4 3.2). */
 const INSTANCE_KEY = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 /** An area's or project's slug (A1 3.3). */
@@ -138,7 +144,10 @@ export const PREFERENCES: readonly PreferenceSpec[] = [
     scope: "space",
     shape: {
       type: "list",
-      item: { type: "object", fields: { key: { type: "text", max: 40, pattern: STATUS_KEY } } },
+      item: {
+        type: "object",
+        fields: { key: { type: "text", max: EFFORT_KEY_MAX, pattern: EFFORT_KEY } },
+      },
       min: 1,
       max: 10,
       unique: "key",
@@ -284,7 +293,7 @@ export function fitsShape(shape: ValueShape, value: unknown): boolean {
       if (!value.every((item) => fitsShape(shape.item, item))) return false;
       if (shape.unique === undefined) return true;
       const ids = value.map((item: unknown) =>
-        shape.unique === "key" && isRecord(item) ? item["key"] : item,
+        shape.unique === "key" && isRecord(item) ? String(item["key"]).toLowerCase() : item,
       );
       return new Set(ids).size === ids.length;
     }

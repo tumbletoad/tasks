@@ -1397,7 +1397,7 @@
                       "type": "null"
                     }
                   ],
-                  "description": "The new value; null resets it to its default"
+                  "description": "The new value, a list as keys separated by commas; null resets it to its default"
                 }
               },
               "required": [

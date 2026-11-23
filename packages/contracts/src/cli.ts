@@ -108,9 +108,10 @@ export function faceFields(entry: AnyEntry, face: CliFace): Map<string, FieldInf
   const element = item === undefined ? undefined : defOf(coreOf(item.schema))["element"];
   const elementShape = element === undefined ? undefined : shapeOf(element as z.ZodType);
   const itemJson = item?.json["items"];
-  if (elementShape === undefined || !isRecord(itemJson)) return fields;
+  if (item === undefined || elementShape === undefined || !isRecord(itemJson)) return fields;
+  // An item's field is required only when the item is: `ttasks prefs get` gives no `set`.
   for (const [name, info] of infos(entry, elementShape, itemJson, `${face.item}[].`)) {
-    if (!fields.has(name)) fields.set(name, info);
+    if (!fields.has(name)) fields.set(name, { ...info, required: item.required && info.required });
   }
   return fields;
 }

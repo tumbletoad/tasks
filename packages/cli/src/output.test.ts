@@ -555,6 +555,22 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] ttasks area and ttasks pref
     );
     expect(described.split("\n")[0]).toBe("tasks.statuses: The statuses (a list of 1 to 12 keys)");
   });
+
+  test("[A3.3.4.prefs.set] a set says what changed from and to, or that nothing did", () => {
+    const row = { key: "tasks.effort_scale", value: ["XS", "S", "M", "L", "XL"], default: [] };
+    const set = (changed: unknown[]) =>
+      render(
+        "prefs.manage",
+        { action: "set", as_of: "1.1046.5n0w8k3q", prefs: [row], result: "updated", changed },
+        "Mira",
+      );
+    expect(
+      set([{ key: "tasks.effort_scale", from: ["S", "M", "L"], to: ["XS", "S", "M", "L", "XL"] }]),
+    ).toBe('tasks.effort_scale: ["S","M","L"] → ["XS","S","M","L","XL"]\n');
+    expect(set([])).toBe(
+      'Nothing changed: the value was so already.\ntasks.effort_scale: ["XS","S","M","L","XL"]\n',
+    );
+  });
 });
 
 describe("[A3.3.5.error-text] a message and its hint, each said once", () => {

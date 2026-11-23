@@ -634,6 +634,13 @@ const SQL = {
   updatePreference:
     "UPDATE preferences SET value = $value, schema_ver = $schema_ver WHERE key = $id",
   preferenceVersions: "UPDATE preferences SET version = $seq, fv = $fv, fp = $fp WHERE key = $id",
+  // An active task that holds one of the keys, by scale: a change that drops it is refused.
+  statusInUse:
+    "SELECT 1 FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL " +
+    "AND status IN (SELECT value FROM json_each($keys)) LIMIT 1",
+  effortInUse:
+    "SELECT 1 FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL " +
+    "AND effort IN (SELECT value FROM json_each($keys)) LIMIT 1",
   areaRow: "SELECT * FROM areas WHERE id = $id",
   projectRow: "SELECT * FROM projects WHERE id = $id",
   lastArea: "SELECT max(position) AS p FROM areas",
@@ -830,8 +837,17 @@ export function readAsOf(conn: Connection): AsOf {
  * The keys of `tasks.statuses` or `tasks.effort_scale` as the registry reads them: the stored list
  * when it fits its shape, else the default (A1 3.16).
  */
-function listPreference(conn: Connection, key: "tasks.statuses" | "tasks.effort_scale"): string[] {
-  const value = readSpacePreference(conn, key).value;
+function listPreference(conn: Connection, key: ScaleKey): string[] {
+  return scaleKeys(readSpacePreference(conn, key).value);
+}
+
+type ScaleKey = "tasks.statuses" | "tasks.effort_scale";
+
+const isScaleKey = (key: string): key is ScaleKey =>
+  key === "tasks.statuses" || key === "tasks.effort_scale";
+
+/** A scale's keys from its value: a list of keys, or of `{key}` objects. */
+function scaleKeys(value: unknown): string[] {
   if (!Array.isArray(value)) throw misuse("A list preference reads as a list");
   return value.map((item: unknown) =>
     typeof item === "string" ? item : String((item as { key?: unknown }).key),
@@ -2006,6 +2022,24 @@ export class SpaceWriter {
           const spec = must(preferenceSpec(op.key), "A checked pref.set names a declared key");
           if (!mayWrite(spec, request.actor.actor_kind)) {
             problem("PREFERENCE_FORBIDDEN", "Only the user changes this preference", i, "key");
+          }
+          // A task keeps its status and effort whatever the scale says, so a scale never drops a
+          // key an active task holds: the person moves those tasks first and loses nothing.
+          if (isScaleKey(op.key)) {
+            const kept = new Set(scaleKeys(op.value ?? spec.default));
+            const removed = listPreference(conn, op.key).filter((key) => !kept.has(key));
+            const inUse = op.key === "tasks.statuses" ? SQL.statusInUse : SQL.effortInUse;
+            if (
+              removed.length > 0 &&
+              conn.prepare(inUse).get({ keys: JSON.stringify(removed) }) !== undefined
+            ) {
+              problem(
+                "VALIDATION_FAILED",
+                "Active tasks hold a key this change removes: give them another first",
+                i,
+                "value",
+              );
+            }
           }
           const touches: Touch[] = [];
           const row = conn.prepare(SQL.preferenceRow).get({ id: op.key });
