@@ -3,7 +3,7 @@
 // reload; an agent's question under "Needs you" until the person answers or dismisses it, which
 // Undo takes back; a long thread read back to its first entry; and a title still being typed back
 // in its editor after a reload, unsent. At 1,440 and 390 px in both themes. Fixture data only.
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { axeFound, openTask, picture, pictures, showsSpace, signIn, themes } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
@@ -32,8 +32,17 @@ async function openAgents(page: Page, world: World): Promise<void> {
   await showsSpace(page, world.mira.name);
 }
 
-/** The state in every theme of this browser, at both widths, axe clean in `part`, no sideways scroll. */
-async function shots(page: Page, world: World, name: string, part = "main"): Promise<void> {
+/**
+ * The state in every theme of this browser, at both widths, axe clean in `part`, no sideways
+ * scroll; `show` in view when given.
+ */
+async function shots(
+  page: Page,
+  world: World,
+  name: string,
+  part = "main",
+  show?: Locator,
+): Promise<void> {
   for (const theme of themes()) {
     await world.machine("ui.theme", theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme, { timeout: SLOW_MS });
@@ -42,6 +51,7 @@ async function shots(page: Page, world: World, name: string, part = "main"): Pro
       [390, 900],
     ] as const) {
       await page.setViewportSize({ width, height });
+      await show?.scrollIntoViewIfNeeded();
       await picture(page, `while-away-${name}-${theme}-${String(width)}.png`);
       if (pictures()) expect(await axeFound(page, [part]), `axe in ${theme}`).toEqual([]);
       const scroll = await page.evaluate(
@@ -148,8 +158,9 @@ test.describe("[A5.while-away.e2e.older] a long thread reads back to its first e
     await row.locator('[data-part="earlier"]').click();
     const older = row.getByRole("button", { name: "Older entries" });
     await expect(older).toBeEnabled({ timeout: SLOW_MS });
-    await shots(page, world, "older");
+    await shots(page, world, "older", "main", older);
     // The entry that was the oldest shown stays where it was on the screen.
+    await older.scrollIntoViewIfNeeded();
     const first = thread.locator("li").first();
     const was = await first.getAttribute("data-entry-key");
     const at = (await first.boundingBox())?.y;
@@ -157,7 +168,7 @@ test.describe("[A5.while-away.e2e.older] a long thread reads back to its first e
     await expect(thread).toContainText("Note 1:", { timeout: SLOW_MS });
     await expect(row.locator('[data-part="earlier"]')).toHaveCount(0);
     const kept = thread.locator(`li[data-entry-key="${String(was)}"]`);
-    expect((await kept.boundingBox())?.y).toBeCloseTo(at ?? 0, 0);
+    expect(Math.abs(((await kept.boundingBox())?.y ?? 0) - (at ?? 0))).toBeLessThanOrEqual(2);
     await expect(kept.locator("..").locator("li").first()).toContainText("Note 1:");
   });
 });

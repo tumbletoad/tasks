@@ -1,15 +1,16 @@
 // The expanded task's thread (A5 3.7 item 5, 3.9): notes, log entries, sessions and background
 // runs, oldest first, as a conversation reads. Notes and log
 // entries come from the detail (detail.ts); sessions are the task's launch receipts and runs are
-// its run records, which the feed's launch and run events refresh. The last six entries show, and
-// "Earlier" reveals the rest. Each entry: the actor's mark (the person's initial, an agent's
+// its run records, which the feed's launch and run events refresh. The last six entries show,
+// "Earlier" reveals the rest the page holds, and "Older entries" reads further back for as long as
+// there is more; the entry that was the oldest shown stays where it was on the screen. Each entry: the actor's mark (the person's initial, an agent's
 // initials, an instance's monogram), the actor, the mode, the time, then the text, as Markdown
 // that is never HTML (markdown.tsx). A run shows what was asked, its state in plain words with
 // Stop while it may still work, and the agent's answer or question (RunBody). A session shows what
 // was asked the same way (the note its launch names) above its state, and a launch that did not
 // open offers to open again with it. Copy on a log entry shows on hover and on focus. Grouped field
 // changes and their Revert join with M5.09.
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { Instance, Receipt, Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
@@ -173,6 +174,10 @@ export interface ThreadProps {
   readonly instances: readonly Instance[];
   /** The pages ran out before the oldest entries. */
   readonly partial: boolean;
+  /** Reads the entries before the oldest the thread holds. */
+  readonly onOlder?: (() => void) | undefined;
+  /** Older entries were asked for and have not come yet. */
+  readonly loadingOlder?: boolean;
   /** Open an instance again with a request already on the task (its note). */
   readonly onOpenAgain?: (note: DetailNote, instance: Instance) => void;
   /** The person's Stop of a run. */
@@ -186,12 +191,17 @@ export function Thread({
   runs = [],
   instances,
   partial,
+  onOlder,
+  loadingOlder = false,
   onOpenAgain,
   onStop,
 }: ThreadProps) {
   const t = useT();
   const say = useToast();
   const [all, setAll] = useState(false);
+  const list = useRef<HTMLOListElement>(null);
+  /** The entry that was the oldest shown when the person asked for earlier ones, and where it was. */
+  const anchor = useRef<{ key: string; top: number } | undefined>(undefined);
   /** The entry that holds focus: it stays shown while it does, however many entries arrive. */
   const [focused, setFocused] = useState<string | undefined>(undefined);
 
@@ -319,23 +329,49 @@ export function Thread({
     : Math.max(0, Math.min(items.length - SHOWN_ENTRIES, held < 0 ? Infinity : held));
   const shown = items.slice(hidden);
   const today = new Date().toDateString();
+  const first = shown[0]?.key;
+  /** Earlier entries go above the one shown first: it is kept where the person sees it. */
+  const keepPlace = () => {
+    const entry = first === undefined ? null : entryOf(list.current, first);
+    if (first !== undefined && entry !== null) {
+      anchor.current = { key: first, top: entry.getBoundingClientRect().top };
+    }
+  };
+  useLayoutEffect(() => {
+    const kept = anchor.current;
+    if (kept === undefined || kept.key === first) return;
+    anchor.current = undefined;
+    const entry = entryOf(list.current, kept.key);
+    if (entry === null) return;
+    window.scrollBy(0, entry.getBoundingClientRect().top - kept.top);
+    // The button went with the last of them: the place stays with the entry.
+    if (document.activeElement === document.body) entry.focus({ preventScroll: true });
+  });
+  const older = hidden === 0 && partial && onOlder !== undefined;
   return (
     <>
-      {hidden > 0 || partial ? (
+      {hidden > 0 || older ? (
         <button
           type="button"
           className={styles.earlier}
           data-part="earlier"
-          disabled={hidden === 0}
+          aria-busy={older && loadingOlder}
           onClick={() => {
-            setAll(true);
+            keepPlace();
+            if (hidden > 0) setAll(true);
+            else if (!loadingOlder) onOlder?.();
           }}
         >
-          {hidden > 0 ? t("thread.earlier", { count: hidden }) : t("thread.partial")}
+          {hidden > 0
+            ? t("thread.earlier", { count: hidden })
+            : loadingOlder
+              ? t("thread.loadingOlder")
+              : t("thread.older")}
         </button>
       ) : null}
       {/* New entries are announced politely; the ones there when it opens are not. */}
       <ol
+        ref={list}
         className={styles.thread}
         aria-label={t("thread.label")}
         aria-live="polite"
@@ -354,6 +390,7 @@ export function Thread({
           <li
             key={item.key}
             data-entry-key={item.key}
+            tabIndex={-1}
             className={styles.entry}
             data-entry={item.kind}
             data-state={item.state}
@@ -429,4 +466,8 @@ export function Thread({
       </ol>
     </>
   );
+}
+
+function entryOf(list: HTMLOListElement | null, key: string): HTMLElement | null {
+  return list?.querySelector<HTMLElement>(`[data-entry-key="${CSS.escape(key)}"]`) ?? null;
 }

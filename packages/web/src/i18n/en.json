@@ -319,7 +319,8 @@
   "thread.openAgain": "Open again with this",
   "thread.openAgainLabel": "Open again with this request in {label}",
   "thread.earlier": "Earlier · {count}",
-  "thread.partial": "Older entries are not shown",
+  "thread.older": "Older entries",
+  "thread.loadingOlder": "Reading older entries…",
   "thread.copy": "Copy",
   "thread.copyEntry": "Copy the entry by {who}",
 

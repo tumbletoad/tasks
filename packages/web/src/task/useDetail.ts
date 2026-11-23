@@ -1,13 +1,16 @@
 // The expanded task's detail, live (A5 3.15 item 8): read when the task expands, and again
 // whenever a frame of the feed touched the task (its row, a note, a log entry, a source) or a
-// fresh snapshot replaced the working set. Only the
-// newest read applies: an older one that answers late never replaces a newer detail. A read that
-// fails keeps what is shown and says so, unless the session itself failed (signed out, a stale
-// build), which the frame reports.
-import { useContext, useEffect, useState } from "react";
+// fresh snapshot replaced the working set. Only the newest read applies: an older one that
+// answers late never replaces a newer detail, and stops reading pages once it is not the newest.
+// A read that fails keeps what is shown and says so, unless the session itself failed (signed
+// out, a stale build), which the frame reports.
+//
+// "Older entries" reads further back: every read from then on, also the ones the feed asks for,
+// reads that many pages. What is loaded lives as long as the task stays expanded.
+import { useCallback, useContext, useEffect, useState } from "react";
 import { Session } from "../context.ts";
 import { Latest } from "../latest.ts";
-import { readDetail, type Detail } from "./detail.ts";
+import { PAGES, readDetail, type Detail } from "./detail.ts";
 
 export interface DetailState {
   readonly detail: Detail | undefined;
@@ -17,6 +20,19 @@ export interface DetailState {
   readonly failed: boolean;
   /** The task is not in the space (purged, or never was). */
   readonly missing: boolean;
+  /** Reads the entries before the oldest `detail` holds, when there are any. */
+  readonly older?: (() => void) | undefined;
+  /** Older entries were asked for and have not come yet. */
+  readonly loadingOlder?: boolean;
+}
+
+interface Read {
+  readonly detail: Detail | undefined;
+  readonly base?: string | undefined;
+  readonly failed: boolean;
+  readonly missing: boolean;
+  /** How many pages `detail` was read with. */
+  readonly pages: number;
 }
 
 const isNotFound = (error: unknown): boolean =>
@@ -25,11 +41,15 @@ const isNotFound = (error: unknown): boolean =>
 /** `requests`: the notes the sessions the thread shows name as their requests, read whatever their age. */
 export function useDetail(task: string, requests: readonly string[] = []): DetailState {
   const { api, live } = useContext(Session);
-  const [state, setState] = useState<DetailState>({
+  const [state, setState] = useState<Read>({
     detail: undefined,
     failed: false,
     missing: false,
+    pages: PAGES,
   });
+  /** How many pages the person has asked to see of the task: a task expanded anew starts over. */
+  const [asked, setAsked] = useState({ task, pages: PAGES });
+  const pages = asked.task === task ? asked.pages : PAGES;
 
   // One string, so receipts read again with the same requests read nothing again.
   const named = requests.join(" ");
@@ -40,9 +60,9 @@ export function useDetail(task: string, requests: readonly string[] = []): Detai
     const load = () => {
       const newest = reads.begin(task);
       const base = live.store.asOf;
-      readDetail(api.client, task, wanted)
+      readDetail(api.client, task, wanted, pages, () => !current || !newest())
         .then((detail) => {
-          if (current && newest()) setState({ detail, base, failed: false, missing: false });
+          if (current && newest()) setState({ detail, base, failed: false, missing: false, pages });
         })
         .catch((error: unknown) => {
           if (!current || !newest() || live.failed(error)) return;
@@ -59,7 +79,24 @@ export function useDetail(task: string, requests: readonly string[] = []): Detai
       current = false;
       stop();
     };
-  }, [api, live, task, named]);
+  }, [api, live, task, named, pages]);
 
-  return state;
+  const loadingOlder = pages > state.pages;
+  const older = useCallback(() => {
+    // One press at a time: a press while the last one reads asks for nothing more.
+    setAsked((before) =>
+      before.task === task && before.pages > state.pages
+        ? before
+        : { task, pages: state.pages + PAGES },
+    );
+  }, [task, state.pages]);
+
+  return {
+    detail: state.detail,
+    base: state.base,
+    failed: state.failed,
+    missing: state.missing,
+    ...(state.detail?.partial === true ? { older } : {}),
+    loadingOlder,
+  };
 }

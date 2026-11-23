@@ -3,10 +3,10 @@
 // lifecycle (its place on this machine, when it was created). The sections give the long text in
 // full: the context, every note (those to agents too), the log, the sources, the outcome and
 // learnings. A sections read comes in pages sized for an agent's budget (A3 3.4.4), so this reads
-// page after page, up to `MAX_PAGES`, and joins a text a page boundary split. The notes the
-// thread's sessions name as their requests come whole with the digest, by reference, whatever
-// their age or length. Plain code: the hook (useDetail.ts) refetches it when the feed touches the
-// task.
+// page after page, as many as the person has asked for (`PAGES` at first, `PAGES` more for each
+// "Older entries"), and joins a text a page boundary split. The notes the thread's sessions name
+// as their requests come whole with the digest, by reference, whatever their age or length. Plain
+// code: the hook (useDetail.ts) refetches it when the feed touches the task.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 
@@ -55,8 +55,11 @@ export interface Detail {
   readonly partial: boolean;
 }
 
-/** At most this many pages per read: about 80 kB of text, far beyond a task's usual size. */
-export const MAX_PAGES = 20;
+/**
+ * The pages a thread reads at first, and how many more each "Older entries" reads: about 80 kB of
+ * text, far beyond a task's usual size.
+ */
+export const PAGES = 20;
 
 /** The most notes one read names, as `task.get` takes them: the newest are read. */
 const NAMED_NOTES = 64;
@@ -182,38 +185,41 @@ export function rowOfFacts(
 }
 
 /**
- * Reads the detail of `task` (an ID or a reference) through the client: digest and every page,
- * and whole the notes named in `requests` (the requests of the sessions the thread shows).
+ * Reads the detail of `task` (an ID or a reference) through the client: digest and up to `pages`
+ * pages, and whole the notes named in `requests` (the requests of the sessions the thread shows).
+ * A read that `stale` says no one waits for any more stops between pages.
  */
 export async function readDetail(
   client: Client,
   task: string,
   requests: readonly string[] = [],
+  pages = PAGES,
+  stale: () => boolean = () => false,
 ): Promise<Detail> {
   const notes = [...new Set(requests)]
     .sort((a, b) => ordinal(b) - ordinal(a))
     .slice(0, NAMED_NOTES);
   const digest = client.task.get({ task, ...(notes.length === 0 ? {} : { notes }) });
-  const pages: Sections[] = [];
+  const read: Sections[] = [];
   let before: string | undefined;
   let partial = false;
   for (let page = 0; ; page += 1) {
-    if (page >= MAX_PAGES) {
+    if (page >= pages || stale()) {
       partial = true;
       break;
     }
-    const read = await client.task.get({
+    const answer = await client.task.get({
       task,
       sections: [...SECTIONS],
       log_limit: 50,
       ...(before === undefined ? {} : { before }),
     });
-    if (read.view !== "sections") break;
-    pages.push(read.sections);
-    before = read.before;
+    if (answer.view !== "sections") break;
+    read.push(answer.sections);
+    before = answer.before;
     if (before === undefined) break;
   }
   const facts = await digest;
   if (facts.view !== "digest") throw new Error("task.get answered without a digest");
-  return mergePages(facts.task, pages, partial, facts.notes ?? []);
+  return mergePages(facts.task, read, partial, facts.notes ?? []);
 }
