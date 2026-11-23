@@ -8,6 +8,7 @@
 // - A folder (an absolute path) names its own entry, in whatever state.
 // - A name that two different spaces have is `ambiguous`: the ID names one of them.
 import { isAbsolute, resolve } from "node:path";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
 
 /** What a lookup reads of a space. */
@@ -116,6 +117,20 @@ export function spaceChanged(): AppError {
     code: "space_unavailable",
     message: "This space was closed, restored or claimed since this page loaded it.",
     hint: "Load it again to see it as it is now. Nothing more is saved from this page.",
+    data: { reason: "replaced", retryable: false },
+  });
+}
+
+/**
+ * An agent session's call once another copy serves its space than the one its launch or run was
+ * made in (a claim or a restore in place): what the agent read and holds is of that copy, so nothing
+ * of the call is done, and a retry would be refused the same way.
+ */
+export function sessionReplaced(): AppError {
+  return new AppError({
+    code: "space_unavailable",
+    message: "This space was restored since this session began. Nothing of this call was done.",
+    hint: `Do not retry. Tell the user; they start the agent again from the task in ${PRODUCT_NAME}.`,
     data: { reason: "replaced", retryable: false },
   });
 }

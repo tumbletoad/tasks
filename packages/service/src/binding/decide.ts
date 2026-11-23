@@ -35,12 +35,14 @@ const PRESET = "CLAUDE_CODE_SESSION_ID";
 /** A launch without an app or a task, or a run without a task, names nothing. */
 function sessionOf(live: Live): Session | undefined {
   if (live.task === null) return undefined;
+  const copy = live.copy === undefined ? {} : { copy: live.copy };
   if (live.of === "run") {
     return {
       session: live.session,
       space: live.space,
       task: live.task,
       home: { of: "run", run: live.run, instance: live.instance },
+      ...copy,
     };
   }
   if (live.app === undefined) return undefined;
@@ -49,6 +51,7 @@ function sessionOf(live: Live): Session | undefined {
     space: live.space,
     task: live.task,
     home: { of: "launch", app: live.app, home: live.home },
+    ...copy,
   };
 }
 

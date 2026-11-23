@@ -298,9 +298,16 @@ export interface LaunchServiceOptions extends LaunchOptions {
   readonly registeredElsewhere?: RegisteredElsewhere;
 }
 
+/** A space's launching on one writer: its machine and store, and the copy that writer serves. */
+interface Launching {
+  readonly machine: LaunchMachine;
+  readonly store: SpaceExecutionStore;
+  readonly copy: string | undefined;
+}
+
 interface Hosted {
   readonly writer: unknown;
-  readonly made: Promise<{ machine: LaunchMachine; store: SpaceExecutionStore }>;
+  readonly made: Promise<Launching>;
 }
 
 /** The one answer every refused shim call gets: no reason a guesser could learn from. */
@@ -1311,7 +1318,7 @@ ${instance}`;
    */
   async #openWith(
     space: string,
-    hosted: { machine: LaunchMachine; store: SpaceExecutionStore },
+    hosted: Launching,
     click: Omit<NewIntent, "machine">,
     requestId: string,
     planFor: (intent: LaunchIntent) => SpawnPlan,
@@ -1319,7 +1326,9 @@ ${instance}`;
   ): Promise<LaunchIntent> {
     const intent = await hosted.machine.open(click, requestId);
     if (intent.route === "terminal" && intent.state === "prepared") {
-      this.host.prepare(space, intent, planFor(intent), given);
+      // The launch's session and reports belong to the copy its click was made in.
+      const copy = hosted.copy === undefined ? {} : { copy: hosted.copy };
+      this.host.prepare(space, intent, planFor(intent), { ...given, ...copy });
     }
     return intent;
   }
@@ -1568,9 +1577,7 @@ ${instance}`;
   }
 
   /** The space's machine and store, made once per writer, with that writer's recovery. */
-  async #space(
-    space: string,
-  ): Promise<{ machine: LaunchMachine; store: SpaceExecutionStore } | undefined> {
+  async #space(space: string): Promise<Launching | undefined> {
     const served = this.#options.spaces().find((s) => s.id === space && isOpen(s));
     const writer = served?.writer;
     if (served === undefined || writer === undefined) return undefined;
@@ -1587,10 +1594,7 @@ ${instance}`;
     return made;
   }
 
-  async #make(
-    space: string,
-    served: ServedSpace,
-  ): Promise<{ machine: LaunchMachine; store: SpaceExecutionStore }> {
+  async #make(space: string, served: ServedSpace): Promise<Launching> {
     const writer = served.writer;
     if (writer === undefined) throw new Error("The space has no writer");
     const { machine: id, now, elapsed } = this.#options;
@@ -1621,7 +1625,7 @@ ${instance}`;
       ...(now === undefined ? {} : { now }),
       ...(elapsed === undefined ? {} : { elapsed }),
     });
-    return { machine, store };
+    return { machine, store, copy: served.copy };
   }
 
   /**

@@ -132,6 +132,8 @@ export interface LiveLaunch {
   /** The agent's app and home folder as the click recorded them; a launch can lack either. */
   readonly app?: string;
   readonly home?: string;
+  /** The copy of the space the click was made in: its session writes there only. */
+  readonly copy?: string;
 }
 
 /** Sends the claim's reply to the shim. Resolves once it has left the service. */
@@ -141,9 +143,14 @@ export interface ShimHostOptions {
   readonly records: RecordStore;
   readonly probe: ProcessProbe;
   readonly platform: NodeJS.Platform;
-  /** The space's launch machine, while the space is open as this machine's. */
+  /**
+   * The space's launch machine, while the space is open as this machine's from the copy `copy`
+   * (a launch's record names the copy its click was made in; none for an earlier build's record):
+   * a launch is never reported into another copy of its space.
+   */
   readonly machine: (
     space: string,
+    copy: string | undefined,
   ) => LaunchMachine | undefined | Promise<LaunchMachine | undefined>;
   /**
    * Where the agent's environment starts for `launch` (environment.ts AgentBase): read at each
@@ -361,7 +368,7 @@ export class ShimHost {
     if (!isPid(pid) || !isStartTime(startTime)) return refused("malformed");
     const found = this.#byTicket(ticket);
     if (found?.ticket === undefined) return refused("unknown");
-    const { launch, space } = found;
+    const { launch, space, copy } = found;
     if (found.ticket.shimUsed) return refused("used");
     const hash = found.ticket.hash;
     const claiming = this.#claiming.get(launch) ?? new Set<string>();
@@ -374,7 +381,7 @@ export class ShimHost {
       // shim may try again (the service answers it as retryable), never a final refusal.
       let machine: LaunchMachine | undefined;
       try {
-        machine = await this.#machine(space);
+        machine = await this.#machine(space, copy);
       } catch {
         return refused("space"); // The space's machine could not be made now (its writer).
       }
@@ -554,7 +561,7 @@ export class ShimHost {
         break;
       }
     }
-    const machine = await this.#machine(record.space);
+    const machine = await this.#machine(record.space, record.copy);
     if (machine === undefined) return refused("space");
     let intent: LaunchIntent | undefined;
     try {
@@ -609,6 +616,7 @@ export class ShimHost {
       session: sessionOf({ id: record.launch, session: record.session ?? null }),
       ...(record.app === undefined ? {} : { app: record.app }),
       ...(record.home === undefined ? {} : { home: record.home }),
+      ...(record.copy === undefined ? {} : { copy: record.copy }),
     };
   }
 
@@ -737,7 +745,7 @@ export class ShimHost {
     if (observation !== undefined) {
       let machine: LaunchMachine | undefined;
       try {
-        machine = await this.#machine(record.space);
+        machine = await this.#machine(record.space, record.copy);
         if (machine !== undefined) await machine.report(launch, observation);
       } catch {
         return false; // The store did not answer: the next check tries again.

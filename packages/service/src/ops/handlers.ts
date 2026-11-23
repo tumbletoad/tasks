@@ -78,6 +78,7 @@ import {
   findSpace,
   isAmbiguity,
   onlySpace,
+  sessionReplaced,
   spaceChanged,
   type Copy,
 } from "./copies.ts";
@@ -479,10 +480,15 @@ export function defaultOf<S extends Copy>(
   return copyOf(live, defaultId) ?? "not_served";
 }
 
-/** The space a call uses, which for a page's call must be the copy the page loaded. */
+/**
+ * The space a call uses, which must be the copy its caller was made for: the copy a page loaded,
+ * or the copy an agent's session was launched in.
+ */
 function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): UsableSpace {
   const space = spaceOfCall(host, caller, named);
   if (caller.copy !== undefined && space.copy !== caller.copy) throw spaceChanged();
+  const session = caller.binding?.kind === "session" ? caller.binding.session : undefined;
+  if (session?.copy !== undefined && space.copy !== session.copy) throw sessionReplaced();
   return space;
 }
 

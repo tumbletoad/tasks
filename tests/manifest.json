@@ -4221,6 +4221,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.10.5.copies.session",
+      "title": "An agent's terminal session goes on over a close and an open of its unchanged folder; after a claim of a backup, a note from its bridge and from its shell and a read are refused as replaced, in words that say not to retry and to start the agent again, and the claimed space holds no receipt",
+      "source": "A2 3.10.5, A3 3.7.8, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.10.5.copies.e2e",
       "title": "In Chromium and Firefox against the real service, at 1,440 and 390 px without sideways scroll: Open folder with a restored copy while its space is open is refused with what is open, what the folder is and what to do; a tab whose space is closed says so; the copy opened alone says it is a restored copy with its folder, backup and ways out, in the switcher too; an edit there keeps the words with the reason, Copy and Discard and no Try again, also over a reload; a claim of the copy tells the open tab, whose Undo then writes nothing, and loading it again shows the space as it is now",
       "source": "A2 3.10.5, A5 3.11, A1 3.18",

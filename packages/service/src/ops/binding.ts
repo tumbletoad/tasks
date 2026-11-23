@@ -24,6 +24,11 @@ export interface Session {
   /** Its task (`t_` ID): the default of every call that names none. */
   readonly task: string;
   readonly home: SessionHome;
+  /**
+   * The copy of its space the launch or run was made in (hub/spaces.ts copyToken): once another
+   * copy serves the space, every call is refused. Absent for a launch an earlier build recorded.
+   */
+  readonly copy?: string;
 }
 
 /** A bridge's binding, fixed at its bind. A shell that is no session has none. */

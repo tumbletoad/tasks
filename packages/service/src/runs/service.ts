@@ -99,9 +99,10 @@ export interface RunServiceOptions extends RunOptions {
   readonly agents?: RunAgents;
 }
 
-/** What a run ticket names: the run its bridge acts for. */
+/** What a run ticket names: the run its bridge acts for, in the copy of its space it started in. */
 interface RunTicket {
   readonly space: string;
+  readonly copy: string | undefined;
   readonly run: string;
   readonly task: string | null;
   readonly instance: string;
@@ -111,6 +112,8 @@ interface RunTicket {
 export interface LiveRun {
   readonly run: string;
   readonly space: string;
+  /** The copy of its space it started in: its session writes there only. */
+  readonly copy?: string;
   /** Null for a routine's run. */
   readonly task: string | null;
   readonly instance: string;
@@ -550,6 +553,7 @@ export class RunService {
     return {
       run: found.run,
       space: found.space,
+      ...(found.copy === undefined ? {} : { copy: found.copy }),
       task: found.task,
       instance: found.instance,
       session: sessionOf({ id: found.run }),
@@ -703,8 +707,16 @@ export class RunService {
    * land can be tried again; its ticket names it to the bridge from then until it ends.
    */
   async #prepare(lane: Lane, run: RunRecord): Promise<Prepared> {
+    // The copy whose writer hosts the lane: a run never starts from another copy's task.
     const served = this.#served(lane.space);
-    if (served === undefined) throw new Error("The space is not open on this machine");
+    const hosted = this.#hosted.get(lane.space);
+    if (
+      served === undefined ||
+      hosted?.life.host !== lane.host ||
+      hosted.writer !== served.writer
+    ) {
+      throw new Error("The space is not open on this machine");
+    }
     const given = this.#commands.get(run.id);
     const agents = this.#options.agents;
     if (given === undefined && agents !== undefined) {
@@ -726,6 +738,7 @@ export class RunService {
           if (toolsFile !== undefined) this.#files.writePrivate(run.id, TOOLS_FILE, toolsFile);
           this.#tickets.set(ticket, {
             space: lane.space,
+            copy: served.copy,
             run: run.id,
             task: run.task,
             instance: run.instance,
