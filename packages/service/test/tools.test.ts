@@ -555,9 +555,10 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
       const read = await call("task.get", { task: ref });
       const digest = read["task"] as Json;
       expect(digest["title"]).toHaveLength(200);
-      expect(digest["summary"]).toHaveLength(240);
+      // The summary comes whole: an agent that replaces it was shown all of it.
+      expect(digest["summary"]).toBe("s".repeat(300));
       expect(digest["context"]).toHaveLength(800);
-      expect(digest["cut"]).toEqual({ title: 80, summary: 60, context: 100 });
+      expect(digest["cut"]).toEqual({ title: 80, context: 100 });
       expect((digest["instructions"] as Json[]).map((x) => x["ref"])).toEqual([
         "n7",
         "n6",
@@ -574,7 +575,13 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
       ]);
       expect((digest["log"] as Json[]).map((x) => x["ref"])).toEqual(["l10", "l9", "l8"]);
       expect((digest["sources"] as Json[]).map((x) => x["cut"])).toEqual([51, 51, 51, 51, 51]);
-      expect(digest["more"]).toEqual({ instructions: 2, notes: 2, log: 7, sources: 3 });
+      expect(digest["more"]).toEqual({
+        instructions: 2,
+        notes: 2,
+        log: 7,
+        sources: 3,
+        learnings: 0,
+      });
 
       // A note for agents over 1,000 characters stops the digest's notes for agents there.
       await call(
@@ -588,6 +595,78 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
     },
     LONG,
   );
+
+  test("the digest shows a task's first learnings, each whole, and counts the rest", async () => {
+    const finished = async (title: string, learnings: string[]) => {
+      const [task] = await add(title);
+      const ref = task ?? "";
+      await call(
+        "task.finish",
+        {
+          task: ref,
+          outcome: "Fixture outcome.",
+          learnings,
+          base: await asOf(),
+          request_id: rid(),
+        },
+        USER,
+      );
+      return (await call("task.get", { task: ref }))["task"] as Json;
+    };
+    const five = await finished("Fixture task with five lessons", ["A.", "B.", "C.", "D.", "E."]);
+    expect(five["learnings"]).toEqual(["A.", "B.", "C."]);
+    expect((five["more"] as Json)["learnings"]).toBe(2);
+    // A lesson longer than the digest holds stops the preview there: none is shown cut.
+    const long = await finished("Fixture task with a long lesson", ["A.", "L".repeat(301), "C."]);
+    expect(long["learnings"]).toEqual(["A."]);
+    expect((long["more"] as Json)["learnings"]).toBe(2);
+  });
+
+  test("a crowded digest still shows the whole summary and says the task has learnings", async () => {
+    const [task] = await add("Fixture crowded task");
+    const ref = task ?? "";
+    const summary = "s".repeat(400);
+    await call(
+      "task.update",
+      { task: ref, set: { summary }, base: await asOf(), request_id: rid() },
+      USER,
+    );
+    for (const letter of ["a", "b"]) {
+      await call(
+        "entry.add",
+        {
+          task: ref,
+          kind: "note",
+          text: letter.repeat(1_000),
+          for_agents: true,
+          request_id: rid(),
+        },
+        USER,
+      );
+    }
+    await call(
+      "task.finish",
+      {
+        task: ref,
+        outcome: "Fixture outcome.",
+        learnings: ["L".repeat(300), "M".repeat(300), "N".repeat(300)],
+        base: await asOf(),
+        request_id: rid(),
+      },
+      USER,
+    );
+    const mcp = toolCaller({
+      ops: w.service.ops,
+      context: { space: null },
+      conn: 1,
+      binding: inSpace(),
+    });
+    const text = (await mcp("get_task", { task: ref })).content[0].text;
+    expect(text).toContain(`Summary: ${summary}\n`);
+    expect(text).toContain(
+      `Learnings: 3, read them with get_task task "${ref}" sections ["outcome"].`,
+    );
+  });
 
   test("[A3.3.4.here.folders] the digest says where the task opens here: its own folder, its project's, missing, or the work folder", async () => {
     const shop = folder("work", "shop");

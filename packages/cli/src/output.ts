@@ -371,6 +371,27 @@ export function render(entry: string, result: Result, space: string): string {
           `  source: ${String(source["title"])}${typeof source["key"] === "string" ? ` [${source["key"]}]` : ""}`,
         );
       }
+      // A digest holds the first lessons and counts them all; the outcome section holds them all.
+      const outcome = result["sections"] === undefined ? undefined : sections["outcome"];
+      if (outcome === undefined) {
+        const shown = (task["learnings"] as unknown[] | undefined) ?? [];
+        const all = shown.length + Number((task["more"] as Result | undefined)?.["learnings"] ?? 0);
+        if (all > 0) {
+          const rest = shown.length < all ? ", all with --section outcome" : "";
+          lines.push(`  learnings: ${String(shown.length)} of ${String(all)}${rest}`);
+        }
+        for (const learning of shown) lines.push(`  learning: ${entryText(learning)}`);
+      } else {
+        const section = outcome as Result;
+        if (typeof section["outcome"] === "string") {
+          const wrap =
+            typeof section["wrap_state"] === "string" ? ` (${section["wrap_state"]})` : "";
+          lines.push(`  outcome${wrap}: ${entryText(section["outcome"])}`);
+        }
+        for (const learning of (section["learnings"] as unknown[] | undefined) ?? []) {
+          lines.push(`  learning: ${entryText(learning)}`);
+        }
+      }
       for (const note of (sections["notes"] as Result[] | undefined) ?? []) {
         const launches = (note["request_for"] as Result[] | undefined) ?? [];
         const asked =
@@ -486,7 +507,14 @@ export function render(entry: string, result: Result, space: string): string {
           result["action"] === "describe"
             ? `${str(pref["summary"])} (${str(pref["shape"])})`
             : `${JSON.stringify(pref["value"])}${pref["is_default"] === true ? " (default)" : ""}`;
-        lines.push(`${str(pref["key"])}: ${shown}${pref["policy"] === true ? " · policy" : ""}`);
+        const inForce =
+          "in_force" in pref
+            ? ` · in force: ${JSON.stringify(pref["in_force"])}, as this build does not read it yet`
+            : "";
+        const fixed = pref["fixed"] === true ? " · fixed in this build" : "";
+        lines.push(
+          `${str(pref["key"])}: ${shown}${pref["policy"] === true ? " · policy" : ""}${fixed}${inForce}`,
+        );
       }
       break;
     case "launch.open": {

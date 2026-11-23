@@ -650,7 +650,7 @@ Result:
 
 Read and change the space's preferences that are not policy.
 
-MCP tool `preferences`, "Read settings": Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. Policy stays the user's.
+MCP tool `preferences`, "Read settings": Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. A key marked fixed nobody changes in this build. Policy stays the user's.
 
 | Property | Value |
 |---|---|
@@ -662,7 +662,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | A1 operations | `pref.set` |
 | Faces | MCP `preferences`, CLI `ttasks prefs`, UI |
 | Errors | `invalid_input`, `forbidden`, `conflict`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 359, reported |
+| Definition, estimated tokens | 384, reported |
 | Result budget, estimated tokens | typical 600, max 2000 |
 
 ### Input
@@ -673,7 +673,8 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `keys` | (string, max 64)[], max 20 items | no | Keys, or prefixes ending in ".*"; default every key |
 | `set` | object[], 1 to 10 items | no | set: the keys and their new values |
 | `set[].key` | string, max 64 | yes | A key describe lists |
-| `set[].value` | string, max 1024 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64)[], max 20 items \| null | yes | The new value, a list as keys separated by commas; null resets it to its default |
+| `set[].value` | string, max 1024 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64)[], max 20 items | no | The new value, a list as keys separated by commas |
+| `set[].reset` | boolean | no | Put the key back to its default, instead of a value |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 
@@ -692,6 +693,8 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `prefs[].is_default` | boolean | no | The value is the default (get) |
 | `prefs[].writable` | boolean | yes | Whether this caller may change it |
 | `prefs[].policy` | true | no | Policy: the user's own (A3 3.8) |
+| `prefs[].fixed` | true | no | Fixed in this build: nobody changes it |
+| `prefs[].in_force` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | no | What this build does whatever the key says: it does not act on the key yet |
 | `result` | "updated" \| "no_change" | no | What a change did |
 | `changed` | object[] | no | The keys a change changed |
 | `changed[].key` | string | yes | The key |
@@ -736,7 +739,8 @@ Result:
         "backlog"
       ],
       "is_default": true,
-      "writable": false
+      "writable": false,
+      "fixed": true
     }
   ]
 }
@@ -1021,8 +1025,8 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `as_of` | string | yes | The space's position when this answer was made |
-| `date` | string | yes | Today in the space's time zone |
-| `time_zone` | string | yes | IANA time zone of the space |
+| `date` | string | yes | Today in the time zone of the service's machine |
+| `time_zone` | string | yes | IANA time zone of the service's machine; the page uses the browser's |
 | `autonomy` | "full" \| "review" \| "suggest" | yes | Autonomy level for this session |
 | `space` | object | yes | The space this session uses |
 | `space.id` | string | yes | Space ID |
@@ -1053,13 +1057,13 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `here[].live_sessions` | integer, 0 to 1000000000 | yes | Live agent sessions on it |
 | `here_total` | integer, 0 to 1000000000 | no | Active tasks for cwd in all |
 | `counts` | object | yes | Counts of active tasks |
-| `counts.statuses` | object[] | yes | Active tasks per status, in the space's order |
+| `counts.statuses` | object[] | yes | Per status, in the space's order; the sidebar counts custom statuses in Open |
 | `counts.statuses[].status` | string | yes | Status key |
-| `counts.statuses[].count` | integer, 0 to 1000000000 | yes | Active tasks with it |
+| `counts.statuses[].count` | integer, 0 to 1000000000 | yes | Active tasks with it, outside the Inbox |
 | `counts.inbox` | integer, 0 to 1000000000 | yes | Tasks in the Inbox |
 | `counts.proposals` | integer, 0 to 1000000000 | yes | Pending proposals |
 | `sections` | object[] | no | The sections asked for with include |
-| `sections[].name` | "today" \| "week" \| "review" \| "waiting" \| "inbox" \| "changes" | yes | Section |
+| `sections[].name` | "today" \| "week" \| "review" \| "waiting" \| "inbox" \| "changes" | yes | Section; today and week as Today's Focus and This week on the page |
 | `sections[].tasks` | object[] | yes | Up to 8 tasks |
 | `sections[].tasks[].id` | string | yes | Task ID |
 | `sections[].tasks[].ref` | string | yes | Task reference |
@@ -1345,7 +1349,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | A1 operations | `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `add_tasks`, CLI `ttasks add`, UI |
 | Errors | `invalid_input`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1622, reported |
+| Definition, estimated tokens | 1629, reported |
 | Result budget, estimated tokens | typical 80, max 2000 |
 
 ### Input
@@ -1363,7 +1367,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | `tasks[].effort` | string, max 20 | no | A size of the space: read skill sizing-effort first |
 | `tasks[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `tasks[].waiting_on` | string, max 80 | no | Who or what it waits on |
-| `tasks[].focus` | boolean | no | Star it for today, only when the user asks |
+| `tasks[].focus` | boolean | no | Star it: on Today until cleared. Only when the user asks |
 | `tasks[].created` | string, max 40 | no | When it was created, only for work that existed before: ISO date or instant |
 | `tasks[].folder` | string, 1 to 4096 | no | Its folder: "cwd", an absolute folder or one under ~ |
 | `tasks[].sources` | object[], max 10 items | no | Where it came from |
@@ -1477,7 +1481,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | A1 operations | `task.complete`, `task.archive`, `task.wrap_up`, `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `complete_task`, CLI `ttasks done`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 2019, reported |
+| Definition, estimated tokens | 2026, reported |
 | Result budget, estimated tokens | typical 100, max 1500 |
 
 ### Input
@@ -1499,7 +1503,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].effort` | string, max 20 | no | A size of the space: read skill sizing-effort first |
 | `follow_ups[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `follow_ups[].waiting_on` | string, max 80 | no | Who or what it waits on |
-| `follow_ups[].focus` | boolean | no | Star it for today, only when the user asks |
+| `follow_ups[].focus` | boolean | no | Star it: on Today until cleared. Only when the user asks |
 | `follow_ups[].created` | string, max 40 | no | When it was created, only for work that existed before: ISO date or instant |
 | `follow_ups[].folder` | string, 1 to 4096 | no | Its folder: "cwd", an absolute folder or one under ~ |
 | `follow_ups[].sources` | object[], max 10 items | no | Where it came from |
@@ -1812,10 +1816,10 @@ When `view` is `"digest"`:
 | `task.due.tz` | string | yes | IANA time zone of the commitment |
 | `task.area` | string | no | Area name |
 | `task.project` | string | no | Project name |
-| `task.summary` | string | yes | One line: the next step |
+| `task.summary` | string | yes | One line: the next step, whole |
 | `task.context` | string | yes | Markdown context: the first 800 characters |
 | `task.waiting_on` | string | no | Who or what it waits on |
-| `task.focus` | boolean | yes | Starred for today |
+| `task.focus` | boolean | yes | Starred: in Today's Focus until the star is cleared |
 | `task.created` | string | no | When it was created |
 | `task.folder` | object \| object | no | Where it opens on this machine; none: in the space's work folder |
 | `task.folder.path` | string | yes | The folder, the home written as ~ |
@@ -1825,7 +1829,7 @@ When `view` is `"digest"`:
 | `task.folder.machine` | string | yes | The machine its folder is on: it opens there |
 | `task.wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
 | `task.outcome` | string | no | Outcome of the last completion |
-| `task.learnings` | string[] | yes | Learnings |
+| `task.learnings` | string[], max 3 items | yes | Its first learnings: up to 3, each whole, up to 300 characters |
 | `task.instructions` | object[], max 5 items | yes | Notes from the user to agents, newest first: up to 5, each whole |
 | `task.instructions[].ref` | string | yes | Note ordinal, such as n2 |
 | `task.instructions[].author` | string | yes | Actor that wrote it, from history |
@@ -1878,9 +1882,9 @@ When `view` is `"digest"`:
 | `task.more.notes` | integer, 0 to 9007199254740991 | yes | Other notes not here |
 | `task.more.log` | integer, 0 to 9007199254740991 | yes | Log entries not here |
 | `task.more.sources` | integer, 0 to 9007199254740991 | yes | Sources not here |
+| `task.more.learnings` | integer, 0 to 9007199254740991 | yes | Learnings not here |
 | `task.cut` | object | no | Characters left out of the task's own texts |
 | `task.cut.title` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
-| `task.cut.summary` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.cut.context` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.cut.outcome` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.version` | integer, 0 to 9007199254740991 | yes | Row version |
@@ -2104,7 +2108,8 @@ Result:
       "instructions": 0,
       "notes": 0,
       "log": 0,
-      "sources": 0
+      "sources": 0,
+      "learnings": 0
     },
     "version": 1040
   },
@@ -2501,7 +2506,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
 | Faces | MCP `update_task`, CLI `ttasks set`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict` |
-| Definition, estimated tokens | 1717, reported |
+| Definition, estimated tokens | 1724, reported |
 | Result budget, estimated tokens | typical 80, max 400 |
 
 ### Input
@@ -2521,7 +2526,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `set.area` | string, max 120 | no | Area name or slug |
 | `set.project` | string, max 120 | no | Project name or slug |
 | `set.folder` | string, 1 to 4096 | no | "cwd", an absolute folder or one under ~ |
-| `set.focus` | boolean | no | Star it for today, only when the user asks |
+| `set.focus` | boolean | no | Star it: on Today until cleared. Only when the user asks |
 | `clear` | ("summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus")[], max 7 items | no | Fields to clear |
 | `context` | object | no | Change the context |
 | `context.mode` | "append" \| "replace" | yes | append needs no base |

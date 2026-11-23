@@ -11,7 +11,8 @@
 import type { Instance } from "../api.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { TaskRow } from "../store/rows.ts";
-import { dayNumber, formatDay, formatInstant, localDate, type Clock } from "./dates.ts";
+import { dayNumber, isStarred, localDate } from "@ttasks/contracts/day";
+import { formatDay, formatInstant, type Clock } from "./dates.ts";
 import { launchOf, type BusyOf, type LaunchBlock, type LaunchModel } from "./launch.ts";
 
 /** A message's values: plain values, or other messages that are formatted first. */
@@ -528,7 +529,7 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
 
   const move = moveOf(task, ctx);
 
-  const starred = task.focus_on !== undefined && task.focus_on <= ctx.clock.today;
+  const starred = isStarred(task, ctx.clock.today);
   if (starred) description.push(msg("row.desc.starred"));
 
   let marker: RowModel["marker"];

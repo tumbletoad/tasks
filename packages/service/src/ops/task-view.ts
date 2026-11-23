@@ -1,7 +1,7 @@
 // `get_task`'s two views (A3 3.4.4, 3.9.6): the digest v0, bounded by A3's limits per part, and a
 // page of the sections asked for (pages.ts). Both are built by the request path from one snapshot,
 // so every face returns the same result; MCP's text is its rendering (mcp/render.ts).
-import { REQUEST_CHARS } from "@ttasks/contracts";
+import { isStarred, REQUEST_CHARS } from "@ttasks/contracts";
 import type { Row } from "@ttasks/storage";
 import { invalid } from "./errors.ts";
 import {
@@ -28,10 +28,9 @@ import {
   type TaskRead,
 } from "./read.ts";
 
-/** A3 3.9.6's limits of the digest, per part. */
+/** A3 3.9.6's limits of the digest, per part. The summary has none: it is one line, whole. */
 export const DIGEST_LIMITS = {
   title: 200,
-  summary: 240,
   /** Notes the user addressed to agents: at most 5, each whole up to 1,000 characters. */
   instructions: 5,
   instructionChars: 1_000,
@@ -44,6 +43,9 @@ export const DIGEST_LIMITS = {
   sourceTitle: 100,
   /** Not in A3's table: the agent's limit of an outcome (A3 3.4.8). */
   outcome: 600,
+  /** The first learnings, each whole up to the length an agent may write one. */
+  learnings: 3,
+  learningChars: 300,
 } as const;
 
 /** `text` cut to `max` code points, with how many were left out. */
@@ -51,6 +53,24 @@ function clipped(value: string, max: number): { text: string; cut?: number } {
   const chars = Array.from(value);
   if (chars.length <= max) return { text: value };
   return { text: chars.slice(0, max).join(""), cut: chars.length - max };
+}
+
+/**
+ * The first `count` of a list that are each at most `chars` long, in order: it stops at the first
+ * longer one, so every text shown is whole and the rest are counted, never cut.
+ */
+function wholeUpTo<T>(
+  list: readonly T[],
+  textOf: (item: T) => string,
+  count: number,
+  chars: number,
+): T[] {
+  const kept: T[] = [];
+  for (const item of list) {
+    if (kept.length === count || Array.from(textOf(item)).length > chars) break;
+    kept.push(item);
+  }
+  return kept;
 }
 
 /**
@@ -95,11 +115,18 @@ export function digestOf(
     return c.text;
   };
   // Newest first, each whole, at most five: the digest stops at the first longer one (A3 3.9.6).
-  const instructions: Row[] = [];
-  for (const note of read.instructions) {
-    if (Array.from(text(note["body"])).length > DIGEST_LIMITS.instructionChars) break;
-    instructions.push(note);
-  }
+  const instructions = wholeUpTo(
+    read.instructions,
+    (note) => text(note["body"]),
+    DIGEST_LIMITS.instructions,
+    DIGEST_LIMITS.instructionChars,
+  );
+  const learnings = wholeUpTo(
+    read.learnings.map((learning) => learning.text),
+    (learning) => learning,
+    DIGEST_LIMITS.learnings,
+    DIGEST_LIMITS.learningChars,
+  );
   const item = <T extends { text: string }>(value: T, max: number): T & { cut?: number } => {
     const c = clipped(value.text, max);
     return { ...value, text: c.text, ...(c.cut === undefined ? {} : { cut: c.cut }) };
@@ -113,17 +140,17 @@ export function digestOf(
   const result: Record<string, unknown> = {
     ...taskRow(row, read.space.refPrefix),
     title: field("title", text(row["title"]), DIGEST_LIMITS.title),
-    summary: field("summary", text(row["summary"]), DIGEST_LIMITS.summary),
+    summary: text(row["summary"]),
     context: field("context", text(row["context"]), DIGEST_LIMITS.context),
     ...present("waiting_on", row["waiting_on"]),
-    focus: row["focus_on"] === today,
+    focus: typeof row["focus_on"] === "string" && isStarred({ focus_on: row["focus_on"] }, today),
     ...(typeof row["created_at"] === "number" && Number.isFinite(row["created_at"])
       ? { created: new Date(row["created_at"]).toISOString() }
       : {}),
     ...(folder === undefined ? {} : { folder }),
     ...present("wrap_state", row["wrap_state"]),
     ...(outcome === "" ? {} : { outcome: field("outcome", outcome, DIGEST_LIMITS.outcome) }),
-    learnings: [],
+    learnings,
     instructions: instructions.map(noteOf),
     notes: read.notes.map((note) => item(noteOf(note), DIGEST_LIMITS.noteChars)),
     log: read.log.map((entry) => item(logOf(entry), DIGEST_LIMITS.logChars)),
@@ -133,6 +160,7 @@ export function digestOf(
       notes: counts.notes - read.notes.length,
       log: counts.log - read.log.length,
       sources: counts.sources - sources.length,
+      learnings: read.learnings.length - learnings.length,
     },
     version: Number(row["version"]),
   };

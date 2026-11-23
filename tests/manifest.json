@@ -2446,6 +2446,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "M6.page.run-finished",
+      "title": "A finished task offers Reopen where Run would stand, with Run's key, and no Run: a click or the key reopens it, and Run is back once it is open",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "M6.page.run-once",
       "title": "One press of Run is one run: the second click of a double click and a held key start nothing more, and a Run that got no answer, pressed again with the same words, also after a reload, carries the same request ID; a refusal forgets it",
       "owner": "M6",
@@ -2462,6 +2469,13 @@
     {
       "id": "M6.page.busy-read",
       "title": "A tab reads which agent apps are busy whenever it is live, again after it was offline, and tries a failed read again while it stays live",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.e2e.run-finished",
+      "title": "In the browser: a finished task shows no Run; Reopen stands in its place with Run's key, which reopens it, and Run is back; screenshots at 1,440 px and 390 px in Sumi and Washi, axe clean",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5144,6 +5158,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.4.day.one-rule",
+      "title": "One table of cases for the day's rule, run through the page's Today and counts and through an agent's status and digest: the same tasks in Today and in the week in the same order (a backlog task only by its star, a star carried over from an earlier day, a plan, a due time on the viewer's calendar, the week as the six days after today), each active task counted once (the Inbox by its flag, else its status), and the same stars",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.4.web.today-page",
       "title": "Today in a DOM with the real live store: today's date shows once with the day's numbers, each a link to the search or view it counts, done this week from the service's finished tasks (a dash until it answers, read again when a task is finished and only then, dropped tasks left out), a tab shown again on a later day moves on to it, the sections are section elements under their headings with no view heading, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
       "source": "A5 3.4, A5 3.15, A5 3.22, A7 3.12 M5.04",
@@ -5444,14 +5465,14 @@
     },
     {
       "id": "A5.agents.fake-ttam",
-      "title": "The test kit's fake ttam answers both of TTAM's recorded conversations line for line as TTAM did, busy and every error included, and exits as recorded",
+      "title": "The test kit's fake ttam answers both of TTAM's recorded conversations line for line as TTAM did, busy and every error included, and exits as recorded; with `none` in its control file a fake that runs or is held ends, so the next start finds no TTAM",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A5.agents.pace",
-      "title": "The service asks the Agent Monitor at the pace of the most attentive tab, on a clock the test moves: looked at with live usage after four passes (1 s after a settling answer, at most three times), visible only every 30 s with cached usage, nothing for a hidden tab or one without the page, still looked at for five minutes after the focus went and the end of them read on the steady clock when a request is made, so one due late asks for cached usage, a closed tab forgotten and a new one given the newest at once with its age on the steady clock, the newest dropped 30 s after the last tab left and an answer that comes later not kept, a sign-in that ends with the last tab dropping the answer on its way, the slow flag cleared only with the next answer or failure, a view queued for a tab that stops watching never sent, two tabs at the faster pace and none sent to a tab without the page, a launch asking at once and several while an answer is out making one request, and a missing monitor looked for again only when a page opens or gets the focus back",
+      "title": "The service asks the Agent Monitor at the pace of the most attentive tab, on a clock the test moves: looked at with live usage after four passes (1 s after a settling answer, at most three times), visible only every 30 s with cached usage, nothing for a hidden tab or one without the page, still looked at for five minutes after the focus went and the end of them read on the steady clock when a request is made, so one due late asks for cached usage, a closed tab forgotten and a new one given the newest at once with its age on the steady clock, the newest dropped 30 s after the last tab left and an answer that comes later not kept, a sign-in that ends with the last tab dropping the answer on its way, the slow flag cleared only with the next answer or failure, a view queued for a tab that stops watching never sent, two tabs at the faster pace and none sent to a tab without the page, a launch asking at once and several while an answer is out making one request, a failed monitor asked again at the same pace so one taken away is found missing, and a missing monitor looked for again only when a page opens or gets the focus back",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

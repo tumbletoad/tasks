@@ -82,7 +82,11 @@ export const PREFERENCE_VALUE_BYTES = 16 * 1024;
 const STATUS_KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
 /** The longest effort key: the scale's and every task input's, so each size can be used. */
 export const EFFORT_KEY_MAX = 20;
-const EFFORT_KEY = new RegExp(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,${String(EFFORT_KEY_MAX - 1)}}$`);
+/** Never `null`: a person who types it to mean "back to the default" must not get that size. */
+const EFFORT_KEY = new RegExp(
+  `^(?!null$)[A-Za-z0-9][A-Za-z0-9_.-]{0,${String(EFFORT_KEY_MAX - 1)}}$`,
+  "i",
+);
 /** The most sizes a space has. */
 export const EFFORT_SCALE_MAX = 10;
 /**

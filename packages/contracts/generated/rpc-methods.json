@@ -1371,6 +1371,10 @@
                   "maxLength": 64,
                   "type": "string"
                 },
+                "reset": {
+                  "description": "Put the key back to its default, instead of a value",
+                  "type": "boolean"
+                },
                 "value": {
                   "anyOf": [
                     {
@@ -1392,17 +1396,13 @@
                       },
                       "maxItems": 20,
                       "type": "array"
-                    },
-                    {
-                      "type": "null"
                     }
                   ],
-                  "description": "The new value, a list as keys separated by commas; null resets it to its default"
+                  "description": "The new value, a list as keys separated by commas"
                 }
               },
               "required": [
-                "key",
-                "value"
+                "key"
               ],
               "type": "object"
             },
@@ -1536,6 +1536,36 @@
                     }
                   ],
                   "description": "Its default"
+                },
+                "fixed": {
+                  "const": true,
+                  "description": "Fixed in this build: nobody changes it",
+                  "type": "boolean"
+                },
+                "in_force": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "maximum": 1000000,
+                      "minimum": -1000000,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "What this build does whatever the key says: it does not act on the key yet"
                 },
                 "is_default": {
                   "description": "The value is the default (get)",
@@ -2261,12 +2291,12 @@
                 "type": "integer"
               },
               "statuses": {
-                "description": "Active tasks per status, in the space's order",
+                "description": "Per status, in the space's order; the sidebar counts custom statuses in Open",
                 "items": {
                   "additionalProperties": false,
                   "properties": {
                     "count": {
-                      "description": "Active tasks with it",
+                      "description": "Active tasks with it, outside the Inbox",
                       "maximum": 1000000000,
                       "minimum": 0,
                       "type": "integer"
@@ -2293,7 +2323,7 @@
             "type": "object"
           },
           "date": {
-            "description": "Today in the space's time zone",
+            "description": "Today in the time zone of the service's machine",
             "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
             "type": "string"
           },
@@ -2446,7 +2476,7 @@
                   "type": "boolean"
                 },
                 "name": {
-                  "description": "Section",
+                  "description": "Section; today and week as Today's Focus and This week on the page",
                   "enum": [
                     "today",
                     "week",
@@ -2673,7 +2703,7 @@
             "type": "object"
           },
           "time_zone": {
-            "description": "IANA time zone of the space",
+            "description": "IANA time zone of the service's machine; the page uses the browser's",
             "type": "string"
           }
         },
@@ -2760,7 +2790,7 @@
                   "type": "string"
                 },
                 "focus": {
-                  "description": "Star it for today, only when the user asks",
+                  "description": "Star it: on Today until cleared. Only when the user asks",
                   "type": "boolean"
                 },
                 "folder": {
@@ -3094,7 +3124,7 @@
                   "type": "string"
                 },
                 "focus": {
-                  "description": "Star it for today, only when the user asks",
+                  "description": "Star it: on Today until cleared. Only when the user asks",
                   "type": "boolean"
                 },
                 "folder": {
@@ -4032,12 +4062,6 @@
                         "minimum": 0,
                         "type": "integer"
                       },
-                      "summary": {
-                        "description": "Characters left out; a sections read has them",
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
                       "title": {
                         "description": "Characters left out; a sections read has them",
                         "maximum": 9007199254740991,
@@ -4080,7 +4104,7 @@
                     "type": "string"
                   },
                   "focus": {
-                    "description": "Starred for today",
+                    "description": "Starred: in Today's Focus until the star is cleared",
                     "type": "boolean"
                   },
                   "folder": {
@@ -4243,10 +4267,11 @@
                     "type": "array"
                   },
                   "learnings": {
-                    "description": "Learnings",
+                    "description": "Its first learnings: up to 3, each whole, up to 300 characters",
                     "items": {
                       "type": "string"
                     },
+                    "maxItems": 3,
                     "type": "array"
                   },
                   "lifecycle": {
@@ -4351,6 +4376,12 @@
                         "minimum": 0,
                         "type": "integer"
                       },
+                      "learnings": {
+                        "description": "Learnings not here",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
                       "log": {
                         "description": "Log entries not here",
                         "maximum": 9007199254740991,
@@ -4374,7 +4405,8 @@
                       "instructions",
                       "notes",
                       "log",
-                      "sources"
+                      "sources",
+                      "learnings"
                     ],
                     "type": "object"
                   },
@@ -4561,7 +4593,7 @@
                     "type": "string"
                   },
                   "summary": {
-                    "description": "One line: the next step",
+                    "description": "One line: the next step, whole",
                     "type": "string"
                   },
                   "title": {
@@ -6004,7 +6036,7 @@
                 "type": "string"
               },
               "focus": {
-                "description": "Star it for today, only when the user asks",
+                "description": "Star it: on Today until cleared. Only when the user asks",
                 "type": "boolean"
               },
               "folder": {

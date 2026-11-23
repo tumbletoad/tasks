@@ -61,7 +61,7 @@ const ORGANIZING = [
   `- The same work elsewhere: ${search} the task's title words first.`,
   `- While sorting, use ${addEntry} only for what the user must know.`,
   `- Filing: ${updateTask} with area and project by name (only ones ${organize} lists), a status, and inbox false. Pass base, the as_of of your ${getTask} that showed those fields, and a new request_id.`,
-  `- A project: ${organize} action create with path "Area/Project"; a new area in the path is created with it. A name close to an existing one is refused as a likely typo: use the existing one.`,
+  `- A project: ${organize} action create with path "Area/Project" makes it as named. A name close to a group's is refused as a typo, in filing and as a path's new area: create it alone first.`,
   `- rename takes path and to; move takes path "Area/Project" and to, the new area; archive and unarchive. Each needs base, the as_of of the last answer that listed the group, and a new request_id.`,
   `- A draft in ${addTasks} or ${updateTask} may name an area or project that does not exist yet: it is created with the task. Prefer the names ${organize} lists.`,
   `- Folders: a project has one per machine, a task may have its own (a worktree). ${organize} create or set_folder takes folder, "cwd" or an absolute path; a task takes folder in ${addTasks} and ${updateTask}, and a new one with folder "cwd" and no project joins the project whose folder holds yours. ${PRODUCT_NAME} makes no folders: make one with your own tools first.`,
@@ -79,7 +79,7 @@ const WRITING = [
 ];
 
 const PRIORITY = [
-  `- priority runs from 1 (highest) to 4 (none, the default); due takes an ISO date or a phrase such as fri or +3d; focus stars a task for today.`,
+  `- priority runs from 1 (highest) to 4 (none, the default); due takes an ISO date or a phrase such as fri or +3d; focus stars a task, which stays on Today until the star is cleared.`,
   `- A task you add (${addTasks}, or a follow-up of ${completeTask}): give it the priority the user's part below says. A task that exists: change priority or due with ${updateTask} only when the user asks.`,
   `- Set focus only when the user asks.`,
 ];

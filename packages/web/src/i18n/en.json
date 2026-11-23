@@ -622,6 +622,7 @@
   "composer.runTip": "{label} works on {words, select, words {what you typed} other {this task}} in the background, in the task's folder, and its answer comes here. It may change whatever your {label} setup allows, without asking.",
   "composer.runTipWorkFolder": "{label} works on {words, select, words {what you typed} other {this task}} in the background, in the space's {product} work folder: the task has no folder. Its answer comes here. It may change whatever your {label} setup allows, without asking.",
   "composer.runOther": "Run with another agent",
+  "composer.reopenTip": "The task is finished: reopen it to run an agent on it. Its outcome and learnings stay.",
   "composer.noRunner": "No agent here can work in the background. Open it instead.",
   "composer.openTip": "Start {label} on this task",
   "composer.openWithTip": "Start {label} on this task. What you typed is saved on the task as its request",
