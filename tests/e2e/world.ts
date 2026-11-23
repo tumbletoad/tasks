@@ -16,8 +16,8 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
-import { findEntry, readsOnly } from "../../packages/contracts/src/index.ts";
+import { RpcError, type RpcSession } from "../../packages/bridge/src/protocol/index.ts";
+import { findEntry, readsOnly, type ErrorBody } from "../../packages/contracts/src/index.ts";
 import { atomicWrite } from "../../packages/files/src/index.ts";
 import { startTimes } from "../../packages/launch/src/process.ts";
 import { openSpace, type Id } from "../../packages/storage/src/index.ts";
@@ -531,19 +531,31 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       op: async (space, op, input, as = "user") => {
         ops += 1;
         const entry = findEntry(op);
-        return (as === "user" ? life.user : life.agent).call(
-          "op/call",
-          {
-            space,
-            op,
-            // A call that only reads takes no request ID; every write gets a fresh one.
-            input:
-              entry !== undefined && readsOnly(entry, input)
-                ? input
-                : { ...input, request_id: `e2e-world-op-${String(ops).padStart(4, "0")}` },
-          },
-          { timeoutMs: SLOW_MS },
-        );
+        const params = {
+          space,
+          op,
+          // A call that only reads takes no request ID; every write gets a fresh one.
+          input:
+            entry !== undefined && readsOnly(entry, input)
+              ? input
+              : { ...input, request_id: `e2e-world-op-${String(ops).padStart(4, "0")}` },
+        };
+        // A space the service is still opening answers that the call may be tried again: it is,
+        // with the same request ID, as a client does.
+        const until = Date.now() + SLOW_MS;
+        for (;;) {
+          try {
+            return await (as === "user" ? life.user : life.agent).call("op/call", params, {
+              timeoutMs: SLOW_MS,
+            });
+          } catch (error) {
+            const body =
+              error instanceof RpcError ? (error.data as ErrorBody | undefined) : undefined;
+            const again = body?.code === "space_unavailable" && body.data?.["retryable"] === true;
+            if (!again || Date.now() > until) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+        }
       },
       restart: async (whileStopped) => {
         await stop();
