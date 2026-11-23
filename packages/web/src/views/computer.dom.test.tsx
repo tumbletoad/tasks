@@ -511,16 +511,17 @@ describe("[A5.agents.web-page] the Agents page shows the monitor's every state i
 });
 
 /** A task of the space on screen, open, without a run. */
-const task = (n: number): TaskRow => {
-  const { run: _run, ...open } = working;
-  return {
-    ...open,
-    id: `t_0000${String(n)}`,
-    ref: `M-${String(n)}`,
-    title: `Fixture task ${String(n)}`,
-    position: `p${String(n)}`,
-  };
-};
+const task = (n: number): TaskRow => ({
+  id: `t_0000${String(n)}`,
+  ref: `M-${String(n)}`,
+  title: `Fixture task ${String(n)}`,
+  status: "open",
+  inbox: false,
+  lifecycle: "active",
+  position: `p${String(n)}`,
+  created_at: 0,
+  version: 1,
+});
 
 /** The task `row` as the service links a session to it. */
 const linkTo = (row: TaskRow, started: AgentsTask["started"] = "terminal"): AgentsTask => ({

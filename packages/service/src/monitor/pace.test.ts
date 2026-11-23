@@ -14,7 +14,7 @@ const LOOKED = { agents: true, visible: true, focused: true };
 const VISIBLE = { agents: true, visible: true, focused: false };
 const GONE = { agents: false, visible: true, focused: true };
 
-const HOME = process.platform === "win32" ? "C:\fixture\claude" : "/fixture/claude";
+const HOME = process.platform === "win32" ? "C:\\fixture\\claude" : "/fixture/claude";
 const SESSION = "aaaaaaaa-1111-4111-8111-000000000001";
 const TASK = {
   space: "sp_fixture",
