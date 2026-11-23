@@ -4,6 +4,7 @@
 // is never kept or judged: whatever stands under its names is dropped, the tables are made again
 // from the statements the schema steps use at the copy's revision, and they are filled from the
 // copy's tasks (documents.ts rebuildSearchIndex). A copy at a revision before the index gets none.
+// A writer's open brings a sound index's documents up to date instead (repairSearchIndex).
 import type { Connection } from "../driver.ts";
 import { StorageError } from "../errors.ts";
 import { removeQuietly } from "../files.ts";
@@ -12,7 +13,7 @@ import { inRange } from "../rows.ts";
 import type { SchemaStep } from "../schema.ts";
 import type { CheckedDriver } from "../startup-check.ts";
 import { ALL_OBJECTS, referenceSearch } from "../backup/snapshot.ts";
-import { rebuildSearchIndex } from "./documents.ts";
+import { rebuildSearchIndex, refreshSearchIndex } from "./documents.ts";
 import { hasSearchTables, isSearchObject, SEARCH_FTS } from "./tables.ts";
 
 interface ObjectRow {
@@ -97,16 +98,25 @@ export function remakeSearchIndex(
 }
 
 /**
- * Checks the search index of a space on its writer's connection and, when it is damaged, makes it
- * again in a transaction of its own. The tasks are not touched either way, and a remake that fails
- * leaves the space as it was: `damaged`, with search failing until the next try.
+ * Checks the search index of a space on its writer's connection. A sound index gets the documents
+ * this build defines where they differ (refreshSearchIndex); a damaged one is made again. Each in
+ * a transaction of its own. The tasks are not touched either way, and a remake that fails leaves
+ * the space as it was: `damaged`, with search failing until the next try.
  */
 export function repairSearchIndex(
   checked: CheckedDriver,
   conn: Connection,
   steps: readonly SchemaStep[],
 ): "sound" | "remade" | "damaged" {
-  if (!hasSearchTables(conn) || searchIndexSound(conn)) return "sound";
+  if (!hasSearchTables(conn)) return "sound";
+  if (searchIndexSound(conn)) {
+    try {
+      const written = conn.transaction("immediate", () => refreshSearchIndex(conn));
+      return written === 0 ? "sound" : "remade";
+    } catch {
+      // An index that takes no writes is no longer one to trust: it is made again.
+    }
+  }
   try {
     conn.transaction("immediate", () => {
       remakeSearchIndex(checked, conn, steps);

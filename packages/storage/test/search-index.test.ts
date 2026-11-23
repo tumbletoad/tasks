@@ -99,6 +99,7 @@ describe("[A1.5.search.index] the search tables are written in the commit", () =
           title: "Times shift by an hour",
           who: "Lumen support",
           key: "jira:LUM-212",
+          url: "https://www.tracker.example/browse/LUM%20212?session=1#top",
         },
       },
       { kind: "note.add", task, body: "Check the mobile app too." },
@@ -116,7 +117,9 @@ describe("[A1.5.search.index] the search tables are written in the commit", () =
       audience: "all",
       title: "Fix appointment time zones",
       body: "Store UTC and the zone ID\nTimes are stored without a zone.\nConverted once from UTC.",
-      extra: `Times shift by an hour\nLumen support\nPortal\nLumen\nM-${String(ref)}`,
+      extra:
+        "Times shift by an hour\nLumen support\njira:LUM-212\ntracker.example/browse/LUM 212\n" +
+        `Portal\nLumen\nM-${String(ref)}`,
     });
     const children = [...docs.values()].filter((d) => d.taskId === task && d.kind !== "task");
     expect(children.map((d) => [d.kind, d.title, d.body, d.extra, d.lifecycle]).sort()).toEqual([

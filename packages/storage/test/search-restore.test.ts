@@ -280,6 +280,69 @@ describe("[A1.5.search.repair] a damaged search index is made again and never co
     });
   });
 
+  test("a writer's open gives a sound index filled by another definition this build's documents", async () => {
+    const folder = await indexedSpace("old");
+    // As an earlier build could have left it: one task's text without its title, one task with
+    // no document, and a document of no row.
+    const conn = new DatabaseSync(join(folder, DATABASE_FILE));
+    try {
+      const docOf = (title: string): number =>
+        Number(
+          conn
+            .prepare(
+              "SELECT d.doc FROM search_docs d JOIN tasks t ON t.id = d.entity_id WHERE t.title = ?",
+            )
+            .get(title)?.["doc"],
+        );
+      const stale = docOf("Task old1");
+      conn.prepare("DELETE FROM search_fts WHERE rowid = ?").run(stale);
+      conn
+        .prepare("INSERT INTO search_fts (rowid, title, body, extra) VALUES (?, '', 'x', '')")
+        .run(stale);
+      const gone = docOf("Task old2");
+      conn.prepare("DELETE FROM search_fts WHERE rowid = ?").run(gone);
+      conn.prepare("DELETE FROM search_docs WHERE doc = ?").run(gone);
+      const extra = conn
+        .prepare(
+          "INSERT INTO search_docs (kind, entity_id, task_id, lifecycle, audience, seq) " +
+            "VALUES ('area', 'a_gone', NULL, NULL, 'all', 1) RETURNING doc",
+        )
+        .get()?.["doc"];
+      conn
+        .prepare("INSERT INTO search_fts (rowid, title, body, extra) VALUES (?, 'Gone', '', '')")
+        .run(Number(extra));
+    } finally {
+      conn.close();
+    }
+    const before = await rawWriter(folder);
+    try {
+      expect(searchIndexSound(before)).toBe(true);
+      expect(matching(before, "old1")).toEqual([]);
+    } finally {
+      before.close();
+    }
+    const worker = await StorageWorker.start({ driver: "node:sqlite" });
+    try {
+      const writer = await worker.openSpaceWriter(folder, { machine: MACHINE });
+      expect(writer.searchIndex).toBe("remade");
+      await writer.close();
+      const again = await worker.openSpaceWriter(folder, { machine: MACHINE });
+      expect(again.searchIndex).toBeUndefined();
+      await again.close();
+    } finally {
+      await worker.close();
+    }
+    const after = await rawWriter(folder);
+    try {
+      expectIndexOfTasks(after);
+      expect(searchIndexSound(after)).toBe(true);
+      expect(matching(after, "old1")).toEqual(titled(after, "old1"));
+      expect(matching(after, "old2")).toEqual(titled(after, "old2"));
+    } finally {
+      after.close();
+    }
+  });
+
   test("a text that no document names counts as damage, and the repair removes it", async () => {
     const checked = await checkedDriver();
     const folder = await indexedSpace("live");

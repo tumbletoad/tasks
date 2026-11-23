@@ -341,6 +341,32 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(ids(await search({ q: "radarword violetword" }))).toEqual([spread]);
   });
 
+  test("a source's key and the readable parts of its link find its task", async () => {
+    const [task = ""] = created(submit(fx, [{ kind: "task.create", title: "Linked holder" }]));
+    submit(fx, [
+      {
+        kind: "source.add",
+        task,
+        source: {
+          kind: "ticket",
+          title: "Ticket",
+          url: "https://www.tracker.example/harborword/item%20seven?utm_source=mailword",
+          key: "issue:sample-42",
+        },
+      },
+    ]);
+    expect(ids(await search({ q: "harborword" }))).toEqual([task]);
+    expect(ids(await search({ q: "sample-42" }))).toEqual([task]);
+    expect(ids(await search({ q: "issue:sample-42" }))).toEqual([task]);
+    expect(ids(await search({ q: "tracker seven" }))).toEqual([task]);
+    expect(ids(await search({ q: "linked sample" }))).toEqual([task]);
+    // What a person does not read as the link's words: its scheme, www and query.
+    expect(ids(await search({ q: '"https"' }))).not.toContain(task);
+    expect(ids(await search({ q: '"www"' }))).not.toContain(task);
+    expect(ids(await search({ q: "mailword" }))).toEqual([]);
+    expect(ids(await search({ q: "source:issue:sample-42" }))).toEqual([task]);
+  });
+
   test("filters: an area includes its projects, priority, focus, ids and has:", async () => {
     expect(ids(await search({ q: "rankword area:Lumen" }))).toEqual([lumen]);
     expect(ids(await search({ q: "rankword p<=2" }))).toEqual([starred]);
