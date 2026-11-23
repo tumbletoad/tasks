@@ -1206,16 +1206,17 @@ const timer = (ms: number): Promise<void> =>
 
 /**
  * Runs `work` under the app's own lock on the home's file (Claude Code's), or at once for an app
- * that has none. `busy` when another writer keeps the lock through every pause.
+ * that has none. `busy` when another writer keeps the lock through every pause, `unwritable` when
+ * the lock cannot be made beside the file.
  */
 async function underAppLock<T>(
   input: SetupInput,
   home: AgentHome,
   work: () => T,
-): Promise<T | "busy"> {
+): Promise<T | "busy" | "unwritable"> {
   if (!APPS[home.app].locked) return work();
   const ran = await withAppLock(home.file, input.wait ?? timer, work);
-  return ran.held ? ran.value : "busy";
+  return ran.held ? ran.value : ran.why;
 }
 
 /**
@@ -1452,7 +1453,9 @@ async function takeOut(
       ? { home, result: "removed" }
       : { home, result: "failed", reason: wrote, kept: "own" };
   });
-  if (found === "busy") return { home, result: "failed", reason: "busy", kept: "own" };
+  if (found === "busy" || found === "unwritable") {
+    return { home, result: "failed", reason: found, kept: "own" };
+  }
   return found.kept === "own" ? found : done(found);
 }
 /**

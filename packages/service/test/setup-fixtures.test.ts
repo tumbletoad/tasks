@@ -20,6 +20,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
 import { detect, nodeDetectHost } from "@ttasks/launch";
 import { parseToml } from "../src/config/toml.ts";
+import { withAppLock } from "../src/setup/app-lock.ts";
 import {
   applyHome,
   planOf,
@@ -537,6 +538,22 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
     },
     SLOW,
   );
+
+  test("a lock that cannot be made where the file is (a folder setup may not write in) is a file that cannot be written: the work does not run", async () => {
+    const w = await world();
+    // No such folder: making the lock fails as it does in a folder that takes no new entry.
+    const file = join(w.input.stateDir, "no-such-folder", ".claude.json");
+    let ran = false;
+    const outcome = await withAppLock(
+      file,
+      () => Promise.resolve(),
+      () => {
+        ran = true;
+      },
+    );
+    expect(outcome).toEqual({ held: false, why: "unwritable" });
+    expect(ran).toBe(false);
+  });
 
   test.skipIf(root)(
     "a file that cannot be written: no access is given; turning off takes the access away, and the next setup takes the entry out once",

@@ -24,21 +24,26 @@ function stale(lock: string, now: number): boolean {
 }
 
 /**
- * Runs `work` while holding `<file>.lock`, or gives up (`held: false`) when another writer keeps it
- * through every pause. Only the folder this call made is removed.
+ * Runs `work` while holding `<file>.lock`, or gives up (`held: false`): `busy` when another
+ * writer keeps the lock through every pause, `unwritable` when the lock cannot be made where the
+ * file is (a folder that takes no new entry, as a read-only home is on Linux and macOS: the file
+ * could not be replaced there either). Only the folder this call made is removed.
  */
 export async function withAppLock<T>(
   file: string,
   wait: (ms: number) => Promise<void>,
   work: () => T,
-): Promise<{ readonly held: true; readonly value: T } | { readonly held: false }> {
+): Promise<
+  | { readonly held: true; readonly value: T }
+  | { readonly held: false; readonly why: "busy" | "unwritable" }
+> {
   const lock = `${file}.lock`;
   for (let attempt = 0; ;) {
     try {
       makeDir(lock, 0o700, { recursive: false });
       break;
     } catch (error) {
-      if (codeOf(error) !== "EEXIST") throw error;
+      if (codeOf(error) !== "EEXIST") return { held: false, why: "unwritable" };
     }
     if (stale(lock, Date.now())) {
       try {
@@ -49,7 +54,7 @@ export async function withAppLock<T>(
       }
     }
     const pause = PAUSES_MS[attempt];
-    if (pause === undefined) return { held: false };
+    if (pause === undefined) return { held: false, why: "busy" };
     attempt += 1;
     await wait(pause);
   }
