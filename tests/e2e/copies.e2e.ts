@@ -62,6 +62,8 @@ test.describe("[A2.3.10.5.copies.e2e] a person looks inside a backup on the page
     await expect(refusal).toContainText(`close ${name} first`);
     await expect(refusal).toContainText("space close");
     await pictures(page, "copy-refused");
+    // Escape closes the dialog it is pressed in; the pictures may have taken focus out of it.
+    await form.getByRole("button", { name: "Open", exact: true }).focus();
     await page.keyboard.press("Escape");
     await expect(form).toHaveCount(0);
     await expect(page.locator('[data-part="read-only"]')).toHaveCount(0);
