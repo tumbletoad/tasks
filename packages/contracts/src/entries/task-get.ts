@@ -152,7 +152,7 @@ const Learnings = z.array(z.string()).describe("Learnings");
  * and related learnings is M4.03's.
  */
 export const TaskDetail = TaskRow.extend({
-  summary: z.string().describe("One line: the next step"),
+  summary: z.string().describe("One line: the next step, whole"),
   context: z.string().describe("Markdown context: the first 800 characters"),
   waiting_on: z.string().describe("Who or what it waits on").optional(),
   focus: z.boolean().describe("Starred: in Today's Focus until the star is cleared"),
@@ -185,7 +185,6 @@ export const TaskDetail = TaskRow.extend({
   cut: z
     .strictObject({
       title: Cut.optional(),
-      summary: Cut.optional(),
       context: Cut.optional(),
       outcome: Cut.optional(),
     })

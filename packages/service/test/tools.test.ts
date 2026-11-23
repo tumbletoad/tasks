@@ -555,9 +555,10 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
       const read = await call("task.get", { task: ref });
       const digest = read["task"] as Json;
       expect(digest["title"]).toHaveLength(200);
-      expect(digest["summary"]).toHaveLength(240);
+      // The summary comes whole: an agent that replaces it was shown all of it.
+      expect(digest["summary"]).toBe("s".repeat(300));
       expect(digest["context"]).toHaveLength(800);
-      expect(digest["cut"]).toEqual({ title: 80, summary: 60, context: 100 });
+      expect(digest["cut"]).toEqual({ title: 80, context: 100 });
       expect((digest["instructions"] as Json[]).map((x) => x["ref"])).toEqual([
         "n7",
         "n6",

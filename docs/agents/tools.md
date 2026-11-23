@@ -1811,7 +1811,7 @@ When `view` is `"digest"`:
 | `task.due.tz` | string | yes | IANA time zone of the commitment |
 | `task.area` | string | no | Area name |
 | `task.project` | string | no | Project name |
-| `task.summary` | string | yes | One line: the next step |
+| `task.summary` | string | yes | One line: the next step, whole |
 | `task.context` | string | yes | Markdown context: the first 800 characters |
 | `task.waiting_on` | string | no | Who or what it waits on |
 | `task.focus` | boolean | yes | Starred: in Today's Focus until the star is cleared |
@@ -1880,7 +1880,6 @@ When `view` is `"digest"`:
 | `task.more.learnings` | integer, 0 to 9007199254740991 | yes | Learnings not here |
 | `task.cut` | object | no | Characters left out of the task's own texts |
 | `task.cut.title` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
-| `task.cut.summary` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.cut.context` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.cut.outcome` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.version` | integer, 0 to 9007199254740991 | yes | Row version |

@@ -4027,12 +4027,6 @@
                         "minimum": 0,
                         "type": "integer"
                       },
-                      "summary": {
-                        "description": "Characters left out; a sections read has them",
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
                       "title": {
                         "description": "Characters left out; a sections read has them",
                         "maximum": 9007199254740991,
@@ -4564,7 +4558,7 @@
                     "type": "string"
                   },
                   "summary": {
-                    "description": "One line: the next step",
+                    "description": "One line: the next step, whole",
                     "type": "string"
                   },
                   "title": {

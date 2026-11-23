@@ -28,10 +28,9 @@ import {
   type TaskRead,
 } from "./read.ts";
 
-/** A3 3.9.6's limits of the digest, per part. */
+/** A3 3.9.6's limits of the digest, per part. The summary has none: it is one line, whole. */
 export const DIGEST_LIMITS = {
   title: 200,
-  summary: 240,
   /** Notes the user addressed to agents: at most 5, each whole up to 1,000 characters. */
   instructions: 5,
   instructionChars: 1_000,
@@ -141,7 +140,7 @@ export function digestOf(
   const result: Record<string, unknown> = {
     ...taskRow(row, read.space.refPrefix),
     title: field("title", text(row["title"]), DIGEST_LIMITS.title),
-    summary: field("summary", text(row["summary"]), DIGEST_LIMITS.summary),
+    summary: text(row["summary"]),
     context: field("context", text(row["context"]), DIGEST_LIMITS.context),
     ...present("waiting_on", row["waiting_on"]),
     focus: typeof row["focus_on"] === "string" && isStarred({ focus_on: row["focus_on"] }, today),

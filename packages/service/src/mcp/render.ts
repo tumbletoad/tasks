@@ -419,7 +419,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
     {
       data: true,
       units: [
-        ...(task.summary === "" ? [] : [[`Summary: ${withCut(task.summary, cut.summary)}`]]),
+        ...(task.summary === "" ? [] : [[`Summary: ${task.summary}`]]),
         ...(task.waiting_on === undefined ? [] : [[`Waiting on: ${clip(task.waiting_on, 80)}`]]),
         ...(task.focus ? [["Focus: today"]] : []),
       ],

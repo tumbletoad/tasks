@@ -135,7 +135,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     const digest = example("task.get", 0);
     const task = digest["task"] as Json;
     task["title"] = cjk(200);
-    task["summary"] = cjk(240);
+    task["summary"] = cjk(400);
     task["context"] = long(800, "context line\n");
     task["instructions"] = Array.from({ length: 5 }, (_, n) => ({
       ref: `n${String(n + 1)}`,
@@ -170,7 +170,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     task["learnings"] = Array.from({ length: 3 }, () => cjk(300));
     task["outcome"] = long(600);
     task["more"] = { instructions: 2, notes: 7, log: 47, sources: 5, learnings: 17 };
-    task["cut"] = { title: 100, summary: 160, context: 64_736, outcome: 3_496 };
+    task["cut"] = { title: 100, context: 64_736, outcome: 3_496 };
     // get_task with every section.
     const sections = example("task.get", 1);
     sections["sections"] = {
