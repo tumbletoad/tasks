@@ -548,7 +548,9 @@ function meaning(entry: string, value: Value): unknown {
       // Who may change a key is the caller's (as the UI, every example is the user's).
       return {
         action: value["action"],
-        prefs: (value["prefs"] as Value[]).map(({ writable: _, ...row }) => row),
+        prefs: (value["prefs"] as Value[]).map((row) =>
+          Object.fromEntries(Object.entries(row).filter(([field]) => field !== "writable")),
+        ),
         result: value["result"],
       };
     case "history.undo":
