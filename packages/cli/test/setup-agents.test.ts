@@ -125,7 +125,7 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
           app: string;
           state: string;
           sha256: string;
-          change: { args: string[]; diff: string[] };
+          change: { entry: { command: string; args: string[] }; diff: string[] };
         }[];
       };
       expect(planned.space).toBe(space);
@@ -146,18 +146,14 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
       ]);
       for (const h of planned.homes) {
         expect(h.sha256).toMatch(/^[0-9a-f]{64}$/u);
-        expect(h.change.args).toContain(join(home, "bin", windows ? "ttasks.exe" : "ttasks"));
-        expect(h.change.args).toContain(space);
+        expect(h.change.entry.command).toBe(join(home, "bin", windows ? "ttasks.exe" : "ttasks"));
+        expect(h.change.entry.args).toContain(space);
       }
       const text = await run(["setup", "agents"], false);
       expect(text.code).toBe(0);
-      // PowerShell drops a bare -- before an npm .ps1 shim, so on Windows it is quoted (A3 3.13.7).
-      expect(text.stdout).toContain(`mcp add ${MCP_SERVER_KEY} ${windows ? "'--'" : "--"} `);
-      // The command as the person's shell takes it literally, the home's variable first.
-      const codexHome = join(user, ".codex");
-      expect(text.stdout).toContain(
-        windows ? `runs: $env:CODEX_HOME = '${codexHome}'; & ` : `runs: CODEX_HOME=${codexHome} `,
-      );
+      // The file each entry goes in, and no command a person could paste into another account.
+      expect(text.stdout).toContain(join(user, ".codex", "config.toml"));
+      expect(text.stdout).not.toContain("mcp add");
       expect(text.stdout).toContain("+ startup_timeout_sec = 20");
       expect(text.stdout).toContain(
         `Nothing was changed. To make these 2 changes, run: ${planned.apply.join(" ")}`,
@@ -220,6 +216,35 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
         (JSON.parse(again.stdout) as { homes: { result: string }[] }).homes.map((h) => h.result),
       ).toEqual(["unchanged", "unchanged"]);
       expect((await rows()).map((r) => r.grant).sort()).toEqual(granted.map((r) => r.grant).sort());
+
+      // A registered home whose access went: the preview says that its apply gives it again.
+      const person = await classSession(home, service.endpoint.path, "cli-interactive");
+      try {
+        const codexRow = granted.find((r) => r.app === "codex");
+        await person.call(
+          "setup/home_revoke",
+          { grants: [codexRow?.grant] },
+          { timeoutMs: 30_000 },
+        );
+      } finally {
+        person.close();
+      }
+      const off = await run(["setup", "agents"], false);
+      expect(off.stdout).toContain(
+        "registered, and its access is off: apply gives it its access again.",
+      );
+      expect(off.stdout).toContain("To make this change, run:");
+      const back = JSON.parse((await run(["setup", "agents", "--json"], false)).stdout) as {
+        apply: string[];
+        homes: { app: string; state: string; change?: unknown }[];
+      };
+      // The JSON says the same: the access that apply gives back, for that home alone.
+      expect(back.homes.map((h) => [h.app, h.state, h.change])).toEqual([
+        ["claude-code", "registered", undefined],
+        ["codex", "registered", { access: "on" }],
+      ]);
+      expect((await run([...back.apply.slice(1), "--json"])).code).toBe(0);
+      expect((await rows()).map((r) => r.app).sort()).toEqual(["claude-code", "codex"]);
 
       // Remove: refused for a script, then the user's takes back entries and rows.
       expect((await run(["setup", "agents", "--remove", "--json"], false)).code).toBe(5);
@@ -355,11 +380,11 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
         space: string;
         plan: string;
         apply: string[];
-        homes: { app: string; change: { args: string[] } }[];
+        homes: { app: string; change: { entry: { args: string[] } } }[];
       };
       expect(planned.space).toBe(other);
       expect(planned.homes.map((h) => h.app)).toEqual(["codex"]);
-      expect(planned.homes[0]?.change.args).toContain(other);
+      expect(planned.homes[0]?.change.entry.args).toContain(other);
       expect(planned.apply).toEqual([
         CLI_NAME,
         "setup",
@@ -430,7 +455,7 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
         expect(preview.code, preview.stderr).toBe(0);
         const planned = JSON.parse(preview.stdout) as {
           apply: string[];
-          homes: { app: string; instance: string; change: { args: string[] } }[];
+          homes: { app: string; instance: string; change: { entry: { args: string[] } } }[];
         };
         // The default Codex home would be `codex`, which the other home's row holds; Claude Code's
         // `claude` is free and kept.
@@ -439,7 +464,7 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
           ["codex", "codex-2"],
         ]);
         const codex = planned.homes.find((h) => h.app === "codex");
-        expect(codex?.change.args).toEqual(expect.arrayContaining(["--instance", "codex-2"]));
+        expect(codex?.change.entry.args).toEqual(expect.arrayContaining(["--instance", "codex-2"]));
         // --instance selects by the instance the preview shows.
         const selected = await run(
           ["setup", "agents", "--space", space, "--instance", "codex-2", "--json"],
@@ -562,11 +587,53 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
         );
         expect(preview.code, preview.stderr).toBe(0);
         expect(preview.stdout).toContain("that setup did not write (one added by hand)");
-        expect(preview.stdout).toContain(`claude mcp remove ${MCP_SERVER_KEY} --scope user`);
+        expect(preview.stdout).toContain(
+          `"${MCP_SERVER_KEY}" member of "mcpServers" out of ${claudeFile}`,
+        );
+        expect(preview.stdout).not.toContain("mcp remove");
         expect(preview.stdout).toContain(`then run ${CLI_NAME} setup agents again`);
       } finally {
         writeFileSync(claudeFile, before[0] ?? "");
       }
+      expect(read()).toEqual(before);
+    },
+    SLOW,
+  );
+
+  test(
+    "setup's own record unreadable: remove turns every home's access off by its row, says where the record is, and changes no file",
+    async () => {
+      const before = read();
+      const shown = await run(["setup", "agents", "--space", space, "--json"], false);
+      expect(shown.code, shown.stdout + shown.stderr).toBe(0);
+      const planned = JSON.parse(shown.stdout) as {
+        apply: string[];
+      };
+      expect((await run([...planned.apply.slice(1), "--json"])).code).toBe(0);
+      expect((await rows()).map((r) => r.app).sort()).toEqual(["claude-code", "codex"]);
+      const withEntries = read();
+      const kept = readFileSync(recordFile());
+      const damaged = '{"format": 2, "homes": [';
+      writeFileSync(recordFile(), damaged);
+      try {
+        // The preview turns nothing on.
+        const preview = await run(["setup", "agents"], false);
+        expect(preview.code, preview.stderr).toBe(0);
+        expect(preview.stdout).toContain("cannot read its own record of the agent homes");
+        expect(preview.stdout).toContain("Nothing was changed.");
+        const removed = await run(["setup", "agents", "--remove"]);
+        // Not complete: each entry stays in its file.
+        expect(removed.code, removed.stdout + removed.stderr).toBe(10);
+        expect(removed.stdout).toContain(recordFile());
+        expect(removed.stdout).toContain("Access is off.");
+        expect(await rows()).toEqual([]);
+        expect(read()).toEqual(withEntries);
+        expect(readFileSync(recordFile(), "utf8")).toBe(damaged);
+      } finally {
+        writeFileSync(recordFile(), kept);
+      }
+      // Readable again: the next remove takes the entries out.
+      expect((await run(["setup", "agents", "--remove"])).code).toBe(0);
       expect(read()).toEqual(before);
     },
     SLOW,

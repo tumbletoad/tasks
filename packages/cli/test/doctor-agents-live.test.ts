@@ -46,7 +46,10 @@ describe("[A3.3.14.doctor.manual] ttasks doctor on an entry setup did not write"
         expect(handMade?.status).toBe("warn");
         expect(handMade?.detail).toContain("without --instance");
         expect(handMade?.detail).toContain("reach only the machine's default space");
-        expect(handMade?.detail).toContain(`claude mcp remove ${MCP_SERVER_KEY} --scope user`);
+        expect(handMade?.detail).toContain(
+          `"${MCP_SERVER_KEY}" member of "mcpServers" out of that home's .claude.json`,
+        );
+        expect(handMade?.detail).not.toContain("mcp remove");
         expect(handMade?.detail).not.toContain(user);
 
         // One with an instance setup did not register: the grant gate refuses it.
@@ -72,7 +75,7 @@ describe("[A3.3.14.doctor.manual] ttasks doctor on an entry setup did not write"
         expect(unread?.status).toBe("warn");
         expect(unread?.detail).not.toContain("default space");
         expect(unread?.detail).not.toContain("refuses its calls");
-        expect(unread?.detail).toContain(`claude mcp remove ${MCP_SERVER_KEY} --scope user`);
+        expect(unread?.detail).toContain(`"${MCP_SERVER_KEY}" member of "mcpServers" out of`);
       } finally {
         writeFileSync(claudeFile, before);
         const removed = await run(["setup", "agents", "--remove", "--json"]);

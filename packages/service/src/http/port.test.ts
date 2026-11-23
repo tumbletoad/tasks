@@ -166,18 +166,25 @@ describe("[A2.3.8.http.port] the UI port", () => {
     expect(failed).toEqual(["sighting", "sighting", "sighting"]);
   });
 
-  test("a first start whose port cannot be written to machine.toml claims no persisted port", async () => {
-    const failed: string[] = [];
-    const m = machine({});
-    const facts: PortFacts = {
-      ...m.facts,
-      persist: () => false,
-      writeFailed: (stage) => failed.push(stage),
-    };
-    const choice = await choosePort(undefined, facts, [7713]);
-    expect(choice).toMatchObject({ kind: "bound", persisted: undefined, first: true });
-    expect(choice.kind === "bound" ? choice.listener.port : 0).toBe(7713);
-    expect(failed).toEqual(["persist"]);
+  test("a first start whose port cannot be written to machine.toml keeps its listener and claims no persisted port", async () => {
+    for (const persist of [
+      () => false,
+      () => {
+        throw Object.assign(new Error("no hard links here"), { code: "ENOTSUP" });
+      },
+    ]) {
+      const failed: string[] = [];
+      const m = machine({});
+      const facts: PortFacts = {
+        ...m.facts,
+        persist,
+        writeFailed: (stage) => failed.push(stage),
+      };
+      const choice = await choosePort(undefined, facts, [7713]);
+      expect(choice).toMatchObject({ kind: "bound", persisted: undefined, first: true });
+      expect(choice.kind === "bound" ? choice.listener.port : 0).toBe(7713);
+      expect(failed).toEqual(["persist"]);
+    }
   });
 
   test("the retry while moved: kept while busy, back when free, blocked when another user appears", async () => {
