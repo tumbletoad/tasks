@@ -62,13 +62,28 @@ const kept = (page: Page): Promise<Record<string, string>> =>
     for (const storage of [localStorage, sessionStorage]) {
       for (let i = 0; i < storage.length; i += 1) {
         const key = storage.key(i) ?? "";
-        if (/\.(draft|note|top|unsaved|unanswered)\./u.test(key) && key.startsWith(prefix)) {
+        if (/\.(add|draft|note|top|unsaved|unanswered)\./u.test(key) && key.startsWith(prefix)) {
           found[key] = storage.getItem(key) ?? "";
         }
       }
     }
     return found;
   }, `${PRODUCT_ID}.`);
+
+const ADD = "**/api/v1/op/task.add";
+/** The line under the top field of the add with these words. */
+const lineOf = (page: Page, words: string) =>
+  page.locator('[data-part="add-line"]', {
+    has: page.locator('[data-part="add-words"]', { hasText: words }),
+  });
+
+/** How many tasks of the space have exactly this title. */
+async function count(world: World, title: string): Promise<number> {
+  const found = (await world.op(world.mira.id, "task.search", { q: title, scope: "all" })) as {
+    rows: { title: string }[];
+  };
+  return found.rows.filter((row) => row.title === title).length;
+}
 
 /** The calls to one operation the page makes from now on. */
 function calls(page: Page, op: string): Request[] {
@@ -821,46 +836,6 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     expect(Object.keys(await kept(page))).toEqual([]);
   });
 
-  test("an add sent just before a reload, and pressed again on the words the reload kept, adds the task once", async ({
-    page,
-    world,
-  }) => {
-    const tag = test.info().project.name;
-    const title = `Order the padlock (${tag})`;
-    await signIn(page, world, `/s/${world.mira.id}/today`);
-    await showsSpace(page, world.mira.name);
-    const field = page.getByRole("textbox", { name: "New task" });
-    // Each add reaches the service late: the first one is still on its way when the page reloads.
-    const added = calls(page, "task.add");
-    let answered = 0;
-    await page.route("**/api/v1/op/task.add", async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 1_500));
-      const response = await route.fetch();
-      answered += 1;
-      await route.fulfill({ response }).catch(() => undefined);
-    });
-    await field.fill(title);
-    await page.keyboard.press("Enter");
-    await page.reload();
-    await showsSpace(page, world.mira.name);
-    await expect(field).toHaveValue(title);
-    await field.focus();
-    await page.keyboard.press("Enter");
-    await expect(field).toHaveValue("", { timeout: SLOW_MS });
-    await expect.poll(() => answered, { timeout: SLOW_MS }).toBe(2);
-    await page.unroute("**/api/v1/op/task.add");
-    const ids = added.map((r) => (r.postDataJSON() as { request_id: string }).request_id);
-    expect(ids).toHaveLength(2);
-    expect(ids[1]).toBe(ids[0]);
-    const found = (await world.op(world.mira.id, "task.search", {
-      q: "padlock",
-      scope: "all",
-    })) as {
-      rows: { title: string }[];
-    };
-    expect(found.rows.filter((row) => row.title === title)).toHaveLength(1);
-  });
-
   test("an edit still waiting behind another edit of the task when the page reloads is back as not saved, never lost, and Try again never overwrites a change made since", async ({
     page,
     world,
@@ -988,6 +963,204 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await unsaved.locator('[data-part="keep-theirs"]').click();
     await expect(unsaved).toHaveCount(0);
     expect(Object.keys(await kept(page))).toEqual([]);
+  });
+});
+
+test.describe("[A7.3.12.m5-07.e2e.add-unanswered] An add from the top field that got no answer is made once and never loses its words", () => {
+  test("an add on its way when the page reloads: the field was free at once, and the reloaded page sends it again by itself under the same request ID and makes it once", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const title = `Order the padlock (${tag})`;
+    const next = `The next thought (${tag})`;
+    await signIn(page, world, `/s/${world.mira.id}/today`);
+    await showsSpace(page, world.mira.name);
+    const field = page.getByRole("textbox", { name: "New task" });
+    const added = calls(page, "task.add");
+    // Every add waits here until the test lets them go, also the one the reload cut off.
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(ADD, async (route) => {
+      await released;
+      const response = await route.fetch().catch(() => undefined);
+      if (response === undefined) await route.abort().catch(() => undefined);
+      else await route.fulfill({ response }).catch(() => undefined);
+    });
+    await field.fill(title);
+    await page.keyboard.press("Enter");
+    // While the add is on its way the field is empty and takes the next words.
+    await expect(field).toHaveValue("");
+    await field.fill(next);
+    await expect(lineOf(page, title)).toHaveAttribute("data-state", "adding", { timeout: SLOW_MS });
+
+    await page.reload();
+    await showsSpace(page, world.mira.name);
+    await expect(field).toHaveValue(next);
+    await expect.poll(() => added.length, { timeout: SLOW_MS }).toBe(2);
+    release();
+    await expect(toast(page)).toHaveText("Added to Inbox", { timeout: SLOW_MS });
+    await expect(page.locator('[data-part="add-line"]')).toHaveCount(0);
+    await expect.poll(() => count(world, title), { timeout: SLOW_MS }).toBe(1);
+    await page.unroute(ADD);
+    const ids = added.map((r) => (r.postDataJSON() as { request_id: string }).request_id);
+    expect(ids[1]).toBe(ids[0]);
+    expect(Object.keys(await kept(page)).filter((key) => key.includes(".add."))).toEqual([]);
+  });
+
+  test("the service away: each add waits as its own line in every tab, Discard lets one go, and Try again in another tab makes the other once", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const kept1 = `Bleed the radiators (${tag})`;
+    const gone = `Repot the fern (${tag})`;
+    await signIn(page, world, `/s/${world.mira.id}/today`);
+    await showsSpace(page, world.mira.name);
+    const context = page.context();
+    const added: Request[] = [];
+    context.on("request", (request) => {
+      if (request.url().endsWith("/api/v1/op/task.add")) added.push(request);
+    });
+    let failed = 0;
+    context.on("requestfailed", (request) => {
+      if (request.url().endsWith("/api/v1/op/task.add")) failed += 1;
+    });
+    await context.route(ADD, (route) => route.abort());
+    const field = page.getByRole("textbox", { name: "New task" });
+    await field.fill(kept1);
+    await page.keyboard.press("Enter");
+    await field.fill(gone);
+    await page.keyboard.press("Enter");
+    await expect(field).toHaveValue("");
+    await expect(lineOf(page, kept1)).toHaveAttribute("data-state", "unanswered", {
+      timeout: SLOW_MS,
+    });
+    await expect(lineOf(page, gone)).toHaveAttribute("data-state", "unanswered");
+
+    // A second tab of the space shows both, and sends them as it loads: still no service.
+    const second = await context.newPage();
+    await second.goto(`${world.origin}/s/${world.mira.id}/today`);
+    await showsSpace(second, world.mira.name);
+    await expect(lineOf(second, kept1)).toHaveAttribute("data-state", "unanswered", {
+      timeout: SLOW_MS,
+    });
+    // Both its sends came back: an add on its way when Discard is pressed may still be made.
+    await expect.poll(() => failed, { timeout: SLOW_MS }).toBe(4);
+    await lineOf(page, gone).locator('[data-part="add-discard"]').click();
+    await expect(lineOf(page, gone)).toHaveCount(0);
+    await expect(lineOf(second, gone)).toHaveCount(0);
+
+    await context.unroute(ADD);
+    await lineOf(second, kept1).locator('[data-part="add-again"]').click();
+    await expect(toast(second)).toHaveText("Added to Inbox", { timeout: SLOW_MS });
+    await expect(lineOf(second, kept1)).toHaveCount(0);
+    await expect(lineOf(page, kept1)).toHaveCount(0);
+    expect(await count(world, kept1)).toBe(1);
+    expect(await count(world, gone)).toBe(0);
+    const ids = new Set(
+      added
+        .map((r) => r.postDataJSON() as { request_id: string; tasks: { title: string }[] })
+        .filter((body) => body.tasks[0]?.title === kept1)
+        .map((body) => body.request_id),
+    );
+    expect(ids.size).toBe(1);
+    expect(Object.keys(await kept(page)).filter((key) => key.includes(".add."))).toEqual([]);
+    await second.close();
+  });
+});
+
+test.describe("[A7.3.12.m5-07.e2e.add-screens] The lines of adds not made yet, in both themes: screenshots and axe", () => {
+  test("adding, not confirmed, refused and sent before a sign-in, at 1,440 px and 390 px, axe clean and no sideways scroll", async ({
+    browser,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    for (const theme of themes()) {
+      const context = await browser.newContext({
+        bypassCSP: true,
+        viewport: { width: 1440, height: 900 },
+        reducedMotion: "reduce",
+      });
+      let release: () => void = () => undefined;
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      try {
+        const page = await context.newPage();
+        await world.machine("ui.theme", theme);
+        await signIn(page, world, `/s/${world.mira.id}/today`);
+        await showsSpace(page, world.mira.name);
+        // One kept by an earlier sign-in of this browser.
+        await page.evaluate(
+          ({ name, add }) => {
+            localStorage.setItem(name, JSON.stringify(add));
+          },
+          {
+            name: `${PRODUCT_ID}.add.${world.mira.id}.00000000-0000-4000-8000-000000000001`,
+            add: {
+              request: "00000000-0000-4000-8000-000000000001",
+              text: `Renew the passport (${tag})`,
+              kept: [],
+              task: { title: `Renew the passport (${tag})`, inbox: true },
+              where: "Inbox",
+              signIn: "00000000",
+              at: 1,
+            },
+          },
+        );
+        await page.route(ADD, async (route) => {
+          const body = route.request().postDataJSON() as { tasks: { title: string }[] };
+          const title = body.tasks[0]?.title ?? "";
+          if (title.startsWith("Book")) {
+            await released;
+            await route.abort().catch(() => undefined);
+          } else if (title.startsWith("Plan")) {
+            await route.fulfill({
+              status: 400,
+              contentType: "application/json",
+              body: JSON.stringify({
+                error: { code: "invalid_input", message: "The area was deleted." },
+              }),
+            });
+          } else {
+            await route.abort();
+          }
+        });
+        await page.reload();
+        await showsSpace(page, world.mira.name);
+        const field = page.getByRole("textbox", { name: "New task" });
+        for (const words of [
+          `Call the plumber about the leak under the kitchen sink (${tag})`,
+          `Plan the garden #home (${tag})`,
+          `Book the earliest slot (${tag})`,
+        ]) {
+          await field.fill(words);
+          await page.keyboard.press("Enter");
+        }
+        const lines = page.locator('[data-part="add-line"]');
+        await expect(lines).toHaveCount(4, { timeout: SLOW_MS });
+        for (const state of ["unanswered", "refused", "adding", "signedInAgain"]) {
+          await expect(lines.and(page.locator(`[data-state="${state}"]`))).toHaveCount(1);
+        }
+        const top = page.locator("header");
+        await picture(top, `add-lines-${theme}-1440.png`);
+        if (pictures()) expect(await axeFound(page, ["header"]), `axe in ${theme}`).toEqual([]);
+
+        await page.setViewportSize({ width: 390, height: 844 });
+        const scroll = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
+        await picture(page, `add-lines-${theme}-390.png`);
+      } finally {
+        release();
+        await context.close();
+      }
+    }
+    await world.machine("ui.theme", null);
   });
 });
 

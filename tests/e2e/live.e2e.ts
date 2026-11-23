@@ -69,7 +69,7 @@ test.describe("[A7.3.12.m5-02.e2e.live] The live store in the page", () => {
     await picture(page, "live-store.png");
   });
 
-  test("a task added in the page clears its field when the feed confirms it", async ({
+  test("a task added in the page empties its field at Enter, and its row comes with the feed before the add's answer", async ({
     page,
     world,
   }) => {
@@ -93,10 +93,10 @@ test.describe("[A7.3.12.m5-02.e2e.live] The live store in the page", () => {
     });
     await field.fill(title);
     await field.press("Enter");
+    await expect(field).toHaveValue("");
     await expect(page.locator('[data-part="title"]', { hasText: title })).toHaveCount(1, {
       timeout: SLOW_MS,
     });
-    await expect(field).toHaveValue("");
     release();
     await given;
     await page.unroute("**/api/v1/op/task.add");

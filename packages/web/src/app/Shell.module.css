@@ -24,20 +24,22 @@
   max-width: 1160px;
 }
 
+/* The top: the field's row, and under it the adds not made yet, which it grows by. */
 .top {
   position: sticky;
   top: 0;
   z-index: 2;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  height: var(--k-top);
+  min-height: var(--k-top);
   background: var(--k-bg);
 }
 
 .menu {
   display: none;
   flex: none;
+  margin-block: calc((var(--k-top) - 32px) / 2);
   place-items: center;
   width: 32px;
   height: 32px;

@@ -193,6 +193,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   after a reload, and so does one still waiting behind your previous edit when the page closed. Try
   again sends it against what you saw when you made it, so a change made since is shown to you
   first.
+- A task added from the top field is made once and its words are never lost: the field is free
+  again at Enter, and an add that got no answer stays under the field, in every tab of the space
+  and after a reload, until TTasks says what it did. It is sent again by itself when the page is
+  live again, and Discard never takes back a task that was made.
 - Pressing Note or Run again after its answer was lost, also after a reload, makes one note or
   run. For Note this holds in the same browser under the same sign-in; for Run in the same browser
   within a day of the first press, also after signing in again.
@@ -278,6 +282,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   afterwards, writes its own list of spaces back, and the next start follows that list.
 - On a machine that several people sign in to, another person could serve a page at TTasks's
   address while TTasks is stopped.
+- An add from the top field that got no answer is kept in this browser, as a field edit is. One
+  sent before you signed in again is not sent again by itself: TTasks cannot tell whether it made
+  it, so the line asks you to look in the list first.
 - A field edit that could not be saved is kept in this browser. Another browser does not have it,
   clearing the browser's data for the page loses it, and a browser whose storage is blocked or full
   keeps it only until the page is reloaded or closed. When two tabs hold different unsaved values

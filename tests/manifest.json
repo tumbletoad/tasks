@@ -4028,7 +4028,7 @@
     },
     {
       "id": "A7.3.12.m5-02.e2e.live",
-      "title": "Against the real service in Chromium and Firefox: a task an agent adds, or one reopened at the terminal, appears in the open view without a reload, a completed one leaves it, a burst of side-by-side agent writes lands whole and once, an edit changes a shown row in place, and a task added in the page clears its field when the feed confirms it, before the HTTP answer arrives",
+      "title": "Against the real service in Chromium and Firefox: a task an agent adds, or one reopened at the terminal, appears in the open view without a reload, a completed one leaves it, a burst of side-by-side agent writes lands whole and once, an edit changes a shown row in place, and a task added in the page empties its field at Enter and shows its row from the feed before the HTTP answer arrives",
       "source": "A7 3.12 M5.02, A5 3.15",
       "owner": "M5",
       "kind": "ci",
@@ -4889,6 +4889,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.13.web.add-kept",
+      "title": "An add from the top field is kept for the browser before it is sent and goes only on the service's word: made (Added once its row is in), refused (said with its words, never sent again by itself, Edit gives back the words and kept shortcuts) or discarded; without an answer it is not confirmed and goes again under the same request ID and task when the page is live again, as a page loads, or on Try again; two tabs never send it at once, another tab takes it over once the first lets it go; one sent under an earlier sign-in is never sent by itself; whatever a capture makes reads back, and what this build cannot read is left alone",
+      "source": "A5 3.3, A5 3.11, A1 3.8",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.13.web.add-line",
+      "title": "The real top bar: Enter empties the field at once and the next words go out while an add is on its way; a lost answer is a line with Try again and Discard, Try again sends the same request, the feed live again sends it by itself, and a refused add gives its words back with Edit, or Copy while the field holds others",
+      "source": "A5 3.3, A5 3.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.11.web.kept-edits",
       "title": "A field edit the service did not take is kept per space and comes back after a reload as its control made it, ready for Try again; a value no control could make, or kept under another name, never comes back and is removed; a tab removes only what it kept or read; a task gone for good takes its edits along",
       "source": "A5 3.11, A7 3.12 M5.07",
@@ -4932,6 +4948,22 @@
       "id": "A7.3.12.m5-07.e2e.reload",
       "title": "In Chromium and Firefox: the top field's text is back after a reload of its tab, per space, a second tab keeps its own through its reload, a paste over the field's limit says it was cut, and the text is gone once the task is added; a task's draft follows into a second tab where nobody types, is back after a reload and leaves nothing behind once saved as a note; a field edit not saved because the connection was down, the task changed under it or the task was finished is back after a reload with its choices, and gone once saved or discarded",
       "source": "A5 3.8, A5 3.11, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-07.e2e.add-unanswered",
+      "title": "In Chromium and Firefox against the real service: Enter empties the top field at once while the add is on its way; an add on its way when the page reloads is sent again by itself by the reloaded page under the same request ID, made once and said Added; with the service away each add is its own line in every tab of the space, Discard in one tab takes it from all, and Try again in another tab makes it once; nothing is left kept",
+      "source": "A5 3.3, A5 3.11, A1 3.8, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-07.e2e.add-screens",
+      "title": "In Chromium and Firefox: the lines of adds not made yet (adding, not confirmed, refused, sent before a sign-in) under the top field in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "source": "A5 3.3, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

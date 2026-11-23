@@ -14,13 +14,19 @@
 // search along as the draft when there is none, so nothing typed is lost either way.
 //
 // The draft is kept per space for the tab (kept.ts), so it survives a switch to another space and
-// back, and a reload; another tab keeps its own. A draft typed while an add was on its way stays. An add's text stays in
-// the field until the feed confirms the add, so the field tracks it until then: the same text is
-// not sent again while it is on its way, and when the space's session ends first (a switch of
-// space stops its store, which then confirms nothing), an add the service took drops its text from
-// the space's kept draft.
+// back, and a reload; another tab keeps its own. Enter hands the words to an add of its own
+// (adds.ts) and empties the field: an add the service has not answered shows as a line under the
+// field, in every tab of the space, until it is made or the person lets it go.
 import { useNavigate, useParams, useRouter, useRouterState } from "@tanstack/react-router";
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { Button } from "react-aria-components";
 import {
   HERE_KEY,
@@ -29,24 +35,28 @@ import {
   parseCapture,
   type Chip,
 } from "../capture/parse.ts";
-import { requestId } from "../api.ts";
 import { Session } from "../context.ts";
-import { useT, type Translate } from "../i18n/intl.tsx";
-import { tabKept } from "../kept.ts";
+import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
+import { browserKept, onKeptUnder, tabKept } from "../kept.ts";
 import { formatDay } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import { actionOf, ariaKeys, isMac, keysOf } from "../keys/keymap.ts";
 import { useKeyLabel } from "../keys/labels.ts";
+import { Adds, browserLocks, signInMark, type AddLine } from "./adds.ts";
 import { onFieldRequest, wantResults } from "./field.ts";
 import { useToast } from "./frame.ts";
 import { useMachine } from "./machine.ts";
 import { CrossIcon, PlusIcon, SearchIcon } from "./Icons.tsx";
 import css from "./TopBar.module.css";
 import { classes } from "./css.ts";
+import { useAuth } from "./session.tsx";
 import { LANDING } from "./views.ts";
 
 const styles = classes(css, [
+  "act",
+  "add",
+  "adds",
   "bar",
   "button",
   "chip",
@@ -60,6 +70,9 @@ const styles = classes(css, [
   "suggestion",
   "suggestions",
   "title",
+  "top",
+  "why",
+  "words",
 ]);
 
 /** The field's limit: more than any title, so the shortcuts have room. */
@@ -72,14 +85,7 @@ const FIELD_MAX = 500;
 interface Draft {
   readonly text: string;
   readonly kept: ReadonlySet<string>;
-  /**
-   * The request ID of the add of this text that got no answer: the same add again, also after a
-   * reload, carries it, so the service gives back the task it made instead of a second.
-   */
-  readonly request?: string;
 }
-
-const REQUEST_ID = /^[0-9a-f-]{36}$/u;
 
 const draftName = (space: string) => `top.${space}`;
 
@@ -90,56 +96,24 @@ function readTop(space: string): Draft | undefined {
 /** A kept draft, read by its shape. */
 function draftOf(value: unknown): Draft | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const { text, kept, request } = value as { text?: unknown; kept?: unknown; request?: unknown };
+  const { text, kept } = value as { text?: unknown; kept?: unknown };
   if (typeof text !== "string" || text === "" || text.length > FIELD_MAX) return undefined;
   const keys = Array.isArray(kept)
     ? kept.filter((k): k is string => typeof k === "string" && k.length <= 100).slice(0, 50)
     : [];
-  return {
-    text,
-    kept: new Set(keys),
-    ...(typeof request === "string" && REQUEST_ID.test(request) ? { request } : {}),
-  };
+  return { text, kept: new Set(keys) };
 }
 
-/** Keeps the draft; the same text keeps the request ID of its unanswered add. */
 function keepTop(space: string, draft: Draft | undefined): void {
-  const before = readTop(space);
-  const request = draft?.request ?? (before?.text === draft?.text ? before?.request : undefined);
   const value =
     draft === undefined || draft.text === ""
       ? undefined
-      : JSON.stringify({
-          text: draft.text,
-          kept: [...draft.kept],
-          ...(request === undefined ? {} : { request }),
-        });
+      : JSON.stringify({ text: draft.text, kept: [...draft.kept] });
   if (tabKept.read(draftName(space)) !== value) tabKept.keep(draftName(space), value);
-}
-
-/** The request ID for an add of `text`: its unanswered one's, else a new one, kept with it. */
-function requestFor(space: string, text: string, kept: ReadonlySet<string>): string {
-  const before = readTop(space);
-  if (before?.text === text && before.request !== undefined) return before.request;
-  const request = requestId();
-  keepTop(space, { text, kept, request });
-  return request;
-}
-
-/** The add of `text` was refused: it did nothing, so the next one is a new request. */
-function dropRequest(space: string, text: string): void {
-  const before = readTop(space);
-  if (before?.text !== text || before.request === undefined) return;
-  tabKept.keep(draftName(space), JSON.stringify({ text, kept: [...before.kept] }));
 }
 
 /** How long the search waits for typing to pause before it reads. */
 const QUIET_MS = 150;
-
-/** Drops `text` from the space's kept draft, unless the draft has become something else. */
-function forget(space: string, text: string): void {
-  if (readTop(space)?.text === text) keepTop(space, undefined);
-}
 
 /** What a chip shows: the value its words became. */
 function chipLabel(t: Translate, chip: Chip, locale: string): string {
@@ -165,6 +139,7 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
   const t = useT();
   const say = useToast();
   const { api, live: feed } = useContext(Session);
+  const { token } = useAuth();
   const state = useLive();
   const clock = useClock(false);
   const navigate = useNavigate();
@@ -195,20 +170,41 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
   /** The route the person was on before searching, to go back to. */
   const back = useRef<string | undefined>(undefined);
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  /** The texts of adds on their way: sent, and not yet confirmed or refused. */
-  const sending = useRef(new Set<string>());
-  /** Of those, the ones the service took: they wait only for the feed. */
-  const taken = useRef(new Set<string>());
-  const mounted = useRef(false);
-
+  const said = useRef({ say, t });
+  said.current = { say, t };
+  const [adds] = useState(
+    () =>
+      new Adds(
+        {
+          space,
+          signIn: signInMark(token),
+          kept: browserKept,
+          heard: onKeptUnder,
+          locks: browserLocks(),
+          send: (add) =>
+            feed.write(
+              (request_id) => api.client.task.add({ tasks: [add.task], request_id }),
+              undefined,
+              add.request,
+            ),
+          failed: (error) => feed.failed(error),
+          added: (add) => {
+            said.current.say(said.current.t("top.added", { where: add.where }));
+          },
+        },
+        state.phase === "live",
+      ),
+  );
+  useEffect(
+    () => () => {
+      adds.stop();
+    },
+    [adds],
+  );
   useEffect(() => {
-    mounted.current = true;
-    const took = taken.current;
-    return () => {
-      mounted.current = false;
-      for (const text of took) forget(space, text);
-    };
-  }, [space]);
+    adds.live(state.phase === "live");
+  }, [adds, state.phase]);
+  const lines = useSyncExternalStore(adds.subscribe, adds.lines);
 
   useEffect(() => {
     keepTop(space, text === "" ? undefined : { text, kept });
@@ -344,9 +340,7 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
     }
     const draft = capture.draft;
     // Shortcuts alone: the panel says a title is missing.
-    if (draft === undefined) return;
-    if (!live || sending.current.has(submitted)) return;
-    sending.current.add(submitted);
+    if (draft === undefined || !live) return;
     const area = capture.chips.find((chip) => chip.kind === "area");
     const where =
       area === undefined
@@ -354,36 +348,18 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
           ? t("nav.waiting")
           : t("capture.inbox")
         : chipLabel(t, area, clock.locale);
-    // Through the live store: no optimistic row, and the text goes when the feed confirms the
-    // add, so the new row is on screen when it does. Only the text that was added goes: whatever
-    // the person typed meanwhile stays, here and in the space's kept draft.
-    const sent = feed.write(
-      (request_id) => api.client.task.add({ tasks: [draft], request_id }),
-      undefined,
-      requestFor(space, submitted, kept),
-    );
-    void sent.settled.then((settled) => {
-      sending.current.delete(submitted);
-      taken.current.delete(submitted);
-      if (settled !== "confirmed") return;
-      forget(space, submitted);
-      if (mounted.current) say(t("top.added", { where }));
-      setText((current) => (current === submitted ? "" : current));
-    });
-    sent.answer.then(
-      () => {
-        if (!sending.current.has(submitted)) return;
-        if (mounted.current) taken.current.add(submitted);
-        else forget(space, submitted);
-      },
-      (error: unknown) => {
-        sending.current.delete(submitted);
-        // A refusal the service sent did nothing: the same text again is a new add.
-        const code = error instanceof Error ? (error as { code?: unknown }).code : undefined;
-        if (typeof code === "string" && code !== "internal") dropRequest(space, submitted);
-        if (!feed.failed(error)) say(t("top.addFailed"));
-      },
-    );
+    adds.add({ text: submitted, kept: [...kept], task: draft, where });
+    setText("");
+  };
+
+  /** A refused add's words go back into the empty field, with the shortcuts kept as text. */
+  const edit = (line: AddLine) => {
+    const back = adds.edit(line.add.request);
+    if (back === undefined) return;
+    setKept(new Set(back.kept));
+    setText(back.text);
+    placeCaret.current = back.text.length;
+    field.current?.focus();
   };
 
   const value = searching ? query : text;
@@ -395,175 +371,268 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
     (capture.chips.length > 0 || suggestions.length > 0);
 
   return (
-    <div className={styles.bar}>
-      <div
-        ref={wrapper}
-        className={styles.field}
-        data-mode={searching ? "search" : "add"}
-        onFocus={() => {
-          setWithin(true);
-        }}
-        onBlur={(event) => {
-          if (!wrapper.current?.contains(event.relatedTarget)) setWithin(false);
-        }}
-      >
-        <Button
-          className={styles.mode}
-          aria-label={searching ? t("top.toAdd") : t("top.toSearch")}
-          data-tip={searching ? t("top.toAdd") : t("top.toSearch")}
-          isDisabled={!live}
-          onPress={toggle}
+    <div className={styles.top}>
+      <div className={styles.bar}>
+        <div
+          ref={wrapper}
+          className={styles.field}
+          data-mode={searching ? "search" : "add"}
+          onFocus={() => {
+            setWithin(true);
+          }}
+          onBlur={(event) => {
+            if (!wrapper.current?.contains(event.relatedTarget)) setWithin(false);
+          }}
         >
-          {searching ? <SearchIcon /> : <PlusIcon />}
-        </Button>
-        <input
-          ref={field}
-          className={styles.input}
-          type="text"
-          value={value}
-          maxLength={FIELD_MAX}
-          placeholder={searching ? t("top.searchPlaceholder") : t("top.newTask")}
-          aria-label={label}
-          aria-keyshortcuts={ariaKeys(keysOf("search", singleKeys), mac)}
-          aria-describedby={showPanel ? "top-capture" : undefined}
-          autoComplete="off"
-          spellCheck={!searching}
-          disabled={!live}
-          onChange={(event) => {
-            const next = event.target.value;
-            setCaret(event.target.selectionStart ?? next.length);
-            if (!searching) {
-              setText(next);
-              return;
-            }
-            setQuery(next);
-            wantResults(undefined);
-            clearTimeout(pending.current);
-            pending.current = setTimeout(() => {
-              writeQuery(next.trim() === "" ? "" : next);
-            }, QUIET_MS);
-          }}
-          onSelect={(event) => {
-            setCaret(event.currentTarget.selectionStart ?? 0);
-          }}
-          onPaste={(event) => {
-            // The field takes what fits and drops the rest: say so, the clipboard still has it.
-            const pasted = event.clipboardData.getData("text/plain").length;
-            const input = event.currentTarget;
-            const chosen = (input.selectionEnd ?? 0) - (input.selectionStart ?? 0);
-            if (input.value.length - chosen + pasted > FIELD_MAX) {
-              say(t("top.pasteCut", { count: FIELD_MAX }));
-            }
-          }}
-          onKeyDown={(event) => {
-            const action = actionOf(event.nativeEvent, "field", singleKeys);
-            const close = actionOf(event.nativeEvent, "page", singleKeys) === "close";
-            if (searching) {
-              if (close) {
-                event.preventDefault();
-                endSearch();
-              } else if (action === "add" || action === "results") {
-                event.preventDefault();
-                const q = query.trim();
-                writeQuery(q === "" ? "" : query);
-                // The results take focus once this search's rows are on screen.
-                wantResults(q === "" ? undefined : q);
+          <Button
+            className={styles.mode}
+            aria-label={searching ? t("top.toAdd") : t("top.toSearch")}
+            data-tip={searching ? t("top.toAdd") : t("top.toSearch")}
+            isDisabled={!live}
+            onPress={toggle}
+          >
+            {searching ? <SearchIcon /> : <PlusIcon />}
+          </Button>
+          <input
+            ref={field}
+            className={styles.input}
+            type="text"
+            value={value}
+            maxLength={FIELD_MAX}
+            placeholder={searching ? t("top.searchPlaceholder") : t("top.newTask")}
+            aria-label={label}
+            aria-keyshortcuts={ariaKeys(keysOf("search", singleKeys), mac)}
+            aria-describedby={showPanel ? "top-capture" : undefined}
+            autoComplete="off"
+            spellCheck={!searching}
+            disabled={!live}
+            onChange={(event) => {
+              const next = event.target.value;
+              setCaret(event.target.selectionStart ?? next.length);
+              if (!searching) {
+                setText(next);
+                return;
               }
-              return;
-            }
-            if (action === "suggestion" && suggestions[0] !== undefined) {
-              event.preventDefault();
-              take(suggestions[0].insert);
-            } else if (action === "add") {
-              event.preventDefault();
-              add();
-            }
+              setQuery(next);
+              wantResults(undefined);
+              clearTimeout(pending.current);
+              pending.current = setTimeout(() => {
+                writeQuery(next.trim() === "" ? "" : next);
+              }, QUIET_MS);
+            }}
+            onSelect={(event) => {
+              setCaret(event.currentTarget.selectionStart ?? 0);
+            }}
+            onPaste={(event) => {
+              // The field takes what fits and drops the rest: say so, the clipboard still has it.
+              const pasted = event.clipboardData.getData("text/plain").length;
+              const input = event.currentTarget;
+              const chosen = (input.selectionEnd ?? 0) - (input.selectionStart ?? 0);
+              if (input.value.length - chosen + pasted > FIELD_MAX) {
+                say(t("top.pasteCut", { count: FIELD_MAX }));
+              }
+            }}
+            onKeyDown={(event) => {
+              const action = actionOf(event.nativeEvent, "field", singleKeys);
+              const close = actionOf(event.nativeEvent, "page", singleKeys) === "close";
+              if (searching) {
+                if (close) {
+                  event.preventDefault();
+                  endSearch();
+                } else if (action === "add" || action === "results") {
+                  event.preventDefault();
+                  const q = query.trim();
+                  writeQuery(q === "" ? "" : query);
+                  // The results take focus once this search's rows are on screen.
+                  wantResults(q === "" ? undefined : q);
+                }
+                return;
+              }
+              if (action === "suggestion" && suggestions[0] !== undefined) {
+                event.preventDefault();
+                take(suggestions[0].insert);
+              } else if (action === "add") {
+                event.preventDefault();
+                add();
+              }
+            }}
+          />
+          {searching || hint === undefined ? null : (
+            <kbd className={styles.hint} aria-hidden="true">
+              {keyLabel(hint)}
+            </kbd>
+          )}
+          {showPanel ? (
+            <div className={styles.panel} id="top-capture">
+              {suggestions.length === 0 ? null : (
+                <div className={styles.suggestions} role="group" aria-label={t("top.suggestions")}>
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.insert}
+                      type="button"
+                      className={styles.suggestion}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                      }}
+                      onClick={() => {
+                        take(s.insert);
+                      }}
+                    >
+                      <span dir="auto">{s.insert}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {capture.chips.length === 0 ? null : (
+                <ul className={styles.chips}>
+                  {capture.chips.map((chip) => {
+                    const shown = chipLabel(t, chip, clock.locale);
+                    return (
+                      <li key={chip.key} className={styles.chip} data-kind={chip.kind}>
+                        <span dir="auto">{shown}</span>
+                        <button
+                          type="button"
+                          className={styles.keep}
+                          aria-label={
+                            chip.key === HERE_KEY
+                              ? t("top.keepView", { where: shown })
+                              : t("top.keepText", { text: chip.text })
+                          }
+                          data-tip={
+                            chip.key === HERE_KEY
+                              ? t("top.keepView", { where: shown })
+                              : t("top.keepText", { text: chip.text })
+                          }
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                          }}
+                          onClick={() => {
+                            setKept((known) => new Set([...known, chip.key]));
+                            field.current?.focus();
+                          }}
+                        >
+                          <CrossIcon />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {capture.chips.length === 0 ? null : (
+                <p className={styles.title}>
+                  {capture.draft === undefined ? (
+                    t("top.needsTitle")
+                  ) : (
+                    <span dir="auto">{t("top.title", { title: capture.title })}</span>
+                  )}
+                </p>
+              )}
+            </div>
+          ) : null}
+        </div>
+        <Button
+          className={styles.button}
+          aria-label={searching ? t("top.toAdd") : t("top.add")}
+          isDisabled={!live}
+          onPress={() => {
+            if (searching) endSearch(query);
+            else add();
           }}
-        />
-        {searching || hint === undefined ? null : (
-          <kbd className={styles.hint} aria-hidden="true">
-            {keyLabel(hint)}
-          </kbd>
-        )}
-        {showPanel ? (
-          <div className={styles.panel} id="top-capture">
-            {suggestions.length === 0 ? null : (
-              <div className={styles.suggestions} role="group" aria-label={t("top.suggestions")}>
-                {suggestions.map((s) => (
-                  <button
-                    key={s.insert}
-                    type="button"
-                    className={styles.suggestion}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                    }}
-                    onClick={() => {
-                      take(s.insert);
-                    }}
-                  >
-                    <span dir="auto">{s.insert}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {capture.chips.length === 0 ? null : (
-              <ul className={styles.chips}>
-                {capture.chips.map((chip) => {
-                  const shown = chipLabel(t, chip, clock.locale);
-                  return (
-                    <li key={chip.key} className={styles.chip} data-kind={chip.kind}>
-                      <span dir="auto">{shown}</span>
-                      <button
-                        type="button"
-                        className={styles.keep}
-                        aria-label={
-                          chip.key === HERE_KEY
-                            ? t("top.keepView", { where: shown })
-                            : t("top.keepText", { text: chip.text })
-                        }
-                        data-tip={
-                          chip.key === HERE_KEY
-                            ? t("top.keepView", { where: shown })
-                            : t("top.keepText", { text: chip.text })
-                        }
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                        }}
-                        onClick={() => {
-                          setKept((known) => new Set([...known, chip.key]));
-                          field.current?.focus();
-                        }}
-                      >
-                        <CrossIcon />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {capture.chips.length === 0 ? null : (
-              <p className={styles.title}>
-                {capture.draft === undefined ? (
-                  t("top.needsTitle")
-                ) : (
-                  <span dir="auto">{t("top.title", { title: capture.title })}</span>
-                )}
-              </p>
-            )}
-          </div>
-        ) : null}
+        >
+          <PlusIcon />
+        </Button>
       </div>
-      <Button
-        className={styles.button}
-        aria-label={searching ? t("top.toAdd") : t("top.add")}
-        isDisabled={!live}
-        onPress={() => {
-          if (searching) endSearch(query);
-          else add();
-        }}
-      >
-        <PlusIcon />
-      </Button>
+      {lines.length === 0 ? null : (
+        <div className={styles.adds}>
+          {lines.map((line) => (
+            <AddLineView
+              key={line.add.request}
+              line={line}
+              fieldEmpty={text.trim() === ""}
+              adds={adds}
+              edit={edit}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One add the service has not made, under the field: its words, what is known, and choices. */
+function AddLineView({
+  line,
+  fieldEmpty,
+  adds,
+  edit,
+}: {
+  readonly line: AddLine;
+  /** A refused add's words go back into the field only while it holds none: else they copy. */
+  readonly fieldEmpty: boolean;
+  readonly adds: Adds;
+  readonly edit: (line: AddLine) => void;
+}) {
+  const t = useT();
+  const say = useToast();
+  const { add, state } = line;
+  const words = add.text;
+  const why =
+    state === "adding"
+      ? t("top.addAdding")
+      : state === "unanswered"
+        ? t("top.addUnanswered")
+        : state === "signedInAgain"
+          ? t("top.addSignedInAgain")
+          : line.said === undefined
+            ? t("top.addRefused")
+            : t("top.addRefusedSaid", { said: line.said });
+  const act = (label: string, name: MessageId, part: string, onClick: () => void) => (
+    <button
+      type="button"
+      className={styles.act}
+      data-part={part}
+      aria-label={t(name, { words })}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className={styles.add} data-part="add-line" data-state={state} role="status">
+      <span className={styles.words} dir="auto" data-part="add-words">
+        {words}
+      </span>
+      <span className={styles.why}>{why}</span>
+      {state === "unanswered"
+        ? act(t("edit.tryAgain"), "top.tryAgainWords", "add-again", () => {
+            adds.tryAgain(add.request);
+          })
+        : null}
+      {state === "signedInAgain"
+        ? act(t("top.addNow"), "top.addNowWords", "add-again", () => {
+            adds.addAgain(add.request);
+          })
+        : null}
+      {state === "refused" && fieldEmpty
+        ? act(t("top.edit"), "top.editWords", "add-edit", () => {
+            edit(line);
+          })
+        : null}
+      {state === "refused" && !fieldEmpty
+        ? act(t("row.copy"), "top.copyWords", "add-copy", () => {
+            navigator.clipboard.writeText(words).then(
+              () => {
+                say(t("row.copied"));
+              },
+              () => {
+                say(t("row.copyFailed"));
+              },
+            );
+          })
+        : null}
+      {act(t("edit.discard"), "top.discardWords", "add-discard", () => {
+        adds.discard(add.request);
+      })}
     </div>
   );
 }

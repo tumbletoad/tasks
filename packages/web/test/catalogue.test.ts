@@ -35,6 +35,7 @@ const SAMPLE = {
   name: "Mira",
   count: 2,
   title: "Fix appointment time zones",
+  said: "The area was deleted.",
   label: "Claude Code",
   reason: "no terminal",
   words: "agent exited",
