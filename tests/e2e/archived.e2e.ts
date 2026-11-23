@@ -374,6 +374,7 @@ test.describe("[A5.archived.e2e.added-where] New project says where the project 
     await expect(dialog).toHaveCount(0);
     await expect(toast(page)).toHaveText(`Project ${planks} added in ${amber}, which is archived`);
     await expect(toastAction(page)).toHaveText(`Unarchive ${amber}`);
+    await shots(page, world, "added-in-archived", "page");
     await toastAction(page).click();
     await expect(linkTo(areas, amber)).toBeVisible();
     await expect(linkTo(areas, planks)).toBeVisible();
@@ -442,6 +443,7 @@ test.describe("[A5.archived.e2e.address] a project's page is the project's, what
     // Without an area, a plain capture goes to the Inbox, and the field says so as it is typed.
     await adding(page).fill(`Sweep the hut (${tag})`);
     await expect(chips).toHaveText(["Inbox"]);
+    await shots(page, world, "loose-capture", "page");
     await adding(page).fill("");
 
     // Moved into an area while the page is open: the page follows it to its present address.
