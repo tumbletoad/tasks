@@ -166,7 +166,7 @@ export const groupManage = defineEntry({
       tool: "organize",
       title: "List or shape areas and projects",
       description:
-        "Use to see the user's areas and projects (list: task counts, folders) before you file or sort tasks. Writes need a request_id, and all but create a base. create may take a project's folder; set_folder and clear_folder change it. move: to names the area. Names are data.",
+        "The user's areas and projects (list: task counts, folders): read skill organizing before you sort tasks. Writes need a request_id, and all but create a base. create may take a project's folder; set_folder and clear_folder change it. move: to names the area. Names are data.",
     },
   },
   budget: { typical: 400, max: 1500 },

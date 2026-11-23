@@ -1,8 +1,7 @@
 // The server instructions: their size, their alphabet, the start rule in the first 240
 // characters, and the tools and fields they name, checked against the registry itself.
-import { isOffered, laterFields, registry, type AnyEntry } from "@ttasks/contracts";
+import { isOffered, registry, type AnyEntry } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
-import { GUIDES } from "../ops/guides.ts";
 import {
   INSTRUCTIONS,
   MAX_INSTRUCTION_CHARS,
@@ -72,7 +71,7 @@ describe("[A3.3.6.mcp.instructions] the server instructions", () => {
     // "with", and after a colon that ends a "for this, use" line.
     const named = [
       ...INSTRUCTIONS.matchAll(/\bcall ([a-z_]+)/g),
-      ...INSTRUCTIONS.matchAll(/\b([a-z_]+) with (?:launch|task|scope|guide|your|only|one)\b/g),
+      ...INSTRUCTIONS.matchAll(/\b([a-z_]+) with (?:launch|task|scope|your|only|one)\b/g),
       ...INSTRUCTIONS.matchAll(/: ([a-z_]+)\./g),
     ].map((m) => m[1] ?? "");
     expect(named.length).toBeGreaterThan(8);
@@ -110,21 +109,8 @@ describe("[A3.3.6.mcp.instructions] the server instructions", () => {
     );
   });
 
-  test("the guides line names only the guides this build serves, and every one of them", () => {
-    // The guides behind status hold the longer workflows. A guide a later step brings is on the
-    // later list, so status neither offers nor names it yet.
-    const line = /Longer workflows \(([a-z, ]+)\): status with guide\./u.exec(INSTRUCTIONS);
-    const named = (line?.[1] ?? "").split(", ");
-    expect(named.sort()).toEqual(Object.keys(GUIDES).sort());
-    expect(named).toContain("work");
-    for (const guide of named) {
-      expect(valuesOf("status", "guide"), guide).toContain(guide);
-    }
-    // Every guide the tool offers is one this build has.
-    const later = laterFields("space.status").flatMap((row) =>
-      row.field === "guide" && row.value !== undefined ? [row.value] : [],
-    );
-    const offered = valuesOf("status", "guide").filter((guide) => !later.includes(guide));
-    expect(offered.sort()).toEqual(Object.keys(GUIDES).sort());
+  test("the skills line says how to read a skill, with a field status has", () => {
+    expect(INSTRUCTIONS).toMatch(/read those that apply with status skills first\./u);
+    expect(fieldsOf("status")).toContain("skills");
   });
 });

@@ -1,7 +1,17 @@
 // space.status: orientation and session status (A3 3.4.2).
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { AsOf, Cwd, TaskRef, TaskRow, idPattern, patterns } from "../schemas.ts";
+import {
+  AsOf,
+  Cwd,
+  SKILL_NAME,
+  SKILL_NAME_CHARS,
+  SkillRow,
+  TaskRef,
+  TaskRow,
+  idPattern,
+  patterns,
+} from "../schemas.ts";
 import { AS_OF, M14, M15, PORTAL, SPACE_ID } from "./fixture.ts";
 
 const INCLUDE = ["today", "week", "review", "waiting", "inbox", "changes"] as const;
@@ -9,6 +19,8 @@ const INCLUDE = ["today", "week", "review", "waiting", "inbox", "changes"] as co
 const SINCE =
   /^(?:24h|7d|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,9})?)?(?:Z|[+-][0-9]{2}:[0-9]{2}))$/u;
 const Count = z.int().min(0).max(1_000_000_000);
+/** The most skills one call reads: those of one moment, such as adding a task, and a few more. */
+export const MAX_SKILLS = 6;
 
 /** The example space's counts per status, in the space's order. */
 export const STATUS_COUNTS = [
@@ -27,9 +39,11 @@ export const SpaceStatusInput = z.strictObject({
     .regex(SINCE)
     .describe("For changes: 24h, 7d or an ISO time; default 24h")
     .optional(),
-  guide: z
-    .enum(["work", "refresh", "triage", "organize"])
-    .describe("Return this workflow guide instead")
+  skills: z
+    .array(z.string().max(SKILL_NAME_CHARS).regex(SKILL_NAME))
+    .min(1)
+    .max(MAX_SKILLS)
+    .describe("Return these skills' text instead")
     .optional(),
 });
 
@@ -100,11 +114,24 @@ export const SpaceStatusResult = z.strictObject({
     )
     .describe("The sections asked for with include")
     .optional(),
-  guide: z.string().describe("The workflow guide asked for").optional(),
+  skills: z
+    .array(SkillRow)
+    .describe("The user's skills, or the ones asked for with their text")
+    .optional(),
+  missing: z
+    .array(z.string())
+    .max(MAX_SKILLS)
+    .describe("Skills asked for that do not exist")
+    .optional(),
   hint: z.string().describe("What to do next").optional(),
 });
 
 const row = { lifecycle: "active", status: "open", inbox: false, area: "Client work" } as const;
+
+const SIZING = {
+  name: "sizing-effort",
+  when: "Use before you give a task a size, when you add tasks or change a task's effort.",
+} as const;
 
 export const spaceStatus = defineEntry({
   name: "space.status",
@@ -120,16 +147,15 @@ export const spaceStatus = defineEntry({
   output: SpaceStatusResult,
   faces: {
     ui: true,
-    cli: { verb: "status" },
+    cli: { verb: "status", flags: { skills: "skill" } },
     mcp: {
       tool: "status",
       title: "Orientation and session status",
       description:
-        "Call first when a session did not start from a task, and again later. Returns the " +
-        "date, autonomy, whether this is a task's session, the tasks matching cwd and counts. " +
-        "include adds " +
-        "sections. guide returns a workflow guide instead. You cannot open or run agents: ask " +
-        "the user.",
+        "Call first when a session did not start from a task, and again later. Gives the " +
+        "date, autonomy, whether this is a task's session, the tasks for cwd, counts, the " +
+        "user's skills. include adds sections; skills returns their text instead. You cannot " +
+        "open or run agents: ask the user.",
       alwaysLoad: true,
     },
   },
@@ -176,6 +202,13 @@ export const spaceStatus = defineEntry({
           inbox: 0,
           proposals: 0,
         },
+        skills: [
+          SIZING,
+          {
+            name: "client-reports",
+            when: "Use when you write a weekly report for a client.",
+          },
+        ],
         hint: "Two tasks match this folder. Ask the user which one, then pass its task on the calls that act on it.",
       },
     },
@@ -209,6 +242,31 @@ export const spaceStatus = defineEntry({
               },
             ],
             total: 1,
+          },
+        ],
+      },
+    },
+    {
+      title: "Read the skill for sizing before adding tasks",
+      input: { skills: ["sizing-effort"] },
+      output: {
+        as_of: AS_OF,
+        date: "2026-11-12",
+        time_zone: "Europe/Lisbon",
+        autonomy: "full",
+        space: { id: SPACE_ID, name: "Mira", ref_prefix: "M" },
+        session: { state: "unbound", instance: "claude-code", app: "claude-code" },
+        counts: {
+          statuses: STATUS_COUNTS,
+          inbox: 0,
+          proposals: 0,
+        },
+        skills: [
+          {
+            ...SIZING,
+            text:
+              "This space's sizes, smallest first: S, M, L. ...\n\n# Sizing effort\n\n" +
+              "Never estimate hours or minutes. Place the task next to the examples below. ...",
           },
         ],
       },

@@ -1,17 +1,17 @@
 // The five tools through the request path (A3 3.4.2, 3.4.4, 3.4.6 to 3.4.8, 3.5, 3.9.6; A7 3.9
-// M2.03): status's `here`, session and guide; get_task's digest v0 with its bounds, its folder and
+// M2.03): status's `here`, session and skills; get_task's digest v0 with its bounds, its folder and
 // the paging of a sections read; update_task's folder clear and context append; add_entry's links;
 // `unbound` with candidates; and the fields a later step brings, each refused with that step. A
 // service in this process, fixture text and temporary folders only.
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 import { PRODUCT_NAME } from "@ttasks/brand";
-import { AppError, resultTokens, type ErrorBody } from "@ttasks/contracts";
+import { AppError, type ErrorBody } from "@ttasks/contracts";
 import type { WriteRequest } from "@ttasks/storage";
 import { toolCaller } from "../src/mcp/index.ts";
 import { opCall, type Binding, type Caller, type OpsHost } from "../src/ops/index.ts";
-import { GUIDE_TOKENS } from "../src/mcp/render.ts";
+import { DATA_WORD } from "../src/mcp/text.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { grantHome } from "./ops-helpers.ts";
 
@@ -124,7 +124,7 @@ async function own(task: string, path: string): Promise<void> {
   await call("folder.manage", { action: "set", task, folder: path, request_id: rid() }, USER);
 }
 
-describe("[A3.3.4.tools.five] status: here, the session and guides", () => {
+describe("[A3.3.4.tools.five] status: here and the session", () => {
   test(
     "[A3.3.4.here.folders] here: a task's own folder, else the deepest project folder that holds the working folder; exact, inside, below, best first, and a hint",
     async () => {
@@ -285,62 +285,143 @@ describe("[A3.3.4.tools.five] status: here, the session and guides", () => {
       "Session: not bound · instance codex-work · codex",
     );
   });
+});
 
-  test("guide work replaces the overview within its budget; the other guides name their step", async () => {
-    const guided = await call("space.status", { guide: "work", cwd: w.portal, include: ["today"] });
-    expect(String(guided["guide"]).startsWith(`Work on a ${PRODUCT_NAME} task.`)).toBe(true);
-    expect(guided).not.toHaveProperty("here");
-    expect(guided).not.toHaveProperty("sections");
-    const text = (
+describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read through status", () => {
+  const skillsDir = () => join(w.home, "skills");
+  const writeSkill = (name: string, text: string | Uint8Array) => {
+    mkdirSync(join(skillsDir(), name), { recursive: true });
+    writeFileSync(join(skillsDir(), name, "SKILL.md"), text);
+  };
+  const named = (rows: unknown, name: string): Json | undefined =>
+    (rows as Json[]).find((row) => row["name"] === name);
+  const statusText = async (input: Json): Promise<string> =>
+    (
       await toolCaller({
         ops: w.service.ops,
         context: { space: null },
         conn: 1,
         binding: inSpace(),
-      })("status", {
-        guide: "work",
-      })
+      })("status", input)
     ).content[0].text;
-    expect(resultTokens(text)).toBeLessThanOrEqual(GUIDE_TOKENS);
-    expect(text).toContain("get_task");
+  const USERS_RULE = "Every title starts with a verb in capitals.";
+
+  afterEach(() => {
+    rmSync(skillsDir(), { recursive: true, force: true });
+  });
+
+  test(
+    "status and a read by launch list every skill with when to read it",
+    async () => {
+      writeSkill(
+        "ticket-export",
+        "---\nname: ticket-export\ndescription: Use when you turn tasks into tickets.\n---\nOne ticket per task.\n",
+      );
+      const listed = (await call("space.status", {}))["skills"];
+      for (const name of ["working-a-task", "sizing-effort", "organizing"]) {
+        expect(String(named(listed, name)?.["when"])).toMatch(/^Use /u);
+      }
+      expect(named(listed, "ticket-export")).toEqual({
+        name: "ticket-export",
+        when: "Use when you turn tasks into tickets.",
+      });
+      expect(await statusText({})).toContain("  sizing-effort: Use before you give a task a size");
+      const [ref = ""] = await add("A task opened on its launch");
+      const launch = await w.launch(ref);
+      const read = await call("task.get", { launch: launch.reference });
+      expect(named(read["skills"], "working-a-task")).toBeDefined();
+      expect(named(read["skills"], "ticket-export")).toBeDefined();
+      // A read by task is no first call: no list.
+      expect(await call("task.get", { task: ref })).not.toHaveProperty("skills");
+    },
+    LONG,
+  );
+
+  test("skills returns their text instead of the overview: TTasks' part with the space's sizes, then the user's", async () => {
+    const read = await call("space.status", {
+      skills: ["sizing-effort", "working-a-task", "no-such-skill"],
+      cwd: w.portal,
+      include: ["today"],
+    });
+    expect(read).not.toHaveProperty("here");
+    expect(read).not.toHaveProperty("sections");
+    expect(read["missing"]).toEqual(["no-such-skill"]);
+    // The space's own scale, whatever it holds.
+    const prefs = await call("prefs.manage", { action: "get", keys: ["tasks.effort_scale"] });
+    const scale = (prefs["prefs"] as Json[])[0]?.["value"] as string[];
+    expect(scale.length).toBeGreaterThan(0);
+    const sizing = String(named(read["skills"], "sizing-effort")?.["text"]);
+    expect(sizing).toContain(`This space's sizes, smallest first: ${scale.join(", ")}.`);
+    expect(sizing).toContain("Never estimate hours or minutes.");
+    expect(String(named(read["skills"], "working-a-task")?.["text"])).toContain("get_task");
+    const text = await statusText({ skills: ["sizing-effort"] });
+    expect(text).toContain("Never estimate hours or minutes.");
     expect(text).not.toContain("Counts:");
-    expect(/^[\x20-\x7e\n·]*$/u.test(text)).toBe(true);
-    // The triage and organize guides are this build's; refresh waits for its step.
-    const triage = (
-      await toolCaller({
-        ops: w.service.ops,
-        context: { space: null },
-        conn: 1,
-        binding: inSpace(),
-      })("status", {
-        guide: "triage",
-      })
-    ).content[0].text;
-    expect(resultTokens(triage)).toBeLessThanOrEqual(GUIDE_TOKENS);
-    expect(/^[\x20-\x7e\n·]*$/u.test(triage)).toBe(true);
-    for (const tool of ["status", "organize", "search", "update_task"]) {
-      expect(triage).toMatch(new RegExp(`\\b${tool}\\b`));
-    }
-    const organize = (
-      await toolCaller({
-        ops: w.service.ops,
-        context: { space: null },
-        conn: 1,
-        binding: inSpace(),
-      })("status", {
-        guide: "organize",
-      })
-    ).content[0].text;
-    expect(resultTokens(organize)).toBeLessThanOrEqual(GUIDE_TOKENS);
-    expect(/^[\x20-\x7e\n·]*$/u.test(organize)).toBe(true);
-    for (const tool of ["organize", "add_tasks", "update_task"]) {
-      expect(organize).toMatch(new RegExp(`\\b${tool}\\b`));
-    }
-    for (const [guide, step] of [["refresh", "M4.07"]] as const) {
-      const body = await refusal("space.status", { guide });
-      expect(body).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "guide" }] } });
-      expect(body.hint).toContain(step);
-    }
+    expect(text).not.toContain(DATA_WORD);
+  });
+
+  test("the user's copy replaces the default's part whole, read anew at every call", async () => {
+    writeSkill(
+      "sizing-effort",
+      `---\nname: sizing-effort\ndescription: Use when sizing.\n---\n${USERS_RULE}\n`,
+    );
+    const first = named(
+      (await call("space.status", { skills: ["sizing-effort"] }))["skills"],
+      "sizing-effort",
+    );
+    expect(first?.["when"]).toBe("Use when sizing.");
+    expect(String(first?.["text"])).toContain(USERS_RULE);
+    expect(String(first?.["text"])).toContain("This space's sizes");
+    expect(String(first?.["text"])).not.toContain("Never estimate hours");
+    writeSkill("sizing-effort", "No front matter: the whole file is the user's part.\n");
+    const second = named(
+      (await call("space.status", { skills: ["sizing-effort"] }))["skills"],
+      "sizing-effort",
+    );
+    expect(String(second?.["text"])).toContain(
+      "No front matter: the whole file is the user's part.",
+    );
+    expect(String(second?.["text"])).not.toContain(USERS_RULE);
+    expect(String(second?.["when"])).toMatch(/^Use before you give a task a size/u);
+  });
+
+  test("a copy that cannot be used falls back to the default, and the answer says why", async () => {
+    writeSkill("sizing-effort", `${USERS_RULE}\n${"x".repeat(17 * 1024)}`);
+    writeSkill("organizing", new Uint8Array([0x41, 0xc3, 0x28, 0x0a]));
+    writeSkill("big-own", "y".repeat(17 * 1024));
+    const read = (
+      await call("space.status", { skills: ["sizing-effort", "organizing", "big-own"] })
+    )["skills"];
+    const sizing = named(read, "sizing-effort");
+    expect(String(sizing?.["text"])).toContain("Never estimate hours or minutes.");
+    expect(String(sizing?.["text"])).not.toContain(USERS_RULE);
+    expect(String(sizing?.["problem"])).toMatch(
+      /over the limit of 16 KB\. This is the default\.$/u,
+    );
+    expect(String(named(read, "organizing")?.["problem"])).toContain("not UTF-8 text");
+    const own = named(read, "big-own");
+    expect(own).not.toHaveProperty("text");
+    expect(String(own?.["problem"])).toContain("cannot be used");
+    expect(
+      String(named((await call("space.status", {}))["skills"], "big-own")?.["problem"]),
+    ).toContain("over the limit");
+  });
+
+  test("a skill of the user's own is served as written, with no part of TTasks'", async () => {
+    const body = "# Ticket export\n\nOne ticket per task. Effort: S is 1 point, M is 3, L is 8.";
+    writeSkill(
+      "ticket-export",
+      `---\nname: ticket-export\ndescription: "Use when you turn tasks into tickets."\n---\n\n${body}\n`,
+    );
+    const read = named(
+      (await call("space.status", { skills: ["ticket-export"] }))["skills"],
+      "ticket-export",
+    );
+    expect(read).toEqual({
+      name: "ticket-export",
+      when: "Use when you turn tasks into tickets.",
+      text: body,
+    });
   });
 });
 

@@ -403,7 +403,20 @@ export function render(entry: string, result: Result, space: string): string {
       lines.push(
         `${String(sp["name"])} (${String(sp["ref_prefix"])}) · ${String(result["date"])} · ${statuses} · inbox ${String(counts["inbox"])}`,
       );
-      if (typeof result["guide"] === "string") lines.push("", result["guide"], "");
+      // Skills asked for: each as an agent gets it. Otherwise their names.
+      const skills = (result["skills"] as Result[] | undefined) ?? [];
+      for (const skill of skills.filter((s) => typeof s["text"] === "string")) {
+        const when = typeof skill["when"] === "string" ? `: ${skill["when"]}` : "";
+        lines.push("", `Skill ${String(skill["name"])}${when}`);
+        if (typeof skill["problem"] === "string") lines.push(skill["problem"]);
+        lines.push("", String(skill["text"]), "");
+      }
+      const missing = (result["missing"] as string[] | undefined) ?? [];
+      if (missing.length > 0) lines.push(`no skill named ${missing.join(", ")}`);
+      const listed = skills.filter((s) => typeof s["text"] !== "string");
+      if (listed.length > 0) {
+        lines.push(`skills: ${listed.map((s) => String(s["name"])).join(", ")}`);
+      }
       const here = result["here"] as Result[] | undefined;
       if (here !== undefined) {
         const total = result["here_total"];

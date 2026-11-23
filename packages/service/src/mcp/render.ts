@@ -101,6 +101,64 @@ function sessionLine(session: Status["session"]): string {
   )}`;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Skills: the user's instructions to their agents, as a note for agents is, so they stand outside
+// every data block. They are never cut: a skill file has a size limit instead.
+
+type SkillOut = NonNullable<Status["skills"]>[number];
+
+const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/u;
+
+/** The list a session's first call gives: each skill's name and when to read it. */
+function skillListParts(skills: readonly SkillOut[] | undefined): Part[] {
+  const listed = (skills ?? []).filter((skill) => skill.text === undefined);
+  if (listed.length === 0) return [];
+  return [
+    {
+      fixed: true,
+      whole: true,
+      units: [
+        [
+          `Skills, the user's ways of working: before you act, read the ones that apply with ${toolOf("space.status")} skills [names].`,
+        ],
+        ...listed.map((skill) => [
+          `  ${skill.name}${skill.when === undefined ? "" : `: ${skill.when}`}`,
+          ...(skill.problem === undefined ? [] : [`    ${skill.problem}`]),
+        ]),
+      ],
+    },
+  ];
+}
+
+/** The skills asked for, each whole, and the names that are no skill. */
+function skillTextParts(result: Status): Part[] {
+  const read = (result.skills ?? []).filter((skill) => skill.text !== undefined);
+  return [
+    ...read.map((skill): Part => ({
+      fixed: true,
+      whole: true,
+      units: [
+        [`Skill ${skill.name}${skill.when === undefined ? "" : `: ${skill.when}`}`],
+        ...(skill.problem === undefined ? [] : [[skill.problem]]),
+        ...(skill.text ?? "").split(LINE_BREAK).map((line) => [line]),
+      ],
+    })),
+    ...(result.missing === undefined
+      ? []
+      : [
+          fixed(
+            `No skill is named ${result.missing.join(", ")}. ${toolOf("space.status")} without skills lists them.`,
+          ),
+        ]),
+  ];
+}
+
+/** The tokens of parts that are never cut: their room on top of the result's budget. */
+const wholeTokens = (parts: readonly Part[]): number =>
+  parts.length === 0
+    ? 0
+    : resultTokens(parts.flatMap((part) => part.units.flat()).join("\n")) + parts.length;
+
 function statusParts(result: Status): Part[] {
   const counts = result.counts;
   // No as_of: a status row is no base (instructions.ts), so the text offers none.
@@ -108,8 +166,9 @@ function statusParts(result: Status): Part[] {
     join(PRODUCT_NAME, withWeekday(result.date), result.time_zone, `autonomy ${result.autonomy}`),
     sessionLine(result.session),
   );
-  // A guide is one workflow text instead of the overview (A3 3.4.2).
-  if (result.guide !== undefined) return [header, fixed(...result.guide.split("\n"))];
+  // Skills asked for come instead of the overview.
+  const texts = skillTextParts(result);
+  if (texts.length > 0) return [header, ...texts, ...skillListParts(result.skills)];
   const parts: Part[] = [
     header,
     {
@@ -149,6 +208,7 @@ function statusParts(result: Status): Part[] {
       ],
     ],
   });
+  parts.push(...skillListParts(result.skills));
   for (const section of result.sections ?? []) {
     parts.push({
       data: true,
@@ -162,9 +222,6 @@ function statusParts(result: Status): Part[] {
   if (result.hint !== undefined) parts.push(fixed(result.hint));
   return parts;
 }
-
-/** A3 3.2.5: a guide's budget. */
-export const GUIDE_TOKENS = 900;
 
 /** How to see what a status left out: its rows are cut last-first. */
 const STATUS_MORE = "Pass a deeper cwd, or ask for fewer include sections.";
@@ -330,7 +387,7 @@ function requestPart(request: Request | undefined, getTask: string, ref: string)
       whole: true,
       units: [
         ["Request from the user for this launch:"],
-        ...request.text.split(/\r\n|[\n\r\u2028\u2029]/u).map((line) => [`  ${line}`]),
+        ...request.text.split(LINE_BREAK).map((line) => [`  ${line}`]),
         ...(request.cut === undefined
           ? []
           : [
@@ -370,6 +427,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
       getTask,
       task.ref,
     ),
+    ...skillListParts(result.skills),
     {
       data: true,
       fixed: true,
@@ -447,6 +505,7 @@ function sectionsRendered(
   const parts: Part[] = [fixed(headerLine(task, result.as_of))];
   parts.push(fixed(sessionOfRead(result.bound, task.ref)));
   parts.push(...requestPart(result.request, getTask, task.ref));
+  parts.push(...skillListParts(result.skills));
   let byOthers: Note[] = [];
   if (sections.instructions !== undefined) {
     // Only what the user wrote stands outside the data block as instructions (A3 3.10).
@@ -777,10 +836,11 @@ type Renderer = (
 };
 
 const RENDERERS: Readonly<Record<string, Renderer>> = {
+  // The list of skills fits the budget like any part; a skill's own text gets room of its own.
   "space.status": (result: Status) => ({
     parts: statusParts(result),
     more: STATUS_MORE,
-    ...(result.guide === undefined ? {} : { max: GUIDE_TOKENS }),
+    extra: wholeTokens(skillTextParts(result)),
   }),
   "task.get": (result: TaskGet, { getTask }) => {
     const extra = requestTokens(result.request, getTask, result.task.ref);

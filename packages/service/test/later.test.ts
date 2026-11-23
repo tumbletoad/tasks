@@ -260,7 +260,7 @@ describe("[A3.3.3.mcp.later] what a later step builds", () => {
     // A search row and a status row show part of a task: their answers offer no as_of.
     expect(await tool("search", { q: "Fixture" })).not.toMatch(AS_OF);
     expect(await tool("status", {})).not.toMatch(AS_OF);
-    expect(await tool("status", { guide: "work" })).not.toMatch(AS_OF);
+    expect(await tool("status", { skills: ["working-a-task"] })).not.toMatch(AS_OF);
   });
 
   test("the groups line survives the largest add: 25 drafts, every source held", () => {
