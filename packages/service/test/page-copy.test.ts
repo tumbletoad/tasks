@@ -118,10 +118,21 @@ describe("[A2.3.10.5.copies.page] a tab shows one copy of its space and writes o
             { tasks: [{ title: "From the tab" }], request_id: requestId },
             headers,
           );
-        expect((await write("page-copy-task-0002", loaded)).error).toMatchObject({
-          code: "read_only",
-          data: { reason: "read_only_copy" },
-        });
+        const readOnly = { code: "read_only", data: { reason: "read_only_copy" } };
+        expect((await write("page-copy-task-0002", loaded)).error).toMatchObject(readOnly);
+        // Run and Stop say the same: the space takes no change.
+        expect(
+          (
+            await page(
+              "/api/v1/launch/run",
+              { task: before.id, request_id: "page-copy-run-0001" },
+              loaded,
+            )
+          ).error,
+        ).toMatchObject(readOnly);
+        expect(
+          (await page("/api/v1/launch/stop", { run: `ru_${"0".repeat(26)}` }, loaded)).error,
+        ).toMatchObject(readOnly);
 
         // The copy is claimed: the tab's feed gets a snapshot of the space as it is now, with
         // another copy, no longer read-only or restored.

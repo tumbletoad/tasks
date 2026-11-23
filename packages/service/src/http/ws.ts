@@ -615,11 +615,11 @@ class FeedSocket {
       const spaceId = this.#space;
       const cursor = this.#cursor;
       if (this.#closed || spaceId === undefined || cursor === undefined) return;
-      // The folder that serves the space now (copies.ts).
-      const space = copyOf(
-        this.#hub.options.host.spaces().filter((s) => s.reader !== undefined),
-        spaceId,
-      );
+      // The folder that serves the space now (copies.ts). One closing or opening (a claim, a
+      // restore in place, a recheck closes the space and opens it again) is waited for: the next
+      // poll goes on.
+      const space = copyOf(this.#hub.options.host.spaces(), spaceId);
+      if (space?.state === "opening" || space?.state === "closing") return;
       if (space?.reader === undefined) {
         this.#unsubscribe();
         await this.#send({ type: "error", code: "space_unavailable" }).catch(() => undefined);

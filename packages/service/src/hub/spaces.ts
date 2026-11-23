@@ -682,7 +682,9 @@ export class SpaceManager {
 
   /**
    * The spaces as the request path sees them (ops/handlers.ts): a writer while the space is open
-   * as this machine's, a reader while it is served.
+   * as this machine's, a reader while it is served. A space closed for a moment by a change that
+   * opens it again (a restore in place, a claim, a recheck) is opening: a call is told to retry,
+   * and a page's feed waits for it.
    */
   served(): ServedSpace[] {
     return this.#spaces
@@ -694,7 +696,8 @@ export class SpaceManager {
           id: space.id,
           registered: space.registered,
           name: space.name,
-          state: space.state,
+          state:
+            space.state === "closed" && space.replacing !== undefined ? "opening" : space.state,
           ...(space.reason === undefined ? {} : { reason: space.reason }),
           ...(message === undefined ? {} : { message }),
           ...(backup === undefined ? {} : { backup: backup.why }),

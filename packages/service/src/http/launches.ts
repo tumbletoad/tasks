@@ -36,7 +36,7 @@ import {
 } from "@ttasks/launch";
 import { findSpace, isAmbiguity, spaceChanged } from "../ops/copies.ts";
 import { launchError } from "../ops/handlers.ts";
-import type { OpsHost, ServedSpace } from "../ops/index.ts";
+import { readOnly, type OpsHost, type ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
 import { WORK_ON_IT } from "../runs/agent.ts";
 import type { HttpLog } from "./events.ts";
@@ -397,6 +397,16 @@ export class UiLaunches {
   }
 
   /**
+   * The served space a run starts or stops in, which must take changes: a read-only one is refused
+   * with its own reason, as a write to it is.
+   */
+  #writable(ref: string | undefined, copy: string | undefined): ServedSpace {
+    const space = this.#space(ref, copy);
+    if (space.state === "read_only") throw readOnly(space.reason, space.message);
+    return space;
+  }
+
+  /**
    * The agent apps busy with a task on this machine, for every task of the space: what the
    * page's tiles and Open buttons hold to, whatever receipts a tab has read.
    */
@@ -491,7 +501,7 @@ export class UiLaunches {
         data: { field: "text" },
       });
     }
-    const space = this.#space(spaceRef, copy).id ?? "";
+    const space = this.#writable(spaceRef, copy).id ?? "";
     const queued = await runs.queueTask(space, {
       task,
       ...(instance === undefined ? {} : { instance }),
@@ -530,7 +540,7 @@ export class UiLaunches {
     const runs = this.#runs();
     const { run } = input;
     if (typeof run !== "string" || !RUN_ID.test(run)) throw invalid("Expected a run ID.", "run");
-    const space = this.#space(spaceRef, copy).id ?? "";
+    const space = this.#writable(spaceRef, copy).id ?? "";
     const after = await runs.stop(space, run);
     if (after === undefined) {
       throw new AppError({ code: "not_found", message: "No run has this ID in this space." });
