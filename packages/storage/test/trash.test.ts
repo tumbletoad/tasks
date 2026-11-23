@@ -157,6 +157,83 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     expect(back.results[0]?.status).toBe("updated");
   });
 
+  const history = (kind: "undo" | "redo"): WriteResult =>
+    fx.writer.submit(fx.request(fx.human, [{ kind }]));
+
+  test("Redo of a removal after someone worked on the task is a conflict naming that work; the task stays, and removing it again is one request", () => {
+    const a = task("Renew the passport");
+    const sourced = task("Answer the clinic");
+    // What was done, the task it was done to, and the row and field the conflict names.
+    const work: [string, Id<"t">, Operation, string, string][] = [
+      ["a note", a, { kind: "note.add", task: a, body: "Booked for Tuesday" }, "notes", "deleted"],
+      ["a log entry", a, { kind: "log.add", task: a, body: "Form sent" }, "log_entries", "deleted"],
+      [
+        "a source link",
+        sourced,
+        { kind: "source.add", task: sourced, source: ticket("jira:FIX-3") },
+        "task_sources",
+        "removed",
+      ],
+      [
+        "a field",
+        a,
+        { kind: "task.patch", task: a, set: { summary: "Repurposed" } },
+        "tasks",
+        "summary",
+      ],
+    ];
+    for (const [what, target, op, entity, field] of work) {
+      remove(target);
+      applied(history("undo"));
+      applied(send("codex", [op]));
+      const late = history("redo");
+      expectStatus(late, "conflict");
+      expect(late.error?.code, what).toBe("UNDO_CONFLICT");
+      expect(late.conflicts, what).toContainEqual(
+        expect.objectContaining({
+          entity,
+          task: target,
+          field,
+          by: expect.objectContaining({ kind: "agent" }),
+        }),
+      );
+      expect(deleted(target), what).toBe(false);
+      // The person still wants it gone: one removal, from what they see now.
+      remove(target);
+      expect(deleted(target), what).toBe(true);
+      applied(restore(target));
+    }
+  });
+
+  test("Undo of a restore after someone added to the task is a conflict naming it, and the task stays", () => {
+    const a = task("Renew the passport");
+    remove(a);
+    applied(restore(a));
+    applied(send("codex", [{ kind: "note.add", task: a, body: "Booked for Tuesday" }]));
+    const late = history("undo");
+    expectStatus(late, "conflict");
+    expect(late.conflicts).toEqual([expect.objectContaining({ entity: "notes", task: a })]);
+    expect(deleted(a)).toBe(false);
+  });
+
+  test("the person's own steps since do not hold back Redo or Undo of a removal", () => {
+    // Redo: a title edit undone and redone after the removal's undo.
+    const a = task("Renew the passport");
+    applied(send("human", [{ kind: "task.patch", task: a, set: { title: "Renew both" } }]));
+    remove(a);
+    applied(history("undo"));
+    applied(history("undo"));
+    applied(history("redo"));
+    applied(history("redo"));
+    expect(deleted(a)).toBe(true);
+    // Undo: a restore, then an edit of the person's that is undone first.
+    applied(restore(a));
+    applied(send("human", [{ kind: "task.patch", task: a, set: { title: "Renew one" } }]));
+    applied(history("undo"));
+    applied(history("undo"));
+    expect(deleted(a)).toBe(true);
+  });
+
   test("a named Undo or Redo of a change the space does not have says so, and changes nothing", () => {
     const a = task("Renew the passport");
     remove(a);

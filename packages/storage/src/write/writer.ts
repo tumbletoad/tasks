@@ -2696,6 +2696,7 @@ export class SpaceWriter {
       refPrefix: space.refPrefix,
       partial,
       op: 0,
+      principal,
     });
     const conflict = (): WriteResult => ({
       ...refused(
@@ -2705,8 +2706,8 @@ export class SpaceWriter {
           code: "UNDO_CONFLICT",
           // A redo is all or nothing (A1 3.10.1): it offers no partial form.
           message: undo
-            ? "Someone changed a field of it since: undo the rest, or keep theirs"
-            : "Someone changed one of its fields since: a redo is all or nothing",
+            ? "Someone changed it since: undo the rest, or keep theirs"
+            : "Someone changed it since: a redo is all or nothing",
         },
         plan.conflicts,
       ),

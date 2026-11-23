@@ -208,6 +208,7 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
           refPrefix: "M",
           partial: true,
           op: 0,
+          principal: fx.human.principal_id,
         });
       } catch (error) {
         problem = error;
@@ -268,6 +269,20 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
     const queued = String(startRun(other).results[0]?.id);
     move(queued, "queued", "cancelled");
     expect(undo().conflicts).toEqual([expect.objectContaining({ entity: "runs", id: queued })]);
+  });
+
+  test("a run on a task since its removal was undone keeps Redo from putting it back in the Trash", () => {
+    const id = create();
+    applied(write([{ kind: "task.delete", task: id }]));
+    applied(undo());
+    // The person's run, though written with the person's credential, is no step on their stack.
+    const run = String(startRun(id).results[0]?.id);
+    const late = redo();
+    expectStatus(late, "conflict");
+    expect(late.conflicts).toEqual([
+      expect.objectContaining({ entity: "runs", id: run, task: id, field: "state" }),
+    ]);
+    expect(task(id)["deleted_at"]).toBeNull();
   });
 
   test("a task its create's undo tombstoned takes no run, and its redo brings it back without one", () => {

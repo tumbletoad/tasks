@@ -194,6 +194,43 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
   );
 
   test(
+    "a redo of a removal after an agent's note is a conflict naming the note; the task stays, and one removal moves it",
+    async () => {
+      const task = await add("Fixture task removed and brought back");
+      await call("task.delete", { tasks: [task], base: await asOf(), request_id: rid() });
+      await call("history.undo", { request_id: rid() });
+      await call(
+        "entry.add",
+        { task, kind: "note", text: "Fixture note since.", request_id: rid() },
+        SCRIPT,
+      );
+      const conflict = await refusal("history.redo", { request_id: rid() });
+      expect(conflict).toMatchObject({
+        code: "conflict",
+        data: {
+          cause: "UNDO_CONFLICT",
+          conflicts: [{ task, entity: "notes", field: "deleted", value: null, by: "script" }],
+        },
+      });
+      expect((await show(task))["ref"]).toBe(task);
+      const removed = await call("task.delete", {
+        tasks: [task],
+        base: await asOf(),
+        request_id: rid(),
+      });
+      expect(removed["commit"]).toMatch(/^op_/);
+      expect(
+        await refusal(
+          "entry.add",
+          { task, kind: "note", text: "Fixture note after.", request_id: rid() },
+          SCRIPT,
+        ),
+      ).toMatchObject({ data: { reason: "in_trash" } });
+    },
+    LONG,
+  );
+
+  test(
     "a folder set from a base before Undo brought the cleared one back is a conflict, and the restored folder stays",
     async () => {
       const task = await add("Fixture task with a folder");

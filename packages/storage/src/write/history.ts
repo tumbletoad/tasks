@@ -21,6 +21,11 @@
 //   them. A run has no tombstone and is never the creating commits', so a task with a run keeps
 //   its create. The tombstone is a write of its own (after_prov is the inverting commit), so a
 //   redo clears it under that guard.
+// - Setting a tombstone back (a redo of a removal, the undo of a restore) puts a row out of sight
+//   again, a step the person decided before anything done to the row since. Another's change to
+//   the row after the commit inverted, and for a task to anything on it (a field, a note, a log
+//   entry, a link, a run, a folder), keeps it in sight, as a conflict that names that change. The
+//   principal's own steps (its undoable writes, undos and redos) do not count: the person made them.
 // - Clearing a tombstone (a redo of a create's undo, or the undo of a delete) brings a row back. A
 //   source whose key, or a place whose owner and machine, another live row holds now stays
 //   tombstoned, and that row is the conflict: the unique indexes allow one live row each.
@@ -363,6 +368,18 @@ function liveChildren(conn: Connection, changes: readonly StoredChange[]): Map<s
 
 const COMMIT_COLUMNS = "seq, id, undo_status, undone_by";
 
+function newerWorkSql(runs: string): string {
+  return (
+    "SELECT c.entity AS entity, c.entity_id AS id, " +
+    "coalesce(c.task_id, CASE c.entity WHEN 'runs' THEN $task END) AS task, c.field AS field, " +
+    "max(c.seq) AS version FROM changes c JOIN commits k ON k.seq = c.seq WHERE c.seq > $since " +
+    `AND (c.task_id = $task OR (c.entity = $entity AND c.entity_id = $id)${runs}) ` +
+    "AND NOT (k.principal_id = $principal AND (k.undo_status IS NOT NULL " +
+    "OR k.kind IN ('undo', 'redo'))) " +
+    "GROUP BY c.entity, c.entity_id, c.field ORDER BY min(c.seq), c.entity, c.entity_id, c.field"
+  );
+}
+
 const SQL = {
   changes: "SELECT * FROM changes WHERE seq = $seq ORDER BY n",
   newestDone:
@@ -431,6 +448,15 @@ const SQL = {
   liveLearnings:
     "SELECT task_id, id FROM learnings WHERE deleted_at IS NULL " +
     "AND task_id IN (SELECT value FROM json_each($tasks)) ORDER BY task_id, position",
+  /**
+   * The rows and fields others changed after `$since`: of row `$entity` `$id`, and of everything
+   * of task `$task`. Each once, with its newest change; a create has no field.
+   */
+  newerWork: newerWorkSql(""),
+  /** The same, with the task's runs, whose changes name no task (runs.ts). */
+  newerWorkWithRuns: newerWorkSql(
+    " OR (c.entity = 'runs' AND c.entity_id IN (SELECT id FROM runs WHERE task_id = $task))",
+  ),
   touched: "UPDATE tasks SET touched = $seq WHERE id = $id",
 } as const;
 
@@ -562,6 +588,8 @@ export interface PlanOptions {
   partial: boolean;
   /** The request's operation index the conflicts name. */
   op: number;
+  /** Whose undo or redo it is: its own steps since are no newer work (the header). */
+  principal: Id<"ac">;
 }
 
 const parsed = (json: string): unknown => {
@@ -723,6 +751,11 @@ export function planInversions(
         );
         continue;
       }
+      if (field === table.tombstone && !isLive(parsed(restore))) {
+        const newer = newerWork(conn, entity, id, change.seq, options.principal);
+        for (const work of newer) blocked(conflict(work.where, work.version));
+        if (newer.length > 0) continue;
+      }
       plan.inversions.push({
         kind: "restore",
         entity,
@@ -797,6 +830,66 @@ export function planInversions(
     blocked(conflict(where, version));
   });
   return plan;
+}
+
+/**
+ * A row a change names, as it is now, with its logical fields and the field that names a row
+ * created since: its tombstone, or a run's state.
+ */
+function rowNow(
+  conn: Connection,
+  entity: string,
+  id: string,
+): { fields: Child["fields"]; field: string; row: Row | undefined } {
+  if (isInvertible(entity)) {
+    const table = TABLES[entity];
+    return { fields: table.fields, field: table.tombstone, row: readRow(conn, entity, id)?.raw };
+  }
+  const child = TASK_CHILDREN.find((c) => c.entity === entity);
+  if (child === undefined) throw invalidValue("changes", "entity");
+  const row = conn.prepare(`SELECT * FROM ${child.entity} WHERE ${child.key} = $id`).get({ id });
+  return { fields: child.fields, field: child.field, row };
+}
+
+/**
+ * Others' changes to a row after commit `since`, and for a task to anything of it (the header):
+ * each row and field once, named with its newest change. A row created since is named by its
+ * tombstone, as a create's guard names another's child row.
+ */
+function newerWork(
+  conn: Connection,
+  entity: InvertibleEntity,
+  id: string,
+  since: number,
+  principal: Id<"ac">,
+): { where: Where; version: number }[] {
+  const runs = entity === "tasks" && conn.prepare(TABLE_EXISTS).get({ name: "runs" }) !== undefined;
+  const found = conn.prepare(runs ? SQL.newerWorkWithRuns : SQL.newerWork).all({
+    since,
+    principal,
+    entity,
+    id,
+    task: entity === "tasks" ? id : null,
+  });
+  return found.map((row) => {
+    const r = new RowReader("changes", row);
+    const changed = r.text("entity");
+    const rowId = r.text("id");
+    const task = r.optText("task", (v) => isId(v, "t")) as Id<"t"> | null;
+    const set = r.optText("field");
+    const now = rowNow(conn, changed, rowId);
+    if (now.row === undefined) throw invalidValue("changes", "entity_id");
+    return {
+      where: {
+        entity: changed as ConflictEntity,
+        id: rowId,
+        ...(task === null ? {} : { task }),
+        field: set ?? now.field,
+        value: set === null ? null : columnsValue(now.row, now.fields[set] ?? []),
+      },
+      version: r.int("version", "seq"),
+    };
+  });
 }
 
 /** Whether a tombstone field's value says the row is live: every column null. */

@@ -23,7 +23,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   outcome and what was learned.
 - Moving a task to the Trash deletes nothing: its notes, log, sources and history stay, nothing
   empties the Trash, and Restore brings it back as it was. A task whose project or area is gone
-  comes back in its area, or the Inbox. A task someone changed since you looked is not moved.
+  comes back in its area, or the Inbox. A task someone changed since you looked is not moved, and
+  neither Undo nor Redo puts a task back in the Trash when someone else added to it or changed it
+  since.
 - A task in the Trash changes only by Restore: its card is for reading, and what you typed for it
   stays as you typed it. A task whose creation you undid is not in the Trash: Redo brings it back
   whole.

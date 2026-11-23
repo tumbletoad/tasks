@@ -662,6 +662,7 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
       refPrefix: "MI",
       partial: false,
       op: 0,
+      principal: fx.human.principal_id,
     });
     expect(plan.conflicts).toEqual([]);
     expect(plan.inversions).toHaveLength(75);

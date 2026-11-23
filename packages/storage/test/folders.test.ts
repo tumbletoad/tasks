@@ -401,6 +401,22 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expect(live()).toEqual({ [`task:${task}`]: "~/work/a" });
   });
 
+  test("Redo of a clear after someone changed the folder is a conflict, and their folder stays", () => {
+    const task = newTask("Moved since", undefined, "~/work/a");
+    expectStatus(submit([{ kind: "task.folder_clear", task }]), "applied");
+    expectStatus(undo(), "applied");
+    expectStatus(
+      submit([{ kind: "task.folder_set", task, path: "~/work/b" }], fx.codex),
+      "applied",
+    );
+    const late = redo();
+    expectStatus(late, "conflict");
+    expect(late.conflicts).toEqual([
+      expect.objectContaining({ entity: "folders", field: "path", task }),
+    ]);
+    expect(live()).toEqual({ [`task:${task}`]: "~/work/b" });
+  });
+
   test("a deleted project never holds a live folder: undo of a clear while it is deleted is a conflict, so its restore cannot share a folder", () => {
     const project = newProject("Away", "~/work/away");
     expectStatus(submit([{ kind: "project.folder_clear", project }]), "applied");
