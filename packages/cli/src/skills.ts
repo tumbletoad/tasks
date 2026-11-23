@@ -42,8 +42,8 @@ their next call.
 
   (none)       List the skills: default, edited, yours, and files that cannot be used, with why
   show <name>  Print a skill as an agent gets it, with the space's sizes (asks the service)
-  copy <name>  Write a default's text into your skills folder, to edit. With your copy
-               there, it is kept, and counts as made from today's default
+  copy <name>  Write a default's text into your skills folder, to edit. A file of yours
+               there is never replaced: it counts as made from today's default
   diff <name>  What changed in a default since your copy was made from it
 `;
 
@@ -91,7 +91,9 @@ type Change =
 function changeOf(folder: string, skill: Skill): Change | undefined {
   const shipped = DEFAULTS.get(skill.name);
   if (skill.origin !== "edited" || shipped === undefined) return undefined;
-  const before = readText(copiedFrom(folder, skill.name));
+  // A linked record folder could bring any text in as the default; `copy` refuses it too.
+  const linked = lstatSync(join(folder, COPIED_FROM), { throwIfNoEntry: false })?.isSymbolicLink();
+  const before = linked === true ? undefined : readText(copiedFrom(folder, skill.name));
   if (before === undefined) return { state: "unknown" };
   return before === shipped.file ? { state: "same" } : { state: "changed", before };
 }
@@ -297,22 +299,11 @@ function copy(io: Io, globals: Globals, folder: string, name: string): number {
     fd = createFile(path, 0o600, "wx");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    const before = readText(record);
-    if (before === skill.file)
-      return said(false, `Your copy is already at ${path}. It is unchanged.`);
-    // A copy still exactly as an older default left it holds none of the person's work.
-    if (before !== undefined && readText(path) === before) {
-      atomicWrite(path, skill.file, 0o600);
-      atomicWrite(record, skill.file, 0o600);
-      return said(
-        true,
-        `Your copy at ${path} was the default as it was, unedited: it is today's default now.`,
-      );
-    }
+    // The person's file is theirs whatever it holds: only the record of the default moves on.
     atomicWrite(record, skill.file, 0o600);
     return said(
       false,
-      `Your copy at ${path} is unchanged. It now counts as made from today's default, and is marked again only when the default changes.`,
+      `Your copy at ${path} is kept as it is, and now counts as made from today's default. For today's default instead, remove your file: your agents get the default again, and ${CLI_NAME} skills copy ${name} writes it fresh.`,
     );
   }
   try {

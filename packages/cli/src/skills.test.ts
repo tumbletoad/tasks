@@ -52,7 +52,7 @@ describe("[A3.3.6.mcp.skills] ttasks skills", () => {
       writeFileSync(file, "My own sizing.\n");
       const again = await run(home, "skills", "copy", "sizing-effort");
       expect(again.code).toBe(0);
-      expect(again.out).toContain("already");
+      expect(again.out).toContain("kept as it is");
       expect(readFileSync(file, "utf8")).toBe("My own sizing.\n");
       expect((await run(home, "skills", "copy", "no-default")).code).toBe(2);
 
@@ -102,15 +102,8 @@ describe("[A3.3.6.mcp.skills] ttasks skills", () => {
       expect(shown.out).toContain(file);
 
       // copy over an edited copy keeps it, and counts it as made from today's default.
-      expect((await run(home, "skills", "copy", "sizing-effort")).out).toContain("unchanged");
+      expect((await run(home, "skills", "copy", "sizing-effort")).out).toContain("kept as it is");
       expect(readFileSync(file, "utf8")).toBe(`${older}\nThe user's own rule.\n`);
-      expect(await state()).toBe("same");
-
-      // A copy still exactly as an older default left it becomes today's.
-      writeFileSync(madeFrom, older);
-      writeFileSync(file, older);
-      expect((await run(home, "skills", "copy", "sizing-effort")).code).toBe(0);
-      expect(readFileSync(file, "utf8")).toBe(today);
       expect(await state()).toBe("same");
 
       // A copy made by hand: no record of its default, so diff compares it with today's.
@@ -123,6 +116,63 @@ describe("[A3.3.6.mcp.skills] ttasks skills", () => {
 
       expect((await run(home, "skills", "diff", "organizing")).out).toContain("no copy");
       expect((await run(home, "skills", "diff", "no-default")).code).toBe(2);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("copy over a file of the user's keeps its bytes, whatever the record of its default says", async () => {
+    const home = mkdtempSync(join(tmpdir(), "tt-skills-"));
+    try {
+      const file = join(home, "skills", "sizing-effort", "SKILL.md");
+      const madeFrom = join(home, "skills", ".copied-from", "sizing-effort.md");
+      expect((await run(home, "skills", "copy", "sizing-effort")).code).toBe(0);
+      const today = readFileSync(file, "utf8");
+      const older = today.replace("## XS", "## XS\n\nAn example that was dropped since.");
+      const edited = `${older}\nThe user's own rule.\n`;
+      const cases: { name: string; file: string; record: string | undefined }[] = [
+        { name: "an edited copy", file: edited, record: older },
+        { name: "a copy with only its line ends changed", file: older.replaceAll("\n", "\r\n"), record: older },
+        { name: "a copy with no record", file: older, record: undefined },
+        { name: "a damaged record", file: edited, record: String.fromCharCode(0, 0xff) },
+        { name: "a record that is the user's own file", file: edited, record: edited },
+        { name: "a copy as the older default left it", file: older, record: older },
+      ];
+      for (const given of cases) {
+        writeFileSync(file, given.file);
+        if (given.record === undefined) rmSync(madeFrom, { force: true });
+        else writeFileSync(madeFrom, given.record);
+        const copied = await run(home, "--json", "skills", "copy", "sizing-effort");
+        expect(copied.code, given.name).toBe(0);
+        expect(JSON.parse(copied.out), given.name).toMatchObject({ written: false });
+        expect(readFileSync(file).equals(Buffer.from(given.file)), given.name).toBe(true);
+        expect(readFileSync(madeFrom, "utf8"), given.name).toBe(today);
+      }
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("a linked record folder is no record: diff compares the copy with today's default", async () => {
+    const home = mkdtempSync(join(tmpdir(), "tt-skills-"));
+    try {
+      const file = join(home, "skills", "sizing-effort", "SKILL.md");
+      expect((await run(home, "skills", "copy", "sizing-effort")).code).toBe(0);
+      writeFileSync(file, `${readFileSync(file, "utf8")}A rule of the user's.\n`);
+      const elsewhere = join(home, "elsewhere");
+      mkdirSync(elsewhere);
+      writeFileSync(join(elsewhere, "sizing-effort.md"), "Text from outside the skills folder.\n");
+      rmSync(join(home, "skills", ".copied-from"), { recursive: true });
+      symlinkSync(elsewhere, join(home, "skills", ".copied-from"), "junction");
+
+      const listed = JSON.parse((await run(home, "--json", "skills")).out) as {
+        skills: { name: string; default_since_copy?: string }[];
+      };
+      const sizing = listed.skills.find((skill) => skill.name === "sizing-effort");
+      expect(sizing?.default_since_copy).toBe("unknown");
+      const shown = await run(home, "skills", "diff", "sizing-effort");
+      expect(shown.out).toContain("- A rule of the user's.");
+      expect(shown.out).not.toContain("Text from outside");
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
