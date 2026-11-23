@@ -44,6 +44,7 @@
 //
 // Every statement is built from the constant table, column and field names below and in
 // fields.ts, with values bound as parameters (A1 3.7).
+import { newerBy } from "@ttasks/contracts/newer-work";
 import type { Connection, Row, SqlValue } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
 import { isId, type Id } from "../ids.ts";
@@ -370,17 +371,37 @@ function liveChildren(conn: Connection, changes: readonly StoredChange[]): Map<s
 
 const COMMIT_COLUMNS = "seq, id, undo_status, undone_by";
 
+/** Changes after `$since` of row `$entity` `$id`, and of everything of task `$task`, by others. */
+function newerWhere(runs: string): string {
+  return (
+    "WHERE c.seq > $since " +
+    `AND (c.task_id = $task OR (c.entity = $entity AND c.entity_id = $id)${runs}) ` +
+    "AND NOT (k.principal_id = $principal AND (k.undo_status IS NOT NULL " +
+    "OR k.kind IN ('undo', 'redo')))"
+  );
+}
+
 function newerWorkSql(runs: string): string {
   return (
     "SELECT c.entity AS entity, c.entity_id AS id, " +
     "coalesce(c.task_id, CASE c.entity WHEN 'runs' THEN $task END) AS task, c.field AS field, " +
-    "max(c.seq) AS version FROM changes c JOIN commits k ON k.seq = c.seq WHERE c.seq > $since " +
-    `AND (c.task_id = $task OR (c.entity = $entity AND c.entity_id = $id)${runs}) ` +
-    "AND NOT (k.principal_id = $principal AND (k.undo_status IS NOT NULL " +
-    "OR k.kind IN ('undo', 'redo'))) " +
+    `max(c.seq) AS version FROM changes c JOIN commits k ON k.seq = c.seq ${newerWhere(runs)} ` +
     "GROUP BY c.entity, c.entity_id, c.field ORDER BY min(c.seq), c.entity, c.entity_id, c.field"
   );
 }
+
+/** Who made those changes: each author once, with the time of their newest, a run's apart. */
+function newerAuthorsSql(runs: string): string {
+  return (
+    "SELECT c.entity = 'runs' AS run, k.author_id AS actor, a.kind AS kind, a.label AS label, " +
+    "k.origin AS origin, max(k.at) AS at FROM changes c JOIN commits k ON k.seq = c.seq " +
+    `JOIN actors a ON a.id = k.author_id ${newerWhere(runs)} ` +
+    "GROUP BY c.entity = 'runs', k.author_id, k.origin"
+  );
+}
+
+const RUNS_OF_TASK =
+  " OR (c.entity = 'runs' AND c.entity_id IN (SELECT id FROM runs WHERE task_id = $task))";
 
 const SQL = {
   changes: "SELECT * FROM changes WHERE seq = $seq ORDER BY n",
@@ -468,9 +489,10 @@ const SQL = {
    */
   newerWork: newerWorkSql(""),
   /** The same, with the task's runs, whose changes name no task (runs.ts). */
-  newerWorkWithRuns: newerWorkSql(
-    " OR (c.entity = 'runs' AND c.entity_id IN (SELECT id FROM runs WHERE task_id = $task))",
-  ),
+  newerWorkWithRuns: newerWorkSql(RUNS_OF_TASK),
+  /** Who made them: each author once, with the time of their newest. */
+  newerAuthors: newerAuthorsSql(""),
+  newerAuthorsWithRuns: newerAuthorsSql(RUNS_OF_TASK),
   touched: "UPDATE tasks SET touched = $seq WHERE id = $id",
 } as const;
 
@@ -950,49 +972,84 @@ function newerWork(
   return [...work.values()];
 }
 
+/** A step an undo or a redo could not take whole: what it last applied, and what held it back. */
+export interface Held {
+  /** PlanOptions.applied: others' changes after it are newer work. */
+  readonly since: number;
+  readonly conflicts: readonly FieldConflict[];
+}
+
 /**
- * Who changed which task since, from an undo's or a redo's conflicts (WriteResult.newer): per
- * task and author, the time of that author's newest change there and how many changes (commits),
- * and how many changes in all. The principal's own steps (its undoable writes, undos and redos)
- * are no one's newer work: they hold a redo back only after an earlier step of the person's was
- * passed over, and that step's conflicts say why. A run's own progress is the run's, whichever
- * credential wrote it.
+ * Who changed which task since (WriteResult.newer): for each task a held step's conflicts name,
+ * every author of a change to it or to what belongs to it after the step was last applied, with the
+ * time of that author's newest change there; a row of no task (an area, a project, a source) by
+ * its own changes. The conflicts' own authors are named too: a key another row took counts. The
+ * principal's own steps (its undoable writes, undos and redos) are no one's newer work: they hold
+ * a redo back only after an earlier step of the person's was passed over, and that step's
+ * conflicts say why. A run's own progress is the run's, whichever credential wrote it.
  */
 export function newerWorkOf(
   conn: Connection,
-  conflicts: readonly FieldConflict[],
+  held: readonly Held[],
   principal: Id<"ac">,
 ): NewerWork {
-  const seqs = [...new Set(conflicts.map((c) => c.version))];
+  const conflicts = held.flatMap((h) => h.conflicts);
   const own = new Set(
     conn
       .prepare(SQL.ownSteps)
-      .all({ seqs: JSON.stringify(seqs), principal })
+      .all({ seqs: JSON.stringify([...new Set(conflicts.map((c) => c.version))]), principal })
       .map((row) => new RowReader("commits", row).int("seq", "seq")),
   );
   const work = new Map<string, NewerWork["work"][number]>();
-  /** The changes of each entry, and of all of them. */
-  const versions = new Map<string, Set<number>>();
-  const changes = new Set<number>();
-  for (const c of conflicts) {
-    if (own.has(c.version)) continue;
-    changes.add(c.version);
-    const run = c.entity === "runs";
-    const key = `${c.task ?? ""}|${run ? "run" : c.by.actor}`;
-    const seen = versions.get(key) ?? new Set<number>();
-    seen.add(c.version);
-    versions.set(key, seen);
+  const named = (
+    where: { task?: Id<"t">; ref?: string },
+    by: FieldConflict["by"],
+    run: boolean,
+    at: number,
+  ): void => {
+    const key = `${where.task ?? ""}|${newerBy(by, run)}`;
     const entry = work.get(key);
+    if (entry !== undefined && entry.at >= at) return;
     work.set(key, {
-      ...(c.task === undefined ? {} : { task: c.task }),
-      ...(c.ref === undefined ? {} : { ref: c.ref }),
-      by: entry?.by ?? c.by,
+      ...(where.task === undefined ? {} : { task: where.task }),
+      ...(where.ref === undefined ? {} : { ref: where.ref }),
+      by,
       run,
-      at: Math.max(entry?.at ?? c.at, c.at),
-      changes: seen.size,
+      at,
     });
+  };
+  const runs = conn.prepare(TABLE_EXISTS).get({ name: "runs" }) !== undefined;
+  for (const { since, conflicts: theirs } of held) {
+    const asked = new Set<string>();
+    for (const c of theirs) {
+      if (!own.has(c.version)) named(c, c.by, c.entity === "runs", c.at);
+      const scope =
+        c.task === undefined
+          ? { entity: c.entity, id: c.id, task: null }
+          : { entity: "tasks", id: c.task, task: c.task };
+      const key = `${scope.entity}|${scope.id}`;
+      if (asked.has(key)) continue;
+      asked.add(key);
+      const sql = runs && scope.task !== null ? SQL.newerAuthorsWithRuns : SQL.newerAuthors;
+      for (const row of conn.prepare(sql).all({ since, principal, ...scope })) {
+        const r = new RowReader("commits", row);
+        named(
+          c.task === undefined
+            ? {}
+            : { task: c.task, ...(c.ref === undefined ? {} : { ref: c.ref }) },
+          {
+            actor: r.id("actor", "ac"),
+            kind: r.text("kind"),
+            label: r.text("label"),
+            origin: r.text("origin"),
+          },
+          r.int("run", "count") === 1,
+          r.int("at", "instant"),
+        );
+      }
+    }
   }
-  return { work: [...work.values()], changes: changes.size };
+  return { work: [...work.values()] };
 }
 
 /** Whether a tombstone field's value says the row is live: every column null. */

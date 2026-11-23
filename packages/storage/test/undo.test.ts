@@ -900,10 +900,8 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
           task: a,
           by: expect.objectContaining({ kind: "agent" }) as unknown,
           run: false,
-          changes: 1,
         }),
       ],
-      changes: 1,
     });
     expect(task(a)["title"]).toBe("Renew both passports");
     expect(task(a)["deleted_at"]).toBeNull();
@@ -933,6 +931,38 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     expect(task(a)["title"]).toBe("Renew the passport");
   });
 
+  test("a refused Redo names every author who changed the task since, each with their newest change, and no count", () => {
+    const a = create("Renew the passport");
+    applied(write([{ kind: "task.delete", task: a }]));
+    applied(undo());
+    patch(a, { title: "Renew both passports" }, "codex");
+    const claude = patch(a, { title: "Renew the passports" }, "claude");
+    const last = patch(a, { title: "Renew all passports" }, "codex");
+    const refused = redo();
+    expectStatus(refused, "conflict");
+    const at = (seq: number): number => Number(commitAt(seq)["at"]);
+    expect(refused.newer?.work).toEqual(
+      expect.arrayContaining([
+        {
+          task: a,
+          ref: expect.any(String) as unknown,
+          by: expect.objectContaining({ actor: fx.codex.principal_id }) as unknown,
+          run: false,
+          at: at(last.seq),
+        },
+        {
+          task: a,
+          ref: expect.any(String) as unknown,
+          by: expect.objectContaining({ actor: fx.claude.principal_id }) as unknown,
+          run: false,
+          at: at(claude.seq),
+        },
+      ]),
+    );
+    expect(refused.newer?.work).toHaveLength(2);
+    expect(refused.newer).not.toHaveProperty("changes");
+  });
+
   test("Redo never brings back a project whose area is not there: passed over, it comes back after the area", async () => {
     const other = await partner();
     const area = applied(write([{ kind: "area.create", title: "Garden" }]));
@@ -953,10 +983,8 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
       work: [
         expect.objectContaining({
           by: expect.objectContaining({ actor: other.principal_id }) as unknown,
-          changes: 1,
         }),
       ],
-      changes: 1,
     });
     expect(refused.newer?.work[0]?.task).toBeUndefined();
     const live = (table: "areas" | "projects", id: string) =>

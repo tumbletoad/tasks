@@ -2,14 +2,13 @@
 // their numbers and the authors by their names, each list short. The page's toast and the command
 // line both say it through `newerSaid`, so they never name different tasks or authors.
 
-/** One author's changes to one task since the change, as an undo's or a redo's answer names it. */
+/** One author who changed one task since the change, as an undo's or a redo's answer names it. */
 export interface NewerWorkEntry {
   /** The task's reference; absent for an area, a project or a source. */
   readonly task?: string;
   /** `user`, `import`, `script`, `run` (a run's own progress) or the actor's label. */
   readonly by: string;
   readonly at: string;
-  readonly changes: number;
 }
 
 /** A short list: the names it shows, and how many more it leaves out. */

@@ -77,6 +77,7 @@ import {
   groupBreaks,
   lastApplied,
   newerWorkOf,
+  type Held,
   planInversions,
   readChanges,
   redoSteps,
@@ -2697,6 +2698,7 @@ export class SpaceWriter {
     /** The steps a redo passed over, and why: each row and field once. */
     const passed: Id<"op">[] = [];
     const why = new Map<string, FieldConflict>();
+    const held: Held[] = [];
     for (const target of steps) {
       // The rows an undo inverts are the commit's own; a redo inverts its undo's.
       const inverted = undo ? target.seq : must(target.undoneBy, "An undone commit names its undo");
@@ -2714,6 +2716,8 @@ export class SpaceWriter {
       });
       const pass = (): void => {
         passed.push(target.id);
+        if (plan.conflicts.length > 0)
+          held.push({ since: plan.applied, conflicts: plan.conflicts });
         for (const c of plan.conflicts) {
           const key = `${c.entity}|${c.id}|${c.field}`;
           if (!why.has(key)) why.set(key, c);
@@ -2786,6 +2790,7 @@ export class SpaceWriter {
         throw error;
       }
       const conflicts = undo ? plan.conflicts : [...why.values()];
+      if (undo && conflicts.length > 0) held.push({ since: plan.applied, conflicts });
       return {
         ...accepted("applied", { ...asOf, seq }),
         commit: commitId,
@@ -2794,7 +2799,7 @@ export class SpaceWriter {
         // the one it redid (WriteResult.conflicts).
         conflicts,
         ...(passed.length === 0 ? {} : { passed }),
-        ...(conflicts.length === 0 ? {} : { newer: newerWorkOf(conn, conflicts, principal) }),
+        ...(held.length === 0 ? {} : { newer: newerWorkOf(conn, held, principal) }),
       };
     }
     // Nothing could be applied. The refusal names the oldest step it tried, which a caller that
@@ -2815,7 +2820,7 @@ export class SpaceWriter {
       ),
       target: first.id,
       ...(undo ? {} : { passed }),
-      newer: newerWorkOf(conn, conflicts, principal),
+      newer: newerWorkOf(conn, held, principal),
     };
   }
 

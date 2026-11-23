@@ -1164,7 +1164,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
             at: "2026-11-12T10:42:00.000Z",
           },
         ],
-        newer_work: [{ task: "M-1", by: "Codex", at: "2026-11-12T10:42:00.000Z", changes: 1 }],
+        newer_work: [{ task: "M-1", by: "Codex", at: "2026-11-12T10:42:00.000Z" }],
       });
     });
     await w.edits.undo();
@@ -1368,12 +1368,11 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     expect(restoreChange("priority", null)?.set).toEqual({ priority: 4 });
   });
 
-  /** An answer's newer work: one author's changes to one task since. */
+  /** An answer's newer work: one author who changed one task since. */
   const work = (task: string | undefined, by: string) => ({
     ...(task === undefined ? {} : { task }),
     by,
     at: "2026-11-12T10:42:00.000Z",
-    changes: 1,
   });
   const intl = createIntl({ locale: SOURCE_LOCALE, messages: CATALOGUE });
   const said = (text: string | Msg | undefined): string =>

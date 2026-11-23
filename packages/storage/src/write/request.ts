@@ -214,9 +214,8 @@ export interface FieldConflict {
 }
 
 /**
- * Who changed which task since, as an undo's or a redo's answer counts it (history.ts,
- * newerWorkOf): per task and author, that author's newest change there and how many changes
- * (commits), and how many changes in all.
+ * Who changed which task since, as an undo's or a redo's answer names it (history.ts,
+ * newerWorkOf): per task and author, the time of that author's newest change there.
  */
 export interface NewerWork {
   work: {
@@ -227,9 +226,7 @@ export interface NewerWork {
     /** A run's own progress: the run's, whichever credential wrote it. */
     run: boolean;
     at: number;
-    changes: number;
   }[];
-  changes: number;
 }
 
 export interface OpResult {

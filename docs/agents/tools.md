@@ -485,8 +485,6 @@ Redo the change you undid last, as long as nobody changed its fields since.
 | `newer_work[].task` | string | no | The task; absent for an area, a project or a source |
 | `newer_work[].by` | string | yes | Who: user, import, run (a run's own progress) or the actor's label |
 | `newer_work[].at` | string | yes | When that author last changed it |
-| `newer_work[].changes` | integer, 1 to 1000000000 | yes | How many changes that author made there |
-| `newer_changes` | integer, 0 to 1000000000 | no | How many changes others made since, in all |
 
 ### Examples
 
@@ -559,8 +557,6 @@ Undo your newest change in the space, field by field as long as nobody changed i
 | `newer_work[].task` | string | no | The task; absent for an area, a project or a source |
 | `newer_work[].by` | string | yes | Who: user, import, run (a run's own progress) or the actor's label |
 | `newer_work[].at` | string | yes | When that author last changed it |
-| `newer_work[].changes` | integer, 1 to 1000000000 | yes | How many changes that author made there |
-| `newer_changes` | integer, 0 to 1000000000 | no | How many changes others made since, in all |
 | `script_change` | object | no | A newer change by a script, which is not on the undo stack |
 | `script_change.task` | string | yes | Task reference |
 | `script_change.change` | string | yes | Its first operation's kind on the task, such as task.complete |
@@ -978,8 +974,6 @@ When `found` is `true`:
 | `newer_work[].task` | string | no | The task; absent for an area, a project or a source |
 | `newer_work[].by` | string | yes | Who: user, import, run (a run's own progress) or the actor's label |
 | `newer_work[].at` | string | yes | When that author last changed it |
-| `newer_work[].changes` | integer, 1 to 1000000000 | yes | How many changes that author made there |
-| `newer_changes` | integer, 0 to 1000000000 | no | How many changes others made since, in all |
 | `results` | object[], max 50 items | yes | One result per operation, the first 50 of an import's |
 | `results[].i` | integer, 0 to 999999 | yes | Index of the operation in the request |
 | `results[].status` | "created" \| "updated" \| "unchanged" \| "existing" \| "proposed" | yes | What the operation did |

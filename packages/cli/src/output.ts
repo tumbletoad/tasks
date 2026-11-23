@@ -101,7 +101,6 @@ function newerOf(data: Readonly<Record<string, unknown>> | undefined): string | 
             ...(typeof w["task"] === "string" ? { task: w["task"] } : {}),
             by: w["by"],
             at: w["at"],
-            changes: Number(w["changes"]),
           },
         ]
       : [],

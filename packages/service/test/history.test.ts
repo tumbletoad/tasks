@@ -266,7 +266,7 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
   );
 
   test(
-    "a refusal over a hundred notes and a question names the task and its author once, with how many changes; the answer, the receipt and a partial undo say the same",
+    "a refusal over a hundred notes and a question names the task and its author once, and no count; the answer, the receipt and a partial undo say the same",
     async () => {
       const task = await add("Fixture task with many notes");
       await call("task.delete", { tasks: [task], base: await asOf(), request_id: rid() });
@@ -279,9 +279,12 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
       await call("entry.add", asked, SCRIPT);
       const redo = rid();
       const refused = await refusal("history.redo", { request_id: redo });
-      const newer = { newer_work: [{ task, by: "script", changes: 101 }], newer_changes: 101 };
+      const newer = { newer_work: [{ task, by: "script" }] };
       expect(refused.data).toMatchObject(newer);
-      expect((refused.data?.["newer_work"] as Json[]).length).toBe(1);
+      expect(refused.data?.["newer_work"]).toEqual([
+        { task, by: "script", at: expect.any(String) as unknown },
+      ]);
+      expect(refused.data).not.toHaveProperty("newer_changes");
       // Each row once, for a program that looks closer.
       expect((refused.data?.["conflicts"] as Json[]).length).toBe(101);
       expect(await call("receipt.get", { request: redo })).toMatchObject(newer);
@@ -410,7 +413,7 @@ describe("[A1.5.history.runs] a run keeps its task's create, through the request
       const run = String(created.results[0]?.id);
       const refused = rid();
       // The run is named by its state now, and is a run's work, not the person's elsewhere.
-      const newer = { newer_work: [{ task, by: "run", changes: 1 }], newer_changes: 1 };
+      const newer = { newer_work: [{ task, by: "run" }] };
       expect(await refusal("history.undo", { request_id: refused })).toMatchObject({
         code: "conflict",
         data: {

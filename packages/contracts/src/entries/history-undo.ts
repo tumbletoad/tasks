@@ -35,25 +35,18 @@ export const Unresolved = z.strictObject({
   at: z.string().regex(patterns.instant).describe("When"),
 });
 
-/** One author's changes to one task since the change (A1 3.10.1): who, when last, how many. */
+/** One author who changed one task since the change (A1 3.10.1): who, and when last. */
 export const NewerWork = z.strictObject({
   task: TaskRef.describe("The task; absent for an area, a project or a source").optional(),
   by: z.string().describe("Who: user, import, run (a run's own progress) or the actor's label"),
   at: z.string().regex(patterns.instant).describe("When that author last changed it"),
-  changes: z.int().min(1).max(1_000_000_000).describe("How many changes that author made there"),
 });
 
-/** Who changed what an undo or a redo met since: one entry per task and author, and a total. */
+/** Who changed what an undo or a redo met since: one entry per task and author. */
 export const NewerWorkFields = {
   newer_work: z
     .array(NewerWork)
     .describe("Who changed which task since, one entry per task and author")
-    .optional(),
-  newer_changes: z
-    .int()
-    .min(0)
-    .max(1_000_000_000)
-    .describe("How many changes others made since, in all")
     .optional(),
 };
 

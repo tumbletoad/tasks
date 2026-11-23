@@ -115,18 +115,14 @@ export function newerWorkJson(newer: {
     readonly by: { readonly kind: string; readonly label: string; readonly origin?: string };
     readonly run: boolean;
     readonly at: number;
-    readonly changes: number;
   }[];
-  readonly changes: number;
-}): { newer_work: z.input<typeof NewerWorkFields.newer_work>; newer_changes: number } {
+}): { newer_work: z.input<typeof NewerWorkFields.newer_work> } {
   return {
     newer_work: newer.work.map((w) => ({
       ...(w.ref === undefined ? {} : { task: w.ref }),
       by: newerBy(w.by, w.run),
       at: new Date(w.at).toISOString(),
-      changes: w.changes,
     })),
-    newer_changes: newer.changes,
   };
 }
 
@@ -201,9 +197,7 @@ export interface StoredReceiptLike {
         readonly by: { readonly kind: string; readonly label: string; readonly origin?: string };
         readonly run: boolean;
         readonly at: number;
-        readonly changes: number;
       }[];
-      readonly changes: number;
     };
     results: readonly object[];
     conflicts: readonly { at: number }[];
