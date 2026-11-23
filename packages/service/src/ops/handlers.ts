@@ -1934,7 +1934,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         readSkills(call.host.skillsFolder, asked),
       ]);
       skillFields = {
-        skills: read.skills.map((skill) => {
+        asked: read.skills.map((skill) => {
           const text = servedText(skill, space);
           return { ...skillRow(skill), ...(text === undefined ? {} : { text }) };
         }),

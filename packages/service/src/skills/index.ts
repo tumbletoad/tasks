@@ -26,6 +26,8 @@ export const SKILLS_WITHIN_MS = 2_000;
 export const SKILL_FOLDERS = 64;
 /** The skill files read at the same time. */
 const AT_ONCE = 8;
+/** How long a finished read is used again: a burst of calls reads the folder once. */
+const FRESH_MS = 1_500;
 
 /** A default as it ships: its whole file, which `copy` writes for a person to start from. */
 interface Default {
@@ -116,11 +118,26 @@ type Found = { readonly path: string } & (
   | { readonly ok: false; readonly problem: string }
 );
 
+/** One name in the skills folder's own listing: a folder to read, or why it is not a skill. */
+type Entry =
+  | { readonly kind: "folder"; readonly path: string }
+  | { readonly kind: "unusable"; readonly path: string; readonly problem: string };
+
+/** The skills folder's listing by name, in name order, or why the folder cannot be read. */
+type Listing = ReadonlyMap<string, Entry> | string;
+
+/** What the catalogue asks of the disk. Tests give a stand-in. */
+export interface SkillFiles {
+  list(folder: string): Promise<Listing>;
+  read(path: string): Promise<Found>;
+}
+
 const codeOf = (error: unknown): string =>
   (error as NodeJS.ErrnoException | null)?.code ?? "an error";
 
 const LINK = "it is a link, and only real folders and files in the skills folder are read";
 const NO_FOLLOW = (constants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+const BAD_NAME = "its folder's name is no skill name: use lower case letters, digits and hyphens";
 
 /** A person's skill file: what it says, or why it cannot be used. Reads at most the limit + 1. */
 async function readOne(path: string): Promise<Found> {
@@ -162,19 +179,58 @@ async function readOne(path: string): Promise<Found> {
   }
 }
 
-/** The skills folder: a real folder, none at all, or why it cannot be read. */
-async function rootOf(folder: string): Promise<"folder" | "absent" | { readonly problem: string }> {
+/**
+ * The skills folder's own listing, which alone decides what a name is: the spelling on disk, and
+ * whether that entry can be a skill. It opens no skill file.
+ */
+async function listFolder(folder: string): Promise<Listing> {
   try {
     const kind = await lstat(folder);
-    if (kind.isSymbolicLink()) return { problem: LINK };
-    return kind.isDirectory() ? "folder" : { problem: "it is not a folder" };
+    if (kind.isSymbolicLink()) return LINK;
+    if (!kind.isDirectory()) return "it is not a folder";
   } catch (error) {
     const code = codeOf(error);
-    return code === "ENOENT" || code === "ENOTDIR"
-      ? "absent"
-      : { problem: `it cannot be read (${code})` };
+    return code === "ENOENT" || code === "ENOTDIR" ? new Map() : `it cannot be read (${code})`;
   }
+  let entries;
+  try {
+    entries = await readdir(folder, { withFileTypes: true });
+  } catch (error) {
+    return `it cannot be read (${codeOf(error)})`;
+  }
+  const visible = entries
+    .filter((entry) => !entry.name.startsWith("."))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const listing = new Map<string, Entry>();
+  for (const entry of visible) {
+    if (entry.isFile()) continue;
+    const path = join(folder, entry.name);
+    const problem = entry.isSymbolicLink()
+      ? LINK
+      : !entry.isDirectory()
+        ? "it is not a folder"
+        : !isSkillName(entry.name)
+          ? BAD_NAME
+          : undefined;
+    listing.set(
+      entry.name,
+      problem === undefined ? { kind: "folder", path } : { kind: "unusable", path, problem },
+    );
+  }
+  // A skill written as one file beside the folders, the way some apps keep them.
+  for (const entry of visible) {
+    const stem = entry.isFile() ? /^(.+)\.md$/iu.exec(entry.name)?.[1] : undefined;
+    if (stem === undefined || listing.has(stem)) continue;
+    listing.set(stem, {
+      kind: "unusable",
+      path: join(folder, entry.name),
+      problem: `a skill is a folder: move it to ${join(folder, stem, SKILL_FILE)}`,
+    });
+  }
+  return listing;
 }
+
+const DISK: SkillFiles = { list: listFolder, read: readOne };
 
 /** Runs `work` on each item, at most `limit` at a time. */
 async function eachAtMost<T>(items: readonly T[], limit: number, work: (item: T) => Promise<void>) {
@@ -185,69 +241,26 @@ async function eachAtMost<T>(items: readonly T[], limit: number, work: (item: T)
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
-/** What the skills folder holds, by skill name, or why it cannot be read. */
-export type FolderRead = { readonly found: Map<string, Found>; readonly unread: number } | string;
-
-async function readFolder(folder: string): Promise<FolderRead> {
-  const root = await rootOf(folder);
-  if (root === "absent") return { found: new Map(), unread: 0 };
-  if (root !== "folder") return root.problem;
-  let entries;
-  try {
-    entries = await readdir(folder, { withFileTypes: true });
-  } catch (error) {
-    return `it cannot be read (${codeOf(error)})`;
-  }
-  const visible = entries
-    .filter((entry) => !entry.name.startsWith("."))
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  const folders = visible.filter((entry) => !entry.isFile());
-  const read = folders.slice(0, SKILL_FOLDERS);
-  const found = new Map<string, Found>();
-  await eachAtMost(read, AT_ONCE, async (entry) => {
-    const path = join(folder, entry.name);
-    const fail = (problem: string) => {
-      found.set(entry.name, { path, ok: false, problem });
-    };
-    if (entry.isSymbolicLink()) fail(LINK);
-    else if (!entry.isDirectory()) fail("it is not a folder");
-    else if (!isSkillName(entry.name)) {
-      fail("its folder's name is no skill name: use lower case letters, digits and hyphens");
-    } else found.set(entry.name, await readOne(join(path, SKILL_FILE)));
-  });
-  // A skill written as one file beside the folders, the way some apps keep them.
-  for (const entry of visible) {
-    const stem = entry.isFile() ? /^(.+)\.md$/iu.exec(entry.name)?.[1] : undefined;
-    if (stem === undefined || found.has(stem)) continue;
-    found.set(stem, {
-      path: join(folder, entry.name),
-      ok: false,
-      problem: `a skill is a folder: move it to ${join(folder, stem, SKILL_FILE)}`,
-    });
-  }
-  return { found, unread: folders.length - read.length };
-}
-
-/** The person's files for these names alone. */
-async function readNames(folder: string, names: readonly string[]): Promise<FolderRead> {
-  const root = await rootOf(folder);
-  if (root === "absent") return { found: new Map(), unread: 0 };
-  if (root !== "folder") return root.problem;
-  const found = new Map<string, Found>();
-  await eachAtMost(names, AT_ONCE, async (name) => {
-    const path = join(folder, name);
-    try {
-      const kind = await lstat(path);
-      if (kind.isSymbolicLink()) found.set(name, { path, ok: false, problem: LINK });
-      else if (kind.isDirectory()) found.set(name, await readOne(join(path, SKILL_FILE)));
-    } catch (error) {
-      const code = codeOf(error);
-      if (code !== "ENOENT") {
-        found.set(name, { path, ok: false, problem: `it cannot be read (${code})` });
-      }
+/**
+ * Work on one key at a time: a request that comes while it runs, or within `freshMs` of its end,
+ * gets the same result. A folder that stalls then holds one read per path, however many requests
+ * wait on it.
+ */
+function shared<T>(freshMs: number): (key: string, start: () => Promise<T>) => Promise<T> {
+  const runs = new Map<string, { readonly work: Promise<T>; ended?: number }>();
+  return (key, start) => {
+    const run = runs.get(key);
+    if (run !== undefined && (run.ended === undefined || Date.now() - run.ended < freshMs)) {
+      return run.work;
     }
-  });
-  return { found, unread: 0 };
+    const next: { work: Promise<T>; ended?: number } = {
+      work: start().finally(() => {
+        next.ended = Date.now();
+      }),
+    };
+    runs.set(key, next);
+    return next.work;
+  };
 }
 
 /** `work`, or `late()` once `ms` have passed without it. */
@@ -263,8 +276,6 @@ function within<T>(work: Promise<T>, ms: number, late: () => T): Promise<T> {
     clearTimeout(timer);
   });
 }
-
-const tooSlow = (ms: number) => () => `it did not answer within ${String(ms / 1000)} s`;
 
 /** A default as the person's file for it leaves it. */
 function defaultSkill(skill: Default, file: Found | undefined): Skill {
@@ -299,97 +310,162 @@ const ownSkill = (name: string, file: Found): Skill => ({
   problem: file.ok ? undefined : file.problem,
 });
 
-/** A default when the skills folder itself cannot be read: why travels with it. */
-const unreadFolder = (folder: string, problem: string) => (skill: Default) =>
-  defaultSkill(skill, { path: folder, ok: false, problem: `the skills folder: ${problem}` });
+/** The skills of a person's folder, read through `files`, every read bounded in time. */
+export function skillCatalogue(
+  files: SkillFiles = DISK,
+  options: { readonly withinMs?: number; readonly freshMs?: number } = {},
+) {
+  const withinMs = options.withinMs ?? SKILLS_WITHIN_MS;
+  const listOnce = shared<Listing>(options.freshMs ?? FRESH_MS);
+  const readOnce = shared<Found>(options.freshMs ?? FRESH_MS);
+  /** The person's file for one entry of the listing: what the list and a named read both see. */
+  const fileOf = async (entry: Entry): Promise<Found> =>
+    entry.kind === "folder"
+      ? readOnce(entry.path, () => files.read(join(entry.path, SKILL_FILE)))
+      : { path: entry.path, ok: false, problem: entry.problem };
+  /** The files of `names` (no names: the first SKILL_FOLDERS of the listing), or why not. */
+  const found = async (
+    folder: string,
+    names: readonly string[] | undefined,
+  ): Promise<{ readonly files: Map<string, Found>; readonly unread: number } | string> => {
+    const listing = await listOnce(folder, () => files.list(folder));
+    if (typeof listing === "string") return listing;
+    const all = [...listing.keys()];
+    const wanted = names?.filter((name) => listing.has(name)) ?? all.slice(0, SKILL_FOLDERS);
+    const read = new Map<string, Found>();
+    await eachAtMost(wanted, AT_ONCE, async (name) => {
+      const entry = listing.get(name);
+      if (entry !== undefined) read.set(name, await fileOf(entry));
+    });
+    return { files: read, unread: names === undefined ? all.length - wanted.length : 0 };
+  };
+  const timed = (folder: string, names: readonly string[] | undefined, ms: number) =>
+    within(found(folder, names), ms, () => `it did not answer within ${String(ms / 1000)} s`);
+  const unreadFolder = (folder: string, problem: string): Found => ({
+    path: folder,
+    ok: false,
+    problem: `the skills folder: ${problem}`,
+  });
 
-/**
- * Every skill, read now: the defaults in their order, then the person's own by name. `folder` is
- * the person's skills folder; none serves the defaults alone.
- */
-export async function listSkills(
-  folder: string | undefined,
-  ms: number = SKILLS_WITHIN_MS,
-  read: (folder: string) => Promise<FolderRead> = readFolder,
-): Promise<Catalog> {
-  if (folder === undefined) {
-    return {
-      skills: [...DEFAULTS.values()].map((skill) => defaultSkill(skill, undefined)),
-      unread: 0,
-    };
-  }
-  const result = await within(read(folder), ms, tooSlow(ms));
-  if (typeof result === "string") {
-    return { skills: [...DEFAULTS.values()].map(unreadFolder(folder, result)), unread: 0 };
-  }
-  const own = [...result.found.entries()]
-    .filter(([name]) => !DEFAULTS.has(name))
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([name, file]) => ownSkill(name, file));
-  const defaults = [...DEFAULTS.values()].map((skill) =>
-    defaultSkill(skill, result.found.get(skill.name)),
-  );
-  return { skills: [...defaults, ...own], unread: result.unread };
+  return {
+    /**
+     * Every skill: the defaults in their order, then the person's own by name. `folder` is the
+     * person's skills folder; none serves the defaults alone.
+     */
+    list: async (folder: string | undefined, ms: number = withinMs): Promise<Catalog> => {
+      const result = folder === undefined ? undefined : await timed(folder, undefined, ms);
+      if (typeof result === "string") {
+        const why = unreadFolder(folder ?? "", result);
+        return {
+          skills: [...DEFAULTS.values()].map((skill) => defaultSkill(skill, why)),
+          unread: 0,
+        };
+      }
+      const own = [...(result?.files.entries() ?? [])]
+        .filter(([name]) => !DEFAULTS.has(name))
+        .map(([name, file]) => ownSkill(name, file));
+      const defaults = [...DEFAULTS.values()].map((skill) =>
+        defaultSkill(skill, result?.files.get(skill.name)),
+      );
+      return { skills: [...defaults, ...own], unread: result?.unread ?? 0 };
+    },
+
+    /**
+     * The skills of these names, in the order asked, opening only their files; `missing` names
+     * no skill. A name is what the folder's listing spells, and an unusable entry gives the
+     * reason the list gives.
+     */
+    read: async (
+      folder: string | undefined,
+      names: readonly string[],
+      ms: number = withinMs,
+    ): Promise<{ readonly skills: readonly Skill[]; readonly missing: readonly string[] }> => {
+      const asked = [...new Set(names)];
+      const result = folder === undefined ? undefined : await timed(folder, asked, ms);
+      const skills: Skill[] = [];
+      const missing: string[] = [];
+      for (const name of asked) {
+        const shipped = DEFAULTS.get(name);
+        const file =
+          typeof result === "string" ? unreadFolder(folder ?? "", result) : result?.files.get(name);
+        if (shipped !== undefined) skills.push(defaultSkill(shipped, file));
+        else if (file !== undefined) skills.push(ownSkill(name, file));
+        else missing.push(name);
+      }
+      return { skills, missing };
+    },
+  };
 }
 
-/**
- * The skills of these names, reading only their files, in the order asked; `missing` names no
- * skill. When the skills folder cannot be read, a name no default has comes back with why.
- */
-export async function readSkills(
-  folder: string | undefined,
-  names: readonly string[],
-  ms: number = SKILLS_WITHIN_MS,
-): Promise<{ readonly skills: readonly Skill[]; readonly missing: readonly string[] }> {
-  const asked = [...new Set(names)];
-  const result =
-    folder === undefined
-      ? { found: new Map<string, Found>(), unread: 0 }
-      : await within(readNames(folder, asked), ms, tooSlow(ms));
-  const skills: Skill[] = [];
-  const missing: string[] = [];
-  for (const name of asked) {
-    const shipped = DEFAULTS.get(name);
-    if (typeof result === "string") {
-      const file: Found = {
-        path: folder ?? "",
-        ok: false,
-        problem: `the skills folder: ${result}`,
-      };
-      skills.push(shipped === undefined ? ownSkill(name, file) : defaultSkill(shipped, file));
-      continue;
-    }
-    const file = result.found.get(name);
-    if (shipped !== undefined) skills.push(defaultSkill(shipped, file));
-    else if (file !== undefined) skills.push(ownSkill(name, file));
-    else missing.push(name);
-  }
-  return { skills, missing };
-}
+const catalogue = skillCatalogue();
+export const listSkills = catalogue.list;
+export const readSkills = catalogue.read;
 
 /** The most skills an agent's list shows; the rest are counted. */
 export const SKILL_LIST_ROWS = 10;
-/** The longest line of a skill in an agent's list. */
-export const SKILL_LINE_CHARS = 120;
+/** The longest line of a skill in an agent's list, and the whole list, in UTF-8 bytes. */
+export const SKILL_LINE_BYTES = 160;
+export const SKILL_LIST_BYTES = 1_500;
 
 const UNUSED = ` (the user's file is not used: ${CLI_NAME} skills says why)`;
 
+const utf8Bytes = (text: string): number => Buffer.byteLength(text, "utf8");
+
+/** Text as one plain line: each run of line breaks, spaces and control characters is a space. */
+export const oneLine = (text: string): string => text.replace(/[\s\p{Cc}]+/gu, " ").trim();
+
+/** `text` within `max` UTF-8 bytes, cut between characters and ended with "..." when cut. */
+function cutTo(text: string, max: number): string {
+  if (utf8Bytes(text) <= max) return text;
+  let kept = "";
+  let used = 3;
+  for (const char of text) {
+    used += utf8Bytes(char);
+    if (used > max) break;
+    kept += char;
+  }
+  return `${kept}...`;
+}
+
 /**
- * A skill's line in an agent's list: its name and when to read it, one line, with "..." where the
- * line was cut. `ttasks skills` says when a "when to use" is cut here.
+ * A skill's line in an agent's list: its name and when to read it, as one plain line of at most
+ * SKILL_LINE_BYTES, with "..." where it was cut. `ttasks skills` says when a "when to use" is cut.
  */
 export function listLine(name: string, when: string | undefined, unused: boolean): string {
-  const head = `  ${name}${unused ? UNUSED : ""}`;
-  const room = SKILL_LINE_CHARS - head.length - 2;
-  const chars = Array.from(when ?? "");
-  const line =
-    chars.length === 0
-      ? head
-      : `${head}: ${chars.length <= room ? chars.join("") : `${chars.slice(0, Math.max(0, room - 3)).join("")}...`}`;
-  const all = Array.from(line);
-  return all.length <= SKILL_LINE_CHARS
-    ? line
-    : `${all.slice(0, SKILL_LINE_CHARS - 3).join("")}...`;
+  const text = `${name}${unused ? UNUSED : ""}${when === undefined || when === "" ? "" : `: ${when}`}`;
+  return `  ${cutTo(oneLine(text), SKILL_LINE_BYTES - 2)}`;
+}
+
+/**
+ * The list of skills a session's first call ends with: at most SKILL_LIST_ROWS lines and
+ * SKILL_LIST_BYTES in all, and a line that counts the rest. Empty without skills.
+ */
+export function listText(
+  skills: readonly {
+    readonly name: string;
+    readonly when?: string | undefined;
+    readonly problem?: string | undefined;
+  }[],
+  status: string,
+): string {
+  if (skills.length === 0) return "";
+  const more = (rest: number) =>
+    `  +${String(rest)} more, not listed here: the user lists them all with ${CLI_NAME} skills.`;
+  const lines = [
+    `Skills, the user's ways of working: before you act, read the ones that apply with ${status} skills [names].`,
+  ];
+  // Room for the closing line, whatever its count.
+  const room = SKILL_LIST_BYTES - utf8Bytes(more(skills.length)) - 1;
+  let used = utf8Bytes(lines[0] ?? "");
+  for (const skill of skills.slice(0, SKILL_LIST_ROWS)) {
+    const line = listLine(skill.name, skill.when, skill.problem !== undefined);
+    if (used + 1 + utf8Bytes(line) > room) break;
+    lines.push(line);
+    used += 1 + utf8Bytes(line);
+  }
+  const shown = lines.length - 1;
+  if (shown < skills.length) lines.push(more(skills.length - shown));
+  return lines.join("\n");
 }
 
 const TTASKS_LABEL = `${PRODUCT_NAME}'s part: how its tools do this. Its rules come first.`;

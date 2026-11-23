@@ -2205,6 +2205,36 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "asked": {
+            "description": "The skills asked for, with their text or why they cannot be used",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Skill name",
+                  "type": "string"
+                },
+                "problem": {
+                  "description": "Why the user's file for it is not used",
+                  "type": "string"
+                },
+                "text": {
+                  "description": "The skill: the user's instructions, when asked for",
+                  "type": "string"
+                },
+                "when": {
+                  "description": "When to read it",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            "maxItems": 6,
+            "type": "array"
+          },
           "autonomy": {
             "description": "Autonomy level for this session",
             "enum": [
@@ -2583,7 +2613,7 @@
             "type": "object"
           },
           "skills": {
-            "description": "The user's skills, or the ones asked for with their text",
+            "description": "The user's skills: read one with skills",
             "items": {
               "additionalProperties": false,
               "properties": {

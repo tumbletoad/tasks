@@ -404,20 +404,19 @@ export function render(entry: string, result: Result, space: string): string {
         `${String(sp["name"])} (${String(sp["ref_prefix"])}) · ${String(result["date"])} · ${statuses} · inbox ${String(counts["inbox"])}`,
       );
       // Skills asked for: each as an agent gets it. Otherwise their names.
-      const skills = (result["skills"] as Result[] | undefined) ?? [];
-      for (const skill of skills.filter((s) => typeof s["text"] === "string")) {
+      for (const skill of (result["asked"] as Result[] | undefined) ?? []) {
         const when = typeof skill["when"] === "string" ? `: ${skill["when"]}` : "";
         lines.push("", `Skill ${String(skill["name"])}${when}`);
         if (typeof skill["problem"] === "string") lines.push(skill["problem"]);
-        lines.push("", String(skill["text"]), "");
+        if (typeof skill["text"] === "string") lines.push("", skill["text"], "");
       }
       const missing = (result["missing"] as string[] | undefined) ?? [];
       if (missing.length > 0) lines.push(`no skill named ${missing.join(", ")}`);
-      const listed = skills.filter((s) => typeof s["text"] !== "string");
+      const listed = (result["skills"] as Result[] | undefined) ?? [];
       if (listed.length > 0) {
         lines.push(`skills: ${listed.map((s) => String(s["name"])).join(", ")}`);
       }
-      // A skill that cannot be used says why, also when it was asked for by name.
+      // A skill that cannot be used says why.
       for (const skill of listed) {
         if (typeof skill["problem"] === "string") {
           lines.push(`  ${String(skill["name"])}: ${skill["problem"]}`);
