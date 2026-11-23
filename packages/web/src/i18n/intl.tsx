@@ -3,11 +3,11 @@
 // (eslint-plugin-formatjs), and every message ID is a key of the catalogue, checked by the
 // compiler. Plurals and selects are ICU; nothing is concatenated.
 //
-// Every product name comes from packages/brand: a message says `{product}` or `{cli}`, and `t`
-// supplies both, so the rename touches no message.
+// Every product name comes from packages/brand: a message says `{product}`, `{cli}`, `{monitor}` or
+// `{monitorCli}`, and `t` supplies them, so the rename touches no message.
 import { useCallback, type ReactNode } from "react";
 import { IntlProvider, useIntl } from "react-intl";
-import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { CLI_NAME, MONITOR_COMMAND, MONITOR_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import en from "./en.json" with { type: "json" };
 
 /** The catalogue's message IDs. */
@@ -22,7 +22,12 @@ export const SOURCE_LOCALE = "en";
 export const CATALOGUE: Readonly<Record<MessageId, string>> = en;
 
 /** The names every message may use. */
-export const BRAND_VALUES = { product: PRODUCT_NAME, cli: CLI_NAME } as const;
+export const BRAND_VALUES = {
+  product: PRODUCT_NAME,
+  cli: CLI_NAME,
+  monitor: MONITOR_NAME,
+  monitorCli: MONITOR_COMMAND,
+} as const;
 
 export function I18n({ children }: { readonly children: ReactNode }) {
   return (

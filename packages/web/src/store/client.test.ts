@@ -315,3 +315,127 @@ describe("[A5.3.15.web.installed] the page and a newer installed version", () =>
     live.stop();
   });
 });
+
+/** A tab whose visibility and focus the test sets. */
+function attention(visible: boolean, focused: boolean) {
+  const listeners = new Set<() => void>();
+  const state = { visible, focused };
+  return {
+    state,
+    port: {
+      visible: () => state.visible,
+      focused: () => state.focused,
+      onChange: (listener: () => void) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    },
+    set(next: { visible?: boolean; focused?: boolean }) {
+      Object.assign(state, next);
+      for (const listener of listeners) listener();
+    },
+    listening: () => listeners.size,
+  };
+}
+
+const PICTURE = {
+  ageMs: 0,
+  settling: false,
+  sessions: [
+    {
+      key: "k1",
+      app: "claude",
+      appName: "claude",
+      account: "claude",
+      title: "Release checklist",
+      folder: "/home/mira/projects/portal",
+      activity: "working",
+      ageMs: 60_000,
+      quietMs: 1_000,
+      nested: [],
+    },
+  ],
+  accounts: [],
+};
+
+function watching(tab: ReturnType<typeof attention>): Live {
+  const live = new Live({
+    api: { ticket: () => Promise.resolve("t".repeat(32)) } as unknown as Api,
+    route: { space: SPACE },
+    build: "",
+    onSpace: () => undefined,
+    onSignedOut: () => undefined,
+    frames,
+    attention: tab.port,
+  });
+  live.start();
+  return live;
+}
+
+describe("[A5.agents.web-watch] the tab tells the service whether it watches the Agents page", () => {
+  test("mounted, visible and focused on each change and after every hello; the view is kept while mounted", async () => {
+    const tab = attention(true, true);
+    const live = watching(tab);
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b" });
+    const watches = () => socket().sent.filter((m) => m["type"] === "watch");
+    // A tab without an Agents page tells nothing, and takes no view.
+    expect(watches()).toEqual([]);
+    socket().receive({ type: "agents", picture: PICTURE, trouble: null });
+    expect(live.agents.getState().view).toBeUndefined();
+
+    const unwatch = live.watchAgents();
+    expect(watches()).toEqual([{ type: "watch", agents: true, visible: true, focused: true }]);
+    socket().receive({ type: "agents", picture: PICTURE, trouble: null });
+    expect(live.agents.getState().view?.picture?.sessions[0]?.title).toBe("Release checklist");
+    tab.set({ focused: false });
+    tab.set({ visible: false });
+    // The same facts again tell nothing new.
+    tab.set({ visible: false });
+    expect(watches().slice(1)).toEqual([
+      { type: "watch", agents: true, visible: true, focused: false },
+      { type: "watch", agents: true, visible: false, focused: false },
+    ]);
+
+    // A reconnect: the new connection is told at its hello.
+    socket().drop();
+    await vi.advanceTimersByTimeAsync(1_000);
+    socket().receive({ type: "hello", build: "b" });
+    expect(watches()).toEqual([{ type: "watch", agents: true, visible: false, focused: false }]);
+
+    // The page unmounts: the service is told, the view is dropped, and the tab stops listening.
+    unwatch();
+    expect(watches().at(-1)).toEqual({
+      type: "watch",
+      agents: false,
+      visible: false,
+      focused: false,
+    });
+    expect(live.agents.getState().view).toBeUndefined();
+    expect(tab.listening()).toBe(0);
+    live.stop();
+  });
+
+  test("a view of another shape is no view", async () => {
+    const live = watching(attention(true, true));
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b" });
+    const unwatch = live.watchAgents();
+    socket().receive({ type: "agents", picture: "nope", trouble: null });
+    socket().receive({ type: "agents", picture: null, trouble: { kind: "nope" } });
+    expect(live.agents.getState().view).toBeUndefined();
+    socket().receive({
+      type: "agents",
+      picture: null,
+      trouble: { kind: "not_installed", reason: "not_found" },
+    });
+    expect(live.agents.getState().view?.trouble).toEqual({
+      kind: "not_installed",
+      reason: "not_found",
+    });
+    unwatch();
+    live.stop();
+  });
+});

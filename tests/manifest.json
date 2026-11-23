@@ -5386,6 +5386,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.agents.web-watch",
+      "title": "The tab tells the service on its feed whether an Agents page is mounted, the tab visible and its window focused: on each change only and again after every hello, nothing before the page mounts, the view kept only while it is mounted and dropped with the listeners when it unmounts, and a view of another shape is no view",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.agents.web-page",
+      "title": "The Agents page in a DOM: TTasks' own rows first, then the monitor's every state in words (nothing before it says anything; not installed, a script or too old as one quiet line; does not fit naming the side to update; looking, settling and no agents; failed with run ttam doctor and not updating with the picture's age), sessions with what needs you first, then what works, then the rest as they started and unknown never idle, a session's app, account, folder, age and agents inside, plan usage per account with each limit, a limit reached, a reading from an earlier period, none yet, none for the sign-in, a check running or failed, and the picture dropped when the page unmounts",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.agents.picture",
       "title": "The Agents page's picture of a snapshot: each conversation once with every agent inside it one level under it, a parent that is gone or a loop standing on its own, an unknown agent app by its name and an unknown state as unknown, plan usage per account, keys stable between snapshots, and no session ID, home path or process in it",
       "owner": "M6",

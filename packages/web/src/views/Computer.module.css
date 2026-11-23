@@ -1,0 +1,236 @@
+/*
+ * The Agents page's parts from the Agent Monitor: headings as the list's labels, entries aligned
+ * with the list's titles, a state in words with a mark only where it asks for the person, and a
+ * quiet bar per usage limit. Colour repeats what the words say. Tokens only.
+ */
+
+.part {
+  margin: 0;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 28px 0 6px 40px;
+  font-size: 0.78125rem;
+  font-weight: 500;
+  line-height: 1.125rem;
+  color: var(--k-muted);
+}
+
+.heading::after {
+  content: "";
+  flex: 1;
+  min-width: 24px;
+  height: 1px;
+  background: var(--k-line);
+}
+
+/* The part's state: looking, settling, empty or not updating. */
+.line {
+  margin: 4px 0 8px 40px;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  color: var(--k-text-2);
+}
+
+.line:empty {
+  margin: 0;
+}
+
+/* No monitor: one quiet line under the rows. */
+.note {
+  margin: 24px 0 24px 40px;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  color: var(--k-muted);
+}
+
+.list,
+.nested,
+.windows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  padding: 8px 12px 8px 40px;
+  border-radius: 8px;
+}
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 16px;
+}
+
+.title {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  line-height: 1.25rem;
+  color: var(--k-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state {
+  flex: none;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  color: var(--k-text-2);
+}
+
+/* The one state that asks for the person, as the rows' needs-input ring does. */
+.state[data-state="waiting"] {
+  font-weight: 600;
+  color: var(--k-review);
+}
+
+.state[data-state="working"] {
+  color: var(--k-accent);
+}
+
+.state[data-state="unknown"] {
+  color: var(--k-muted);
+}
+
+/* Facts in a row, each after a middle dot. */
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  min-width: 0;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  color: var(--k-muted);
+}
+
+.meta > span + span::before {
+  content: "·";
+  margin-inline-end: 6px;
+}
+
+.nested {
+  margin-top: 4px;
+  padding-inline-start: 12px;
+  border-inline-start: 1px solid var(--k-line-strong);
+}
+
+.inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 16px;
+  padding: 2px 0;
+}
+
+.inner > .title {
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.account {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+}
+
+.account > span + span::before {
+  content: "·";
+  margin-inline-end: 6px;
+  font-weight: 400;
+  color: var(--k-muted);
+}
+
+.item[data-limited] .top > .state {
+  font-weight: 600;
+  color: var(--k-late);
+}
+
+.windows {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* A limit: its name, a bar, and its figures. The bar keeps one width so the bars line up. */
+.window {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px minmax(0, 1.2fr);
+  align-items: center;
+  gap: 4px 16px;
+}
+
+.bar {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--k-sunken);
+  box-shadow: inset 0 0 0 1px var(--k-line-strong);
+}
+
+.fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: 3px;
+  background: var(--k-accent);
+}
+
+.window[data-limited] .fill {
+  background: var(--k-late);
+}
+
+.figure {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--k-text-2);
+}
+
+.figure > span + span::before {
+  content: "·";
+  margin-inline-end: 6px;
+  color: var(--k-muted);
+}
+
+.window[data-limited] .figure {
+  color: var(--k-late);
+}
+
+@media (max-width: 599px) {
+  .heading,
+  .line,
+  .note {
+    padding-inline-start: 16px;
+    margin-inline-start: 0;
+  }
+
+  .line,
+  .note {
+    padding-inline-start: 16px;
+  }
+
+  .item {
+    padding-inline: 16px;
+  }
+
+  .window {
+    grid-template-columns: minmax(0, 1fr) 96px;
+  }
+
+  .figure {
+    grid-column: 1 / -1;
+  }
+}

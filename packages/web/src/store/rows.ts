@@ -5,6 +5,7 @@
 //
 // Rows are the service's compact rows: a field that is null in the space is absent.
 import type { Instance } from "../api.ts";
+import { parseAgents, type AgentsView } from "./agents.ts";
 
 export interface TaskRow {
   readonly id: string;
@@ -300,8 +301,20 @@ export interface InstalledMessage {
   readonly version: string | undefined;
 }
 
+/** The Agent Monitor's view for an Agents page (store/agents.ts). */
+export interface AgentsMessage {
+  readonly type: "agents";
+  readonly view: AgentsView;
+}
+
 export type FeedMessage =
-  SnapshotMessage | BatchMessage | ErrorMessage | HelloMessage | MachineMessage | InstalledMessage;
+  | SnapshotMessage
+  | BatchMessage
+  | ErrorMessage
+  | HelloMessage
+  | MachineMessage
+  | InstalledMessage
+  | AgentsMessage;
 
 const VERSION = /^[0-9A-Za-z.+-]{1,64}$/;
 const versionOf = (value: unknown): string | undefined =>
@@ -518,6 +531,10 @@ export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" 
       };
     case "installed":
       return { type: "installed", version: versionOf(value["version"]) };
+    case "agents": {
+      const view = parseAgents(value);
+      return view === undefined ? undefined : { type: "agents", view };
+    }
     case "error":
       return { type: "error", code: isString(value["code"]) ? value["code"] : "" };
     case "machine": {
