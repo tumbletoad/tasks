@@ -54,7 +54,8 @@ export const SPACE_HELP = `Usage: ttasks space <command> [arguments] [--json]
                                            every table as JSON lines
   restore <backup> [<space>] --to <folder> Restore a backup or a bundle into a new folder: a
                                            read-only copy. A <backup> given by its name is one of
-                                           <space>'s
+                                           <space>'s; a file named with <space> or --space must be
+                                           of that space
   restore latest [<space>] --to <folder>   Restore the space's newest backup that verifies
   restore <backup> --in-place [<space>]    Replace the space with the backup, keeping the old
                                            folder. Name the space when several are open: this
@@ -467,9 +468,11 @@ export async function spaceCommand(
               }
             : { to: absolute(io, to) }),
           // `latest` names the space whose newest verified backup it restores, a backup's name the
-          // space it is of, and a backup's file named with a space the space it must be of. A file
-          // named alone restores whatever space it holds.
-          ...(to !== undefined && (!isFile || o.positional[1] !== undefined)
+          // space it is of, and a backup's file named with a space (its argument or --space) the
+          // space it must be of. A file named alone restores whatever space it holds: TTASKS_SPACE
+          // and the default space are where a terminal works, not a statement about the file.
+          ...(to !== undefined &&
+          (!isFile || o.positional[1] !== undefined || globals.space !== undefined)
             ? { of: await which(o.positional[1]) }
             : {}),
         });
