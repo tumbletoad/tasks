@@ -27,6 +27,7 @@ const ID = {
   shared: "aaaaaaaa-1111-4111-8111-000000000005",
   twin: "aaaaaaaa-1111-4111-8111-000000000006",
   ended: "aaaaaaaa-1111-4111-8111-000000000007",
+  trashed: "aaaaaaaa-1111-4111-8111-000000000008",
 } as const;
 
 let w: HttpWorld;
@@ -96,6 +97,48 @@ async function launch(
       ...(ended ? { ran_ms: 60_000 } : {}),
     },
   });
+}
+
+/**
+ * A backup of `title`'s space restored beside it, then the task trashed in the original: the
+ * restored copy still holds the task and its launch.
+ */
+async function trashAfterRestore(title: string): Promise<void> {
+  const task = tasks.get(title);
+  const served = w.service.ops.spaces().find((s) => s.name === task?.space);
+  const writer = served?.writer;
+  if (task === undefined || served?.id === undefined || served.folder === undefined || !writer) {
+    throw new Error(`no task ${title}`);
+  }
+  const user = await w.user();
+  const call = { timeoutMs: 120_000 };
+  const backup = (await user.call("space/backup", { space: served.folder }, call)) as {
+    backup: { name: string };
+  };
+  await user.call(
+    "space/restore",
+    { backup: backup.backup.name, to: join(w.root, "s", "restored"), of: served.folder },
+    call,
+  );
+  const got = (await user.call("op/call", {
+    space: task.space,
+    op: "task.get",
+    input: { task: task.ref },
+  })) as { as_of: unknown };
+  const result = await writer.submit({
+    space_id: served.id,
+    request_id: rid(),
+    actor: {
+      scope_id: `links:${w.service.ops.machine.id}`,
+      principal_id: await writer.actor("human", "user"),
+      actor_kind: "human",
+      machine_id: w.service.ops.machine.id,
+      origin: "ui",
+    },
+    ops: [{ kind: "task.delete", task: task.id }],
+    base: got.as_of,
+  });
+  if (result.status !== "applied") throw new Error(JSON.stringify(result));
 }
 
 /** A background run of `title`'s task that reported `nativeId` and has ended. */
@@ -206,7 +249,7 @@ beforeAll(async () => {
     { name: "Studio", path: join(w.root, "s", "studio"), ref_prefix: "S" },
     { timeoutMs: 60_000 },
   );
-  for (const title of ["Terminal", "Thread", "Missing", "Shared", "Twin", "Ended"]) {
+  for (const title of ["Terminal", "Thread", "Missing", "Shared", "Twin", "Ended", "Trashed"]) {
     await addTask("Mira", title);
   }
   for (const title of ["Run", "Shared too"]) await addTask("Studio", title);
@@ -218,6 +261,8 @@ beforeAll(async () => {
   await launch("Twin", "claude-twin", { preset: ID.twin });
   await launch("Ended", "claude-work", { preset: ID.ended }, true);
   await run("Run", ID.run);
+  await launch("Trashed", "claude-work", { preset: ID.trashed });
+  await trashAfterRestore("Trashed");
 
   const agent = (row: string, provider: string, home: string, session: string, name: string) =>
     ttamAgent({ row, provider, home, session, name, activity: "working" });
@@ -249,6 +294,7 @@ beforeAll(async () => {
         agent("e-shared", "claude", "claude-test", ID.shared, "Fixture shared session"),
         agent("f-twin", "claude", "twin-a", ID.twin, "Fixture twin home"),
         agent("g-ended", "claude", "claude-test", ID.ended, "Fixture ended launch"),
+        agent("i-trashed", "claude", "claude-test", ID.trashed, "Fixture trashed task"),
         // A Claude session ID of a launch, under Codex: another app's session.
         agent("h-other-app", "codex", "codex-test", ID.terminal, "Fixture other app"),
       ],
@@ -312,9 +358,11 @@ describe("[A5.agents.links] each agent of the monitor is shown with the task TTa
     });
     // A launch whose agent ended still links its session: the person may have resumed it.
     expect(byTitle(p, "Fixture ended launch")?.task).toMatchObject(linked("Ended") ?? {});
-    // A home TTAM does not list, one two of its homes could be, a session two tasks hold, and the
-    // same ID under another app: no link.
+    // A home TTAM does not list, one two of its homes could be, a session two tasks hold, the
+    // same ID under another app, and a task trashed in the space but kept in a restored copy of
+    // it: no link.
     for (const title of [
+      "Fixture trashed task",
       "Fixture missing home",
       "Fixture twin home",
       "Fixture shared session",
