@@ -15,6 +15,7 @@
 //   entries, sources, links, places, launches): a client refetches the task those touch. No body
 //   of a note, no context, outcome or other long text is in the feed, and of a log entry only the
 //   start of an agent's question that waits for the person, on its task's row.
+// - Each event carries its commit's time (`at`), which only moves forward.
 // - A task's compact row (ops/task-rows.ts) also carries what its row shows of its children
 //   (A5 3.6): its first three sources with their own text and URL (`sources`), how many more it
 //   has (`sources_more`), where it opens on this machine (`place`), from its own folder or its
@@ -64,6 +65,8 @@ export interface FeedEntity {
 
 export interface FeedEvent {
   readonly seq: number;
+  /** The commit's time. */
+  readonly at: number;
   readonly op_id: string;
   readonly request_id: string;
   readonly actor: { readonly kind: string; readonly label: string };
@@ -159,26 +162,26 @@ export const AGENT_CHANGE_DAYS = 7;
 /** At most this many tasks agents changed are in a snapshot. */
 export const AGENT_CHANGE_TASKS = 100;
 /**
- * The newest commits looked at for them: a bound on the read in a space whose history is long,
- * far more than a week of agents' work on a hundred tasks takes.
+ * Each live task's newest commit by an agent or a routine since `$since`, newest first, at most
+ * `AGENT_CHANGE_TASKS`. Commit times only move forward, so the week is the newest commits: the
+ * walk goes back from the newest one by one and stops at the first one older.
  */
-const AGENT_CHANGE_COMMITS = 20_000;
-/** Each task's newest commit by an agent or a routine since `$since`, newest first. */
 const AGENT_CHANGED =
-  "WITH recent AS (SELECT c.task_id AS task, max(k.seq) AS seq FROM (SELECT seq, at, actor_kind " +
-  `FROM commits ORDER BY seq DESC LIMIT ${String(AGENT_CHANGE_COMMITS)}) k JOIN changes c ON ` +
-  "c.seq = k.seq WHERE k.at >= $since AND k.actor_kind IN ('agent', 'routine') AND " +
-  "c.task_id IS NOT NULL GROUP BY c.task_id ORDER BY seq DESC " +
-  `LIMIT ${String(AGENT_CHANGE_TASKS)}) `;
+  "WITH RECURSIVE week(seq) AS (SELECT seq FROM commits WHERE seq = (SELECT max(seq) FROM " +
+  "commits) AND at >= $since UNION ALL SELECT c.seq FROM week w JOIN commits c ON c.seq = " +
+  "(SELECT max(seq) FROM commits WHERE seq < w.seq) WHERE c.at >= $since), recent AS (SELECT " +
+  "c.task_id AS task, max(w.seq) AS seq FROM week w JOIN commits k ON k.seq = w.seq JOIN changes " +
+  "c ON c.seq = w.seq JOIN tasks t ON t.id = c.task_id WHERE k.actor_kind IN ('agent', " +
+  "'routine') AND t.deleted_at IS NULL GROUP BY c.task_id ORDER BY seq DESC LIMIT " +
+  `${String(AGENT_CHANGE_TASKS)}) `;
 const AGENT_CHANGES =
   AGENT_CHANGED +
   "SELECT r.task AS task, k.at AS at, a.label AS actor FROM recent r JOIN commits k ON " +
-  "k.seq = r.seq JOIN actors a ON a.id = k.principal_id JOIN tasks t ON t.id = r.task " +
-  "WHERE t.deleted_at IS NULL ORDER BY r.seq DESC";
+  "k.seq = r.seq JOIN actors a ON a.id = k.principal_id ORDER BY r.seq DESC";
 /** The rows of the tasks agents changed that the open tasks do not hold. */
 const agentChangedRows = (folders: boolean) =>
   `${AGENT_CHANGED}SELECT ${taskColumns(folders)} FROM tasks t WHERE t.id IN ` +
-  "(SELECT task FROM recent) AND t.lifecycle <> 'active' AND t.deleted_at IS NULL";
+  "(SELECT task FROM recent) AND t.lifecycle <> 'active'";
 /** The rows of the finished and dropped tasks a question waits on (task-rows.ts's `WAITS`). */
 const askingRows = (folders: boolean) =>
   `SELECT ${taskColumns(folders)} FROM tasks t WHERE t.lifecycle <> 'active' AND ` +
@@ -187,7 +190,7 @@ const askingRows = (folders: boolean) =>
 
 const IN_BATCH = "seq > $after AND seq <= $upto";
 const COMMITS =
-  "SELECT seq, id, request_id, kind, actor_kind, origin, principal_id FROM commits " +
+  "SELECT seq, id, at, request_id, kind, actor_kind, origin, principal_id FROM commits " +
   `WHERE ${IN_BATCH} ORDER BY seq`;
 const CHANGES =
   "SELECT seq, n, entity, entity_id, task_id, action, field FROM changes " +
@@ -500,6 +503,7 @@ export async function readBatch(
     const actor = actorOf.get(String(commit["principal_id"]));
     events.push({
       seq,
+      at: Number(commit["at"]),
       op_id: String(commit["id"]),
       request_id: String(commit["request_id"]),
       actor: {

@@ -222,6 +222,8 @@ export interface FeedEntity {
 
 export interface FeedEvent {
   readonly seq: number;
+  /** The commit's time, in milliseconds since 1970. */
+  readonly at?: number;
   /** The commit's ID (`op_`): what a toast's Undo names (A5 3.12). */
   readonly op_id?: string;
   readonly request_id: string;
@@ -553,6 +555,7 @@ function eventOf(value: unknown): FeedEvent | undefined {
   }
   return {
     seq: value["seq"],
+    ...(isNumber(value["at"]) ? { at: value["at"] } : {}),
     ...(isString(value["op_id"]) ? { op_id: value["op_id"] } : {}),
     request_id: isString(value["request_id"]) ? value["request_id"] : "",
     actor: {

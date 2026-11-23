@@ -335,3 +335,58 @@ describe("[A5.while-away.service.reads] a waiting question breaks no read of tas
     }
   });
 });
+
+describe("[A5.while-away.service.recent-limits] the recent read is what happened in the week", () => {
+  test("a hundred tasks agents changed and the person then deleted take no place of the hundred still there", async () => {
+    const at = (clock += DAY);
+    const make = (count: number) => Array.from({ length: count }, () => newId("t"));
+    const [kept, deleted] = [make(100), make(100)];
+    submit(
+      fx.human,
+      [...kept, ...deleted].map((id): Operation => ({
+        kind: "task.create",
+        id,
+        title: "Fixture many",
+        area: fx.areas.home,
+      })),
+      at,
+    );
+    for (const list of [kept, deleted]) {
+      submit(
+        fx.codex,
+        list.map((task): Operation => ({ kind: "log.add", task, body: "Fixture touched" })),
+        (clock += 60_000),
+      );
+    }
+    submit(
+      fx.human,
+      deleted.map((task): Operation => ({ kind: "task.delete", task })),
+      (clock += 60_000),
+    );
+    const listed = (await readSnapshot(readerOf(fx.reader), undefined, clock)).agent_changes;
+    expect(new Set(listed.map((c) => c.task))).toEqual(new Set(kept));
+  });
+
+  test("a change six days back is found behind tens of thousands of later commits", async () => {
+    const task = newId("t");
+    submit(
+      fx.human,
+      [{ kind: "task.create", id: task, title: "Fixture behind", area: fx.areas.home }],
+      (clock += DAY),
+    );
+    submit(fx.codex, [{ kind: "log.add", task, body: "Fixture early" }], (clock += 60_000));
+    const asked = clock;
+    const busy = newId("t");
+    submit(
+      fx.human,
+      [{ kind: "task.create", id: busy, title: "Fixture busy", area: fx.areas.home }],
+      clock,
+    );
+    for (let k = 0; k < 25_000; k += 1) {
+      submit(fx.human, [{ kind: "task.patch", task: busy, set: { priority: (k % 4) + 1 } }], clock);
+    }
+    const listed = (await readSnapshot(readerOf(fx.reader), undefined, asked + 6 * DAY))
+      .agent_changes;
+    expect(listed.find((c) => c.task === task)).toMatchObject({ at: asked });
+  }, 120_000);
+});

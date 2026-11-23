@@ -55,6 +55,8 @@ export interface Change {
   readonly created: boolean;
   readonly kind: string;
   readonly actor: { readonly kind: string; readonly label: string };
+  /** When its commit was made, in milliseconds since 1970. */
+  readonly at?: number;
   readonly request_id: string;
 }
 
@@ -241,6 +243,7 @@ export class LiveCore {
           created: entity.created,
           kind: event.kind,
           actor: event.actor,
+          ...(event.at === undefined ? {} : { at: event.at }),
           request_id: event.request_id,
         };
         if (!isRowType(entity.type)) {
