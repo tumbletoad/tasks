@@ -30,6 +30,8 @@ export {
   interactiveAgentArgv,
   readJsonLines,
   TTAM_CONVERSATIONS,
+  ttamAgent,
+  ttamHome,
   type FakeSpawnerOptions,
   type FakeSpawnRequest,
   type CliAgentReport,

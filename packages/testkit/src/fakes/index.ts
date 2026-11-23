@@ -38,6 +38,8 @@ export function fakeTtam(options: {
   /** A file that holds the mode, read again for each request (ttam.ts). */
   readonly control?: string;
   readonly log?: string;
+  /** A file of more homes and agents, read again for each request (ttam.ts `--agents`). */
+  readonly agents?: string;
   /** How long it may live at most. Default 120 s. */
   readonly maxMs?: number;
 }): { readonly file: string; readonly args: readonly string[] } {
@@ -50,7 +52,53 @@ export function fakeTtam(options: {
       ...(options.control === undefined ? [] : [`--control=${options.control}`]),
       ...(options.maxMs === undefined ? [] : [`--max-ms=${String(options.maxMs)}`]),
       ...(options.log === undefined ? [] : [`--log=${options.log}`]),
+      ...(options.agents === undefined ? [] : [`--agents=${options.agents}`]),
     ],
+  };
+}
+
+/** An agent as TTAM's snapshot holds one, for the fake's `--agents` file. Invented data only. */
+export function ttamAgent(agent: {
+  readonly row: string;
+  readonly parent?: string;
+  readonly kind?: "session" | "subagent";
+  readonly provider: string;
+  readonly home: string;
+  readonly session: string;
+  readonly name: string;
+  readonly activity: string;
+  readonly folder?: string;
+}): Record<string, unknown> {
+  return {
+    row_id: agent.row,
+    parent_row_id: agent.parent ?? null,
+    kind: agent.kind ?? "session",
+    provider: agent.provider,
+    home_id: agent.home,
+    profile: agent.provider,
+    conversation: { provider: agent.provider, home_id: agent.home, session_id: agent.session },
+    child_id: agent.kind === "subagent" ? `${agent.row}-child` : null,
+    liveness: "confirmed",
+    name: agent.name,
+    project: agent.folder ?? null,
+    activity: agent.activity,
+    started_at_ms: null,
+    last_activity_ms: null,
+  };
+}
+
+/** A home as TTAM's snapshot holds one, for the fake's `--agents` file. */
+export function ttamHome(home: {
+  readonly id: string;
+  readonly provider: string;
+  readonly path: string;
+}): Record<string, unknown> {
+  return {
+    id: home.id,
+    provider: home.provider,
+    label: home.provider,
+    path: home.path,
+    present: true,
   };
 }
 

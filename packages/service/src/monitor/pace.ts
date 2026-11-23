@@ -15,10 +15,19 @@
 // is not kept at all. A monitor that is missing or does not fit is looked for again when an
 // Agents page opens or a tab showing one gets the focus back.
 //
+// Each answer is joined with the agent sessions TTasks holds, read after the answer came, so an
+// agent shows with the task TTasks started it for (links.ts).
+//
 // Attention is read on the steady clock when a request is made, so a request that falls due late
 // (a machine that slept) asks for what the tabs' attention is then. Ages count on the same clock
 // from the moment a snapshot arrived, never from a time in it.
-import type { AgentsView, AgentsWatch, MonitorProblem } from "@ttasks/contracts/monitor";
+import type {
+  AgentsTask,
+  AgentsView,
+  AgentsWatch,
+  MonitorProblem,
+} from "@ttasks/contracts/monitor";
+import { linksOf, Unseen, type HeldSession } from "./links.ts";
 import type { Monitor, MonitorAnswer } from "./monitor.ts";
 import { pictureOf } from "./picture.ts";
 
@@ -67,12 +76,25 @@ export interface PaceOptions {
   readonly timers: PaceTimers;
   /** A steady clock in ms. */
   readonly now: () => number;
+  /** The agent sessions TTasks holds now, in every open space. Default: none. */
+  readonly held?: () => Promise<readonly HeldSession[]>;
+  /** Whose path rules join TTasks' agent homes to TTAM's. */
+  readonly platform: NodeJS.Platform;
+}
+
+/** The newest answer, with the tasks its agents work on. */
+interface Newest {
+  readonly answer: MonitorAnswer & { ok: true };
+  readonly links: ReadonlyMap<string, AgentsTask>;
+  readonly unseen: readonly AgentsTask[];
+  readonly at: number;
 }
 
 export class MonitorPace {
   readonly #options: PaceOptions;
   readonly #watching = new Map<Watcher, Watching>();
-  #newest: { readonly answer: MonitorAnswer & { ok: true }; readonly at: number } | undefined;
+  #newest: Newest | undefined;
+  readonly #unseen = new Unseen();
   #problem: MonitorProblem | undefined;
   /** When the last answer came, of either kind: the rest counts from it. */
   #answeredAt: number | undefined;
@@ -189,6 +211,7 @@ export class MonitorPace {
     this.#newest = undefined;
     this.#answeredAt = undefined;
     this.#settlingRun = 0;
+    this.#unseen.reset();
   }
 
   /** Sets the next request by the most attentive tab, or none; keeps or drops the newest. */
@@ -235,12 +258,22 @@ export class MonitorPace {
     this.#asking = true;
     this.#again = false;
     const usage = this.#level() === "looked" ? "live" : "cached";
-    void this.#options.monitor.ask(usage).then((answer) => {
-      this.#answered(answer);
+    void this.#options.monitor.ask(usage).then(async (answer) => {
+      const held = answer.ok ? await this.#held() : [];
+      this.#answered(answer, held);
     });
   }
 
-  #answered(answer: MonitorAnswer): void {
+  /** What TTasks holds; none when it cannot be read now. */
+  async #held(): Promise<readonly HeldSession[]> {
+    try {
+      return (await this.#options.held?.()) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  #answered(answer: MonitorAnswer, held: readonly HeldSession[]): void {
     this.#asking = false;
     if (this.#closed) return;
     const now = this.#options.now();
@@ -251,7 +284,16 @@ export class MonitorPace {
       this.#settlingRun = answer.snapshot.settling ? this.#settlingRun + 1 : 0;
       // An answer that comes after the newest would have been dropped is not kept either.
       if (this.#keepUntil !== undefined && now >= this.#keepUntil) this.#drop();
-      else this.#newest = { answer, at: now };
+      else {
+        const { snapshot } = answer;
+        const platform = this.#options.platform;
+        this.#newest = {
+          answer,
+          links: linksOf(snapshot, held, platform),
+          unseen: this.#unseen.next(snapshot, held, platform, now),
+          at: now,
+        };
+      }
     } else {
       this.#problem = answer.problem;
       if (verdict(answer.problem)) this.#newest = undefined;
@@ -266,7 +308,12 @@ export class MonitorPace {
     const picture =
       newest === undefined
         ? null
-        : pictureOf(newest.answer.snapshot, Math.max(0, this.#options.now() - newest.at));
+        : pictureOf(
+            newest.answer.snapshot,
+            Math.max(0, this.#options.now() - newest.at),
+            newest.links,
+            newest.unseen,
+          );
     const trouble = this.#problem ?? (this.#slow ? { kind: "slow" as const } : null);
     return { picture, trouble };
   }

@@ -24,7 +24,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { CLI_NAME, envVar, PRODUCT_NAME } from "@ttasks/brand";
-import { nodeDetectHost, type Instance } from "@ttasks/launch";
+import { instanceHome, nodeDetectHost, type Instance } from "@ttasks/launch";
 import { StorageError, type Id, type SpaceWriterHandle } from "@ttasks/storage";
 import {
   DEFAULT_CONFIG,
@@ -126,11 +126,13 @@ import { SeenCalls } from "./agent-homes.ts";
 import { agentAppVerbs, personEnv } from "./agent-apps.ts";
 import {
   findMonitor,
+  heldSessions,
   Monitor,
   MONITOR_VARIABLE,
   type MonitorCommand,
   type MonitorTimes,
 } from "../monitor/index.ts";
+import { agentAppOf } from "../setup/agents.ts";
 import { pageFolderVerbs } from "./page-folders.ts";
 import { pageSpaceVerbs } from "./page-spaces.ts";
 import { within } from "./wait.ts";
@@ -777,6 +779,24 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         httpRunning?.app.agents?.changed();
       },
     });
+    // The sessions TTasks started here, which link the monitor's agents to their tasks: the home
+    // an instance starts its app on is where that app keeps its sessions, as TTAM reads them.
+    const held = () =>
+      heldSessions({
+        spaces: knownSpaces,
+        machine: machine.id,
+        agentOf: (key) => {
+          const instance = instances.find((i) => i.id === key);
+          const app = instance === undefined ? undefined : agentAppOf(instance.target);
+          const home =
+            instance === undefined ? undefined : instanceHome(instance, personHome, platform)?.path;
+          if (home === undefined) return undefined;
+          if (app === "claude-code") return { provider: "claude", home };
+          return app === "codex" ? { provider: "codex", home } : undefined;
+        },
+        running: (space) => launching.service?.host.runningIn(space) ?? [],
+        now: Date.now,
+      });
     const hub = {
       status,
       requestStop: (o: { restart: boolean }) => {
@@ -1129,6 +1149,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           project: (input, space) => pageFolders.project(input, "ui", space),
         },
         monitor,
+        held,
         db: grantsDb.db,
         grants: grantsDb.grants,
         log: httpLog,
@@ -1141,6 +1162,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           list: (space, task) => runs.list(space, task),
           stop: (space, run) => runs.stop(space, run),
           live: (run) => runs.live(run),
+          onChange: (listener) => runs.onChange(listener),
           runnable: (key) => {
             const instance = instances.find((i) => i.id === key);
             return instance !== undefined && runsWith(instance);

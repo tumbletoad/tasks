@@ -31,6 +31,7 @@ import {
   REQUEST_LAUNCHES,
   type PreferenceRead,
 } from "@ttasks/contracts";
+import { sessionRecord } from "@ttasks/launch";
 import type { FoldersHere } from "./here.ts";
 
 /** One statement of a read. Only the parameters the statement names are bound. */
@@ -601,6 +602,93 @@ export async function readTaskRef(
   const [space, row] = await snapshot(reader, [SPACE, BOUND], { bound: id });
   const ref = isPlain(row) ? row["ref"] : undefined;
   return typeof ref === "number" ? formatTaskRef(spaceFacts(space).refPrefix, ref) : undefined;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Agent sessions this machine started
+
+const AGENT_LAUNCHES: Statement = {
+  sql:
+    "SELECT l.id, l.task_id, l.instance_id, l.detail, t.ref AS task_ref FROM launches l " +
+    "JOIN tasks t ON t.id = l.task_id AND t.deleted_at IS NULL " +
+    "WHERE l.machine_id = $machine AND l.route = 'terminal' " +
+    "AND (l.updated_at >= $since OR l.id IN (SELECT value FROM json_each($running)))",
+  mode: "all",
+};
+const AGENT_RUNS: Statement = {
+  sql:
+    "SELECT r.id, r.task_id, r.instance_id, r.detail, r.ended_at, t.ref AS task_ref FROM runs r " +
+    "JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL " +
+    "WHERE r.machine_id = $machine AND r.started_at IS NOT NULL " +
+    "AND (r.ended_at IS NULL OR r.ended_at >= $since)",
+  mode: "all",
+};
+
+/** A terminal launch or a background run of this machine, with the agent app's session ID. */
+export interface AgentSessionRow {
+  readonly started: "terminal" | "run";
+  /** The `la_` or `ru_` ID. */
+  readonly id: string;
+  readonly task: string;
+  readonly ref: string;
+  readonly instance: string;
+  /** Claude Code's preset session or Codex's thread for a launch, the reported one for a run. */
+  readonly sessionId: string;
+  /** A launch whose record says its agent ended. */
+  readonly ended: boolean;
+}
+
+const evidenceOf = (detail: unknown): Readonly<Record<string, unknown>> => {
+  try {
+    const parsed: unknown = JSON.parse(String(detail));
+    const evidence = isPlain(parsed) ? parsed["evidence"] : undefined;
+    return isPlain(evidence) ? evidence : {};
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * The terminal launches and background runs of `machine` whose agent app's session ID is known:
+ * those that changed or ended since `since`, and the launches `running` names whatever their age.
+ */
+export async function readAgentSessions(
+  reader: WorkerConnection,
+  query: { readonly machine: string; readonly since: number; readonly running: readonly string[] },
+): Promise<{ space: SpaceFacts; rows: AgentSessionRow[] }> {
+  const [space, launches, runs] = await snapshot(reader, [SPACE, AGENT_LAUNCHES, AGENT_RUNS], {
+    machine: query.machine,
+    since: query.since,
+    running: JSON.stringify(query.running),
+  });
+  const facts = spaceFacts(space);
+  const rows: AgentSessionRow[] = [];
+  const add = (
+    started: AgentSessionRow["started"],
+    row: Row,
+    sessionId: unknown,
+    ended: boolean,
+  ): void => {
+    if (typeof sessionId !== "string" || sessionId === "") return;
+    rows.push({
+      started,
+      id: text(row["id"]),
+      task: text(row["task_id"]),
+      ref: formatTaskRef(facts.refPrefix, Number(row["task_ref"])),
+      instance: text(row["instance_id"]),
+      sessionId,
+      ended,
+    });
+  };
+  for (const row of launches as Row[]) {
+    const evidence = evidenceOf(row["detail"]);
+    const ended = sessionRecord(evidence) !== "open";
+    add("terminal", row, evidence["preset"] ?? evidence["thread"], ended);
+  }
+  for (const row of runs as Row[]) {
+    add("run", row, evidenceOf(row["detail"])["native_id"], row["ended_at"] !== null);
+  }
+  return { space: facts, rows };
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -185,9 +185,26 @@ export interface AgentsNested {
   readonly ageMs: number | null;
 }
 
+/**
+ * The task TTasks started an agent for, in any open space. `run`: a background run, whose state
+ * TTasks knows and its row shows. `terminal`: an agent in a terminal, whose state TTAM knows.
+ */
+export interface AgentsTask {
+  /** The space's ID. */
+  readonly space: string;
+  readonly spaceName: string;
+  /** The task's ID. */
+  readonly id: string;
+  /** The task's reference, such as `MIRA-12`. */
+  readonly ref: string;
+  readonly started: "run" | "terminal";
+}
+
 /** One conversation's own agent, with the agents inside it. */
 export interface AgentsSession {
   readonly key: string;
+  /** The task TTasks started it for, which its nested agents share. null: none it can be sure of. */
+  readonly task: AgentsTask | null;
   readonly app: MonitorProvider;
   /** The agent app as TTAM names it: what the page shows for an `unknown` one. */
   readonly appName: string;
@@ -223,6 +240,11 @@ export interface AgentsPicture {
   /** TTAM says it may be incomplete. */
   readonly settling: boolean;
   readonly sessions: readonly AgentsSession[];
+  /**
+   * Agents in a terminal that TTasks holds as running and TTAM has not seen in its last two
+   * complete answers, by their task.
+   */
+  readonly unseen: readonly AgentsTask[];
   readonly accounts: readonly AgentsAccount[];
 }
 

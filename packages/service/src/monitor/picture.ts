@@ -1,9 +1,11 @@
 // The Agents page's picture of one snapshot: each conversation's own agent with the agents inside
-// it, and each account's plan usage. Only what the page shows leaves the service: no session ID,
-// home path or process. TTAM's row and home IDs hold those, so a row's key is a digest of its ID.
+// it and the task TTasks started it for, and each account's plan usage. Only what the page shows
+// leaves the service: no session ID, home path or process. TTAM's row and home IDs hold those, so
+// a row's key is a digest of its ID.
 import { createHash } from "node:crypto";
 import type {
   AgentsAccount,
+  AgentsTask,
   AgentsNested,
   AgentsPicture,
   AgentsSession,
@@ -31,8 +33,16 @@ function topOf(agent: MonitorAgent, byRow: ReadonlyMap<string, MonitorAgent>): M
   }
 }
 
-/** `snapshot` as the page shows it, `ageMs` after its capture. */
-export function pictureOf(snapshot: MonitorSnapshot, ageMs: number): AgentsPicture {
+/**
+ * `snapshot` as the page shows it, `ageMs` after its capture, with each agent's task by its row ID
+ * (links.ts) and the agents TTasks holds that TTAM has not seen.
+ */
+export function pictureOf(
+  snapshot: MonitorSnapshot,
+  ageMs: number,
+  links: ReadonlyMap<string, AgentsTask> = new Map(),
+  unseen: readonly AgentsTask[] = [],
+): AgentsPicture {
   const byRow = new Map(snapshot.agents.map((a) => [a.rowId, a]));
   const nested = new Map<string, AgentsNested[]>();
   const tops: MonitorAgent[] = [];
@@ -54,6 +64,7 @@ export function pictureOf(snapshot: MonitorSnapshot, ageMs: number): AgentsPictu
   }
   const sessions = tops.map((a): AgentsSession => ({
     key: keyOf(a.rowId),
+    task: links.get(a.rowId) ?? null,
     app: a.provider,
     appName: a.providerName,
     account: a.profile,
@@ -77,5 +88,5 @@ export function pictureOf(snapshot: MonitorSnapshot, ageMs: number): AgentsPictu
     failed: a.failed,
     unavailable: a.unavailable,
   }));
-  return { ageMs, settling: snapshot.settling, sessions, accounts };
+  return { ageMs, settling: snapshot.settling, sessions, unseen, accounts };
 }
