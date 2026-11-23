@@ -7,6 +7,8 @@
     ".": "./src/index.ts",
     "./preferences": "./src/preferences.ts",
     "./query-terms": "./src/query-terms.ts",
+    "./day": "./src/day.ts",
+    "./day-cases": "./src/day-cases.ts",
     "./monitor": "./src/monitor.ts",
     "./runs": "./src/runs.ts",
     "./generated/client.ts": "./generated/client.ts",

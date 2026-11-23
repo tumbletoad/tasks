@@ -5,17 +5,31 @@
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import type { TaskRow } from "../live.ts";
-import { dateOf, dayNumber, localDate, type Clock } from "../row/dates.ts";
+import {
+  dateOf,
+  dayNumber,
+  dueDayOf,
+  inToday,
+  inWeek,
+  isStarred,
+  localDate,
+} from "@ttasks/contracts/day";
+import {
+  DAY_CASES,
+  DAY_CLOCK,
+  DAY_COUNTS,
+  DAY_STARRED,
+  DAY_TODAY,
+  DAY_WEEK,
+} from "@ttasks/contracts/day-cases";
+import type { Clock } from "../row/dates.ts";
 import {
   CHANGES_LIMIT,
   dayNumbersOf,
-  dueDayOf,
   holdExpanded,
-  inFocus,
   inNext,
-  inWeek,
-  isStarred,
   todayOf,
+  viewCounts,
   type TaskChange,
   type TodaySection,
   weekStartOf,
@@ -48,6 +62,28 @@ const task = (patch: Partial<TaskRow>): TaskRow => {
 
 const titles = (today: ReturnType<typeof todayOf>) =>
   Object.fromEntries(today.sections.map((s) => [s.key, s.tasks.map((t) => t.title)]));
+
+describe("[A5.3.4.day.one-rule] the page's day follows the rule an agent's status does", () => {
+  // The table an agent's status is tested with (service test/day.test.ts).
+  const clock: Clock = { ...DAY_CLOCK, locale: "en-GB" };
+  const rows = DAY_CASES.map(({ name, ...fields }, i) =>
+    task({ ...fields, title: name, created_at: Date.UTC(2026, 10, 1) + i }),
+  );
+
+  test("Focus and This week hold the table's Today and week, in their order", () => {
+    const today = titles(todayOf(rows, clock));
+    expect(today["focus"]).toEqual(DAY_TODAY);
+    expect(today["week"]).toEqual(DAY_WEEK);
+  });
+
+  test("the sidebar counts each task once: the Inbox by its flag, else its status", () => {
+    expect(viewCounts(rows)).toEqual(DAY_COUNTS);
+  });
+
+  test("the row is starred where the digest says focus", () => {
+    expect(rows.filter((t) => isStarred(t, clock.today)).map((t) => t.title)).toEqual(DAY_STARRED);
+  });
+});
 
 describe("[A5.3.4.web.today] Today's sections and numbers", () => {
   test("the fixture example of A5 3.4", () => {
@@ -465,9 +501,9 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
           for (const t of tasks) {
             if (t.lifecycle !== "active") continue;
             const rule = ruleOf(t, CLOCK);
-            expect(inFocus(t, CLOCK)).toBe(rule === "focus");
-            expect(!inFocus(t, CLOCK) && inWeek(t, CLOCK)).toBe(rule === "week");
-            expect(!inFocus(t, CLOCK) && !inWeek(t, CLOCK) && inNext(t)).toBe(rule === "next");
+            expect(inToday(t, CLOCK)).toBe(rule === "focus");
+            expect(!inToday(t, CLOCK) && inWeek(t, CLOCK)).toBe(rule === "week");
+            expect(!inToday(t, CLOCK) && !inWeek(t, CLOCK) && inNext(t)).toBe(rule === "next");
             if (isStarred(t, CLOCK.today)) expect(rule).toBe("focus");
             const due = dueDayOf(t, CLOCK);
             if (due !== undefined) expect(daysOf(t, CLOCK)[0]).toBe(due);
