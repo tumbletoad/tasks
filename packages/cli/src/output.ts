@@ -367,9 +367,21 @@ export function render(entry: string, result: Result, space: string): string {
         lines.push("", sections["context"]);
       }
       for (const source of (sections["sources"] as Result[] | undefined) ?? []) {
-        lines.push(
-          `  source: ${String(source["title"])}${typeof source["key"] === "string" ? ` [${source["key"]}]` : ""}`,
-        );
+        const removed = source["removed"] as Result | undefined;
+        const key = source["key"] ?? source["ref"];
+        const facts = [
+          typeof key === "string" ? key : undefined,
+          typeof source["url"] === "string" ? source["url"] : undefined,
+          typeof source["captures_to"] === "string"
+            ? `captures go to ${source["captures_to"]}`
+            : undefined,
+          String(source["id"]),
+        ].filter((fact) => fact !== undefined);
+        const label =
+          removed === undefined
+            ? "source"
+            : `detached ${String(removed["at"]).slice(0, 10)} by ${String(removed["by"])}`;
+        lines.push(`  ${label}: ${String(source["title"])} [${facts.join(" · ")}]`);
       }
       // A digest holds the first lessons and counts them all; the outcome section holds them all.
       const outcome = result["sections"] === undefined ? undefined : sections["outcome"];

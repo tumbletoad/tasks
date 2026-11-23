@@ -161,6 +161,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
       cut: 16_144,
     }));
     task["sources"] = Array.from({ length: 5 }, (_, n) => ({
+      id: `s_0${String(n).repeat(25)}`,
       key: `jira:LUM-${String(n)}`,
       kind: "ticket",
       title: cjk(100),
@@ -197,10 +198,13 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
         text: long(16_384),
       })),
       sources: Array.from({ length: 10 }, (_, n) => ({
+        id: `s_0${String(n).repeat(25)}`,
         key: `jira:LUM-${String(n)}`,
         kind: "ticket",
         title: cjk(300),
         who: long(120),
+        captures_to: "M-1000000000",
+        removed: { at, by: long(64) },
       })),
       outcome: {
         outcome: long(4_096),
@@ -641,7 +645,15 @@ describe("[A3.3.10.mcp.framing] stored text and editable names appear only insid
     task["log"] = [
       { ref: "l9", kind: "progress", author: "agent:codex-work", at, text: INJECTION },
     ];
-    task["sources"] = [{ kind: "email", title: INJECTION, who: INJECTION, key: "mail:1" }];
+    task["sources"] = [
+      {
+        id: "s_01111111111111111111111111",
+        kind: "email",
+        title: INJECTION,
+        who: INJECTION,
+        key: "mail:1",
+      },
+    ];
     task["learnings"] = [INJECTION];
 
     const sections = example("task.get", 1);

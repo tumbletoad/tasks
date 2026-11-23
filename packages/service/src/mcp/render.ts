@@ -229,11 +229,15 @@ type LogEntry = {
   readonly slice?: Slice | undefined;
 };
 type Source = {
+  readonly id: string;
   readonly key?: string | undefined;
   readonly kind: string;
   readonly title: string;
   readonly who?: string | undefined;
   readonly url?: string | undefined;
+  readonly ref?: string | undefined;
+  readonly captures_to?: string | undefined;
+  readonly removed?: { readonly at: string; readonly by: string } | undefined;
   readonly cut?: number | undefined;
 };
 
@@ -302,7 +306,16 @@ const logLines = (entry: LogEntry): string[] =>
   );
 
 const sourceLine = (source: Source): string =>
-  `- ${join(`[${source.kind}] "${withCut(source.title, source.cut)}"`, source.who, source.key !== undefined && `key ${source.key}`, source.url)}`;
+  `- ${join(
+    source.removed !== undefined && `detached ${day(source.removed.at)} by ${source.removed.by}:`,
+    `[${source.kind}] "${withCut(source.title, source.cut)}"`,
+    source.who,
+    source.key !== undefined && `key ${source.key}`,
+    source.ref !== undefined && `ref ${source.ref}`,
+    source.url,
+    source.captures_to !== undefined && `captures go to ${source.captures_to}`,
+    source.id,
+  )}`;
 
 function headerLine(
   task: RowLike & { readonly wrap_state?: string | undefined },

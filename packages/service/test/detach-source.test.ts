@@ -1,0 +1,208 @@
+// A source detached from a task and put back, through real requests: the person at a terminal and
+// an agent's shell call the request path in this process, and an agent reads the MCP text. Every
+// read lists each source's ID; a key or URL names one link or is refused with the candidates; put
+// back says where captures go when another task holds the key; a finished task takes a detach
+// alone. Fixture text only.
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { AppError, type ErrorBody } from "@ttasks/contracts";
+import { renderResult } from "../src/mcp/index.ts";
+import { opCall, type Caller } from "../src/ops/index.ts";
+import { contractWorld, type ContractWorld } from "./contract/suite.ts";
+
+type Json = Record<string, unknown>;
+interface Source {
+  id: string;
+  key?: string;
+  title: string;
+  url?: string;
+  ref?: string;
+  captures_to?: string;
+  removed?: { at: string; by: string };
+}
+
+let w: ContractWorld & { root: string };
+const LONG = 180_000;
+
+beforeAll(async () => {
+  w = await contractWorld("detach");
+}, LONG);
+afterAll(async () => {
+  await w.close();
+}, LONG);
+
+const PERSON: Caller = { class: "cli-interactive", env: {} };
+/** An agent's shell: the agent audience. */
+const AGENT: Caller = { class: "cli-script", env: {} };
+
+let n = 0;
+const rid = () => `fixture-detach-${String((n += 1)).padStart(6, "0")}`;
+const call = async (op: string, input: Json, who: Caller = PERSON): Promise<Json> =>
+  (await opCall(w.service.ops, who, { op, input })) as Json;
+async function refusal(op: string, input: Json, who: Caller = PERSON): Promise<ErrorBody> {
+  const error = await call(op, input, who).then(
+    () => undefined,
+    (e: unknown) => e,
+  );
+  if (!(error instanceof AppError)) throw new Error(`${op} was not refused`);
+  return error.toBody();
+}
+const asOf = async () => (await call("space.status", {}))["as_of"] as string;
+
+async function add(draft: Json, who: Caller = PERSON): Promise<{ ref: string; result: string }> {
+  const added = await call("task.add", { tasks: [draft], request_id: rid() }, who);
+  return (added["tasks"] as { ref: string; result: string }[])[0] ?? { ref: "", result: "" };
+}
+/** The task's sources as a sections read lists them: the live ones, then the detached ones. */
+async function sources(ref: string): Promise<Source[]> {
+  const read = await call("task.get", { task: ref, sections: ["sources"] });
+  return ((read["sections"] as Json)["sources"] ?? []) as Source[];
+}
+const update = async (input: Json, who: Caller = PERSON): Promise<Json> =>
+  call("task.update", { base: await asOf(), request_id: rid(), ...input }, who);
+
+const ticket = (key: string) => ({ kind: "ticket", key, title: `Fixture ticket ${key}` });
+
+describe("[A3.source.detach] detaching a source and putting it back, through real requests", () => {
+  test("every read lists each source's ID; a key, a URL or an ID names one link, several are refused with their IDs", async () => {
+    const url = "https://tickets.example/shared";
+    const { ref } = await add({
+      title: "Fixture detach by name",
+      sources: [
+        ticket("fix:DT-1"),
+        { kind: "issue", title: "First copy", url },
+        { kind: "issue", title: "Second copy", url },
+        { kind: "chat", title: "Fixture call notes" },
+      ],
+    });
+    const listed = await sources(ref);
+    expect(listed).toHaveLength(4);
+    for (const s of listed) expect(s.id).toMatch(/^s_[0-9a-z]{26}$/u);
+    const digest = await call("task.get", { task: ref });
+    expect(((digest["task"] as Json)["sources"] as Source[]).map((s) => s.id)).toEqual(
+      listed.map((s) => s.id),
+    );
+
+    // A URL two links share is ambiguous: the refusal names both IDs and changes nothing.
+    const both = await refusal("task.update", {
+      task: ref,
+      remove_sources: [url],
+      base: await asOf(),
+      request_id: rid(),
+    });
+    expect(both).toMatchObject({
+      code: "ambiguous",
+      data: { issues: [{ path: "remove_sources.0" }] },
+    });
+    for (const s of listed.slice(1, 3)) expect(both.hint).toContain(s.id);
+    // A name of no link is not found.
+    expect(
+      await refusal("task.update", {
+        task: ref,
+        remove_sources: ["fix:NONE"],
+        base: await asOf(),
+        request_id: rid(),
+      }),
+    ).toMatchObject({ code: "not_found", data: { issues: [{ path: "remove_sources.0" }] } });
+
+    // By key, then by ID for the title-only source: both detached, the others stay.
+    const [keyed, first, second, titled] = listed as [Source, Source, Source, Source];
+    const done = await update({ task: ref, remove_sources: ["fix:DT-1", titled.id] });
+    expect(done).toMatchObject({ result: "updated", fields: ["sources"] });
+    const after = await sources(ref);
+    expect(after.filter((s) => s.removed === undefined).map((s) => s.id)).toEqual([
+      first.id,
+      second.id,
+    ]);
+    expect(after.filter((s) => s.removed !== undefined)).toMatchObject([
+      { removed: { by: "user" } },
+      { removed: { by: "user" } },
+    ]);
+    // The digest lists only what is linked.
+    const read = await call("task.get", { task: ref });
+    expect(((read["task"] as Json)["sources"] as Source[]).map((s) => s.id)).toEqual([
+      first.id,
+      second.id,
+    ]);
+    // Detaching again changes nothing; the key names the detached link.
+    expect(await update({ task: ref, remove_sources: ["fix:DT-1"] })).toMatchObject({
+      result: "no_change",
+    });
+    // Put back by key brings back the same source.
+    expect(await update({ task: ref, put_back_sources: ["fix:DT-1"] })).toMatchObject({
+      result: "updated",
+    });
+    expect((await sources(ref)).find((s) => s.id === keyed.id)?.removed).toBeUndefined();
+    // Detach and put back of one source in one call is refused.
+    expect(
+      await refusal("task.update", {
+        task: ref,
+        remove_sources: [keyed.id],
+        put_back_sources: [keyed.id],
+        base: await asOf(),
+        request_id: rid(),
+      }),
+    ).toMatchObject({ code: "invalid_input" });
+  });
+
+  test("a capture after a detach is new work; put back then keeps the capture there and says so in every read", async () => {
+    const { ref } = await add({ title: "Fixture wrong ticket", sources: [ticket("fix:DT-2")] });
+    // An agent detaches the wrong ticket through its tool's entry.
+    await update({ task: ref, remove_sources: ["fix:DT-2"] }, AGENT);
+    const [gone] = await sources(ref);
+    expect(gone?.removed?.by).not.toBe("user");
+    // The agent's next capture of the ticket is new work.
+    const other = await add({ title: "Fixture right task", sources: [ticket("fix:DT-2")] }, AGENT);
+    expect(other).toMatchObject({ result: "created" });
+    expect(other.ref).not.toBe(ref);
+    expect(gone?.captures_to).toBeUndefined();
+    expect((await sources(ref))[0]?.captures_to).toBe(other.ref);
+    // The person puts it back: the other task keeps the key, this one has the ticket as context.
+    const back = await update({ task: ref, put_back_sources: [gone?.id ?? ""] });
+    expect(back["warnings"]).toEqual([
+      `The source at put_back_sources.0 is back as context: captures of its item go to ${other.ref}, which holds its key.`,
+    ]);
+    const now = await sources(ref);
+    expect(now).toHaveLength(1);
+    expect(now[0]).toMatchObject({ ref: "fix:DT-2", captures_to: other.ref });
+    expect(now[0]?.key).toBeUndefined();
+    // The next capture still goes to the other task.
+    expect(await add({ title: "Fixture again", sources: [ticket("fix:DT-2")] }, AGENT)).toEqual(
+      expect.objectContaining({ ref: other.ref }),
+    );
+    // An agent reads where captures go, and each source's ID, in its tool's text.
+    const text = renderResult("task.get", await call("task.get", { task: ref }));
+    expect(text).toContain(`captures go to ${other.ref}`);
+    expect(text).toContain(now[0]?.id ?? "?");
+  });
+
+  test("a finished task takes a detach alone; mixed with another change it is refused whole", async () => {
+    const { ref } = await add({ title: "Fixture finished", sources: [ticket("fix:DT-3")] });
+    await call("task.finish", {
+      task: ref,
+      outcome: "Fixture done.",
+      base: await asOf(),
+      request_id: rid(),
+    });
+    const mixed = await refusal("task.update", {
+      task: ref,
+      set: { summary: "Fixture next" },
+      remove_sources: ["fix:DT-3"],
+      base: await asOf(),
+      request_id: rid(),
+    });
+    expect(mixed.code).toBe("wrong_tool");
+    expect((await sources(ref))[0]?.removed).toBeUndefined();
+    expect(await update({ task: ref, remove_sources: ["fix:DT-3"] })).toMatchObject({
+      result: "updated",
+    });
+    expect((await sources(ref))[0]?.removed).toBeDefined();
+    expect(await update({ task: ref, put_back_sources: ["fix:DT-3"] })).toMatchObject({
+      result: "updated",
+    });
+    // A retry with the same request ID answers the same.
+    const id = rid();
+    const input = { task: ref, remove_sources: ["fix:DT-3"], base: await asOf(), request_id: id };
+    const first = await call("task.update", input);
+    expect(await call("task.update", input)).toMatchObject({ ...first, replayed: true });
+  });
+});

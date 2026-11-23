@@ -145,6 +145,7 @@ import {
   readSpace,
   readStatus,
   readTask,
+  readTaskLinks,
   readKeyHolders,
   readTaskKeys,
   readTaskRef,
@@ -899,6 +900,69 @@ function differsWarnings(result: WriteResult, paths: ReadonlyMap<number, string>
     return [
       `The source at ${path} exists already and keeps its own ${op.differs.join(", ")} (source_differs).`,
     ];
+  });
+}
+
+/**
+ * A put back that found the source's key held by another active task: the key stays there and the
+ * task has the source as context. From the writer's result, so a replay warns the same.
+ */
+function keptWarnings(result: WriteResult, paths: ReadonlyMap<number, string>): string[] {
+  return result.results.flatMap((op) => {
+    const path = paths.get(op.i);
+    if (path === undefined || op.held_by === undefined) return [];
+    return [
+      `The source at ${path} is back as context: captures of its item go to ${op.held_by}, which holds its key.`,
+    ];
+  });
+}
+
+const strings = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+
+/**
+ * The source IDs of the links `names` name on a task, at `path`: a source ID, or a key or URL that
+ * names one link. `first` are the links the call acts on (the live ones to detach); `then` the
+ * others, so a call repeated after it applied names the same link and changes nothing. A name
+ * that fits several links is ambiguous and lists their IDs; one that fits none is not_found,
+ * except a source ID, which the writer decides.
+ */
+function linksNamed(
+  first: readonly Row[],
+  then: readonly Row[],
+  names: readonly string[],
+  path: string,
+): Id<"s">[] {
+  const fits = (row: Row, name: string): boolean =>
+    row["id"] === name ||
+    row["source_key"] === name ||
+    row["url"] === name ||
+    (row["source_key"] === null && row["ref"] === name);
+  return names.map((name, k) => {
+    const at = `${path}.${String(k)}`;
+    const found = first.filter((row) => fits(row, name));
+    const candidates = found.length > 0 ? found : then.filter((row) => fits(row, name));
+    const [one] = candidates;
+    if (one !== undefined && candidates.length === 1) return text(one["id"]) as Id<"s">;
+    if (candidates.length > 1) {
+      const ids = candidates.map((row) => text(row["id"]));
+      throw new AppError({
+        code: "ambiguous",
+        message: "Several sources of the task have this key or URL.",
+        hint: `Name one by its ID: ${ids.join(", ")}.`,
+        data: {
+          issues: [{ path: at, message: "Names several sources" }],
+          candidates: candidates.map((row) => ({ id: text(row["id"]), title: text(row["title"]) })),
+        },
+      });
+    }
+    if (isId(name, "s")) return name;
+    throw new AppError({
+      code: "not_found",
+      message: "No source of the task has this ID, key or URL.",
+      hint: "ttasks show <task> --section sources lists them with their IDs.",
+      data: { issues: [{ path: at, message: "Names no source of the task" }] },
+    });
   });
 }
 
@@ -2225,6 +2289,27 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       sourcePaths.set(ops.length, at);
       ops.push({ kind: "source.add", task, source: sourceFields(source, at) });
     });
+    const detach = strings(input["remove_sources"]);
+    const putBack = strings(input["put_back_sources"]);
+    /** The input path of each put back, by its operation's index: where it says a key stayed. */
+    const putBackPaths = new Map<number, string>();
+    if (detach.length > 0 || putBack.length > 0) {
+      const links = await readTaskLinks(readerOf(call.space), task);
+      const detached = linksNamed(links.live, links.removed, detach, "remove_sources");
+      const back = linksNamed(links.removed, links.live, putBack, "put_back_sources");
+      const both = back.findIndex((source) => detached.includes(source));
+      if (both >= 0) {
+        throw invalid(
+          `put_back_sources.${String(both)}`,
+          "Detach a source or put it back, not both",
+        );
+      }
+      for (const source of detached) ops.push({ kind: "source.unlink", task, source });
+      back.forEach((source, k) => {
+        putBackPaths.set(ops.length, `put_back_sources.${String(k)}`);
+        ops.push({ kind: "source.relink", task, source });
+      });
+    }
     // The folder last, so the other operations keep their indexes in a replay, which checks no
     // folder (draftFolders) and sends a stand-in when nothing else is in the request.
     const folder = set["folder"];
@@ -2254,13 +2339,16 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (clearFolder) ops.push({ kind: "task.folder_clear", task });
     fields.push(...Object.keys(set), ...clear);
     if (context !== undefined) fields.push("context");
-    if (added.length > 0) fields.push("sources");
+    if (added.length > 0 || detach.length > 0 || putBack.length > 0) fields.push("sources");
     if (ops.length === 0) throw invalid("set", "Nothing to change");
     // update_task changes an active task (A3 3.4.6): the writer refuses a completed or archived
-    // one with TASK_NOT_ACTIVE (wrong_tool), in the request's transaction, so it is receipted.
+    // one with TASK_NOT_ACTIVE (wrong_tool), in the request's transaction, so it is receipted. A
+    // request that only detaches or puts back sources also corrects a finished task, which still
+    // catches captures of its sources for a while.
+    const linksOnly = ops.every((op) => op.kind === "source.unlink" || op.kind === "source.relink");
     const result = ownResults(
       await submit(call, [...groups, ...ops], {
-        active: true,
+        active: !linksOnly,
         inserted: { at: 0, count: groups.length },
         warnings: made,
         pathOf: (i, field) =>
@@ -2286,6 +2374,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       as_of: result.as_of,
       warnings: madeFirst([
         ...differsWarnings(result, sourcePaths),
+        ...keptWarnings(result, putBackPaths),
         ...result.warnings,
         ...(updated && result.replayed !== true ? moveWarnings(move) : []),
       ]),

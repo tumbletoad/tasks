@@ -8,13 +8,7 @@ import {
   storedDocuments,
   type SearchDocument,
 } from "../src/search/documents.ts";
-import type {
-  Credential,
-  Operation,
-  SourceFields,
-  WriteRequest,
-  WriteResult,
-} from "../src/write/request.ts";
+import type { Operation, SourceFields, WriteRequest, WriteResult } from "../src/write/request.ts";
 import { tempFolders } from "./space-helpers.ts";
 import { checkHistory, expectStatus, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
@@ -58,7 +52,7 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
   type Who = "human" | "codex";
   const send = (who: Who, ops: Operation[], extra: Partial<WriteRequest> = {}): WriteResult =>
     fx.writer.submit(
-      fx.request(fx[who] as Credential, ops, {
+      fx.request(fx[who], ops, {
         ...(who === "human" ? { undoable: true } : {}),
         ...extra,
       }),
@@ -73,6 +67,12 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
     fx.reader
       .prepare("SELECT * FROM task_sources WHERE task_id = $task AND source_id = $source")
       .get({ task, source }) ?? {};
+  /** The commit whose write the link's removal holds: its provenance. */
+  const removedBy = (task: string, source: string): unknown =>
+    one(
+      "SELECT json_extract(fp, '$.removed') FROM task_sources WHERE task_id = $task AND source_id = $source",
+      { task, source },
+    );
   const sourceOf = (key: string): Id<"s"> =>
     String(one("SELECT id FROM sources WHERE source_key = $key", { key })) as Id<"s">;
   /** The tasks a live link joins to the source with `key`. */
@@ -93,7 +93,7 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
         ...sources.map((source): Operation => ({ kind: "source.add", task: id, source })),
       ]),
     );
-    return (result.results[0]?.task ?? id) as Id<"t">;
+    return result.results[0]?.task ?? id;
   };
   const unlink = (task: string, source: Id<"s">, who: Who = "human", extra = {}) =>
     send(who, [{ kind: "source.unlink", task, source }], { base: fx.base(), ...extra });
@@ -270,11 +270,11 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
     applied(redo());
     expect(holders("jira:FIX-1")).toEqual([]);
     // The redo holds the detach's own provenance: put back still lists it as a removal.
-    expect(JSON.parse(String(link(a, fix1)["fp"]))["removed"]).toBe(detach.seq);
+    expect(removedBy(a, fix1)).toBe(detach.seq);
     applied(relink(a, fix1));
     applied(undo());
     expect(holders("jira:FIX-1")).toEqual([]);
-    expect(JSON.parse(String(link(a, fix1)["fp"]))["removed"]).toBe(detach.seq);
+    expect(removedBy(a, fix1)).toBe(detach.seq);
     applied(redo());
     expect(holders("jira:FIX-1")).toEqual([a]);
     // Detached again, then captured elsewhere: the undo of the detach would make two holders.

@@ -72,7 +72,12 @@ export const TaskUpdateInput = z.strictObject({
   remove_sources: z
     .array(z.string().max(USER_LIMITS.url))
     .max(10)
-    .describe("Source keys or URLs to unlink")
+    .describe("Sources to detach: ID, or a key or URL of one")
+    .optional(),
+  put_back_sources: z
+    .array(z.string().max(USER_LIMITS.url))
+    .max(10)
+    .describe("Detached sources to link again: ID, key or URL")
     .optional(),
   base: Base.optional(),
   reason: safeText(200).describe("Why, shown in history").optional(),
@@ -108,6 +113,7 @@ export const taskUpdate = defineEntry({
     "task.move",
     "source.add",
     "source.unlink",
+    "source.relink",
     "task.folder_set",
     "task.folder_clear",
     // A new area or project name creates it, in the same commit as the move into it.
@@ -131,7 +137,7 @@ export const taskUpdate = defineEntry({
       verb: "set",
       positional: ["task"],
       keyValue: "set",
-      flags: { remove_sources: "remove-source" },
+      flags: { remove_sources: "remove-source", put_back_sources: "put-back-source" },
     },
     mcp: {
       tool: "update_task",
@@ -152,6 +158,7 @@ export const taskUpdate = defineEntry({
     "forbidden",
     "wrong_tool",
     "request_id_conflict",
+    "ambiguous",
   ],
   examples: [
     {

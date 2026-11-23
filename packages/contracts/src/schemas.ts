@@ -258,6 +258,7 @@ export const AsOf = z
 
 export const TaskId = z.string().regex(idPattern("t")).describe("Task ID");
 export const TaskRef = z.string().regex(patterns.taskRef).describe("Task reference");
+export const SourceId = z.string().regex(idPattern("s")).describe("Source ID");
 export const ProposalId = z.string().regex(idPattern("pr")).describe("Proposal ID");
 export const Lifecycle = z.enum(["active", "completed", "archived"]).describe("Lifecycle");
 export const WrapState = z.enum(["pending", "wrapped"]).describe("Wrap-up state");
@@ -398,6 +399,7 @@ export const CompactTaskRow = z.strictObject({
   sources: z
     .array(
       z.strictObject({
+        id: SourceId,
         kind: z.string().describe("Source kind"),
         title: z.string().describe("Title"),
         who: z.string().describe("Sender or counterpart").optional(),
@@ -433,10 +435,20 @@ export const CompactTaskRow = z.strictObject({
 });
 
 export const SourceOutput = z.strictObject({
+  id: SourceId.describe("Source ID: detach or put back by it"),
   key: z.string().describe("Source key").optional(),
   kind: z.enum(SOURCE_KINDS).describe("Source kind"),
   title: z.string().describe("Title"),
   who: z.string().describe("Sender or counterpart").optional(),
   url: z.string().describe("Link").optional(),
   at: z.string().describe("When it was sent").optional(),
+  ref: z.string().describe("Its key, held by another task").optional(),
+  captures_to: TaskRef.describe("Captures of its item go to this task").optional(),
+  removed: z
+    .strictObject({
+      at: z.string().describe("When, ISO date and time"),
+      by: z.string().describe("Actor that detached it"),
+    })
+    .describe("Detached from the task; put_back_sources brings it back")
+    .optional(),
 });

@@ -1668,6 +1668,7 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].touched` | integer, 0 to 9007199254740991 | no | The seq of its or a child's last change |
 | `rows[].waiting_since` | integer, -8640000000000000 to 8640000000000000 | no | When its current wait began |
 | `rows[].sources` | object[] | no | Its first three sources |
+| `rows[].sources[].id` | string | yes | Source ID |
 | `rows[].sources[].kind` | string | yes | Source kind |
 | `rows[].sources[].title` | string | yes | Title |
 | `rows[].sources[].who` | string | no | Sender or counterpart |
@@ -1870,12 +1871,18 @@ When `view` is `"digest"`:
 | `task.log[].slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
 | `task.log[].slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
 | `task.sources` | object[], max 5 items | yes | Linked sources: the first 5 |
+| `task.sources[].id` | string | yes | Source ID: detach or put back by it |
 | `task.sources[].key` | string | no | Source key |
 | `task.sources[].kind` | "email" \| "chat" \| "ticket" \| "pr" \| "issue" \| "doc" \| "calendar" \| "crash" \| "session" \| "book" \| "web" \| "other" | yes | Source kind |
 | `task.sources[].title` | string | yes | Title |
 | `task.sources[].who` | string | no | Sender or counterpart |
 | `task.sources[].url` | string | no | Link |
 | `task.sources[].at` | string | no | When it was sent |
+| `task.sources[].ref` | string | no | Its key, held by another task |
+| `task.sources[].captures_to` | string | no | Captures of its item go to this task |
+| `task.sources[].removed` | object | no | Detached from the task; put_back_sources brings it back |
+| `task.sources[].removed.at` | string | yes | When, ISO date and time |
+| `task.sources[].removed.by` | string | yes | Actor that detached it |
 | `task.sources[].cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.more` | object | yes | What the digest left out: read it with sections |
 | `task.more.instructions` | integer, 0 to 9007199254740991 | yes | Notes from the user to agents not here |
@@ -1980,12 +1987,18 @@ When `view` is `"sections"`:
 | `sections.log[].slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
 | `sections.log[].slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
 | `sections.sources` | object[] | no | Linked sources |
+| `sections.sources[].id` | string | yes | Source ID: detach or put back by it |
 | `sections.sources[].key` | string | no | Source key |
 | `sections.sources[].kind` | "email" \| "chat" \| "ticket" \| "pr" \| "issue" \| "doc" \| "calendar" \| "crash" \| "session" \| "book" \| "web" \| "other" | yes | Source kind |
 | `sections.sources[].title` | string | yes | Title |
 | `sections.sources[].who` | string | no | Sender or counterpart |
 | `sections.sources[].url` | string | no | Link |
 | `sections.sources[].at` | string | no | When it was sent |
+| `sections.sources[].ref` | string | no | Its key, held by another task |
+| `sections.sources[].captures_to` | string | no | Captures of its item go to this task |
+| `sections.sources[].removed` | object | no | Detached from the task; put_back_sources brings it back |
+| `sections.sources[].removed.at` | string | yes | When, ISO date and time |
+| `sections.sources[].removed.by` | string | yes | Actor that detached it |
 | `sections.outcome` | object | no | Outcome and learnings |
 | `sections.outcome.outcome` | string | no | Outcome of the last completion |
 | `sections.outcome.wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
@@ -2098,6 +2111,7 @@ Result:
     ],
     "sources": [
       {
+        "id": "s_0ftqk2b8x3m9r4v7w1c5n6d2ha",
         "key": "jira:LUM-212",
         "kind": "ticket",
         "title": "Appointment times shift by an hour",
@@ -2248,6 +2262,7 @@ Result:
     ],
     "sources": [
       {
+        "id": "s_04hm8q2v6c1x9t3k7w5r0b2nfe",
         "key": "jira:LUM-187",
         "kind": "ticket",
         "title": "Report times wrong after DST"
@@ -2503,10 +2518,10 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | Scope | `space:write` |
 | Remote class | write |
 | Audience filter | caller |
-| A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
+| A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `source.relink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
 | Faces | MCP `update_task`, CLI `ttasks set`, UI |
-| Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict` |
-| Definition, estimated tokens | 1724, reported |
+| Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict`, `ambiguous` |
+| Definition, estimated tokens | 1879, reported |
 | Result budget, estimated tokens | typical 80, max 400 |
 
 ### Input
@@ -2538,6 +2553,8 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `add_sources[].who` | string, max 120 | no | Sender or counterpart |
 | `add_sources[].url` | string, max 2048 | no | Link |
 | `add_sources[].at` | string, max 40 | no | When it was sent |
+| `remove_sources` | (string, max 2048)[], max 10 items | no | Sources to detach: ID, or a key or URL of one |
+| `put_back_sources` | (string, max 2048)[], max 10 items | no | Detached sources to link again: ID, key or URL |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `reason` | string, max 200 | no | Why, shown in history |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |

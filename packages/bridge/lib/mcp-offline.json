@@ -974,10 +974,28 @@
                 "maxLength": 4096,
                 "type": "string"
               },
+              "put_back_sources": {
+                "description": "Detached sources to link again: ID, key or URL",
+                "items": {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "type": "array"
+              },
               "reason": {
                 "description": "Why, shown in history",
                 "maxLength": 200,
                 "type": "string"
+              },
+              "remove_sources": {
+                "description": "Sources to detach: ID, or a key or URL of one",
+                "items": {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "type": "array"
               },
               "request_id": {
                 "description": "New per intended change; reuse it only to retry that call",
@@ -1993,10 +2011,28 @@
                 "maxLength": 4096,
                 "type": "string"
               },
+              "put_back_sources": {
+                "description": "Detached sources to link again: ID, key or URL",
+                "items": {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "type": "array"
+              },
               "reason": {
                 "description": "Why, shown in history",
                 "maxLength": 200,
                 "type": "string"
+              },
+              "remove_sources": {
+                "description": "Sources to detach: ID, or a key or URL of one",
+                "items": {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "type": "array"
               },
               "request_id": {
                 "description": "New per intended change; reuse it only to retry that call",

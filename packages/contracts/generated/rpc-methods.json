@@ -3670,6 +3670,11 @@
                   "items": {
                     "additionalProperties": false,
                     "properties": {
+                      "id": {
+                        "description": "Source ID",
+                        "pattern": "^s_[0-9a-hjkmnp-tv-z]{26}$",
+                        "type": "string"
+                      },
                       "kind": {
                         "description": "Source kind",
                         "type": "string"
@@ -3692,6 +3697,7 @@
                       }
                     },
                     "required": [
+                      "id",
                       "kind",
                       "title"
                     ],
@@ -4538,11 +4544,21 @@
                           "description": "When it was sent",
                           "type": "string"
                         },
+                        "captures_to": {
+                          "description": "Captures of its item go to this task",
+                          "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                          "type": "string"
+                        },
                         "cut": {
                           "description": "Characters left out; a sections read has them",
                           "maximum": 9007199254740991,
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "id": {
+                          "description": "Source ID: detach or put back by it",
+                          "pattern": "^s_[0-9a-hjkmnp-tv-z]{26}$",
+                          "type": "string"
                         },
                         "key": {
                           "description": "Source key",
@@ -4566,6 +4582,29 @@
                           ],
                           "type": "string"
                         },
+                        "ref": {
+                          "description": "Its key, held by another task",
+                          "type": "string"
+                        },
+                        "removed": {
+                          "additionalProperties": false,
+                          "description": "Detached from the task; put_back_sources brings it back",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Actor that detached it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
                         "title": {
                           "description": "Title",
                           "type": "string"
@@ -4580,6 +4619,7 @@
                         }
                       },
                       "required": [
+                        "id",
                         "kind",
                         "title"
                       ],
@@ -5213,6 +5253,16 @@
                           "description": "When it was sent",
                           "type": "string"
                         },
+                        "captures_to": {
+                          "description": "Captures of its item go to this task",
+                          "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                          "type": "string"
+                        },
+                        "id": {
+                          "description": "Source ID: detach or put back by it",
+                          "pattern": "^s_[0-9a-hjkmnp-tv-z]{26}$",
+                          "type": "string"
+                        },
                         "key": {
                           "description": "Source key",
                           "type": "string"
@@ -5235,6 +5285,29 @@
                           ],
                           "type": "string"
                         },
+                        "ref": {
+                          "description": "Its key, held by another task",
+                          "type": "string"
+                        },
+                        "removed": {
+                          "additionalProperties": false,
+                          "description": "Detached from the task; put_back_sources brings it back",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Actor that detached it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
                         "title": {
                           "description": "Title",
                           "type": "string"
@@ -5249,6 +5322,7 @@
                         }
                       },
                       "required": [
+                        "id",
                         "kind",
                         "title"
                       ],
@@ -5876,7 +5950,8 @@
         "conflict",
         "forbidden",
         "wrong_tool",
-        "request_id_conflict"
+        "request_id_conflict",
+        "ambiguous"
       ],
       "input": {
         "additionalProperties": false,
@@ -5996,13 +6071,22 @@
             ],
             "type": "string"
           },
+          "put_back_sources": {
+            "description": "Detached sources to link again: ID, key or URL",
+            "items": {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
           "reason": {
             "description": "Why, shown in history",
             "maxLength": 200,
             "type": "string"
           },
           "remove_sources": {
-            "description": "Source keys or URLs to unlink",
+            "description": "Sources to detach: ID, or a key or URL of one",
             "items": {
               "maxLength": 2048,
               "type": "string"
@@ -6102,6 +6186,7 @@
         "task.move",
         "source.add",
         "source.unlink",
+        "source.relink",
         "task.folder_set",
         "task.folder_clear",
         "area.create",

@@ -817,6 +817,22 @@
           ]
         },
         {
+          "field": "remove_sources",
+          "flag": "--remove-source",
+          "help": "Sources to detach: ID, or a key or URL of one",
+          "repeat": true,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "put_back_sources",
+          "flag": "--put-back-source",
+          "help": "Detached sources to link again: ID, key or URL",
+          "repeat": true,
+          "required": false,
+          "type": "string"
+        },
+        {
           "field": "reason",
           "flag": "--reason",
           "help": "Why, shown in history",
