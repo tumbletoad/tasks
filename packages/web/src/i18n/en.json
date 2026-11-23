@@ -510,6 +510,8 @@
   "edit.changedByEarlier": "{who, select, user {Changed elsewhere} import {Changed by the import} other {Changed by {by}}}",
   "edit.notSaved": "Not saved",
   "edit.notSavedFinished": "Not saved: the task is finished",
+  "title.otherTab": "Typed in another tab",
+  "title.otherTabFinished": "Typed in another tab, not saved: the task is finished",
   "edit.notSavedRestored": "Not saved: the space was restored since",
   "edit.copyValue": "Copy: {value}",
   "edit.applyMine": "Apply mine",

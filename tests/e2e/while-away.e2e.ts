@@ -2,7 +2,8 @@
 // service process: the agents' changes of the last seven days on Agents and Today, also after a
 // reload; an agent's question under "Needs you" until the person answers or dismisses it, which
 // Undo takes back; a long thread read back to its first entry; and a title still being typed back
-// in its editor after a reload, unsent. At 1,440 and 390 px in both themes. Fixture data only.
+// in its editor after a reload, unsent, in the tab that typed it alone. At 1,440 and 390 px in
+// both themes. Fixture data only.
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { axeFound, openTask, picture, pictures, showsSpace, signIn, themes } from "./page.ts";
@@ -23,9 +24,13 @@ async function newTask(world: World, title: string): Promise<string> {
   return ref;
 }
 
+const read = async (world: World, ref: string) =>
+  (await world.op(world.mira.id, "task.get", { task: ref })) as {
+    task: { title: string };
+    as_of: string;
+  };
 const titleOf = async (world: World, ref: string): Promise<string> =>
-  ((await world.op(world.mira.id, "task.get", { task: ref })) as { task: { title: string } }).task
-    .title;
+  (await read(world, ref)).task.title;
 
 async function openAgents(page: Page, world: World): Promise<void> {
   await signIn(page, world, `/s/${world.mira.id}/agents`);
@@ -198,6 +203,63 @@ test.describe("[A5.while-away.e2e.title-draft] a title still being typed survive
     await page.reload();
     await expect(row.locator('[data-part="title"]')).toHaveText(before, { timeout: SLOW_MS });
     await expect(field).toHaveCount(0);
+    expect(await titleOf(world, ref)).toBe(before);
+  });
+
+  test("a second tab shows what the first types as typed there and cannot erase it; on a task finished meanwhile the words stay with Copy and Discard", async ({
+    page,
+    world,
+  }) => {
+    const ref = await newTask(world, "Book the hall");
+    const before = await titleOf(world, ref);
+    const other = await page.context().newPage();
+    const first = await openTask(page, world, ref);
+    const second = await openTask(other, world, ref);
+    const editor = (row: Locator) => row.getByRole("textbox", { name: "Title" });
+    const open = async (tab: Page, row: Locator) => {
+      await tab.bringToFront();
+      await row.locator('[data-part="title"]').focus();
+      await tab.keyboard.press("F2");
+      await expect(editor(row)).toBeFocused();
+    };
+    // Both editors open before anyone types; the first tab types, the second lets its own go.
+    await open(page, first);
+    await open(other, second);
+    await page.bringToFront();
+    await editor(first).focus();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" in April");
+    const typed = `${before} in April`;
+    await other.bringToFront();
+    await editor(second).focus();
+    await other.keyboard.press("Escape");
+    const elsewhere = second.locator('[data-part="kept-title"]');
+    await expect(elsewhere).toHaveAttribute("data-reason", "other-tab", { timeout: SLOW_MS });
+    await expect(elsewhere.locator('[data-part="kept-title-value"]')).toHaveText(typed);
+    await expect(elsewhere).toContainText("Typed in another tab");
+    await shots(other, world, "title-other-tab", `li[data-task="${ref}"]`);
+    // The first tab's words are still its own after a reload.
+    await page.bringToFront();
+    await page.reload();
+    await expect(editor(first)).toHaveValue(typed, { timeout: SLOW_MS });
+    await expect(first.locator('[data-part="kept-title"]')).toHaveCount(0);
+
+    // Finished meanwhile: no editor that cannot save, but the words with Copy and Discard.
+    await world.op(world.mira.id, "task.finish", {
+      task: ref,
+      base: (await read(world, ref)).as_of,
+    });
+    await page.reload();
+    const kept = first.locator('[data-part="kept-title"]');
+    await expect(kept).toHaveAttribute("data-reason", "finished", { timeout: SLOW_MS });
+    await expect(kept.locator('[data-part="kept-title-value"]')).toHaveText(typed);
+    await expect(editor(first)).toHaveCount(0);
+    await expect(kept.getByRole("button", { name: `Copy: ${typed}` })).toBeVisible();
+    await shots(page, world, "title-finished", `li[data-task="${ref}"]`);
+    await kept.getByRole("button", { name: "Discard" }).click();
+    await expect(kept).toHaveCount(0);
+    await expect(second.locator('[data-part="kept-title"]')).toHaveCount(0, { timeout: SLOW_MS });
+    await other.close();
     expect(await titleOf(world, ref)).toBe(before);
   });
 });

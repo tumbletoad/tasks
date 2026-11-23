@@ -4,7 +4,7 @@
 // forgotten when the space next opens.
 import type { Api } from "../api.ts";
 import { forgetUnsaved, unsavedTasks } from "../edit/keep.ts";
-import { keepTitleDraft, titleDraftTasks } from "../row/title-draft.ts";
+import { forgetTitleDrafts, titleDraftTasks } from "../row/title-draft.ts";
 import { draftTasks, keepDraft } from "../task/composer.ts";
 
 /** The most tasks asked about per opening: the rest wait for the next one. */
@@ -37,7 +37,7 @@ export async function forgetGone(
     } catch (error) {
       if (!gone(error)) continue;
       keepDraft(space, task, "");
-      keepTitleDraft(space, task, undefined);
+      forgetTitleDrafts(space, task);
       forgetUnsaved(space, task);
     }
   }

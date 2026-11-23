@@ -36,6 +36,7 @@ import type { RowActions } from "./actions.ts";
 import { tileClick, type BusyOf, type FolderRefusal } from "./launch.ts";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
+import { KeptTitles } from "./KeptTitles.tsx";
 import { keepTitleDraft, pageLeaving, readTitleDraft, TITLE_MAX } from "./title-draft.ts";
 import {
   ChevronUpIcon,
@@ -694,6 +695,8 @@ function RowView({
           {/* A title the person typed while the task was finished stays readable, with Copy and
               Discard; Try again only once the task is active again (A5 3.11). */}
           {expanded ? <Unsaved task={task.id} field="title" finished={!active} withValue /> : null}
+          {/* What another tab is typing, or what was typed before the task was finished. */}
+          {expanded ? <KeptTitles space={space} task={task.id} finished={!active} /> : null}
         </div>
         <Slots model={model} task={task} tab={tab} expanded={expanded} actions={actions} t={t} />
         <span id={described} hidden>

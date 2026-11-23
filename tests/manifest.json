@@ -5626,7 +5626,14 @@
     },
     {
       "id": "A5.while-away.e2e.title-draft",
-      "title": "In Chromium and Firefox: a title typed and not yet saved is back in its editor after a reload and is not saved by itself; Escape lets it go for good; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "title": "In Chromium and Firefox: a title typed and not yet saved is back in its editor after a reload and is not saved by itself; Escape lets it go for good; a second tab shows it as typed in another tab and its own Escape does not erase it; on a task finished meanwhile the words show with Copy and Discard instead of an editor; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.web.title-tabs",
+      "title": "A title being typed is kept per tab: a tab reads and lets go of its own words only, lists another tab's as theirs until the person discards them, and a task gone for good takes every tab's words with it",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
