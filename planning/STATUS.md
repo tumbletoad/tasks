@@ -2,7 +2,7 @@
 
 One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
 
-**Done so far:** 80 of 101, and M2.04b, M4.01b, M4.05b and M6.04h outside the base count. The rows were checked against the code on 2026-11-22.
+**Done so far:** 80 of 101, and M2.04b, M4.01b, M4.05b and M6.04h outside the base count. The rows were checked against the code on 2026-11-23.
 
 **Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 11 · M5 14 · M6 16 · M7 2 · total 101. Plus the gates G1 and G2, the grant gate M2.04b, the rows that hold what a merged step left (an ID that ends in `b`, `t` or `r`), and the conditional steps listed apart.
 
@@ -212,6 +212,19 @@ M6.06b, M6.09b and M6.12r are not in the base count. M6.03 was built another way
 | M7.10 | Cutover and 10-day trial | M7.09 | S RM | todo |
 
 The prototype importer and the steps built on it (M7.01 to M7.08 and M7.11) left the plan: agents recreate the first user's tasks with the product's own tools. Their IDs are not reused. The first user's tasks were recreated that way on 2026-11-17, so the cutover's data move is done. In M7 the work is fixing what the rehearsal and the trial find.
+
+## Built outside the plan's steps
+
+Not in the base count. No step of the plan holds this work, so the rows have no ID.
+
+| Work | Pull requests | State |
+|---|---|---|
+| Skills: the person's guidance for agents, read through the MCP server, `ttasks skills` | 127, 131 | done |
+| Effort sizes a person sets: `ttasks prefs set` for the effort scale and the dedupe window, any list of 1 to 10 sizes | 128, 133 | done |
+| The Agents page shows every coding agent on this computer and each account's plan usage, read from the Agent Monitor | 129, 135 | done |
+| The Agents page links an agent to the task TTasks started it for | 138 | review |
+
+A space's statuses, the page's Settings for the sizes and an agent's `set` (M3.11's part for agents) are not built: `ttasks prefs set` and the `preferences` tool refuse them.
 
 ## Conditional steps
 
