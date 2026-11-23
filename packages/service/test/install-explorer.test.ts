@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isAgentMarker } from "@ttasks/bridge/protocol";
-import { buildLaunchers, findMsvc, type Msvc } from "@ttasks/launcher-win/build";
+import { buildLaunchers, compileC, findMsvc, type Msvc } from "@ttasks/launcher-win/build";
 import { afterAll, describe, expect, test } from "vitest";
 import { detectIdentity, system32 } from "../src/hub/identity.ts";
 import { explorerInSession, startService, stopService } from "../src/install/commands.ts";
@@ -148,25 +148,12 @@ afterAll(async () => {
 
 /** Compiles test/fixtures/jobinfo.c with the launchers' MSVC. */
 function compileJobInfo(msvc: Msvc, outDir: string): string {
-  const source = fileURLToPath(new URL("./fixtures/jobinfo.c", import.meta.url));
-  const out = join(outDir, "jobinfo.exe");
-  const result = spawnSync(
-    msvc.cl,
-    [
-      "/nologo",
-      "/W4",
-      "/WX",
-      "/MT",
-      "/DUNICODE",
-      "/D_UNICODE",
-      `/Fo${outDir}\\`,
-      `/Fe${out}`,
-      source,
-    ],
-    { cwd: outDir, env: msvc.env, encoding: "utf8", windowsHide: true },
-  );
-  if (result.status !== 0) throw new Error(`cl.exe failed for jobinfo.c:\n${result.stdout}`);
-  return out;
+  return compileC(msvc, {
+    source: fileURLToPath(new URL("./fixtures/jobinfo.c", import.meta.url)),
+    out: join(outDir, "jobinfo.exe"),
+    compile: ["/W4", "/WX", "/MT", "/DUNICODE", "/D_UNICODE"],
+    link: [],
+  });
 }
 
 /**
