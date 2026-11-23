@@ -197,8 +197,7 @@ export interface FieldConflict {
   value?: unknown;
   /**
    * Undo and redo: the value the inverted change wrote, and the value the inversion would have
-   * set back (what "Restore mine" applies, A5 3.12). In the reply only, like `value`: a receipt
-   * holds no task text.
+   * set back. In the reply only, like `value`: a receipt holds no task text.
    */
   wrote?: unknown;
   restore?: unknown;
@@ -211,6 +210,22 @@ export interface FieldConflict {
    */
   by: { actor: Id<"ac">; kind: string; label: string; origin?: string };
   at: number;
+}
+
+/**
+ * Who changed which task since, as an undo's or a redo's answer names it (history.ts,
+ * newerWorkOf): per task and author, the time of that author's newest change there.
+ */
+export interface NewerWork {
+  work: {
+    /** Absent for a row of no task: an area, a project, a source. */
+    task?: Id<"t">;
+    ref?: string;
+    by: FieldConflict["by"];
+    /** A run's own progress: the run's, whichever credential wrote it. */
+    run: boolean;
+    at: number;
+  }[];
 }
 
 export interface OpResult {
@@ -297,11 +312,19 @@ export interface WriteResult {
    * (Ctrl+Z) can name it in what it does next (A1 3.10.1).
    */
   target?: Id<"op">;
+  /**
+   * A redo's: the undone steps it tried and could not redo, oldest first. They stay undone, and
+   * the next redo tries them again; `conflicts` says why.
+   */
+  passed?: Id<"op">[];
+  /** An undo's or a redo's conflicts, as who changed which task since. */
+  newer?: NewerWork;
   /** One per operation, for `applied` and `unchanged`. */
   results: OpResult[];
   /**
    * Every conflict of the request together, for `conflict`. For an `applied` partial undo, the
-   * fields it left as others set them (A1 3.10.1).
+   * fields it left as others set them, and for an `applied` redo why it passed over the steps in
+   * `passed` (A1 3.10.1).
    */
   conflicts: FieldConflict[];
   /** Why, for `rejected` and `conflict`. */
@@ -831,12 +854,12 @@ export interface Undo {
 }
 
 /**
- * `redo` (A1 3.10.1): inverts the undo of the principal's oldest undone commit, so the commit's
- * values return with its own provenance. All or nothing. A request holds it alone.
+ * `redo` (A1 3.10.1): inverts the undo of the principal's oldest undone commit it can, so the
+ * commit's values return with its own provenance. All or nothing. A request holds it alone.
  */
 export interface Redo {
   kind: "redo";
-  /** The commit the caller means: refused unless it is the one a redo would bring back. */
+  /** The commit the caller means: refused unless it is one of the principal's undone commits. */
   commit?: Id<"op">;
 }
 

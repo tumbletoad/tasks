@@ -260,6 +260,25 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     expectStatus(submit([{ kind: "project.restore", project: empty }]), "rejected");
   });
 
+  test("Redo of a project's delete after someone renamed it is a conflict naming the rename, and the project stays", () => {
+    const spare = created(submit([{ kind: "project.create", title: "Spare" }]));
+    expectStatus(submit([{ kind: "project.delete", project: spare }]), "applied");
+    expectStatus(undo(), "applied");
+    expectStatus(
+      submit(
+        [{ kind: "project.patch", project: spare, set: { title: "Spare, renamed" } }],
+        "codex",
+      ),
+      "applied",
+    );
+    const late = redo();
+    expectStatus(late, "conflict");
+    expect(late.conflicts).toEqual([
+      expect.objectContaining({ entity: "projects", id: spare, field: "title" }),
+    ]);
+    expect(row("projects", spare)["deleted_at"]).toBeNull();
+  });
+
   test("undo of a create tombstones the group; a task another commit filed into it keeps it", () => {
     const area = created(submit([{ kind: "area.create", title: "Errands" }]));
     expectStatus(undo(), "applied");

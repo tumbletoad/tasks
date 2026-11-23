@@ -26,6 +26,7 @@ import {
   LATER_PREFERENCES,
   LATER_SETS,
   mayWrite,
+  newerWorkJson,
   opSpec,
   parseInput,
   PREFERENCES,
@@ -4437,6 +4438,8 @@ async function historyResult(
     result: word,
     commit: opAt(result, 0).id,
     ...(tasks === undefined ? {} : { tasks: tasks.refs, task_count: tasks.count }),
+    ...(result.passed === undefined ? {} : { passed_over: result.passed }),
+    ...(result.newer === undefined ? {} : newerWorkJson(result.newer)),
     ...(word === "partial"
       ? {
           unresolved: result.conflicts.map((c) => ({
