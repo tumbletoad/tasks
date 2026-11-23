@@ -33,7 +33,7 @@ import {
   type Selection,
 } from "./check-plan.ts";
 import { changedSince, isLabPath } from "./lab-tests.ts";
-import { checkIds, collectE2e, E2E_CONFIG, parseManifest, type CollectedTest } from "./manifest.ts";
+import { checkIdsQuickly, E2E_CONFIG, type CollectedTest } from "./manifest.ts";
 import { binPath, repoRoot, runNodeCaptured, type Captured } from "./run.ts";
 import { CRUISE_ROOTS, generated, runtime, typecheck } from "./steps.ts";
 
@@ -443,10 +443,7 @@ await vitest.close();
 
 pending.push(
   timed("test IDs", () =>
-    quietly(() => {
-      const manifest = parseManifest(
-        JSON.parse(readFileSync(join(repoRoot, "tests", "manifest.json"), "utf8")),
-      );
+    quietly(async () => {
       const collected: CollectedTest[] = ran.flatMap((m) =>
         [...m.children.allTests()].map((t) => ({
           name: t.fullName,
@@ -454,15 +451,9 @@ pending.push(
           ...(t.location ? { line: t.location.line } : {}),
         })),
       );
-      const e2eChanged = changed.some((p) => p === "tests/manifest.json" || p.startsWith(E2E_DIR));
-      const e2e = e2eChanged ? collectE2e(repoRoot) : { tests: [], errors: [] };
-      const errors = [
-        ...(changed.includes("tests/manifest.json") ? manifest.errors : []),
-        ...e2e.errors,
-        ...checkIds(manifest.entries, [...collected, ...e2e.tests]),
-      ];
+      const { errors, tests } = await checkIdsQuickly(collected);
       for (const e of errors) console.error(e);
-      console.log(`${plural(collected.length + e2e.tests.length, "test")} carry known IDs`);
+      console.log(`${plural(tests, "test")} checked`);
       return errors.length === 0;
     }),
   ),
@@ -494,7 +485,10 @@ notRun.push(
     ? "lint of the files the change did not edit, under its changed lint rules"
     : "lint of the files the change did not edit, which may use what it changed",
 );
-notRun.push("the test manifest's check that every entry has a test (pnpm verify)");
+notRun.push(
+  "the test manifest's check that every entry has a test, and of IDs in titles built as their " +
+    "file runs, in files the check did not run (pnpm verify)",
+);
 if (browserSkipped !== "") notRun.push(`browser tests: ${browserSkipped}`);
 const others = e2eFiles.length - browserRan.length;
 const waiting = [...browser.run, ...browser.over].filter((f) => !browserRan.includes(f)).length;

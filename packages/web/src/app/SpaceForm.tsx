@@ -175,7 +175,12 @@ function NewSpace({
         aria-describedby={proposalId}
         placeholder={t("start.namePlaceholder")}
       />
-      <p id={proposalId} className={styles.note} aria-live="polite">
+      <p
+        id={proposalId}
+        className={styles.note}
+        data-machine={proposal === undefined ? undefined : ""}
+        aria-live="polite"
+      >
         {proposal === undefined
           ? t("start.where")
           : t("start.proposal", { prefix: proposal.prefix, folder: proposal.folder })}
@@ -201,7 +206,7 @@ function NewSpace({
         </>
       ) : null}
       {error === undefined ? null : (
-        <p className={styles.error} role="alert">
+        <p className={styles.error} role="alert" data-machine="">
           {error}
         </p>
       )}
@@ -279,7 +284,7 @@ function OpenFolder({
         placeholder={t("start.folderPlaceholder")}
       />
       {error === undefined ? null : (
-        <p className={styles.error} role="alert">
+        <p className={styles.error} role="alert" data-machine="">
           {error}
         </p>
       )}

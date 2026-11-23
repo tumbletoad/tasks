@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { testFiles } from "../vitest.config.ts";
 import {
+  checkIdsQuickly,
   checkManifest,
   checkTestFiles,
   describeError,
@@ -219,6 +220,30 @@ describe("[A7.3.18.6.manifest-check] the test-manifest check", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  test("the quick check names a test it did not run whose ID the manifest no longer holds", async () => {
+    // The state a merge of main can leave: main's test file stays, and the branch took its entry
+    // out. The change does not reach the file, so pnpm check does not run it.
+    const { include, exclude } = testFiles;
+    const root = await writeTree({
+      "vitest.config.mjs": `export default ${JSON.stringify({ test: { include, exclude, globals: true } })};\n`,
+      "tests/manifest.json": JSON.stringify({ version: 1, entries: [entry("A7.one")] }),
+      "a/kept.test.ts":
+        'describe("[A7.gone] kept by the merge", () => {\n  test("still here", () => {});\n});\n',
+      "a/ran.test.ts": 'test("[A7.one] ran", () => {});\n',
+      // A title built as its file runs: the source shows no ID, which is not a problem here.
+      "a/built.test.ts": 'const n = "[A7.one]";\ntest(`${n} built`, () => {});\n',
+    });
+    try {
+      const ran = [{ name: "[A7.one] ran", file: "a/ran.test.ts", line: 1 }];
+      const { errors } = await checkIdsQuickly(ran, root);
+      expect(errors).toEqual([
+        'a/kept.test.ts:2 "[A7.gone] kept by the merge > still here" carries unknown manifest ID "A7.gone"',
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 120_000);
 
   test("the check fails on stray test files, untagged skipped and todo tests, and .only", async () => {
     // A small tree checked by the real script with the repository's include and exclude (the union
