@@ -1,6 +1,7 @@
 // What an agent is told about its write is what happened: a retry with the same request ID gets
 // the answer the first call got, also for a write that changed nothing; an import makes groups only
-// for the drafts it adds. A service in this process, fixture text and temporary folders only.
+// for the drafts it adds; a task's history holds that task's changes, every one of them. A service
+// in this process, fixture text and temporary folders only.
 import { mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -223,5 +224,58 @@ describe("[A3.answers.groups] an import makes groups only for the drafts it adds
     expect(listed.areas.find((a) => a.name === "Shared area")?.projects).toEqual([
       expect.objectContaining({ name: "Shared project", active: 1 }),
     ]);
+  });
+});
+
+describe("[A3.answers.history] a task's history is its own changes, every one of them", () => {
+  test("a task made in one call with another shows none of the other's entries", async () => {
+    const added = await call("task.add", {
+      tasks: [{ title: "Made without a log" }, { title: "Made with a log", log: "Fixture entry" }],
+      request_id: rid(),
+    });
+    const [a] = added["tasks"] as { ref: string }[];
+    const read = await call("task.get", { task: a?.ref, sections: ["history"] });
+    const history = (read["sections"] as { history: { what: string }[] }).history;
+    expect(history).toHaveLength(1);
+    expect(history[0]?.what).not.toMatch(/log\.add|\bl1\b/u);
+  });
+
+  test("paging through a task's history reaches its first change, and a change made meanwhile moves no page", async () => {
+    const added = await call("task.add", { tasks: [{ title: "Busy task" }], request_id: rid() });
+    const ref = (added["tasks"] as { ref: string }[])[0]?.ref ?? "";
+    for (let k = 0; k < 45; k += 1) {
+      await call("entry.add", {
+        task: ref,
+        kind: "progress",
+        text: `Step ${String(k)}`,
+        request_id: rid(),
+      });
+    }
+    const seen: number[] = [];
+    let before: string | undefined;
+    let pages = 0;
+    do {
+      const read = await call("task.get", {
+        task: ref,
+        sections: ["history"],
+        ...(before === undefined ? {} : { before }),
+      });
+      seen.push(...(read["sections"] as { history: { seq: number }[] }).history.map((h) => h.seq));
+      before = typeof read["before"] === "string" ? read["before"] : undefined;
+      pages += 1;
+      // A change made between two pages: the next page still starts where this one ended.
+      if (pages === 1) {
+        await call("entry.add", {
+          task: ref,
+          kind: "progress",
+          text: "Meanwhile",
+          request_id: rid(),
+        });
+      }
+    } while (before !== undefined && pages < 10);
+    expect(pages).toBeGreaterThan(1);
+    expect(seen).toHaveLength(46);
+    expect(new Set(seen).size).toBe(46);
+    expect([...seen].sort((x, y) => y - x)).toEqual(seen);
   });
 });

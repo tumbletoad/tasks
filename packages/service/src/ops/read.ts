@@ -327,19 +327,25 @@ async function readsLearnings(reader: WorkerConnection): Promise<boolean> {
   learningReaders.add(reader);
   return true;
 }
-/** One row per commit that changed the task or a row under it, newest first. */
+/**
+ * One row per commit that changed the task or a row under it, newest first, from commit `hupto`
+ * down: what each did to this task, from its change rows of this task alone, so a commit that
+ * also made another task says nothing of that one.
+ */
 const HISTORY: Statement = {
   sql:
     "SELECT k.seq AS seq, CASE WHEN k.origin = 'import' THEN 'import' " +
     "WHEN x.kind = 'human' THEN 'user' ELSE x.label END AS actor, " +
-    "(SELECT group_concat(DISTINCT json_extract(value, '$.op')) FROM json_each(k.ops)) AS ops, " +
-    "(SELECT group_concat(DISTINCT field) FROM changes " +
-    "WHERE seq = k.seq AND entity = 'tasks' AND field IS NOT NULL) AS fields, " +
+    "(SELECT group_concat(DISTINCT json_extract(k.ops, '$[' || c.op || '].op')) FROM changes c " +
+    `WHERE c.seq = k.seq AND c.task_id = ${MATCH}) AS ops, ` +
+    "(SELECT group_concat(DISTINCT field) FROM changes WHERE seq = k.seq " +
+    `AND task_id = ${MATCH} AND entity = 'tasks' AND field IS NOT NULL) AS fields, ` +
     "(SELECT group_concat(CASE entity WHEN 'notes' THEN 'n' ELSE 'l' END || " +
-    "json_extract(after, '$.ordinal'), ',') FROM changes WHERE seq = k.seq AND action = 'create' " +
-    "AND entity IN ('notes', 'log_entries')) AS entries " +
-    "FROM commits k JOIN actors x ON x.id = k.author_id WHERE k.seq IN " +
-    `(SELECT DISTINCT seq FROM changes WHERE task_id = ${MATCH}) ORDER BY k.seq DESC LIMIT 20`,
+    "json_extract(after, '$.ordinal'), ',') FROM changes WHERE seq = k.seq " +
+    `AND task_id = ${MATCH} AND action = 'create' AND entity IN ('notes', 'log_entries')) ` +
+    "AS entries FROM commits k JOIN actors x ON x.id = k.author_id WHERE k.seq IN " +
+    `(SELECT DISTINCT seq FROM changes WHERE task_id = ${MATCH} ` +
+    "AND ($hupto IS NULL OR seq <= $hupto)) ORDER BY k.seq DESC LIMIT $hlimit",
   mode: "all",
 };
 
@@ -534,6 +540,8 @@ export async function readTask(
     readonly instructions: EntryRange;
     readonly notes: EntryRange;
     readonly log: EntryRange;
+    /** Commits by their seq; none without it. */
+    readonly history?: EntryRange;
     readonly named?: readonly number[];
     readonly trash?: boolean;
     /** The notes taken back too: for the person, never for an agent. */
@@ -553,6 +561,8 @@ export async function readTask(
     nlimit: options.notes.limit,
     lupto: options.log.upto,
     llimit: options.log.limit,
+    hupto: options.history?.upto ?? null,
+    hlimit: options.history?.limit ?? 0,
     named: JSON.stringify(options.named ?? []),
   };
   const learned = await readsLearnings(reader);
@@ -587,7 +597,7 @@ export async function readTask(
       LOG_COUNT,
       SOURCES,
       REMOVED_SOURCES,
-      HISTORY,
+      options.history === undefined || options.history.limit === 0 ? NOTHING : HISTORY,
       learned ? LEARNINGS : NOTHING,
       options.named === undefined || options.named.length === 0 ? NOTHING : NAMED,
       options.removed === true ? REMOVED_NOTE_ROWS : NOTHING,

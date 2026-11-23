@@ -5679,7 +5679,7 @@
                     "type": "object"
                   },
                   "history": {
-                    "description": "The last 20 operations on the task, newest first",
+                    "description": "The task's own changes, newest first: before reads the older ones",
                     "items": {
                       "additionalProperties": false,
                       "properties": {
@@ -5705,7 +5705,7 @@
                       ],
                       "type": "object"
                     },
-                    "maxItems": 20,
+                    "maxItems": 64,
                     "type": "array"
                   },
                   "instructions": {

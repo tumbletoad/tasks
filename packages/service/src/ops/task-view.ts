@@ -217,16 +217,21 @@ function rangeOf(plan: PagePlan, section: Section, limit: number): EntryRange {
   return { upto: token.kind === "after" ? token.item - 1 : token.item, limit };
 }
 
-/** The ranges a page's read takes. The log takes one more than the page holds, to know of more. */
+/**
+ * The ranges a page's read takes. The log takes one more than the page holds, to know of more.
+ * History is a list of commits, keyed by their seq.
+ */
 export function pageRanges(plan: PagePlan): {
   readonly instructions: EntryRange;
   readonly notes: EntryRange;
   readonly log: EntryRange;
+  readonly history: EntryRange;
 } {
   return {
     instructions: rangeOf(plan, "instructions", PAGE_ITEMS),
     notes: rangeOf(plan, "notes", PAGE_ITEMS),
     log: rangeOf(plan, "log", Math.min(plan.logLimit, PAGE_ITEMS) + 1),
+    history: rangeOf(plan, "history", PAGE_ITEMS),
   };
 }
 
@@ -317,10 +322,11 @@ export function sectionsOf(
         );
         break;
       case "history":
+        // Keyed by commit, so a commit made after this page leaves the next one where it was.
         add(
-          read.history.slice(skip).map((entry, i) => {
+          read.history.map((entry) => {
             const value = historyOf(entry);
-            return { value, key: skip + i + 1, extra: bytes(value.actor) + bytes(value.what) };
+            return { value, key: value.seq, extra: bytes(value.actor) + bytes(value.what) };
           }),
         );
         break;

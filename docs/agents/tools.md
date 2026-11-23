@@ -2287,7 +2287,7 @@ When `view` is `"sections"`:
 | `sections.outcome.slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
 | `sections.outcome.slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
 | `sections.outcome.slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
-| `sections.history` | object[], max 20 items | no | The last 20 operations on the task, newest first |
+| `sections.history` | object[], max 64 items | no | The task's own changes, newest first: before reads the older ones |
 | `sections.history[].seq` | integer, 1 to 9007199254740991 | yes | Commit sequence number |
 | `sections.history[].actor` | string | yes | Actor that wrote it, from history |
 | `sections.history[].what` | string | yes | Operation kind and the fields it changed |
