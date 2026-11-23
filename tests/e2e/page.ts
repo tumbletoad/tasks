@@ -2,6 +2,7 @@
 // CSP violations, and the screens tests' pictures and axe scans. Tests only.
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import {
   expect,
   test,
@@ -141,7 +142,21 @@ export const pictures = (): boolean => test.info().project.name === "chromium";
 export const themes = (): readonly ("sumi" | "washi")[] =>
   pictures() ? ["sumi", "washi"] : ["sumi"];
 
-/** Saves `name` in the test's results for review, in the browser that takes pictures. */
+/** The home folder as text on the page names it, with either slash. */
+const HOME = new RegExp(
+  homedir()
+    .split(/[\\/]/)
+    .filter((part) => part !== "")
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("[\\\\/]"),
+  "i",
+);
+
+/**
+ * Saves `name` in the test's results for review, in the browser that takes pictures. The pictures
+ * go to a public pull request, so they hide this machine: what the page marks `data-machine` (its
+ * folders, drives and files, and machine names), and any text naming the home folder.
+ */
 export async function picture(
   target: Page | Locator,
   name: string,
@@ -149,8 +164,10 @@ export async function picture(
 ): Promise<void> {
   if (!pictures()) return;
   const path = test.info().outputPath(name);
-  if ("goto" in target) await target.screenshot({ path, ...options });
-  else await target.screenshot({ path });
+  const page = "goto" in target ? target : target.page();
+  const mask = [page.locator("[data-machine]"), page.getByText(HOME)];
+  if ("goto" in target) await target.screenshot({ path, mask, ...options });
+  else await target.screenshot({ path, mask });
 }
 
 const AXE = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");

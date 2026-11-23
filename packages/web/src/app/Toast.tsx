@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "../i18n/intl.tsx";
 import { is } from "../keys/keymap.ts";
 import type { Msg } from "../row/model.ts";
-import { sayMsg } from "../row/say.ts";
+import { namesMachine, sayMsg } from "../row/say.ts";
 import type { ToastKind } from "../edit/edits.ts";
 import { classes } from "./css.ts";
 import css from "./Toast.module.css";
@@ -114,7 +114,13 @@ export function Toast({
     >
       {toast === undefined ? null : (
         <>
-          <span className={styles.text} data-part="toast-text">
+          <span
+            className={styles.text}
+            data-part="toast-text"
+            data-machine={
+              typeof toast.text !== "string" && namesMachine(toast.text) ? "" : undefined
+            }
+          >
             {text}
           </span>
           {toast.action === undefined ? null : (
