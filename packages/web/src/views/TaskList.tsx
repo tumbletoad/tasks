@@ -845,15 +845,20 @@ export function TaskList({
               }
               // What this way of opening could not carry is said before the person sends anything.
               // A second click while the first was opening got that launch: its words are a note.
-              const then =
-                opened.leftOut.length > 0
-                  ? t("row.openedWithout", {
-                      label: instance.label,
-                      what: list(opened.leftOut.map((code) => t("row.leftOut", { what: code }))),
-                    })
-                  : opened.text === "note"
-                    ? t("row.openedEarlier", { label: instance.label })
-                    : undefined;
+              const said = [
+                ...(opened.leftOut.length > 0
+                  ? [
+                      t("row.openedWithout", {
+                        label: instance.label,
+                        what: list(opened.leftOut.map((code) => t("row.leftOut", { what: code }))),
+                      }),
+                    ]
+                  : []),
+                ...(opened.text === "note"
+                  ? [t("row.openedEarlier", { label: instance.label })]
+                  : []),
+              ];
+              const then = said.length === 0 ? undefined : said.join(" ");
               // The app takes the brief by paste: it opens without it when the copy failed.
               if (copy !== undefined)
                 return (await toClipboard(copy, false, then)) ? receipt : undefined;

@@ -90,6 +90,7 @@ import {
   LaunchFolderUnmarked,
   LaunchUnavailable,
   LaunchWriterGone,
+  leftOutOf,
   NOT_FOR_SPACE,
   type OpenTaskRequest,
   type OpenTaskResult,
@@ -3069,10 +3070,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw launchError(error);
     }
     return {
-      launch: {
-        ...launchReceipt(opened.intent),
-        ...(opened.leftOut.length === 0 ? {} : { left_out: [...opened.leftOut] }),
-      },
+      launch: launchReceipt(opened.intent),
       ...(opened.copy === undefined ? {} : { copy: opened.copy }),
       text: opened.composer,
       ...(opened.note === undefined ? {} : { note: opened.note }),
@@ -4483,8 +4481,12 @@ function noteRequestOf(requestId: string): string {
   return `launch-note-${digest.slice(0, 40)}`;
 }
 
-/** A launch intent as `launch.open` returns it: IDs, states, instants and fixed codes only. */
+/**
+ * A launch intent as `launch.open` returns it: IDs, states, instants and fixed codes only, with
+ * what its click left out as recorded then.
+ */
 function launchReceipt(intent: LaunchIntent): Record<string, unknown> {
+  const leftOut = leftOutOf(intent.evidence);
   return {
     id: intent.id,
     reference: intent.reference,
@@ -4492,6 +4494,7 @@ function launchReceipt(intent: LaunchIntent): Record<string, unknown> {
     route: intent.route,
     state: intent.state,
     ...(intent.reason === null ? {} : { reason: intent.reason }),
+    ...(leftOut.length === 0 ? {} : { left_out: leftOut }),
     at: { ...intent.at },
   };
 }

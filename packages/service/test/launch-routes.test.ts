@@ -40,7 +40,7 @@ import type { Logger } from "../src/hub/log.ts";
 import { briefNames, chooseRoute, codexEntryOf, LaunchUnavailable } from "../src/launch/open.ts";
 import { LaunchService } from "../src/launch/service.ts";
 import { homeDigest, physicalHome } from "../src/setup/agents.ts";
-import { instanceToml, readLog, stateOf, tempRoot, waitFor } from "./harness.ts";
+import { configOf, instanceToml, readLog, stateOf, tempRoot, waitFor } from "./harness.ts";
 import { errorOf, classSession } from "./ops-helpers.ts";
 import { LONG_MS, ShimLab } from "./shim-harness.ts";
 import { holdNextWrite } from "./slow-marker.ts";
@@ -1118,6 +1118,38 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
         data: { field: "instance", reason: "not_for_space" },
       });
       expect(r.lab.folders.size).toBe(started);
+    },
+  );
+
+  test(
+    "a launch keeps what it left out: a repeat of its click after the instance changed and the service restarted still names it",
+    { timeout: 300_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("chosen-kept", 0, {
+        instances: [{ id: "desktop-plan", target: "claude-desktop", open_permission: "read-only" }],
+      });
+      const task = await addTask(r, "Fixture kept left out");
+      const first = await open(r, { task: task.ref, instance: "desktop-plan" });
+      const leftOut = ["read-only", "environment"];
+      expect(first.result.launch.left_out).toEqual(leftOut);
+      await waitFor(() => (opened.length > 0 ? true : undefined), LONG_MS, "the link's opener");
+      // The person takes the permission away, and the service starts again.
+      await r.lab.stopService();
+      const toml = join(configOf(r.lab.home), "machine.toml");
+      const before = readFileSync(toml, "utf8");
+      writeFileSync(toml, before.replace('open_permission = "read-only"', ""));
+      await r.lab.start();
+      const user = await classSession(r.lab.home, r.lab.running.endpoint.path, "cli-interactive");
+      sessions.push(user);
+      const again = await open(
+        { ...r, user },
+        { task: task.ref, instance: "desktop-plan", request_id: first.requestId },
+      );
+      expect(again.result.launch).toMatchObject({ id: first.result.launch.id, left_out: leftOut });
+      // A new click opens as the instance is set up now.
+      const now = await open({ ...r, user }, { task: task.ref, instance: "desktop-plan" });
+      expect(now.result.launch.left_out).toEqual(["environment"]);
     },
   );
 

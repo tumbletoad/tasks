@@ -113,6 +113,7 @@ import { agentHomeOf, homeDigest, physicalHome } from "../setup/agents.ts";
 import {
   briefNames,
   chooseRoute,
+  leftOutEvidence,
   codexEntryOf,
   codexHomeOf,
   COPY,
@@ -723,7 +724,6 @@ export class LaunchService {
           composer: composerOf(given ? "request" : "none", note, session),
           ...(note === undefined ? {} : { note }),
           removed: false,
-          leftOut: [],
         };
       }
     }
@@ -844,8 +844,10 @@ export class LaunchService {
     // The person's words are on the task before the launch is recorded, so a launch that fails, a
     // service that stops, or a page that closes never loses them.
     const note = await this.#saveWords(request, probe);
+    const leftOut = leftOutEvidence(choice.leftOut);
     const evidence = {
       ...(session === undefined ? {} : { preset: session }),
+      ...(leftOut === undefined ? {} : { left_out: leftOut }),
       ...(sessionHome === undefined
         ? {}
         : { home: homeDigest(platform, await physicalHome(platform, sessionHome)) }),
@@ -906,7 +908,6 @@ export class LaunchService {
       composer,
       ...(note === undefined ? {} : { note }),
       removed: probe.removed,
-      leftOut: choice.leftOut,
     };
   }
 
@@ -1239,7 +1240,6 @@ ${instance}`;
       composer: composerOf(kind, note, intent),
       ...(note === undefined ? {} : { note }),
       removed: brief?.removed ?? false,
-      leftOut: choice?.route === intent.route ? choice.leftOut : [],
     };
   }
 

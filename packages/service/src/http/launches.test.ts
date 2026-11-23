@@ -2,6 +2,7 @@
 // the page only as the fixed words a launch records. Fixture rows only.
 import { describe, expect, test } from "vitest";
 import { RUN_LIMITS, type RunRecord } from "@ttasks/contracts/runs";
+import { leftOutEvidence } from "../launch/open.ts";
 import { WORK_ON_IT } from "../runs/agent.ts";
 import { receiptOf, UiLaunches, uiRun, type UiRunPort } from "./launches.ts";
 
@@ -41,6 +42,15 @@ describe("[A5.3.9.service.session] a Confirmed launch's session: running only wh
     expect(receiptOf(elsewhere)).not.toHaveProperty("session");
     // Only a Confirmed launch has a session to show: a dispatched one is still opening.
     expect(receiptOf(row({ claim: "c1" }), runs)).not.toHaveProperty("session");
+  });
+});
+
+describe("[A4.5.routes.chosen] the page's receipt names what its click left out", () => {
+  test("the codes the launch recorded at the click, and nothing it does not know", () => {
+    const left = leftOutEvidence(["read-only", "home"]);
+    expect(receiptOf(row({ left_out: left }))).toMatchObject({ left_out: ["read-only", "home"] });
+    expect(receiptOf(row({}))).not.toHaveProperty("left_out");
+    expect(receiptOf(row({ left_out: "elsewhere" }))).not.toHaveProperty("left_out");
   });
 });
 

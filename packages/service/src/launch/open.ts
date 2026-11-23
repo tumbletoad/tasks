@@ -19,10 +19,12 @@ import {
   type Instance,
   type LaunchIntent,
   type PackInput,
+  PERMISSIONS,
   type Permission,
   type ResolveReason,
   type Route,
   type RouteDef,
+  SETTINGS,
   type Setting,
 } from "@ttasks/launch";
 import { decodeConfig, parseToml, readConfigFile } from "../config/toml.ts";
@@ -209,8 +211,6 @@ export interface OpenTaskResult {
   readonly note?: string;
   /** The sanitiser removed something from the composer text (A4 3.15.6's quiet notice). */
   readonly removed: boolean;
-  /** What the instance sets that this way of opening could not carry (Choice). */
-  readonly leftOut: readonly LeftOut[];
 }
 
 /** The route an instance takes for a click, and its brief. */
@@ -232,6 +232,22 @@ export interface Choice {
  * (`read-only`), the others by theirs.
  */
 export type LeftOut = Exclude<Permission, "inherit"> | Exclude<Setting, "permission">;
+
+const LEFT_OUT: readonly string[] = [
+  ...PERMISSIONS.filter((p) => p !== "inherit"),
+  ...SETTINGS.filter((s) => s !== "permission"),
+];
+
+/** A launch's `left_out` evidence for what its click left out; undefined for nothing. */
+export const leftOutEvidence = (codes: readonly LeftOut[]): string | undefined =>
+  codes.length === 0 ? undefined : codes.join(".");
+
+/** What a launch's evidence says its click left out: the codes it knows, in their order. */
+export function leftOutOf(evidence: Readonly<Record<string, unknown>>): LeftOut[] {
+  const kept = evidence["left_out"];
+  if (typeof kept !== "string") return [];
+  return kept.split(".").filter((code): code is LeftOut => LEFT_OUT.includes(code));
+}
 
 /** Copy (A4 3.4.6): the pointer brief on the clipboard, a launch with route `clipboard`. */
 export const COPY: Choice = {

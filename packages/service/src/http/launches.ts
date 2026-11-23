@@ -36,6 +36,7 @@ import {
   type OpenResult,
   type Route,
 } from "@ttasks/launch";
+import { leftOutOf, type LeftOut } from "../launch/open.ts";
 import { findSpace, isAmbiguity, spaceChanged } from "../ops/copies.ts";
 import { launchError } from "../ops/handlers.ts";
 import { readOnly, type OpsHost, type ServedSpace } from "../ops/index.ts";
@@ -228,6 +229,8 @@ export interface UiReceipt {
   readonly session?: "running" | "ended" | "restored";
   /** How long its agent ran, when its end was reported with it. */
   readonly ran_ms?: number;
+  /** What of its instance's settings its click could not carry (LeftOut codes). */
+  readonly left_out?: readonly LeftOut[];
 }
 
 /** A note's entry reference, as a launch's evidence names its request. */
@@ -322,6 +325,7 @@ export function receiptOf(
   const reason = row["reason"];
   const ran = evidence["ran_ms"];
   const ranMs = typeof ran === "number" && Number.isSafeInteger(ran) && ran >= 0 ? ran : undefined;
+  const leftOut = leftOutOf(evidence);
   const recorded = restored && isOpenLaunch({ state, route, evidence });
   const record = state === "confirmed" && !recorded ? sessionRecord(evidence) : undefined;
   const session =
@@ -342,6 +346,7 @@ export function receiptOf(
     ...(request === undefined ? {} : { request }),
     ...(session === undefined ? {} : { session }),
     ...(ranMs === undefined ? {} : { ran_ms: ranMs }),
+    ...(leftOut.length === 0 ? {} : { left_out: leftOut }),
   };
 }
 
