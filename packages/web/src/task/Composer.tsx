@@ -96,11 +96,14 @@ export interface ComposerProps {
 function KeptNotes({
   task,
   shown,
+  flying,
   send,
 }: {
   readonly task: string;
   /** The words the field shows, and those of the note on its way from here. */
   readonly shown: readonly string[];
+  /** The notes this card sent and has no answer for yet, by request ID. */
+  readonly flying?: ReadonlySet<string>;
   /** Sends the note again, with its request ID; none on a card that writes nothing. */
   readonly send?: (note: NoteRequest) => void;
 }) {
@@ -114,8 +117,10 @@ function KeptNotes({
       <span className={noteLine.value} dir="auto">
         {note.words}
       </span>
-      <span className={noteLine.why}>{t("composer.noteKept")}</span>
-      {send === undefined ? null : (
+      <span className={noteLine.why}>
+        {t(flying?.has(note.id) === true ? "composer.noteOnItsWay" : "composer.noteKept")}
+      </span>
+      {send === undefined || flying?.has(note.id) === true ? null : (
         <button
           type="button"
           className={noteLine.act}
@@ -145,7 +150,7 @@ function KeptNotes({
       >
         {t("row.copy")}
       </button>
-      {send === undefined ? null : (
+      {send === undefined || flying?.has(note.id) === true ? null : (
         <button
           type="button"
           className={noteLine.act}
@@ -210,6 +215,8 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   /** The words of the note on their way from this tab, at once and for drawing. */
   const sending = useRef<string | undefined>(undefined);
   const [onItsWay, setOnItsWay] = useState<string | undefined>(undefined);
+  /** Every note this card sent and has no answer for yet, by request ID. */
+  const [flying, setFlying] = useState<ReadonlySet<string>>(new Set());
   /** The instances whose Open is on its way from here. */
   const [opening, setOpening] = useState<ReadonlySet<string>>(new Set());
   /** A Run on its way from here: the words it carries, until the service answered. */
@@ -223,14 +230,15 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
 
   /**
    * The words went somewhere: the kept draft and the field clear, each unless the person has
-   * typed on since (here, in another tab, or in this task's composer opened again), and so does a
-   * kept note of the same words that is not on its way: they are on the task or the clipboard.
+   * typed on since (here, in another tab, or in this task's composer opened again). A kept note
+   * of the same words goes only when a note of them was `saved`: a Copy or an Open posts no note,
+   * so a note that was not saved stays until its own answer or the person's Discard.
    */
-  const sent = (words: string) => {
+  const sent = (words: string, saved = false) => {
     const kept = readDraft(space, task.id);
     if (wordsOf(kept) === words) letGo(space, { kind: "draft", task: task.id, text: kept });
     if (wordsOf(now.current) === words) setText("");
-    if (sending.current === words) return;
+    if (!saved || sending.current === words) return;
     for (const note of readNotes(space, task.id)) {
       if (note.words === words) letGo(space, { kind: "note", task: task.id, id: note.id });
     }
@@ -297,15 +305,24 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   };
 
   /** Sends `words` as a note: kept until the service holds them, which then lets them go. */
-  const note = (words: string) => {
+  const note = (words: string, known?: string) => {
     if (sending.current === words) return;
     // The same words again (after a failure, a reload, or from another tab) are the same request:
-    // the service saves them once.
-    const id = readNotes(space, task.id).find((kept) => kept.words === words)?.id ?? requestId();
+    // the service saves them once. A kept note sent again goes with the ID it shows, also when
+    // another tab has let its record go meanwhile.
+    const id =
+      known ?? readNotes(space, task.id).find((kept) => kept.words === words)?.id ?? requestId();
+    if (flying.has(id)) return;
     keepNote(space, task.id, { words, id });
     sending.current = words;
     setOnItsWay(words);
+    setFlying((before) => new Set(before).add(id));
     const done = () => {
+      setFlying((before) => {
+        const next = new Set(before);
+        next.delete(id);
+        return next;
+      });
       if (sending.current !== words) return;
       sending.current = undefined;
       setOnItsWay(undefined);
@@ -316,7 +333,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
       () => {
         done();
         letGo(space, { kind: "note", task: task.id, id });
-        sent(words);
+        sent(words, true);
         if (answers > 1) say(t("composer.noteAnswers"));
       },
       (error: unknown) => {
@@ -412,8 +429,9 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
       <KeptNotes
         task={task.id}
         shown={onItsWay === undefined ? [words] : [words, onItsWay]}
+        flying={flying}
         send={(kept) => {
-          note(kept.words);
+          note(kept.words, kept.id);
         }}
       />
       <textarea

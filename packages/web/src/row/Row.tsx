@@ -406,8 +406,10 @@ function TitleEditor({
     const value = field.current?.value ?? "";
     const title = value.trim();
     const sending = keep && title !== "" && title !== before;
-    // Escape, or nothing to save: nothing typed waits any more.
-    if (!sending) keepTitleDraft(space, task.id, undefined);
+    // Escape, or nothing to save: what this editor typed or brought back waits no more. Words it
+    // never touched are an earlier save's, still on its way: they stay until that save is answered.
+    const own = typed.current !== undefined || opened.typed !== undefined;
+    if (!sending && own) keepTitleDraft(space, task.id, undefined);
     const line = field.current?.closest("[data-row-line]");
     // The title is drawn back before focus goes to it, within this key: a key pressed right after
     // acts from the title, and nothing moves focus later.
