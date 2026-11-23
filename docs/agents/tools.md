@@ -929,7 +929,7 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | A1 operations | none |
 | Faces | MCP `status`, CLI `ttasks status`, UI |
 | Errors | `invalid_input`, `space_unavailable` |
-| Definition, estimated tokens | 632, reported |
+| Definition, estimated tokens | 619, reported |
 | Result budget, estimated tokens | typical 400, max 1500 |
 
 ### Input
@@ -939,7 +939,7 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
 | `include` | ("today" \| "week" \| "review" \| "waiting" \| "inbox" \| "changes")[], max 6 items | no | Extra sections, up to 8 rows each |
 | `since` | string, max 40 | no | For changes: 24h, 7d or an ISO time; default 24h |
-| `skills` | (string, max 64)[], 1 to 6 items | no | Return these skills' text instead |
+| `skills` | (string, 1 to 64)[], 1 to 6 items | no | Return these skills' text instead |
 
 ### Output
 

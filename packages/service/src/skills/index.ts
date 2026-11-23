@@ -134,7 +134,7 @@ async function readOne(path: string): Promise<Found> {
   } catch (error) {
     return fail(`it cannot be read (${codeOf(error)})`);
   } finally {
-    await handle.close();
+    await handle.close().catch(() => undefined);
   }
 }
 
@@ -274,27 +274,40 @@ export function skillCatalogue(
   options: { readonly withinMs?: number; readonly freshMs?: number } = {},
 ) {
   const withinMs = options.withinMs ?? SKILLS_WITHIN_MS;
+  // The disk's failures are reasons, never a failed answer: a skill is not worth a task's read.
+  const unreadable = (error: unknown) => `it cannot be read (${codeOf(error)})`;
   const listOnce = shared<Listing>(options.freshMs ?? FRESH_MS);
   const readOnce = shared<Found>(options.freshMs ?? FRESH_MS);
   /** The person's file for one entry of the listing: what the list and a named read both see. */
   const fileOf = async (entry: Entry): Promise<Found> =>
     entry.kind === "folder"
-      ? readOnce(entry.path, () => files.read(join(entry.path, SKILL_FILE)))
+      ? readOnce(entry.path, () => {
+          const path = join(entry.path, SKILL_FILE);
+          return files
+            .read(path)
+            .catch((error: unknown): Found => ({ path, ok: false, problem: unreadable(error) }));
+        })
       : { path: entry.path, ok: false, problem: entry.problem };
   /** The files of `names` (no names: the first SKILL_FOLDERS of the listing), or why not. */
   const found = async (
     folder: string,
     names: readonly string[] | undefined,
   ): Promise<{ readonly files: Map<string, Found>; readonly unread: number } | string> => {
-    const listing = await listOnce(folder, () => files.list(folder));
+    const listing = await listOnce(folder, () => files.list(folder).catch(unreadable));
     if (typeof listing === "string") return listing;
     const all = [...listing.keys()];
     const wanted = names?.filter((name) => listing.has(name)) ?? all.slice(0, SKILL_FOLDERS);
-    const read = new Map<string, Found>();
+    const done = new Map<string, Found>();
     await eachAtMost(wanted, AT_ONCE, async (name) => {
       const entry = listing.get(name);
-      if (entry !== undefined) read.set(name, await fileOf(entry));
+      if (entry !== undefined) done.set(name, await fileOf(entry));
     });
+    // In the order asked or listed, whichever file answered first.
+    const read = new Map<string, Found>();
+    for (const name of wanted) {
+      const file = done.get(name);
+      if (file !== undefined) read.set(name, file);
+    }
     return { files: read, unread: names === undefined ? all.length - wanted.length : 0 };
   };
   const timed = (folder: string, names: readonly string[] | undefined, ms: number) =>

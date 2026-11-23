@@ -4,7 +4,6 @@ import { defineEntry } from "../define.ts";
 import {
   AsOf,
   Cwd,
-  SKILL_NAME,
   SKILL_NAME_CHARS,
   SkillRow,
   TaskRef,
@@ -40,7 +39,8 @@ export const SpaceStatusInput = z.strictObject({
     .describe("For changes: 24h, 7d or an ISO time; default 24h")
     .optional(),
   skills: z
-    .array(z.string().max(SKILL_NAME_CHARS).regex(SKILL_NAME))
+    // Any name a list gave, one that is no skill's name included: the answer says why.
+    .array(z.string().min(1).max(SKILL_NAME_CHARS))
     .min(1)
     .max(MAX_SKILLS)
     .describe("Return these skills' text instead")

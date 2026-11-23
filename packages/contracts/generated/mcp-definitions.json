@@ -43,9 +43,9 @@
       "tokens": 540
     },
     {
-      "bytes": 1263,
+      "bytes": 1238,
       "name": "status",
-      "tokens": 632
+      "tokens": 619
     },
     {
       "bytes": 3402,
@@ -54,8 +54,8 @@
     }
   ],
   "total": {
-    "bytes": 18877,
-    "tokens": 9441,
+    "bytes": 18852,
+    "tokens": 9428,
     "tools": 10
   }
 }

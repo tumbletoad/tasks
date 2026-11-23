@@ -280,6 +280,39 @@ describe("[A3.3.6.mcp.skills] the user's skills folder", () => {
     }
   });
 
+  test("a disk that fails gives a reason, and the skills come in the listing's order", async () => {
+    const folder = (name: string) => ({ kind: "folder" as const, path: join(root, name) });
+    const waits: Record<string, number> = { "own-a": 30, "own-b": 15, "own-c": 0 };
+    const files: SkillFiles = {
+      list: () =>
+        Promise.resolve(new Map(["own-a", "own-b", "own-c", "own-d"].map((n) => [n, folder(n)]))),
+      read: async (path) => {
+        const name = /own-[a-d]/u.exec(path)?.[0] ?? "";
+        if (name === "own-d") throw Object.assign(new Error("gone"), { code: "EIO" });
+        await new Promise((done) => setTimeout(done, waits[name]));
+        return { path, ok: true, description: undefined, body: name };
+      },
+    };
+    const catalogue = skillCatalogue(files, { freshMs: 60_000 });
+    for (let n = 0; n < 2; n += 1) {
+      const own = (await catalogue.list(root)).skills.filter((skill) => skill.origin === "own");
+      expect(own.map((skill) => skill.name)).toEqual(["own-a", "own-b", "own-c", "own-d"]);
+      expect(own.map((skill) => skill.problem)).toEqual([
+        undefined,
+        undefined,
+        undefined,
+        "it cannot be read (EIO)",
+      ]);
+    }
+    const failing = skillCatalogue(
+      { ...files, list: () => Promise.reject(Object.assign(new Error("gone"), { code: "EIO" })) },
+      { freshMs: 60_000 },
+    );
+    const defaults = (await failing.list(root)).skills;
+    expect(defaults.map((skill) => skill.name)).toEqual([...DEFAULTS.keys()]);
+    expect(defaults[0]?.problem).toBe("the skills folder: it cannot be read (EIO)");
+  });
+
   test("a list reads the first folders by name and counts the rest", async () => {
     for (let n = 0; n < SKILL_FOLDERS + 3; n += 1) {
       write(root, `own-${String(n).padStart(3, "0")}`, "A skill.\n");
