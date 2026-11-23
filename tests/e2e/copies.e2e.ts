@@ -3,11 +3,12 @@
 // the space is closed, the copy opens and says it is a restored copy, read-only, with its folder,
 // its backup and the ways out; an edit there keeps the words with the reason and no Try again; a
 // claim of the copy tells the open tab that it was claimed, and the tab writes nothing more, Undo
-// included. Pictures at 1,440 and 390 px. Fixture data only.
+// included; a run the backup recorded as working is shown as working then, never now. Pictures at
+// 1,440 and 390 px. Fixture data only.
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { picture, showsSpace, signIn, spaceSwitcher } from "./page.ts";
-import { SLOW_MS } from "./world.ts";
+import { openTask, picture, showsSpace, signIn, spaceSwitcher } from "./page.ts";
+import { CODEX_INSTANCE, SLOW_MS } from "./world.ts";
 
 /** No sideways scroll at this width. */
 const sideScroll = (page: Page) =>
@@ -217,5 +218,79 @@ test.describe("[A2.3.10.5.copies.e2e-first-load] a tab sent to the folder the pe
     await showsSpace(page, name);
     await expect(gone).toHaveCount(0);
     await expect(page.locator('[data-part="read-only"]')).toHaveCount(0);
+  });
+});
+
+test.describe("[A2.3.10.5.copies.e2e-recorded] a restored copy shows a run its backup recorded as working as working then, never now", () => {
+  test("in the copy the run says it was working when the backup was made, with no Stop and nothing that goes on, a terminal session says it was open then, and the Agents page has the run's task in no live group", async ({
+    page,
+    copies: world,
+  }) => {
+    const { name, id } = world.mira;
+    const ref = world.task.ref;
+    const listed = (await world.space("list", {})) as {
+      spaces: { id?: string; folder: string }[];
+    };
+    const spaceFolder = listed.spaces.find((s) => s.id === id)?.folder ?? "";
+    const group = (live: string) =>
+      page.getByRole("main").getByRole("group", { name: live, exact: true });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+
+    // A run that works until it is stopped, in the space itself: under Working on the Agents page.
+    world.codex(ref, ["hold"]);
+    const row = await openTask(page, world, ref);
+    await row
+      .getByRole("toolbar", { name: "Act on this task" })
+      .getByRole("button", { name: `Run with ${CODEX_INSTANCE.label}` })
+      .click();
+    const working = row.locator('[data-entry="run"]').first();
+    await expect(working.locator('[data-part="run-state"]')).toContainText("is working on it", {
+      timeout: SLOW_MS,
+    });
+    await signIn(page, world, `/s/${id}/agents`);
+    await showsSpace(page, name);
+    await expect(group("Working").locator(`li[data-task="${ref}"]`)).toBeVisible({
+      timeout: SLOW_MS,
+    });
+
+    // A backup made while it works, restored into a folder of its own; the space closed and the
+    // copy opened.
+    const copyFolder = await world.restoreCopy(id);
+    await world.space("close", { space: spaceFolder });
+    await world.space("open", { path: copyFolder });
+    const copied = await openTask(page, world, ref);
+    await expect(page.locator('[data-part="read-only"]')).toContainText(
+      `This is a copy of ${name} restored `,
+    );
+    const recorded = copied.locator('[data-entry="run"]').first();
+    await expect(recorded.locator('[data-part="run-state"]')).toHaveText(
+      `${CODEX_INSTANCE.label} was working on it when this backup was made.`,
+      { timeout: SLOW_MS },
+    );
+    await expect(recorded.getByRole("button", { name: /^Stop/u })).toHaveCount(0);
+    await expect(copied).not.toContainText("It goes on if you close this page");
+    await pictures(page, "copy-recorded-run", () => recorded.scrollIntoViewIfNeeded());
+
+    // A terminal session the backup recorded as open: open then, never running now.
+    const launched = await openTask(page, world, world.launched);
+    const session = launched.locator('[data-entry="session"]').first();
+    await expect(session).toContainText("Opened in codex-work · open when this backup was made", {
+      timeout: SLOW_MS,
+    });
+    await expect(session).toHaveAttribute("data-state", "recorded");
+    await pictures(page, "copy-recorded-session", () => session.scrollIntoViewIfNeeded());
+
+    // The Agents page: the task is in no group of agents at work or waiting.
+    await signIn(page, world, `/s/${id}/agents`);
+    await showsSpace(page, name);
+    await expect(page.locator('[data-part="read-only"]')).toBeVisible();
+    for (const live of ["Needs you", "Working", "With an agent"]) {
+      await expect(group(live).locator(`li[data-task="${ref}"]`)).toHaveCount(0);
+    }
+    await pictures(page, "copy-recorded-agents", async () => {
+      await page.evaluate(() => {
+        window.scrollTo(0, 0);
+      });
+    });
   });
 });

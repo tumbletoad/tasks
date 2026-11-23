@@ -42,11 +42,12 @@ export const test = base.extend<
     { scope: "worker", timeout: 240_000 },
   ],
   // A world of each test's own for the tests that close its space and open a restored copy of it:
-  // each starts from the space as it was made, also when it runs again.
+  // each starts from the space as it was made, also when it runs again. With the fake Codex, so a
+  // backup can hold a run that works.
   copies: [
     // eslint-disable-next-line no-empty-pattern
     async ({}, use) => {
-      const world = await startWorld(built());
+      const world = await startWorld(built(), { runs: true });
       try {
         await use(world);
       } finally {
