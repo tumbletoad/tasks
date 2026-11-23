@@ -306,9 +306,9 @@ function draftLine(task: Result, space: string, its = "its"): string {
     return `Several tasks in ${space} have ${its} source key: ${ambiguous.map(String).join(", ")}${logged}`;
   }
   const lifecycle =
-    task["lifecycle"] === undefined || task["lifecycle"] === "active"
+    typeof task["lifecycle"] !== "string" || task["lifecycle"] === "active"
       ? ""
-      : ` (${String(task["lifecycle"])})`;
+      : ` (${task["lifecycle"]})`;
   return `Found ${String(task["ref"])}${lifecycle} in ${space} by ${its} source key${logged}`;
 }
 
