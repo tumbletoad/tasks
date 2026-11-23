@@ -1515,12 +1515,14 @@ async function projectFolderChecked(
 /** The folders inside an owner's old folder: what moved along with it, or what stayed. */
 interface FolderMove {
   readonly carry: boolean;
+  /** They stayed because the old folder is not seen, not because it is still there. */
+  readonly unseen: boolean;
   readonly inside: readonly Follower[];
   /** The followers whose new place is not a folder on this machine now. */
   readonly missing: ReadonlySet<Follower>;
 }
 
-const NO_MOVE: FolderMove = { carry: false, inside: [], missing: new Set() };
+const NO_MOVE: FolderMove = { carry: false, unseen: false, inside: [], missing: new Set() };
 
 /**
  * What changing an owner's folder here to `folder` does to the folders inside its old one
@@ -1539,14 +1541,18 @@ async function folderMove(
   } catch (error) {
     throw storageFailure(error);
   }
-  const plan = await moveOf(
-    read.current,
-    folder,
-    { kind: owner.kind, owner: read.owner ?? owner.id },
-    read.here,
-    facts,
+  const id = read.owner ?? owner.id;
+  const from = read.current;
+  const { markers } = call.host;
+  const space = call.space.id;
+  const plan = await moveOf(from, folder, { kind: owner.kind, owner: id }, read.here, facts, () =>
+    markers === undefined || space === undefined || from === undefined
+      ? Promise.resolve(false)
+      : markers.movedTo({ space, kind: owner.kind, id }, from, folder.stored),
   );
-  if (plan.kind !== "carry") return { ...NO_MOVE, inside: plan.inside };
+  if (plan.kind !== "carry") {
+    return { ...NO_MOVE, unseen: plan.kind === "unseen", inside: plan.inside };
+  }
   const missing = new Set<Follower>();
   for (const follower of plan.inside) {
     const absolute = expanded(follower.to, facts.home, facts.platform);
@@ -1562,7 +1568,7 @@ async function folderMove(
       missing.add(follower);
     }
   }
-  return { carry: true, inside: plan.inside, missing };
+  return { carry: true, unseen: false, inside: plan.inside, missing };
 }
 
 /** An owner's folder here that a write cleared, which loses that owner's marker. */
@@ -1638,7 +1644,7 @@ function moveAnswer(move: FolderMove): Record<string, unknown> {
   }));
   return move.carry
     ? { moved: move.inside.length, followed: named }
-    : { stayed: move.inside.length, kept: named };
+    : { stayed: move.inside.length, old_folder: move.unseen ? "unseen" : "there", kept: named };
 }
 
 /** The same in words, for a tool whose answer has warnings only. */
@@ -1652,7 +1658,10 @@ function moveWarnings(move: FolderMove): string[] {
   const count = `${String(n)} folder${n === 1 ? "" : "s"}`;
   if (!move.carry) {
     const stay = n === 1 ? "stays where it is" : "stay where they are";
-    return [`The old folder is still there, so ${count} inside it ${stay}: ${names}.`];
+    const why = move.unseen
+      ? "The old folder is not seen here and nothing shows the new one is it"
+      : "The old folder is still there";
+    return [`${why}, so ${count} inside it ${stay}: ${names}.`];
   }
   const gone = move.missing.size;
   const missing =

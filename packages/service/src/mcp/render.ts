@@ -779,7 +779,7 @@ function groupsRendered(result: Groups, organize: string): Rendered {
       ? []
       : [
           [
-            `${result.moved === undefined ? `Stayed, the old folder is still there: ${String(result.stayed ?? 0)}` : `Moved along: ${String(result.moved)}`} · ${inside
+            `${result.moved === undefined ? `Stayed, ${result.old_folder === "unseen" ? "the old folder is not seen and the new one is not it" : "the old folder is still there"}: ${String(result.stayed ?? 0)}` : `Moved along: ${String(result.moved)}`} · ${inside
               .map(
                 (f) =>
                   `${f.kind === "task" ? (f.ref ?? "") : (f.name ?? "")} ${f.folder}${f.missing === true ? " (not there)" : ""}`,

@@ -613,6 +613,15 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] ttasks area and ttasks pref
       "  M-15  ~/work/portal/docs",
       "",
     ]);
+    expect(
+      write({
+        stayed: 1,
+        old_folder: "unseen",
+        kept: [{ kind: "task", ref: "M-16", folder: "/media/drive/portal/docs" }],
+      })[0],
+    ).toBe(
+      "The old folder is not seen here and nothing shows the new one is it: 1 folder inside it stays where it is.",
+    );
     const got = render(
       "prefs.manage",
       {

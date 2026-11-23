@@ -391,10 +391,12 @@ export interface Follower {
 /**
  * What a folder change from `old` to `next` does to the folders inside the old one (`here`, every
  * live folder on this machine, the owner's own among them):
- * - `carry`: the old folder is gone, so it was moved, and every folder inside it moves along, as
- *   a move in a file manager takes everything inside the folder with it;
+ * - `carry`: the old folder is gone and `next` is that folder (`movedHere`): it was moved, and
+ *   every folder inside it moves along, as a move in a file manager takes everything inside it;
  * - `stay`: the old folder is still there, so the owner was given another folder and nothing was
  *   moved: the folders inside stay where they are and are named;
+ * - `unseen`: the old folder is not seen (a drive unplugged, a share offline) and nothing shows
+ *   that `next` is it, so the folders inside stay too: an absence is no proof of a move;
  * - `none`: no folder is inside the old one, or the change names the folder itself, one inside it
  *   or one around it.
  * A look that does not answer in time counts as there: nothing moves on a guess.
@@ -405,7 +407,8 @@ export async function moveOf(
   self: { readonly kind: "project" | "task"; readonly owner: string },
   here: readonly { kind: "project" | "task"; owner: string; label: string; path: string }[],
   facts: Pick<BindFacts, "home" | "platform">,
-): Promise<{ kind: "carry" | "stay" | "none"; inside: Follower[] }> {
+  movedHere: () => Promise<boolean>,
+): Promise<{ kind: "carry" | "stay" | "unseen" | "none"; inside: Follower[] }> {
   if (old === undefined) return { kind: "none", inside: [] };
   const os = osOf(facts.platform);
   const inside: Follower[] = [];
@@ -425,7 +428,8 @@ export async function moveOf(
       return code === "ENOENT" || code === "ENOTDIR";
     }
   });
-  return { kind: gone === true ? "carry" : "stay", inside };
+  if (gone !== true) return { kind: "stay", inside };
+  return { kind: (await movedHere()) ? "carry" : "unseen", inside };
 }
 
 /**

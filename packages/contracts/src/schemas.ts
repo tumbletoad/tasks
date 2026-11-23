@@ -284,9 +284,8 @@ export const InsideFolder = z.strictObject({
 });
 
 /**
- * What a folder change did to the folders inside the old one: an old folder that is gone was
- * moved, and every folder inside it moved along; one that is still there was replaced, and they
- * stayed.
+ * What a folder change did to the folders inside the old one: an old folder that is gone and found
+ * at the new place was moved, and every folder inside it moved along; otherwise they stayed.
  */
 export const InsideFolders = {
   moved: z
@@ -300,7 +299,11 @@ export const InsideFolders = {
     .int()
     .min(0)
     .max(1_000_000)
-    .describe("Folders inside the old one that stayed: it is still there")
+    .describe("Folders inside the old one that stayed")
+    .optional(),
+  old_folder: z
+    .enum(["there", "unseen"])
+    .describe("Why they stayed: the old folder is there, or unseen and not the new one")
     .optional(),
   kept: z.array(InsideFolder).max(20).describe("The first of them").optional(),
 };

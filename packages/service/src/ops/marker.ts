@@ -451,6 +451,28 @@ export class FolderMarkers {
   }
 
   /**
+   * Whether the folder at `to` is the one this machine marked for `owner` at `from`, moved: it has
+   * that folder's identity (a rename), or its marker names the owner while this machine never
+   * marked `to` for it, so the marker came with the folder (a copy to another drive). A marker
+   * this machine wrote at `to` itself, for an earlier folder of the owner's, proves nothing.
+   */
+  movedTo(owner: MarkerOwner, from: string, to: string): Promise<boolean> {
+    return this.#turn(async () => {
+      const folder = await this.#folder(to);
+      if (folder === undefined) return false;
+      const known = this.#marks.identity(this.#key(owner, from));
+      if (known !== undefined && folder.identity === known) return true;
+      if (this.#marks.has(this.#key(owner, to))) return false;
+      const read = await bounded(() => readMarker(folder.open), MARKER_MS);
+      return (
+        read !== "not_answering" &&
+        read.state === "owners" &&
+        read.owners.some((o) => same(o, owner))
+      );
+    });
+  }
+
+  /**
    * A folder that moved with another: its marker moved with it, inside it, so what this machine
    * marked follows too. The old place stays marked: an undo gives the owner that place back, and
    * an unrelated folder made there since is still noticed.

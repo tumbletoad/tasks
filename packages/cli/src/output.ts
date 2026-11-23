@@ -340,7 +340,7 @@ function insideLines(result: Result): string[] {
   const lines = [
     moved > 0
       ? `The old folder was moved: ${folders(moved)} inside it moved along.`
-      : `The old folder is still there: ${folders(stayed)} inside it ${stayed === 1 ? "stays where it is" : "stay where they are"}.`,
+      : `${result["old_folder"] === "unseen" ? "The old folder is not seen here and nothing shows the new one is it" : "The old folder is still there"}: ${folders(stayed)} inside it ${stayed === 1 ? "stays where it is" : "stay where they are"}.`,
   ];
   for (const f of list) {
     const who = f["kind"] === "task" ? str(f["ref"]) : `project ${str(f["name"])}`;

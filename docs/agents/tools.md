@@ -197,7 +197,8 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | `followed[].ref` | string | no | Task reference |
 | `followed[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
 | `followed[].missing` | true | no | No folder is there on this machine now |
-| `stayed` | integer, 0 to 1000000 | no | Folders inside the old one that stayed: it is still there |
+| `stayed` | integer, 0 to 1000000 | no | Folders inside the old one that stayed |
+| `old_folder` | "there" \| "unseen" | no | Why they stayed: the old folder is there, or unseen and not the new one |
 | `kept` | object[], max 20 items | no | The first of them |
 | `kept[].kind` | "project" \| "task" | yes | Whose folder it is |
 | `kept[].name` | string | no | A project's name |
@@ -323,7 +324,8 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | `followed[].ref` | string | no | Task reference |
 | `followed[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
 | `followed[].missing` | true | no | No folder is there on this machine now |
-| `stayed` | integer, 0 to 1000000 | no | Folders inside the old one that stayed: it is still there |
+| `stayed` | integer, 0 to 1000000 | no | Folders inside the old one that stayed |
+| `old_folder` | "there" \| "unseen" | no | Why they stayed: the old folder is there, or unseen and not the new one |
 | `kept` | object[], max 20 items | no | The first of them |
 | `kept[].kind` | "project" \| "task" | yes | Whose folder it is |
 | `kept[].name` | string | no | A project's name |

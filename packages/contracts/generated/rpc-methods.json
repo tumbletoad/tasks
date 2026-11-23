@@ -340,6 +340,14 @@
             "minimum": 0,
             "type": "integer"
           },
+          "old_folder": {
+            "description": "Why they stayed: the old folder is there, or unseen and not the new one",
+            "enum": [
+              "there",
+              "unseen"
+            ],
+            "type": "string"
+          },
           "owner": {
             "additionalProperties": false,
             "description": "Whose folder it is",
@@ -414,7 +422,7 @@
             "type": "string"
           },
           "stayed": {
-            "description": "Folders inside the old one that stayed: it is still there",
+            "description": "Folders inside the old one that stayed",
             "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
@@ -814,6 +822,14 @@
             "minimum": 0,
             "type": "integer"
           },
+          "old_folder": {
+            "description": "Why they stayed: the old folder is there, or unseen and not the new one",
+            "enum": [
+              "there",
+              "unseen"
+            ],
+            "type": "string"
+          },
           "projects": {
             "description": "Projects without an area, after every area",
             "items": {
@@ -894,7 +910,7 @@
             "type": "string"
           },
           "stayed": {
-            "description": "Folders inside the old one that stayed: it is still there",
+            "description": "Folders inside the old one that stayed",
             "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
