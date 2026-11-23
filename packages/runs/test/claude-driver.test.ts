@@ -4,7 +4,7 @@
 // fake's input ended and it exited.
 import { PassThrough } from "node:stream";
 import { describe, expect, test } from "vitest";
-import type { RunEvent } from "@ttasks/contracts/runs";
+import { LINE_CAP_BYTES, type RunEvent } from "@ttasks/contracts/runs";
 import {
   claudeArgs,
   claudeDriver,
@@ -130,6 +130,8 @@ const ASKS: readonly { readonly request: Json; readonly asked: string }[] = [
 
 /** The words of the request the run heard, in a cell of TABLE. */
 const ASKED = Symbol("the request's words");
+/** The words of a run that ended on a line it could not read: TTasks's own, not the agent's. */
+const UNREAD = expect.any(String) as string;
 
 /** The answer the run shows: its words, and whether they are the agent's final answer. */
 type Answer = readonly [text: string | null | typeof ASKED, final: boolean];
@@ -171,6 +173,11 @@ const TABLE: Readonly<Record<Phase, Readonly<Record<Heard, Expected>>>> = {
       wrote: ["turned down", "interrupt"],
     },
     "unknown request": { goesOn: "turn", answer: [null, false], wrote: ["error"] },
+    unreadable: {
+      settles: { ok: false, outcome: "agent_error", error: UNREAD },
+      answer: [null, false],
+      wrote: ["interrupt"],
+    },
     exit: { settles: { ok: false, outcome: "no_result" }, answer: [null, false] },
     stop: { goesOn: "stopping", answer: [null, false], wrote: ["interrupt"] },
   },
@@ -190,6 +197,11 @@ const TABLE: Readonly<Record<Phase, Readonly<Record<Heard, Expected>>>> = {
       wrote: ["turned down", "interrupt"],
     },
     "unknown request": { goesOn: "between", answer: ["First.", true], wrote: ["error"] },
+    unreadable: {
+      settles: { ok: false, outcome: "agent_error", error: UNREAD },
+      answer: ["First.", false],
+      wrote: ["interrupt", "end"],
+    },
     exit: { settles: { ok: false, outcome: "no_result" }, answer: ["First.", false] },
     stop: {
       settles: { ok: false, outcome: "interrupted" },
@@ -205,6 +217,7 @@ const TABLE: Readonly<Record<Phase, Readonly<Record<Heard, Expected>>>> = {
     failed: { settles: { ok: false, outcome: "interrupted" }, answer: [null, false] },
     asks: { goesOn: "stopping", answer: [null, false], wrote: ["turned down"] },
     "unknown request": { goesOn: "stopping", answer: [null, false], wrote: ["error"] },
+    unreadable: { settles: { ok: false, outcome: "interrupted" }, answer: [null, false] },
     exit: { settles: { ok: false, outcome: "interrupted" }, answer: [null, false] },
     stop: { goesOn: "stopping", answer: [null, false] },
   },
@@ -216,6 +229,7 @@ const TABLE: Readonly<Record<Phase, Readonly<Record<Heard, Expected>>>> = {
     failed: "unchanged",
     asks: "unchanged",
     "unknown request": "unchanged",
+    unreadable: "unchanged",
     exit: "unchanged",
     stop: "unchanged",
   },
@@ -284,6 +298,9 @@ async function makeHear(
       });
     case "asks":
       return say({ type: "control_request", request_id: "r1", request: ask.request });
+    case "unreadable":
+      // Too long to read whole, and not an object or an array: nothing of it can be read.
+      return say("x".repeat(LINE_CAP_BYTES));
     case "unknown request":
       return say({ type: "control_request", request_id: "r2", request: { subtype: "later_kind" } });
     case "exit":
@@ -895,5 +912,33 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     const work = await driver.settled;
     expect(work.text === answer).toBe(true);
     expect(work.textCut).toBe(false);
+  });
+
+  test("a line too long to read whole is still heard: a result in it settles the work with the answer it had, not final, and a request in it is turned down", async () => {
+    const long = "x".repeat(LINE_CAP_BYTES);
+    const ended = await driverIn("turn");
+    await ended.say(own("Done."), {
+      ...RESULT,
+      result: "Done.",
+      permission_denials: [
+        { tool_name: "Write", tool_input: { file_path: "a.txt", content: long } },
+      ],
+    });
+    expect(await settledNow(ended.driver)).toEqual(
+      done({ ok: false, outcome: "no_result", text: "Done.", textFinal: false }),
+    );
+
+    const asks = await driverIn("turn");
+    await asks.say({
+      type: "control_request",
+      request_id: "r1",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Write",
+        input: { file_path: "a.txt", content: long },
+      },
+    });
+    expect(await settledNow(asks.driver)).toEqual(done({ outcome: "needs_input" }));
+    expect(asks.wrote).toEqual(["turned down", "interrupt"]);
   });
 });

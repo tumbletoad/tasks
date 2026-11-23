@@ -6,11 +6,12 @@
 import { PassThrough } from "node:stream";
 import { createInterface } from "node:readline";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { OutcomeReason } from "@ttasks/contracts/runs";
+import { LINE_CAP_BYTES, type OutcomeReason } from "@ttasks/contracts/runs";
 import { claudeDriver } from "../src/drivers/claude.ts";
 import { codexDriver } from "../src/drivers/codex.ts";
 import { printDriver } from "../src/drivers/print.ts";
 import type { DriverSession, OpenDriver } from "../src/drivers/types.ts";
+import { CUT_STRING_BYTES } from "../src/streams/cut-json.ts";
 
 /** What a message is in Codex's protocol: its answer, its commentary, or not said (null). */
 type Phase = "final_answer" | "commentary" | null;
@@ -32,14 +33,24 @@ type Step =
       /** A question for the person the message ends with. */
       readonly asks?: string;
       readonly turn?: number;
+      /** Its question carries a choice described at more length than a line read whole. */
+      readonly bulk?: boolean;
     }
   /** The turn ends, its summary naming the answer's message with its words, or naming none. */
   | {
       readonly kind: "turn ends";
       readonly names: { readonly item: string; readonly text: string } | null;
+      /** Its summary holds a command's output longer than a line read whole. */
+      readonly bulk?: boolean;
     }
   /** The agent starts a turn of its own on the same run. */
   | { readonly kind: "turn starts" }
+  /**
+   * An agent the run's agent started begins its turn, or ends it with a summary; with `bulk`, one
+   * of thousands of commands, one of whose output is longer than a line read whole.
+   */
+  | { readonly kind: "helper starts" }
+  | { readonly kind: "helper ends"; readonly bulk?: boolean }
   /** A command the agent leaves running in the background starts, or ends. */
   | { readonly kind: "command starts" }
   | { readonly kind: "command ends" }
@@ -77,8 +88,24 @@ function pipes(): { toAgent: PassThrough; fromAgent: PassThrough; write: (line: 
 }
 
 const THREAD = "00000000-0000-4000-8000-000000000002";
+const HELPER = "00000000-0000-4000-8000-000000000003";
 const SESSION = "00000000-0000-4000-8000-0000000000a1";
 const turnId = (turn: number): string => `turn-${String(turn)}`;
+/** Longer than a line read whole. */
+const BULK = "x".repeat(LINE_CAP_BYTES);
+
+/** A command of a turn's summary, as Codex lists it: its own output, `output` by default. */
+const commandItem = (id: string, at: number, output = "ok"): object => ({
+  type: "commandExecution",
+  id,
+  status: "completed",
+  exitCode: 0,
+  processId: 40_000 + at,
+  startedAt: 1_763_900_000_000 + at,
+  completedAt: 1_763_900_000_040 + at,
+  durationMs: 40,
+  aggregatedOutput: output,
+});
 
 /** Codex's app server: messages of a turn by item, streamed or whole, and turns with summaries. */
 const codex: Speaker = async () => {
@@ -131,13 +158,17 @@ const codex: Speaker = async () => {
     phase: Phase,
     asks?: string,
     of?: number,
+    bulk = false,
   ): object => ({
     type: "agentMessage",
     id: id(item, of),
     text,
     phase,
     delivery: asks === undefined ? null : "async",
-    questions: asks === undefined ? null : [{ title: asks, options: ["CSV", "PDF"] }],
+    questions:
+      asks === undefined
+        ? null
+        : [{ title: asks, options: ["CSV", bulk ? { label: "PDF", description: BULK } : "PDF"] }],
   });
   const of = (at = turn) => ({ threadId: THREAD, turnId: turnId(at) });
   return {
@@ -164,25 +195,56 @@ const codex: Speaker = async () => {
             method: "item/completed",
             params: {
               ...of(step.turn),
-              item: agentMessage(step.item, step.text, step.phase, step.asks, step.turn),
+              item: agentMessage(step.item, step.text, step.phase, step.asks, step.turn, step.bulk),
             },
           });
           break;
-        case "turn ends":
+        case "turn ends": {
+          const items = [
+            ...(step.bulk === true ? [commandItem(`${turnId(turn)}-cmd`, 0, BULK)] : []),
+            ...(step.names === null
+              ? []
+              : [agentMessage(step.names.item, step.names.text, "final_answer")]),
+          ];
           write({
             method: "turn/completed",
             params: {
               threadId: THREAD,
               turn: {
                 id: turnId(turn),
-                items:
-                  step.names === null
-                    ? []
-                    : [agentMessage(step.names.item, step.names.text, "final_answer")],
-                itemsView: step.names === null ? "notLoaded" : "summary",
+                items,
+                itemsView: items.length === 0 ? "notLoaded" : "summary",
                 status: "completed",
                 error: null,
               },
+            },
+          });
+          break;
+        }
+        case "helper starts":
+          write({
+            method: "turn/started",
+            params: { threadId: HELPER, turn: { id: "helper-turn" } },
+          });
+          break;
+        case "helper ends":
+          // The thread's ID comes after the turn, with all of its items.
+          write({
+            method: "turn/completed",
+            params: {
+              turn: {
+                id: "helper-turn",
+                items:
+                  step.bulk === true
+                    ? Array.from({ length: 3_000 }, (_, at) =>
+                        commandItem(`helper-cmd-${String(at)}`, at, at === 0 ? BULK : "ok"),
+                      )
+                    : [commandItem("helper-cmd-0", 0)],
+                itemsView: "summary",
+                status: "completed",
+                error: null,
+              },
+              threadId: HELPER,
             },
           });
           break;
@@ -312,13 +374,20 @@ const streams = (item: string, text: string, phase: Phase = "final_answer"): Ste
 const message = (
   item: string,
   text: string,
-  more: { phase?: Phase; asks?: string; turn?: number } = {},
+  more: { phase?: Phase; asks?: string; turn?: number; bulk?: boolean } = {},
 ): Step => ({ kind: "message", item, text, phase: "final_answer", ...more });
-const turnEnds = (item?: string, text?: string): Step => ({
+const turnEnds = (item?: string, text?: string, more: { bulk?: boolean } = {}): Step => ({
   kind: "turn ends",
   names: item === undefined ? null : { item, text: text ?? "" },
+  ...more,
 });
 const turnStarts: Step = { kind: "turn starts" };
+const helperStarts: Step = { kind: "helper starts" };
+const helperEnds = (more: { bulk?: boolean } = {}): Step => ({ kind: "helper ends", ...more });
+/** An answer longer than the start of a string that is kept of a line too long to read whole. */
+const LONG_ANSWER = `${ANSWER} `.repeat(Math.ceil((2 * CUT_STRING_BYTES) / ANSWER.length));
+/** What is kept of a string too long to keep whole: its start. */
+const start = (text: string): string => text.slice(0, CUT_STRING_BYTES);
 const commandStarts: Step = { kind: "command starts" };
 const commandEnds: Step = { kind: "command ends" };
 const timePasses: Step = { kind: "time passes" };
@@ -330,7 +399,10 @@ const ALL = ["codex", "claude", "claude-print"] as const;
 const STOPS = ["codex", "claude"] as const;
 const CODEX = ["codex"] as const;
 
-/** Each order, and how the work settles: its outcome, its text, and whether that is final. */
+/**
+ * Each order, and how the work settles: its outcome, its text, whether that is final, and whether
+ * only its start is kept.
+ */
 const ORDERS: readonly {
   readonly name: string;
   readonly for: readonly string[];
@@ -338,6 +410,7 @@ const ORDERS: readonly {
   readonly outcome: OutcomeReason;
   readonly text: string | null;
   readonly final: boolean;
+  readonly cut?: boolean;
 }[] = [
   {
     name: "the answer streams, then the output ends",
@@ -601,6 +674,95 @@ const ORDERS: readonly {
     text: null,
     final: false,
   },
+  {
+    name: "an earlier answer, then the turn's summary names the final one",
+    for: CODEX,
+    steps: [message("A", "Looking into it."), turnEnds("B", ANSWER)],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "an earlier answer, then the turn's summary names the final one beside a command's output too long to read whole",
+    for: CODEX,
+    steps: [message("A", "Looking into it."), turnEnds("B", ANSWER, { bulk: true })],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "the turn's end without a summary before any message, then it asks the person with a choice described at more length than a line read whole",
+    for: CODEX,
+    steps: [
+      turnEnds(),
+      message("A", "Two exports exist.", { asks: "Which one should I fix?", bulk: true }),
+    ],
+    outcome: "needs_input",
+    text: "Two exports exist.\nWhich one should I fix? (CSV, PDF)",
+    final: false,
+  },
+  {
+    name: "an agent the run's agent started holds the work until its turn ends",
+    for: CODEX,
+    steps: [helperStarts, message("A", ANSWER), turnEnds("A", ANSWER), helperEnds()],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "an agent the run's agent started holds the work until its turn ends, with a summary of thousands of commands too long to read whole",
+    for: CODEX,
+    steps: [helperStarts, message("A", ANSWER), turnEnds("A", ANSWER), helperEnds({ bulk: true })],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "a long answer, then the turn's end with it",
+    for: CODEX,
+    steps: [message("A", LONG_ANSWER), turnEnds("A", LONG_ANSWER)],
+    outcome: "success",
+    text: LONG_ANSWER,
+    final: true,
+  },
+  {
+    name: "a long answer, then the turn's end with it beside a command's output too long to read whole: the start the summary keeps never replaces the whole answer",
+    for: CODEX,
+    steps: [message("A", LONG_ANSWER), turnEnds("A", LONG_ANSWER, { bulk: true })],
+    outcome: "success",
+    text: LONG_ANSWER,
+    final: true,
+  },
+  {
+    name: "the turn's end names an answer too long to read whole, and nothing else said it: its start is the answer, cut",
+    for: CODEX,
+    steps: [turnEnds("A", BULK)],
+    outcome: "success",
+    text: start(BULK),
+    final: true,
+    cut: true,
+  },
+  {
+    name: "a piece of the answer too long to read whole: the answer is kept as far as it came, cut",
+    for: CODEX,
+    steps: [streams("A", "The export "), streams("A", BULK), turnEnds(), timePasses],
+    outcome: "success",
+    text: `The export ${start(BULK)}`,
+    final: false,
+    cut: true,
+  },
+  {
+    name: "a question too long to read whole is still a question, shown as far as it is kept",
+    for: CODEX,
+    steps: [
+      turnEnds(),
+      message("A", "Two exports exist.", { asks: `Which one should I fix? ${BULK}` }),
+    ],
+    outcome: "needs_input",
+    text: `Two exports exist.\n${start(`Which one should I fix? ${BULK}`)} (CSV, PDF)`,
+    final: false,
+    cut: true,
+  },
 ];
 
 describe("[A4.3.11.drivers.answer-orders] every driver keeps what the agent said by the time its work settles, in every order of its messages", () => {
@@ -622,7 +784,7 @@ describe("[A4.3.11.drivers.answer-orders] every driver keeps what the agent said
             outcome: order.outcome,
             text: order.text,
             textFinal: order.final,
-            textCut: false,
+            textCut: order.cut ?? false,
           });
           agent.driver.close();
         });

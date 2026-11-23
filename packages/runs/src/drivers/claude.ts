@@ -18,6 +18,9 @@
 //   turned down so the turn stops, and the work ends as needing the person, with what was asked
 //   as its text. Answering a prompt with a permission would make Claude Code write it into the
 //   person's settings: this driver never does.
+// - A line too long to read whole is read with its long strings cut (streams/cut-json.ts), so a
+//   result or a request in it is heard; one that cannot be read at all ends the work at once as
+//   failed. The stream parser, which keeps the answer, still counts such a line as unread.
 import {
   ANSWER_CAP_BYTES,
   LINE_CAP_BYTES,
@@ -25,9 +28,9 @@ import {
   type ProcessExit,
   type RunPermission,
 } from "@ttasks/contracts/runs";
-import { MCP_SERVER_KEY, PRODUCT_ID } from "@ttasks/brand";
+import { MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { createClaudePrintParser, startsTurn } from "../streams/claude-print.ts";
-import { LineSplitter } from "../streams/lines.ts";
+import { LineSplitter, type LineResult } from "../streams/lines.ts";
 import { array, capText, record, string, type Json } from "../streams/values.ts";
 import { workOf } from "./print.ts";
 import type { OpenDriver, Work } from "./types.ts";
@@ -95,6 +98,8 @@ const FOR_THE_PERSON =
   "This is a background run: no one is there to answer now. The run ends here and the person reads what you asked.";
 /** What it hears for a prompt after a Stop. */
 const STOPPED = "The person stopped this run.";
+/** Why the run ended when a line too long to read could not be read. */
+const UNREADABLE = `Claude Code sent a message too long for ${PRODUCT_NAME} to read, so it could not tell what the work did.`;
 
 /** A value of a prompt longer than this is cut: the person needs to recognise it, not read it all. */
 const VALUE_SHOWN = 1_000;
@@ -197,6 +202,8 @@ export const HEARD = [
   "asks",
   /** A request the driver does not know. */
   "unknown request",
+  /** A line too long to read whole that could not be read at all: it may have been anything. */
+  "unreadable",
   /** The program's output ended. */
   "exit",
   /** The person's Stop. */
@@ -205,7 +212,7 @@ export const HEARD = [
 export type Heard = (typeof HEARD)[number];
 
 /** How the work settles: as the program's last result judged it, or as the run decided. */
-type Settle = "judged" | "interrupted" | "unfinished" | "needs the person";
+type Settle = "judged" | "interrupted" | "unfinished" | "needs the person" | "unreadable";
 
 interface Step {
   /** The phase the run goes on in, or how the work settles. */
@@ -223,6 +230,7 @@ const STEPS: Readonly<Record<Phase, Readonly<Record<Heard, Step>>>> = {
     failed: { then: "judged" },
     asks: { then: "needs the person", say: "turn down" },
     "unknown request": { then: "turn", say: "error" },
+    unreadable: { then: "unreadable", say: "interrupt" },
     exit: { then: "judged" },
     stop: { then: "stopping", say: "interrupt" },
   },
@@ -235,6 +243,7 @@ const STEPS: Readonly<Record<Phase, Readonly<Record<Heard, Step>>>> = {
     failed: { then: "judged" },
     asks: { then: "needs the person", say: "turn down" },
     "unknown request": { then: "between", say: "error" },
+    unreadable: { then: "unreadable", say: "end" },
     // The background work it was to report on never was.
     exit: { then: "unfinished" },
     // No turn goes on: the end of the input ends what was left running.
@@ -248,6 +257,7 @@ const STEPS: Readonly<Record<Phase, Readonly<Record<Heard, Step>>>> = {
     failed: { then: "interrupted" },
     asks: { then: "stopping", say: "turn down, stopped" },
     "unknown request": { then: "stopping", say: "error" },
+    unreadable: { then: "interrupted" },
     exit: { then: "interrupted" },
     stop: { then: "stopping" },
   },
@@ -259,6 +269,7 @@ const STEPS: Readonly<Record<Phase, Readonly<Record<Heard, Step>>>> = {
     failed: { then: "settled" },
     asks: { then: "settled" },
     "unknown request": { then: "settled" },
+    unreadable: { then: "settled" },
     exit: { then: "settled" },
     stop: { then: "settled" },
   },
@@ -278,7 +289,7 @@ interface Request {
 export function claudeDriver(session: ClaudeSession): OpenDriver {
   return ({ stdin, stdout }, report) => {
     const parser = createClaudePrintParser();
-    const lines = new LineSplitter(LINE_CAP_BYTES);
+    const lines = new LineSplitter(LINE_CAP_BYTES, { readLong: true });
     let phase: Phase = "turn";
     let inputEnded = false;
     /** Background work the program last listed: each brings a turn of its own when it ends. */
@@ -345,6 +356,15 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
           break;
         case "unfinished":
           work = { ...work, ok: false, outcome: "no_result", textFinal: false };
+          break;
+        case "unreadable":
+          work = {
+            ...work,
+            ok: false,
+            outcome: "agent_error",
+            textFinal: false,
+            error: UNREADABLE,
+          };
           break;
         case "judged":
           break;
@@ -426,13 +446,24 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
       }
     };
 
-    const read = (text: string): void => {
-      let value: unknown;
-      try {
-        value = JSON.parse(text);
-      } catch {
+    /** One line: read whole, or too long and read with its long strings cut (cut-json.ts). */
+    const take = (line: LineResult): void => {
+      if (line.kind === "oversized") {
+        if (line.value === undefined) hear("unreadable");
+        else read(line.value);
         return;
       }
+      let value: unknown;
+      try {
+        value = JSON.parse(line.line.text);
+      } catch {
+        // A line that is not JSON says nothing the run decides on.
+        return;
+      }
+      read(value);
+    };
+
+    const read = (value: unknown): void => {
       const message = record(value);
       if (message === undefined) return;
       switch (message["type"]) {
@@ -474,7 +505,7 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
         const piece = chunk.subarray(start, end);
         start = end;
         for (const event of parser.push(piece)) report(event);
-        for (const line of lines.push(piece)) if (line.kind === "line") read(line.line.text);
+        for (const line of lines.push(piece)) take(line);
       }
     });
 

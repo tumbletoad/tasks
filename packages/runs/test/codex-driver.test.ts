@@ -10,6 +10,7 @@ import {
 } from "@ttasks/contracts/runs";
 import { codexDriver, type CodexSession } from "../src/drivers/codex.ts";
 import type { DriverSession, Work } from "../src/drivers/types.ts";
+import { CUT_KEPT_BYTES } from "../src/streams/cut-json.ts";
 import { serveCodex, type FakeCodex, type FakeScenario } from "./codex-server.ts";
 
 const TOOLS = {
@@ -742,7 +743,7 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
     driver.close();
   });
 
-  test("a message too long to read whose end cannot be told ends the run at once as failed, with what the agent said", async () => {
+  test("a message too long to read that cannot be read at all ends the run at once as failed, with what the agent said, not final", async () => {
     const { driver, say } = bench({ fixture: "windows-plain", stallAt: "initialize" });
     say("thread/started", { thread: { id: THREAD } });
     say("turn/started", { threadId: THREAD, turn: { id: "turn-1" } });
@@ -755,10 +756,15 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
       threadId: THREAD,
       item: { type: "commandExecution", id: "exec-1", status: "inProgress" },
     });
-    // The command's ID is longer than what is read of a line too long to keep.
+    // The command's completion holds more than is kept of a line too long to read whole.
     say("item/completed", {
       threadId: THREAD,
-      item: { type: "commandExecution", id: "x".repeat(LINE_CAP_BYTES), status: "completed" },
+      item: {
+        type: "commandExecution",
+        id: "exec-1",
+        status: "completed",
+        lines: Array.from({ length: CUT_KEPT_BYTES / 4 }, () => "ab"),
+      },
     });
     expect(await settledNow(driver)).toEqual(
       done({ ok: false, outcome: "agent_error", text: "Half done.", textFinal: false }),

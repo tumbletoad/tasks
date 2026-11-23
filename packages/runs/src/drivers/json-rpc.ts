@@ -3,15 +3,14 @@
 // and must answer what it is asked; a request the other side asks is answered while this side
 // keeps reading, so an answer that takes its time never holds up a reply or a notification.
 //
-// Lines are read in bounded memory (streams/lines.ts): one longer than the cap is skipped whole,
-// and so is anything that is not a JSON object. What a skipped line was is still told from what
-// could be read of it (streams/skim.ts): a request gets an error, an answer fails its request, and a
-// notification reaches onCut with its short params, so that no side waits for a message it lost. A
-// request with a method no handler takes gets the protocol's "method not found" error, never
-// silence.
+// Lines are read in bounded memory (streams/lines.ts). One longer than the cap is read as it
+// passes, with its long strings cut (streams/cut-json.ts), and is then a message like any other.
+// One that cannot be read so, past the reader's bounds or not JSON, reaches onLost: nothing of it
+// is known, not even whom it was for. A short line that is not a JSON message is skipped. A request
+// with a method no handler takes gets the protocol's "method not found" error, never silence.
 import type { Readable, Writable } from "node:stream";
 import { LINE_CAP_BYTES } from "@ttasks/contracts/runs";
-import { LineSplitter } from "../streams/lines.ts";
+import { LineSplitter, type LineResult } from "../streams/lines.ts";
 
 /** JSON-RPC's own error codes. */
 export const RPC_ERRORS = {
@@ -53,12 +52,6 @@ export type RequestHandler = (method: string, params: unknown, id: number | stri
 
 export type NotificationHandler = (method: string, params: unknown) => void;
 
-/**
- * Hears a line too long to read whole: a notification's method and what of its params could be
- * read (skim.ts), or undefined for both when nothing tells what the line was.
- */
-export type CutHandler = (method: string | undefined, params: unknown) => void;
-
 export interface LineRpcOptions {
   /** Writes `"jsonrpc": "2.0"` on every message. Codex's app server goes without it. */
   readonly version?: boolean;
@@ -83,10 +76,10 @@ export class LineRpc {
     throw new RpcError(RPC_ERRORS.methodNotFound, `Method not found: ${method}`);
   };
   #onNotification: NotificationHandler = () => undefined;
-  #onCut: CutHandler = () => undefined;
+  #onLost: () => void = () => undefined;
   #next = 1;
   #ended = false;
-  /** Lines that were skipped: too long, not JSON, or not a message. */
+  /** Lines that were skipped: lost, not JSON, or not a message. */
   skipped = 0;
   /** Resolves once the input ended or failed. */
   readonly ended: Promise<void>;
@@ -94,22 +87,16 @@ export class LineRpc {
   constructor(input: Readable, output: Writable, options: LineRpcOptions = {}) {
     this.#output = output;
     this.#version = options.version ?? false;
-    this.#splitter = new LineSplitter(options.lineCap ?? LINE_CAP_BYTES, { skim: true });
+    this.#splitter = new LineSplitter(options.lineCap ?? LINE_CAP_BYTES, { readLong: true });
     output.on("error", () => undefined);
     input.on("data", (chunk: Buffer | string) => {
       const bytes = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk;
-      for (const line of this.#splitter.push(bytes)) {
-        if (line.kind === "oversized") this.#cut(line.skimmed);
-        else this.#line(line.line.text);
-      }
+      for (const line of this.#splitter.push(bytes)) this.#take(line);
     });
     this.ended = new Promise((resolve) => {
       const end = (): void => {
         if (this.#ended) return;
-        for (const line of this.#splitter.end()) {
-          if (line.kind === "oversized") this.#cut(line.skimmed);
-          else this.#line(line.line.text);
-        }
+        for (const line of this.#splitter.end()) this.#take(line);
         this.#end();
         resolve();
       };
@@ -129,9 +116,9 @@ export class LineRpc {
     this.#onNotification = handler;
   }
 
-  /** Who hears a line too long to read whole that is no request or answer. */
-  onCut(handler: CutHandler): void {
-    this.#onCut = handler;
+  /** Who hears that a line too long to read could not be read at all. */
+  onLost(handler: () => void): void {
+    this.#onLost = handler;
   }
 
   /** Asks the other side. Rejects with RpcError for its error, RpcClosed when it ended first. */
@@ -183,6 +170,23 @@ export class LineRpc {
     }
   }
 
+  #take(line: LineResult): void {
+    if (line.kind === "line") {
+      this.#line(line.line.text);
+      return;
+    }
+    if (line.value !== undefined) {
+      this.#message(line.value);
+      return;
+    }
+    this.skipped += 1;
+    try {
+      this.#onLost();
+    } catch {
+      // A defect in a handler never stops the reading.
+    }
+  }
+
   #line(text: string): void {
     if (text.trim() === "") return;
     let message: unknown;
@@ -192,6 +196,10 @@ export class LineRpc {
       this.skipped += 1;
       return;
     }
+    this.#message(message);
+  }
+
+  #message(message: unknown): void {
     if (!isObject(message)) {
       this.skipped += 1;
       return;
@@ -208,29 +216,6 @@ export class LineRpc {
       return;
     }
     this.skipped += 1;
-  }
-
-  /** A line too long to read whole, told by what could be read of it. */
-  #cut(message: Record<string, unknown> | undefined): void {
-    this.skipped += 1;
-    const method = message?.["method"];
-    const id = message?.["id"];
-    if (typeof method === "string" && isId(id)) {
-      this.fail(id, new RpcError(RPC_ERRORS.invalidRequest, "The request was too long to read"));
-      return;
-    }
-    if (typeof method !== "string" && isId(id)) {
-      const pending = this.#pending.get(id);
-      this.#pending.delete(id);
-      pending?.reject(new RpcError(RPC_ERRORS.internal, "The answer was too long to read"));
-      return;
-    }
-    try {
-      if (typeof method === "string") this.#onCut(method, message?.["params"]);
-      else this.#onCut(undefined, undefined);
-    } catch {
-      // A defect in a handler never stops the reading.
-    }
   }
 
   #response(id: Id, message: Record<string, unknown>): void {

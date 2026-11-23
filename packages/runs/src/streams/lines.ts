@@ -1,14 +1,15 @@
 // Splits a byte stream into lines, incrementally and in bounded memory (A4 3.11.4).
 //
 // - A line ends at LF. A CR before the LF is dropped, so CRLF streams parse the same.
-// - A line longer than the cap is dropped whole: once the buffer would pass the cap, the bytes
-//   held so far are released and the rest of the line is skipped up to its LF. The splitter never
-//   holds more than cap + 1 bytes, whatever the input and however it is chunked. It is reported
-//   when it ends, with what a JsonSkim told of it on the way when the splitter skims.
+// - A line longer than the cap is not kept: once the buffer would pass the cap, the bytes held so
+//   far go to its reader, when the splitter reads long lines (cut-json.ts), and are released; the
+//   rest of the line goes to the reader as it comes, up to its LF. The splitter never holds more
+//   than cap + 1 bytes, whatever the input and however it is chunked, and the reader keeps at most
+//   CUT_KEPT_BYTES. The line is reported when it ends, with its value cut when it could be read.
 // - Bytes are decoded as UTF-8 only once a line is complete, so a code point split across chunks
 //   decodes correctly. Invalid UTF-8 is reported and decoded with replacement characters.
 // - At the end of the stream, an unterminated rest is handed out as a final, partial line.
-import { JsonSkim } from "./skim.ts";
+import { CutJson } from "./cut-json.ts";
 
 /** One line, decoded. `invalidUtf8` says the bytes were not valid UTF-8. */
 export interface Line {
@@ -20,12 +21,15 @@ export interface Line {
 
 export type LineResult =
   | { kind: "line"; line: Line }
-  /** `skimmed`: the line's JSON object with its short values, when the splitter skims and it was one. */
-  | { kind: "oversized"; skimmed?: Record<string, unknown> };
+  /**
+   * `value`: the line's JSON value with its long strings cut (cut-json.ts), when the splitter
+   * reads long lines and the line could be read. Without it, nothing of the line is known.
+   */
+  | { kind: "oversized"; value?: Record<string, unknown> | unknown[] };
 
 export interface LineSplitterOptions {
-  /** Reads each line too long to keep as it passes, to tell what it was (skim.ts). */
-  readonly skim?: boolean;
+  /** Reads each line too long to keep as it passes, its long strings cut (cut-json.ts). */
+  readonly readLong?: boolean;
 }
 
 const LF = 0x0a;
@@ -47,17 +51,17 @@ export function decodeUtf8(bytes: Uint8Array): { text: string; invalidUtf8: bool
 export class LineSplitter {
   private buf: Uint8Array;
   private size = 0;
-  /** A line too long to keep is being skipped: what reads it as it passes, when the splitter skims. */
-  private skipping: { readonly skim: JsonSkim | undefined } | undefined;
+  /** A line too long to keep is being skipped: what reads it as it passes, when the splitter reads. */
+  private skipping: { readonly reader: CutJson | undefined } | undefined;
   private readonly cap: number;
-  private readonly skims: boolean;
+  private readonly reads: boolean;
   /** The most a line may hold before it is dropped: the cap, plus one for a CR before the LF. */
   private readonly limit: number;
 
   constructor(cap: number, options: LineSplitterOptions = {}) {
     this.cap = cap;
     this.limit = cap + 1;
-    this.skims = options.skim === true;
+    this.reads = options.readLong === true;
     this.buf = new Uint8Array(Math.min(SMALL, this.limit));
   }
 
@@ -69,6 +73,11 @@ export class LineSplitter {
   /** Bytes allocated for the line buffer. Never more than cap + 1. */
   get capacity(): number {
     return this.buf.length;
+  }
+
+  /** Bytes kept of the line too long to keep that is being read. */
+  get kept(): number {
+    return this.skipping?.reader?.kept ?? 0;
   }
 
   /** Feeds a chunk. Returns the lines it completed, in order. */
@@ -94,7 +103,7 @@ export class LineSplitter {
   private take(segment: Uint8Array): void {
     if (segment.length === 0) return;
     if (this.skipping !== undefined) {
-      this.skipping.skim?.push(segment);
+      this.skipping.reader?.push(segment);
       return;
     }
     const needed = this.size + segment.length;
@@ -111,12 +120,12 @@ export class LineSplitter {
     this.size = needed;
   }
 
-  /** From here on the line is skipped: what was held so far and `rest` go to its skim. */
+  /** From here on the line is skipped: what was held so far and `rest` go to its reader. */
   private skip(rest: Uint8Array): void {
-    const skim = this.skims ? new JsonSkim() : undefined;
-    skim?.push(this.buf.subarray(0, this.size));
-    skim?.push(rest);
-    this.skipping = { skim };
+    const reader = this.reads ? new CutJson() : undefined;
+    reader?.push(this.buf.subarray(0, this.size));
+    reader?.push(rest);
+    this.skipping = { reader };
     this.reset();
   }
 
@@ -127,8 +136,8 @@ export class LineSplitter {
     const skipped = this.skipping;
     if (skipped !== undefined) {
       this.skipping = undefined;
-      const skimmed = skipped.skim?.end();
-      out.push(skimmed === undefined ? { kind: "oversized" } : { kind: "oversized", skimmed });
+      const value = skipped.reader?.end();
+      out.push(value === undefined ? { kind: "oversized" } : { kind: "oversized", value });
       return;
     }
     const { text, invalidUtf8 } = decodeUtf8(this.buf.subarray(0, end));
