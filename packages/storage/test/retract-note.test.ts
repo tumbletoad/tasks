@@ -57,11 +57,12 @@ describe("[A1.note.retract] a note retracted from a task, and put back", () => {
       .prepare("SELECT * FROM notes WHERE task_id = $task AND ordinal = $ordinal")
       .get({ task, ordinal }) ?? {};
   /** The task's own fields: `touched` follows every change under it. */
-  const taskRow = (id: string): Row => {
-    const { touched: _, ...fields } =
-      fx.reader.prepare("SELECT * FROM tasks WHERE id = $id").get({ id }) ?? {};
-    return fields;
-  };
+  const taskRow = (id: string): Row =>
+    Object.fromEntries(
+      Object.entries(
+        fx.reader.prepare("SELECT * FROM tasks WHERE id = $id").get({ id }) ?? {},
+      ).filter(([column]) => column !== "touched"),
+    );
   /** A task with notes by the person and by Codex, in that order: n1, n2, n3. */
   const noted = (): Id<"t"> => {
     const id = newId("t");

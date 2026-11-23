@@ -343,7 +343,7 @@ function Sources({
                 {/* Whose it was and who took it back, above its words, as the thread's lines read. */}
                 <div className={styles.muted}>
                   {t("note.removedBy", {
-                    author: actorOf(note.author, t).who,
+                    who: actorOf(note.author, t).who,
                     by: note.removed.by,
                     at: Date.parse(note.removed.at),
                   })}

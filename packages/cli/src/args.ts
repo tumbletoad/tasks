@@ -221,6 +221,17 @@ export function verbSpec(verb: string, args: readonly string[] = []): VerbSpec |
 export const verbFaces = (verb: string): readonly VerbSpec[] =>
   CLI_SPEC.verbs.filter((v) => v.verb === verb);
 
+/** The face of a shared verb whose `when` field the `--input` JSON names, else `verb` itself. */
+export function faceOfInput(verb: VerbSpec, input: unknown): VerbSpec {
+  if (verb.when !== undefined || typeof input !== "object" || input === null) return verb;
+  const names = (face: VerbSpec) =>
+    (face.when ?? []).flatMap((flag) => face.flags.find((f) => f.flag === flag)?.field ?? []);
+  return (
+    verbFaces(verb.verb).find((face) => names(face).some((field) => Object.hasOwn(input, field))) ??
+    verb
+  );
+}
+
 /** Converts one value to its field's type, or a usage error naming the option. */
 function typed(
   raw: string,

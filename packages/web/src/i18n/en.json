@@ -289,7 +289,7 @@
   "source.notPutBack": "The source was not put back. Try again.",
   "note.kind": "Note",
   "note.removedCount": "{count, plural, one {# note removed} other {# notes removed}}",
-  "note.removedBy": "{author} · removed by {by, select, user {you} import {the import} other {{by}}} {at, date, medium}",
+  "note.removedBy": "{who} · removed by {by, select, user {you} import {the import} other {{by}}} {at, date, medium}",
   "note.notRemoved": "The note was not removed. Try again.",
   "note.notPutBack": "The note was not put back. Try again.",
   "task.removedCount": "{count} removed",
