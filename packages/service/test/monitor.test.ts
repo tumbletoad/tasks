@@ -2,7 +2,7 @@
 // recorded conversations: every rule of the conversation, every way the fake misbehaves, and after
 // each test no fake left running. Nothing here starts the real `ttam`.
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -440,6 +440,42 @@ describe("[A5.agents.fake-ttam] the fake ttam answers TTAM's recorded conversati
       expect(got.map((line) => JSON.parse(line) as unknown)).toEqual(expected);
     });
   }
+
+  test("`none` in its control file takes TTAM away: a fake that runs or is held ends, and the next start finds none", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ttasks-fake-ttam-"));
+    dirs.push(dir);
+    const control = join(dir, "mode");
+    const log = join(dir, "fake.log");
+    writeFileSync(control, "");
+    const fake = fakeTtam({ control, log });
+    // As the end-to-end tests' service finds it (tests/e2e/serve-entry.ts).
+    const monitor = new Monitor({
+      command: (): Promise<MonitorCommand> =>
+        Promise.resolve(
+          readFileSync(control, "utf8").trim() === "none"
+            ? { ok: false, reason: "not_found" }
+            : { ok: true, file: fake.file, args: fake.args, env: process.env, cwd: dir },
+        ),
+      times: { ...NEVER, retryMs: [0] },
+    });
+    monitors.push(monitor);
+    const pids = () => new Set(readJsonLines(log).map((line) => (line as { pid: number }).pid));
+    const exited = { ok: false, problem: { kind: "failed", reason: "exited" } };
+    const missing = { ok: false, problem: { kind: "not_installed", reason: "not_found" } };
+
+    expect((await monitor.ask()).ok).toBe(true);
+    writeFileSync(control, "none");
+    expect(await monitor.ask()).toEqual(exited);
+    expect(await monitor.ask()).toEqual(missing);
+
+    monitor.recheck();
+    writeFileSync(control, "hold");
+    const held = monitor.ask();
+    await until(() => pids().size === 2);
+    writeFileSync(control, "none");
+    expect(await held).toEqual(exited);
+    expect(await monitor.ask()).toEqual(missing);
+  });
 });
 
 describe("[A3.3.14.doctor.monitor] where ttam comes from, and whether it fits", () => {

@@ -5428,7 +5428,7 @@
     },
     {
       "id": "A5.agents.fake-ttam",
-      "title": "The test kit's fake ttam answers both of TTAM's recorded conversations line for line as TTAM did, busy and every error included, and exits as recorded",
+      "title": "The test kit's fake ttam answers both of TTAM's recorded conversations line for line as TTAM did, busy and every error included, and exits as recorded; with `none` in its control file a fake that runs or is held ends, so the next start finds no TTAM",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
