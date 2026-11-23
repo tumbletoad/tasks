@@ -1,10 +1,11 @@
-// Claude Code's own lock on `.claude.json`, which setup takes for its splice. Claude
-// Code rewrites that file while a session runs, and its writers take `<file>.lock` (a folder, made
-// exclusively), read the file again under it and write it whole: a session that saves while setup
-// holds the lock waits, then keeps setup's entry. The holder refreshes the folder's time while it
-// holds it, so one whose time is more than ten seconds old was left by a process that ended, and
-// is taken over, as Claude Code's own writers do.
-import { rmdirSync, statSync } from "node:fs";
+// Claude Code's own lock on `.claude.json`, which setup takes for the last step of its write. Claude
+// Code's writers take `<file>.lock` (a folder, made exclusively), read the file again under it and
+// write it whole: a session that saves while setup holds the lock waits, then keeps setup's entry.
+// Claude Code's start-up does not wait: it writes without the lock after about 1.5 seconds. Setup
+// holds the lock only to compare the file with what it read and to rename its new file into place,
+// so that comparison is what protects a save made then. A folder whose time is more than ten seconds
+// old was left by a process that ended, and is taken over, as Claude Code's own writers do.
+import { rmdirSync, statSync, type BigIntStats } from "node:fs";
 import { makeDir } from "../hub/files.ts";
 
 /** A lock folder whose time is older than this was left behind. */
@@ -23,11 +24,28 @@ function stale(lock: string, now: number): boolean {
   }
 }
 
+/** The folder at `lock` as this call made it, to tell it from one another writer made since. */
+function identity(lock: string): BigIntStats | undefined {
+  try {
+    return statSync(lock, { bigint: true });
+  } catch {
+    return undefined;
+  }
+}
+
+const sameFolder = (a: BigIntStats | undefined, b: BigIntStats | undefined): boolean =>
+  a !== undefined &&
+  b !== undefined &&
+  a.ino === b.ino &&
+  a.birthtimeNs === b.birthtimeNs &&
+  a.mtimeNs === b.mtimeNs;
+
 /**
  * Runs `work` while holding `<file>.lock`, or gives up (`held: false`): `busy` when another
  * writer keeps the lock through every pause, `unwritable` when the lock cannot be made where the
  * file is (a folder that takes no new entry, as a read-only home is on Linux and macOS: the file
- * could not be replaced there either). Only the folder this call made is removed.
+ * could not be replaced there either). At the end the lock is removed only when it is still the
+ * folder this call made: one that another writer took over after its expiry is theirs.
  */
 export async function withAppLock<T>(
   file: string,
@@ -58,13 +76,16 @@ export async function withAppLock<T>(
     attempt += 1;
     await wait(pause);
   }
+  const made = identity(lock);
   try {
     return { held: true, value: work() };
   } finally {
-    try {
-      rmdirSync(lock);
-    } catch {
-      // Already gone: nothing of setup's is left.
+    if (sameFolder(made, identity(lock))) {
+      try {
+        rmdirSync(lock);
+      } catch {
+        // Already gone: nothing of setup's is left.
+      }
     }
   }
 }

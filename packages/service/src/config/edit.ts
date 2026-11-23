@@ -10,11 +10,11 @@
 //
 // Who may edit: approvals and instances are user-only operations (A4 3.2 step 4, R7). The caller
 // (the UI session or an interactive CLI, A2 3.6.5) checks that; this module only writes.
-import { closeSync, fsyncSync, lstatSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { hasControl, isTable } from "@ttasks/launch";
-import { atomicWrite, createFile, makeDir, writeAll } from "../hub/files.ts";
+import { atomicWrite, makeDir, stageFile } from "../hub/files.ts";
 import { loadMachineConfig, MACHINE_TOML } from "./machine-toml.ts";
 import { scanToml, ScanError, type ScannedHeader, type ScannedLine } from "./scan.ts";
 import {
@@ -535,14 +535,15 @@ function tableRemoval(
   let before = text.slice(0, span.start);
   const after = text.slice(span.end);
   const { eol } = layout;
-  if (edit.before !== null) {
-    if (before.endsWith(edit.before)) before = before.slice(0, before.length - edit.before.length);
-  } else if (
-    before.endsWith(eol) &&
-    (before.length === eol.length || before.slice(0, -eol.length).endsWith("\n"))
-  ) {
-    before = before.slice(0, before.length - eol.length);
+  const added = edit.before ?? eol;
+  if (added !== "" && before.endsWith(added)) {
+    const rest = before.slice(0, before.length - added.length);
+    // One break is a blank line only when a line break comes right before it: otherwise it now ends
+    // a line someone wrote there. Two are the break that ended the file's last line and a blank one.
+    if (rest === "" || rest.endsWith("\n") || /^(?:\r?\n){2}$/u.test(added)) before = rest;
   }
+  // What stays after the table starts a line of its own.
+  if (after !== "" && before !== "" && !before.endsWith("\n")) before += eol;
   return before + after;
 }
 
@@ -793,12 +794,13 @@ export interface CommitOptions {
  * alone (`changed_meanwhile`). What remains is the rename itself: a save in that instant is not
  * seen. TTasks's own edits are synchronous, so two in one process never interleave. The write keeps
  * the file's mode exactly, whatever the umask (it is the person's choice); a missing file is
- * created exclusively, 0600, and missing folders 0700. The folder and the file are judged again first, as the
- * service judges them: machine.toml is never written into a folder that fails the rule, and never
- * through a link (A2 3.2.4; the reader refuses one, so a link that appeared meanwhile is a
- * change). A caller that edits another file with the same editor (an agent app's configuration,
- * setup/agents.ts) passes its own rule for that file: machine.toml's rule is about the product's
- * own configuration folder and refuses group write, which is the norm for files other apps make.
+ * created 0600 and linked into place exclusively, so one that appeared meanwhile is never replaced,
+ * and missing folders are made 0700. The folder and the file are judged again first, as the service
+ * judges them: machine.toml is never written into a folder that fails the rule, and never through a
+ * link (A2 3.2.4; the reader refuses one, so a link that appeared meanwhile is a change). A caller
+ * that edits another file with the same editor (the instruction block, setup/block.ts) passes its own
+ * rule for that file: machine.toml's rule is about the product's own configuration folder and
+ * refuses group write, which is the norm for files other apps make.
  */
 export function commitEdit(edit: PreparedEdit, options: CommitOptions = {}): EditResult {
   const unchanged = () => {
@@ -812,25 +814,10 @@ export function commitEdit(edit: PreparedEdit, options: CommitOptions = {}): Edi
   if (unsafe(edit.path)) return { ok: false, reason: "unsafe" };
   if (!unchanged()) return { ok: false, reason: "changed_meanwhile" };
   if (edit.before === undefined) {
-    // A file that was not there is created exclusively: one that appeared meanwhile is never
-    // replaced.
     makeDir(dirname(edit.path), 0o700);
-    let fd: number;
-    try {
-      fd = createFile(edit.path, 0o600, "wx");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-        return { ok: false, reason: "changed_meanwhile" };
-      }
-      throw error;
-    }
-    try {
-      writeAll(fd, edit.text);
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-    return { ok: true, text: edit.text };
+    return stageFile(edit.path, edit.text, 0o600).create()
+      ? { ok: true, text: edit.text }
+      : { ok: false, reason: "changed_meanwhile" };
   }
   let mode = 0o600;
   try {

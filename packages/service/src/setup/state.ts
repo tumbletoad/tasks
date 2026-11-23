@@ -39,10 +39,11 @@ export interface HomeRecord {
   readonly account: string;
   readonly space: string;
   /**
-   * `applying`: written before anything changes in the home, and the home has no access yet.
-   * `applied`: the entry was found in place, then the home got its access (`grant`). `removing`:
-   * the access is being taken back, or was, and the entry still waits to come out. A record that is
-   * not `applied` when setup takes its lock was left by a run that ended midway.
+   * `applying`: written before anything changes in the home. `applied`: the entry was found in
+   * place, then the home got its access (`grant`). `removing`: setup decided to take it back (the
+   * person turned it off, or an apply failed), and the entry may still wait to come out. A record
+   * that is not `applied` when setup takes its lock was left by a run that ended midway, and is
+   * finished as a removal.
    */
   readonly state: "applying" | "applied" | "removing";
   /** The entry TTasks writes there, as it intended it: never what it read back. */
@@ -66,6 +67,14 @@ export class SetupStateInvalid extends Error {
   override readonly name = "SetupStateInvalid";
   constructor() {
     super("Setup's record of the agent homes cannot be read");
+  }
+}
+
+/** A record that setup could not read back is never written: the one before it stays. */
+export class SetupStateTooLarge extends Error {
+  override readonly name = "SetupStateTooLarge";
+  constructor() {
+    super("Setup's record of the agent homes would be larger than it can read back");
   }
 }
 
@@ -233,7 +242,9 @@ export function writeRecords(stateDir: string, records: readonly HomeRecord[]): 
 
 /** Replaces one of setup's record files, 0600 in its user-only folder. */
 export function writeStateFile(stateDir: string, file: string, doc: unknown): void {
+  const text = `${JSON.stringify(doc, null, 2)}\n`;
+  if (Buffer.byteLength(text, "utf8") > MAX_STATE_BYTES) throw new SetupStateTooLarge();
   const dir = setupDir(stateDir);
   if (ensurePrivateDir(dir) !== undefined) throw new SetupStateUnsafe();
-  atomicWrite(join(dir, file), `${JSON.stringify(doc, null, 2)}\n`, 0o600);
+  atomicWrite(join(dir, file), text, 0o600);
 }

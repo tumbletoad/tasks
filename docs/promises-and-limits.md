@@ -324,9 +324,11 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Agent setup shows what it will change, changes only its own entry, and removes only what it
   wrote. What it gives you to add or take out by hand is the file and the entry, never a command,
   which would act on whatever account the shell you paste it into selects.
-- An agent app gets TTasks's tools only once its entry is in place. Turning them off takes the
-  access away first, also when you changed the entry or its file cannot be written, and says what
-  stays in the file.
+- An agent app gets TTasks's tools only once its entry is in place, and only from the change you
+  asked for: a setup that did not finish is finished later only by taking the access away. Turning
+  them off takes the access away first, also when you changed the entry or its file cannot be read
+  or written, and says what stays in the file; when TTasks's service does not confirm it, nothing
+  changes and you are told the tools are still on.
 - An update is checked before it runs. A failed update returns to the version before it.
 - An update does not end a background run unasked. It waits up to 15 minutes for running runs,
   then asks whether to stop them or give the update up; without anyone to ask, it gives up.
@@ -403,8 +405,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   afterwards, writes its own list of spaces back, and the next start follows that list.
 - Agent setup reads an agent app's settings file again just before it replaces it, and leaves a
   file that changed alone; a save another program makes in the instant between that read and the
-  replacement is lost, except a Claude Code session's, which waits for setup under Claude Code's
-  own lock.
+  replacement is lost. For that read and the replacement setup holds Claude Code's own lock, for
+  milliseconds: a Claude Code session that saves then waits, but Claude Code's start-up stops
+  waiting after about 1.5 seconds, and for it only that last read protects the file.
 - On a machine that several people sign in to, another person could serve a page at TTasks's
   address while TTasks is stopped.
 - Words you typed and did not send for a task in the Trash, or for one the space does not have now,

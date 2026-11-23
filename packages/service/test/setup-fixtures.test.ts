@@ -3,19 +3,23 @@
 // writes. After each action it compares the file's raw bytes, the home's access, and the other home
 // of the same app, which nothing may change. Every home is a folder under this file's own temporary
 // folder; no app's command runs, and the grants table is the test's own (setup-rows.ts).
-import {
+import fs, {
   chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
+  renameSync,
+  rmdirSync,
   rmSync,
   statSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
 import { detect, nodeDetectHost } from "@ttasks/launch";
@@ -168,6 +172,8 @@ async function apply(w: World, a: Adapter) {
 async function remove(w: World, a: Adapter) {
   return removeHome(w.input, await viewOf(w, a), w.rows);
 }
+
+const recordPath = (w: World): string => join(setupDir(w.input.stateDir), SETUP_FILE);
 
 /** Whether the selected home has access: a live row of the test's grants table. */
 const accessOf = (w: World, a: Adapter, file: string): boolean =>
@@ -413,37 +419,43 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
-    "a change made while setup gives the access is never recorded as setup's: removal leaves it",
+    "a save while setup asks for the access that changes or takes out the entry: setup looks again, takes the access back, and leaves what the save left",
     async () => {
       for (const a of ADAPTERS) {
-        const w = await world();
-        const file = a.file(w);
-        seed(file, a.format === "json" ? "{}\n" : "");
-        // The person adds a field to the entry at the moment setup asks for its row.
-        const rows = keptRows((verb) => {
-          if (verb !== "grant") return;
-          const text = readFileSync(file, "utf8");
-          writeFileSync(
-            file,
-            a.format === "json"
-              ? text.replace(`"args": [`, `"env": {"PERSON": "1"},\n      "args": [`)
-              : `${text}tool_timeout_sec = 99\n`,
-          );
-        });
-        const view = await viewOf(w, a);
-        const [item] = planOf(w.input, [view], SPACE);
-        expect((await applyHome(w.input, view, SPACE, rows, item?.change)).result).toBe("applied");
-        const instance = view.home.instance;
-        expect(readRecords(w.input.stateDir)).toMatchObject([
-          { entry: expectedEntry(w, a, instance) },
-        ]);
-        const changed = readFileSync(file, "utf8");
-        expect(await removeHome(w.input, await viewOf(w, a), rows)).toMatchObject({
-          result: "left",
-          reason: "edited",
-          access: "off",
-        });
-        expect(readFileSync(file, "utf8")).toBe(changed);
+        for (const save of ["changes the entry", "takes the entry out"] as const) {
+          const w = await world();
+          const file = a.file(w);
+          seed(file, a.format === "json" ? "{}\n" : "");
+          const before = readFileSync(file, "utf8");
+          let saved = "";
+          // Another save lands right after setup checked its entry, before the service answers.
+          const rows = keptRows((verb) => {
+            if (verb !== "grant") return;
+            const text = readFileSync(file, "utf8");
+            saved =
+              save === "takes the entry out"
+                ? before
+                : a.format === "json"
+                  ? text.replace(`"args": [`, `"env": {"PERSON": "1"},\n      "args": [`)
+                  : `${text}tool_timeout_sec = 99\n`;
+            writeFileSync(file, saved);
+          });
+          const view = await viewOf(w, a);
+          const [item] = planOf(w.input, [view], SPACE);
+          const what = `${a.app}: a save that ${save}`;
+          expect(await applyHome(w.input, view, SPACE, rows, item?.change), what).toMatchObject({
+            result: "failed",
+            reason: "changed_meanwhile",
+            access: "off",
+          });
+          expect(
+            rows.asked.map((x) => x.verb),
+            what,
+          ).toEqual(["grant", "revoke"]);
+          expect(rows.live, what).toEqual([]);
+          expect(readFileSync(file, "utf8"), what).toBe(saved);
+          expect(readRecords(w.input.stateDir), what).toEqual([]);
+        }
       }
     },
     SLOW,
@@ -555,6 +567,27 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
     expect(ran).toBe(false);
   });
 
+  test("a lock taken over while setup held it (past its expiry) is the new holder's: setup leaves it", async () => {
+    const w = await world();
+    const file = join(w.home, ".claude-work", ".claude.json");
+    const lock = `${file}.lock`;
+    const outcome = await withAppLock(
+      file,
+      () => Promise.resolve(),
+      () => {
+        // Another writer found setup's lock stale, removed it and made its own, more than ten
+        // seconds after setup made its.
+        rmdirSync(lock);
+        mkdirSync(lock);
+        const later = new Date(Date.now() + 11_000);
+        utimesSync(lock, later, later);
+        return "done";
+      },
+    );
+    expect(outcome).toEqual({ held: true, value: "done" });
+    expect(existsSync(lock)).toBe(true);
+  });
+
   test.skipIf(root)(
     "a file that cannot be written: no access is given; turning off takes the access away, and the next setup takes the entry out once",
     async () => {
@@ -574,6 +607,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           restore();
         }
         expect(readFileSync(file)).toEqual(before);
+        expect(readdirSync(dirname(file)).filter((n) => n !== basename(file))).toEqual([]);
         expect(w.rows.asked).toEqual([]);
         expect(readRecords(w.input.stateDir)).toEqual([]);
 
@@ -602,7 +636,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
-    "a run that ended midway is settled once by the next setup: finished when its entry is in place, undone otherwise",
+    "a run that ended midway is settled once by the next setup, always as a removal: a later run never gives access",
     async () => {
       for (const a of ADAPTERS) {
         const w = await world();
@@ -614,16 +648,23 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         if (record === undefined) throw new Error("no record");
         const withEntry = readFileSync(file);
 
-        // Ended after the entry was written, before its access: finished.
-        await w.rows.revoke((await viewOf(w, a)).home);
-        writeRecords(w.input.stateDir, [{ ...record, state: "applying", grant: null }]);
-        expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
-          { result: "applied", access: "on" },
-        ]);
-        expect(accessOf(w, a, file)).toBe(true);
-        expect(readFileSync(file)).toEqual(withEntry);
-        expect(readRecords(w.input.stateDir)).toMatchObject([{ state: "applied" }]);
-        expect(await settleHomes(w.input, w.rows)).toEqual([]);
+        // Ended after the entry was written, before its access, and after its access, before the
+        // record said so: the entry comes out and the access is off. The person turns it on again.
+        for (const granted of [false, true]) {
+          writeFileSync(file, withEntry);
+          await w.rows.revoke((await viewOf(w, a)).home);
+          if (granted) await w.rows.grant((await viewOf(w, a)).home, SPACE);
+          writeRecords(w.input.stateDir, [{ ...record, state: "applying", grant: null }]);
+          const asked = w.rows.asked.length;
+          expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
+            { result: "removed", access: "off" },
+          ]);
+          expect(w.rows.asked.slice(asked).map((x) => x.verb)).toEqual(["revoke"]);
+          expect(accessOf(w, a, file)).toBe(false);
+          expect(readFileSync(file)).toEqual(before);
+          expect(readRecords(w.input.stateDir)).toEqual([]);
+          expect(await settleHomes(w.input, w.rows)).toEqual([]);
+        }
 
         // Ended after its record, before the entry was written: nothing to finish.
         writeFileSync(file, before);
@@ -649,7 +690,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
-    "a refused row takes the entry back, and a revoke that fails says the access is unknown and is done again by the next setup",
+    "a refused row takes the entry back",
     async () => {
       for (const a of ADAPTERS) {
         const w = await world();
@@ -664,16 +705,300 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         });
         expect(readFileSync(file)).toEqual(before);
         expect(readRecords(w.input.stateDir)).toEqual([]);
+      }
+    },
+    SLOW,
+  );
 
-        w.rows.refuse = {};
-        expect((await apply(w, a)).result).toBe("applied");
-        w.rows.refuse.revoke = true;
-        expect(await remove(w, a), a.app).toMatchObject({ result: "removed", access: "unknown" });
+  test(
+    "a refused row whose undo cannot write the file: the record says it is being taken back, and no later run gives the home access",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        const file = a.file(w);
+        seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
+        const before = readFileSync(file);
+        let restore = (): void => undefined;
+        // The file becomes one setup cannot write right as the service refuses the row.
+        const rows = keptRows((verb) => {
+          if (verb === "grant") restore = unwritable(file);
+        });
+        rows.refuse.grant = "grant_failed";
+        const view = await viewOf(w, a);
+        const [item] = planOf(w.input, [view], SPACE);
+        try {
+          expect(await applyHome(w.input, view, SPACE, rows, item?.change), a.app).toMatchObject({
+            result: "failed",
+            reason: "grant_failed",
+            access: "off",
+          });
+          expect(readRecords(w.input.stateDir), a.app).toMatchObject([{ state: "removing" }]);
+          // The next run, which may be another app's: it takes the access back, never gives it.
+          rows.refuse = {};
+          const asked = rows.asked.length;
+          await settleHomes(w.input, rows);
+          expect(
+            rows.asked.slice(asked).map((x) => x.verb),
+            a.app,
+          ).toEqual(["revoke"]);
+          expect(rows.live, a.app).toEqual([]);
+        } finally {
+          restore();
+        }
+        expect(await settleHomes(w.input, rows), a.app).toMatchObject([
+          { result: "removed", access: "off" },
+        ]);
         expect(readFileSync(file)).toEqual(before);
+        expect(readRecords(w.input.stateDir)).toEqual([]);
+        expect(rows.asked.filter((x) => x.verb === "grant")).toHaveLength(1);
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "turning off asks for the revoke first and alone: one that fails changes nothing and says the access is still on; a record that cannot be written never stops it",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        const file = a.file(w);
+        seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
+        const before = readFileSync(file);
+        expect((await apply(w, a)).result).toBe("applied");
+        const withEntry = readFileSync(file);
+        const recorded = readFileSync(recordPath(w));
+
+        w.rows.refuse.revoke = true;
+        expect(await remove(w, a), a.app).toMatchObject({
+          result: "failed",
+          reason: "revoke_failed",
+          access: "on",
+        });
+        expect(readFileSync(file)).toEqual(withEntry);
+        expect(readFileSync(recordPath(w))).toEqual(recorded);
         expect(accessOf(w, a, file)).toBe(true);
         w.rows.refuse = {};
-        expect(await settleHomes(w.input, w.rows)).toMatchObject([{ access: "off" }]);
+        // Nothing is left for a later run: the home is as it was, on.
+        expect(await settleHomes(w.input, w.rows)).toEqual([]);
+        expect(accessOf(w, a, file)).toBe(true);
+
+        // Setup's own record cannot be written (a full disk): the access goes all the same.
+        const restore = unwritable(recordPath(w));
+        try {
+          expect(await remove(w, a), a.app).toMatchObject({
+            result: "failed",
+            reason: "state_unwritable",
+            access: "off",
+            kept: "own",
+          });
+        } finally {
+          restore();
+        }
+        expect(w.rows.asked.at(-1)).toMatchObject({ verb: "revoke" });
         expect(accessOf(w, a, file)).toBe(false);
+        expect(readFileSync(file)).toEqual(withEntry);
+        expect(await remove(w, a), a.app).toMatchObject({ result: "removed", access: "off" });
+        expect(readFileSync(file)).toEqual(before);
+        expect(readRecords(w.input.stateDir)).toEqual([]);
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "a home whose folder is gone: no file is no entry, so turning off is done and the record goes",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        const file = a.file(w);
+        seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
+        expect((await apply(w, a)).result).toBe("applied");
+        const [record] = readRecords(w.input.stateDir);
+        if (record === undefined) throw new Error("no record");
+        const folder = dirname(file);
+        renameSync(folder, `${folder}-moved`);
+        expect(await remove(w, a), a.app).toMatchObject({ result: "removed", access: "off" });
+        expect(accessOf(w, a, file)).toBe(false);
+        expect(readRecords(w.input.stateDir)).toEqual([]);
+        // A removal an earlier run left for such a home is done too, once.
+        writeRecords(w.input.stateDir, [{ ...record, state: "removing" }]);
+        expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
+          { result: "removed", access: "off" },
+        ]);
+        expect(readRecords(w.input.stateDir)).toEqual([]);
+        expect(await settleHomes(w.input, w.rows)).toEqual([]);
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "a new file is never left half written: a short write on a full disk, or a failed flush, leaves no file; one that appeared meanwhile is never replaced",
+    async () => {
+      for (const a of ADAPTERS.filter((x) => x.needsFile !== true)) {
+        for (const label of ["a short write, then a full disk", "a failed flush"] as const) {
+          const w = await world();
+          const file = a.file(w);
+          const what = `${a.app}: ${label}`;
+          let writes = 0;
+          const outcome = await faulty(
+            file,
+            label === "a failed flush"
+              ? { sync: true }
+              : {
+                  write: (write, fd, bytes, offset) => {
+                    writes += 1;
+                    if (writes === 1) return write(fd, bytes, offset, 4);
+                    throw Object.assign(new Error("no space"), { code: "ENOSPC" });
+                  },
+                },
+            () => apply(w, a),
+          );
+          expect(outcome, what).toMatchObject({ result: "failed", access: "off" });
+          expect(existsSync(file), what).toBe(false);
+          expect(readdirSync(dirname(file)), what).toEqual([]);
+          expect(readRecords(w.input.stateDir), what).toEqual([]);
+          expect(w.rows.asked, what).toEqual([]);
+        }
+        {
+          // Another program makes the file while setup writes its own.
+          const w = await world();
+          const file = a.file(w);
+          const theirs = a.format === "json" ? '{"theirs": 1}\n' : "theirs = 1\n";
+          let made = false;
+          const outcome = await faulty(
+            file,
+            {
+              write: (write, fd, ...rest) => {
+                if (!made) {
+                  made = true;
+                  writeFileSync(file, theirs);
+                }
+                return write(fd, ...rest);
+              },
+            },
+            () => apply(w, a),
+          );
+          if (a.app === "claude-code") {
+            // Claude Code's file is the app's own state: the entry joins it as it is then.
+            expect(outcome).toMatchObject({ result: "applied" });
+            expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ theirs: 1 });
+          } else {
+            expect(outcome).toMatchObject({ result: "failed", reason: "changed_meanwhile" });
+            expect(readFileSync(file, "utf8")).toBe(theirs);
+          }
+        }
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "the bytes around the entry: after a removal every line the person wrote is a line of its own, with the bytes they gave it",
+    async () => {
+      const toml: readonly [string, string, (text: string) => string, string][] = [
+        [
+          "a table appended after the entry, no final newline before",
+          'model="m"',
+          (t) => `${t}[mcp_servers.x]\ncommand = "x"\n`,
+          'model="m"\n[mcp_servers.x]\ncommand = "x"\n',
+        ],
+        [
+          "a comment appended after the entry, no final newline before",
+          'model="m"',
+          (t) => `${t}# mine\n`,
+          'model="m"\n# mine\n',
+        ],
+        [
+          "a comment appended without a newline, after a comment without one",
+          "# c",
+          (t) => `${t}# mine`,
+          "# c\n# mine",
+        ],
+        [
+          "a table appended after the entry",
+          'model="m"\n',
+          (t) => `${t}[mcp_servers.x]\ncommand = "x"\n`,
+          'model="m"\n[mcp_servers.x]\ncommand = "x"\n',
+        ],
+        [
+          "a table inserted right before the entry",
+          'model="m"\n',
+          (t) =>
+            t.replace(
+              `[mcp_servers.${MCP_SERVER_KEY}]`,
+              `[mcp_servers.y]\ncommand = "y"\n[mcp_servers.${MCP_SERVER_KEY}]`,
+            ),
+          'model="m"\n\n[mcp_servers.y]\ncommand = "y"\n',
+        ],
+        [
+          "a table inserted right before the entry, no final newline before",
+          'model="m"',
+          (t) =>
+            t.replace(
+              `[mcp_servers.${MCP_SERVER_KEY}]`,
+              `[mcp_servers.y]\ncommand = "y"\n[mcp_servers.${MCP_SERVER_KEY}]`,
+            ),
+          'model="m"\n\n[mcp_servers.y]\ncommand = "y"\n',
+        ],
+        [
+          "CRLF, a table appended after the entry, no final newline before",
+          'model="m"\r\nx = 1',
+          (t) => `${t}[mcp_servers.x]\r\ncommand = "x"\r\n`,
+          'model="m"\r\nx = 1\r\n[mcp_servers.x]\r\ncommand = "x"\r\n',
+        ],
+      ];
+      const json: readonly [string, string, (text: string) => string, string][] = [
+        [
+          "a server added after the entry",
+          '{\n  "theme": "dark"\n}',
+          (t) => t.replace(/\n {2}\}\n\}$/u, ',\n    "x": {"command": "x"}\n  }\n}'),
+          '{\n  "theme": "dark",\n  "mcpServers": {\n    "x": {"command": "x"}\n  }\n}',
+        ],
+        [
+          "a server inserted before the entry",
+          '{\n  "theme": "dark"\n}',
+          (t) => t.replace('"mcpServers": {', '"mcpServers": {\n    "y": {"command": "y"},'),
+          '{\n  "theme": "dark",\n  "mcpServers": {\n    "y": {"command": "y"}\n  }\n}',
+        ],
+        [
+          "the entry no longer last in the file",
+          '{\n  "theme": "dark"\n}',
+          (t) => t.replace(/\n\}$/u, ',\n  "later": 1\n}'),
+          '{\n  "theme": "dark",\n  "later": 1\n}',
+        ],
+      ];
+      for (const a of ADAPTERS) {
+        for (const [label, start, edit, expected] of a.format === "toml" ? toml : json) {
+          const w = await world();
+          const file = a.file(w);
+          seed(file, start);
+          const what = `${a.app}: ${label}`;
+          expect((await apply(w, a)).result, what).toBe("applied");
+          writeFileSync(file, edit(readFileSync(file, "utf8")));
+          expect(await remove(w, a), what).toMatchObject({ result: "removed", access: "off" });
+          expect(readFileSync(file, "utf8"), what).toBe(expected);
+          expect(readRecords(w.input.stateDir), what).toEqual([]);
+        }
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "a record setup could not read back is never written: a servers object with millions of line breaks is left alone",
+    async () => {
+      for (const a of ADAPTERS.filter((x) => x.format === "json")) {
+        const w = await world();
+        const file = a.file(w);
+        const text = `{"mcpServers": {${"\n".repeat(2_200_000)}}}`;
+        seed(file, text);
+        expect(await apply(w, a), a.app).toMatchObject({
+          result: "left",
+          reason: "unsupported_layout",
+        });
+        expect(readFileSync(file, "utf8") === text).toBe(true);
+        expect(w.rows.asked).toEqual([]);
         expect(readRecords(w.input.stateDir)).toEqual([]);
       }
     },
@@ -795,6 +1120,59 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
     SLOW,
   );
 });
+
+type Write = (fd: number, ...rest: unknown[]) => number;
+
+/**
+ * Runs `body` with the file system failing what is written to `file` and to the temporary files
+ * beside it: `write` stands in for each of their writes, `sync` fails their flush. Every other
+ * file is written as usual.
+ */
+async function faulty<T>(
+  file: string,
+  fault: {
+    readonly write?: (write: Write, fd: number, ...rest: unknown[]) => number;
+    readonly sync?: true;
+  },
+  body: () => Promise<T>,
+): Promise<T> {
+  const real = {
+    openSync: fs.openSync,
+    closeSync: fs.closeSync,
+    writeSync: fs.writeSync,
+    fsyncSync: fs.fsyncSync,
+  };
+  const name = basename(file);
+  const ours = new Set<number>();
+  const write = real.writeSync as Write;
+  fs.openSync = (path: fs.PathLike, ...rest: unknown[]) => {
+    const fd = (real.openSync as (...args: unknown[]) => number)(path, ...rest);
+    const opened = basename(String(path));
+    if (opened === name || opened.startsWith(`.${name}.`)) ours.add(fd);
+    return fd;
+  };
+  fs.closeSync = (fd: number) => {
+    ours.delete(fd);
+    real.closeSync(fd);
+  };
+  fs.writeSync = (fd: number, ...rest: unknown[]) =>
+    ours.has(fd) && fault.write !== undefined
+      ? fault.write(write, fd, ...rest)
+      : write(fd, ...rest);
+  fs.fsyncSync = (fd: number) => {
+    if (ours.has(fd) && fault.sync === true) {
+      throw Object.assign(new Error("flush failed"), { code: "EIO" });
+    }
+    real.fsyncSync(fd);
+  };
+  syncBuiltinESMExports();
+  try {
+    return await body();
+  } finally {
+    Object.assign(fs, real);
+    syncBuiltinESMExports();
+  }
+}
 
 /** Makes the file one the OS will not let setup replace, and gives back how to undo that. */
 function unwritable(file: string): () => void {
