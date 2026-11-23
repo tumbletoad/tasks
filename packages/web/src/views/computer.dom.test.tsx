@@ -678,6 +678,63 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
     expect(states("M-2")).toEqual(["Agent in a terminalNot seen by TTAM"]);
   });
 
+  test("an expanded task stays once, in its own section, whatever the next picture says", async () => {
+    const [idle, shell, other] = [2, 3, 4].map((n) => task(n));
+    if (!idle || !shell || !other) throw new Error("no rows");
+    await mount([idle, shell, other]);
+    const at = (shellState: AgentsSession["activity"], otherState: AgentsSession["activity"]) => ({
+      picture: picture(
+        [
+          session(1, { task: linkTo(idle), activity: "idle" }),
+          session(2, { task: linkTo(shell), activity: shellState }),
+          session(3, { task: linkTo(other), activity: otherState }),
+        ],
+        [],
+      ),
+      trouble: null,
+    });
+    show(at("shell", "idle"));
+    const before = ["H2:With an agent", "H3:Idle", "M-2", "M-4", "H3:At a shell", "M-3"];
+    expect(layout()).toEqual(before);
+    await act(async () => {
+      container.querySelector<HTMLElement>('li[data-task="M-3"] [data-part="title"]')?.click();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('li[data-task="M-3"]')?.getAttribute("data-expanded")).toBe(
+      "true",
+    );
+    // The same picture again: nothing moves, no heading is lost.
+    show(at("shell", "idle"));
+    show(at("shell", "idle"));
+    expect(layout()).toEqual(before);
+    // Its agent now works and another task's waits: the expanded task stays where it is, once;
+    // the other moves.
+    show(at("working", "waiting"));
+    expect(layout()).toEqual([
+      "H2:Needs you",
+      "M-4",
+      "H2:With an agent",
+      "H3:Idle",
+      "M-2",
+      "H3:At a shell",
+      "M-3",
+    ]);
+    // Collapsed, it goes where its agent puts it.
+    await act(async () => {
+      container.querySelector<HTMLElement>('li[data-task="M-3"] [data-part="title"]')?.click();
+      await Promise.resolve();
+    });
+    expect(layout()).toEqual([
+      "H2:Needs you",
+      "M-4",
+      "H2:Working",
+      "M-3",
+      "H2:With an agent",
+      "H3:Idle",
+      "M-2",
+    ]);
+  });
+
   test("a background run's row keeps TTasks' own state, and its agent is that row", async () => {
     await mount();
     show({

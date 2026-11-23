@@ -79,6 +79,8 @@ function refusedBy(error: unknown): boolean {
 export interface HeldRow {
   readonly task: TaskRow;
   readonly group?: string;
+  /** The key of the section it was shown in (`Section.key`). */
+  readonly section?: string;
   readonly index?: number;
 }
 
@@ -220,7 +222,9 @@ export function TaskList({
         (held.current?.id === expanded ? held.current : undefined));
 
   /** Where the expanded row was shown last: its group and its place there. */
-  const place = useRef<{ id: string; group: string; index: number } | undefined>(undefined);
+  const place = useRef<{ id: string; group: string; section: string; index: number } | undefined>(
+    undefined,
+  );
 
   // The view's rows, grouped, as one sequence of items. Recomputed when the published rows change.
   // An expanded task stays where it is until it is collapsed, even when an update takes it out
@@ -236,7 +240,9 @@ export function TaskList({
           ? undefined
           : {
               task: expandedRow,
-              ...(was?.id === expandedRow.id ? { group: was.group, index: was.index } : {}),
+              ...(was?.id === expandedRow.id
+                ? { group: was.group, section: was.section, index: was.index }
+                : {}),
             };
       groups = groupsOf(tasks, held);
     } else {
@@ -257,7 +263,12 @@ export function TaskList({
   useLayoutEffect(() => {
     held.current = expandedRow;
     if (shownItem?.kind === "row") {
-      place.current = { id: shownItem.key, group: shownItem.group, index: shownItem.posinset - 1 };
+      place.current = {
+        id: shownItem.key,
+        group: shownItem.group,
+        section: shownItem.sectionKey,
+        index: shownItem.posinset - 1,
+      };
     } else if (expanded === undefined) {
       place.current = undefined;
     }

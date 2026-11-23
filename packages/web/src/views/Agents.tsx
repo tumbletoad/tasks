@@ -16,7 +16,7 @@ import { recentOf } from "../app/views.ts";
 import { Session } from "../context.ts";
 import type { Group } from "../groups.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
-import { formatDay } from "../row/dates.ts";
+import { formatDay, type Clock } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
@@ -27,53 +27,16 @@ import { TaskList, type GroupsOf } from "./TaskList.tsx";
 /** Agents' changes may touch any task: its rows fade in and are announced like Today's. */
 const ANY = (): boolean => true;
 
-/** `group` without the task `id`. */
-function without(group: Group, id: string): Group {
-  return {
-    ...group,
-    sections: group.sections.map((s) => ({ ...s, tasks: s.tasks.filter((r) => r.id !== id) })),
-  };
-}
+/** The sections of agents' own, in the page's order: "Needs you", "Working", then each state. */
+const AGENT_SECTIONS = AGENT_STATES.map((state) =>
+  state === "waiting" ? "r:needs" : state === "working" ? "r:working" : `r:other:${state}`,
+);
 
-const hasTasks = (group: Group): boolean => group.sections.some((s) => s.tasks.length > 0);
+const sectionOf = (state: AgentState): string => AGENT_SECTIONS[AGENT_STATES.indexOf(state)] ?? "";
 
-/**
- * The groups with `task` in the group `key` at `index`, and nowhere else; undefined when no group
- * has that key now.
- */
-function keepIn(
-  groups: readonly Group[],
-  key: string,
-  task: TaskRow,
-  index: number,
-): Group[] | undefined {
-  if (!groups.some((g) => g.key === key)) return undefined;
-  return groups
-    .map((g) => {
-      if (g.key !== key) return without(g, task.id);
-      const [section, ...rest] = g.sections;
-      const tasks = section?.tasks ?? [];
-      if (tasks.some((r) => r.id === task.id)) return g;
-      const at = Math.min(index, tasks.length);
-      return {
-        ...g,
-        sections: [
-          { key: section?.key ?? key, tasks: [...tasks.slice(0, at), task, ...tasks.slice(at)] },
-          ...rest,
-        ],
-      };
-    })
-    .filter(hasTasks);
-}
-
-/** The states of "With an agent", in its order. */
-const OTHER_STATES = AGENT_STATES.slice(2);
-
-/** The heading of a group of agents' own, by its key. */
-const runTitle = (key: string, t: Translate): string =>
-  t(
-    key === "r:needs" ? "agents.needsYou" : key === "r:working" ? "agents.working" : "agents.other",
-  );
+/** A section a task can be held in: one of agents' own, or a day of Recent. */
+const isSection = (key: string): boolean =>
+  AGENT_SECTIONS.includes(key) || /^d:\d{4}-\d{2}-\d{2}$/.test(key);
 
 export interface AgentsProps {
   readonly task?: string | undefined;
@@ -112,109 +75,45 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   );
   const groups = useCallback<GroupsOf>(
     (tasks, held) => {
-      // First what needs the person, then what works now, then what has an agent in another
-      // state. Each task once: it leaves Recent while it is in one of them.
-      const needs: TaskRow[] = [];
-      const working: TaskRow[] = [];
-      const other = new Map<AgentState, TaskRow[]>(OTHER_STATES.map((state) => [state, []]));
+      // Each task in one section: its agents' first, else the day of Recent of its newest change.
+      const sections = new Map<string, TaskRow[]>(AGENT_SECTIONS.map((key) => [key, []]));
+      const placed = new Set<string>();
+      const put = (key: string, row: TaskRow): void => {
+        if (placed.has(row.id)) return;
+        placed.add(row.id);
+        const list = sections.get(key);
+        if (list === undefined) sections.set(key, [row]);
+        else list.push(row);
+      };
       for (const row of tasks.values()) {
         const state = merged.tasks.get(row.id)?.state;
-        if (state === "waiting") needs.push(row);
-        else if (state === "working") working.push(row);
-        else if (state !== undefined) other.get(state)?.push(row);
+        if (state !== undefined) put(sectionOf(state), row);
       }
-      const ran = new Set([...needs, ...working, ...[...other.values()].flat()].map((r) => r.id));
-      const otherSections = OTHER_STATES.flatMap((state) => {
-        const listed = other.get(state) ?? [];
-        return listed.length === 0
-          ? []
-          : [{ key: `r:other:${state}`, title: t("agents.state", { state }), tasks: listed }];
-      });
-      const days = recentOf(changes, tasks, clock.timeZone)
-        .map((day) => ({ ...day, tasks: day.tasks.filter((r) => !ran.has(r.id)) }))
-        .filter((day) => day.tasks.length > 0);
-      const runGroups: Group[] = [
-        ...(needs.length === 0
-          ? []
-          : [
-              {
-                key: "r:needs",
-                kind: "label" as const,
-                title: t("agents.needsYou"),
-                sections: [{ key: "r:needs", tasks: needs }],
-              },
-            ]),
-        ...(working.length === 0
-          ? []
-          : [
-              {
-                key: "r:working",
-                kind: "label" as const,
-                title: t("agents.working"),
-                sections: [{ key: "r:working", tasks: working }],
-              },
-            ]),
-        ...(otherSections.length === 0
-          ? []
-          : [
-              {
-                key: "r:other",
-                kind: "label" as const,
-                title: t("agents.other"),
-                sections: otherSections,
-              },
-            ]),
-      ];
-      const out: Group[] = days.map((day) => ({
-        key: `d:${day.date}`,
-        kind: "label",
-        title:
-          day.date === clock.today
-            ? t("row.today")
-            : t("row.fullDate", {
-                weekday: formatDay(day.date, clock.locale, { weekday: "long" }),
-                day: Number(day.date.slice(8, 10)),
-                month: formatDay(day.date, clock.locale, { month: "long" }),
-              }),
-        sections: [{ key: `d:${day.date}`, tasks: day.tasks }],
-      }));
-      out.unshift(...runGroups);
-      // The expanded task stays in the group it was shown in while it is expanded: a run that
-      // starts or ends moves it to its new group only once it is collapsed.
-      const from = held?.group;
-      if (held !== undefined && from !== undefined) {
+      for (const day of recentOf(changes, tasks, clock.timeZone)) {
+        for (const row of day.tasks) put(`d:${day.date}`, row);
+      }
+      // The expanded task stays in the section it was shown in, at its place there, until it is
+      // collapsed; one the list has not shown yet joins the top of the first section.
+      if (held !== undefined) {
         const id = held.task.id;
-        const kept = keepIn(out, from, held.task, held.index ?? 0);
-        if (kept === undefined && from.startsWith("r:")) {
-          const group: Group = {
-            key: from,
-            kind: "label",
-            title: runTitle(from, t),
-            sections: [{ key: from, tasks: [held.task] }],
-          };
-          return [group, ...out.map((g) => without(g, id))].filter(hasTasks);
+        const into =
+          held.section !== undefined && isSection(held.section) ? held.section : undefined;
+        if (into !== undefined || !placed.has(id)) {
+          for (const list of sections.values()) {
+            const at = list.findIndex((r) => r.id === id);
+            if (at >= 0) list.splice(at, 1);
+          }
+          const key = into ?? [...sections].find(([, list]) => list.length > 0)?.[0] ?? "d:";
+          const list = sections.get(key) ?? [];
+          list.splice(
+            into === undefined ? 0 : Math.min(held.index ?? 0, list.length),
+            0,
+            held.task,
+          );
+          sections.set(key, list);
         }
-        if (kept !== undefined) return kept;
       }
-      // The expanded task stays shown while it is expanded, at the top of the list.
-      const shown =
-        held !== undefined &&
-        out.some((g) => g.sections.some((s) => s.tasks.some((r) => r.id === held.task.id)));
-      if (held === undefined || shown) return out;
-      const [first, ...rest] = out;
-      if (first === undefined) {
-        return [{ key: "d:", kind: "flat", sections: [{ key: "d:", tasks: [held.task] }] }];
-      }
-      const section = first.sections[0];
-      return [
-        {
-          ...first,
-          sections: [
-            { key: section?.key ?? first.key, tasks: [held.task, ...(section?.tasks ?? [])] },
-          ],
-        },
-        ...rest,
-      ];
+      return groupsOf(sections, t, clock);
     },
     [changes, clock, t, merged],
   );
@@ -236,4 +135,55 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
       <Computer shown={merged.shown} />
     </div>
   );
+}
+
+/**
+ * The page's groups from its sections: "Needs you" and "Working" with one section each, "With an
+ * agent" with a section per state, then a group per day of Recent, newest first.
+ */
+function groupsOf(
+  sections: ReadonlyMap<string, readonly TaskRow[]>,
+  t: Translate,
+  clock: Clock,
+): Group[] {
+  const listed = (key: string) => sections.get(key) ?? [];
+  const label = (key: string, title: string): Group[] =>
+    listed(key).length === 0
+      ? []
+      : [{ key, kind: "label", title, sections: [{ key, tasks: listed(key) }] }];
+  const others = AGENT_STATES.slice(2).flatMap((state) => {
+    const key = sectionOf(state);
+    return listed(key).length === 0
+      ? []
+      : [{ key, title: t("agents.state", { state }), tasks: listed(key) }];
+  });
+  const days = [...sections.keys()]
+    .filter((key) => key.startsWith("d:") && key !== "d:")
+    .sort()
+    .reverse()
+    .flatMap((key) => {
+      const date = key.slice(2);
+      return label(
+        key,
+        date === clock.today
+          ? t("row.today")
+          : t("row.fullDate", {
+              weekday: formatDay(date, clock.locale, { weekday: "long" }),
+              day: Number(date.slice(8, 10)),
+              month: formatDay(date, clock.locale, { month: "long" }),
+            }),
+      );
+    });
+  const loose = listed("d:");
+  return [
+    ...(loose.length === 0
+      ? []
+      : [{ key: "d:", kind: "flat" as const, sections: [{ key: "d:", tasks: loose }] }]),
+    ...label("r:needs", t("agents.needsYou")),
+    ...label("r:working", t("agents.working")),
+    ...(others.length === 0
+      ? []
+      : [{ key: "r:other", kind: "label" as const, title: t("agents.other"), sections: others }]),
+    ...days,
+  ];
 }
