@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 import { PRODUCT_NAME, CLI_NAME } from "@ttasks/brand";
 import { Refused, type Instance, type Run } from "../api.ts";
 import en from "../i18n/en.json" with { type: "json" };
-import { mergeRuns, runMarker, runRefusal, runners, runView, withStops } from "./runs.ts";
+import { mergeRuns, agentMarker, runRefusal, runners, runView, withStops } from "./runs.ts";
 
 const run = (patch: Partial<Run> = {}): Run => ({
   id: "ru_00r5mfcw5rfzxb9enb2vg50z3g",
@@ -221,19 +221,28 @@ describe("[M6.page.run-follow] the page shows a run as the service has it", () =
       { key: "claude", label: "Claude", glyph: "Cl", ring: 2, route: "terminal" },
     ];
     expect(
-      runMarker({ id: "ru_1", state: "needs_you", instance: "codex-work" }, instances),
+      agentMarker({ id: "ru_1", state: "needs_you", instance: "codex-work" }, instances),
     ).toEqual({
       kind: "needs_input",
       by: "Codex · work",
     });
-    expect(runMarker({ id: "ru_1", state: "working", instance: "gone" }, instances)).toEqual({
+    expect(agentMarker({ id: "ru_1", state: "working", instance: "gone" }, instances)).toEqual({
       kind: "working",
       by: "gone",
     });
     expect(
-      runMarker({ id: "ru_1", state: "later", instance: "codex-work" }, instances),
+      agentMarker({ id: "ru_1", state: "later", instance: "codex-work" }, instances),
     ).toBeUndefined();
-    expect(runMarker(undefined, instances)).toBeUndefined();
+    expect(agentMarker(undefined, instances)).toBeUndefined();
+    // An agent's question that waits asks for the person, as a run that needs them does.
+    const question = { ref: "l3", by: "Claude", text: "Which export?", at: 1 };
+    expect(agentMarker(undefined, instances, question)).toEqual({
+      kind: "needs_input",
+      by: "Claude",
+    });
+    expect(
+      agentMarker({ id: "ru_1", state: "working", instance: "codex-work" }, instances, question),
+    ).toEqual({ kind: "needs_input", by: "Claude" });
     // Run is offered by what the service says an instance can do, never by its name.
     expect(runners(instances).map((i) => i.key)).toEqual(["codex-work"]);
   });

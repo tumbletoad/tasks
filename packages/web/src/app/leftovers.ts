@@ -1,9 +1,10 @@
-// What the browser keeps of a space's unsaved text (a composer's draft, a field edit that waits)
-// belongs to a task. A finished or deleted task can come back, so its text stays as long as the
-// service knows the task. Once the task is gone for good, its text is forgotten when the space
-// next opens.
+// What the browser keeps of a space's unsaved text (a composer's draft, a title being typed, a
+// field edit that waits) belongs to a task. A finished or deleted task can come back, so its text
+// stays as long as the service knows the task. Once the task is gone for good, its text is
+// forgotten when the space next opens.
 import type { Api } from "../api.ts";
 import { forgetUnsaved, unsavedTasks } from "../edit/keep.ts";
+import { forgetTitleDrafts, titleDraftTasks } from "../row/title-draft.ts";
 import { draftTasks, keepDraft } from "../task/composer.ts";
 
 /** The most tasks asked about per opening: the rest wait for the next one. */
@@ -22,7 +23,7 @@ export async function forgetGone(
   api: Api,
   known: (task: string) => boolean,
 ): Promise<void> {
-  const tasks = new Set([...draftTasks(space), ...unsavedTasks(space)]);
+  const tasks = new Set([...draftTasks(space), ...titleDraftTasks(space), ...unsavedTasks(space)]);
   const unknown = [...tasks].filter((task) => task !== "" && !known(task));
   // A random few each time: tasks that still exist never keep the others from being asked about.
   for (let i = unknown.length - 1; i > 0; i -= 1) {
@@ -36,6 +37,7 @@ export async function forgetGone(
     } catch (error) {
       if (!gone(error)) continue;
       keepDraft(space, task, "");
+      forgetTitleDrafts(space, task);
       forgetUnsaved(space, task);
     }
   }

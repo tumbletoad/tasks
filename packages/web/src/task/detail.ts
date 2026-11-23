@@ -3,10 +3,10 @@
 // lifecycle (its place on this machine, when it was created). The sections give the long text in
 // full: the context, every note (those to agents too), the log, the sources, the outcome and
 // learnings. A sections read comes in pages sized for an agent's budget (A3 3.4.4), so this reads
-// page after page, up to `MAX_PAGES`, and joins a text a page boundary split. The notes the
-// thread's sessions name as their requests come whole with the digest, by reference, whatever
-// their age or length. Plain code: the hook (useDetail.ts) refetches it when the feed touches the
-// task.
+// page after page, `PAGES` at first, and joins a text a page boundary split; "Older entries" reads
+// `PAGES` more from where the last read ended (`readOlder`). The notes the thread's sessions name
+// as their requests come whole with the digest, by reference, whatever their age or length. Plain
+// code: the hook (useDetail.ts) refetches it when the feed touches the task.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 
@@ -55,8 +55,21 @@ export interface Detail {
   readonly partial: boolean;
 }
 
-/** At most this many pages per read: about 80 kB of text, far beyond a task's usual size. */
-export const MAX_PAGES = 20;
+/** A read of a thread: its detail, and what a read of the entries before it goes on from. */
+export interface ThreadRead {
+  readonly detail: Detail;
+  readonly facts: TaskFacts;
+  readonly named: readonly NoteOutput[];
+  readonly pages: readonly Sections[];
+  /** Where the next page starts; none when the read reached the first entry. */
+  readonly before?: string;
+}
+
+/**
+ * The pages a thread reads at first, and how many more each "Older entries" reads: about 80 kB of
+ * text, far beyond a task's usual size.
+ */
+export const PAGES = 20;
 
 /** The most notes one read names, as `task.get` takes them: the newest are read. */
 const NAMED_NOTES = 64;
@@ -181,39 +194,73 @@ export function rowOfFacts(
   };
 }
 
+/** Up to `count` pages of `task`'s sections from `before`, stopping between pages once `stale`. */
+async function readPages(
+  client: Client,
+  task: string,
+  before: string | undefined,
+  count: number,
+  stale: () => boolean,
+): Promise<{ pages: Sections[]; before?: string }> {
+  const pages: Sections[] = [];
+  let next = before;
+  for (let page = 0; page < count && !stale(); page += 1) {
+    const answer = await client.task.get({
+      task,
+      sections: [...SECTIONS],
+      log_limit: 50,
+      ...(next === undefined ? {} : { before: next }),
+    });
+    if (answer.view !== "sections") return { pages };
+    pages.push(answer.sections);
+    next = answer.before;
+    if (next === undefined) return { pages };
+  }
+  return { pages, ...(next === undefined ? {} : { before: next }) };
+}
+
+const threadRead = (
+  facts: TaskFacts,
+  named: readonly NoteOutput[],
+  pages: readonly Sections[],
+  before: string | undefined,
+): ThreadRead => ({
+  detail: mergePages(facts, pages, before !== undefined, named),
+  facts,
+  named,
+  pages,
+  ...(before === undefined ? {} : { before }),
+});
+
 /**
- * Reads the detail of `task` (an ID or a reference) through the client: digest and every page,
- * and whole the notes named in `requests` (the requests of the sessions the thread shows).
+ * Reads the detail of `task` (an ID or a reference) through the client: digest and up to `pages`
+ * pages, and whole the notes named in `requests` (the requests of the sessions the thread shows).
+ * A read that `stale` says no one waits for any more stops between pages.
  */
 export async function readDetail(
   client: Client,
   task: string,
   requests: readonly string[] = [],
-): Promise<Detail> {
+  pages = PAGES,
+  stale: () => boolean = () => false,
+): Promise<ThreadRead> {
   const notes = [...new Set(requests)]
     .sort((a, b) => ordinal(b) - ordinal(a))
     .slice(0, NAMED_NOTES);
   const digest = client.task.get({ task, ...(notes.length === 0 ? {} : { notes }) });
-  const pages: Sections[] = [];
-  let before: string | undefined;
-  let partial = false;
-  for (let page = 0; ; page += 1) {
-    if (page >= MAX_PAGES) {
-      partial = true;
-      break;
-    }
-    const read = await client.task.get({
-      task,
-      sections: [...SECTIONS],
-      log_limit: 50,
-      ...(before === undefined ? {} : { before }),
-    });
-    if (read.view !== "sections") break;
-    pages.push(read.sections);
-    before = read.before;
-    if (before === undefined) break;
-  }
+  const read = await readPages(client, task, undefined, pages, stale);
   const facts = await digest;
   if (facts.view !== "digest") throw new Error("task.get answered without a digest");
-  return mergePages(facts.task, pages, partial, facts.notes ?? []);
+  return threadRead(facts.task, facts.notes ?? [], read.pages, read.before);
+}
+
+/** `PAGES` more of the thread `from` holds, from where it ended: the pages before are not read again. */
+export async function readOlder(
+  client: Client,
+  task: string,
+  from: ThreadRead,
+  stale: () => boolean = () => false,
+): Promise<ThreadRead> {
+  const read = await readPages(client, task, from.before, PAGES, stale);
+  return threadRead(from.facts, from.named, [...from.pages, ...read.pages], read.before);
 }

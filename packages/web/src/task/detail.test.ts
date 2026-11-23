@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { mergePages, rowOfFacts, type TaskFacts } from "./detail.ts";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
+import { mergePages, PAGES, readDetail, readOlder, rowOfFacts, type TaskFacts } from "./detail.ts";
 
 const FACTS: TaskFacts = {
   id: "t_0123456789abcdefghjkmnpqrs",
@@ -113,5 +114,80 @@ describe("[A5.3.7.web.detail] the expanded task's detail from the pages of a sec
       created_at: Date.parse("2026-11-09T08:00:00.000Z"),
     });
     expect(row).not.toHaveProperty("focus_on");
+  });
+});
+
+describe("[A5.while-away.web.thread-pages] a thread reads as many pages as the person asked for", () => {
+  /** A task whose sections come in `count` pages of one note each, newest first. */
+  const client = (count: number, asked: string[]): Client =>
+    ({
+      task: {
+        get: (input: { before?: string; sections?: readonly string[] }) => {
+          if (input.sections === undefined) {
+            return Promise.resolve({ view: "digest", task: FACTS, as_of: "1.1.a" });
+          }
+          const page = input.before === undefined ? 0 : Number(input.before);
+          asked.push(String(page));
+          const ordinal = count - page;
+          return Promise.resolve({
+            view: "sections",
+            sections: {
+              notes: [
+                {
+                  ref: `n${String(ordinal)}`,
+                  author: "user",
+                  at: new Date(Date.UTC(2026, 10, 1) + ordinal * 60_000).toISOString(),
+                  text: `Note ${String(ordinal)}`,
+                  for_agents: false,
+                },
+              ],
+            },
+            ...(page + 1 < count ? { before: String(page + 1) } : {}),
+            as_of: "1.1.a",
+          });
+        },
+      },
+    }) as unknown as Client;
+
+  test("the first pages, then each press reads on from where the last read ended, up to the first entry; a read no one waits for stops", async () => {
+    const asked: string[] = [];
+    const count = 2 * PAGES + 5;
+    const first = await readDetail(client(count, asked), "M-3", []);
+    expect(first.detail.partial).toBe(true);
+    expect(first.detail.notes).toHaveLength(PAGES);
+    expect(asked).toHaveLength(PAGES);
+    asked.length = 0;
+    const second = await readOlder(client(count, asked), "M-3", first);
+    // Only the pages after the last one read.
+    expect(asked).toEqual(Array.from({ length: PAGES }, (_, k) => String(PAGES + k)));
+    expect(second.detail.partial).toBe(true);
+    asked.length = 0;
+    const all = await readOlder(client(count, asked), "M-3", second);
+    expect(asked).toHaveLength(5);
+    expect(all.detail.partial).toBe(false);
+    expect(all.detail.notes.map((n) => n.text)).toEqual(
+      Array.from({ length: count }, (_, k) => `Note ${String(k + 1)}`),
+    );
+    asked.length = 0;
+    let reads = 0;
+    await readDetail(client(5, asked), "M-3", [], 6, () => (reads += 1) > 1);
+    expect(asked).toEqual(["0"]);
+  });
+
+  test("a first page with no entry but more behind it is partial, not an empty thread", async () => {
+    const empty = {
+      task: {
+        get: (input: { before?: string; sections?: readonly string[] }) =>
+          Promise.resolve(
+            input.sections === undefined
+              ? { view: "digest", task: FACTS, as_of: "1.1.a" }
+              : { view: "sections", sections: { context: "x" }, before: "c1", as_of: "1.1.a" },
+          ),
+      },
+    } as unknown as Client;
+    const read = await readDetail(empty, "M-3", [], 1);
+    expect(read.detail.notes).toEqual([]);
+    expect(read.detail.log).toEqual([]);
+    expect(read.detail.partial).toBe(true);
   });
 });

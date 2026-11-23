@@ -1,7 +1,7 @@
 // The status views and the area view as data (A5 3.5): each view's grouping, and the property that
 // the counted views are disjoint, so their counts add up and each view lists exactly its count.
 import fc from "fast-check";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { areaGroups, flatGroups, personGroups, projectGroups, type Group } from "../groups.ts";
 import { itemsOf } from "../list/items.ts";
 import type { Change } from "../store/core.ts";
@@ -201,6 +201,120 @@ const arbTask = fc.record({
   area_id: fc.option(fc.constantFrom("ar_lumen", "ar_home", "ar_gone"), { nil: undefined }),
   project_id: fc.option(fc.constantFrom("pj_portal", "pj_sync", "pj_gone"), { nil: undefined }),
   created_at: fc.nat(1000),
+});
+
+describe("[A5.while-away.web.recent] the agents' changes a snapshot brings", () => {
+  test("a snapshot's list is the log, the feed's later changes go on top, and the next snapshot replaces it", () => {
+    let emit: (changes: Changes) => void = () => undefined;
+    const NOW = Date.UTC(2026, 10, 12, 9);
+    const log = new ChangeLog(
+      {
+        onChanges: (listener) => {
+          emit = listener;
+          return () => undefined;
+        },
+      },
+      () => NOW,
+    );
+    const [one, two, three] = [
+      task({ title: "One" }),
+      task({ title: "Two" }),
+      task({ title: "Three" }),
+    ];
+    const done: TaskRow = { ...task({ title: "Done" }), lifecycle: "completed" };
+    const live = new Map([one, two, three].map((t) => [t.id, t]));
+    emit({
+      changes: [],
+      reset: true,
+      agentChanges: [
+        { task: done.id, actor: "Codex", at: NOW - 3_600_000, row: done },
+        { task: one.id, actor: "Codex", at: NOW - 86_400_000 },
+      ],
+    });
+    expect(recentOf(log.getEntries(), live, "UTC")).toEqual([
+      { date: "2026-11-12", tasks: [done] },
+      { date: "2026-11-11", tasks: [one] },
+    ]);
+    // An agent changes the oldest task again: it comes first, once.
+    emit({
+      changes: [
+        {
+          type: "log",
+          id: "lg_0001",
+          task: one.id,
+          changed: [],
+          created: true,
+          kind: "ops",
+          actor: { kind: "agent", label: "Claude Code" },
+          request_id: "fixture-1",
+        },
+      ],
+      reset: false,
+    });
+    expect(log.getEntries().map((e) => [e.task, e.actor])).toEqual([
+      [one.id, "Claude Code"],
+      [done.id, "Codex"],
+    ]);
+    // A fresh snapshot is the service's word on it.
+    emit({ changes: [], reset: true, agentChanges: [{ task: two.id, actor: "Codex", at: NOW }] });
+    expect(log.getEntries().map((e) => e.task)).toEqual([two.id]);
+  });
+});
+
+describe("[A5.while-away.web.recent-dates] the recent list is what happened", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("a change is dated by its commit, also one the feed replays later; a deleted task takes no place; each leaves when seven days old while the page stays open", () => {
+    const DAY = 86_400_000;
+    const NOW = Date.UTC(2026, 10, 12, 9);
+    vi.useFakeTimers({ now: NOW });
+    let emit: (changes: Changes) => void = () => undefined;
+    const log = new ChangeLog({
+      onChanges: (listener) => {
+        emit = listener;
+        return () => undefined;
+      },
+    });
+    const [one, two, gone] = [
+      task({ title: "One" }),
+      task({ title: "Two" }),
+      task({ title: "Gone" }),
+    ];
+    const change = (row: TaskRow, at: number, by = "agent"): Change => ({
+      type: "task",
+      id: row.id,
+      task: row.id,
+      after: row,
+      changed: ["title"],
+      created: false,
+      kind: "ops",
+      actor: { kind: by, label: by === "agent" ? "Codex" : "You" },
+      at,
+      request_id: `fixture-${row.id}`,
+    });
+    emit({
+      changes: [],
+      reset: true,
+      agentChanges: [{ task: one.id, actor: "Codex", at: NOW - 6 * DAY }],
+    });
+    // Replayed after a reconnect an hour on, the change keeps its own time.
+    vi.setSystemTime(NOW + 3_600_000);
+    emit({ changes: [change(two, NOW - 2 * DAY), change(gone, NOW - DAY)], reset: false });
+    expect(log.getEntries().map((e) => [e.task, e.at])).toEqual([
+      [gone.id, NOW - DAY],
+      [two.id, NOW - 2 * DAY],
+      [one.id, NOW - 6 * DAY],
+    ]);
+    emit({ changes: [change({ ...gone, deleted_at: NOW }, NOW, "human")], reset: false });
+    expect(log.getEntries().map((e) => e.task)).toEqual([two.id, one.id]);
+    // A day later the oldest is seven days old, and leaves without another change.
+    vi.advanceTimersByTime(DAY);
+    expect(log.getEntries().map((e) => e.task)).toEqual([two.id]);
+    vi.advanceTimersByTime(5 * DAY);
+    expect(log.getEntries()).toEqual([]);
+  });
 });
 
 describe("[A5.3.5.web.counts-add-up] property: the counts add up across disjoint views", () => {

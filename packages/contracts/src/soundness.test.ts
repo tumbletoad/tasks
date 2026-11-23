@@ -732,7 +732,7 @@ describe("[A3.5.registry.soundness] every agent rule and default the registry li
       required: count((e) => e.agent?.required?.length ?? 0),
       max: count((e) => e.agent?.max?.length ?? 0),
       defaults: count((e) => e.defaults?.length ?? 0),
-    }).toEqual({ hidden: 2, required: 2, max: 18, defaults: 9 });
+    }).toEqual({ hidden: 3, required: 2, max: 18, defaults: 9 });
   });
 
   test("a projection that skips a rule or is off by one fails the intent check", () => {
@@ -747,7 +747,7 @@ describe("[A3.5.registry.soundness] every agent rule and default the registry li
     }
     expect(missed).toEqual([]);
     // 2 hidden, 2 required, 18 limits three ways and 9 defaults.
-    expect(caught).toBe(2 + 2 + 18 * 3 + 9);
+    expect(caught).toBe(3 + 2 + 18 * 3 + 9);
   });
 
   test("task.finish: outcome is required for agents in Zod and JSON Schema", () => {

@@ -62,6 +62,25 @@ export interface TaskRow {
   readonly place?: RowPlace;
   /** Its newest background run, while it works or needs the person. */
   readonly run?: RowRun;
+  /** The questions agents asked on it that wait for the person, newest first. */
+  readonly questions?: readonly RowQuestion[];
+  /** How many more questions wait than `questions` holds. */
+  readonly questions_more?: number;
+}
+
+/**
+ * How many questions wait for the person on the task. The service decides which wait, for every
+ * lifecycle (its task-rows.ts); a deleted task asks nothing.
+ */
+export const questionsWaiting = (row: TaskRow): number =>
+  row.deleted_at === undefined ? (row.questions?.length ?? 0) + (row.questions_more ?? 0) : 0;
+
+/** An agent's question that waits: its log entry, its agent, and its start (the thread has it all). */
+export interface RowQuestion {
+  readonly ref: string;
+  readonly by: string;
+  readonly text: string;
+  readonly at: number;
 }
 
 /** A task's newest run as its row shows it, and the instance it runs with. */
@@ -124,6 +143,8 @@ const TASK_COLUMNS: ReadonlySet<string> = new Set([
   "sources_more",
   "place",
   "run",
+  "questions",
+  "questions_more",
   "waiting_since",
   "finished_at",
 ]);
@@ -201,6 +222,8 @@ export interface FeedEntity {
 
 export interface FeedEvent {
   readonly seq: number;
+  /** The commit's time, in milliseconds since 1970. */
+  readonly at?: number;
   /** The commit's ID (`op_`): what a toast's Undo names (A5 3.12). */
   readonly op_id?: string;
   readonly request_id: string;
@@ -209,11 +232,29 @@ export interface FeedEvent {
   readonly entities: readonly FeedEntity[];
 }
 
+/** A task an agent or a routine changed: who of them changed it last, and when. */
+export interface AgentChange {
+  readonly task: string;
+  /** The actor's label ("Codex"). */
+  readonly actor: string;
+  /** When, in milliseconds since 1970. */
+  readonly at: number;
+  /**
+   * The task's newest row the page has, for a task the live rows do not hold: one the agent
+   * finished is still what the person comes back to see.
+   */
+  readonly row?: TaskRow;
+}
+
 export interface SnapshotMessage {
   readonly type: "snapshot";
   readonly space: SpaceHead;
   readonly cursor: Cursor;
   readonly tasks: readonly TaskRow[];
+  /** The tasks agents changed in the service's recent days, newest change first. */
+  readonly agent_changes?: readonly AgentChange[];
+  /** The finished and dropped tasks on which a question waits for the person. */
+  readonly asking?: readonly TaskRow[];
   readonly areas: readonly AreaRow[];
   readonly projects: readonly ProjectRow[];
   readonly instances: readonly Instance[];
@@ -356,6 +397,13 @@ const isPlace = (v: unknown): boolean =>
 const isRun = (v: unknown): boolean =>
   isRecord(v) && isString(v["id"]) && isString(v["state"]) && isString(v["instance"]);
 
+const isQuestion = (v: unknown): boolean =>
+  isRecord(v) &&
+  isString(v["ref"]) &&
+  isString(v["by"]) &&
+  isString(v["text"]) &&
+  isNumber(v["at"]);
+
 /**
  * A task's compact row, when it has the fields the page relies on with their types. Its other
  * fields are the service's and are taken as they come: a column the page does not read yet must
@@ -384,7 +432,9 @@ export function taskRow(value: unknown): TaskRow | undefined {
     !optional(v["sources"], isSources) ||
     !optional(v["sources_more"], isNumber) ||
     !optional(v["place"], isPlace) ||
-    !optional(v["run"], isRun)
+    !optional(v["run"], isRun) ||
+    !optional(v["questions"], (q) => Array.isArray(q) && q.every(isQuestion)) ||
+    !optional(v["questions_more"], isNumber)
   ) {
     return undefined;
   }
@@ -505,6 +555,7 @@ function eventOf(value: unknown): FeedEvent | undefined {
   }
   return {
     seq: value["seq"],
+    ...(isNumber(value["at"]) ? { at: value["at"] } : {}),
     ...(isString(value["op_id"]) ? { op_id: value["op_id"] } : {}),
     request_id: isString(value["request_id"]) ? value["request_id"] : "",
     actor: {
@@ -514,6 +565,23 @@ function eventOf(value: unknown): FeedEvent | undefined {
     kind: isString(value["kind"]) ? value["kind"] : "",
     entities,
   };
+}
+
+/** The snapshot's agents' changes that read: one that does not is left out, as an unread row is. */
+function agentChangesOf(value: unknown): AgentChange[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item: unknown): AgentChange[] => {
+    if (!isRecord(item) || !isString(item["task"]) || !isNumber(item["at"])) return [];
+    const row = item["row"] === undefined ? undefined : taskRow(item["row"]);
+    return [
+      {
+        task: item["task"],
+        actor: isString(item["actor"]) ? item["actor"] : "",
+        at: item["at"],
+        ...(row === undefined ? {} : { row }),
+      },
+    ];
+  });
 }
 
 /**
@@ -575,6 +643,8 @@ export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" 
         },
         cursor,
         tasks: rowsOf(value["tasks"], taskRow),
+        agent_changes: agentChangesOf(value["agent_changes"]),
+        asking: rowsOf(value["asking"], taskRow),
         areas: rowsOf(value["areas"], areaRow),
         projects: rowsOf(value["projects"], projectRow),
         instances: instancesOf(value["instances"]),
