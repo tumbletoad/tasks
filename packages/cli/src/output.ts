@@ -476,18 +476,25 @@ export function render(entry: string, result: Result, space: string): string {
         lines.push(`${done} ${str(group["kind"])} ${str(group["name"])}${folder}`);
         lines.push(...insideLines(result));
       }
-      // A project a line, with the repository in its folder and the folder on this machine.
-      const archived = (g: Result) => (g["archived"] === true ? ", archived" : "");
+      // A project a line, with the repository in its folder and the folder on this machine. A
+      // group's ID shows where its name alone does not name it.
+      const facts = (g: Result) =>
+        `${g["archived"] === true ? ", archived" : ""}${typeof g["ref"] === "string" ? `, id ${g["ref"]}` : ""}`;
       const project = (g: Result) =>
-        `  ${str(g["name"])}${typeof g["repo"] === "string" ? ` [${g["repo"]}]` : ""} (${str(g["active"])}${archived(g)})${typeof g["folder"] === "string" ? `  ${g["folder"]}` : ""}`;
+        `  ${str(g["name"])}${typeof g["repo"] === "string" ? ` [${g["repo"]}]` : ""} (${str(g["active"])}${facts(g)})${typeof g["folder"] === "string" ? `  ${g["folder"]}` : ""}`;
       for (const area of (result["areas"] as Result[] | undefined) ?? []) {
-        lines.push(`${str(area["name"])} (${str(area["active"])}${archived(area)})`);
+        lines.push(`${str(area["name"])} (${str(area["active"])}${facts(area)})`);
         lines.push(...((area["projects"] as Result[] | undefined) ?? []).map(project));
       }
       const loose = (result["projects"] as Result[] | undefined) ?? [];
       if (loose.length > 0) lines.push("No area", ...loose.map(project));
+      // A write takes no cursor: the rest of the list is read with list.
       if (typeof result["cursor"] === "string") {
-        lines.push(`More: the same command with --cursor ${result["cursor"]}`);
+        lines.push(
+          result["action"] === "list"
+            ? `More: the same command with --cursor ${result["cursor"]}`
+            : `More: ${CLI_NAME} area list --cursor ${result["cursor"]}`,
+        );
       }
       break;
     }

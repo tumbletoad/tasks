@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { CLI_NAME } from "@ttasks/brand";
 import { ERROR_CODES, EXIT_CODES, messageWithHint, type ErrorCode } from "@ttasks/contracts";
 import { RpcError, LocalError } from "@ttasks/bridge/protocol";
 import { SLOTS, main, type Io } from "./main.ts";
@@ -482,8 +483,10 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] ttasks area and ttasks pref
           },
           { name: "Learning", active: 1, archived: true, projects: [] },
         ],
-        projects: [{ name: "Loose", active: 0, archived: true }],
-        cursor: "p_4g8k2m6q0s4w8y2b6d0f4h8k2m",
+        projects: [
+          { name: "Loose", active: 0, archived: true, ref: "p_6j0n4r8v2z6c0f4j8n2r6v0z4c" },
+        ],
+        cursor: "a0.a_8n2r6v0z4c8f2j6n0r4v8z2c6f.a1.p_4g8k2m6q0s4w8y2b6d0f4h8k2m",
       },
       "Mira",
     );
@@ -493,8 +496,8 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] ttasks area and ttasks pref
         "  Lumen Health [lumen-web] (4)  ~/work/lumen",
         "Learning (1, archived)",
         "No area",
-        "  Loose (0, archived)",
-        "More: the same command with --cursor p_4g8k2m6q0s4w8y2b6d0f4h8k2m",
+        "  Loose (0, archived, id p_6j0n4r8v2z6c0f4j8n2r6v0z4c)",
+        "More: the same command with --cursor a0.a_8n2r6v0z4c8f2j6n0r4v8z2c6f.a1.p_4g8k2m6q0s4w8y2b6d0f4h8k2m",
         "",
       ].join("\n"),
     );
@@ -508,10 +511,15 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] ttasks area and ttasks pref
         projects: [],
         result: "created",
         group: { kind: "project", id: "p_9m3q7w1y5c9g3k7p1t5x9b3f7k", name: "Northwind" },
+        cursor: "a0.a_8n2r6v0z4c8f2j6n0r4v8z2c6f.a1.p_4g8k2m6q0s4w8y2b6d0f4h8k2m",
       },
       "Mira",
     );
     expect(created.split("\n")[0]).toBe("Created project Northwind");
+    // A write takes no cursor: the rest is read with list.
+    expect(created).toContain(
+      `More: ${CLI_NAME} area list --cursor a0.a_8n2r6v0z4c8f2j6n0r4v8z2c6f.a1.p_4g8k2m6q0s4w8y2b6d0f4h8k2m\n`,
+    );
     const same = render(
       "group.manage",
       {
