@@ -1,6 +1,7 @@
 // Areas and projects by name (A3 3.4.5, 3.4.10): a caller names a group as people do, and the
-// writer takes IDs and slugs only (A1 3.6). A name matches an area's or a project's name or slug,
-// ignoring case, else an old slug; a project named beside an area must be one of that area's. A
+// writer takes IDs and slugs only (A1 3.6). A name matches an area's or a project's ID, name or
+// slug, ignoring case, else an old slug; of several, the one named exactly wins, then a live one
+// over archived ones. A project named beside an area must be one of that area's. A
 // name that matches nothing but lies within edit distance 2 of a group's name or slug, and
 // less than half that name's length from it, is `invalid_input` with the close names in
 // `data.suggestions` (stored names never reach a message, A3 3.5): "Client wrok" is a typo of
@@ -82,6 +83,22 @@ const exact = (group: GroupName, wanted: string): boolean =>
   fold(group.title) === fold(wanted);
 
 /**
+ * Of several groups a name matches, the one it names: the one whose title is exactly the name, of
+ * those or of all the live one, when only one is.
+ */
+function narrowed(found: readonly GroupName[], wanted: string): readonly GroupName[] {
+  let out = found;
+  for (const keep of [
+    (group: GroupName) => group.title === wanted.trim(),
+    (group: GroupName) => group.archived !== true,
+  ]) {
+    const kept = out.filter(keep);
+    if (kept.length > 0) out = kept;
+  }
+  return out;
+}
+
+/**
  * The ID of the area or project `name` names, at input path `path`, or undefined for a new name:
  * one no group has and none is close to. `area` is the area the caller named beside a project: a
  * project there wins over one of the same name elsewhere. `lookup`: the name only looks a group up,
@@ -117,19 +134,16 @@ export function resolveGroup(
     if (inArea.length === 0) throw elsewhere(names, found, path);
     found = inArea;
   }
-  const [one, ...more] = found;
+  const [one, ...more] = narrowed(found, name);
   if (one !== undefined && more.length === 0) return one.id;
   if (one !== undefined) {
     throw new AppError({
       code: "ambiguous",
       message: `Several ${kind === "area" ? "areas" : "projects"} have this name.`,
-      hint: "Name it by its slug: organize with action list shows each one's.",
+      hint: "Name it by its ID: organize with action list shows it beside the name.",
       data: {
         issues: [{ path, message: "Several have this name" }],
-        suggestions: found
-          .map((group) => group.slug)
-          .filter((slug) => slug !== "")
-          .slice(0, SUGGESTIONS),
+        suggestions: found.map((group) => group.id).slice(0, SUGGESTIONS),
       },
     });
   }

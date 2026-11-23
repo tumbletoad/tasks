@@ -630,9 +630,18 @@
                 ],
                 "type": "string"
               },
+              "archived": {
+                "description": "list: true includes archived areas and projects",
+                "type": "boolean"
+              },
               "base": {
                 "description": "as_of of the organize list that showed the group, or of your write of it",
                 "maxLength": 40,
+                "type": "string"
+              },
+              "cursor": {
+                "description": "list: the last page's cursor, with the same path and archived",
+                "maxLength": 330,
                 "type": "string"
               },
               "cwd": {
@@ -647,7 +656,7 @@
                 "type": "string"
               },
               "path": {
-                "description": "\"Area\" or \"Area/Project\", by name or slug; list: one area",
+                "description": "\"Area\" or \"Area/Project\" by name, or an ID; list: that area and its projects",
                 "maxLength": 250,
                 "type": "string"
               },
@@ -1667,9 +1676,18 @@
                 ],
                 "type": "string"
               },
+              "archived": {
+                "description": "list: true includes archived areas and projects",
+                "type": "boolean"
+              },
               "base": {
                 "description": "as_of of the organize list that showed the group, or of your write of it",
                 "maxLength": 40,
+                "type": "string"
+              },
+              "cursor": {
+                "description": "list: the last page's cursor, with the same path and archived",
+                "maxLength": 330,
                 "type": "string"
               },
               "cwd": {
@@ -1684,7 +1702,7 @@
                 "type": "string"
               },
               "path": {
-                "description": "\"Area\" or \"Area/Project\", by name or slug; list: one area",
+                "description": "\"Area\" or \"Area/Project\" by name, or an ID; list: that area and its projects",
                 "maxLength": 250,
                 "type": "string"
               },

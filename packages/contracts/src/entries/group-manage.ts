@@ -30,18 +30,41 @@ export const GROUP_ACTIONS = [
   "clear_folder",
 ] as const;
 
-/** Areas a list shows, and projects per area (A3 3.4.10: 15 per group). */
-export const GROUP_LIMITS = { areas: 50, projects: 15 } as const;
+/**
+ * Groups a list page holds, areas and projects together. An area a page continues is shown again
+ * above its projects and does not count.
+ */
+export const GROUP_PAGE = 25;
+
+const POSITION = "[0-9A-Za-z]{2,120}";
+const B32 = "[0-9a-hjkmnp-tv-z]{26}";
+/**
+ * Where the next page starts: the space's ID, then after the last group's place in the list's
+ * order, the position and ID of its area (`~`: none), then of the project.
+ */
+export const GROUP_CURSOR = new RegExp(
+  `^sp_${B32}\\.(?:${POSITION}\\.a_${B32}(?:\\.${POSITION}\\.p_${B32})?|~\\.${POSITION}\\.p_${B32})$`,
+  "u",
+);
+/** A cursor's longest form. */
+const CURSOR_LENGTH = 330;
 
 export const GroupManageInput = z.strictObject({
   action: z.enum(GROUP_ACTIONS).describe("list reads; the others change a group"),
   path: safeLine(250)
-    .describe('"Area" or "Area/Project", by name or slug; list: one area')
+    .describe('"Area" or "Area/Project" by name, or an ID; list: that area and its projects')
     .optional(),
   to: safeLine(120).describe("rename: the new name; move: the new area").optional(),
   folder: FolderInput.describe(
     'create, set_folder: the project\'s folder here, "cwd" or an absolute path',
   ).optional(),
+  archived: z.boolean().describe("list: true includes archived areas and projects").optional(),
+  // Any text: the service says whether it is damaged or from another space.
+  cursor: z
+    .string()
+    .max(CURSOR_LENGTH)
+    .describe("list: the last page's cursor, with the same path and archived")
+    .optional(),
   base: GroupBase.optional(),
   request_id: RequestId.optional(),
   mode: Mode,
@@ -49,6 +72,12 @@ export const GroupManageInput = z.strictObject({
 });
 
 const Count = z.int().min(0).max(1_000_000_000);
+
+/** A group whose name alone would name another one too, or holds a slash, is named by its ID. */
+const Ref = z
+  .string()
+  .regex(idPattern("[ap]"))
+  .describe("Its ID, for a path: its name alone does not name it");
 
 const Folder = z.string().describe("Its folder on this machine, the home as ~");
 
@@ -59,6 +88,8 @@ const ProjectRow = z.strictObject({
   active: Count.describe("Active tasks"),
   folder: Folder.optional(),
   repo: z.string().max(255).describe("The Git repository in its folder, by name").optional(),
+  archived: z.literal(true).describe("Archived").optional(),
+  ref: Ref.optional(),
 });
 
 const AreaRow = z.strictObject({
@@ -66,18 +97,25 @@ const AreaRow = z.strictObject({
   slug: z.string().describe("Slug"),
   name: z.string().describe("Name"),
   active: Count.describe("Active tasks, its projects' included"),
-  projects: z.array(ProjectRow).describe("Its active projects, at most 15"),
-  more_projects: Count.describe("Projects left out of the list").optional(),
+  archived: z.literal(true).describe("Archived").optional(),
+  ref: Ref.optional(),
+  projects: z.array(ProjectRow).describe("Its projects on this page"),
 });
 
 export const GroupManageResult = z.strictObject({
   action: z.enum(GROUP_ACTIONS).describe("The action"),
   as_of: AsOf,
-  areas: z.array(AreaRow).describe("Active areas in the space's order"),
+  areas: z.array(AreaRow).describe("Areas in the space's order, each with its projects"),
   /** Projects without an area (A1 3.4: a project's area is optional). */
-  projects: z.array(ProjectRow).describe("Active projects without an area"),
-  total_areas: Count.describe("Active areas"),
-  total_projects: Count.describe("Active projects"),
+  projects: z.array(ProjectRow).describe("Projects without an area, after every area"),
+  total_areas: Count.describe("Areas the whole list holds"),
+  total_projects: Count.describe("Projects the whole list holds"),
+  cursor: z
+    .string()
+    .max(CURSOR_LENGTH)
+    .regex(GROUP_CURSOR)
+    .describe("Pass it for the next page")
+    .optional(),
   result: z
     .enum([
       "created",

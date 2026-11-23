@@ -406,6 +406,148 @@ test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is fini
   });
 });
 
+test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a task, and Undo takes it back", () => {
+  test("a typo takes the live area it is close to, never an archived one; a new name close to an area is one Down away; Enter makes it and moves the task there; Ctrl+Z moves it back, and again takes the area away", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const seedlings = `Seedlings ${tag}`;
+    // A new name close to an existing one, meant as a new area.
+    const garden = `Seedling ${tag}`;
+    await world.op(world.mira.id, "group.manage", { action: "create", path: seedlings });
+    const [ref] = await addTasks(world, [{ title: `Plant the tulips (${tag})`, area: "home" }]);
+    if (ref === undefined) throw new Error("the task was not added");
+    const areaOf = async () =>
+      ((await world.op(world.mira.id, "task.get", { task: ref })) as { task: { area?: string } })
+        .task.area;
+    const sidebarLink = page
+      .getByRole("navigation")
+      .getByRole("link", { name: new RegExp(`^${garden}, `) });
+    await watchViolations(page);
+    await openArea(page, world, "Home");
+    const title = rowOf(page, ref).locator('[data-part="title"]');
+    await title.focus();
+    await page.keyboard.press("Enter");
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+    const pill = rowOf(page, ref).locator('[data-part="area"]');
+    const field = page.getByRole("searchbox", { name: "Find an area or project" });
+    const offer = page.locator('[data-part="new-area"]');
+
+    // A name an area has, in any case, is that area: nothing new is offered.
+    await tabInto(page, pill);
+    await page.keyboard.press("Enter");
+    await expect(field).toBeFocused();
+    await page.keyboard.type("HOME");
+    await expect(page.getByRole("option", { name: "Home", exact: true })).toBeVisible();
+    await expect(offer).toHaveCount(0);
+    // Escape empties the field, then closes the list.
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await expect(pill).toBeFocused();
+
+    // A typo: the area it is close to comes first and Enter takes it; a new area is only offered.
+    await page.keyboard.press("Enter");
+    const typo = seedlings.replace("ee", "e");
+    await page.keyboard.type(typo);
+    await expect(page.getByRole("option").first()).toHaveText(seedlings);
+    await expect(offer).toHaveText(`New area “${typo}”`);
+    await page.keyboard.press("Enter");
+    await expect(toast(page)).toHaveText(`Moved to ${seedlings}`);
+    await expect.poll(areaOf).toBe(seedlings);
+    await page.keyboard.press("Control+z");
+    await expect(toast(page)).toHaveText("Undone");
+    await expect.poll(areaOf).toBe("Home");
+
+    // A new name close to an area: the area comes first, the new one is the next choice down.
+    await pill.focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type(garden);
+    await expect(page.getByRole("option").first()).toHaveText(seedlings);
+    await expect(page.getByRole("option").nth(1)).toHaveText(`New area “${garden}”`);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect(toast(page)).toHaveText(`Moved to ${garden}`);
+    await expect(toastAction(page)).toHaveText("Undo");
+    await expect.poll(areaOf).toBe(garden);
+    await expect(sidebarLink).toBeVisible();
+
+    // Ctrl+Z takes back the move, and once more the area.
+    await page.keyboard.press("Control+z");
+    await expect(toast(page)).toHaveText("Undone");
+    await expect.poll(areaOf).toBe("Home");
+    await page.keyboard.press("Control+z");
+    await expect(sidebarLink).toHaveCount(0, { timeout: SLOW_MS });
+
+    // The same typo once the area is archived: the archived area comes last, marked, and Enter
+    // makes the area typed.
+    const { as_of: base } = (await world.op(world.mira.id, "group.manage", {
+      action: "list",
+    })) as { as_of: string };
+    await world.op(world.mira.id, "group.manage", { action: "archive", path: seedlings, base });
+    await pill.focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type(typo);
+    const shelved = page.getByRole("option", { name: seedlings, exact: true });
+    await expect(shelved).toHaveAccessibleDescription("archived");
+    await expect(page.getByRole("option").first()).toHaveText(`New area “${typo}”`);
+    await expect(page.getByRole("option").last()).toHaveAccessibleName(seedlings);
+    await page.keyboard.press("Enter");
+    await expect(toast(page)).toHaveText(`Moved to ${typo}`);
+    await expect.poll(areaOf).toBe(typo);
+    expect(await violations(page)).toEqual([]);
+  });
+
+  test("a filing made elsewhere while the area is being made stays: the area is added, the task is not moved, and the toast says both", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const orchard = `Orchard ${tag}`;
+    const shed = `Shed ${tag}`;
+    await world.op(world.mira.id, "group.manage", { action: "create", path: shed });
+    const [ref] = await addTasks(world, [{ title: `Prune the pear tree (${tag})`, area: "home" }]);
+    if (ref === undefined) throw new Error("the task was not added");
+    const areaOf = async () =>
+      ((await world.op(world.mira.id, "task.get", { task: ref })) as { task: { area?: string } })
+        .task.area;
+    // The area's creation waits until an agent has filed the task elsewhere.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let asked!: () => void;
+    const sent = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    await page.route("**/api/v1/op/group.manage", async (route) => {
+      asked();
+      await gate;
+      await route.continue();
+    });
+    await openArea(page, world, "Home");
+    const title = rowOf(page, ref).locator('[data-part="title"]');
+    await title.focus();
+    await page.keyboard.press("Enter");
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+    const pill = rowOf(page, ref).locator('[data-part="area"]');
+    await pill.click();
+    await expect(page.getByRole("searchbox", { name: "Find an area or project" })).toBeFocused();
+    await page.keyboard.type(orchard);
+    await page.keyboard.press("Enter");
+    await sent;
+    await agentSets(world, ref, { area: shed });
+    release();
+    await expect(toast(page)).toHaveText(
+      new RegExp(`^Area ${orchard} added, and the task stayed where it was\\. .+ changed the area`),
+    );
+    await expect(
+      page.getByRole("navigation").getByRole("link", { name: new RegExp(`^${orchard}, `) }),
+    ).toBeVisible();
+    expect(await areaOf()).toBe(shed);
+  });
+});
+
 test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots and axe", () => {
   test("Sumi and Washi at 1,440 px and 390 px, with the date popover and a toast, axe clean", async ({
     browser,
