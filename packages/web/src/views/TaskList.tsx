@@ -30,6 +30,7 @@ import { List, type Place } from "../list/List.tsx";
 import {
   busyByTask,
   folderRefusal,
+  homeRefusal,
   MARKER_REASONS,
   markerWords,
   type BusyOf,
@@ -706,6 +707,18 @@ export function TaskList({
               if (!answered) {
                 say(t("row.openUnanswered", { label: instance.label }));
                 loadReceipts(task.id);
+                return undefined;
+              }
+              // Its agent could not use the tools in this space: Settings is where that changes.
+              const home = homeRefusal(error);
+              if (home !== undefined) {
+                refuse(task.id, undefined);
+                say(
+                  t("row.openOtherSpace", {
+                    label: instance.label,
+                    space: home.works ?? t("apps.otherSpace"),
+                  }),
+                );
                 return undefined;
               }
               const found = folderRefusal(error);

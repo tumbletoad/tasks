@@ -157,6 +157,34 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
   });
 });
 
+test.describe("[M6.page.e2e.open-other-space] Open with an agent registered for another space", () => {
+  test("the click says where the agent works and what to change, and starts nothing @one-browser", async ({
+    page,
+    world,
+  }) => {
+    await watchViolations(page);
+    const revoke = await world.registerAgent(world.studio.id);
+    try {
+      const before = world.terminal().length;
+      await signIn(page, world, `/s/${world.mira.id}/area/${world.task.area}`);
+      await showsSpace(page, world.mira.name);
+      const row = page.locator(`li[data-task="${world.task.ref}"]`);
+      await row.locator('[data-part="tile"]').click();
+      const label = FAKE_INSTANCE.label;
+      const said = page.getByRole("status").filter({
+        hasText: `${label} works in ${world.studio.name}, so it could not use ${PRODUCT_NAME} in this space. To use it here, turn "Give ${label} the ${PRODUCT_NAME} tools" off, then on, in Settings under Agent apps. Nothing was started.`,
+      });
+      await expect(said).toBeVisible({ timeout: SLOW_MS });
+      await expect(row.locator('[data-part="tile"]')).toHaveAttribute("data-state", "ready");
+      expect(world.terminal()).toHaveLength(before);
+      expect(await violations(page)).toEqual([]);
+      await picture(page, "open-other-space.png");
+    } finally {
+      await revoke();
+    }
+  });
+});
+
 test.describe("[A5.3.7.e2e.show-folder] the folder button opens the task's folder in the file manager", () => {
   test("the row's folder button and the expanded folder line show the task's folder; a folder that went is said and nothing opens @one-browser", async ({
     page,

@@ -116,6 +116,7 @@ import {
   LaunchFolderUnmarked,
   LaunchUnavailable,
   type Choice,
+  type RegisteredElsewhere,
   type OpenTaskRequest,
   type OpenTaskResult,
 } from "./open.ts";
@@ -292,6 +293,8 @@ export interface LaunchServiceOptions extends LaunchOptions {
   readonly instances?: readonly Instance[] | (() => readonly Instance[]);
   /** The markers in projects' and tasks' folders (marker.ts). None: a launch checks no marker. */
   readonly markers?: FolderMarkers;
+  /** Where a terminal click's agent home is registered, when not for its space. None: nowhere. */
+  readonly registeredElsewhere?: RegisteredElsewhere;
 }
 
 interface Hosted {
@@ -754,6 +757,19 @@ export class LaunchService {
         ...(agent?.home === undefined ? {} : { home: agent.home }),
         ...(session === undefined ? {} : { preset: session }),
       };
+      // An agent whose home is registered for another space could not use TTasks here: the
+      // person hears it now rather than at its first call.
+      const elsewhere =
+        agent === undefined
+          ? undefined
+          : this.#options.registeredElsewhere?.(agent.app, agent.home, space);
+      if (elsewhere !== undefined) {
+        this.#log("launch.unavailable", "other_space");
+        throw new LaunchUnavailable(
+          "other_space",
+          this.#options.spaces().find((s) => s.id === elsewhere)?.name,
+        );
+      }
       const codexHome =
         chosen.target === "codex-cli"
           ? codexHomeOf(chosen, this.#options.home, platform)

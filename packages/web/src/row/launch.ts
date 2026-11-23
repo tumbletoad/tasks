@@ -113,6 +113,19 @@ export interface FolderRefusal {
   readonly choose?: true;
 }
 
+/**
+ * The service's refusal of an Open whose agent app is registered for another space, with that
+ * space's name when the service serves it; undefined for any other answer.
+ */
+export function homeRefusal(error: unknown): { readonly works?: string } | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const data = (error as Error & { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return undefined;
+  const { field, reason, space } = data as Record<string, unknown>;
+  if (field !== "instance" || reason !== "other_space") return undefined;
+  return typeof space === "string" ? { works: space } : {};
+}
+
 /** The reasons a folder's marker gives: the person may open the task there anyway. */
 export const MARKER_REASONS: ReadonlySet<string> = new Set(["marker_missing", "marker_other"]);
 

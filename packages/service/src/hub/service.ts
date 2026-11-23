@@ -972,6 +972,14 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       commandFolder: layout.bin,
       markers,
       ...(accountHome === undefined ? {} : { home: accountHome }),
+      // The grant gate's rule for the session the click starts: its home's live row names its
+      // space (binding/decide.ts standing).
+      registeredElsewhere: (app, home, space) => {
+        if (home === undefined) return undefined;
+        const rows = homeRows({ grants: grantsOf, platform }, app, home);
+        const live = rows.kind === "rows" ? rows.rows.find((row) => row.live) : undefined;
+        return live === undefined || live.spaces.includes(space) ? undefined : live.spaces[0];
+      },
     });
     launching.service = launches;
     // Settings for this machine (M5.11): the page's theme and keys, and Open's terminal.

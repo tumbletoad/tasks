@@ -25,6 +25,7 @@ import {
   instanceToml,
   registerSpaces,
   removeRuntimeDir,
+  serviceEnv,
   Services,
   stateOf,
   tempRoot,
@@ -32,6 +33,8 @@ import {
   within,
   type ServiceJson,
 } from "../../packages/service/test/harness.ts";
+import { homeFolder, hostFacts } from "../../packages/service/src/hub/paths.ts";
+import { agentHomeOf } from "../../packages/service/src/setup/agents.ts";
 import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { checkedDriver, seedMira } from "../../packages/testkit/src/index.ts";
@@ -126,6 +129,11 @@ export interface World {
   restart(whileStopped?: () => Promise<void>): Promise<void>;
   /** An agent logs on a task, through the service's request path as an agent does. */
   agentLog(space: string, task: string, text: string): Promise<void>;
+  /**
+   * Registers the fake agent's home for `space` as agent setup does, until the function it gives
+   * takes the registration back. The home's own files are never read or written.
+   */
+  registerAgent(space: string): Promise<() => Promise<void>>;
   /**
    * An operation through the service's request path, as the person at a terminal (`user`) or an
    * agent makes it, with a fresh request ID. Returns its result.
@@ -452,6 +460,26 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           },
           { timeoutMs: SLOW_MS },
         );
+      },
+      registerAgent: async (space) => {
+        const account = homeFolder(hostFacts(serviceEnv(home), process.platform));
+        const agent = agentHomeOf(
+          { target: "claude-cli", env: {}, configHome: undefined },
+          account,
+          process.platform,
+        );
+        const granted = (await life.user.call(
+          "setup/home_grant",
+          { app: agent?.app, home: agent?.home, instance: "fake-agent-home", account: "", space },
+          { timeoutMs: SLOW_MS },
+        )) as { grant: { grant: string } };
+        return async () => {
+          await life.user.call(
+            "setup/home_revoke",
+            { grants: [granted.grant.grant] },
+            { timeoutMs: SLOW_MS },
+          );
+        };
       },
       op: async (space, op, input, as = "user") => {
         ops += 1;

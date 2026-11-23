@@ -3812,6 +3812,18 @@ async function unmarkedError(call: Call, error: LaunchFolderUnmarked): Promise<A
 
 export function launchError(error: unknown): unknown {
   if (error instanceof LaunchUnavailable) {
+    if (error.reason === "other_space") {
+      return new AppError({
+        code: "invalid_input",
+        message: `This agent app works in ${error.works === undefined ? "another space" : `the space ${error.works}`}, so it could not use ${PRODUCT_NAME} in this one. Nothing was started.`,
+        hint: `Register it for this space: in Settings under Agent apps, or with ${CLI_NAME} setup agents.`,
+        data: {
+          field: "instance",
+          reason: error.reason,
+          ...(error.works === undefined ? {} : { space: error.works }),
+        },
+      });
+    }
     return new AppError({
       code: "invalid_input",
       message:
