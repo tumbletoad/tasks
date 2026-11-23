@@ -516,6 +516,25 @@ describe("[A3.3.14.doctor.monitor] where ttam comes from, and whether it fits", 
     });
   });
 
+  test("a monitor that wrote its hello but does not end when its input closes fails", async () => {
+    const { monitor, command, pids } = prober({ helloMs: 60_000, killMs: 300 });
+    expect(await monitor.probe(command("deaf"))).toEqual({
+      fits: false,
+      problem: { kind: "failed", reason: "not_ending" },
+    });
+    for (const pid of pids()) expect(alive(pid)).toBe(false);
+  });
+
+  test("probes at the same time share one process", async () => {
+    const { monitor, command, pids } = prober();
+    const fits = { fits: true, build: { version: "0.1.0", build: "0123456789ab" } };
+    expect(await Promise.all([monitor.probe(command()), monitor.probe(command())])).toEqual([
+      fits,
+      fits,
+    ]);
+    expect(pids()).toHaveLength(1);
+  });
+
   test("a probe under way when the service stops is ended, and close waits until it is gone", async () => {
     const { monitor, command, pids } = prober({ helloMs: 60_000, killMs: 60_000 });
     const probed = monitor.probe(command("deaf"));

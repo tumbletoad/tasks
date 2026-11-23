@@ -15,12 +15,15 @@
 //                   and runs out within 5 days or ran out (warn)
 //   sessions        the agent connections open now, and how many are the session of an agent
 //                   TTasks opened or of a background run
+//   monitor         the Agent Monitor (doctor-monitor.ts), found in the environment launch.env
+//                   read: the person's environment is looked up once per report
 //
 // Rows hold words, counts, dates and instance IDs only: never a path, a variable's name or value,
 // a token or a task. None of them fails the report: each names what launches lose, and the fix.
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 
 import type { Session } from "./connect.ts";
+import { monitorCheck } from "./doctor-monitor.ts";
 
 export interface Check {
   readonly id: string;
@@ -365,5 +368,6 @@ export async function launchChecks(
     sessions === undefined
       ? { id: "sessions", status: "skip", detail: "The service did not answer." }
       : sessionsCheck(sessions.answer),
+    monitorCheck(facts?.["monitor"]),
   ];
 }

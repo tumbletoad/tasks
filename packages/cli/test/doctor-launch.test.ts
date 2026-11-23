@@ -208,6 +208,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
           attempted_at: iso(NOW),
           taken_at: iso(NOW),
         },
+        monitor: { fits: true, build: { version: "0.1.0", build: "0123456789ab" } },
       },
       "t3/status": { state: "not_paired" },
       "doctor/sessions": { open: 2, sessions: { launch: 1, run: 0 } },
@@ -219,6 +220,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
       ["launch.env", "ok"],
       ["launch.t3", "skip"],
       ["sessions", "ok"],
+      ["monitor", "ok"],
     ]);
     expect(asked.map(([method]) => method).sort()).toEqual([
       "doctor/launch",
@@ -230,7 +232,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     await launchChecks(session(answers), true, NOW);
     expect(asked.find(([method]) => method === "doctor/launch")?.[1]).toEqual({ take: true });
     const older = await launchChecks(session({}), false, NOW);
-    expect(older.map((r) => r.status)).toEqual(["skip", "skip", "skip", "skip", "skip"]);
+    expect(older.map((r) => r.status)).toEqual(["skip", "skip", "skip", "skip", "skip", "skip"]);
   });
 });
 

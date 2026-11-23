@@ -66,7 +66,6 @@ import {
 } from "./connect.ts";
 import { readAccounts, type AccountFacts } from "./accounts.ts";
 import { accountsCheck, httpCheck, type HttpStatusView } from "./doctor-http.ts";
-import { monitorCheck } from "./doctor-monitor.ts";
 import type { Io } from "./io.ts";
 import { migratedLine, migratedSince, type Migrated } from "./migrations.ts";
 import { bodyOf, printUsage, RESTART_HINT } from "./output.ts";
@@ -468,11 +467,6 @@ async function serviceChecks(
     checks.push(await httpCheck(status.http, io.platform, io.env));
     checks.push(runsCheck(status.runs));
     checks.push(...(await launch.launchChecks(session, live)));
-    checks.push(
-      monitorCheck(
-        await session.call("doctor/monitor", {}, { timeoutMs: 20_000 }).catch(() => undefined),
-      ),
-    );
     return checks;
   } catch (error) {
     const body = bodyOf(asAppError(error));

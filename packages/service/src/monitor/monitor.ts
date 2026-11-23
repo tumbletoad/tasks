@@ -550,7 +550,9 @@ export type MonitorProbe =
 
 /**
  * Starts `command` with its input already closed and reads its hello: TTAM writes its hello, runs
- * no pass and exits, so it reads no session. Resolves once the process is gone; `stop` kills it.
+ * no pass and exits, so it reads no session. The hello is due within helloMs, the exit killMs after
+ * it; a process the probe has to kill is a failure, whatever it wrote. Resolves once the process is
+ * gone; `stop` kills it.
  */
 function probeMonitor(
   command: MonitorCommand,
@@ -576,30 +578,45 @@ function probeMonitor(
       stdio: ["ignore", "pipe", "ignore"],
       windowsHide: true,
     });
-    const kill = (): void => {
+    /** Why the probe killed it: that is the answer. */
+    let killed: MonitorFailure | undefined;
+    const kill = (why: MonitorFailure): void => {
+      killed ??= why;
+      clearTimeout(deadline);
       proc.kill("SIGKILL");
     };
-    stop.addEventListener("abort", kill);
-    const deadline = setTimeout(kill, times.helloMs + times.killMs);
+    const stopped = (): void => {
+      kill("closed");
+    };
+    stop.addEventListener("abort", stopped);
+    let deadline = setTimeout(() => {
+      kill("no_hello");
+    }, times.helloMs);
     proc.stdout.setEncoding("utf8");
     proc.stdout.on("data", (chunk: string) => {
       if (first !== undefined) return;
       text += chunk;
       const end = text.indexOf("\n");
-      if (end !== -1) first = text.slice(0, end);
-      else if (text.length > 64 * 1024) kill();
+      if (end !== -1) {
+        first = text.slice(0, end);
+        // Its input is closed: a TTAM that does not end now would not end with the service either.
+        clearTimeout(deadline);
+        deadline = setTimeout(() => {
+          kill("not_ending");
+        }, times.killMs);
+      } else if (text.length > 64 * 1024) kill("no_hello");
     });
     const done = (probe: MonitorProbe): void => {
       clearTimeout(deadline);
-      stop.removeEventListener("abort", kill);
+      stop.removeEventListener("abort", stopped);
       resolve(probe);
     };
     proc.once("error", () => {
       if (proc.pid === undefined) done(failed("start_failed"));
     });
     proc.once("close", (code) => {
-      if (stop.aborted) {
-        done(failed("closed"));
+      if (killed !== undefined) {
+        done(failed(killed));
         return;
       }
       if (first === undefined) {

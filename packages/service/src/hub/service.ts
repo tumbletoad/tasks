@@ -746,28 +746,27 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       ...(personHome === undefined ? {} : { home: personHome }),
     });
     // The person's own `ttam`, looked for in their environment as Open's agents get it.
-    const monitorCommand =
-      options.monitor?.command ??
-      (async (): Promise<MonitorCommand> => {
-        const source = launching.service?.environment;
-        const found = source === undefined ? env : await personEnv(source).catch(() => env);
-        const home = personHome ?? layout.state;
-        return findMonitor(
-          nodeDetectHost({ platform, env: found, home }),
-          home,
+    const monitorHome = personHome ?? layout.state;
+    const monitorIn = (found: Env): Promise<MonitorCommand> =>
+      options.monitor?.command() ??
+      Promise.resolve(
+        findMonitor(
+          nodeDetectHost({ platform, env: found, home: monitorHome }),
+          monitorHome,
           env[MONITOR_VARIABLE],
-        );
-      });
+        ),
+      );
     const monitor = new Monitor({
-      command: monitorCommand,
+      command: async () => {
+        const source = launching.service?.environment;
+        return monitorIn(source === undefined ? env : await personEnv(source).catch(() => env));
+      },
       log: (event, fields) => {
         log.log(event, fields);
       },
     });
     const hub = {
       status,
-      // `ttasks doctor`'s monitor row: TTAM's hello only, read by a run that collects nothing.
-      monitor: { probe: async () => monitor.probe(await monitorCommand()) },
       requestStop: (o: { restart: boolean }) => {
         onStopRequest(o);
       },
@@ -835,8 +834,14 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       },
       launches: {
         handlers: () => launching.service?.handlers() ?? {},
-        // `doctor/launch` (A3 3.14): the launch service's own scope probe and environment check.
-        doctor: (take: boolean) => launching.service?.doctor(take) ?? Promise.resolve(undefined),
+        // `doctor/launch` (A3 3.14): the launch service's own scope probe and environment check,
+        // and the monitor row, found in the environment that check read: TTAM's hello only.
+        doctor: async (take: boolean) => {
+          const service = launching.service;
+          if (service === undefined) return undefined;
+          const { facts, env: found } = await service.doctor(take);
+          return { ...facts, monitor: await monitor.probe(await monitorIn(found)) };
+        },
       },
       // `ttasks setup t3` (M2.11): T3's routes over `<state>/t3`, the paired one and the CLI
       // fallback (M6.10). Launching through them is a later step's.

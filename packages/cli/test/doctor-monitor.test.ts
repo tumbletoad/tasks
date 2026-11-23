@@ -36,6 +36,10 @@ describe("[A3.3.14.doctor.monitor] doctor's monitor row", () => {
     const failed = row({ kind: "failed", reason: "no_hello" });
     expect(failed.status).toBe("warn");
     expect(failed.detail).toContain("Run: ttam doctor");
+    // One that had to be killed after its hello would not end with TTasks either.
+    const hung = row({ kind: "failed", reason: "not_ending" });
+    expect(hung.status).toBe("warn");
+    expect(hung.detail).toContain("Update TTAM.");
   });
 
   test("an older service that does not answer skips the row", () => {

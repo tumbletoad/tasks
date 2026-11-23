@@ -1,4 +1,4 @@
-// `ttasks doctor`'s monitor row, from the service's `doctor/monitor`: whether the Agent Monitor
+// `ttasks doctor`'s monitor row, from `doctor/launch`'s `monitor`: whether the Agent Monitor
 // (TTAM) is found as the service would start it, whether its version fits, and what to do when
 // not. TTasks works without it, so no answer fails the report.
 import { MONITOR_COMMAND, MONITOR_NAME, PRODUCT_NAME } from "@ttasks/brand";
@@ -43,6 +43,11 @@ export function monitorCheck(answer: unknown): Check {
         `${named(problem["found"])} does not fit this ${PRODUCT_NAME}. Update ${problem["update"] === "ttasks" ? PRODUCT_NAME : MONITOR_NAME}.`,
       );
     default:
+      if (problem["reason"] === "not_ending") {
+        return warn(
+          `${MONITOR_NAME} did not end when its input closed, so it would not end with ${PRODUCT_NAME} either. Update ${MONITOR_NAME}.`,
+        );
+      }
       return warn(
         `${MONITOR_NAME} did not start as expected (${typeof problem["reason"] === "string" ? problem["reason"] : "unknown"}). Run: ${MONITOR_COMMAND} doctor`,
       );

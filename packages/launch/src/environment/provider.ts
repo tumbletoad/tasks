@@ -82,10 +82,13 @@ export interface EnvironmentSource {
   check?(take: boolean): Promise<EnvironmentCheck>;
 }
 
-/** What doctor learns of the agent's environment. Words and times only: never a name or value. */
+/** What doctor learns of the agent's environment. It shows words and times only, never a value. */
 export type EnvironmentCheck =
-  /** Windows: whether the registry's layers could be read now. */
-  | { readonly kind: "registry"; readonly read: boolean }
+  /**
+   * Windows: whether the registry's layers could be read now, and the base that read gave, for
+   * doctor's other rows: the registry is read once per report.
+   */
+  | { readonly kind: "registry"; readonly read: boolean; readonly base: AgentBase }
   /**
    * Linux and macOS: how the last login-shell snapshot this start attempted ended and when (none
    * when it attempted none), and when the snapshot in use was taken (none: launches get the
@@ -361,8 +364,10 @@ export class UserEnvironment implements EnvironmentSource {
    */
   async check(take: boolean): Promise<EnvironmentCheck> {
     if (!this.#posix) {
-      const base = await this.#registryBase().catch(() => undefined);
-      return { kind: "registry", read: base?.kind === "user" };
+      const base = await this.#registryBase().catch(
+        (): AgentBase => ({ kind: "service", env: this.#o.serviceEnv }),
+      );
+      return { kind: "registry", read: base.kind === "user", base };
     }
     this.#load();
     if (take) {

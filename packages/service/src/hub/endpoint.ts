@@ -36,7 +36,6 @@ import { spaceVerbs, type SpaceVerbsHost } from "./space-verbs.ts";
 import { t3Verbs, type T3Host } from "./t3.ts";
 import { agentHomeVerbs, type AgentHomesHost } from "./agent-homes.ts";
 import { instanceVerbs, type InstancesHost } from "./instances.ts";
-import type { MonitorProbe } from "../monitor/index.ts";
 import type { RunBlocker, RunsStatus } from "../runs/service.ts";
 import { runVerbs, type RunVerbsHost } from "../runs/verbs.ts";
 
@@ -121,7 +120,8 @@ export interface EndpointHub {
   readonly defaults?: Pick<DefaultSpace, "make">;
   /**
    * The launch shim's methods (A4 3.6.3, `launch.*`, shim class only): launch/ (M2.08). `doctor`
-   * answers `doctor/launch` (A3 3.14); undefined while there is no launch service to ask.
+   * answers `doctor/launch` (A3 3.14), the monitor row with it; undefined while there is no launch
+   * service to ask.
    */
   readonly launches?: {
     handlers(): RpcHandlers;
@@ -129,8 +129,6 @@ export interface EndpointHub {
   };
   /** `ttasks setup t3` (`t3/*`). */
   readonly t3?: T3Host;
-  /** `doctor/monitor`: whether the Agent Monitor is there and fits. */
-  readonly monitor?: { probe(): Promise<MonitorProbe> };
   /** Each mcp mode connection's binding, decided at its bind. A shell's call is decided in `op/call`. */
   readonly bridges?: Bridges;
   /** `ttasks setup agents` (`setup/*`): the agent-home rows of the grants table. */
@@ -228,7 +226,6 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
         terminal: null,
       },
     "doctor/sessions": () => (hub.bridges === undefined ? null : sessionFacts(hub.bridges)),
-    "doctor/monitor": async () => (hub.monitor === undefined ? null : await hub.monitor.probe()),
     "service/status": () => hub.status(),
     // A2 3.8.4 step 1: a one-time code for `ttasks open`, and the port to use it on.
     "ui/mint_code": () => {

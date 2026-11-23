@@ -141,7 +141,7 @@ export interface MonitorBuild {
 /**
  * Why a child failed, as a fixed word: it could not be started, wrote no hello in time or another
  * first line, ended by itself, wrote a line that is not JSON or too long, refused a request, did
- * not answer in time, or the service is stopping.
+ * not answer in time, did not end when its input closed, or the service is stopping.
  */
 export const MONITOR_FAILURES = [
   "start_failed",
@@ -150,6 +150,7 @@ export const MONITOR_FAILURES = [
   "bad_output",
   "refused",
   "not_answering",
+  "not_ending",
   "closed",
 ] as const;
 export type MonitorFailure = (typeof MONITOR_FAILURES)[number];
