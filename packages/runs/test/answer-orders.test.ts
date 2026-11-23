@@ -1,31 +1,55 @@
 // One table of the orders in which an agent's words can reach its driver, run against every
-// driver: whatever the agent said by the time its work settles is the work's text, and work that
-// succeeded never has an empty answer when one was given. Each driver's agent says each step in
-// its own protocol, or says nothing where that protocol has no words for it.
+// driver whose protocol can say them: whatever the agent said by the time its work settles is the
+// work's text, and work that succeeded never has an empty answer when one was given. A row names
+// the drivers it applies to; the others list it as skipped. A fake that is asked to say a step its
+// protocol has no words for fails the row.
 import { PassThrough } from "node:stream";
 import { createInterface } from "node:readline";
-import { describe, expect, test } from "vitest";
-import type { OutcomeReason, RunEvent } from "@ttasks/contracts/runs";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type { OutcomeReason } from "@ttasks/contracts/runs";
 import { claudeDriver } from "../src/drivers/claude.ts";
 import { codexDriver } from "../src/drivers/codex.ts";
 import { printDriver } from "../src/drivers/print.ts";
-import type { DriverSession, OpenDriver, Work } from "../src/drivers/types.ts";
+import type { DriverSession, OpenDriver } from "../src/drivers/types.ts";
+
+/** What a message is in Codex's protocol: its answer, its commentary, or not said (null). */
+type Phase = "final_answer" | "commentary" | null;
 
 type Step =
-  /** Part of an answer, before its message is whole. */
-  | { readonly kind: "streams"; readonly text: string }
-  /** The answer's message, whole. */
-  | { readonly kind: "message"; readonly text: string }
-  /** The turn ends, with the answer in its summary or without one. */
-  | { readonly kind: "turn ends"; readonly summary: string | null }
+  /** Part of message `item`, before it is whole. Empty: the message only starts. */
+  | {
+      readonly kind: "streams";
+      readonly item: string;
+      readonly text: string;
+      readonly phase: Phase;
+    }
+  /** Message `item`, whole; of an earlier turn when `turn` names one. */
+  | {
+      readonly kind: "message";
+      readonly item: string;
+      readonly text: string;
+      readonly phase: Phase;
+      /** A question for the person the message ends with. */
+      readonly asks?: string;
+      readonly turn?: number;
+    }
+  /** The turn ends, its summary naming the answer's message with its words, or naming none. */
+  | {
+      readonly kind: "turn ends";
+      readonly names: { readonly item: string; readonly text: string } | null;
+    }
+  /** The agent starts a turn of its own on the same run. */
+  | { readonly kind: "turn starts" }
+  /** A command the agent leaves running in the background starts, or ends. */
+  | { readonly kind: "command starts" }
+  | { readonly kind: "command ends" }
+  /** Longer than any wait for a message still to come. */
+  | { readonly kind: "time passes" }
   | { readonly kind: "output ends" }
   | { readonly kind: "stop" };
 
-/** One agent program's protocol, as a fake of it says each step. */
 interface Agent {
   readonly driver: DriverSession;
-  /** Whether the protocol says `step`: false when it has no words for it. */
-  readonly says: (step: Step) => boolean;
   readonly say: (step: Step) => Promise<void>;
 }
 
@@ -35,6 +59,9 @@ type Speaker = () => Promise<Agent>;
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
 };
+
+const noWords = (driver: string, step: Step): Error =>
+  new Error(`${driver} has no words for "${step.kind}": the row does not apply to it`);
 
 function pipes(): { toAgent: PassThrough; fromAgent: PassThrough; write: (line: object) => void } {
   const toAgent = new PassThrough();
@@ -50,19 +77,19 @@ function pipes(): { toAgent: PassThrough; fromAgent: PassThrough; write: (line: 
 }
 
 const THREAD = "00000000-0000-4000-8000-000000000002";
-const TURN = "00000000-0000-4000-8000-000000000003";
 const SESSION = "00000000-0000-4000-8000-0000000000a1";
+const turnId = (turn: number): string => `turn-${String(turn)}`;
 
-/** Codex's app server: a final-answer item that streams, completes, and a turn with its summary. */
+/** Codex's app server: messages of a turn by item, streamed or whole, and turns with summaries. */
 const codex: Speaker = async () => {
   const { toAgent, fromAgent, write } = pipes();
-  const events: RunEvent[] = [];
   let started: () => void = () => undefined;
   const turnStarted = new Promise<void>((resolve) => {
     started = resolve;
   });
-  let item = 0;
-  let open = false;
+  let turn = 1;
+  let command = 0;
+  const begun = new Set<string>();
   createInterface({ input: toAgent }).on("line", (line) => {
     const message = JSON.parse(line) as { id?: number; method?: string };
     if (message.id === undefined) return;
@@ -74,8 +101,8 @@ const codex: Speaker = async () => {
         write({ id: message.id, result: { thread: { id: THREAD } } });
         return;
       case "turn/start":
-        write({ id: message.id, result: { turn: { id: TURN } } });
-        write({ method: "turn/started", params: { threadId: THREAD, turn: { id: TURN } } });
+        write({ id: message.id, result: { turn: { id: turnId(turn) } } });
+        write({ method: "turn/started", params: { threadId: THREAD, turn: { id: turnId(turn) } } });
         started();
         return;
       case "turn/interrupt":
@@ -84,7 +111,7 @@ const codex: Speaker = async () => {
           method: "turn/completed",
           params: {
             threadId: THREAD,
-            turn: { id: TURN, items: [], itemsView: "notLoaded", status: "interrupted" },
+            turn: { id: turnId(turn), items: [], itemsView: "notLoaded", status: "interrupted" },
           },
         });
         return;
@@ -94,38 +121,52 @@ const codex: Speaker = async () => {
   });
   const driver = codexDriver({ request: "Look into the export.", permission: "full-access" })(
     { stdin: toAgent, stdout: fromAgent },
-    (event) => events.push(event),
+    () => undefined,
   );
   await turnStarted;
-  const answerItem = (text: string) => ({
+  const id = (item: string, of = turn): string => `${turnId(of)}-${item}`;
+  const agentMessage = (
+    item: string,
+    text: string,
+    phase: Phase,
+    asks?: string,
+    of?: number,
+  ): object => ({
     type: "agentMessage",
-    id: `answer-${String(item)}`,
+    id: id(item, of),
     text,
-    phase: "final_answer",
-    delivery: null,
-    questions: null,
+    phase,
+    delivery: asks === undefined ? null : "async",
+    questions: asks === undefined ? null : [{ title: asks, options: ["CSV", "PDF"] }],
   });
-  const of = { threadId: THREAD, turnId: TURN };
+  const of = (at = turn) => ({ threadId: THREAD, turnId: turnId(at) });
   return {
     driver,
-    says: () => true,
     say: async (step) => {
       switch (step.kind) {
         case "streams":
-          if (!open) {
-            item += 1;
-            open = true;
-            write({ method: "item/started", params: { ...of, item: answerItem("") } });
+          if (!begun.has(id(step.item))) {
+            begun.add(id(step.item));
+            write({
+              method: "item/started",
+              params: { ...of(), item: agentMessage(step.item, "", step.phase) },
+            });
           }
-          write({
-            method: "item/agentMessage/delta",
-            params: { ...of, itemId: `answer-${String(item)}`, delta: step.text },
-          });
+          if (step.text !== "") {
+            write({
+              method: "item/agentMessage/delta",
+              params: { ...of(), itemId: id(step.item), delta: step.text },
+            });
+          }
           break;
         case "message":
-          if (!open) item += 1;
-          open = false;
-          write({ method: "item/completed", params: { ...of, item: answerItem(step.text) } });
+          write({
+            method: "item/completed",
+            params: {
+              ...of(step.turn),
+              item: agentMessage(step.item, step.text, step.phase, step.asks, step.turn),
+            },
+          });
           break;
         case "turn ends":
           write({
@@ -133,14 +174,51 @@ const codex: Speaker = async () => {
             params: {
               threadId: THREAD,
               turn: {
-                id: TURN,
-                items: step.summary === null ? [] : [answerItem(step.summary)],
-                itemsView: step.summary === null ? "notLoaded" : "summary",
+                id: turnId(turn),
+                items:
+                  step.names === null
+                    ? []
+                    : [agentMessage(step.names.item, step.names.text, "final_answer")],
+                itemsView: step.names === null ? "notLoaded" : "summary",
                 status: "completed",
                 error: null,
               },
             },
           });
+          break;
+        case "turn starts":
+          turn += 1;
+          write({
+            method: "turn/started",
+            params: { threadId: THREAD, turn: { id: turnId(turn) } },
+          });
+          break;
+        case "command starts":
+          command += 1;
+          write({
+            method: "item/started",
+            params: {
+              ...of(),
+              item: {
+                type: "commandExecution",
+                id: `cmd-${String(command)}`,
+                status: "inProgress",
+              },
+            },
+          });
+          break;
+        case "command ends":
+          write({
+            method: "item/completed",
+            params: {
+              ...of(),
+              item: { type: "commandExecution", id: `cmd-${String(command)}`, status: "completed" },
+            },
+          });
+          break;
+        case "time passes":
+          await settle();
+          vi.advanceTimersByTime(60_000);
           break;
         case "output ends":
           driver.ended({ code: 1, signal: null });
@@ -160,22 +238,20 @@ const codex: Speaker = async () => {
  * goes over its input; else the program exits after its result.
  */
 const claudeLike =
-  (open: OpenDriver, stops: boolean): Speaker =>
+  (name: string, open: OpenDriver, stops: boolean): Speaker =>
   () => {
     const { toAgent, fromAgent, write } = pipes();
     toAgent.resume();
     const driver = open({ stdin: toAgent, stdout: fromAgent }, () => undefined);
     write({ type: "system", subtype: "init", session_id: SESSION, mcp_servers: [] });
-    const says = (step: Step): boolean =>
-      step.kind !== "streams" && (step.kind !== "stop" || stops);
     return Promise.resolve({
       driver,
-      says,
       say: async (step) => {
         switch (step.kind) {
-          case "streams":
-            break;
           case "message":
+            if (step.phase !== "final_answer" || step.asks !== undefined || step.turn) {
+              throw noWords(name, step);
+            }
             write({
               type: "assistant",
               session_id: SESSION,
@@ -188,7 +264,7 @@ const claudeLike =
               subtype: "success",
               is_error: false,
               session_id: SESSION,
-              result: step.summary ?? "",
+              result: step.names?.text ?? "",
             });
             if (!stops) {
               fromAgent.end();
@@ -202,7 +278,7 @@ const claudeLike =
             driver.ended({ code: 1, signal: null });
             break;
           case "stop":
-            if (!stops) break;
+            if (!stops) throw noWords(name, step);
             driver.interrupt();
             write({
               type: "result",
@@ -212,113 +288,316 @@ const claudeLike =
               terminal_reason: "aborted_streaming",
             });
             break;
+          default:
+            throw noWords(name, step);
         }
         await settle();
       },
     });
   };
 
-/** Each driver, and whether its protocol can stop the agent: else the host interrupts its process. */
-const SPEAKERS: Readonly<Record<string, { readonly speaker: Speaker; readonly stops: boolean }>> = {
-  codex: { speaker: codex, stops: true },
-  claude: {
-    speaker: claudeLike(claudeDriver({ request: "Look into the export." }), true),
-    stops: true,
-  },
-  "claude-print": { speaker: claudeLike(printDriver("claude-print"), false), stops: false },
+const SPEAKERS: Readonly<Record<string, Speaker>> = {
+  codex,
+  claude: claudeLike("claude", claudeDriver({ request: "Look into the export." }), true),
+  "claude-print": claudeLike("claude-print", printDriver("claude-print"), false),
 };
 
 const ANSWER = "The export drops the last row.";
-const streams = (text: string): Step => ({ kind: "streams", text });
-const message: Step = { kind: "message", text: ANSWER };
-const turnEnds = (summary: string | null): Step => ({ kind: "turn ends", summary });
+const streams = (item: string, text: string, phase: Phase = "final_answer"): Step => ({
+  kind: "streams",
+  item,
+  text,
+  phase,
+});
+const message = (
+  item: string,
+  text: string,
+  more: { phase?: Phase; asks?: string; turn?: number } = {},
+): Step => ({ kind: "message", item, text, phase: "final_answer", ...more });
+const turnEnds = (item?: string, text?: string): Step => ({
+  kind: "turn ends",
+  names: item === undefined ? null : { item, text: text ?? "" },
+});
+const turnStarts: Step = { kind: "turn starts" };
+const commandStarts: Step = { kind: "command starts" };
+const commandEnds: Step = { kind: "command ends" };
+const timePasses: Step = { kind: "time passes" };
 const outputEnds: Step = { kind: "output ends" };
 const stop: Step = { kind: "stop" };
 
-/** Each order, and how the work settles: its text is what the agent said by then. */
+/** Every driver; the ones that can stop their agent over the protocol; Codex alone. */
+const ALL = ["codex", "claude", "claude-print"] as const;
+const STOPS = ["codex", "claude"] as const;
+const CODEX = ["codex"] as const;
+
+/** Each order, and how the work settles: its outcome, its text, and whether that is final. */
 const ORDERS: readonly {
   readonly name: string;
+  readonly for: readonly string[];
   readonly steps: readonly Step[];
   readonly outcome: OutcomeReason;
+  readonly text: string | null;
+  readonly final: boolean;
 }[] = [
   {
     name: "the answer streams, then the output ends",
-    steps: [streams("The export "), streams("drops"), outputEnds],
+    for: CODEX,
+    steps: [streams("A", "The export "), streams("A", "drops"), outputEnds],
     outcome: "no_result",
+    text: "The export drops",
+    final: false,
   },
   {
     name: "the answer is whole, then the output ends",
-    steps: [streams("The export "), message, outputEnds],
+    for: ALL,
+    steps: [message("A", ANSWER), outputEnds],
     outcome: "no_result",
+    text: ANSWER,
+    final: false,
+  },
+  {
+    name: "the answer streams and is whole, then the output ends",
+    for: CODEX,
+    steps: [streams("A", "The export "), message("A", ANSWER), outputEnds],
+    outcome: "no_result",
+    text: ANSWER,
+    final: false,
   },
   {
     name: "the answer, then the turn's end with it",
-    steps: [streams("The export "), message, turnEnds(ANSWER)],
+    for: ALL,
+    steps: [message("A", ANSWER), turnEnds("A", ANSWER)],
     outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "the answer streams and is whole, then the turn's end with it",
+    for: CODEX,
+    steps: [streams("A", "The export "), message("A", ANSWER), turnEnds("A", ANSWER)],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
   },
   {
     name: "the turn's end with the answer comes before the answer's own message",
-    steps: [streams("The export "), turnEnds(ANSWER), message],
+    for: CODEX,
+    steps: [streams("A", "The export "), turnEnds("A", ANSWER), message("A", ANSWER)],
     outcome: "success",
+    text: ANSWER,
+    final: true,
   },
   {
-    name: "the turn's end without a summary comes while the answer streams",
-    steps: [streams("The export "), streams("drops"), turnEnds(null)],
+    name: "the turn's end without a summary comes while the answer streams, and nothing more comes",
+    for: CODEX,
+    steps: [streams("A", "The export "), streams("A", "drops"), turnEnds(), timePasses],
     outcome: "success",
+    text: "The export drops",
+    final: false,
   },
   {
     name: "Stop while the answer streams",
-    steps: [streams("The export "), streams("drops"), stop],
+    for: CODEX,
+    steps: [streams("A", "The export "), streams("A", "drops"), stop],
     outcome: "interrupted",
+    text: "The export drops",
+    final: false,
+  },
+  {
+    name: "Stop after a whole message",
+    for: STOPS,
+    steps: [message("A", ANSWER), stop],
+    outcome: "interrupted",
+    text: ANSWER,
+    final: false,
   },
   {
     name: "a whole answer, then a later one streams, then the output ends",
-    steps: [message, streams("Also "), streams("the header"), outputEnds],
+    for: CODEX,
+    steps: [message("A", ANSWER), streams("B", "Also "), streams("B", "the header"), outputEnds],
     outcome: "no_result",
+    text: "Also the header",
+    final: false,
+  },
+  {
+    name: "the turn's summary names a whole answer after a later message of only spaces",
+    for: ALL,
+    steps: [message("A", ANSWER), message("B", "  "), turnEnds("A", ANSWER)],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "the turn's summary names the answer after a late piece of an earlier message",
+    for: CODEX,
+    steps: [
+      streams("A", "Looking "),
+      message("B", ANSWER),
+      streams("A", "further"),
+      turnEnds("B", ANSWER),
+    ],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "the answer completes empty, then the turn's summary gives its words",
+    for: CODEX,
+    steps: [message("A", ""), turnEnds("A", ANSWER)],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "the answer streams, then the turn's summary gives it empty",
+    for: CODEX,
+    steps: [streams("A", "The export "), turnEnds("A", "")],
+    outcome: "success",
+    text: "The export ",
+    final: false,
+  },
+  {
+    name: "the answer streams, then the turn's summary names another message",
+    for: CODEX,
+    steps: [streams("A", "Looking"), turnEnds("B", ANSWER)],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "an answer of only spaces is no answer",
+    for: CODEX,
+    steps: [message("A", "  "), turnEnds("A", "  ")],
+    outcome: "success",
+    text: null,
+    final: false,
+  },
+  {
+    name: "the turn's end without a summary, then the answer's own message",
+    for: CODEX,
+    steps: [streams("A", ""), turnEnds(), message("A", ANSWER)],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "the turn's end without a summary while the answer streams, then its own message",
+    for: CODEX,
+    steps: [streams("A", "The export "), turnEnds(), message("A", ANSWER)],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "the turn's end without a summary while the answer streams, then it asks the person",
+    for: CODEX,
+    steps: [
+      streams("A", "Two exports exist."),
+      turnEnds(),
+      message("A", "Two exports exist.", { asks: "Which one should I fix?" }),
+    ],
+    outcome: "needs_input",
+    text: "Two exports exist.\nWhich one should I fix? (CSV, PDF)",
+    final: false,
+  },
+  {
+    name: "background work holds the run: words of the answer that stream after the turn's end are kept",
+    for: CODEX,
+    steps: [
+      commandStarts,
+      streams("A", "The export "),
+      turnEnds(),
+      streams("A", "drops"),
+      commandEnds,
+      timePasses,
+    ],
+    outcome: "success",
+    text: "The export drops",
+    final: false,
+  },
+  {
+    name: "background work holds the run, and a turn of the agent's own says nothing: the earlier answer is the last message",
+    for: CODEX,
+    steps: [
+      commandStarts,
+      message("A", ANSWER),
+      turnEnds("A", ANSWER),
+      turnStarts,
+      turnEnds(),
+      commandEnds,
+    ],
+    outcome: "success",
+    text: ANSWER,
+    final: false,
+  },
+  {
+    name: "a late message of an earlier turn changes nothing of the present one",
+    for: CODEX,
+    steps: [
+      commandStarts,
+      streams("A", "Looking"),
+      turnEnds(),
+      turnStarts,
+      message("B", ANSWER),
+      message("A", "Old words.", { turn: 1 }),
+      turnEnds(),
+      commandEnds,
+    ],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "a question of an earlier turn gives way to the answer of the present one",
+    for: CODEX,
+    steps: [
+      commandStarts,
+      message("A", "Two exports exist.", { asks: "Which one should I fix?" }),
+      turnEnds(),
+      turnStarts,
+      message("B", ANSWER),
+      turnEnds("B", ANSWER),
+      commandEnds,
+    ],
+    outcome: "success",
+    text: ANSWER,
+    final: true,
+  },
+  {
+    name: "a message without a phase streams, then completes as commentary: it is no answer",
+    for: CODEX,
+    steps: [
+      streams("A", "Looking.", null),
+      message("A", "Looking.", { phase: "commentary" }),
+      turnEnds(),
+    ],
+    outcome: "success",
+    text: null,
+    final: false,
   },
 ];
 
-/** What the agent said by the time the work settled, as far as its protocol carried it. */
-function said(agent: Agent, steps: readonly Step[], work: Work): Partial<Work> {
-  let text: string | null = null;
-  let whole = false;
-  let streaming = false;
-  for (const step of steps) {
-    if (!agent.says(step)) continue;
-    if (step.kind === "streams") {
-      text = streaming ? `${text ?? ""}${step.text}` : step.text;
-      streaming = true;
-      whole = false;
-    } else if (step.kind === "message") {
-      text = step.text;
-      streaming = false;
-      whole = true;
-    } else if (step.kind === "turn ends" && step.summary !== null) {
-      text = step.summary;
-      whole = true;
-    }
-    // Nothing after the step the work settled at counts.
-    if (step.kind !== "streams" && step.kind !== "message") break;
-  }
-  return {
-    ok: work.outcome === "success",
-    text,
-    textFinal: work.outcome === "success" && whole,
-    textCut: false,
-  };
-}
-
 describe("[A4.3.11.drivers.answer-orders] every driver keeps what the agent said by the time its work settles, in every order of its messages", () => {
-  for (const [name, { speaker, stops }] of Object.entries(SPEAKERS)) {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  for (const [name, speaker] of Object.entries(SPEAKERS)) {
     describe(name, () => {
       for (const order of ORDERS) {
-        if (!stops && order.steps.includes(stop)) continue;
-        test(order.name, async () => {
+        test.skipIf(!order.for.includes(name))(order.name, async () => {
           const agent = await speaker();
           for (const step of order.steps) await agent.say(step);
           const work = await agent.driver.settled;
-          expect(work.outcome).toBe(order.outcome);
-          expect(work).toMatchObject(said(agent, order.steps, work));
+          expect(work).toMatchObject({
+            ok: order.outcome === "success",
+            outcome: order.outcome,
+            text: order.text,
+            textFinal: order.final,
+            textCut: false,
+          });
           agent.driver.close();
         });
       }

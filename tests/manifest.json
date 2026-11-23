@@ -1625,7 +1625,7 @@
     },
     {
       "id": "A4.3.11.drivers.answer-orders",
-      "title": "Every driver (codex, claude, claude-print) against one table of the orders in which an agent's words can reach it: what the agent said by the time its work settles is the work's text, unfinished when its message never came whole, when the output ends mid answer, at Stop, after a turn's end without a summary, and when the turn's summary comes before the answer's own message, and work that succeeded never has an empty answer when one was given",
+      "title": "Every driver (codex, claude, claude-print) against one table of the orders in which an agent's words can reach it, each row marked for the drivers whose protocol can say it: what the agent said by the time its work settles is the work's text, unfinished when its message never came whole, when the output ends mid answer, at Stop, after a turn's end without a summary; the answer the turn's summary names wins over a later message, a late piece or spaces; a message that completes after its turn's end, or a question it ends with, is waited for briefly; a message or question of an earlier turn never changes a later one; commentary is never the answer; and work that succeeded never has an empty answer when one was given",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

@@ -15,9 +15,11 @@
 //   and no agent it started still works: what goes on in the background ends later, and the run
 //   waits for it.
 // - The answer is the message the protocol marks as the final answer, never just the last text.
-//   Its words count as they stream in: a turn, a Stop or a server that ends before the message is
-//   whole keeps them as an unfinished answer, and the turn's summary completes an answer whose own
-//   message comes after it.
+//   Messages are kept by item, per turn, and the run's answer is its last turn's: the message the
+//   turn's summary names, else the turn's last answer, whole or as far as it streamed. A message
+//   of another turn changes nothing of this one. A turn that ends while its last answer is still
+//   coming waits LATE_MS for it, and a turn that said nothing leaves an earlier turn's words as
+//   the run's last message, not as its answer.
 // - The server's requests are answered as the run's permission says, while reading goes on. A
 //   question for the person is never answered for them: a blocking one interrupts the turn, one
 //   the turn ends with is kept, and the work ends as needing the person, with the question as its
@@ -156,9 +158,91 @@ function questionText(params: Json): string {
   return lines.join("\n").trim();
 }
 
-/** A message that is an answer: the final one, or any of a server that marks none. */
-const answers = (item: Json): boolean =>
-  item["phase"] === "final_answer" || item["phase"] === null || item["phase"] === undefined;
+/**
+ * How long a turn that ended waits for the completion of its last answer, when its summary names
+ * none: the server sends that completion in the same burst as the turn's end, so a second is
+ * plenty on a loaded machine, and only a run whose answer races its turn's end pays it.
+ */
+const LATE_MS = 1_000;
+
+/** Text the agent said, cut to its cap. */
+interface Words {
+  readonly text: string;
+  readonly cut: boolean;
+}
+
+/** A message of the run's own thread, by item. */
+interface Message {
+  /** Its phase as last said: none (null or undefined) from a server that marks none. */
+  phase: unknown;
+  /** Its completion's text, else its words streamed so far. */
+  text: string;
+  bytes: number;
+  cut: boolean;
+  /** Its completion was heard. */
+  done: boolean;
+  /** `text` is its completion's, whole. */
+  whole: boolean;
+  /** The question for the person it ends with. */
+  asks: Words | null;
+}
+
+/** One turn of the run's own thread: its messages only. */
+interface Turn {
+  id: string | null;
+  /** By item, in the order they began. */
+  readonly messages: Map<string, Message>;
+  /** The item its summary names as the answer. */
+  named: string | null;
+  end: { readonly status: string; readonly error: string | null } | null;
+  /** Its wait for a late answer is over. */
+  waited: boolean;
+}
+
+const newTurn = (id: string | null): Turn => ({
+  id,
+  messages: new Map(),
+  named: null,
+  end: null,
+  waited: false,
+});
+
+/** A message that began, with nothing said yet. */
+const begun = (phase: unknown): Message => ({
+  phase,
+  text: "",
+  bytes: 0,
+  cut: false,
+  done: false,
+  whole: false,
+  asks: null,
+});
+
+/** A phase of an answer: the final one, or none from a server that marks none. */
+const answers = (phase: unknown): boolean =>
+  phase === "final_answer" || phase === null || phase === undefined;
+
+const blank = (text: string): boolean => text.trim() === "";
+
+/** Whether a message is an answer with words. */
+const isAnswer = (message: Message | undefined): message is Message =>
+  message !== undefined && answers(message.phase) && !blank(message.text);
+
+/** What a turn says: the question it ends with, else the answer its summary names, else its last. */
+function saidBy(turn: Turn): (Words & { final: boolean }) | null {
+  const messages = [...turn.messages.values()];
+  const asks = messages.findLast((m) => m.asks !== null)?.asks;
+  if (asks !== undefined && asks !== null) return { ...asks, final: false };
+  const named = turn.named === null ? undefined : turn.messages.get(turn.named);
+  const answer = isAnswer(named) ? named : messages.findLast(isAnswer);
+  return answer === undefined ? null : { text: answer.text, cut: answer.cut, final: answer.whole };
+}
+
+/** A question for the person, cut to the answer's cap. */
+function question(text: string): Words {
+  const capped = capText(text === "" ? "Codex asked a question." : text, ANSWER_CAP_BYTES);
+  return { text: capped.text, cut: capped.capped };
+}
 
 /** A message the turn ends with that asks the person, rather than answers: its questions. */
 const asksPerson = (item: Json): boolean =>
@@ -234,36 +318,28 @@ export function codexDriver(session: CodexSession): OpenDriver {
     const policy = POLICY[session.permission];
     const state: {
       thread: string | null;
-      turn: string | null;
-      turnDone: boolean;
-      turnStatus: string | null;
-      turnError: string | null;
       lastError: string | null;
-      /** The latest answer: `whole` once its message completed, else the words streamed so far. */
-      answer: { text: string; cut: boolean; whole: boolean } | null;
-      final: boolean;
       heard: boolean;
       usage: Usage | null;
       appTools: AppToolsState | null;
       declined: number;
-      question: { text: string; cut: boolean } | null;
+      /** A question a request asked the person: it ends the work at once. */
+      asked: Words | null;
       stopping: boolean;
     } = {
       thread: null,
-      turn: null,
-      turnDone: false,
-      turnStatus: null,
-      turnError: null,
       lastError: null,
-      answer: null,
-      final: false,
       heard: false,
       usage: null,
       appTools: session.tools === undefined ? null : "absent",
       declined: 0,
-      question: null,
+      asked: null,
       stopping: false,
     };
+    /** The run's present turn, and what its earlier turns said. */
+    let turn = newTurn(null);
+    let earlier: Words | null = null;
+    let late: NodeJS.Timeout | undefined;
     /**
      * Commands started and not completed, of the run's thread and of the agents it started, by
      * item, with the thread and turn that started them.
@@ -277,14 +353,15 @@ export function codexDriver(session: CodexSession): OpenDriver {
     };
     /** Threads of agents the run's agent started that are working. */
     const children = new Set<string>();
-    /** The run's answer messages that are streaming in, by item: their words so far. */
-    const streaming = new Map<string, { text: string; bytes: number; cut: boolean }>();
-    /** The run's messages of the current turn that completed, by item. */
-    const completed = new Set<string>();
     /** Whether a message is about the run's own thread, not one of an agent it started. */
     const ours = (params: Json): boolean => {
       const thread = string(params["threadId"]);
       return thread === undefined || state.thread === null || thread === state.thread;
+    };
+    /** Whether a message of the run's own thread is about its present turn. */
+    const now = (params: Json): boolean => {
+      const id = string(params["turnId"]);
+      return id === undefined || turn.id === null || id === turn.id;
     };
 
     let done = false;
@@ -296,43 +373,59 @@ export function codexDriver(session: CodexSession): OpenDriver {
       settle = resolve;
     });
     /**
-     * What the run says: a question the agent asked, once it asked one, however the run then ends,
-     * since that is what the person acts on; else its answer. The run's folder keeps the same.
+     * What the run says: a question the agent asked in its last turn, however the run then ends,
+     * since that is what the person acts on; else that turn's answer; else, unfinished, what an
+     * earlier turn said. The run's folder keeps the same.
      */
-    const said = (): { text: string; cut: boolean; final: boolean } | null => {
-      if (state.question !== null) return { ...state.question, final: false };
-      if (state.answer === null) return null;
-      return { text: state.answer.text, cut: state.answer.cut, final: state.final };
+    const said = (): (Words & { final: boolean }) | null => {
+      if (state.asked !== null) return { ...state.asked, final: false };
+      return saidBy(turn) ?? (earlier === null ? null : { ...earlier, final: false });
     };
-    const keep = (): void => {
+    /** What the run says as of now, in its folder: final only once its work succeeded. */
+    let kept: (Words & { final: boolean }) | null = null;
+    const keep = (succeeded = false): void => {
       const told = said();
-      if (told !== null) report({ kind: "answer", ...told });
+      if (told === null) return;
+      const final = succeeded && told.final;
+      if (kept?.text === told.text && kept.cut === told.cut && kept.final === final) return;
+      kept = { ...told, final };
+      report({ kind: "answer", ...kept });
     };
-    /** A message of the run's own thread, whole: its question, its answer, or what it reports. */
-    const heard = (item: Json): void => {
-      const id = string(item["id"]);
-      if (id !== undefined) {
-        completed.add(id);
-        streaming.delete(id);
-      }
+    /**
+     * A message of the present turn, whole, from its own completion or the turn's summary: what it
+     * says replaces the words streamed so far, unless it says nothing. Returns its item.
+     */
+    const complete = (item: Json): string => {
+      const key = string(item["id"]) ?? `unnamed-${String(turn.messages.size)}`;
+      const known = turn.messages.get(key);
+      const message = known ?? begun(item["phase"]);
+      const first = !message.done;
       const text = string(item["text"]) ?? "";
-      if (asksPerson(item)) {
-        ask(
-          [text.trim(), questionText({ questions: item["questions"] })]
-            .filter((part) => part !== "")
-            .join("\n"),
-        );
-      } else if (text !== "" && answers(item)) {
+      message.phase = item["phase"];
+      message.done = true;
+      message.asks = asksPerson(item)
+        ? question(
+            [text.trim(), questionText({ questions: item["questions"] })]
+              .filter((part) => part !== "")
+              .join("\n"),
+          )
+        : null;
+      if (!blank(text) || blank(message.text)) {
         const capped = capText(text, ANSWER_CAP_BYTES);
-        state.answer = { text: capped.text, cut: capped.capped, whole: true };
-        if (state.question === null) keep();
-      } else if (text !== "") {
+        message.text = capped.text;
+        message.cut = capped.capped;
+        message.whole = !blank(text);
+      }
+      if (known === undefined) turn.messages.set(key, message);
+      if (first && message.asks === null && !answers(message.phase) && text !== "") {
         report({ kind: "message", text: capText(text).text });
       }
+      return key;
     };
     const finish = (outcome: OutcomeReason, error: string | null = null): void => {
       if (done) return;
       done = true;
+      clearTimeout(late);
       const told = said();
       settle({
         ok: outcome === "success",
@@ -340,7 +433,7 @@ export function codexDriver(session: CodexSession): OpenDriver {
         nativeId: state.thread,
         text: told?.text ?? null,
         textCut: told?.cut ?? false,
-        textFinal: told?.final ?? false,
+        textFinal: outcome === "success" && told?.final === true,
         error,
         usage: state.usage,
         appTools: state.appTools,
@@ -349,37 +442,51 @@ export function codexDriver(session: CodexSession): OpenDriver {
       });
     };
 
+    /** Whether the person is asked something: by a request, or by a message of the present turn. */
+    const asking = (): boolean =>
+      state.asked !== null || [...turn.messages.values()].some((m) => m.asks !== null);
+    /** Whether the turn's last answer is still to complete, and may within its wait. */
+    const arriving = (): boolean => {
+      if (turn.named !== null || turn.waited) return false;
+      const last = [...turn.messages.values()].findLast((m) => answers(m.phase));
+      return last !== undefined && !last.done;
+    };
+
     /** Settles once the turn completed and nothing it started still runs. */
     const check = (): void => {
-      if (done || !state.turnDone || running.size > 0 || children.size > 0) return;
-      if (state.turnStatus === "completed" && state.question !== null) {
+      if (done || turn.end === null || running.size > 0 || children.size > 0) return;
+      const { status, error } = turn.end;
+      if (status === "completed" && asking()) {
         finish("needs_input");
-      } else if (state.turnStatus === "completed") {
-        state.final = state.answer?.whole === true;
-        keep();
+      } else if (status === "completed" && arriving()) {
+        if (late !== undefined) return;
+        const waiting = turn;
+        late = setTimeout(() => {
+          late = undefined;
+          waiting.waited = true;
+          check();
+        }, LATE_MS);
+        late.unref();
+      } else if (status === "completed") {
+        keep(true);
         finish("success");
-      } else if (state.turnStatus === "interrupted") {
-        finish(state.question !== null ? "needs_input" : "interrupted");
+      } else if (status === "interrupted") {
+        finish(asking() ? "needs_input" : "interrupted");
       } else {
-        finish("agent_error", errorText(state.turnError ?? state.lastError ?? ""));
+        finish("agent_error", errorText(error ?? state.lastError ?? ""));
       }
     };
 
     const interruptTurn = (): void => {
-      if (state.thread === null || state.turn === null || state.turnDone) return;
-      rpc.request("turn/interrupt", { threadId: state.thread, turnId: state.turn }).catch(() => {
+      if (state.thread === null || turn.id === null || turn.end !== null) return;
+      rpc.request("turn/interrupt", { threadId: state.thread, turnId: turn.id }).catch(() => {
         // The turn ended meanwhile, or the server is gone: its own end says how the work went.
       });
     };
 
-    const ask = (text: string): void => {
-      const question = capText(text === "" ? "Codex asked a question." : text, ANSWER_CAP_BYTES);
-      state.question = { text: question.text, cut: question.capped };
-      keep();
-    };
-
     const needsPerson = (text: string): typeof NO_ANSWER => {
-      ask(text);
+      state.asked = question(text);
+      keep();
       interruptTurn();
       finish("needs_input");
       return NO_ANSWER;
@@ -447,11 +554,14 @@ export function codexDriver(session: CodexSession): OpenDriver {
             children.add(string(params["threadId"]) ?? "");
             return;
           }
-          // A turn the server starts by itself after background work is the work going on.
-          completed.clear();
-          state.turn = id;
-          state.turnDone = false;
-          state.turnStatus = null;
+          if (turn.id === null) turn.id = id;
+          if (id === turn.id) return;
+          // A turn the server starts by itself after background work is the work going on, and
+          // what it says is the run's answer from here on.
+          earlier = saidBy(turn) ?? earlier;
+          clearTimeout(late);
+          late = undefined;
+          turn = newTurn(id);
           return;
         }
         case "item/started": {
@@ -470,9 +580,10 @@ export function codexDriver(session: CodexSession): OpenDriver {
             item["type"] === "agentMessage" &&
             id !== undefined &&
             ours(params) &&
-            answers(item)
+            now(params) &&
+            !turn.messages.has(id)
           ) {
-            streaming.set(id, { text: "", bytes: 0, cut: false });
+            turn.messages.set(id, begun(item["phase"]));
           }
           const label = labelOf(item);
           if (label !== undefined) report({ kind: "progress", label });
@@ -484,52 +595,57 @@ export function codexDriver(session: CodexSession): OpenDriver {
           const id = string(item["id"]);
           if (id !== undefined) running.delete(id);
           if (item["status"] === "declined") state.declined += 1;
-          if (item["type"] === "agentMessage" && ours(params)) heard(item);
+          if (item["type"] === "agentMessage" && ours(params) && now(params)) {
+            complete(item);
+            keep();
+          }
           check();
           return;
         }
         case "item/agentMessage/delta": {
-          if (!ours(params)) return;
-          const words = streaming.get(string(params["itemId"]) ?? "");
+          if (!ours(params) || !now(params)) return;
+          const message = turn.messages.get(string(params["itemId"]) ?? "");
           const delta = string(params["delta"]) ?? "";
-          if (words === undefined || words.cut || delta === "") return;
+          if (message === undefined || message.done || message.cut || delta === "") return;
+          if (!answers(message.phase)) return;
           // Words past the answer's cap are not kept.
           const bytes = Buffer.byteLength(delta, "utf8");
-          if (words.bytes + bytes > ANSWER_CAP_BYTES) {
-            words.text = capText(words.text + delta, ANSWER_CAP_BYTES).text;
-            words.cut = true;
+          if (message.bytes + bytes > ANSWER_CAP_BYTES) {
+            message.text = capText(message.text + delta, ANSWER_CAP_BYTES).text;
+            message.cut = true;
           } else {
-            words.text += delta;
-            words.bytes += bytes;
+            message.text += delta;
+            message.bytes += bytes;
           }
-          state.answer = { text: words.text, cut: words.cut, whole: false };
           return;
         }
         case "turn/completed": {
-          const turn = record(params["turn"]);
-          if (turn === undefined) return;
-          const id = string(turn["id"]);
+          const ended = record(params["turn"]);
+          if (ended === undefined) return;
+          const id = string(ended["id"]);
           if (!ours(params)) {
             const thread = string(params["threadId"]) ?? "";
             children.delete(thread);
-            if (turn["status"] !== "completed") forget(thread, id ?? null);
+            if (ended["status"] !== "completed") forget(thread, id ?? null);
             check();
             return;
           }
-          if (state.turn !== null && id !== state.turn) return;
-          state.turn = id ?? state.turn;
-          state.turnDone = true;
-          state.turnStatus = string(turn["status"]) ?? "failed";
-          state.turnError = string(record(turn["error"])?.["message"]) ?? null;
-          // The summary holds the turn's messages whole, also one whose own message is still to
-          // come: anything said after the work settled no longer counts.
-          for (const summarised of array(turn["items"]) ?? []) {
-            const message = record(summarised);
-            if (message?.["type"] !== "agentMessage") continue;
-            if (!completed.has(string(message["id"]) ?? "")) heard(message);
+          if (turn.id !== null && id !== turn.id) return;
+          turn.id = id ?? turn.id;
+          turn.end = {
+            status: string(ended["status"]) ?? "failed",
+            error: string(record(ended["error"])?.["message"]) ?? null,
+          };
+          // The summary holds the turn's messages whole, also one whose own completion is still to
+          // come, and names the answer among them.
+          for (const summarised of array(ended["items"]) ?? []) {
+            const item = record(summarised);
+            if (item?.["type"] !== "agentMessage") continue;
+            const key = complete(item);
+            if (isAnswer(turn.messages.get(key))) turn.named = key;
           }
-          streaming.clear();
-          if (state.turnStatus !== "completed") {
+          keep();
+          if (turn.end.status !== "completed") {
             // The work ended with the turn: what it left going has no end of its own to wait for.
             running.clear();
             children.clear();
@@ -636,7 +752,7 @@ export function codexDriver(session: CodexSession): OpenDriver {
           finish("agent_error", capText(elsewhere, TEXT_CAP_BYTES).text);
           return;
         }
-        const turn = record(
+        const started = record(
           await within(
             rpc.request("turn/start", {
               threadId: id,
@@ -645,8 +761,8 @@ export function codexDriver(session: CodexSession): OpenDriver {
             startMs,
           ),
         );
-        const turnId = string(record(turn?.["turn"])?.["id"]);
-        if (turnId !== undefined && state.turn === null) state.turn = turnId;
+        const turnId = string(record(started?.["turn"])?.["id"]);
+        if (turnId !== undefined && turn.id === null) turn.id = turnId;
         // A Stop that came while the turn was being started ended the work already: the turn
         // that started meanwhile is interrupted too.
         if (stopped()) interruptTurn();
@@ -671,7 +787,7 @@ export function codexDriver(session: CodexSession): OpenDriver {
       interrupt: () => {
         if (done) return true;
         state.stopping = true;
-        if (state.turn !== null && !state.turnDone) interruptTurn();
+        if (turn.id !== null && turn.end === null) interruptTurn();
         // No turn to interrupt yet, or only work it left running: the work ends here.
         else finish("interrupted");
         return true;
