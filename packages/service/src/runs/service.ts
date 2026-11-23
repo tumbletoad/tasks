@@ -185,6 +185,28 @@ export interface RunLive {
   readonly said?: { readonly text: string; readonly final: boolean; readonly cut: boolean };
 }
 
+/**
+ * What the agent said, as a person reads it: the answer its record keeps once it ended, else what it
+ * said so far; whether it finished its turn with it, and whether only its start is kept.
+ */
+export function runAnswer(
+  run: RunRecord,
+  said: RunLive["said"],
+): { answer: string | null; answer_final: boolean; answer_cut: boolean } {
+  const result = run.result;
+  return result === null
+    ? {
+        answer: said?.text ?? null,
+        answer_final: said?.final === true,
+        answer_cut: said?.cut === true,
+      }
+    : {
+        answer: result.text,
+        answer_final: result.textFinal === true,
+        answer_cut: result.textCut === true,
+      };
+}
+
 /** The time limits `[runs]` sets, and only those: a run without one has none. */
 const timeLimits = (settings: RunSettings): Pick<RunLimits, "wallMs" | "idleMs"> => ({
   ...(settings.wallMs === undefined ? {} : { wallMs: settings.wallMs }),
@@ -536,14 +558,11 @@ export class RunService {
     });
   }
 
-  /**
-   * One run as a person reads it: its record, with the answer saved so far while it has none in
-   * its record yet, and why it waits when it is queued.
-   */
+  /** One run as a person reads it: its record and its task's reference. */
   async show(
     space: string,
     run: string,
-  ): Promise<{ run: RunRecord; task: string | null; answer: string | null } | undefined> {
+  ): Promise<{ run: RunRecord; task: string | null } | undefined> {
     const served = this.#readable(space);
     if (served?.reader === undefined) return undefined;
     const found = await readRunRow(served.reader, run).catch(() => undefined);
@@ -554,8 +573,7 @@ export class RunService {
     } catch {
       return undefined;
     }
-    const answer = record.result?.text ?? this.live(record, served).said?.text ?? null;
-    return { run: record, task: found.ref, answer };
+    return { run: record, task: found.ref };
   }
 
   /**

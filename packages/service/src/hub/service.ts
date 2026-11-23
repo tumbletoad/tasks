@@ -920,6 +920,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           backedUp: (entry: number, at: number) => {
             spaceManager().backedUp(entry, at);
           },
+          incarnationOf: (entry: number) => spaceManager().incarnationOf(entry),
         },
       },
     };

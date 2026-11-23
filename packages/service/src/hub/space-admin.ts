@@ -5,7 +5,7 @@
 // connection (A1 3.9). Content-free replies: an error crosses as its code only, never a message
 // that could name a path.
 import { Worker } from "node:worker_threads";
-import type { Id } from "@ttasks/storage";
+import type { BackupHistory, Id } from "@ttasks/storage";
 
 export type AdminJob =
   | {
@@ -27,16 +27,31 @@ export type AdminJob =
       /** Folders no file of the bundle may come from: the secrets folder (A6 3.16.4). */
       readonly secretFolders: readonly string[];
     }
-  | { readonly kind: "restore"; readonly backupFile: string; readonly target: string }
+  | {
+      readonly kind: "restore";
+      readonly backupFile: string;
+      readonly target: string;
+      /** The space the backup must be of, when the person named it. */
+      readonly spaceId?: Id<"sp">;
+    }
   | {
       /** The newest backup of the space that verifies, into a new folder (A1 3.2). */
       readonly kind: "restore-latest";
       readonly backupDir: string;
       readonly spaceId: Id<"sp">;
       readonly target: string;
+      /** The incarnation of the copy this machine serves, when known: its history is taken first. */
+      readonly incarnation?: Id<"ai">;
     }
   /** The rows that can still be read, into `exchange/rescued/` (A1 3.2). */
-  | { readonly kind: "rescue"; readonly folder: string };
+  | {
+      readonly kind: "rescue";
+      readonly folder: string;
+      /** The space the folder is registered as: another space's rows are refused. */
+      readonly spaceId?: Id<"sp">;
+      /** This service has the space open: it is read beside its writer (rescue.ts). */
+      readonly served: boolean;
+    };
 
 export interface AdminBackup {
   readonly name: string;
@@ -47,6 +62,27 @@ export interface AdminBackup {
   readonly size: number;
   readonly compressed_size: number;
 }
+
+/**
+ * One history of a space's backups (storage's backupHistories) as a person tells it apart: when it
+ * was last written to and how far it goes, by its newest backup. Its incarnation is for programs.
+ */
+export interface AdminHistory {
+  readonly incarnation: string;
+  readonly last_written_at: string;
+  readonly newest: string;
+  readonly seq: number;
+  readonly backups: number;
+}
+
+/** A history as AdminHistory. */
+export const historyView = (history: BackupHistory): AdminHistory => ({
+  incarnation: history.incarnation,
+  last_written_at: new Date(history.lastWrittenAt).toISOString(),
+  newest: history.backups[0]?.name ?? "",
+  seq: history.backups[0]?.seq ?? 0,
+  backups: history.backups.length,
+});
 
 /** A published export bundle, as the CLI shows it. */
 export interface AdminExport {
@@ -73,7 +109,14 @@ export type AdminResult =
       readonly searchIndexDamaged?: true;
     }
   | { readonly kind: "export"; readonly export: AdminExport }
-  | { readonly kind: "restore"; readonly spaceId: Id<"sp">; readonly backup?: string }
+  | {
+      readonly kind: "restore";
+      readonly spaceId: Id<"sp">;
+      /** Restore latest's: the backup, its history, and the space's other histories. */
+      readonly backup?: string;
+      readonly history?: AdminHistory & { readonly this_copy: boolean };
+      readonly others?: readonly AdminHistory[];
+    }
   | {
       readonly kind: "rescue";
       readonly file: string;
@@ -81,6 +124,8 @@ export type AdminResult =
       readonly rows: number;
       /** Tables that could not be read to their end: names from the schema, never content. */
       readonly failed: readonly string[];
+      /** Whether the database said it holds the space the rescue was for (rescue.ts). */
+      readonly identity: "confirmed" | "unconfirmed";
     };
 
 export type AdminReply =

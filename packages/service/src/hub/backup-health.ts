@@ -1,5 +1,6 @@
 // Whether an open space's backups are working, as the service last saw them: its daily upkeep
-// failed, or the newest backup does not pass a trial restore. A person sees it where they look at
+// failed, its backups folder is not there, or the newest backup does not pass a trial restore or
+// could not be trial restored. A person sees it where they look at
 // their spaces (`ttasks space list`, `ttasks doctor`, the page's space switcher), with what to do,
 // until a backup succeeds again. Nothing is stored: each start's first upkeep finds it again.
 import { CLI_NAME } from "@ttasks/brand";
@@ -10,8 +11,11 @@ import type { MaintenanceReport } from "./maintenance.ts";
  * - `failed`: it failed otherwise (a full or failing disk while writing, a backups folder that
  *   cannot be written, a database that fails its check).
  * - `unverified`: the newest backup was made but does not pass a trial restore.
+ * - `unchecked`: the newest backup's trial restore could not run, for want of free space beside it
+ *   (BUNDLE_LIMIT_EXCEEDED) or for another reason that is not the backup's. Nothing is known of it.
+ * - `away`: the backups folder this machine set for the space is not there.
  */
-export type BackupTroubleWhy = "disk_full" | "failed" | "unverified";
+export type BackupTroubleWhy = "disk_full" | "failed" | "unverified" | "unchecked" | "away";
 
 export interface BackupHealth {
   /** What is wrong, or undefined while backups work. */
@@ -37,20 +41,29 @@ export interface BackupTroubleView {
  */
 const NO_ROOM = "BUNDLE_LIMIT_EXCEEDED";
 
-const later = (a: number | undefined, b: number | undefined): number | undefined =>
-  a === undefined ? b : b === undefined ? a : Math.max(a, b);
-
 /** After an upkeep run that ended with `report`. */
 export function afterRun(health: BackupHealth, report: MaintenanceReport): BackupHealth {
-  const lastGood = later(report.verifiedAt, health.lastGood);
+  // The run's verified backup is the newest by the work it holds, so it replaces the one known
+  // before even when its date is earlier: a clock set back dates later work earlier.
+  const lastGood = report.verifiedAt ?? health.lastGood;
   const base = lastGood === undefined ? {} : { lastGood };
+  if (report.backup === "away") return { ...base, trouble: { why: "away" } };
   // Retention verified the newest backups in this run: its verdict replaces what was known.
   if (report.checked === true) {
-    return report.unverified > 0 ? { ...base, trouble: { why: "unverified" } } : base;
+    if (report.unverified > 0) return { ...base, trouble: { why: "unverified" } };
+    const code = report.unchecked?.code;
+    if (report.unchecked !== undefined) {
+      return { ...base, trouble: { why: "unchecked", ...(code === undefined ? {} : { code }) } };
+    }
+    return base;
   }
   // A run without a verdict found no daily backup due: a complete one is there since the last
-  // daily hour, so a failure before is over. A backup that does not restore is still there.
-  return health.trouble?.why === "unverified" ? { ...base, trouble: health.trouble } : base;
+  // daily hour, so a failure before is over. A backup that does not restore, or that could not be
+  // checked, is still there.
+  const { trouble } = health;
+  return trouble?.why === "unverified" || trouble?.why === "unchecked"
+    ? { ...base, trouble }
+    : base;
 }
 
 /** After an upkeep run that failed with `code`, the service's drain aside. */
@@ -119,14 +132,18 @@ export function troubleView(health: BackupHealth): BackupTroubleView | undefined
   const { trouble, lastGood } = health;
   if (trouble === undefined) return undefined;
   const code = trouble.code === undefined ? "" : ` (${trouble.code})`;
-  const what =
-    trouble.why === "disk_full"
-      ? `The daily backup failed: the disk has too little free space${code}. Free some space, then make one now: ${NOW}.`
-      : trouble.why === "failed"
-        ? `The daily backup failed${code}. Check that the disk has free space and that the backups folder can be written, then make one now: ${NOW}.`
-        : `The newest backup does not pass a trial restore. Make a new one now: ${NOW}.`;
+  const what = {
+    disk_full: `The daily backup failed: the disk has too little free space${code}. Free some space, then make one now: ${NOW}.`,
+    failed: `The daily backup failed${code}. Check that the disk has free space and that the backups folder can be written, then make one now: ${NOW}.`,
+    unverified: `The newest backup does not pass a trial restore. Make a new one now: ${NOW}.`,
+    unchecked:
+      trouble.code === NO_ROOM
+        ? `The newest backup could not be trial restored: the disk of its backups folder lacks the free space for the trial, with 1 GB to spare${code}. It is kept, and no backup was removed. Free some space: the next daily backup checks it again.`
+        : `The newest backup could not be trial restored${code}. It is kept, and no backup was removed. Check the disk of its backups folder: the next daily backup checks it again.`,
+    away: `The backups folder set for this space is not there, so no daily backup was made. If it is on a drive that is not connected, connect it; otherwise create the folder. ${CLI_NAME} space backups <folder> names it.`,
+  }[trouble.why];
   const good =
-    lastGood === undefined ? "" : ` The newest backup that restores is from ${local(lastGood)}.`;
+    lastGood === undefined ? "" : ` The newest backup known to restore is from ${local(lastGood)}.`;
   return {
     why: trouble.why,
     ...(trouble.code === undefined ? {} : { code: trouble.code }),
