@@ -545,7 +545,8 @@ describe("[A4.5.routes.request] what a person types before Open is on the task a
       writeFileSync(r.release, "");
       await waitFor(
         () =>
-          launches.running(first.launch.id, copyOf(r)) || launches.running(another.launch.id, copyOf(r))
+          launches.running(first.launch.id, copyOf(r)) ||
+          launches.running(another.launch.id, copyOf(r))
             ? undefined
             : true,
         LONG_MS,

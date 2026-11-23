@@ -214,11 +214,9 @@ describe("[A2.3.10.5.copies.first-load] a tab sent to the folder the person open
       const opened = JSON.parse(
         (await post(w.port(), "/api/v1/space/open", { folder: copyFolder }, { token })).body,
       ) as { result: { id: string; copy?: string } };
-      expect(opened.result).toMatchObject({
-        id: mira.id,
-        copy: expect.stringMatching(/^[0-9a-f]{24}$/u),
-      });
+      expect(opened.result.id).toBe(mira.id);
       const copy = opened.result.copy;
+      expect(copy).toMatch(/^[0-9a-f]{24}$/u);
 
       const feed = await openFeed(w.port(), token);
       try {

@@ -202,10 +202,12 @@ describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the 
     expect(lines).not.toContain(ticket);
     expect(service?.runs.allows("claude", spaceId, live)).toBe(true);
     expect(service?.ops.homes?.may("claude", spaceId)).toBe(false);
-    // While the run runs, its ticket names it, as the session named after it.
+    // While the run runs, its ticket names it, as the session named after it, in the copy of the
+    // space it started in.
     expect(service?.runs.liveByTicket(ticket)).toEqual({
       run: live,
       space: spaceId,
+      copy: service?.ops.spaces().find((s) => s.id === spaceId && s.reader !== undefined)?.copy,
       task: expect.stringMatching(/^t_/) as unknown,
       instance: "claude",
       session: `se_${live.slice("ru_".length)}`,
