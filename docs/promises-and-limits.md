@@ -135,6 +135,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   app's sign-in file to tell accounts apart, keeping no secret from it. While you look at the page,
   it may start each agent app's own program for a few seconds, once a minute per account, to ask
   how much of the plan is left. That app may then renew its own sign-in. No model turn is started.
+- An agent shows with its task only when its agent app, its home and its session are those of a
+  launch or a background run TTasks started for that task on this computer, within the last day or
+  still running. After `/clear` or `/resume` in Claude Code, or a Codex launch whose session was
+  not found in its first two minutes, the agent shows without a task.
 - What TTAM reports about your agents, other projects' too, stays in TTasks and your own page: it
   is not given to agents' tools, not written into a space, a log or the browser's storage, and
   never leaves this machine.
