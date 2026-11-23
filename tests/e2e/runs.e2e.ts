@@ -381,6 +381,60 @@ test.describe("[M6.page.e2e.needs] A run that needs the person, and one that fai
   });
 });
 
+test.describe("[M6.page.e2e.earlier-asks] An earlier run's question stays in sight until it is answered", () => {
+  test("a run queued before the question works while the question waits on the row and under Needs you, with its words; stopped, the question stays; a reply run answers it", async ({
+    page,
+    runs: world,
+  }) => {
+    const ref = await addTask(world, "Prepare the quarterly export");
+    world.codex(ref, ["gate", "hold", "answer"]);
+    await openTask(page, world, ref);
+    await runButton(page, ref).click();
+    const first = runsOf(page, ref).first();
+    await expect(stateOf(first)).toContainText("is working on it", { timeout: SLOW_MS });
+    await composerOf(page, ref).fill("Then check the totals");
+    await runButton(page, ref).click();
+    const second = runsOf(page, ref).nth(1);
+    await expect(stateOf(second)).toContainText("this task's other run ends first", {
+      timeout: SLOW_MS,
+    });
+    // The first run asks only now, after the second was queued.
+    world.openGate(ref);
+    await expect(stateOf(first)).toContainText("stopped to ask you something", {
+      timeout: SLOW_MS,
+    });
+    await expect(stateOf(second)).toContainText("is working on it", { timeout: SLOW_MS });
+    await expect(markerOf(page, ref)).toHaveAttribute("data-kind", "needs_input");
+
+    await signIn(page, world, `/s/${world.mira.id}/agents`);
+    await showsSpace(page, world.mira.name);
+    const question = rowOf(page, ref).locator('[data-part="question"]');
+    await expect(question).toContainText(`${CODEX_INSTANCE.label} asks`, { timeout: SLOW_MS });
+    await expect(question).toContainText(FAKE_QUESTION);
+    await expect(markerOf(page, ref)).toHaveAttribute("data-kind", "needs_input");
+    await runPictures(page, "run-earlier-asks-agents", () =>
+      rowOf(page, ref).scrollIntoViewIfNeeded(),
+    );
+
+    // Stopping the run that works takes nothing of the question.
+    await openTask(page, world, ref);
+    await runsOf(page, ref).nth(1).getByRole("button", { name: /^Stop/u }).click();
+    await expect(stateOf(runsOf(page, ref).nth(1))).toContainText("Stopped", { timeout: SLOW_MS });
+    await expect(markerOf(page, ref)).toHaveAttribute("data-kind", "needs_input");
+    await runPictures(page, "run-earlier-asks-row", () =>
+      rowOf(page, ref).scrollIntoViewIfNeeded(),
+    );
+
+    // The person's reply is a run that gets to work: the question is answered.
+    await composerOf(page, ref).fill("The March one");
+    await runButton(page, ref).click();
+    const reply = runsOf(page, ref).nth(2);
+    await expect(stateOf(reply)).toContainText("Done.", { timeout: SLOW_MS });
+    await expect(reply.locator('[data-part="run-said"]')).toContainText("Asked: The March one");
+    await expect(markerOf(page, ref)).not.toHaveAttribute("data-kind", "needs_input");
+  });
+});
+
 test.describe("[M6.page.e2e.refused] A run that cannot start says why and keeps the words", () => {
   test("a folder that is gone, and one whose marker is missing, start nothing and keep what was typed @one-browser", async ({
     page,

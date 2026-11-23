@@ -2816,6 +2816,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "M6.page.e2e.earlier-asks",
+      "title": "In Chromium and Firefox: a run queued before an earlier run asked works while that question waits on the row's marker and under Needs you with its words and its agent's label; stopped, the question stays; a reply run that gets to work answers it; at 1,440 and 390 px (Chromium)",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "M6.page.e2e.refused",
       "title": "In the browser: a run whose folder is gone or whose marker is missing starts nothing, says why, and keeps the words",
       "owner": "M6",
