@@ -34,7 +34,7 @@ import {
   type OpenResult,
   type Route,
 } from "@ttasks/launch";
-import { findSpace, isAmbiguity } from "../ops/copies.ts";
+import { findSpace, isAmbiguity, spaceChanged } from "../ops/copies.ts";
 import { launchError } from "../ops/handlers.ts";
 import type { OpsHost, ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
@@ -375,10 +375,10 @@ export class UiLaunches {
   }
 
   /**
-   * The served space a request names (its `TTasks-Space`): an ID or a name, the copy of it that
-   * copies.ts's rule picks among the served copies (A2 3.10.5).
+   * The served space a request names (its `TTasks-Space`): an ID or a name (A2 3.10.5). `copy`, the
+   * copy the page loaded, must be the one served (copies.ts spaceChanged).
    */
-  #space(ref: string | undefined): ServedSpace {
+  #space(ref: string | undefined, copy: string | undefined): ServedSpace {
     if (ref === undefined) throw invalid("Name the space of this tab.", "space");
     const found = findSpace(
       this.#options.host.spaces().filter((s) => s.id !== undefined && s.reader !== undefined),
@@ -386,11 +386,13 @@ export class UiLaunches {
     );
     const space = isAmbiguity(found) ? undefined : found;
     if (space?.reader === undefined || space.id === undefined) {
+      if (copy !== undefined) throw spaceChanged();
       throw new AppError({
         code: "space_unavailable",
         message: "This space cannot open tasks on this machine now.",
       });
     }
+    if (copy !== undefined && space.copy !== copy) throw spaceChanged();
     return space;
   }
 
@@ -398,8 +400,8 @@ export class UiLaunches {
    * The agent apps busy with a task on this machine, for every task of the space: what the
    * page's tiles and Open buttons hold to, whatever receipts a tab has read.
    */
-  async busy(spaceRef: string | undefined): Promise<readonly UiBusy[]> {
-    const space = this.#space(spaceRef).id ?? "";
+  async busy(spaceRef: string | undefined, copy?: string): Promise<readonly UiBusy[]> {
+    const space = this.#space(spaceRef, copy).id ?? "";
     return (await this.#options.port?.busy?.(space)) ?? [];
   }
 
@@ -411,12 +413,13 @@ export class UiLaunches {
   async showFolder(
     spaceRef: string | undefined,
     input: Record<string, unknown>,
+    copy?: string,
   ): Promise<FolderShown> {
     const { task } = input;
     if (typeof task !== "string" || !TASK_ID.test(task)) {
       throw invalid("Expected a task ID.", "task");
     }
-    const space = this.#space(spaceRef);
+    const space = this.#space(spaceRef, copy);
     const show = this.#options.port?.showFolder?.bind(this.#options.port);
     if (show === undefined || space.reader === undefined || space.id === undefined) {
       throw new AppError({
@@ -443,11 +446,15 @@ export class UiLaunches {
   }
 
   /** A task's launch receipts, newest last (at most ten). */
-  async list(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiReceipt[]> {
+  async list(
+    spaceRef: string | undefined,
+    input: Record<string, unknown>,
+    copy?: string,
+  ): Promise<UiReceipt[]> {
     const { task } = input;
     if (typeof task !== "string" || !TASK_ID.test(task))
       throw invalid("Expected a task ID.", "task");
-    const reader = this.#space(spaceRef).reader;
+    const reader = this.#space(spaceRef, copy).reader;
     if (reader === undefined) throw invalid("The space is not served.", "space");
     const rows = await reader.all(LIST_SQL, { task });
     const port = this.#options.port;
@@ -460,7 +467,11 @@ export class UiLaunches {
    * or none. A repeat of the same request ID gives the run it queued and starts nothing twice. A
    * run that cannot start here is refused with its reason, and nothing is queued.
    */
-  async run(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiRun> {
+  async run(
+    spaceRef: string | undefined,
+    input: Record<string, unknown>,
+    copy?: string,
+  ): Promise<UiRun> {
     const runs = this.#runs();
     const { task, instance, text, request_id: requestId } = input;
     if (typeof task !== "string" || !TASK_ID.test(task))
@@ -480,7 +491,7 @@ export class UiLaunches {
         data: { field: "text" },
       });
     }
-    const space = this.#space(spaceRef).id ?? "";
+    const space = this.#space(spaceRef, copy).id ?? "";
     const queued = await runs.queueTask(space, {
       task,
       ...(instance === undefined ? {} : { instance }),
@@ -491,12 +502,16 @@ export class UiLaunches {
   }
 
   /** A task's newest runs, and every older one that may still work, oldest first. */
-  async runs(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiRun[]> {
+  async runs(
+    spaceRef: string | undefined,
+    input: Record<string, unknown>,
+    copy?: string,
+  ): Promise<UiRun[]> {
     const runs = this.#runs();
     const { task } = input;
     if (typeof task !== "string" || !TASK_ID.test(task))
       throw invalid("Expected a task ID.", "task");
-    const listed = await runs.list(this.#space(spaceRef).id ?? "", task);
+    const listed = await runs.list(this.#space(spaceRef, copy).id ?? "", task);
     return listed
       .filter(({ run }, at) => at < RUNS_SHOWN || isOpenRun(run))
       .map(({ run }) => uiRun(run, runs.live(run)))
@@ -507,11 +522,15 @@ export class UiLaunches {
    * Stop: a queued run never starts, a working one is asked to stop and its processes are ended
    * after a grace time. Answers at once with the run as it is then.
    */
-  async stop(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiRun> {
+  async stop(
+    spaceRef: string | undefined,
+    input: Record<string, unknown>,
+    copy?: string,
+  ): Promise<UiRun> {
     const runs = this.#runs();
     const { run } = input;
     if (typeof run !== "string" || !RUN_ID.test(run)) throw invalid("Expected a run ID.", "run");
-    const space = this.#space(spaceRef).id ?? "";
+    const space = this.#space(spaceRef, copy).id ?? "";
     const after = await runs.stop(space, run);
     if (after === undefined) {
       throw new AppError({ code: "not_found", message: "No run has this ID in this space." });

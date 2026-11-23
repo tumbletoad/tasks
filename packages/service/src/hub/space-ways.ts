@@ -32,12 +32,17 @@ const WAYS: Partial<Record<SpaceReason, string>> = {
     "opened. Put the original folder back, or change the space's entry in machine.toml.",
   not_authority: "Another machine owns this space, so it is read-only here. Change it there.",
   read_only_copy:
-    "This is a restored copy, read-only until you make it this machine's. Close its original " +
-    `first if it is open here, then run: ${CLI_NAME} space claim <folder>.`,
+    "This is a restored copy, to look inside: nothing in it can be changed. Close it when you " +
+    `are done (${CLI_NAME} space close <folder>), or make it the space from now on: ` +
+    `${CLI_NAME} space claim <folder>. The folder the space was in before is then no longer it.`,
+  other_copy_open:
+    "Another copy of this space is open on this machine, and two copies of one space are never " +
+    `open together. Close that one first (${CLI_NAME} space close <its folder>), then run: ${AGAIN}.`,
 };
 
 /** The way out of `state` for `reason`, or undefined for a space that is open or opening. */
 export function wayOutOf(state: string, reason: SpaceReason | undefined): string | undefined {
-  if ((state !== "unavailable" && state !== "read_only") || reason === undefined) return undefined;
+  if (reason === undefined) return undefined;
+  if (state !== "unavailable" && state !== "read_only" && state !== "closed") return undefined;
   return WAYS[reason];
 }

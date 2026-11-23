@@ -76,7 +76,7 @@ import {
   findSpace,
   isAmbiguity,
   onlySpace,
-  type Ambiguity,
+  spaceChanged,
   type Copy,
 } from "./copies.ts";
 import {
@@ -199,6 +199,13 @@ export interface ServedSpace {
   readonly reader: WorkerConnection | undefined;
   /** The space's folder on this machine. */
   readonly folder?: string;
+  /** A restored copy not claimed: when it was restored, and from which backup file. */
+  readonly restored?: { readonly at: string; readonly backup?: string };
+  /**
+   * The copy it is served as, once served (hub/spaces.ts copyToken): a page sends it back with
+   * each call, so a tab never writes into another copy than the one it loaded.
+   */
+  readonly copy?: string;
 }
 
 /** What the request path needs from its host. */
@@ -452,24 +459,30 @@ async function callWith(
  * place. An agent's CLI gets no default (A2 3.10.5: A3 may forbid step 4 for agent classes, so an
  * unbound agent never writes into the default space by accident).
  *
- * Only spaces that are not closed are candidates: a closed space serves no call. A restored copy
- * has its original's ID and name, so which copy an ID or a name means is copies.ts's one rule: the
- * writable copy, and a read-only copy by its folder.
+ * Only spaces that are not closed are candidates: a closed space serves no call. One folder serves
+ * a space at a time, so an ID or a name means that folder (copies.ts).
  */
 /**
- * The machine's default space among `live` (spaces that are not closed): the copy of the space with
- * that ID that copies.ts picks; `not_served` when none has it; an ambiguity when two copies are
- * equally good; undefined when the machine has no default.
+ * The machine's default space among `live` (spaces that are not closed): the entry that serves the
+ * space with that ID (copies.ts); `not_served` when none has it; undefined when the machine has no
+ * default.
  */
 export function defaultOf<S extends Copy>(
   live: readonly S[],
   defaultId: string | undefined,
-): S | Ambiguity<S> | "not_served" | undefined {
+): S | "not_served" | undefined {
   if (defaultId === undefined) return undefined;
   return copyOf(live, defaultId) ?? "not_served";
 }
 
+/** The space a call uses, which for a page's call must be the copy the page loaded. */
 function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): UsableSpace {
+  const space = spaceOfCall(host, caller, named);
+  if (caller.copy !== undefined && space.copy !== caller.copy) throw spaceChanged();
+  return space;
+}
+
+function spaceOfCall(host: OpsHost, caller: Caller, named: string | undefined): UsableSpace {
   const binding = caller.binding;
   if (binding?.kind === "session") return heldSpace(host, caller, binding.session.space, named);
   if (caller.class === "bridge") {
@@ -536,9 +549,7 @@ function heldSpace(
     // A folder names its copy, which a session of the space may use.
     if (isAbsolute(named)) return answerFor(live, other, named);
   }
-  const found = copyOf(live, held);
-  if (isAmbiguity(found)) throw ambiguousError(found);
-  return answerFor(live, found, held);
+  return answerFor(live, copyOf(live, held), held);
 }
 
 /** A space a call may go on with: open or read-only, so served, with its ID. */
@@ -661,18 +672,14 @@ function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): U
   const wanted = named ?? (fromEnv === "" ? undefined : fromEnv);
   if (wanted !== undefined) {
     const found = findSpace(live, wanted);
-    if (isAmbiguity(found)) throw ambiguousError(found);
+    if (isAmbiguity(found)) throw ambiguousError();
     return answerFor(live, found, wanted);
   }
   if (caller.class === "cli-agent") {
     throw invalid("space", "Name the space", "Pass --space, or set TTASKS_SPACE.");
   }
   const defaultId = host.defaultSpace?.();
-  if (defaultId !== undefined) {
-    const fallback = copyOf(live, defaultId);
-    if (isAmbiguity(fallback)) throw ambiguousError(fallback);
-    return answerFor(live, fallback, defaultId);
-  }
+  if (defaultId !== undefined) return answerFor(live, copyOf(live, defaultId), defaultId);
   const only = onlySpace(live);
   if (only === undefined) return answerFor(live, undefined, undefined);
   if (only === "several") {
@@ -682,7 +689,6 @@ function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): U
       "Pass --space with an ID, a name or a folder from ttasks space list.",
     );
   }
-  if (isAmbiguity(only)) throw ambiguousError(only);
   return answerFor(live, only, undefined);
 }
 

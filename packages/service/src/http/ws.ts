@@ -21,7 +21,10 @@
 //                                                                (contracts' AgentsView), only
 //                                                                while the tab watches: the newest
 //                                                                only, for a tab that reads slowly
-//   page → service   {type:"subscribe", space?, cursor?}         a new subscription replaces the old
+//   page → service   {type:"subscribe", space?, cursor?, copy?}  a new subscription replaces the old;
+//                                                                `copy`, the copy of the space the
+//                                                                tab loaded, gets a snapshot when
+//                                                                another copy is served now
 //                    {type:"unsubscribe"}
 //                    {type:"watch", agents, visible, focused}    an Agents page is mounted, the tab
 //                                                                visible, its window focused: on
@@ -30,7 +33,10 @@
 //                                                                (monitor/pace.ts)
 //
 // A space with subscribers is checked for new commits every `feedPollMs` (one small read of its
-// head), and at once after a write through this listener. Close codes: 4401 the token was revoked
+// head), and at once after a write through this listener. A snapshot's `space` names the copy it
+// is served as, its folder, why it takes no change and its restore record; when any of these
+// changes (a claim, a restore, another folder of the space opened, a folder found synced), the
+// subscriber gets a fresh snapshot, so a tab never goes on with batches of another copy. Close codes: 4401 the token was revoked
 // or expired (the page shows "signed out"), 1001 the service stops, 1008 a message the feed does
 // not take.
 //
@@ -42,6 +48,7 @@ import type { AgentsView } from "@ttasks/contracts/monitor";
 import type { RawData, WebSocket } from "ws";
 import type { ServerTimer } from "../local/index.ts";
 import type { MonitorPace } from "../monitor/index.ts";
+import { shownPath } from "../hub/agent-apps.ts";
 import { copyOf, findSpace, isAmbiguity, onlySpace } from "../ops/copies.ts";
 import { defaultOf, type ServedSpace } from "../ops/index.ts";
 import type { HttpLog, WsClose } from "./events.ts";
@@ -106,6 +113,38 @@ export interface FeedOptions {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** A copy as hub/spaces.ts names it. */
+const COPY = /^[0-9a-f]{24}$/u;
+
+/**
+ * What a snapshot's `space` says of the copy it is served as: its name for the page's calls, its
+ * folder, why it takes no change, and its restore record.
+ */
+interface CopyFacts {
+  readonly copy?: string;
+  readonly folder?: string;
+  readonly read_only?: { readonly reason: string; readonly message?: string };
+  readonly restored?: { readonly at: string; readonly backup?: string };
+}
+
+function factsOf(space: ServedSpace, host: FeedHost): CopyFacts {
+  return {
+    ...(space.copy === undefined ? {} : { copy: space.copy }),
+    ...(space.folder === undefined
+      ? {}
+      : { folder: shownPath(host.platform ?? process.platform, host.home, space.folder) }),
+    ...(space.state === "read_only"
+      ? {
+          read_only: {
+            reason: space.reason ?? "read_only",
+            ...(space.message === undefined ? {} : { message: space.message }),
+          },
+        }
+      : {}),
+    ...(space.restored === undefined ? {} : { restored: space.restored }),
+  };
+}
+
 function cursorOf(value: unknown): Cursor | undefined | "invalid" {
   if (value === undefined || value === null) return undefined;
   if (!isRecord(value)) return "invalid";
@@ -134,6 +173,8 @@ class FeedSocket {
   readonly #opened: number;
   #space: string | undefined;
   #cursor: Cursor | undefined;
+  /** What the last snapshot said of the copy (CopyFacts, as text): a change sends another. */
+  #facts: string | undefined;
   #generation = 0;
   #pumping = false;
   #again = false;
@@ -148,7 +189,13 @@ class FeedSocket {
   #buffered = 0;
   #drainedMark = 0;
   /** The subscription the page asked for last, waiting for the read in progress to end. */
-  #wanted: { readonly ref: string | undefined; readonly cursor: Cursor | undefined } | undefined;
+  #wanted:
+    | {
+        readonly ref: string | undefined;
+        readonly cursor: Cursor | undefined;
+        readonly copy: string | undefined;
+      }
+    | undefined;
   #subscribing = false;
   /** The installed version this page was last told of. */
   #installed: string | undefined;
@@ -374,9 +421,11 @@ class FeedSocket {
     }
     const space = message["space"];
     const cursor = cursorOf(message["cursor"]);
+    const copy = message["copy"];
     if (
       (space !== undefined && (typeof space !== "string" || space.length > 200)) ||
-      cursor === "invalid"
+      cursor === "invalid" ||
+      (copy !== undefined && (typeof copy !== "string" || !COPY.test(copy)))
     ) {
       this.close(WS_CLOSE.badMessage, "bad_message");
       return;
@@ -384,7 +433,7 @@ class FeedSocket {
     // The old subscription ends now (a read in progress for it sends nothing); the new one starts
     // when that read is over. Only the last of several that come meanwhile is read.
     this.#unsubscribe();
-    this.#wanted = { ref: space, cursor };
+    this.#wanted = { ref: space, cursor, copy };
     void this.#nextSubscription();
   }
 
@@ -419,9 +468,9 @@ class FeedSocket {
     this.#subscribing = true;
     try {
       while (this.#wanted !== undefined && !this.#closed) {
-        const { ref, cursor } = this.#wanted;
+        const { ref, cursor, copy } = this.#wanted;
         this.#wanted = undefined;
-        await this.#subscribe(ref, cursor);
+        await this.#subscribe(ref, cursor, copy);
       }
     } finally {
       this.#subscribing = false;
@@ -431,8 +480,7 @@ class FeedSocket {
   /**
    * The served space a subscription names: an ID or a name; without one, the machine's default
    * space (A2 3.1: what a new tab opens), else the one space served. A default that is set but not
-   * served is never replaced by another space. Which copy of a space an ID or a name means is
-   * copies.ts's rule, the one every lookup uses (A2 3.10.5).
+   * served is never replaced by another space. One folder serves a space at a time (copies.ts).
    */
   #find(ref: string | undefined): ServedSpace | "ambiguous" | "not_served" | undefined {
     const host = this.#hub.options.host;
@@ -447,15 +495,31 @@ class FeedSocket {
   }
 
   /**
-   * Sends a snapshot as the page takes it: with this machine's instances (A5 3.15 step 1). Every
-   * snapshot goes through here, so none reaches the page without the instances for its tiles.
+   * Sends a snapshot as the page takes it: with this machine's instances (A5 3.15 step 1) and what
+   * it is of the copy it was read from. Every snapshot goes through here, so none reaches the page
+   * without the instances for its tiles, or without its copy.
    */
-  #sendSnapshot(snapshot: SnapshotMessage, reason?: "epoch" | "cursor_ahead"): Promise<void> {
+  #sendSnapshot(
+    snapshot: SnapshotMessage,
+    space: ServedSpace,
+    reason?: "epoch" | "cursor_ahead" | "copy",
+  ): Promise<void> {
     const instances: readonly UiInstance[] = this.#hub.options.instances?.() ?? [];
-    return this.#send({ ...snapshot, instances, ...(reason === undefined ? {} : { reason }) });
+    const facts = factsOf(space, this.#hub.options.host);
+    this.#facts = JSON.stringify(facts);
+    return this.#send({
+      ...snapshot,
+      space: { ...snapshot.space, ...facts },
+      instances,
+      ...(reason === undefined ? {} : { reason }),
+    });
   }
 
-  async #subscribe(ref: string | undefined, cursor: Cursor | undefined): Promise<void> {
+  async #subscribe(
+    ref: string | undefined,
+    cursor: Cursor | undefined,
+    copy: string | undefined,
+  ): Promise<void> {
     this.#unsubscribe();
     const generation = ++this.#generation;
     const found = this.#find(ref);
@@ -477,7 +541,13 @@ class FeedSocket {
     const reader = found.reader;
     try {
       let start: Cursor | undefined = cursor;
-      if (cursor !== undefined) {
+      if (cursor !== undefined && copy !== undefined && copy !== found.copy) {
+        // The tab loaded another copy of the space: what it holds says nothing of this one.
+        const snapshot = await readSnapshot(reader, this.#hub.here());
+        if (generation !== this.#generation) return;
+        await this.#sendSnapshot(snapshot, found, "copy");
+        start = snapshot.cursor;
+      } else if (cursor !== undefined) {
         const head = await readHead(reader);
         if (!sameAuthority(cursor, head.cursor) || cursor.seq > head.cursor.seq) {
           start = undefined;
@@ -485,14 +555,17 @@ class FeedSocket {
           if (generation !== this.#generation) return;
           await this.#sendSnapshot(
             snapshot,
+            found,
             sameAuthority(cursor, head.cursor) ? "cursor_ahead" : "epoch",
           );
           start = snapshot.cursor;
+        } else {
+          this.#facts = JSON.stringify(factsOf(found, this.#hub.options.host));
         }
       } else {
         const snapshot = await readSnapshot(reader, this.#hub.here());
         if (generation !== this.#generation) return;
-        await this.#sendSnapshot(snapshot);
+        await this.#sendSnapshot(snapshot, found);
         start = snapshot.cursor;
       }
       if (this.#closed || generation !== this.#generation || start === undefined) return;
@@ -512,6 +585,7 @@ class FeedSocket {
     this.#hub.unwatch(this);
     this.#space = undefined;
     this.#cursor = undefined;
+    this.#facts = undefined;
   }
 
   /** Sends the batches after the cursor until it is current. One run at a time. */
@@ -541,13 +615,11 @@ class FeedSocket {
       const spaceId = this.#space;
       const cursor = this.#cursor;
       if (this.#closed || spaceId === undefined || cursor === undefined) return;
-      // The copy the space's ID means now (copies.ts), among the copies that are served: never a
-      // closed original listed before the copy that serves the ID.
-      const found = copyOf(
+      // The folder that serves the space now (copies.ts).
+      const space = copyOf(
         this.#hub.options.host.spaces().filter((s) => s.reader !== undefined),
         spaceId,
       );
-      const space = isAmbiguity(found) ? undefined : found;
       if (space?.reader === undefined) {
         this.#unsubscribe();
         await this.#send({ type: "error", code: "space_unavailable" }).catch(() => undefined);
@@ -571,11 +643,17 @@ class FeedSocket {
       }
       if (generation !== this.#generation) return;
       const { head, batch } = read;
-      if (!sameAuthority(cursor, head.cursor)) {
-        // An epoch or incarnation change always means a fresh snapshot (A1 3.7).
+      const facts = JSON.stringify(factsOf(space, this.#hub.options.host));
+      if (!sameAuthority(cursor, head.cursor) || facts !== this.#facts) {
+        // An epoch or incarnation change always means a fresh snapshot (A1 3.7), and so does
+        // another copy of the space, or another reason it takes no change.
         const snapshot = await readSnapshot(space.reader, this.#hub.here());
         if (generation !== this.#generation) return;
-        await this.#sendSnapshot(snapshot, "epoch");
+        await this.#sendSnapshot(
+          snapshot,
+          space,
+          sameAuthority(cursor, head.cursor) ? "copy" : "epoch",
+        );
         this.#cursor = snapshot.cursor;
         continue;
       }

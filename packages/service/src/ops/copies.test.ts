@@ -1,16 +1,8 @@
-// Which copy of a space an ID or a name means (A2 3.10.5): the one rule every lookup uses. Fixture
-// folders only.
+// Which space an ID, a name or a folder means (A2 3.10.5), with one folder serving a space at a
+// time: the lookup every caller uses. Fixture folders only.
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import {
-  ambiguousError,
-  chooseCopy,
-  copyOf,
-  findSpace,
-  isAmbiguity,
-  onlySpace,
-  type Copy,
-} from "./copies.ts";
+import { ambiguousError, copyOf, findSpace, isAmbiguity, onlySpace, type Copy } from "./copies.ts";
 
 const MIRA = "sp_43f0gjcvzgaa1gh5my6qxwcj7m";
 const LIFE = "sp_3z8sm956jp8dajmtsar5kx026c";
@@ -25,24 +17,22 @@ const space = (
   name = id === MIRA ? "Mira" : "Life",
 ): Copy => ({ id, name, state, folder: at(folder), ...(reason === undefined ? {} : { reason }) });
 
-describe("[A2.3.10.5.copies.rule] the copy an ID or a name means", () => {
-  test("the writable copy wins over read-only copies, by ID, by name and as the one space", () => {
-    const original = space(MIRA, "mira", "open");
-    const copy = space(MIRA, "mira-copy", "read_only", "read_only_copy");
-    // Either order: never the first one listed.
+describe("[A2.3.10.5.copies.rule] an ID or a name means the folder that serves the space", () => {
+  test("the served entry, by ID, by name and as the one space, whatever the order; a folder names its own entry", () => {
+    const served = space(MIRA, "mira-copy", "read_only", "read_only_copy");
+    const closed = space(MIRA, "mira", "closed");
     for (const spaces of [
-      [copy, original],
-      [original, copy],
+      [closed, served],
+      [served, closed],
     ]) {
-      expect(copyOf(spaces, MIRA)).toBe(original);
-      expect(findSpace(spaces, MIRA)).toBe(original);
-      expect(findSpace(spaces, "mira")).toBe(original);
-      expect(onlySpace(spaces)).toBe(original);
-      // A folder names its own copy.
-      expect(findSpace(spaces, at("mira-copy"))).toBe(copy);
+      expect(copyOf(spaces, MIRA)).toBe(served);
+      expect(findSpace(spaces, MIRA)).toBe(served);
+      expect(findSpace(spaces, "mira")).toBe(served);
+      expect(onlySpace(spaces)).toBe(served);
+      expect(findSpace(spaces, at("mira"))).toBe(closed);
     }
     // A copy not served yet (its folder gone) has no ID read from its folder, but its entry's ID
-    // makes it a copy of the space: still one space served.
+    // makes it a copy of the space: still one space.
     const gone: Copy = {
       id: undefined,
       registered: MIRA,
@@ -50,42 +40,26 @@ describe("[A2.3.10.5.copies.rule] the copy an ID or a name means", () => {
       reason: "missing",
       folder: at("look"),
     };
-    expect(onlySpace([gone, original])).toBe(original);
+    expect(onlySpace([gone, served])).toBe(served);
     expect(onlySpace([gone, space(LIFE, "life", "open")])).toBe("several");
   });
 
-  test("a closed original never stands in for the claimed copy, and with no writable copy the space itself comes before a restored copy", () => {
-    const closed = space(MIRA, "mira", "closed");
-    const claimed = space(MIRA, "mira-copy", "open");
-    expect(copyOf([closed, claimed], MIRA)).toBe(claimed);
-    const synced = space(MIRA, "mira", "read_only", "synced_folder");
-    const restored = space(MIRA, "mira-copy", "read_only", "read_only_copy");
-    expect(copyOf([restored, synced], MIRA)).toBe(synced);
+  test("while no entry serves the space, the first one listed answers with its own state", () => {
     const missing = space(MIRA, "mira", "unavailable", "missing");
-    expect(copyOf([missing, restored], MIRA)).toBe(restored);
-    // Opening or closing for a moment comes before read-only: the answer is "retry".
-    const opening = space(MIRA, "mira", "opening");
-    expect(copyOf([restored, opening], MIRA)).toBe(opening);
-    expect(chooseCopy([space(MIRA, "a", "opening"), space(MIRA, "b", "opening")])).toMatchObject({
-      state: "opening",
-    });
+    const closed = space(MIRA, "mira-copy", "closed");
+    expect(copyOf([missing, closed], MIRA)).toBe(missing);
+    expect(copyOf([closed, missing], MIRA)).toBe(closed);
+    // Opening or closing for a moment is serving: the answer is "retry".
+    const opening = space(MIRA, "mira-copy", "opening");
+    expect(copyOf([missing, opening], MIRA)).toBe(opening);
   });
 
-  test("two copies equally good are ambiguous and the error names both folders; a name of two spaces is ambiguous by name", () => {
-    const one = space(MIRA, "copy-one", "read_only", "read_only_copy");
-    const two = space(MIRA, "copy-two", "read_only", "read_only_copy");
-    const found = copyOf([one, two], MIRA);
-    expect(isAmbiguity(found)).toBe(true);
-    if (!isAmbiguity(found)) throw new Error("not ambiguous");
-    const error = ambiguousError(found);
-    expect(error.code).toBe("ambiguous");
-    expect(error.message).toContain(at("copy-one"));
-    expect(error.message).toContain(at("copy-two"));
-    expect(error.data).toEqual({ folders: [at("copy-one"), at("copy-two")] });
-
+  test("a name two spaces have is ambiguous, and the ID names one of them", () => {
     const other = space(LIFE, "life", "open", undefined, "Mira");
     const byName = findSpace([space(MIRA, "mira", "open"), other], "Mira");
     expect(isAmbiguity(byName) && byName.ambiguous).toBe("name");
+    expect(findSpace([space(MIRA, "mira", "open"), other], LIFE)).toBe(other);
+    expect(ambiguousError().code).toBe("ambiguous");
     expect(onlySpace([space(MIRA, "mira", "open"), other])).toBe("several");
     expect(onlySpace([])).toBeUndefined();
     expect(findSpace([other], "Nothing")).toBeUndefined();

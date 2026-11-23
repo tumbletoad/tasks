@@ -333,10 +333,9 @@ interface Status {
 /**
  * The request path, end to end: `op/list` names the entry of every verb this CLI has, and
  * `space.status` answers through `op/call` for each served space, so a service whose status
- * answers while its operations fail does not pass. A copy served beside its original shares its
- * ID, which means one copy by A2 3.10.5's rule, so each space is asked once by its ID. With no
- * space served, op/call must still answer with A3's body for a space it does not serve. Only codes
- * reach the detail, never a result.
+ * answers while its operations fail does not pass. One folder serves a space at a time, so each
+ * space is asked once by its ID. With no space served, op/call must still answer with A3's body for
+ * a space it does not serve. Only codes reach the detail, never a result.
  */
 export async function requestCheck(session: Session, spaces: Status["spaces"]): Promise<Check> {
   const ask = (space: string | undefined): Promise<unknown> =>

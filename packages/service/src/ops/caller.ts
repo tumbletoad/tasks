@@ -17,6 +17,11 @@ export interface Caller {
    */
   readonly grant?: string;
   /**
+   * For the `ui` class: the copy of its space the page loaded (ServedSpace `copy`). A call is
+   * refused when the space is served from another copy now (ops/copies.ts spaceChanged).
+   */
+  readonly copy?: string;
+  /**
    * The principal the transport determined for this connection when it is no session and its
    * class has no fixed one: an MCP connection's (mcp/principal.ts), or the one a handler writes a
    * step under on the caller's behalf (`launch.open`'s note). Otherwise the class's.
