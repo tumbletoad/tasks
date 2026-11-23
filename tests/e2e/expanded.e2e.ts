@@ -163,7 +163,7 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
     await expect(body.locator('[data-part="source"][data-kind="chat"] a')).toHaveCount(0);
     // A source whose text repeats the title shows its kind's name, still a link.
     const doc = body.locator('[data-part="source"][data-kind="doc"]');
-    await expect(doc).toHaveText("Document");
+    await expect(doc.locator("[data-fact]")).toHaveText("Document");
     await expect(doc.locator("a")).toHaveAttribute("href", "https://docs.example/brief");
     // No folder of its own: it opens in its project's.
     await expect(body.locator('[data-part="place"]')).toHaveAttribute("data-state", "here");

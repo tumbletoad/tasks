@@ -4,6 +4,7 @@
 // stderr. The exit code follows the error's class.
 import { CLI_NAME } from "@ttasks/brand";
 import { RpcError } from "@ttasks/bridge/protocol";
+import { shellLine } from "@ttasks/launch";
 import {
   errorClass,
   EXIT_CODES,
@@ -256,7 +257,26 @@ function insideLines(result: Result): string[] {
   return lines;
 }
 
-export function render(entry: string, result: Result, space: string): string {
+/** Where captures of a source's item go: one task, or several a capture asks between. */
+function capturesTo(source: Result): string | undefined {
+  const value = source["captures_to"];
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const refs = value.map(String);
+  const more = typeof source["captures_more"] === "number" ? source["captures_more"] : 0;
+  if (refs.length === 1 && more === 0) return `captures go to ${refs.join("")}`;
+  return `captures ask which of ${refs.join(", ")}${more > 0 ? ` and ${String(more)} more` : ""}`;
+}
+
+/** What the command asked that a command it prints must ask again. */
+export interface Asked {
+  /** `--space` as given. */
+  readonly space?: string | undefined;
+  /** `--archived`. */
+  readonly archived?: boolean;
+  readonly platform?: NodeJS.Platform;
+}
+
+export function render(entry: string, result: Result, space: string, asked: Asked = {}): string {
   const lines: string[] = [];
   switch (entry) {
     case "task.add":
@@ -367,9 +387,19 @@ export function render(entry: string, result: Result, space: string): string {
         lines.push("", sections["context"]);
       }
       for (const source of (sections["sources"] as Result[] | undefined) ?? []) {
-        lines.push(
-          `  source: ${String(source["title"])}${typeof source["key"] === "string" ? ` [${source["key"]}]` : ""}`,
-        );
+        const removed = source["removed"] as Result | undefined;
+        const key = source["key"] ?? source["ref"];
+        const facts = [
+          typeof key === "string" ? key : undefined,
+          typeof source["url"] === "string" ? source["url"] : undefined,
+          capturesTo(source),
+          String(source["id"]),
+        ].filter((fact) => fact !== undefined);
+        const label =
+          removed === undefined
+            ? "source"
+            : `detached ${String(removed["at"]).slice(0, 10)} by ${String(removed["by"])}`;
+        lines.push(`  ${label}: ${String(source["title"])} [${facts.join(" · ")}]`);
       }
       // A digest holds the first lessons and counts them all; the outcome section holds them all.
       const outcome = result["sections"] === undefined ? undefined : sections["outcome"];
@@ -476,18 +506,36 @@ export function render(entry: string, result: Result, space: string): string {
         lines.push(`${done} ${str(group["kind"])} ${str(group["name"])}${folder}`);
         lines.push(...insideLines(result));
       }
-      // A project a line, with the repository in its folder and the folder on this machine.
+      // A project a line, with the repository in its folder and the folder on this machine. A
+      // group's ID shows where its name alone does not name it.
+      const facts = (g: Result) =>
+        `${g["archived"] === true ? ", archived" : ""}${typeof g["ref"] === "string" ? `, id ${g["ref"]}` : ""}`;
       const project = (g: Result) =>
-        `  ${str(g["name"])}${typeof g["repo"] === "string" ? ` [${g["repo"]}]` : ""} (${str(g["active"])})${typeof g["folder"] === "string" ? `  ${g["folder"]}` : ""}`;
+        `  ${str(g["name"])}${typeof g["repo"] === "string" ? ` [${g["repo"]}]` : ""} (${str(g["active"])}${facts(g)})${typeof g["folder"] === "string" ? `  ${g["folder"]}` : ""}`;
       for (const area of (result["areas"] as Result[] | undefined) ?? []) {
-        lines.push(`${str(area["name"])} (${str(area["active"])})`);
+        lines.push(`${str(area["name"])} (${str(area["active"])}${facts(area)})`);
         lines.push(...((area["projects"] as Result[] | undefined) ?? []).map(project));
-        if (typeof area["more_projects"] === "number") {
-          lines.push(`  and ${String(area["more_projects"])} more projects`);
-        }
       }
       const loose = (result["projects"] as Result[] | undefined) ?? [];
       if (loose.length > 0) lines.push("No area", ...loose.map(project));
+      // A write takes no cursor: the rest of the list is read with list, in the same space and with
+      // the same archived groups.
+      if (typeof result["cursor"] === "string") {
+        const argv = [
+          CLI_NAME,
+          "area",
+          "list",
+          ...(asked.space === undefined ? [] : ["--space", asked.space]),
+          ...(asked.archived === true ? ["--archived"] : []),
+          "--cursor",
+          result["cursor"],
+        ];
+        lines.push(
+          result["action"] === "list"
+            ? `More: the same command with --cursor ${result["cursor"]}`
+            : `More: ${shellLine(asked.platform ?? process.platform, argv) ?? argv.join(" ")}`,
+        );
+      }
       break;
     }
     case "prefs.manage":

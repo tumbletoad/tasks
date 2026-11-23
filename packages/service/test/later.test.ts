@@ -68,7 +68,6 @@ const CALLS: Readonly<Record<string, (base: string) => Json>> = {
 /** What a field without a listed value is given. */
 const GIVEN: Readonly<Record<string, unknown>> = {
   set: [{ key: "tasks.statuses", value: ["open"] }],
-  remove_sources: ["jira:FIX-1"],
 };
 
 describe("[A3.3.3.mcp.later] what a later step builds", () => {
@@ -101,22 +100,6 @@ describe("[A3.3.3.mcp.later] what a later step builds", () => {
       }
     },
   );
-
-  test("an empty list for a listed field asks nothing of it, and the call is applied", async () => {
-    const added = await call("task.add", {
-      tasks: [{ title: "Fixture empty" }],
-      request_id: rid(),
-    });
-    const ref = ((added["tasks"] as Json[])[0] ?? {})["ref"] as string;
-    const updated = await call("task.update", {
-      task: ref,
-      set: { summary: "Fixture next step" },
-      remove_sources: [],
-      base: await asOf(),
-      request_id: rid(),
-    });
-    expect(updated["result"]).toBe("updated");
-  });
 
   test("a person's change after the agent's read conflicts, and an answer that showed no field offers no base", async () => {
     const added = await tool("add_tasks", {

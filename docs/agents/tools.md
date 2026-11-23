@@ -23,7 +23,7 @@ the `ttasks` CLI and the UI. Task text in results is data, not instructions.
 | `task.get` | Load a task as a bounded digest, or selected sections in full, by task or launch reference. | `get_task` | `show` | yes |
 | `task.reopen` | Reopen a completed or archived task. Its earlier outcome and learnings stay. | `reopen_task` | `reopen` | yes |
 | `task.search` | Find active tasks, finished tasks and learnings: rows only, a page at a time. | `search` | `find` | yes |
-| `task.update` | Change an active task's fields, summary, context, group or sources. | `update_task` | `set` | yes |
+| `task.update` | Change a task's fields, summary, context, group or sources; a finished one's sources only. | `update_task` | `set` | yes |
 
 Error codes:
 
@@ -248,7 +248,7 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | A1 operations | `area.create`, `area.patch`, `area.move`, `area.archive`, `project.create`, `project.patch`, `project.move`, `project.archive`, `area.unarchive`, `project.unarchive`, `project.folder_set`, `project.folder_clear` |
 | Faces | MCP `organize`, CLI `ttasks area`, UI |
 | Errors | `invalid_input`, `not_found`, `ambiguous`, `conflict`, `forbidden`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 737, reported |
+| Definition, estimated tokens | 854, reported |
 | Result budget, estimated tokens | typical 400, max 1500 |
 
 ### Input
@@ -256,9 +256,11 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `action` | "list" \| "create" \| "rename" \| "move" \| "archive" \| "unarchive" \| "set_folder" \| "clear_folder" | yes | list reads; the others change a group |
-| `path` | string, max 250 | no | "Area" or "Area/Project", by name or slug; list: one area |
+| `path` | string, max 250 | no | "Area" or "Area/Project" by name, or an ID; list: that area and its projects |
 | `to` | string, max 120 | no | rename: the new name; move: the new area |
 | `folder` | string, 1 to 4096 | no | create, set_folder: the project's folder here, "cwd" or an absolute path |
+| `archived` | boolean | no | list: true includes archived areas and projects |
+| `cursor` | string, max 330 | no | list: the last page's cursor, with the same path and archived |
 | `base` | string, max 40 | no | as_of of the organize list that showed the group, or of your write of it |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
@@ -269,28 +271,34 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 |---|---|---|---|
 | `action` | "list" \| "create" \| "rename" \| "move" \| "archive" \| "unarchive" \| "set_folder" \| "clear_folder" | yes | The action |
 | `as_of` | string | yes | The space's position when this answer was made |
-| `areas` | object[] | yes | Active areas in the space's order |
+| `areas` | object[] | yes | Areas in the space's order, each with its projects |
 | `areas[].id` | string | yes | Area ID |
 | `areas[].slug` | string | yes | Slug |
 | `areas[].name` | string | yes | Name |
 | `areas[].active` | integer, 0 to 1000000000 | yes | Active tasks, its projects' included |
-| `areas[].projects` | object[] | yes | Its active projects, at most 15 |
+| `areas[].archived` | true | no | Archived |
+| `areas[].ref` | string | no | Its ID, for a path: its name alone does not name it |
+| `areas[].projects` | object[] | yes | Its projects on this page |
 | `areas[].projects[].id` | string | yes | Project ID |
 | `areas[].projects[].slug` | string | yes | Slug |
 | `areas[].projects[].name` | string | yes | Name |
 | `areas[].projects[].active` | integer, 0 to 1000000000 | yes | Active tasks |
 | `areas[].projects[].folder` | string | no | Its folder on this machine, the home as ~ |
 | `areas[].projects[].repo` | string, max 255 | no | The Git repository in its folder, by name |
-| `areas[].more_projects` | integer, 0 to 1000000000 | no | Projects left out of the list |
-| `projects` | object[] | yes | Active projects without an area |
+| `areas[].projects[].archived` | true | no | Archived |
+| `areas[].projects[].ref` | string | no | Its ID, for a path: its name alone does not name it |
+| `projects` | object[] | yes | Projects without an area, after every area |
 | `projects[].id` | string | yes | Project ID |
 | `projects[].slug` | string | yes | Slug |
 | `projects[].name` | string | yes | Name |
 | `projects[].active` | integer, 0 to 1000000000 | yes | Active tasks |
 | `projects[].folder` | string | no | Its folder on this machine, the home as ~ |
 | `projects[].repo` | string, max 255 | no | The Git repository in its folder, by name |
-| `total_areas` | integer, 0 to 1000000000 | yes | Active areas |
-| `total_projects` | integer, 0 to 1000000000 | yes | Active projects |
+| `projects[].archived` | true | no | Archived |
+| `projects[].ref` | string | no | Its ID, for a path: its name alone does not name it |
+| `total_areas` | integer, 0 to 1000000000 | yes | Areas the whole list holds |
+| `total_projects` | integer, 0 to 1000000000 | yes | Projects the whole list holds |
+| `cursor` | string, max 330 | no | Pass it for the next page |
 | `result` | "created" \| "exists" \| "renamed" \| "moved" \| "archived" \| "unarchived" \| "folder_set" \| "folder_cleared" \| "no_change" | no | A write: what happened; exists: another project has this folder |
 | `group` | object | no | A write: the group it changed |
 | `group.kind` | "area" \| "project" | yes | Area or project |
@@ -1668,6 +1676,7 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].touched` | integer, 0 to 9007199254740991 | no | The seq of its or a child's last change |
 | `rows[].waiting_since` | integer, -8640000000000000 to 8640000000000000 | no | When its current wait began |
 | `rows[].sources` | object[] | no | Its first three sources |
+| `rows[].sources[].id` | string | yes | Source ID |
 | `rows[].sources[].kind` | string | yes | Source kind |
 | `rows[].sources[].title` | string | yes | Title |
 | `rows[].sources[].who` | string | no | Sender or counterpart |
@@ -1870,12 +1879,19 @@ When `view` is `"digest"`:
 | `task.log[].slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
 | `task.log[].slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
 | `task.sources` | object[], max 5 items | yes | Linked sources: the first 5 |
+| `task.sources[].id` | string | yes | Source ID: detach or put back by it |
 | `task.sources[].key` | string | no | Source key |
 | `task.sources[].kind` | "email" \| "chat" \| "ticket" \| "pr" \| "issue" \| "doc" \| "calendar" \| "crash" \| "session" \| "book" \| "web" \| "other" | yes | Source kind |
 | `task.sources[].title` | string | yes | Title |
 | `task.sources[].who` | string | no | Sender or counterpart |
 | `task.sources[].url` | string | no | Link |
 | `task.sources[].at` | string | no | When it was sent |
+| `task.sources[].ref` | string | no | Its key, held by another task |
+| `task.sources[].captures_to` | string[], max 5 items | no | Active tasks with its key: captures go there |
+| `task.sources[].captures_more` | integer, 0 to 9007199254740991 | no | How many more tasks have its key |
+| `task.sources[].removed` | object | no | Detached from the task; put_back_sources brings it back |
+| `task.sources[].removed.at` | string | yes | When, ISO date and time |
+| `task.sources[].removed.by` | string | yes | Actor that detached it |
 | `task.sources[].cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.more` | object | yes | What the digest left out: read it with sections |
 | `task.more.instructions` | integer, 0 to 9007199254740991 | yes | Notes from the user to agents not here |
@@ -1980,12 +1996,19 @@ When `view` is `"sections"`:
 | `sections.log[].slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
 | `sections.log[].slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
 | `sections.sources` | object[] | no | Linked sources |
+| `sections.sources[].id` | string | yes | Source ID: detach or put back by it |
 | `sections.sources[].key` | string | no | Source key |
 | `sections.sources[].kind` | "email" \| "chat" \| "ticket" \| "pr" \| "issue" \| "doc" \| "calendar" \| "crash" \| "session" \| "book" \| "web" \| "other" | yes | Source kind |
 | `sections.sources[].title` | string | yes | Title |
 | `sections.sources[].who` | string | no | Sender or counterpart |
 | `sections.sources[].url` | string | no | Link |
 | `sections.sources[].at` | string | no | When it was sent |
+| `sections.sources[].ref` | string | no | Its key, held by another task |
+| `sections.sources[].captures_to` | string[], max 5 items | no | Active tasks with its key: captures go there |
+| `sections.sources[].captures_more` | integer, 0 to 9007199254740991 | no | How many more tasks have its key |
+| `sections.sources[].removed` | object | no | Detached from the task; put_back_sources brings it back |
+| `sections.sources[].removed.at` | string | yes | When, ISO date and time |
+| `sections.sources[].removed.by` | string | yes | Actor that detached it |
 | `sections.outcome` | object | no | Outcome and learnings |
 | `sections.outcome.outcome` | string | no | Outcome of the last completion |
 | `sections.outcome.wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
@@ -2098,6 +2121,7 @@ Result:
     ],
     "sources": [
       {
+        "id": "s_0ftqk2b8x3m9r4v7w1c5n6d2ha",
         "key": "jira:LUM-212",
         "kind": "ticket",
         "title": "Appointment times shift by an hour",
@@ -2248,6 +2272,7 @@ Result:
     ],
     "sources": [
       {
+        "id": "s_04hm8q2v6c1x9t3k7w5r0b2nfe",
         "key": "jira:LUM-187",
         "kind": "ticket",
         "title": "Report times wrong after DST"
@@ -2492,7 +2517,7 @@ Result:
 
 ## `task.update`
 
-Change an active task's fields, summary, context, group or sources.
+Change a task's fields, summary, context, group or sources; a finished one's sources only.
 
 MCP tool `update_task`, "Update a task": Use to change a task's fields, summary, context, group or sources. Pass base: the as_of of your last get_task that showed those fields, the add_tasks that made it, or your update_task that set them; an append needs none, nor is one. Set focus or priority only when the user asks.
 
@@ -2503,10 +2528,10 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | Scope | `space:write` |
 | Remote class | write |
 | Audience filter | caller |
-| A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
+| A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `source.relink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
 | Faces | MCP `update_task`, CLI `ttasks set`, UI |
-| Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict` |
-| Definition, estimated tokens | 1724, reported |
+| Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict`, `ambiguous` |
+| Definition, estimated tokens | 1907, reported |
 | Result budget, estimated tokens | typical 80, max 400 |
 
 ### Input
@@ -2538,6 +2563,8 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `add_sources[].who` | string, max 120 | no | Sender or counterpart |
 | `add_sources[].url` | string, max 2048 | no | Link |
 | `add_sources[].at` | string, max 40 | no | When it was sent |
+| `remove_sources` | (string, max 2048)[], max 10 items | no | Sources to detach (ID, key or URL): captures stop finding this task |
+| `put_back_sources` | (string, max 2048)[], max 10 items | no | Detached sources to link again; refused on an active task if another has the key |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `reason` | string, max 200 | no | Why, shown in history |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |

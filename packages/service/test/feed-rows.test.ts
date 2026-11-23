@@ -110,8 +110,11 @@ describe("[A5.3.6.http.row-children] a task's row carries its sources and where 
 
     const snapshot = await readSnapshot(reader, here);
     const four = byTitle(snapshot.tasks, "Fixture four sources");
-    expect(four?.["sources"]).toEqual(
+    const shown = (four?.["sources"] ?? []) as Record<string, unknown>[];
+    for (const source of shown) expect(source["id"]).toMatch(/^s_[0-9a-z]{26}$/u);
+    expect(shown.map((source) => ({ ...source, id: undefined }))).toEqual(
       [1, 2, 3].map((i) => ({
+        id: undefined,
         kind: "ticket",
         title: `Fixture ticket ${String(i)}`,
         who: "Fixture Person",

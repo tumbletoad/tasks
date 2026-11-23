@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   AppError,
+  GROUP_PAGE,
   GroupManageResult,
   opSpec,
   LATER_PREFERENCES,
@@ -26,6 +27,7 @@ import { STEPS_0_3 } from "@ttasks/storage/revisions";
 import { MACHINE, writeFixture, type Fixture } from "@ttasks/storage/write-helpers";
 import { checkedDriver } from "@ttasks/testkit";
 import { bridgePrincipal, renderError, renderResult, TOOLS } from "../src/mcp/index.ts";
+import { showsWhole } from "../src/mcp/render.ts";
 import type { Caller } from "../src/ops/caller.ts";
 import { opCall, type OpsHost } from "../src/ops/index.ts";
 import { readerOf, tempRoot } from "./harness.ts";
@@ -40,11 +42,28 @@ let edited: Fixture;
 let organized: Fixture;
 /** A fixture whose groups one call's drafts make. */
 let drafted: Fixture;
+/** Fixtures with more groups than a list page holds. */
+let paged: Fixture;
+let moved: Fixture;
+let long: Fixture;
+/** A fixture whose groups share names. */
+let named: Fixture;
 const clock = Date.UTC(2026, 10, 12, 9, 0, 0);
 
 beforeAll(async () => {
   temp = tempRoot("m401");
-  for (const name of ["fx", "indexed", "plain", "edited", "organized", "drafted"]) {
+  for (const name of [
+    "fx",
+    "indexed",
+    "plain",
+    "edited",
+    "organized",
+    "drafted",
+    "paged",
+    "moved",
+    "long",
+    "named",
+  ]) {
     mkdirSync(join(temp.root, name));
   }
   drafted = await writeFixture(join(temp.root, "drafted"));
@@ -53,6 +72,10 @@ beforeAll(async () => {
   plain = await writeFixture(join(temp.root, "plain"), { steps: STEPS_0_3 });
   edited = await writeFixture(join(temp.root, "edited"));
   organized = await writeFixture(join(temp.root, "organized"));
+  paged = await writeFixture(join(temp.root, "paged"));
+  moved = await writeFixture(join(temp.root, "moved"));
+  long = await writeFixture(join(temp.root, "long"));
+  named = await writeFixture(join(temp.root, "named"));
 });
 
 afterAll(() => {
@@ -62,6 +85,10 @@ afterAll(() => {
   edited.close();
   organized.close();
   drafted.close();
+  paged.close();
+  moved.close();
+  long.close();
+  named.close();
   temp.cleanup();
 });
 
@@ -404,11 +431,14 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
     );
     expect(one.areas.map((a) => a.name)).toEqual(["Home"]);
     expect(one.total_projects).toBe(0);
-    // Of "Area/Project" the area; an unknown area is not_found, not a group to create.
+    // "Area/Project" is that project under its area; an unknown area is not_found, not a group to
+    // create.
     const narrowed = GroupManageResult.parse(
       await call(fx, script, "group.manage", { action: "list", path: "Lumen/Portal" }),
     );
-    expect(narrowed.areas.map((a) => a.name)).toEqual(["Lumen"]);
+    expect(narrowed.areas.map((a) => [a.name, a.projects.map((p) => p.name)])).toEqual([
+      ["Lumen", ["Portal"]],
+    ]);
     expect(
       await refusal(call(fx, script, "group.manage", { action: "list", path: "Garden" })),
     ).toMatchObject({ code: "not_found", data: { issues: [{ path: "path" }] } });
@@ -425,6 +455,263 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
     const written = rid();
     await add(fx, script, [{ title: "Receipted fixture task" }], written);
     expect(await found(written)).toBe(true);
+  });
+
+  test("every group can be read: page after page, by its exact name, and archived ones when asked", async () => {
+    const list = async (input: Record<string, unknown> = {}) =>
+      GroupManageResult.parse(
+        await call(paged, script, "group.manage", { action: "list", ...input }),
+      );
+    const write = async (input: Record<string, unknown>) =>
+      GroupManageResult.parse(
+        await call(paged, script, "group.manage", { request_id: rid(), ...input }),
+      );
+    const many = Array.from({ length: GROUP_PAGE + 1 }, (_, k) => `Project ${String(k + 1)}`);
+    for (const name of many) await write({ action: "create", path: `Many/${name}` });
+    await add(paged, user, [{ title: "Fixture task in a loose project", project: "Loose" }]);
+    /** Every page of a list, in order. */
+    const pages = async (input: Record<string, unknown> = {}) => {
+      const out = [await list(input)];
+      for (let cursor = out[0]?.cursor; cursor !== undefined; cursor = out.at(-1)?.cursor) {
+        out.push(await list({ ...input, cursor }));
+      }
+      return out;
+    };
+    const names = (page: Awaited<ReturnType<typeof list>>) => [
+      ...page.areas.flatMap((a) => [a.name, ...a.projects.map((p) => `${a.name}/${p.name}`)]),
+      ...page.projects.map((p) => `/${p.name}`),
+    ];
+    const all = await pages();
+    expect(all.length).toBeGreaterThan(1);
+    for (const page of all) {
+      expect(page.areas.length + page.areas.flatMap((a) => a.projects).length).toBeLessThanOrEqual(
+        GROUP_PAGE + 1,
+      );
+    }
+    // A page that starts inside an area shows that area again above the rest of its projects.
+    expect(all[1]?.areas[0]?.name).toBe("Many");
+    const seen = all.flatMap(names).filter((name) => name !== "Many");
+    expect(seen).toEqual([
+      "Lumen",
+      "Lumen/Portal",
+      "Home",
+      ...many.map((name) => `Many/${name}`),
+      "/Loose",
+    ]);
+    expect(all[0]).toMatchObject({ total_areas: 3, total_projects: GROUP_PAGE + 3 });
+    // One area, all of its projects.
+    const area = await pages({ path: "Many" });
+    expect(area.flatMap(names).filter((name) => name !== "Many")).toEqual(
+      many.map((name) => `Many/${name}`),
+    );
+    // An archived project is left out, listed with archived, and found by its exact name.
+    const last = `Many/${many.at(-1) ?? ""}`;
+    const archived = await write({ action: "archive", path: last, base: paged.base() });
+    expect(archived.result).toBe("archived");
+    expect((await pages()).flatMap(names)).not.toContain(last);
+    const withArchived = (await pages({ archived: true })).flatMap((page) => page.areas);
+    expect(
+      withArchived.flatMap((a) => a.projects).find((p) => `Many/${p.name}` === last),
+    ).toMatchObject({ archived: true });
+    const named = await list({ path: last });
+    expect(named.areas.map((a) => [a.name, a.projects.map((p) => [p.name, p.archived])])).toEqual([
+      ["Many", [[many.at(-1), true]]],
+    ]);
+    expect(named.cursor).toBeUndefined();
+    // The answer that found it is the base to unarchive it.
+    expect(await write({ action: "unarchive", path: last, base: named.as_of })).toMatchObject({
+      result: "unarchived",
+    });
+    // An archived area still holding active projects is shown, marked, with them.
+    await write({ action: "archive", path: "Home", base: paged.base() });
+    await write({ action: "archive", path: "Many", base: paged.base() });
+    const shelved = await pages();
+    expect(shelved.flatMap(names)).not.toContain("Home");
+    expect(shelved[0]?.areas.find((a) => a.name === "Many")).toMatchObject({ archived: true });
+    // A page goes on after a group that was archived since.
+    const first = await list();
+    await write({ action: "archive", path: "Many/Project 1", base: paged.base() });
+    const second = await list({ cursor: first.cursor });
+    expect([...names(first), ...names(second)].filter((name) => name !== "Many")).toEqual(
+      [...new Set([...names(first), ...names(second)])].filter((name) => name !== "Many"),
+    );
+    // A damaged cursor says to start again; one from another space's list says so.
+    const damaged = await refusal(
+      call(paged, script, "group.manage", { action: "list", cursor: `a_${"0".repeat(26)}` }),
+    );
+    expect(damaged).toMatchObject({
+      code: "invalid_input",
+      data: { issues: [{ path: "cursor" }] },
+    });
+    expect(damaged.hint).toMatch(/start the list again/iu);
+    const elsewhere = (first.cursor ?? "").replace(/^sp_\w+/u, moved.spaceId);
+    expect(elsewhere).not.toBe(first.cursor);
+    const foreign = await refusal(
+      call(paged, script, "group.manage", { action: "list", cursor: elsewhere }),
+    );
+    expect(foreign).toMatchObject({
+      code: "invalid_input",
+      data: { issues: [{ path: "cursor" }] },
+    });
+    expect(foreign.message).toMatch(/another space/u);
+  });
+
+  test("a list goes on from where its page ended while groups move: none that stayed put is skipped", async () => {
+    const write = async (input: Record<string, unknown>) =>
+      GroupManageResult.parse(
+        await call(moved, script, "group.manage", {
+          request_id: rid(),
+          base: moved.base(),
+          ...input,
+        }),
+      );
+    const list = async (input: Record<string, unknown> = {}) =>
+      GroupManageResult.parse(
+        await call(moved, script, "group.manage", { action: "list", ...input }),
+      );
+    const alpha = Array.from({ length: GROUP_PAGE - 1 }, (_, k) => `Item ${String(k + 1)}`);
+    const beta = Array.from({ length: 6 }, (_, k) => `Later ${String(k + 1)}`);
+    for (const name of alpha) await write({ action: "create", path: `Alpha/${name}` });
+    for (const name of beta) await write({ action: "create", path: `Beta/${name}` });
+    await write({ action: "create", path: "Gamma" });
+    const names = (page: Awaited<ReturnType<typeof list>>) =>
+      page.areas.flatMap((a) => a.projects.map((p) => `${a.name}/${p.name}`));
+    const first = await list();
+    // The page ends inside Alpha, after the fixture's own groups.
+    const last = names(first).at(-1) ?? "";
+    expect(last).toMatch(/^Alpha\//u);
+    expect(first.cursor).toBeDefined();
+    // Between the pages: the last project listed moves to a later area, an unlisted one to an
+    // earlier one, one is renamed, one archived and one deleted.
+    await write({ action: "move", path: last, to: "Beta" });
+    await write({ action: "move", path: "Beta/Later 1", to: "Alpha" });
+    await write({ action: "rename", path: "Beta/Later 2", to: "Later two" });
+    await write({ action: "archive", path: "Beta/Later 3" });
+    const gone = (await list({ path: "Beta/Later 4" })).areas[0]?.projects[0]?.id ?? "";
+    await edit(moved, "UPDATE projects SET deleted_at = 1 WHERE id = $id", { id: gone });
+    const second = await list({ cursor: first.cursor });
+    // Every group that stayed put comes once, the moved one at its new place, and nothing gone.
+    expect(second.areas.map((a) => a.name)).toEqual(["Alpha", "Beta", "Gamma"]);
+    expect(names(second)).toEqual(
+      expect.arrayContaining(["Beta/Later 5", "Beta/Later 6", "Beta/Later two"]),
+    );
+    expect(names(second)).toContain(last.replace("Alpha/", "Beta/"));
+    expect(names(second)).not.toContain("Beta/Later 3");
+    expect(names(second)).not.toContain("Beta/Later 4");
+    const seen = [...names(first), ...names(second)];
+    expect(new Set(seen).size).toBe(seen.length);
+    for (const name of alpha.map((a) => `Alpha/${a}`).filter((a) => a !== last)) {
+      expect(seen).toContain(name);
+    }
+    // A cursor is a place, not a group: one that names no group still goes on from there.
+    const place = (first.cursor ?? "").replace(/p_\w+$/u, `p_${"0".repeat(26)}`);
+    expect(names(await list({ cursor: place }))).toEqual(names(second));
+  });
+
+  test("an agent's page ends where its text ends, and the pages bring every group once", async () => {
+    const agent: Caller = { ...script, shows: showsWhole };
+    const wide = (k: number) => `${String(k).padStart(2, "0")} ${"項".repeat(110)}`;
+    const projects = Array.from({ length: 24 }, (_, k) => wide(k));
+    for (const name of projects) {
+      await call(long, script, "group.manage", {
+        action: "create",
+        path: `Long/${name}`,
+        request_id: rid(),
+      });
+    }
+    // Each project has a long folder on this machine, and one a folder too long for a page.
+    const huge = `~/${"g".repeat(1453)}/x`;
+    const listed = GroupManageResult.parse(
+      await call(long, script, "group.manage", { action: "list", path: "Long" }),
+    );
+    for (const [k, p] of (listed.areas[0]?.projects ?? []).entries()) {
+      await edit(
+        long,
+        "INSERT INTO folders (id, owner_kind, owner_id, machine_id, path, created_at, " +
+          "created_seq, version) VALUES ($id, 'project', $owner, $machine, $path, 0, 0, 1)",
+        {
+          id: `f_${String(k).padStart(26, "0")}`,
+          owner: p.id,
+          machine: MACHINE.id,
+          path: k === 12 ? huge : `~/${"f".repeat(180)}/${String(k)}`,
+        },
+      );
+    }
+    const texts: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = await call(long, agent, "group.manage", {
+        action: "list",
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      const text = renderResult("group.manage", result);
+      expect(text).not.toMatch(/more lines? not shown/u);
+      texts.push(text);
+      cursor = /cursor "([^"]+)"/u.exec(text)?.[1];
+    } while (cursor !== undefined && texts.length < 30);
+    expect(texts.length).toBeGreaterThan(1);
+    const all = texts.join("\n");
+    expect(all).toContain(`~/${"f".repeat(180)}/0`);
+    // The project with the long folder keeps its line, with the folder shortened.
+    expect(all).toContain(`${projects[12] ?? ""} (0, ${huge.slice(0, 240)}... (+1217 chars))`);
+    for (const name of projects) expect(all.split(name).length - 1, name).toBe(1);
+  });
+
+  test("every group can be named: by its exact name first, a live one first, else by its ID", async () => {
+    const write = async (input: Record<string, unknown>) =>
+      GroupManageResult.parse(
+        await call(named, script, "group.manage", {
+          request_id: rid(),
+          base: named.base(),
+          ...input,
+        }),
+      );
+    const list = async (input: Record<string, unknown> = {}) =>
+      GroupManageResult.parse(
+        await call(named, script, "group.manage", { action: "list", archived: true, ...input }),
+      );
+    // An area renamed to a name with a slash is listed with its ID, which names it.
+    await write({ action: "create", path: "Slashed" });
+    await write({ action: "rename", path: "Slashed", to: "One/Two" });
+    const slashed = (await list()).areas.find((a) => a.name === "One/Two");
+    expect(slashed?.ref).toBe(slashed?.id);
+    expect((await list({ path: slashed?.ref })).areas.map((a) => a.name)).toEqual(["One/Two"]);
+    expect(renderResult("group.manage", await list())).toContain(
+      `One/Two (0, id ${slashed?.id ?? ""})`,
+    );
+    // An archived One beside a live ONE: each exact name names its own, another spelling the live one.
+    await write({ action: "create", path: "Box/One" });
+    await write({ action: "archive", path: "Box/One" });
+    await write({ action: "create", path: "Box/Other" });
+    await write({ action: "rename", path: "Box/Other", to: "ONE" });
+    const box = (await list({ path: "Box" })).areas[0]?.projects ?? [];
+    expect(box.map((p) => [p.name, p.archived ?? false, p.ref])).toEqual([
+      ["One", true, undefined],
+      ["ONE", false, undefined],
+    ]);
+    const only = async (path: string) =>
+      (await list({ path })).areas[0]?.projects.map((p) => p.name);
+    expect(await only("Box/One")).toEqual(["One"]);
+    expect(await only("Box/one")).toEqual(["ONE"]);
+    // A project without an area has no path by name: its ID names it, for writes too.
+    await add(named, user, [{ title: "Fixture task in a loose project", project: "Loose" }]);
+    const loose = (await list()).projects.find((p) => p.name === "Loose");
+    expect(loose?.ref).toBe(loose?.id);
+    expect(await write({ action: "rename", path: loose?.ref, to: "Loose one" })).toMatchObject({
+      result: "renamed",
+      group: { kind: "project", name: "Loose one" },
+    });
+    expect((await list({ path: loose?.ref })).projects.map((p) => p.name)).toEqual(["Loose one"]);
+    // A new group takes a name: create given an ID says so.
+    const byId = await refusal(
+      call(named, script, "group.manage", {
+        action: "create",
+        path: loose?.ref,
+        request_id: rid(),
+      }),
+    );
+    expect(byId).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "path" }] } });
+    expect(byId.message).toBe("A new group takes a name, not an ID.");
   });
 
   test("a write action needs a request_id, a group and, to change one, a base; mode propose waits for M4.02", async () => {

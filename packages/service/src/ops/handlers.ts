@@ -17,7 +17,8 @@ import {
   AppError,
   FINISHED_CURSOR,
   fitsShape,
-  GROUP_LIMITS,
+  GROUP_CURSOR,
+  GROUP_PAGE,
   isKeyList,
   laterIn,
   AUTONOMY_IN_FORCE,
@@ -41,6 +42,7 @@ import {
   freeSlug,
   isId,
   newId,
+  normaliseSourceKey,
   type Id,
   type Operation,
   type OpResult,
@@ -122,7 +124,7 @@ import type { FolderMarkers } from "./marker.ts";
 import { repoName } from "./repo.ts";
 import { SearchCursors } from "../search/cursors.ts";
 import { runSearch, type SearchInput } from "../search/search.ts";
-import { editDistance, resolveGroup } from "./groups.ts";
+import { editDistance, fold, resolveGroup } from "./groups.ts";
 import {
   readCommit,
   readCommitTasks,
@@ -145,6 +147,7 @@ import {
   readSpace,
   readStatus,
   readTask,
+  readTaskLinks,
   readKeyHolders,
   readTaskKeys,
   readTaskRef,
@@ -161,6 +164,7 @@ import {
   type BindRead,
   type MoveRead,
   type Destination,
+  type GroupName,
   type GroupNames,
   type ProjectFolderRow,
 } from "./read.ts";
@@ -893,18 +897,130 @@ function draftPathOf(
   };
 }
 
+/** `refs` as a sentence lists them: "M-20", "M-20 and M-21", "M-20, M-21 and M-22". */
+const listed = (refs: readonly string[]): string =>
+  refs.length < 2 ? refs.join("") : `${refs.slice(0, -1).join(", ")} and ${refs.at(-1) ?? ""}`;
+
 /**
- * A1's `source_differs` (A3 3.4.6): a source that exists already keeps its metadata, and the reply
- * names the fields the input gave otherwise, by the input path of the source and the field names,
- * never a value. From the writer's result, so a replay warns the same.
+ * What a source the request added keeps or shares, from the writer's result, so a replay warns the
+ * same, by the input path of the source. A1's `source_differs` (A3 3.4.6): a source that exists
+ * already keeps its metadata, and the warning names the fields the input gave otherwise, never a
+ * value. `shared_key`: other active tasks hold the source's key too, so a capture of it asks which.
  */
-function differsWarnings(result: WriteResult, paths: ReadonlyMap<number, string>): string[] {
+function sourceWarnings(result: WriteResult, paths: ReadonlyMap<number, string>): string[] {
   return result.results.flatMap((op) => {
     const path = paths.get(op.i);
-    if (path === undefined || op.differs === undefined || op.differs.length === 0) return [];
-    return [
-      `The source at ${path} exists already and keeps its own ${op.differs.join(", ")} (source_differs).`,
-    ];
+    if (path === undefined) return [];
+    const warnings: string[] = [];
+    if (op.differs !== undefined && op.differs.length > 0) {
+      warnings.push(
+        `The source at ${path} exists already and keeps its own ${op.differs.join(", ")} (source_differs).`,
+      );
+    }
+    if (op.shared_with !== undefined && op.ref !== undefined) {
+      warnings.push(
+        `The source at ${path} is on ${listed(op.shared_with)} too: a capture of its key asks which of ${listed([op.ref, ...op.shared_with])} (shared_key).`,
+      );
+    }
+    return warnings;
+  });
+}
+
+const strings = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+
+/** The stand-in source of a link change in a request the writer replays. */
+const REPLAY_SOURCE = "s_00000000000000000000000000" as Id<"s">;
+
+/** A link a name resolved to: its source, and its version as read, when it was read. */
+interface NamedLink {
+  readonly source: Id<"s">;
+  readonly version?: number;
+}
+
+/**
+ * The links `names` name among all of a task's links, live and detached, at `path`: a source ID,
+ * or a key (normalised as it is stored) or URL that names one link. A name that fits several
+ * links is ambiguous and lists their IDs, whatever state each is in. Two names of one link are that
+ * link once. A name that fits none is not_found, except a source ID, which the writer decides.
+ */
+function linksNamed(links: readonly Row[], names: readonly string[], path: string): NamedLink[] {
+  const found = new Map<string, NamedLink>();
+  names.forEach((name, k) => {
+    const key = normaliseSourceKey(name) ?? name;
+    const fits = links.filter(
+      (row) =>
+        row["id"] === name ||
+        row["source_key"] === key ||
+        row["url"] === name ||
+        (row["source_key"] === null && row["ref"] === key),
+    );
+    const [one] = fits;
+    if (fits.length > 1) {
+      const ids = fits.map((row) => text(row["id"]));
+      throw new AppError({
+        code: "ambiguous",
+        message: "Several sources of the task have this key or URL.",
+        hint: `Name one by its ID: ${ids.join(", ")}.`,
+        data: {
+          issues: [{ path: `${path}.${String(k)}`, message: "Names several sources" }],
+          candidates: fits.map((row) => ({ id: text(row["id"]), title: text(row["title"]) })),
+        },
+      });
+    }
+    if (one !== undefined) {
+      const source = text(one["id"]) as Id<"s">;
+      found.set(source, { source, version: Number(one["version"]) });
+      return;
+    }
+    if (isId(name, "s")) {
+      found.set(name, { source: name });
+      return;
+    }
+    throw new AppError({
+      code: "not_found",
+      message: "No source of the task has this ID, key or URL.",
+      hint: "Read the task's sources for their IDs (ttasks show <task> --section sources).",
+      data: { issues: [{ path: `${path}.${String(k)}`, message: "Names no source of the task" }] },
+    });
+  });
+  return [...found.values()];
+}
+
+/**
+ * A put back refused because other active tasks hold the source's key: the writer names each
+ * holder's link in its conflicts, and this says where captures go, with the key from `links`.
+ * Undefined for any other refusal, such as a stale base on the task's own link.
+ */
+function keyHeld(error: unknown, task: Id<"t"> | undefined, links: readonly Row[]): unknown {
+  if (!(error instanceof AppError) || error.code !== "conflict" || task === undefined) {
+    return undefined;
+  }
+  const conflicts = (error.data["conflicts"] ?? []) as { task?: string; id?: string }[];
+  const held = new Map<string, string[]>();
+  for (const c of conflicts) {
+    const [holder, source] = (c.id ?? "").split("|");
+    if (holder === undefined || source === undefined || holder === task || c.task === undefined) {
+      return undefined;
+    }
+    held.set(source, [...(held.get(source) ?? []), c.task]);
+  }
+  if (held.size === 0) return undefined;
+  // A replay answers with the holders the request was refused for: they may hold it no more.
+  const then = error.data["replayed"] === true;
+  const said = [...held].map(([source, refs]) => {
+    const row = links.find((link) => link["id"] === source);
+    const key = typeof row?.["source_key"] === "string" ? row["source_key"] : "Its key";
+    if (then) return `${key} was on ${listed(refs)} when this was decided.`;
+    return refs.length === 1
+      ? `${key} is on ${listed(refs)} now: captures go there.`
+      : `${key} is on ${listed(refs)} now: a capture of it asks which.`;
+  });
+  return new AppError({
+    code: "conflict",
+    message: `${said.join(" ")} Nothing was put back.`,
+    hint: "Put it back once no other active task holds the key: finished, dropped, or the source detached from it.",
+    data: { ...error.data, reason: "key_held" },
   });
 }
 
@@ -2156,7 +2272,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           ...heldOf(result, sourcePaths, at(k)),
         };
       }),
-      warnings: madeFirst([...differsWarnings(result, sourcePaths), ...kept]),
+      warnings: madeFirst([...sourceWarnings(result, sourcePaths), ...kept]),
       ...replayed(result),
     };
   },
@@ -2231,6 +2347,43 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       sourcePaths.set(ops.length, at);
       ops.push({ kind: "source.add", task, source: sourceFields(source, at) });
     });
+    const detach = strings(input["remove_sources"]);
+    const putBack = strings(input["put_back_sources"]);
+    /** The task's links, live and detached: what the names name, and a refusal's keys. */
+    let links: Row[] = [];
+    let linkTask: Id<"t"> | undefined;
+    if (detach.length > 0 || putBack.length > 0) {
+      // A retry of a request that committed gets its first answer: the writer replays it before
+      // it stages anything, so the names are not resolved against the links as they are now.
+      const replay = await applied(call);
+      try {
+        links = await readTaskLinks(readerOf(call.space), task);
+      } catch (error) {
+        throw storageFailure(error);
+      }
+      const [first] = links;
+      if (first !== undefined) linkTask = text(first["task_id"]) as Id<"t">;
+      const stand = (names: string[]): NamedLink[] => names.map(() => ({ source: REPLAY_SOURCE }));
+      const detached = replay ? stand(detach) : linksNamed(links, detach, "remove_sources");
+      const back = replay ? stand(putBack) : linksNamed(links, putBack, "put_back_sources");
+      const both = replay ? -1 : back.findIndex((b) => detached.some((d) => d.source === b.source));
+      if (both >= 0) {
+        throw invalid(
+          `put_back_sources.${String(both)}`,
+          "Detach a source or put it back, not both",
+        );
+      }
+      // Without a base, each change is checked against the link's version as read just now.
+      const based = typeof input["base"] === "string";
+      const versioned = (link: NamedLink) =>
+        based || link.version === undefined ? {} : { link_version: link.version };
+      for (const link of detached) {
+        ops.push({ kind: "source.unlink", task, source: link.source, ...versioned(link) });
+      }
+      for (const link of back) {
+        ops.push({ kind: "source.relink", task, source: link.source, ...versioned(link) });
+      }
+    }
     // The folder last, so the other operations keep their indexes in a replay, which checks no
     // folder (draftFolders) and sends a stand-in when nothing else is in the request.
     const folder = set["folder"];
@@ -2260,21 +2413,28 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (clearFolder) ops.push({ kind: "task.folder_clear", task });
     fields.push(...Object.keys(set), ...clear);
     if (context !== undefined) fields.push("context");
-    if (added.length > 0) fields.push("sources");
+    if (added.length > 0 || detach.length > 0 || putBack.length > 0) fields.push("sources");
     if (ops.length === 0) throw invalid("set", "Nothing to change");
     // update_task changes an active task (A3 3.4.6): the writer refuses a completed or archived
-    // one with TASK_NOT_ACTIVE (wrong_tool), in the request's transaction, so it is receipted.
-    const result = ownResults(
-      await submit(call, [...groups, ...ops], {
-        active: true,
+    // one with TASK_NOT_ACTIVE (wrong_tool), in the request's transaction, so it is receipted. A
+    // request that only detaches or puts back sources also corrects a finished task, which still
+    // catches captures of its sources for a while.
+    const linksOnly = ops.every((op) => op.kind === "source.unlink" || op.kind === "source.relink");
+    let submitted: WriteResult;
+    try {
+      submitted = await submit(call, [...groups, ...ops], {
+        active: !linksOnly,
         inserted: { at: 0, count: groups.length },
         warnings: made,
         pathOf: (i, field) =>
           ops[i]?.kind === "task.patch" && field !== undefined && /^[a-z_]+$/u.test(field)
             ? `set.${field}`
             : undefined,
-      }),
-    );
+      });
+    } catch (error) {
+      throw keyHeld(error, linkTask, links) ?? error;
+    }
+    const result = ownResults(submitted);
     const updated = result.status === "applied";
     await markersAfter(call, ops, result, { move, cleared });
     const first = opAt(result, 0);
@@ -2291,7 +2451,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         : {}),
       as_of: result.as_of,
       warnings: madeFirst([
-        ...differsWarnings(result, sourcePaths),
+        ...sourceWarnings(result, sourcePaths),
         ...result.warnings,
         ...(updated && result.replayed !== true ? moveWarnings(move) : []),
       ]),
@@ -2403,7 +2563,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // A matched follow-up takes no folder, so its folder's warning does not apply.
     const matched = follow.map((_, k) => at(k)).filter((_, k) => outcomes[k]?.result === "exists");
     const warnings = madeFirst([
-      ...differsWarnings(result, sourcePaths),
+      ...sourceWarnings(result, sourcePaths),
       ...result.warnings.filter((w) => !matched.some((m) => w.startsWith(`${m}.`))),
     ]);
     const done = opAt(result, 0);
@@ -2692,6 +2852,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           "Pass base: the as_of of the answer that last listed the group.",
         );
       }
+      if (input["cursor"] !== undefined) throw invalid("cursor", "Only a list takes a cursor");
       return groupWrite(call, action);
     }
     if (input["folder"] !== undefined) throw invalid("folder", "A list takes no folder");
@@ -2704,12 +2865,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     } catch (error) {
       throw storageFailure(error);
     }
-    // `path` narrows the list to one area, named as a draft names one (groups.ts); of "Area/Project"
-    // the area. It only looks the area up, so an unknown one is not_found.
-    const area = String(input["path"]).split("/")[0]?.trim() ?? "";
-    const only =
-      names === undefined ? undefined : resolveGroup(names, "area", area, "path", { lookup: true });
-    return groupList(read, only);
+    // `path` narrows the list to the group it names, archived or not: an area with its projects,
+    // or one project.
+    const only = names === undefined ? undefined : namedGroup(names, groupPath(input));
+    const cursor = input["cursor"];
+    return groupList(read, {
+      ...listScope(call),
+      ...(only === undefined ? {} : { only }),
+      ...(typeof cursor === "string" ? { after: placeOf(cursor, read.space.id) } : {}),
+    });
   },
 
   "folder.manage": async (call) => {
@@ -2994,21 +3158,50 @@ const GROUP_DONE: Readonly<Record<string, string>> = {
   clear_folder: "folder_cleared",
 };
 
-/** The group a write names, by its path: `Area` or `Area/Project`. */
-interface GroupPath {
-  readonly area: string;
-  readonly project: string | undefined;
-}
+/**
+ * The group a call names by its path: `Area` or `Area/Project`, by name or ID, or a project's ID
+ * alone, which names one without an area or with a slash in its name too.
+ */
+type GroupPath =
+  | { readonly area: string; readonly project: string | undefined }
+  | { readonly area?: undefined; readonly project: string };
 
 function groupPath(input: Record<string, unknown>): GroupPath {
-  const parts = String(input["path"])
-    .split("/")
-    .map((part) => part.trim());
+  const whole = String(input["path"]).trim();
+  if (isId(whole, "p")) return { project: whole };
+  const parts = whole.split("/").map((part) => part.trim());
   const [area = "", project, ...more] = parts;
   if (area === "" || more.length > 0 || project === "") {
     throw invalid("path", "Expected Area or Area/Project", "Name the area, or the area/project.");
   }
   return { area, project };
+}
+
+/**
+ * The group a path names, archived or not: its area, and the project when it names one. It only
+ * looks the group up (groups.ts), so an unknown one is not_found.
+ */
+function namedGroup(
+  names: GroupNames,
+  path: GroupPath,
+): { readonly area: string | undefined; readonly project: string | undefined } {
+  const look = (kind: "area" | "project", name: string, area?: string) =>
+    resolveGroup(names, kind, name, "path", { lookup: true, area }) ?? "";
+  const area = path.area === undefined ? undefined : look("area", path.area);
+  if (path.project === undefined) return { area, project: undefined };
+  const project = look("project", path.project, area);
+  return { area: area ?? names.projects.find((p) => p.id === project)?.area ?? undefined, project };
+}
+
+/** The list a call reads: archived groups when it asks, and a page its face shows whole. */
+function listScope(call: Call, extra: Record<string, unknown> = {}): ListScope {
+  const { shows } = call.caller;
+  return {
+    archived: call.input["archived"] === true,
+    ...(shows === undefined
+      ? {}
+      : { shows: (page: Record<string, unknown>) => shows("group.manage", { ...page, ...extra }) }),
+  };
 }
 
 /** The group a write changed, as its result names it. */
@@ -3030,6 +3223,13 @@ interface WrittenGroup {
 async function groupWrite(call: Call, action: string): Promise<unknown> {
   const { input } = call;
   let path = groupPath(input);
+  /** The answer, after the list as of the write, so the caller sees the group where it is now. */
+  const answered = (read: GroupsHere | undefined, answer: Record<string, unknown>) => ({
+    ...(read === undefined
+      ? { areas: [], projects: [], total_areas: 0, total_projects: 0 }
+      : groupList(read, listScope(call, answer))),
+    ...answer,
+  });
   const to = typeof input["to"] === "string" ? input["to"].trim() : undefined;
   if ((action === "rename" || action === "move") && (to === undefined || to === "")) {
     throw invalid("to", `Required to ${action}`, action === "move" ? "Name the area." : undefined);
@@ -3068,7 +3268,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     // A retry of a decided write: the writer replays it. Its names and its folder are not looked
     // at again, since a rename it made would refuse its own retry; a stand-in operation carries it
     // to the writer.
-    const result = await submit(call, [{ kind: "area.create", title: path.area }]);
+    const result = await submit(call, [{ kind: "area.create", title: path.area ?? path.project }]);
     const read = await afterWrite(call, (reader) => readGroupsHere(call, reader));
     const kind = action === "move" || path.project !== undefined ? "project" : "area";
     const last = result.results.at(-1)?.id ?? "";
@@ -3077,10 +3277,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
         ? last
         : await afterWrite(call, (reader) => readFolderOwner(reader, last));
     const changed = result.status === "applied";
-    return {
-      ...(read === undefined
-        ? { areas: [], projects: [], total_areas: 0, total_projects: 0 }
-        : groupList(read, undefined)),
+    return answered(read, {
       action,
       as_of: result.as_of,
       result: changed ? (GROUP_DONE[action] ?? "no_change") : "no_change",
@@ -3091,7 +3288,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
         ...(folder === undefined ? {} : { folder: folder.stored }),
       },
       ...replayed(result),
-    };
+    });
   }
   let names: GroupNames;
   try {
@@ -3099,8 +3296,6 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   } catch (error) {
     throw storageFailure(error);
   }
-  const lookup = (kind: "area" | "project", name: string, area?: string): string =>
-    resolveGroup(names, kind, name, "path", { lookup: true, area }) ?? "";
   const titleOf = (kind: "area" | "project", id: string): string =>
     (kind === "area" ? names.areas : names.projects).find((g) => g.id === id)?.title ?? "";
   const ops: Operation[] = [];
@@ -3109,6 +3304,13 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   let move = NO_MOVE;
   let cleared: Cleared | undefined;
   if (action === "create") {
+    if (path.area === undefined) {
+      throw invalid(
+        "path",
+        "A new group takes a name, not an ID",
+        "This ID names a project that exists. To make another, give its name as Area/Project.",
+      );
+    }
     // The group created is created as named; an area named only to hold it keeps the typo check.
     let area = resolveGroup(names, "area", path.area, "path", {
       create: path.project === undefined,
@@ -3150,13 +3352,12 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
           // A folder another live project has here: that project, rather than a second one for it.
           if (taken !== undefined) {
             const list = await readGroupsHere(call, readerOf(call.space));
-            return {
-              ...groupList(list, undefined),
+            return answered(list, {
               action,
               as_of: read.space.asOf,
               result: "exists",
               group: { kind: "project", id: taken.project, name: taken.name, folder: taken.stored },
-            };
+            });
           }
           ops.push({ kind: "project.folder_set", project, path: folder.stored });
           group = { ...group, folder: folder.stored };
@@ -3165,9 +3366,9 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
       }
     } else if (ops.length === 0) group = { kind: "area", id: area, name: titleOf("area", area) };
   } else {
-    const kind = path.project === undefined ? "area" : "project";
-    const area = lookup("area", path.area);
-    const id = kind === "area" ? area : lookup("project", path.project ?? "", area);
+    const named = namedGroup(names, path);
+    const kind = named.project === undefined ? "area" : "project";
+    const id = named.project ?? named.area ?? "";
     group = { kind, id, name: titleOf(kind, id) };
     if (action === "rename") {
       const title = to ?? "";
@@ -3225,25 +3426,23 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     replay = result.replayed === true;
     if (result.status === "applied") outcome = done;
   }
-  // The list as of the write, so the caller sees the group where it is now.
   let read: GroupsHere;
   try {
     read = await readGroupsHere(call, readerOf(call.space));
   } catch (error) {
     throw storageFailure(error);
   }
-  return {
-    ...groupList(read, undefined),
+  return answered(read, {
     action,
     as_of: asOf ?? read.space.asOf,
     result: outcome,
     group,
     ...(outcome !== "no_change" && !replay ? moveAnswer(move) : {}),
     ...(replay ? { replayed: true } : {}),
-  };
+  });
 }
 
-/** The space's active areas and projects, and the projects' folders on this machine. */
+/** The space's areas and projects, and the projects' folders on this machine. */
 interface GroupsHere extends Awaited<ReturnType<typeof readGroups>> {
   /** A project's folder here, and the name of the repository it holds, by the project's ID. */
   readonly folders: ReadonlyMap<string, { readonly stored: string; readonly repo?: string }>;
@@ -3292,34 +3491,238 @@ function groupRow(
   };
 }
 
+/** Which groups an organize list holds, and where its page starts. */
+interface ListScope {
+  /** Archived groups too. */
+  readonly archived: boolean;
+  /** One area with its projects; with `project`, that project alone under its area, if any. */
+  readonly only?: { readonly area?: string | undefined; readonly project?: string | undefined };
+  /** The place in the list's order after which the page starts: the cursor of the page before. */
+  readonly after?: Place;
+  /** Whether the caller's face shows a page whole (Caller.shows): a page holds what it shows. */
+  readonly shows?: ((page: Record<string, unknown>) => boolean) | undefined;
+}
+
 /**
- * The areas and their projects (A3 3.4.10), in the space's order: at most GROUP_LIMITS.areas areas,
- * each with at most GROUP_LIMITS.projects projects and the count of those left out, and the
- * projects without an area. `only` keeps one area.
+ * A place in the list's order: an area's position and ID, or none for the projects without an
+ * area, which come after every area; then a project's position and ID, or none for the area
+ * itself, which comes before its projects.
  */
-function groupList(read: GroupsHere, only: string | undefined): Record<string, unknown> {
-  const areas = read.areas.filter((row) => only === undefined || row["id"] === only);
-  const projectsOf = (area: unknown) => read.projects.filter((p) => p["area_id"] === area);
-  const loose = read.projects.filter(
-    (p) => p["area_id"] === null || !read.areas.some((a) => a["id"] === p["area_id"]),
-  );
-  const project = (row: Row) => groupRow(row, read.folders);
+interface Place {
+  readonly area?: readonly [string, string];
+  readonly project?: readonly [string, string];
+}
+
+const comparePair = (a: readonly [string, string], b: readonly [string, string]): number =>
+  a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0;
+
+function comparePlaces(a: Place, b: Place): number {
+  if (a.area === undefined || b.area === undefined) {
+    if (a.area !== b.area) return a.area === undefined ? 1 : -1;
+  } else {
+    const area = comparePair(a.area, b.area);
+    if (area !== 0) return area;
+  }
+  if (a.project === undefined || b.project === undefined) {
+    return a.project === b.project ? 0 : a.project === undefined ? -1 : 1;
+  }
+  return comparePair(a.project, b.project);
+}
+
+/**
+ * A place in a space's list as a cursor: the space's ID, `<position>.<area ID>` or `~`, then
+ * `.<position>.<project ID>`.
+ */
+const cursorOf = (space: string, place: Place): string =>
+  [space, ...(place.area ?? ["~"]), ...(place.project ?? [])].join(".");
+
+/** The place a cursor names in the list of `space`, whose list gave it. */
+function placeOf(cursor: string, space: string): Place {
+  if (!GROUP_CURSOR.test(cursor)) {
+    throw invalid("cursor", "The cursor is damaged", "Start the list again without a cursor.");
+  }
+  const [from, ...parts] = cursor.split(".");
+  if (from !== space) {
+    throw invalid(
+      "cursor",
+      "The cursor is from another space's list",
+      "Start the list again without a cursor, or pass it with the space it came from.",
+    );
+  }
+  const loose = parts[0] === "~";
+  const area = loose ? undefined : ([parts[0] ?? "", parts[1] ?? ""] as const);
+  const project = parts.slice(loose ? 1 : 2);
   return {
-    action: "list",
-    as_of: read.space.asOf,
-    areas: areas.slice(0, GROUP_LIMITS.areas).map((row) => {
-      const projects = projectsOf(row["id"]);
-      const more = projects.length - GROUP_LIMITS.projects;
-      return {
-        ...groupRow(row),
-        projects: projects.slice(0, GROUP_LIMITS.projects).map(project),
-        ...(more > 0 ? { more_projects: more } : {}),
-      };
+    ...(area === undefined ? {} : { area }),
+    ...(project.length === 2 ? { project: [project[0] ?? "", project[1] ?? ""] as const } : {}),
+  };
+}
+
+/** A group in the list's order: an area, or a project under its area or under none. */
+interface Slot {
+  readonly kind: "area" | "project";
+  readonly row: Row;
+  readonly home?: Row;
+  readonly place: Place;
+}
+
+/**
+ * The areas, each followed by its projects, then the projects without an area, in the space's
+ * order and at most GROUP_PAGE groups a page (A3 3.4.10). A deleted group is never shown, an
+ * archived one when the caller asks for archived groups or names it, and an area whenever it holds
+ * a project shown. The cursor is the place of the page's last group, so the next page goes on from
+ * there in the order as it is then: a group moved since is met at its new place or not again, and
+ * none that stayed put is skipped.
+ */
+function groupList(read: GroupsHere, scope: ListScope): Record<string, unknown> {
+  const pair = (row: Row) => [String(row["position"]), String(row["id"])] as const;
+  const areasById = new Map(read.areas.map((a) => [a["id"], a]));
+  const order: Slot[] = [
+    ...[...areasById.values()].map((row): Slot => ({
+      kind: "area",
+      row,
+      place: { area: pair(row) },
+    })),
+    ...read.projects.map((row): Slot => {
+      const home = areasById.get(row["area_id"]);
+      return home === undefined
+        ? { kind: "project", row, place: { project: pair(row) } }
+        : { kind: "project", row, home, place: { area: pair(home), project: pair(row) } };
     }),
-    projects: only === undefined ? loose.slice(0, GROUP_LIMITS.projects).map(project) : [],
-    total_areas: areas.length,
-    total_projects:
-      only === undefined ? read.projects.length : areas.flatMap((a) => projectsOf(a["id"])).length,
+  ].sort((a, b) => comparePlaces(a.place, b.place));
+  const { only } = scope;
+  const listed = (row: Row) =>
+    scope.archived ||
+    row["lifecycle"] === "active" ||
+    row["id"] === only?.area ||
+    row["id"] === only?.project;
+  const projectShown = (slot: Slot) =>
+    slot.kind === "project" &&
+    listed(slot.row) &&
+    (only === undefined ||
+      (only.project === undefined
+        ? slot.home?.["id"] === only.area
+        : slot.row["id"] === only.project));
+  const homes = new Set(order.filter(projectShown).map((slot) => slot.home?.["id"]));
+  const shown = (slot: Slot) =>
+    slot.kind === "project"
+      ? projectShown(slot)
+      : only === undefined
+        ? listed(slot.row) || homes.has(slot.row["id"])
+        : only.project === undefined
+          ? slot.row["id"] === only.area
+          : homes.has(slot.row["id"]);
+  const all = order.filter(shown);
+  const { after } = scope;
+  const rest = after === undefined ? all : all.filter((s) => comparePlaces(s.place, after) > 0);
+  const refOf = groupRefs(read, areasById);
+  const row = (group: Row, folders?: GroupsHere["folders"]) => {
+    const ref = refOf(group);
+    return {
+      ...groupRow(group, folders),
+      ...(group["lifecycle"] === "active" ? {} : { archived: true }),
+      ...(ref === undefined ? {} : { ref }),
+    };
+  };
+  const pageOf = (count: number): Record<string, unknown> => {
+    const page = rest.slice(0, count);
+    const areas: { id: string; projects: unknown[] }[] = [];
+    const projects: unknown[] = [];
+    for (const slot of page) {
+      if (slot.kind === "area") {
+        areas.push({ ...row(slot.row), projects: [] });
+      } else if (slot.home === undefined) {
+        projects.push(row(slot.row, read.folders));
+      } else {
+        // A page that starts inside an area shows that area above the rest of its projects.
+        if (areas.at(-1)?.id !== slot.home["id"]) areas.push({ ...row(slot.home), projects: [] });
+        areas.at(-1)?.projects.push(row(slot.row, read.folders));
+      }
+    }
+    const last = page.at(-1);
+    return {
+      action: "list",
+      as_of: read.space.asOf,
+      areas,
+      projects,
+      total_areas: all.filter((slot) => slot.kind === "area").length,
+      total_projects: all.filter((slot) => slot.kind === "project").length,
+      ...(rest.length > count && last !== undefined
+        ? { cursor: cursorOf(read.space.id, last.place) }
+        : {}),
+    };
+  };
+  // The most groups the caller's face shows whole: the next page starts at the first it would cut.
+  let count = Math.min(GROUP_PAGE, rest.length);
+  const { shows } = scope;
+  if (shows !== undefined && count > 1 && !shows(pageOf(count))) {
+    let low = 1;
+    let high = count - 1;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (shows(pageOf(mid))) low = mid;
+      else high = mid - 1;
+    }
+    count = low;
+  }
+  return pageOf(count);
+}
+
+/**
+ * The ID of each group whose name alone does not name it as a path would (groups.ts): its name
+ * holds a slash, another group's name or slug is the same name and wins or ties with it, or it is a
+ * project without an area, which no path names by name.
+ */
+function groupRefs(
+  read: GroupsHere,
+  areasById: ReadonlyMap<unknown, Row>,
+): (row: Row) => string | undefined {
+  const named = (row: Row, area: string | null): GroupName => ({
+    id: String(row["id"]),
+    slug: String(row["slug"]),
+    title: String(row["title"]),
+    area,
+    ...(row["lifecycle"] === "active" ? {} : { archived: true }),
+  });
+  const areas = [...areasById.values()].map((row) => named(row, null));
+  const projects = read.projects.map((row) =>
+    named(row, areasById.has(row["area_id"]) ? String(row["area_id"]) : null),
+  );
+  // The groups of one kind, and of one area for projects, by each key a name matches them by:
+  // only groups under one key can tie.
+  const keyOf = (kind: string, area: string | null, key: string) =>
+    `${kind}\n${area ?? ""}\n${key}`;
+  const index = new Map<string, GroupName[]>();
+  const add = (kind: string, group: GroupName) => {
+    for (const key of new Set([fold(group.title), group.slug])) {
+      const at = keyOf(kind, group.area, key);
+      index.set(at, [...(index.get(at) ?? []), group]);
+    }
+  };
+  for (const group of areas) add("area", group);
+  for (const group of projects) add("project", group);
+  const kinds = new Map<string, "area" | "project">([
+    ...areas.map((g) => [g.id, "area"] as const),
+    ...projects.map((g) => [g.id, "project"] as const),
+  ]);
+  const byId = new Map([...areas, ...projects].map((group) => [group.id, group]));
+  return (row) => {
+    const id = String(row["id"]);
+    const group = byId.get(id);
+    const kind = kinds.get(id);
+    if (group === undefined || kind === undefined) return undefined;
+    if (group.title.includes("/") || (kind === "project" && group.area === null)) return id;
+    const rivals = index.get(keyOf(kind, group.area, fold(group.title))) ?? [];
+    if (rivals.length <= 1) return undefined;
+    const names = { areas: rivals, projects: rivals, aliases: [] };
+    try {
+      const area = group.area ?? undefined;
+      return resolveGroup(names, kind, group.title, "path", { lookup: true, area }) === id
+        ? undefined
+        : id;
+    } catch {
+      return id;
+    }
   };
 }
 

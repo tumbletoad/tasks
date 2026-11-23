@@ -34,6 +34,12 @@ the behaviour it describes, and keep each one to a sentence or two.
 - New work that also names a source of its own is never folded into the task that holds a shared
   one, such as a ticket two tasks are about: it becomes its own task, linked to the shared source,
   and the answer says which task holds that source.
+- A source detached from a task, by you or an agent, no longer brings captures of its item there,
+  and Put back brings the same link back. While another active task holds its key, captures go
+  there and Put back on an active task is refused, naming that task. Adding the source again on
+  purpose links it, and the answer says that a capture of it now asks which task.
+- A finished task takes a detached source back even while an active task holds its key, and
+  captures still go to the active one. Reopening that finished task makes them ask which of the two.
 
 ## Backups, restore and export
 
@@ -267,6 +273,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   other has. A restore over a space, or a claim of a copy, goes on from the backup's counter when
   the earlier space's database cannot be read at all.
 - A command repeated without its request ID is a new change: a note added twice is there twice.
+- A project that is moved or reordered past the place a list of areas and projects has reached,
+  while that list is read page by page, can be listed twice or not at all.
 - Everything started inside a terminal agent while it runs counts as that task's session: a new
   conversation in the same window, a helper agent, or a program it leaves running.
 - Changes by Claude Desktop, the Codex app, T3 Code for now, or an agent a brief was pasted into

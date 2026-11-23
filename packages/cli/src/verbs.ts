@@ -250,7 +250,11 @@ export async function runVerb(
       const printed = globals.json
         ? `${JSON.stringify(result)}\n`
         : !globals.quiet || !write
-          ? render(verb.entry, result, spaceName(open, globals, result))
+          ? render(verb.entry, result, spaceName(open, globals, result), {
+              space: globals.space,
+              archived: sent["archived"] === true,
+              platform: io.platform,
+            })
           : "";
       // A verb with its own output (`ttasks brief --copy`) is given the result and what it would
       // print.

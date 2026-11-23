@@ -1,7 +1,13 @@
 // The texts of the tools M4.01 lists (A3 3.4.3, 3.4.5, 3.4.9 to 3.4.12, 3.9.4, 3.10): A3's example
 // results read as A3 shows them, every name a user or an agent can edit stays inside the data
 // block, and the longest results stay within their budgets and say what was cut.
-import { findEntry, resultTokens, TaskAddResult, type AnyEntry } from "@ttasks/contracts";
+import {
+  findEntry,
+  GROUP_PAGE,
+  resultTokens,
+  TaskAddResult,
+  type AnyEntry,
+} from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import { renderError, renderResult } from "./render.ts";
 import { DATA_WORD, closeMarker, openMarker } from "./text.ts";
@@ -81,7 +87,8 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
     expect(list.outside).toEqual([`2 areas · 2 projects · as_of ${AS_OF}`]);
     expect(list.inside).toEqual([
       "Client work (7)",
-      "  Lumen Health (4) · Brightside Bikes (3)",
+      "  Lumen Health (4)",
+      "  Brightside Bikes (3)",
       "Learning (1)",
     ]);
     const created = split(renderResult("group.manage", example("group.manage", 1)));
@@ -303,7 +310,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
     expect(finishText).not.toContain(CJK.slice(0, 4));
   });
 
-  test("a page of 50 search rows and fifty areas at the limits stay within budget and say the cut", () => {
+  test("a page of 50 search rows and a page of groups at the limits stay within budget and say the cut", () => {
     const rows = Array.from({ length: 50 }, (_, n) => ({
       kind: "task",
       id: `t_${"0".repeat(24)}${String(n).padStart(2, "0")}`,
@@ -330,25 +337,32 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       rows,
       cursor: "c_7m2k9q4w1z8r3c6d",
     };
+    // A page of groups at their limits: names of 120 wide characters and long folders.
     const groups = {
       action: "list",
       as_of: AS_OF,
-      areas: Array.from({ length: 50 }, (_, n) => ({
-        id: `a_${"0".repeat(24)}${String(n).padStart(2, "0")}`,
-        slug: "s".repeat(60),
-        name: cjk(120),
-        active: 999_999,
-        projects: Array.from({ length: 15 }, (_, m) => ({
-          id: `p_${"0".repeat(24)}${String(m).padStart(2, "0")}`,
+      areas: [
+        {
+          id: `a_${"0".repeat(26)}`,
           slug: "s".repeat(60),
           name: cjk(120),
           active: 999_999,
-        })),
-        more_projects: 85,
-      })),
+          archived: true,
+          projects: Array.from({ length: GROUP_PAGE - 1 }, (_, m) => ({
+            id: `p_${"0".repeat(24)}${String(m).padStart(2, "0")}`,
+            slug: "s".repeat(60),
+            name: cjk(120),
+            active: 999_999,
+            folder: `~/${"f".repeat(200)}`,
+            repo: "r".repeat(100),
+            archived: true,
+          })),
+        },
+      ],
       projects: [],
-      total_areas: 50,
+      total_areas: 1,
       total_projects: 5_000,
+      cursor: `sp_${"0".repeat(26)}.a0.a_${"0".repeat(26)}.a1.p_${"0".repeat(24)}${String(GROUP_PAGE - 2).padStart(2, "0")}`,
     };
     for (const [name, result] of [
       ["task.search", page],
@@ -359,6 +373,10 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       expect(resultTokens(text), name).toBeLessThanOrEqual(max(name));
       expect(text, name).toMatch(/\+\d+ more lines? not shown\. \S/);
       // The next page and the header are never cut.
+      if (name === "group.manage") {
+        expect(text).toContain(`cursor "${groups.cursor}", and the same path and archived`);
+        expect(text).toContain(`  ${cjk(120)} [`);
+      }
       if (name === "task.search") {
         expect(text).toContain('Next page: search with cursor "c_7m2k9q4w1z8r3c6d"');
         expect(text.split("\n")[0]).toBe(

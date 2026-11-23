@@ -263,6 +263,16 @@
   "source.refWho": "{ref} {title} · {who}",
   "source.whoSuffix": "· {who}",
   "source.tip": "{domain} · {url}",
+  "source.remove": "Remove",
+  "source.notRemoved": "The source was not removed. Try again.",
+  "source.removedCount": "{count, plural, one {# source removed} other {# sources removed}}",
+  "source.show": "Show",
+  "source.hide": "Hide",
+  "source.removedBy": "· removed by {who, select, user {you} import {the import} other {{who}}} {at, date, medium}",
+  "source.putBack": "Put back",
+  "source.notPutBack": "The source was not put back. Try again.",
+  "source.capturesTo": "{count, plural, one {· captures go to} other {· a capture asks which of}}",
+  "source.capturesMore": " and {count} more",
   "source.kind": "{kind, select, email {Mail} chat {Chat} ticket {Ticket} pr {Pull request} issue {Issue} doc {Document} calendar {Event} crash {Crash} session {Session} book {Book} web {Web page} other {Source}}",
 
   "place.missing": "· not found on this machine",
@@ -601,6 +611,11 @@
   "area.label": "Area and project",
   "area.search": "Find an area or project",
   "area.empty": "No area or project matches",
+  "area.new": "New area “{name}”",
+  "area.archived": "archived",
+  "area.added": "Area {name} added",
+  "area.notAdded": "The area was not added. Try again.",
+  "area.addedNotMoved": "Area {name} added, and the task stayed where it was. {why}",
 
   "ask.tip": "Ask an agent to change this",
   "ask.summary": "Change the summary: ",
@@ -692,5 +707,7 @@
   "toast.projectAdded": "Project {name} added",
   "toast.folderSet": "Folder set to {folder}{count, plural, =0 {} one {. # folder inside the old one moved along: {names}} other {. # folders inside the old one moved along: {names}}}",
   "toast.folderSetStayed": "Folder set to {folder}. The old folder is still there, so {count, plural, one {# folder} other {# folders}} inside it stayed: {names}",
-  "toast.folderCleared": "Folder cleared"
+  "toast.folderCleared": "Folder cleared",
+  "toast.sourceRemoved": "Source removed from {ref}",
+  "toast.sourcePutBack": "Source put back on {ref}"
 }

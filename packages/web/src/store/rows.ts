@@ -74,6 +74,7 @@ export interface RowRun {
 
 /** A source as the row shows it: its kind and its own text, never a label. */
 export interface RowSource {
+  readonly id: string;
   readonly kind: string;
   readonly title: string;
   readonly who?: string;
@@ -153,6 +154,7 @@ export interface AreaRow {
   readonly title: string;
   readonly position: string;
   readonly color?: number | string;
+  readonly lifecycle?: string;
   readonly deleted_at?: number;
 }
 
@@ -161,6 +163,7 @@ export interface ProjectRow {
   readonly area_id?: string;
   readonly title: string;
   readonly position: string;
+  readonly lifecycle?: string;
   readonly deleted_at?: number;
 }
 
@@ -440,6 +443,7 @@ export function areaRow(value: unknown): AreaRow | undefined {
     !isString(v["title"]) ||
     !isString(v["position"]) ||
     !optional(v["color"], (c) => isString(c) || isNumber(c)) ||
+    !optional(v["lifecycle"], isString) ||
     !optional(v["deleted_at"], isNumber)
   ) {
     return undefined;
@@ -455,6 +459,7 @@ export function projectRow(value: unknown): ProjectRow | undefined {
     !isString(v["title"]) ||
     !isString(v["position"]) ||
     !optional(v["area_id"], isString) ||
+    !optional(v["lifecycle"], isString) ||
     !optional(v["deleted_at"], isNumber)
   ) {
     return undefined;

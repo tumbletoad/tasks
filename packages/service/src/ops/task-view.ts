@@ -304,13 +304,14 @@ export function sectionsOf(
         break;
       }
       case "sources":
+        // The live links in their order, then those detached from the task, newest first.
         add(
-          read.sources.slice(skip).map((source, i) => {
+          [...read.sources, ...read.removedSources].slice(skip).map((source, i) => {
             const value = sourceOf(source);
             return {
               value,
               key: skip + i + 1,
-              extra: Object.values(value).reduce((n, v) => n + bytes(v), 0),
+              extra: bytes(JSON.stringify(value)),
             };
           }),
         );

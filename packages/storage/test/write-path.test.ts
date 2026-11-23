@@ -364,6 +364,8 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
       "note.add",
       "log.add",
       "source.add",
+      "source.unlink",
+      "source.relink",
       "place.set",
       "place.clear",
       "area.create",
