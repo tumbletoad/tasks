@@ -445,11 +445,14 @@ export function codexDriver(session: CodexSession): OpenDriver {
     /** Whether the person is asked something: by a request, or by a message of the present turn. */
     const asking = (): boolean =>
       state.asked !== null || [...turn.messages.values()].some((m) => m.asks !== null);
-    /** Whether the turn's last answer is still to complete, and may within its wait. */
+    /**
+     * Whether the turn's answer may still come within its wait: its last answer is not complete,
+     * or the summary named none and no answer was seen yet (its messages can follow the summary).
+     */
     const arriving = (): boolean => {
       if (turn.named !== null || turn.waited) return false;
       const last = [...turn.messages.values()].findLast((m) => answers(m.phase));
-      return last !== undefined && !last.done;
+      return last === undefined || !last.done;
     };
 
     /** Settles once the turn completed and nothing it started still runs. */
@@ -799,6 +802,14 @@ export function codexDriver(session: CodexSession): OpenDriver {
       ended: () => {
         rpc.close();
         if (done) return;
+        // The turn had completed and only its last words were waited for: they will not come now,
+        // and the work is as the turn said. Once that settled it, the lines below change nothing.
+        if (late !== undefined) {
+          clearTimeout(late);
+          late = undefined;
+          turn.waited = true;
+          check();
+        }
         // The server ended while the work went on, background work included: it did not finish.
         if (state.stopping) finish("interrupted");
         else if (!state.heard && state.thread === null) finish("no_output");
