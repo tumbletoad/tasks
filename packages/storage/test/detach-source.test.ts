@@ -303,6 +303,29 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
     },
   );
 
+  test("an add of a detached pair while another active task holds the key links it again, and says the key is shared", () => {
+    const a = capture([ticket("jira:FIX-1")]);
+    const fix1 = sourceOf("jira:FIX-1");
+    applied(unlink(a, fix1));
+    const c = capture([ticket("jira:FIX-1")]);
+    const cRef = `M-${String(one("SELECT ref FROM tasks WHERE id = $c", { c }))}`;
+    const added = applied(
+      send("codex", [{ kind: "source.add", task: a, source: ticket("jira:FIX-1") }], {
+        base: fx.base(),
+      }),
+    );
+    expect(added.results[0]).toMatchObject({ status: "updated", id: fix1, shared_with: [cRef] });
+    expect(holders("jira:FIX-1")).toEqual([a, c].sort());
+    expect(Number(one("SELECT count(*) FROM sources"))).toBe(1);
+    expect(Number(one("SELECT count(*) FROM task_sources"))).toBe(2);
+    const next = newId("t");
+    const found = send("codex", [
+      { kind: "task.create", id: next, title: "Answer again" },
+      { kind: "source.add", task: next, source: ticket("jira:FIX-1") },
+    ]);
+    expect(found.results[0]?.ambiguous).toHaveLength(2);
+  });
+
   test("a holder that detached the source itself, or was deleted, holds the key no more", () => {
     const a = capture([ticket("jira:FIX-1")]);
     const fix1 = sourceOf("jira:FIX-1");

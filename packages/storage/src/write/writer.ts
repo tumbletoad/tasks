@@ -600,6 +600,11 @@ const SQL = {
   removeLink:
     "UPDATE task_sources SET removed_at = $at WHERE task_id = $task AND source_id = $source",
   undoOf: "SELECT undo_of FROM commits WHERE seq = $seq",
+  sharedWith:
+    "SELECT t.ref FROM task_sources ts JOIN tasks t ON t.id = ts.task_id " +
+    "JOIN sources s ON s.id = ts.source_id WHERE ts.source_id = $source AND ts.task_id <> $task " +
+    "AND ts.removed_at IS NULL AND s.source_key IS NOT NULL AND t.deleted_at IS NULL " +
+    "AND t.lifecycle = 'active' ORDER BY t.ref",
   linkVersions:
     "UPDATE task_sources SET version = $seq, fv = $fv, fp = $fp " +
     "WHERE task_id = $task AND source_id = $source",
@@ -2724,6 +2729,7 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           version: new RowReader("task_sources", link).int("version", "seq"),
           ...(differs === undefined || differs.length === 0 ? {} : { differs }),
           ...(staged.heldBy === undefined ? {} : { held_by: refOf(staged.heldBy) }),
+          ...sharedWith(conn, run, task, staged.target, link),
         };
       }
       case "source.unlink":
@@ -3147,6 +3153,25 @@ function follows(op: Operation, match: Match): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * `source.add`'s `shared_with`: the other active tasks a live link joins to the keyed `source`,
+ * when `task`'s own `link` is live and the task active after the request.
+ */
+function sharedWith(
+  conn: Connection,
+  run: Execution,
+  task: Id<"t">,
+  source: string,
+  link: Row,
+): { shared_with?: string[] } {
+  if (link["removed_at"] !== null || readTask(conn, task).lifecycle !== "active") return {};
+  const refs = conn
+    .prepare(SQL.sharedWith)
+    .all({ task, source })
+    .map((row) => formatTaskRef(run.plan.refPrefix, new RowReader("tasks", row).int("ref", "taskRef")));
+  return refs.length === 0 ? {} : { shared_with: refs };
 }
 
 /**

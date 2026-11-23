@@ -891,18 +891,32 @@ function draftPathOf(
   };
 }
 
+/** `refs` as a sentence lists them: "M-20", "M-20 and M-21", "M-20, M-21 and M-22". */
+const listed = (refs: readonly string[]): string =>
+  refs.length < 2 ? refs.join("") : `${refs.slice(0, -1).join(", ")} and ${refs.at(-1) ?? ""}`;
+
 /**
- * A1's `source_differs` (A3 3.4.6): a source that exists already keeps its metadata, and the reply
- * names the fields the input gave otherwise, by the input path of the source and the field names,
- * never a value. From the writer's result, so a replay warns the same.
+ * What a source the request added keeps or shares, from the writer's result, so a replay warns the
+ * same, by the input path of the source. A1's `source_differs` (A3 3.4.6): a source that exists
+ * already keeps its metadata, and the warning names the fields the input gave otherwise, never a
+ * value. `shared_key`: other active tasks hold the source's key too, so a capture of it asks which.
  */
-function differsWarnings(result: WriteResult, paths: ReadonlyMap<number, string>): string[] {
+function sourceWarnings(result: WriteResult, paths: ReadonlyMap<number, string>): string[] {
   return result.results.flatMap((op) => {
     const path = paths.get(op.i);
-    if (path === undefined || op.differs === undefined || op.differs.length === 0) return [];
-    return [
-      `The source at ${path} exists already and keeps its own ${op.differs.join(", ")} (source_differs).`,
-    ];
+    if (path === undefined) return [];
+    const warnings: string[] = [];
+    if (op.differs !== undefined && op.differs.length > 0) {
+      warnings.push(
+        `The source at ${path} exists already and keeps its own ${op.differs.join(", ")} (source_differs).`,
+      );
+    }
+    if (op.shared_with !== undefined && op.ref !== undefined) {
+      warnings.push(
+        `The source at ${path} is on ${listed(op.shared_with)} too: a capture of its key asks which of ${listed([op.ref, ...op.shared_with])} (shared_key).`,
+      );
+    }
+    return warnings;
   });
 }
 
@@ -966,10 +980,6 @@ function linksNamed(links: readonly Row[], names: readonly string[], path: strin
   });
   return [...found.values()];
 }
-
-/** `refs` as a sentence lists them: "M-20", "M-20 and M-21", "M-20, M-21 and M-22". */
-const listed = (refs: readonly string[]): string =>
-  refs.length < 2 ? refs.join("") : `${refs.slice(0, -1).join(", ")} and ${refs.at(-1) ?? ""}`;
 
 /**
  * A put back refused because other active tasks hold the source's key: the writer names each
@@ -2253,7 +2263,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           ...heldOf(result, sourcePaths, at(k)),
         };
       }),
-      warnings: madeFirst([...differsWarnings(result, sourcePaths), ...kept]),
+      warnings: madeFirst([...sourceWarnings(result, sourcePaths), ...kept]),
       ...replayed(result),
     };
   },
@@ -2432,7 +2442,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         : {}),
       as_of: result.as_of,
       warnings: madeFirst([
-        ...differsWarnings(result, sourcePaths),
+        ...sourceWarnings(result, sourcePaths),
         ...result.warnings,
         ...(updated && result.replayed !== true ? moveWarnings(move) : []),
       ]),
@@ -2544,7 +2554,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // A matched follow-up takes no folder, so its folder's warning does not apply.
     const matched = follow.map((_, k) => at(k)).filter((_, k) => outcomes[k]?.result === "exists");
     const warnings = madeFirst([
-      ...differsWarnings(result, sourcePaths),
+      ...sourceWarnings(result, sourcePaths),
       ...result.warnings.filter((w) => !matched.some((m) => w.startsWith(`${m}.`))),
     ]);
     const done = opAt(result, 0);

@@ -234,6 +234,12 @@ export interface OpResult {
    * source was linked without the key (Dedupe.decide).
    */
   held_by?: string;
+  /**
+   * A keyed `source.add` that leaves its link live on an active task: the other active tasks whose
+   * live link to that source holds the key too, lowest reference first. A capture of the key asks
+   * between them and this task.
+   */
+  shared_with?: string[];
   /** A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). */
   matched_by?: "source_key";
   lifecycle?: TaskLifecycle;
