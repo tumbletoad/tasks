@@ -21,7 +21,20 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Checking off a task completes it at once and can be undone.
 - Wrapping up a task keeps its context, notes, activity and sources. Reopening keeps the earlier
   outcome and what was learned.
-- Deleting a task keeps its contents and history recoverable. Nothing empties the trash by itself.
+- Moving a task to the Trash deletes nothing: its notes, log, sources and history stay, nothing
+  empties the Trash, and Restore brings it back as it was. A task whose project or area is gone
+  comes back in its area, or the Inbox. A task someone changed since you looked is not moved.
+- A task in the Trash changes only by Restore: its card is for reading, and what you typed for it
+  stays as you typed it. A task whose creation you undid is not in the Trash: Redo brings it back
+  whole.
+- A restored task never takes a source back from a task that took it meanwhile: captures go on
+  there, and the restored task lists the source as removed, saying where captures go.
+- A run working on a task you move to the Trash goes on, and stays on the Agents page with its Stop
+  as long as it would for any task. A run that finishes leaves the page as any task's does: its
+  answer stays in the task's thread, which the Trash opens. An agent in a terminal that TTasks
+  started for the task goes on until you stop it in its terminal, and shows on the Agents page until
+  it ends, with or without the Agent Monitor. Only you move tasks to the Trash and back for now:
+  agents cannot.
 - A task's reference, such as M-14, is not given to another task when the task is deleted or its
   creation is undone, when a backup is restored over the space, or when a restored copy is claimed.
 - Adding work by a source that an open task or a recently finished one already has finds that task
@@ -267,7 +280,7 @@ the behaviour it describes, and keep each one to a sentence or two.
 - An agent with a shell can edit your skill files, and every agent then follows the change.
 - TTasks cannot make an agent ignore instructions hidden in a task, a mail or another source it
   reads.
-- Undo does not unsend a mail, reverse a commit or undo anything done outside TTasks.
+- Undo and Restore do not unsend a mail, reverse a commit or undo anything done outside TTasks.
 - Undo steps back through your own changes. A change by an agent or a script is not on it, and
   nothing from before the last upgrade that changed the data format can be undone.
 - Two copies of one space that both take changes, such as a restored copy and its original used
@@ -319,6 +332,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   afterwards, writes its own list of spaces back, and the next start follows that list.
 - On a machine that several people sign in to, another person could serve a page at TTasks's
   address while TTasks is stopped.
+- Words you typed and did not send for a task in the Trash, or for one the space does not have now,
+  stay in this browser, listed at the foot of the Trash with drafts, notes and field edits, until
+  you discard them.
 - A field edit that could not be saved is kept in this browser. Another browser does not have it,
   clearing the browser's data for the page loses it, and a browser whose storage is blocked or full
   keeps it only until the page is reloaded or closed. When two tabs hold different unsaved values

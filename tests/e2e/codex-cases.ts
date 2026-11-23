@@ -7,8 +7,9 @@
  * - `ask`: a blocking question for the person, which the driver turns into "needs you"
  * - `fail`: the turn fails as a signed-out Codex's does
  * - `hold`: works until Stop interrupts its turn
+ * - `gate`: starts its turn and works until the test opens its gate, then asks as `ask` does
  */
-export type FakeCodexCase = "answer" | "long" | "ask" | "fail" | "hold";
+export type FakeCodexCase = "answer" | "long" | "ask" | "fail" | "hold" | "gate";
 
 /** The answer of `answer` and `long`, for the request the brief ends with. */
 export function fakeAnswer(request: string, long = false): string {

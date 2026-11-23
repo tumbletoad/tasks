@@ -14,6 +14,7 @@ import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
 import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
 import { Thread } from "../task/Thread.tsx";
+import { keepTitleDraft, readTitleDraft } from "../unsent.ts";
 import type { DetailLog } from "../task/detail.ts";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
@@ -503,6 +504,32 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     expect(again?.querySelector('[data-part="apply-mine"]')).not.toBeNull();
   });
 
+  test("a title typed while the task is moved to the Trash elsewhere is sent nowhere: the words stay kept, unsent", async () => {
+    (api.client.task as { update: unknown }).update = (input: Record<string, unknown>) => {
+      updates.push(input);
+      return new Promise(() => undefined);
+    };
+    localStorage.clear();
+    const tasks = [task(1), task(2)];
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot(tasks));
+    const id = "t_00001";
+    expand(id);
+    press(titleOf(id), "F2");
+    type(
+      container.querySelector<HTMLInputElement>(`li[data-key="${id}"] [data-part="title-edit"]`),
+      "Task 1, fixed",
+    );
+    apply(batch(11, [task(1, { deleted_at: Date.UTC(2026, 10, 2), version: 2 })], ["deleted"]));
+    await settle();
+    expect(container.querySelector('[data-part="title-edit"]')).toBeNull();
+    expect(updates).toEqual([]);
+    const kept = Object.keys(localStorage).filter((key) => key.startsWith(`${PRODUCT_ID}.title.`));
+    expect(kept.map((key) => JSON.parse(localStorage.getItem(key) ?? "{}") as unknown)).toEqual([
+      expect.objectContaining({ typed: "Task 1, fixed" }),
+    ]);
+  });
+
   test("leaving the title editor for another control keeps focus there", async () => {
     const tasks = [task(1), task(2)];
     mount(<TaskList view="open" filter={OPEN} empty="" />);
@@ -564,6 +591,23 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     } finally {
       localStorage.removeItem(name);
     }
+  });
+
+  test("a title a reload brought back whose save was on its way: when the title arrives as those words, the editor closes and lets them go", async () => {
+    localStorage.clear();
+    keepTitleDraft(SPACE.id, "t_00001", { typed: "Task 1, fixed", title: "Task 1" });
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot([task(1)]));
+    expand("t_00001");
+    await settle();
+    const field = () =>
+      container.querySelector<HTMLInputElement>('li[data-key="t_00001"] [data-part="title-edit"]');
+    expect(field()?.value).toBe("Task 1, fixed");
+    apply(batch(11, [task(1, { title: "Task 1, fixed", version: 2 })], ["title"]));
+    await settle();
+    expect(field()).toBeNull();
+    expect(readTitleDraft(SPACE.id, "t_00001")).toBeUndefined();
+    expect(updates).toEqual([]);
   });
 
   test("a title being typed is saved when the view changes under the person", () => {

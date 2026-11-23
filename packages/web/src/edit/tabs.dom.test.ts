@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
 // Try again in one tab while another tab of the space keeps a newer value of the same field
-// (keep.ts on the browser's real storage): the retry never writes over that value, nor takes it
+// (unsent.ts on the browser's real storage): the retry never writes over that value, nor takes it
 // away, whatever its outcome.
 import { PRODUCT_ID } from "@ttasks/brand";
 import { beforeEach, describe, expect, test } from "vitest";
@@ -10,7 +10,7 @@ import { LiveStore } from "../store/store.ts";
 import type { SnapshotMessage, TaskRow } from "../store/rows.ts";
 import { priorityChange } from "./change.ts";
 import { Edits, type Unsaved } from "./edits.ts";
-import { unsavedKeeper } from "./keep.ts";
+import { unsavedKeeper } from "../unsent.ts";
 
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
 const TASK: TaskRow = {

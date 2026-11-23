@@ -122,7 +122,7 @@ const WAITING_QUESTIONS =
   `(SELECT count(*) FROM log_entries q WHERE ${WAITS}) AS x_question_count`;
 
 /** A run that may still hold processes (contracts' `isOpenRun`). */
-const OPEN_RUN =
+export const OPEN_RUN =
   `(r.state IN (${OPEN_RUN_STATES.map((s) => `'${s}'`).join(", ")}) OR ` +
   "(r.state = 'unknown' AND r.reason = 'stop_timed_out'))";
 

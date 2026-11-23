@@ -36,6 +36,8 @@ export interface Group {
   readonly slot?: number;
   /** Its rows are drawn as Completed draws them, whatever the list's view: a search's Completed. */
   readonly finished?: boolean;
+  /** The heading's one action, such as the Trash's `"Restore these`" for its change. */
+  readonly action?: { readonly label: string; readonly run: () => void };
   readonly sections: readonly Section[];
 }
 

@@ -1,21 +1,16 @@
 // @vitest-environment happy-dom
 //
-// What a task's composer sends and when its words count as gone (composer.ts): the words as typed,
-// one request ID for one note across a reload, and an Open's words clear once they are on the task.
+// What a task's composer sends and when its words count as gone (composer.ts, unsent.ts): the words
+// as typed, one request ID for one note across a reload, and an Open's words clear once they are on
+// the task.
+import { PRODUCT_ID } from "@ttasks/brand";
 import { beforeEach, describe, expect, test } from "vitest";
-import {
-  keepDraft,
-  keepNote,
-  onSaved,
-  readDraft,
-  readNote,
-  savedWords,
-  wordsOf,
-  type Saved,
-} from "./composer.ts";
+import { keepDraft, keepNote, letGo, readDraft, readNotes, wordsOf } from "../unsent.ts";
+import { onSaved, savedWords, type Saved } from "./composer.ts";
 
 const SPACE = "sp_0123456789abcdefghjkmnpqrs";
 const ID = "0b6f7f3e-6a1c-4c55-9d3e-2f7f5f1d9a10";
+const SECOND = "0b6f7f3e-6a1c-4c55-9d3e-2f7f5f1d9a11";
 
 beforeEach(() => {
   localStorage.clear();
@@ -29,18 +24,35 @@ describe("[A5.3.8.web.composer-sends] a composer sends what was typed once, and 
     expect(wordsOf("\r\n  x")).toBe("  x");
   });
 
-  test("a note on its way keeps its request ID across a reload, and clearing the draft drops it", () => {
+  test("a note on its way keeps its request ID across a reload, and only its answer or the person lets it go: not an emptied field, nor a second note", () => {
     keepDraft(SPACE, "tk_1", "Call the landlord");
     keepNote(SPACE, "tk_1", { words: "Call the landlord", id: ID });
     // A reload reads the same request back, so the same words are saved once.
-    expect(readNote(SPACE, "tk_1")).toEqual({ words: "Call the landlord", id: ID });
-    expect(readNote(SPACE, "tk_2")).toBeUndefined();
+    expect(readNotes(SPACE, "tk_1")).toEqual([{ words: "Call the landlord", id: ID }]);
+    expect(readNotes(SPACE, "tk_2")).toEqual([]);
     keepDraft(SPACE, "tk_1", "");
     expect(readDraft(SPACE, "tk_1")).toBe("");
-    expect(readNote(SPACE, "tk_1")).toBeUndefined();
+    expect(readNotes(SPACE, "tk_1")).toHaveLength(1);
+    // A second note sent before the first one's answer is kept beside it.
+    keepNote(SPACE, "tk_1", { words: "And the plumber", id: SECOND });
+    expect(
+      readNotes(SPACE, "tk_1")
+        .map((note) => note.words)
+        .sort(),
+    ).toEqual(["And the plumber", "Call the landlord"]);
+    letGo(SPACE, { kind: "note", task: "tk_1", id: ID });
+    expect(readNotes(SPACE, "tk_1")).toEqual([{ words: "And the plumber", id: SECOND }]);
+    // An earlier build kept one note under the task's name alone: it is read and let go alike.
+    localStorage.setItem(
+      `${PRODUCT_ID}.note.${SPACE}.tk_3`,
+      JSON.stringify({ words: "Call the bank", id: ID }),
+    );
+    expect(readNotes(SPACE, "tk_3")).toEqual([{ words: "Call the bank", id: ID }]);
+    letGo(SPACE, { kind: "note", task: "tk_3", id: ID });
+    expect(readNotes(SPACE, "tk_3")).toEqual([]);
     // What is read back is checked by its shape.
-    keepNote(SPACE, "tk_1", { words: "x", id: "not an id" });
-    expect(readNote(SPACE, "tk_1")).toBeUndefined();
+    keepNote(SPACE, "tk_4", { words: "x", id: "not an id" });
+    expect(readNotes(SPACE, "tk_4")).toEqual([]);
   });
 
   test("words an Open saved on the task clear the kept draft and the field that shows them, unless the person typed on since; another task's are not touched", () => {

@@ -92,12 +92,14 @@ export interface Leaving {
   readonly at?: number;
 }
 
-/** Where the edits that wait are kept across a reload (keep.ts). */
+/** Where the edits that wait are kept across a reload (unsent.ts). */
 export interface UnsavedKeeper {
   /** The space's kept edits, each once. */
   load(): Unsaved[];
   /** The tab's edits that wait now, as the edits' state holds them (one under each field). */
   save(unsaved: ReadonlyMap<string, Unsaved>): void;
+  /** Tells of each edit this tab kept or read that the browser holds no more: let go elsewhere. */
+  onGone(listener: (unsaved: Unsaved) => void): () => void;
 }
 
 export interface EditState {
@@ -329,6 +331,43 @@ const effectOf = (change: Change): string =>
     [...(change.overlay.clear ?? [])].sort(),
   ]);
 
+type Restored = NonNullable<Awaited<ReturnType<Client["task"]["delete"]>>["restored"]>[number];
+
+/** The list a status's open task is in: its own view, or Open for a status of the space's own. */
+const STATUS_LIST: Readonly<Record<string, Msg["id"]>> = {
+  open: "nav.open",
+  waiting: "nav.waiting",
+  review: "nav.review",
+  backlog: "nav.backlog",
+};
+
+/**
+ * Where a restored task is back, as its toast says it: the list, its area and project, and why it
+ * moved there or which task kept one of its sources.
+ */
+function backIn(task: Restored): Msg {
+  const place: Msg = {
+    id:
+      task.lifecycle !== "active"
+        ? "nav.completed"
+        : task.inbox
+          ? "nav.inbox"
+          : (STATUS_LIST[task.status] ?? "nav.open"),
+  };
+  const holder = task.held?.[0]?.by;
+  if (holder !== undefined) {
+    return { id: "toast.restoredHeld", values: { ref: task.ref, place, holder } };
+  }
+  if (task.regrouped === "inbox") return { id: "toast.restoredInbox", values: { ref: task.ref } };
+  const group = [task.area, task.project].filter((name) => name !== undefined).join(" / ");
+  if (task.regrouped === "area") {
+    return { id: "toast.restoredArea", values: { ref: task.ref, place, group } };
+  }
+  return group === ""
+    ? { id: "toast.restoredIn", values: { ref: task.ref, place } }
+    : { id: "toast.restoredInGroup", values: { ref: task.ref, place, group } };
+}
+
 /** The key of a task's field in the maps of unsaved edits and others' changes. */
 export const keyOf = (task: string, field: string) => `${task}\u0000${field}`;
 
@@ -398,6 +437,11 @@ function conflictText(
 interface EditOptions {
   readonly base?: string | undefined;
   readonly refused?: (why: Msg) => Msg;
+  /**
+   * The service holds the change, or this tab keeps it as not saved (a refusal, no answer): the
+   * caller's own copy of the words can go.
+   */
+  readonly settled?: () => void;
 }
 
 export class Edits {
@@ -447,6 +491,10 @@ export class Edits {
       for (const field of unsaved.change.fields) restored.set(keyOf(unsaved.task, field), unsaved);
     }
     if (restored.size > 0) this.#state = { ...this.#state, unsaved: restored };
+    // Let go in another tab or at the foot of the Trash: the line goes here too, if it still shows.
+    deps.keeper?.onGone((line) => {
+      if (this.unsaved(line.task, line.field) === line) this.#forget(line.task, line.field);
+    });
     deps.onChanges(({ changes }) => {
       this.#heard(changes);
     });
@@ -490,7 +538,13 @@ export class Edits {
    * when it opened; a control leaves it out. `refused` says a refusal after what came before it.
    */
   edit(task: TaskRow, change: Change, options: EditOptions = {}): void {
-    void this.#edit(task, change, options);
+    const { settled } = options;
+    void this.#edit(task, change, options).finally(settled);
+  }
+
+  /** Whether a write of the task's is on its way from this tab. */
+  sending(task: string): boolean {
+    return this.#chains.has(task);
   }
 
   /** `edit`, resolved once its request is decided, or kept as not saved for want of an answer. */
@@ -718,6 +772,112 @@ export class Edits {
               ? { id: "toast.reopenFailed" }
               : { id: "toast.reopenConflict", values: whoOf(conflict.by) },
         });
+      },
+      toast,
+    );
+  }
+
+  /**
+   * Move to Trash (the card's button): in the task's turn, so this tab's edit of it still on its
+   * way lands first, with a base, and an Undo that takes back this change and no other. A run that
+   * works on the task goes on: the toast says so.
+   */
+  trash(task: TaskRow): void {
+    const sent = this.#sendWith(task.id, ["deleted"], this.#deps.asOf(), (base, request) =>
+      this.#deps.client.task.delete({ tasks: [task.id], base: base ?? "", request_id: request }),
+    );
+    const moved: Omit<Toast, "key"> = {
+      kind: "undo",
+      text: {
+        id: task.run?.state === "working" ? "toast.trashedWorking" : "toast.trashed",
+        values: { ref: task.ref },
+      },
+      action: {
+        label: { id: "toast.undo" },
+        run: () => {
+          void this.undo(sent);
+        },
+      },
+    };
+    const toast = this.#toast(moved);
+    void sent.commit.then((commit) => {
+      if (commit !== undefined) this.#fieldsOf.set(commit, ["deleted"]);
+    });
+    void this.#outcome(
+      sent.answer,
+      sent.call,
+      (decision, say, late) => {
+        if (decision.ok) {
+          if (decision.value.result === "no_change") say(undefined);
+          else if (late) say(moved);
+          return;
+        }
+        if (this.#deps.failed(decision.error)) return;
+        // Someone changed the task since the person looked: nothing moved, and the card shows the
+        // task as it is now, with Move to Trash.
+        const conflict = problemOf(decision.error)?.conflicts[0];
+        say({
+          kind: "error",
+          text:
+            conflict === undefined
+              ? { id: "toast.trashFailed", values: { ref: task.ref } }
+              : { id: "toast.trashConflict", values: { ref: task.ref, ...whoOf(conflict.by) } },
+        });
+      },
+      toast,
+    );
+  }
+
+  /**
+   * Restore from the Trash: one action, with a base, and an Undo that moves it back by its own
+   * commit. The toast names where it is back, once the service said.
+   */
+  restore(task: Pick<TaskRow, "id" | "ref">): void {
+    const sent = this.#sendWith(task.id, ["deleted"], this.#deps.asOf(), (base, request) =>
+      this.#deps.client.task.delete({
+        tasks: [task.id],
+        restore: true,
+        base: base ?? "",
+        request_id: request,
+      }),
+    );
+    const undo = {
+      label: { id: "toast.undo" },
+      run: () => {
+        void this.undo(sent);
+      },
+    } as const;
+    const toast = this.#toast({
+      kind: "undo",
+      text: { id: "toast.restoredTask", values: { ref: task.ref } },
+      action: undo,
+    });
+    void sent.commit.then((commit) => {
+      if (commit !== undefined) this.#fieldsOf.set(commit, ["deleted"]);
+    });
+    void this.#outcome(
+      sent.answer,
+      sent.call,
+      (decision, say) => {
+        if (decision.ok) {
+          const value = decision.value;
+          if (value.result === "no_change") {
+            say({ kind: "info", text: { id: "toast.restoredAlready", values: { ref: task.ref } } });
+            return;
+          }
+          const back = "restored" in value ? value.restored?.[0] : undefined;
+          say({
+            kind: "undo",
+            text:
+              back === undefined
+                ? { id: "toast.restoredTask", values: { ref: task.ref } }
+                : backIn(back),
+            action: undo,
+          });
+          return;
+        }
+        if (this.#deps.failed(decision.error)) return;
+        say({ kind: "error", text: { id: "toast.restoreFailed", values: { ref: task.ref } } });
       },
       toast,
     );
@@ -1166,6 +1326,10 @@ export class Edits {
         return;
       case "INVALID_TRANSITION":
         say({ kind: "info", text: { id: "toast.newerFirst" } });
+        return;
+      // The named change is not in the space now: nothing was undone, whatever is newest.
+      case "NOT_FOUND":
+        say({ kind: "info", text: { id: "toast.undoGone" } });
         return;
       case "UNDO_CONFLICT":
         break;

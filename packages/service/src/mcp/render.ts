@@ -324,11 +324,27 @@ const sourceLine = (source: Source): string =>
     source.id,
   )}`;
 
+/**
+ * A task in the Trash, before anything else of it: who moved it there, and that the agent tells
+ * the person rather than adding it again or restoring it.
+ */
+function trashLine(task: {
+  readonly deleted?: { readonly at: string; readonly by: string } | undefined;
+}): string | undefined {
+  if (task.deleted === undefined) return undefined;
+  const who = task.deleted.by === "user" ? "the user" : task.deleted.by;
+  return `In the Trash: ${who} moved it there ${task.deleted.at}. Tell the user; do not add it again or restore it.`;
+}
+
 function headerLine(
-  task: RowLike & { readonly wrap_state?: string | undefined },
+  task: RowLike & {
+    readonly wrap_state?: string | undefined;
+    readonly deleted?: { readonly at: string; readonly by: string } | undefined;
+  },
   asOf: string,
 ): string {
-  return `${join(
+  const trash = trashLine(task);
+  return `${trash === undefined ? "" : `${trash}\n`}${join(
     task.ref,
     task.lifecycle,
     task.wrap_state,

@@ -46,6 +46,8 @@ export function createClient(transport: ClientTransport) {
     task: {
       /** Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it. */
       add: (input: InputOf<"task.add">): Promise<OutputOf<"task.add">> => call("task.add", input),
+      /** Move tasks to the Trash, or restore them. Nothing is deleted for good. */
+      delete: (input: InputOf<"task.delete">): Promise<OutputOf<"task.delete">> => call("task.delete", input),
       /** Finish or abandon a task with an outcome and learnings, and create its follow-ups. */
       finish: (input: InputOf<"task.finish">): Promise<OutputOf<"task.finish">> => call("task.finish", input),
       /** Finished tasks, newest first, a page at a time: the page's Completed view. */
@@ -56,6 +58,8 @@ export function createClient(transport: ClientTransport) {
       reopen: (input: InputOf<"task.reopen">): Promise<OutputOf<"task.reopen">> => call("task.reopen", input),
       /** Find active tasks, finished tasks and learnings: rows only, a page at a time. */
       search: (input: InputOf<"task.search">): Promise<OutputOf<"task.search">> => call("task.search", input),
+      /** What is in the Trash, newest change first, a page at a time. */
+      trash: (input: InputOf<"task.trash">): Promise<OutputOf<"task.trash">> => call("task.trash", input),
       /** Change a task's fields, summary, context, group or sources; a finished one's sources only. */
       update: (input: InputOf<"task.update">): Promise<OutputOf<"task.update">> => call("task.update", input),
     },

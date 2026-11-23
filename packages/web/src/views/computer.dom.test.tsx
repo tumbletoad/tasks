@@ -138,7 +138,12 @@ beforeEach(() => {
   });
   Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
   api = {
-    client: { task: { get: () => new Promise(() => undefined) } },
+    client: {
+      task: {
+        get: () => new Promise(() => undefined),
+        trash: () => Promise.resolve({ rows: [] }),
+      },
+    },
     busy: () => Promise.resolve([]),
     receipts: () => Promise.resolve([]),
     runs: () => Promise.resolve([]),

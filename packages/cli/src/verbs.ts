@@ -23,7 +23,7 @@ import {
   type VerbSpec,
 } from "./args.ts";
 import { connectService, transportError, type ConnectOptions, type Session } from "./connect.ts";
-import type { Io } from "./io.ts";
+import { personAtTerminal, type Io } from "./io.ts";
 import { bodyOf, printError, printUsage, render } from "./output.ts";
 
 /** A new request ID: 128 random bits, 22 characters from A3 3.4.1's alphabet. */
@@ -127,7 +127,8 @@ function spaceName(session: Session, globals: Globals, result: Record<string, un
 
 /**
  * The read whose `as_of` is the base of a write that has none: for a verb about a task, that task,
- * or without one the session's bound task, as the write itself takes it; else the read action of
+ * or without one the session's bound task, as the write itself takes it; for a verb about several,
+ * the first of them; else the read action of
  * the verb's own entry (a group's change reads the groups, a setting's the settings), which shows
  * the space as the person sees it now. A create makes something new and needs no base: undefined.
  */
@@ -142,6 +143,9 @@ export function baseRead(
   ) {
     return { op: "task.get", input: typeof task === "string" ? { task } : {} };
   }
+  // A verb about several tasks by reference (`ttasks delete M-14 M-15`): the first of them.
+  const [first] = Array.isArray(input["tasks"]) ? (input["tasks"] as unknown[]) : [];
+  if (typeof first === "string") return { op: "task.get", input: { task: first } };
   const actions = verb.actions;
   const read = actions?.reads[0];
   if (actions === undefined || read === undefined || input[actions.field] === "create") {
@@ -238,9 +242,17 @@ export async function runVerb(
       }
       const source = input["base"] === undefined ? baseRead(verb, input) : undefined;
       if (source !== undefined) {
-        const read = (await opCall(session, globals, source.op, source.input)) as {
-          as_of?: string;
-        };
+        const read = (await opCall(session, globals, source.op, source.input).catch(
+          (error: unknown) => {
+            // A verb about several tasks reads one only for a base: one it cannot read (its
+            // creation undone, or none) is the write's to name, with what to do. Without a base
+            // the write changes nothing.
+            if (Array.isArray(input["tasks"]) && bodyOf(asAppError(error)).code === "not_found") {
+              return {};
+            }
+            throw error;
+          },
+        )) as { as_of?: string };
         if (typeof read.as_of === "string") input["base"] = read.as_of;
       }
     }
@@ -253,6 +265,8 @@ export async function runVerb(
           ? render(verb.entry, result, spaceName(open, globals, result), {
               space: globals.space,
               archived: sent["archived"] === true,
+              restore: sent["restore"] === true,
+              person: personAtTerminal(io),
               platform: io.platform,
             })
           : "";

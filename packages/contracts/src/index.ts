@@ -68,6 +68,21 @@ export {
 } from "./entries/receipt-get.ts";
 export { spaceStatus, SpaceStatusInput, SpaceStatusResult } from "./entries/space-status.ts";
 export { taskAdd, TaskAddInput, TaskAddResult } from "./entries/task-add.ts";
+export {
+  DELETE_MAX,
+  RestoredTask,
+  taskDelete,
+  TaskDeleteInput,
+  TaskDeleteResult,
+} from "./entries/task-delete.ts";
+export {
+  TRASH_CURSOR,
+  TrashChange,
+  TrashRow,
+  taskTrash,
+  TaskTrashInput,
+  TaskTrashResult,
+} from "./entries/task-trash.ts";
 export { taskFinish, TaskFinishInput, TaskFinishResult } from "./entries/task-finish.ts";
 export {
   FINISHED_CURSOR,

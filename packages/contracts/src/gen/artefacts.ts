@@ -155,11 +155,14 @@ export function verbSpec(entry: AnyEntry, face: CliFace) {
     positionals: positional.map((name) => {
       const info = fields.get(name);
       const readInto = face.readInto?.[name];
+      // An array of scalars, the last positional, takes every argument left.
+      const rest = info?.scalar === undefined && info?.repeatable !== undefined;
       return {
         name,
         field: info?.path ?? name,
         ...(readInto === undefined ? {} : { readInto }),
-        type: info?.scalar,
+        ...(rest ? { repeat: true } : {}),
+        type: info?.scalar ?? info?.repeatable,
         required: info?.required ?? false,
         help: info?.description ?? "",
         ...(info?.values === undefined ? {} : { values: info.values }),

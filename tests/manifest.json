@@ -2129,6 +2129,104 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.trash.write",
+      "title": "A task moved to the Trash and restored, by the writer: a second delete and a restore of a live task are no change and name the task; a delete with a base from before a restore is a conflict and nothing moves; a restore of one change brings back only the tasks whose tombstone it still holds, and a change the space does not have restores nothing; a delete undone and redone is still its first change; a key another active task took meanwhile stays with it and the restored task's link stays removed, also for two restores in one request and in two, while a finished task keeps its link; a task whose project or area is gone comes back in the area or the Inbox",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.trash",
+      "title": "The Trash through real requests: delete moves tasks as one change and the Trash groups them by it with who, when, why and how many; a reference or title words find a task on any page and pages go on without a gap; an undone creation is not in the Trash and Redo brings it back whole; restoring a change brings back what is still there from it and names the rest; a restore says where each task is back and a key another task took stays there; a retry replays and a stale base changes nothing; an agent's shell is refused with words that say removal is the user's and an agent writing to a removed task is told who removed it; a removed task with a terminal agent is among those still worked on",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.trash.cli",
+      "title": "ttasks delete, restore and trash as a person reads them: several tasks in one command, the Trash by change, find by words, show says it is in the Trash, restore by task and by change; an agent's shell is refused",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.web",
+      "title": "The Trash's groups and pages in the page: one group per change in the order read, Restore these only for several tasks, the expanded task kept where it was shown also once restored and a linked one on top, and the source reading on from the cursor with the search's words",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.web.card",
+      "title": "The card of a task in the Trash is for reading: every control a live card offers, pressed on a removed task (the fields that ask an agent, every button but Restore, the composer's keys, the title's edit), leaves its kept draft, its pending note and the task as they were, sends no write, and offers no control that writes",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.web.unsent",
+      "title": "Every unsent word goes through one module: drafts, notes on their way, titles being typed and kept field edits are listed with their task and exact value, a Discard takes only the value it was shown so a newer one another tab kept stays, a change of any kind from this tab or another is heard, and a kept edit let go anywhere leaves the tab that kept it",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.web.agents",
+      "title": "A task in the Trash on the Agents page: the tasks the monitor links an agent to that the live store does not hold are named once, for this space, for the page to read; read, a removed task is placed by the same rule as a live one, whether its run ended or works, and restored it is placed the same",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.e2e.title",
+      "title": "A title being typed stays through the task's removal, a page opened meanwhile (whose cleanup runs) and its restore: it is listed at the foot of the Trash with its reference, and after the restore it is back in the title's editor",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.e2e.unsent",
+      "title": "Every unsent word of a removed task stays: a note on its way and a newer draft, the task removed from another tab while the note waits, are both listed at the foot of the Trash after a reload with Copy and Discard, and Discard of the note keeps the draft",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.e2e.answer",
+      "title": "A run on a task moved to the Trash while it works, which then asks the person: on a cold page the task is under Working and then Needs you beside a live task in the same case, marked, with the question in its card; Restore changes nothing but the mark",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.e2e",
+      "title": "A task taken away and brought back in the page, in the browser: Move to Trash in the card and the toast's Undo; the Trash in the sidebar by change with Restore these, Find by words and reference, and a Restore the keyboard reaches that says where the task is back; a link to a removed task opens it in the Trash read-only with Restore; the words typed for a task the space does not have now stay at the Trash's foot with Discard; screenshots at 1,440 and 390 px, axe clean",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.e2e.screens",
+      "title": "The Trash by change at 1,440 and 390 px in Sumi and Washi: axe clean, and nothing wider than the screen at 390 px",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.e2e.terminal",
+      "title": "An agent in a terminal on a task moved to the Trash, with no monitor: a cold Agents page lists the task once from its launch's record, saying the agent goes on until it is stopped in its terminal, and the task leaves once the agent ends",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.e2e.runs",
+      "title": "A run working on a task moved to the Trash goes on: the toast says so, and after a cold reload the Agents page lists the task marked as in the Trash, with Stop in its card",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.history.dedupe",
       "title": "Undo and redo meet dedupe by source key: an undo of a request whose draft matched takes back its entries and linked sources on the match and never the match; an undone create holds no key; a redo that would take a key's source row is a conflict naming that row; a redo that would make a second active holder of a key, decided on the state it makes, is a conflict that names the standing holder's link (a shared source in either order of two humans' redos, and a source the redo brings back), or each holder's lifecycle when the redo brings back every holder itself, and writes nothing; a key that was double before is not the restore's doing; a partial inversion leaves out a broken key's restores and applies the rest; a finished holder never blocks; an undo or redo never shares a request with a create, and dedupe's start state sees what they left; an undone check-off is no finish and a finish set back keeps its own instant, an archived task's by its provenance; a retry after an undo replays; a link an undo removed comes back only with its link version",
       "source": "A1 3.5, A1 3.6, A1 3.8, A1 3.10, A1 3.10.1, A7 3.10 M3.02",

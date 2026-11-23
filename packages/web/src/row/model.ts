@@ -26,7 +26,16 @@ export interface Msg {
 
 /** The views a row appears in (A5 3.4, 3.5). Search joins with its step. */
 export type RowView =
-  "today" | "inbox" | "open" | "waiting" | "review" | "backlog" | "area" | "completed" | "agents";
+  | "today"
+  | "inbox"
+  | "open"
+  | "waiting"
+  | "review"
+  | "backlog"
+  | "area"
+  | "completed"
+  | "agents"
+  | "trash";
 
 /** How a list groups its rows: each grouping states some facts in its headings. */
 export type Grouping =
@@ -385,7 +394,7 @@ function completedOf(
 
 /** The view's visible move out of it (A5 3.5): an active task in the Inbox, or one in Review. */
 function moveOf(task: TaskRow, ctx: RowContext): RowModel["move"] {
-  if (task.lifecycle !== "active") return undefined;
+  if (task.lifecycle !== "active" || task.deleted_at !== undefined) return undefined;
   if (ctx.view === "inbox" && task.inbox) return { kind: "triage", text: msg("fact.moveToOpen") };
   if (ctx.view === "review" && task.status === "review" && !task.inbox) {
     return { kind: "reopen", text: msg("row.backToOpen") };
@@ -554,7 +563,12 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
     description.push(msg("row.desc.draft"));
   }
 
-  const launch = launchOf(row.instances, row.busy, row.launchBlock);
+  // A task in the Trash opens in no agent: Restore comes first.
+  const launch = launchOf(
+    row.instances,
+    row.busy,
+    task.deleted_at === undefined ? row.launchBlock : { kind: "none" },
+  );
   const label = launch.instance?.label ?? "";
   const tip = msg(LAUNCH_TIP[launch.state] ?? "row.tile.ready", {
     label,

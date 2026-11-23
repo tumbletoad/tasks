@@ -27,17 +27,23 @@ import { useT, type Translate } from "../i18n/intl.tsx";
 import { is } from "../keys/keymap.ts";
 import { useIntl } from "react-intl";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
-import { useHasDraft } from "../task/composer.ts";
 import { Expanded } from "../task/Expanded.tsx";
 import { agentMarker } from "../task/runs.ts";
 import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
-import type { RowActions } from "./actions.ts";
+import { readOnly, type RowActions } from "./actions.ts";
 import { tileClick, type BusyOf, type FolderRefusal } from "./launch.ts";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
 import { KeptTitles } from "./KeptTitles.tsx";
-import { keepTitleDraft, pageLeaving, readTitleDraft, TITLE_MAX } from "./title-draft.ts";
+import {
+  keepTitleDraft,
+  letGo,
+  pageLeaving,
+  readTitleDraft,
+  TITLE_MAX,
+  useHasDraft,
+} from "../unsent.ts";
 import {
   ChevronUpIcon,
   ClockIcon,
@@ -224,8 +230,9 @@ function Slots({
           data-on={model.starred}
           aria-label={t("row.star")}
           aria-pressed={model.starred}
-          // A finished task takes no edit (A5 3.11): its star would only be refused.
-          aria-disabled={task.lifecycle !== "active" || undefined}
+          // A finished task takes no edit (A5 3.11), nor one in the Trash: its star would only be
+          // refused.
+          aria-disabled={task.lifecycle !== "active" || task.deleted_at !== undefined || undefined}
           data-tip={t("row.star")}
           tabIndex={tab}
           onClick={() => {
@@ -300,9 +307,9 @@ function Slots({
  * is the person's edit like any other (edits.ts), with the base taken when the editor opened: a
  * title someone else changed while the person typed is a conflict, never overwritten, and the
  * field says so while the person types. Leaving the window is not leaving the field: the editor
- * stays open with what was typed. What is typed is kept in the browser until then (title-draft.ts):
- * after a reload the editor opens with it again, and only the person's Enter or leaving the field
- * saves it.
+ * stays open with what was typed. What is typed is kept in the browser (unsent.ts) until the service
+ * has answered its save: after a reload the editor opens with it again, and a refusal keeps it as a
+ * refused edit is kept. Only the person's Enter or leaving the field saves it.
  */
 function TitleEditor({
   task,
@@ -322,7 +329,9 @@ function TitleEditor({
   // Taken once, as the editor opens: the save's base is the title the person began to change, also
   // when a reload brought back what they typed.
   const [opened] = useState(() => {
-    const kept = readTitleDraft(space, task.id);
+    const found = readTitleDraft(space, task.id);
+    // Words whose save is still on its way are the title shown: the editor starts from it.
+    const kept = found?.typed.trim() === task.title ? undefined : found;
     return {
       base: kept === undefined ? live.store.asOf : kept.base,
       mark: edits.mark(),
@@ -331,6 +340,16 @@ function TitleEditor({
     };
   });
   const before = opened.title;
+  // Words a reload brought back whose save was still on its way: when the title arrives as them,
+  // and the person has not typed since, they are saved, and the editor that held them closes.
+  useEffect(() => {
+    const words = opened.typed;
+    if (words === undefined || done.current || task.title !== words.trim()) return;
+    if (field.current?.value !== words) return;
+    done.current = true;
+    letGo(space, { kind: "title", task: task.id, text: words });
+    onDone();
+  }, [task.title, task.id, opened, space, onDone]);
   /** What the person typed, for a save when the editor goes away under them. */
   const typed = useRef<string | undefined>(undefined);
   const latest = useRef(task);
@@ -342,19 +361,40 @@ function TitleEditor({
     if (opened.typed === undefined) input?.select();
     else input?.setSelectionRange(input.value.length, input.value.length);
   }, [opened]);
+  /** Sends what was typed; the kept words go once the service holds them or the edit keeps them. */
+  const save = (row: TaskRow, value: string) => {
+    edits.edit(row, titleChange(value.trim()), {
+      ...(opened.base === undefined ? {} : { base: opened.base }),
+      settled: () => {
+        letGo(space, { kind: "title", task: row.id, text: value });
+      },
+    });
+  };
+  // The feed says the task was moved to the Trash, or its creation undone: it takes no title.
+  const removed = useRef(false);
+  useEffect(
+    () =>
+      live.onChanges(({ changes }) => {
+        for (const change of changes) {
+          const after = change.after as TaskRow | undefined;
+          if (change.type === "task" && change.id === task.id && after?.deleted_at !== undefined) {
+            removed.current = true;
+          }
+        }
+      }),
+    [live, task.id],
+  );
   // The row goes away while the person types (the task leaves the view, the card collapses): what
-  // they typed is saved, as leaving the field does, never dropped.
+  // they typed is saved, as leaving the field does, never dropped. A task moved to the Trash takes
+  // no title: the words stay kept, unsent, for its card there and its return.
   useEffect(
     () => () => {
-      const title = (typed.current ?? "").trim();
+      const value = typed.current ?? "";
+      const title = value.trim();
       if (done.current || title === "" || title === before) return;
       done.current = true;
-      keepTitleDraft(space, latest.current.id, undefined);
-      edits.edit(
-        latest.current,
-        titleChange(title),
-        opened.base === undefined ? {} : { base: opened.base },
-      );
+      if (removed.current) return;
+      save(latest.current, value);
     },
     // The editor's own values, fixed while it is open.
     [edits, before, opened, space],
@@ -363,16 +403,19 @@ function TitleEditor({
   const finish = (keep: boolean, refocus: boolean) => {
     if (done.current) return;
     done.current = true;
-    keepTitleDraft(space, task.id, undefined);
-    const title = (field.current?.value ?? "").trim();
+    const value = field.current?.value ?? "";
+    const title = value.trim();
+    const sending = keep && title !== "" && title !== before;
+    // Escape, or nothing to save: what this editor typed or brought back waits no more. Words it
+    // never touched are an earlier save's, still on its way: they stay until that save is answered.
+    const own = typed.current !== undefined || opened.typed !== undefined;
+    if (!sending && own) keepTitleDraft(space, task.id, undefined);
     const line = field.current?.closest("[data-row-line]");
     // The title is drawn back before focus goes to it, within this key: a key pressed right after
     // acts from the title, and nothing moves focus later.
     if (refocus) flushSync(onDone);
     else onDone();
-    if (keep && title !== "" && title !== before) {
-      edits.edit(task, titleChange(title), opened.base === undefined ? {} : { base: opened.base });
-    }
+    if (sending) save(task, value);
     if (refocus) {
       line?.querySelector<HTMLElement>('[data-part="title"]')?.focus({ preventScroll: true });
     }
@@ -464,7 +507,7 @@ function RowView({
   fresh,
   posinset,
   setsize,
-  actions,
+  actions: given,
   leaving,
   refused,
   muted = false,
@@ -475,6 +518,10 @@ function RowView({
 }: RowProps) {
   const t = useT();
   const intl = useIntl();
+  // A task in the Trash is for reading until it is restored: its row and its card get only the
+  // actions that read (actions.ts).
+  const trashed = task.deleted_at !== undefined;
+  const actions = trashed ? readOnly(given) : given;
   const place = placeFact(task.place);
   const marker = agentMarker(task.run, instances, task.questions?.[0]);
   const { live } = useContext(Session);
@@ -502,7 +549,7 @@ function RowView({
   // and during this tab's own hold, its undo.
   const active = task.lifecycle === "active";
   const checked = leaving === undefined ? !active : leaving.done;
-  const checkable = leaving === undefined ? active : leaving.by === undefined;
+  const checkable = !trashed && (leaving === undefined ? active : leaving.by === undefined);
   const completedTip =
     leaving?.by === undefined
       ? undefined
@@ -518,21 +565,28 @@ function RowView({
   // The title edits in place, for typo fixes (A5 3.7): only an open task's, the one kind the
   // service changes. Editing expands the row, so the card is what is being edited.
   const [editing, setEditing] = useState(false);
+  // In the Trash the title is read, never edited: a kept one waits there with Copy and Discard.
+  const editable = active && !trashed;
   // The row the person moved out of the view (A5 3.5): while focus holds it there with the data it
   // had (3.15 item 6), its move is done, so the button goes. Newer data (an undo) brings it back.
   const [movedFrom, setMovedFrom] = useState<TaskRow | undefined>(undefined);
   const edit = () => {
-    if (task.lifecycle !== "active") return;
+    if (!editable) return;
     if (!expanded) actions.expand(task);
     setEditing(true);
   };
-  // A title the person was typing when the page went away comes back in its editor with the card.
+  // A title the person was typing when the page went away comes back in its editor with the card,
+  // unless the service took it before the page went: the title shows it, and no save is on its way.
   const space = live.spaceId ?? "";
+  const edits = useEdits();
   useEffect(() => {
-    if (expanded && task.lifecycle === "active" && readTitleDraft(space, task.id) !== undefined) {
-      setEditing(true);
-    }
-  }, [expanded, space, task.id, task.lifecycle]);
+    const kept = readTitleDraft(space, task.id);
+    if (!expanded || kept === undefined) return;
+    if (kept.typed.trim() === task.title && !edits.sending(task.id)) {
+      letGo(space, { kind: "title", task: task.id, text: kept.typed });
+    } else if (editable) setEditing(true);
+    // The title is read as the card opens, not again as it changes.
+  }, [expanded, space, task.id, editable, edits]);
   // The offset is a custom property set through the CSSOM (React's style object), which the CSP's
   // style-src allows; the stylesheet turns it into a transform. Nothing writes a style attribute.
   const position =
@@ -570,26 +624,29 @@ function RowView({
           )}
         </span>
         <span className={styles.check} data-tip={completedTip}>
-          {/* Check-off is final at once (D12): the row holds, the toast offers Undo (A5 3.12). */}
-          <input
-            type="checkbox"
-            className={styles.box}
-            data-part="check"
-            data-dropped={(leaving === undefined && task.lifecycle === "archived") || undefined}
-            aria-label={sayMsg(t, model.done)}
-            checked={checked}
-            disabled={!checkable}
-            tabIndex={tab}
-            onChange={(event) => {
-              // Focus moves on at once, so the row that stays for its hold is not in the way.
-              if (!checked) focusAfter(event.currentTarget);
-              actions.check(task);
-            }}
-          />
+          {/* Check-off is final at once (D12): the row holds, the toast offers Undo (A5 3.12). A task
+              in the Trash has no box: Restore is its one action. */}
+          {trashed ? null : (
+            <input
+              type="checkbox"
+              className={styles.box}
+              data-part="check"
+              data-dropped={(leaving === undefined && task.lifecycle === "archived") || undefined}
+              aria-label={sayMsg(t, model.done)}
+              checked={checked}
+              disabled={!checkable}
+              tabIndex={tab}
+              onChange={(event) => {
+                // Focus moves on at once, so the row that stays for its hold is not in the way.
+                if (!checked) focusAfter(event.currentTarget);
+                actions.check(task);
+              }}
+            />
+          )}
         </span>
         <div className={styles.main}>
           <div className={styles.tline}>
-            {editing ? (
+            {editing && editable ? (
               <TitleEditor
                 task={task}
                 label={t("task.title")}
@@ -657,7 +714,7 @@ function RowView({
             <div
               className={styles.summary}
               data-part={model.ending === undefined ? "summary" : "ending"}
-              data-tip={expanded ? t("ask.tip") : undefined}
+              data-tip={expanded && !trashed ? t("ask.tip") : undefined}
               onClick={(event) => {
                 // Expanded, the line is an agent's to change: a click asks one (A5 3.11), unless
                 // it ends a selection of its text.
@@ -694,9 +751,18 @@ function RowView({
           )}
           {/* A title the person typed while the task was finished stays readable, with Copy and
               Discard; Try again only once the task is active again (A5 3.11). */}
-          {expanded ? <Unsaved task={task.id} field="title" finished={!active} withValue /> : null}
+          {expanded ? (
+            <Unsaved task={task.id} field="title" finished={!active} trashed={trashed} withValue />
+          ) : null}
           {/* What another tab is typing, or what was typed before the task was finished. */}
-          {expanded ? <KeptTitles space={space} task={task.id} finished={!active} /> : null}
+          {expanded ? (
+            <KeptTitles
+              space={space}
+              task={task.id}
+              finished={!active || trashed}
+              trashed={trashed}
+            />
+          ) : null}
         </div>
         <Slots model={model} task={task} tab={tab} expanded={expanded} actions={actions} t={t} />
         <span id={described} hidden>

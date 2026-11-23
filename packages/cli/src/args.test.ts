@@ -97,6 +97,22 @@ describe("[A2.3.10.cli.parse] arguments from cli-spec.json", () => {
     expect(sections.input).toEqual({ task: "M-14", sections: ["log", "history"] });
   });
 
+  test("a last positional that repeats takes every argument left: ttasks delete M-14 M-15", async () => {
+    expect((await parse("delete", ["M-14", "M-15", "--reason", "Duplicates"])).input).toEqual({
+      tasks: ["M-14", "M-15"],
+      reason: "Duplicates",
+    });
+    expect((await parse("restore", ["M-14"])).input).toEqual({ tasks: ["M-14"], restore: true });
+    expect((await parse("restore", ["--change", "op_1"])).input).toEqual({
+      change: "op_1",
+      restore: true,
+    });
+    // A verb without one still refuses an argument too many.
+    expect(await usage(parse("reopen", ["M-14", "M-15"]))).toBe(
+      "ttasks reopen takes no more arguments",
+    );
+  });
+
   test("[A3.3.4.prefs.set] ttasks prefs set takes a key and its value or --reset; get and describe take a key to read", async () => {
     expect((await parse("prefs", ["set", "tasks.effort_scale", "XS,S,M,L,XL"])).input).toEqual({
       action: "set",
