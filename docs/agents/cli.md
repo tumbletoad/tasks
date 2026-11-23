@@ -44,7 +44,7 @@ Usage: `ttasks add <title> [flags]`
 | `--project` | `tasks[].project` | string | Project name or slug |
 | `--status` | `tasks[].status` | string | A status of the space; default open |
 | `--inbox` | `tasks[].inbox` | boolean | Put it in the Inbox for the user |
-| `-p`, `--priority` | `tasks[].priority` | integer | 1 highest, 4 none |
+| `-p`, `--priority` | `tasks[].priority` | integer | 1 highest, 4 none: read skill setting-priority first |
 | `--effort` | `tasks[].effort` | string | A size of the space: read skill sizing-effort first |
 | `--due` | `tasks[].due` | string | ISO date or phrase: fri, +3d |
 | `--waiting-on` | `tasks[].waiting_on` | string | Who or what it waits on |
@@ -220,7 +220,7 @@ Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 | `--remove-source` | `remove_sources` | string | Source keys or URLs to unlink (repeatable) |
 | `--reason` | `reason` | string | Why, shown in history |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
-| `title=` | `set.title` | string | Title |
+| `title=` | `set.title` | string | Title: read skill writing-tasks first |
 | `summary=` | `set.summary` | string | One line: the next step |
 | `status=` | `set.status` | string | A status of the space |
 | `inbox=` | `set.inbox` | boolean | In the Inbox |
