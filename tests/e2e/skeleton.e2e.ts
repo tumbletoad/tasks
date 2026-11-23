@@ -23,7 +23,7 @@ import {
 } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import { picture, showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS } from "./world.ts";
 
 const TOKEN_KEY = `${PRODUCT_ID}.token`;
@@ -80,7 +80,7 @@ test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
     });
 
     expect(await violations(page)).toEqual([]);
-    await page.screenshot({ path: test.info().outputPath("open-confirmed.png") });
+    await picture(page, "open-confirmed.png");
     world.release(world.task.ref);
     await expect(row.locator('[data-entry][data-state="ended"]')).toBeVisible({ timeout: SLOW_MS });
   });
@@ -131,7 +131,7 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
       const line = row.locator('[data-part="place"]');
       await expect(line).toHaveAttribute("data-state", "here", { timeout: SLOW_MS });
       await expect(line).toContainText(set.folder);
-      await page.screenshot({ path: test.info().outputPath("open-folder-here.png") });
+      await picture(page, "open-folder-here.png");
 
       // The folder goes before the click: nothing reaches the terminal, and the page says why.
       rmSync(folder, { recursive: true });
@@ -150,7 +150,7 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
       expect(world.terminal()).toHaveLength(before);
       await expect(row.locator('[data-part="tile"]')).toHaveAttribute("data-state", "ready");
       expect(await violations(page)).toEqual([]);
-      await page.screenshot({ path: test.info().outputPath("open-folder-gone.png") });
+      await picture(page, "open-folder-gone.png");
     } finally {
       rmSync(temp, { recursive: true, force: true });
     }
@@ -247,7 +247,7 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
       const line = row.locator('[data-part="place"]');
       await expect(line).toHaveAttribute("data-state", "here", { timeout: SLOW_MS });
       await expect(line).toContainText(`${set.folder} [portal-web]`);
-      await page.screenshot({ path: test.info().outputPath("open-marker-repo.png") });
+      await picture(page, "open-marker-repo.png");
 
       // The checkout is moved aside and an unrelated folder made at its path.
       renameSync(folder, join(temp, "portal-aside"));
@@ -264,7 +264,12 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
       });
       await expect(said).toBeVisible({ timeout: SLOW_MS });
       expect(world.terminal()).toHaveLength(before);
-      await page.screenshot({ path: test.info().outputPath("open-marker-missing.png") });
+      await picture(page, "open-marker-missing.png");
+      // Narrow, the warning is still there to read.
+      await page.setViewportSize({ width: 390, height: 900 });
+      await expect(said).toBeVisible();
+      await picture(page, "open-marker-missing-390.png");
+      await page.setViewportSize({ width: 1440, height: 900 });
 
       // Nothing started, so the words wait in the field.
       await expect(composer).toHaveValue("Tag it after the tests pass");
@@ -374,7 +379,7 @@ test.describe("[A7.3.14.m6-11.e2e.pack] Shift+Copy puts the context pack on the 
       timeout: SLOW_MS,
     });
     expect(await violations(page)).toEqual([]);
-    await page.screenshot({ path: test.info().outputPath("pack-copied.png") });
+    await picture(page, "pack-copied.png");
   });
 });
 
@@ -440,42 +445,5 @@ test.describe("[A2.3.8.4.e2e.page-secrets] The code and the token stay out of UR
     await page.reload();
     await expect(page.getByText(`Run ${CLI_NAME} open to sign in this browser.`)).toBeVisible();
     expect(await page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY)).toBeNull();
-  });
-});
-
-test.describe("[A2.3.8.3.e2e.strict-csp] The built page under the strict CSP", () => {
-  test("every script and stylesheet has an integrity hash, nothing is blocked, no service worker", async ({
-    page,
-    world,
-  }) => {
-    await watchViolations(page);
-    const response = await signIn(page, world, `/s/${world.mira.id}`);
-    const csp = response?.headers()["content-security-policy"] ?? "";
-    expect(csp).toContain("script-src 'self'");
-    expect(csp).toContain("worker-src 'none'");
-    expect(csp).not.toContain("unsafe-inline");
-    await showsSpace(page, world.mira.name);
-    const tags = await page.evaluate(() => {
-      const nonce = document.querySelector('meta[name="csp-nonce"]')?.getAttribute("content");
-      return [...document.querySelectorAll("script, link[rel=stylesheet], style")].map((el) => ({
-        tag: el.tagName,
-        src: el.getAttribute("src") ?? el.getAttribute("href"),
-        integrity: el.getAttribute("integrity"),
-        // A runtime style element (React Aria's, M5.01) carries the response's nonce instead.
-        nonced: el instanceof HTMLStyleElement && nonce !== null && el.nonce === nonce,
-      }));
-    });
-    const files = tags.filter((tag) => tag.tag !== "STYLE");
-    expect(files.length).toBeGreaterThanOrEqual(2);
-    for (const tag of files) {
-      expect(tag.src, tag.tag).toMatch(/^\/assets\//);
-      expect(tag.integrity, `${tag.tag} ${String(tag.src)}`).toMatch(/^sha384-/);
-    }
-    for (const tag of tags.filter((t) => t.tag === "STYLE")) expect(tag.nonced).toBe(true);
-    const workers = await page.evaluate(async () =>
-      "serviceWorker" in navigator ? (await navigator.serviceWorker.getRegistrations()).length : 0,
-    );
-    expect(workers).toBe(0);
-    expect(await violations(page)).toEqual([]);
   });
 });

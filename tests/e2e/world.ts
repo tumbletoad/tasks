@@ -17,9 +17,10 @@ import {
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
+import { findEntry, readsOnly } from "../../packages/contracts/src/index.ts";
 import { atomicWrite } from "../../packages/files/src/index.ts";
 import { startTimes } from "../../packages/launch/src/process.ts";
-import { openSpace } from "../../packages/storage/src/index.ts";
+import { openSpace, type Id } from "../../packages/storage/src/index.ts";
 import {
   instanceToml,
   registerSpaces,
@@ -73,6 +74,8 @@ export interface World {
   readonly studio: SpaceInfo;
   /** A space with no open task, area or project. Tests leave its views empty. */
   readonly quiet: SpaceInfo;
+  /** Copies of Mira's sample, one per scale of `WorldOptions.scales`, in its order. */
+  readonly scaled: readonly SpaceInfo[];
   /** A task of Mira's in an area, for the launch. */
   readonly task: FixtureTask;
   /**
@@ -148,8 +151,8 @@ export interface WorldOptions {
   readonly finished?: FinishedCounts;
   /** Mira's space grown to the size of one in real use (bulk.ts addLargeSpace). */
   readonly large?: boolean;
-  /** Mira's own statuses and effort keys. */
-  readonly scales?: Scales;
+  /** Spaces of their own besides Mira's, each a copy of her sample with these statuses and effort keys. */
+  readonly scales?: readonly Scales[];
   /**
    * A second instance, after the fake agent: the fake Codex (fake-codex.ts), which can work on a
    * task in the background. `World.codex` picks the cases its runs play.
@@ -177,7 +180,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
 
     // The service's machine is the seeded space's authority, so the space opens for writing.
     const opened = openSpace(await checkedDriver(), seeded.folder, { role: "reader" });
-    let machine: string;
+    let machine: Id<"m">;
     let task: FixtureTask;
     let spare: FixtureTask;
     let launched: string;
@@ -222,8 +225,20 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     if (options.large === true) {
       await addLargeSpace(seeded.folder, { id: machine, name: "mira-desktop", os: OS });
     }
-    if (options.scales !== undefined) {
-      await setScales(seeded.folder, { id: machine, name: "mira-desktop", os: OS }, options.scales);
+    const scaled: { path: string; id: string; name: string }[] = [];
+    for (const [i, scales] of (options.scales ?? []).entries()) {
+      const root = join(spacesRoot, `scaled-${String(i)}`);
+      mkdirSync(root);
+      const copy = await seedMira(root, {
+        seed: `scaled-${String(i)}`,
+        tasks: 1,
+        os: OS,
+        machineId: machine,
+      });
+      await setScales(copy.folder, { id: machine, name: "mira-desktop", os: OS }, scales);
+      const read = openSpace(await checkedDriver(), copy.folder, { role: "reader" });
+      scaled.push({ path: copy.folder, id: read.space.spaceId, name: read.space.name });
+      read.conn.close();
     }
     if (options.finished !== undefined) {
       await addFinishedTasks(
@@ -267,7 +282,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         : "";
     registerSpaces(
       home,
-      [{ path: seeded.folder, id: opened.space.spaceId }],
+      [{ path: seeded.folder, id: opened.space.spaceId }, ...scaled],
       codexes + fakeInstanceToml(home, holds),
     );
 
@@ -361,6 +376,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       mira: { id: opened.space.spaceId, name: opened.space.name },
       studio: { id: created.space.id, name: created.space.name },
       quiet: { id: quiet.space.id, name: quiet.space.name },
+      scaled: scaled.map(({ id, name }) => ({ id, name })),
       task,
       spare,
       launched,
@@ -439,14 +455,15 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       },
       op: async (space, op, input, as = "user") => {
         ops += 1;
+        const entry = findEntry(op);
         return (as === "user" ? life.user : life.agent).call(
           "op/call",
           {
             space,
             op,
-            // Reads take no request ID; every write gets a fresh one.
+            // A call that only reads takes no request ID; every write gets a fresh one.
             input:
-              op.endsWith(".get") || op === "task.search"
+              entry !== undefined && readsOnly(entry, input)
                 ? input
                 : { ...input, request_id: `e2e-world-op-${String(ops).padStart(4, "0")}` },
           },

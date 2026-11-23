@@ -12,6 +12,7 @@ import {
   type Operation,
 } from "../../packages/storage/src/index.ts";
 import { checkedDriver } from "../../packages/testkit/src/index.ts";
+import { day } from "./days.ts";
 
 const TITLES = [
   "Check the invoice totals",
@@ -39,14 +40,6 @@ const PEOPLE = ["Tom Haas", "Aiko Tanaka", "Ana Reyes"];
 /** Mira's projects and areas, by slug (packages/testkit's seed). Undefined: the Inbox. */
 const PLACES = ["lumen-portal", "clinic-sync", "garden", undefined, "lumen-portal", "garden"];
 
-/** A local calendar date `days` from today, as the browser on this machine reads today. */
-function day(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
 /** Task n's create operation. */
 export function bulkTask(n: number): Operation {
   const status = ["open", "open", "open", "waiting", "review", "open", "backlog"][n % 7] ?? "open";
@@ -65,9 +58,9 @@ export function bulkTask(n: number): Operation {
     priority,
     ...(project === undefined ? {} : { project }),
     ...(status === "waiting" && n % 5 !== 3 ? { waiting_on: person } : {}),
-    ...(n % 5 === 0 ? { due: { date: day((n % 23) - 4) } } : {}),
-    ...(n % 9 === 0 ? { planned_for: day(n % 6) } : {}),
-    ...(n % 17 === 0 ? { focus: day(0) } : {}),
+    ...(n % 5 === 0 ? { due: { date: day((n % 23) - 4).iso } } : {}),
+    ...(n % 9 === 0 ? { planned_for: day(n % 6).iso } : {}),
+    ...(n % 17 === 0 ? { focus: day(0).iso } : {}),
   };
 }
 
@@ -260,8 +253,8 @@ const REASONS = ["The neighbours share theirs now.", "Too late in the season.", 
 
 /**
  * Adds finished tasks to the space at `folder`, each made and finished in one request, 25 a
- * request, all now: the writer's clock holds them in the month the test runs in. Each has a
- * summary, which a row shows when the task has no ending.
+ * request, a millisecond apart in the order they are made, all in this month: no month's end falls
+ * among them. Each has a summary, which a row shows when the task has no ending.
  */
 export async function addFinishedTasks(
   folder: string,
@@ -296,5 +289,8 @@ export async function addFinishedTasks(
   add(counts.done, "done", "Finished fixture task");
   add(counts.pending, "pending", "Checked off fixture task");
   add(counts.dropped, "dropped", "Dropped fixture task");
-  await writeRequests(folder, machine, requests, () => Date.now());
+  const now = new Date();
+  const month = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const first = Math.max(month, now.getTime() - requests.length);
+  await writeRequests(folder, machine, requests, (request) => first + request);
 }
