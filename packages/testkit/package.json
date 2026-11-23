@@ -9,6 +9,7 @@
     "./fake-t3": "./src/fake-t3.ts"
   },
   "dependencies": {
+    "@ttasks/contracts": "workspace:*",
     "@ttasks/storage": "workspace:*"
   },
   "devDependencies": {

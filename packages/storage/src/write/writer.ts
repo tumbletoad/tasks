@@ -833,10 +833,7 @@ export function readAsOf(conn: Connection): AsOf {
   };
 }
 
-/**
- * The keys of `tasks.statuses` or `tasks.effort_scale` as the registry reads them: the stored list
- * when it fits its shape, else the default (A1 3.16).
- */
+/** The keys of `tasks.statuses` or `tasks.effort_scale` as the registry reads them (A1 3.16). */
 function listPreference(conn: Connection, key: ScaleKey): string[] {
   return scaleKeys(readSpacePreference(conn, key).value);
 }
