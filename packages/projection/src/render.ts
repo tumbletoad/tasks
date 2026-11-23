@@ -102,11 +102,6 @@ export interface TaskInput {
   readonly touched: number;
   readonly createdAt: number;
   readonly completedAt: number | null;
-  /**
-   * The outcome is this finish's: the task is completed and wrapped up. A reopen, a drop and a
-   * check-off without a new outcome keep the one there, which is then an earlier finish's.
-   */
-  readonly wrapped: boolean;
   readonly outcome: string | null;
   /** Why an archived task was dropped. */
   readonly dropped: string | null;
@@ -324,15 +319,17 @@ export function renderTask(
   const notes = task.notes.map((n) => noteLine(n, timeZone));
   const log = task.log.map((l) => logLine(l, timeZone));
   const done = task.lifecycle !== "active";
-  const now = task.lifecycle === "completed" && task.wrapped;
+  // An open task's outcome and learnings were recorded before it was reopened. A finished task's
+  // are the ones on record for it: the file does not say which finish wrote them, which nothing
+  // stored tells.
   const ending = [
     ...(task.lifecycle === "archived"
       ? section(2, "Why it was dropped", [block(task.dropped ?? "")])
       : []),
-    ...section(2, now ? "Outcome" : "Earlier outcome", [block(task.outcome ?? "")]),
+    ...section(2, done ? "Outcome" : "Earlier outcome", [block(task.outcome ?? "")]),
     ...section(
       2,
-      now ? "Learnings" : "Earlier learnings",
+      done ? "Learnings" : "Earlier learnings",
       task.learnings.map((l) => item("", l)),
     ),
   ];

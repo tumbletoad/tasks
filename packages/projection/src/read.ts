@@ -45,7 +45,7 @@ const SQL = {
     "AND key IN (SELECT value FROM json_each($waiting))",
   tasks:
     "SELECT t.id, t.ref, t.title, t.summary, t.context, t.lifecycle, t.status, t.priority, " +
-    "t.waiting_on, t.effort, t.due_date, t.due_at, t.completed_at, t.created_at, t.wrap_state, " +
+    "t.waiting_on, t.effort, t.due_date, t.due_at, t.completed_at, t.created_at, " +
     "t.outcome, t.archived_reason, t.deleted_at, t.version, t.touched, t.project_id, " +
     "coalesce(a.slug, pa.slug) AS area, p.slug AS project FROM tasks t " +
     "LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN areas a ON a.id = t.area_id " +
@@ -270,7 +270,6 @@ export function readBatch(
         touched: num(row["touched"]),
         createdAt: num(row["created_at"]),
         completedAt: numOrNull(row["completed_at"]),
-        wrapped: row["wrap_state"] === "wrapped",
         outcome: strOrNull(row["outcome"]),
         dropped: strOrNull(row["archived_reason"]),
         labels: labels.get(id) ?? [],

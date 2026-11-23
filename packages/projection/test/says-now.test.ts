@@ -86,12 +86,12 @@ describe("[A1.5.projection.render] a task's file says what the task is now", () 
     expect(open).toContain("## Earlier learnings\n\n- Check the fixture first.");
     expect(open).not.toContain("## Outcome");
 
-    // Checked off again without a new outcome: the one there is still the earlier one.
+    // Checked off again without new words: the outcome on record is the finished task's.
     w.submit([{ kind: "task.complete", task }]);
     await project();
-    const pending = fileOf(task);
-    expect(pending).toContain("## Earlier outcome\n\nShipped the fixture fix.");
-    expect(pending).not.toContain("## Outcome");
+    const again = fileOf(task);
+    expect(again).toContain("## Outcome\n\nShipped the fixture fix.");
+    expect(again).not.toContain("Earlier");
   });
 
   test("a dropped task says why it was dropped", async () => {

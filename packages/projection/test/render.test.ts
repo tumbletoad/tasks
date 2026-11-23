@@ -42,7 +42,6 @@ const task = (extra: Partial<TaskInput> = {}): TaskInput => ({
   touched: 15,
   createdAt: DAY,
   completedAt: null,
-  wrapped: false,
   outcome: null,
   dropped: null,
   labels: ["clinic"],
@@ -205,7 +204,6 @@ describe("[A1.5.projection.render] what a task's file shows", () => {
       task({
         lifecycle: "completed",
         completedAt: DAY,
-        wrapped: true,
         outcome: "Shipped in 2.3.",
         learnings: ["Store UTC plus the zone ID."],
         notes: [],
@@ -253,7 +251,7 @@ describe("[A1.5.projection.render] what a task's file shows", () => {
     expect(content).toContain("\nwaiting_on:\n");
   });
 
-  test("an outcome that is not this finish's is said as earlier: after a reopen it follows the context; a dropped task says why first", () => {
+  test("an open task's outcome is an earlier one and follows the context; a finished task's is its outcome, however it was finished; a dropped task says why first", () => {
     const earlier = { outcome: "Shipped in 2.3.", learnings: ["Store UTC plus the zone ID."] };
     const reopened = renderTask(
       SPACE,
@@ -285,8 +283,20 @@ describe("[A1.5.projection.render] what a task's file shows", () => {
       task({ ...earlier, lifecycle: "completed", completedAt: DAY }),
       "UTC",
     ).content;
-    expect(checkedOff).toContain("\n## Earlier outcome\n");
-    expect(checkedOff).not.toContain("\n## Outcome\n");
+    // Checked off, with or without new words: what is on record is the finished task's outcome.
+    expect(checkedOff).toContain("\n## Outcome\n");
+    expect(checkedOff).toContain("\n## Learnings\n");
+    expect(checkedOff).not.toContain("Earlier");
+    // Dropped with an outcome and no separate reason (an agent finishing a task as dropped): the
+    // outcome is this task's, and nothing is headed "Why it was dropped".
+    const finishedDropped = renderTask(
+      SPACE,
+      task({ ...earlier, lifecycle: "archived" }),
+      "UTC",
+    ).content;
+    expect(finishedDropped).toContain("\n## Outcome\n\nShipped in 2.3.\n");
+    expect(finishedDropped).not.toContain("Earlier");
+    expect(finishedDropped).not.toContain("Why it was dropped");
     const dropped = renderTask(
       SPACE,
       task({ ...earlier, lifecycle: "archived", dropped: "The clinic changed vendors." }),
@@ -298,11 +308,11 @@ describe("[A1.5.projection.render] what a task's file shows", () => {
         "",
         "The clinic changed vendors.",
         "",
-        "## Earlier outcome",
+        "## Outcome",
         "",
         "Shipped in 2.3.",
         "",
-        "## Earlier learnings",
+        "## Learnings",
         "",
         "- Store UTC plus the zone ID.",
         "",
