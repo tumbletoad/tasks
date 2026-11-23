@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { deepestProject, expanded, storedForm } from "./folders.ts";
+import { bounded, deepestProject, expanded, storedForm } from "./folders.ts";
 
 describe("[A1.3.15.folders.stored-form] a folder as the space stores it, the home written as ~", () => {
   test("Linux and macOS: ~ in and out, separators made plain, case kept on Linux", () => {
@@ -71,6 +71,58 @@ describe("[A1.3.15.folders.stored-form] a folder as the space stores it, the hom
   });
 });
 
+describe("[A1.3.15.folders.bounded] a look at the disk is timed by the time this process could listen", () => {
+  /** Keeps this process busy for `ms`, as a stall of the service does. */
+  function holdUp(ms: number): void {
+    const until = performance.now() + ms;
+    while (performance.now() < until) {
+      /* held up */
+    }
+  }
+
+  test("a look of several steps answered while this process was held up before each counts as answered", async () => {
+    // Each answer is already on its way when the process is held up, as a read of the disk's is,
+    // and each next step is asked only once the one before was delivered: one turn of the event
+    // loop per step.
+    const look = bounded(async () => {
+      for (const step of ["first", "second", "third"]) {
+        const answer = new Promise((resolve) => setImmediate(resolve, step));
+        holdUp(100);
+        expect(await answer).toBe(step);
+      }
+      return "answered";
+    }, 40);
+    expect(await look).toBe("answered");
+  });
+
+  test("a look that never answers is given up after its limit of time this process ran, a stall counting little", async () => {
+    let started = performance.now();
+    expect(await bounded(() => new Promise<never>(() => undefined), 60)).toBe("not_answering");
+    expect(performance.now() - started).toBeGreaterThanOrEqual(60);
+
+    started = performance.now();
+    const look = bounded(() => {
+      holdUp(300);
+      return new Promise<never>(() => undefined);
+    }, 60);
+    expect(await look).toBe("not_answering");
+    // The stall counts as one short tick: the look still had most of its limit after it.
+    expect(performance.now() - started).toBeGreaterThanOrEqual(300 + 50);
+  });
+
+  test("a look given up is told so, and one that answered is not", async () => {
+    const signals: AbortSignal[] = [];
+    await bounded((signal) => {
+      signals.push(signal);
+      return new Promise<never>(() => undefined);
+    }, 20);
+    await bounded((signal) => {
+      signals.push(signal);
+      return Promise.resolve("answered");
+    }, 20);
+    expect(signals.map((s) => s.aborted)).toEqual([true, false]);
+  });
+});
 describe("[A1.3.15.folders.deepest] the project a working folder belongs to", () => {
   const project = (name: string, stored: string) => ({ project: name, name, stored });
 

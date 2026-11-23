@@ -7,10 +7,11 @@
 // person, a failure in the agent's own words; Stop while it works; a queued run and why it waits;
 // a refusal at the start that keeps the words; a reload and a second tab show the same run; the
 // row's marker and the Agents view.
-import { mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
+import { FOLDER_MARKER } from "../../packages/brand/src/index.ts";
 import { FAKE_QUESTION, FAKE_SIGNED_OUT } from "./codex-cases.ts";
 import { test } from "./fixture.ts";
 import {
@@ -346,7 +347,11 @@ test.describe("[M6.page.e2e.refused] A run that cannot start says why and keeps 
       await openTask(page, world, ref);
       const composer = composerOf(page, ref);
 
-      // The checkout is replaced at its path: its marker is missing.
+      // The checkout is replaced at its path once its marker is there (a busy machine writes it
+      // after the set answers): its marker is missing.
+      await expect
+        .poll(() => existsSync(join(folder, FOLDER_MARKER, "owners.json")), { timeout: SLOW_MS })
+        .toBe(true);
       renameSync(folder, join(temp, "portal-aside"));
       mkdirSync(folder);
       await composer.fill("Tag it as 2.4");
