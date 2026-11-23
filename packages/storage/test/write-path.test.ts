@@ -388,6 +388,11 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
         expect(opSpec(kind)).not.toHaveProperty("r7");
         continue;
       }
+      if (kind === "note.delete" || kind === "note.restore") {
+        // The person's alone: an agent never takes back a note.
+        expect(opSpec(kind), kind).toMatchObject({ class: "user", base: true });
+        continue;
+      }
       expect(opSpec(kind), kind).toMatchObject({ class: "agent", base: !baseFree.has(kind) });
     }
     expect(opSpec("machine.register")).toMatchObject({ class: "system" });
@@ -904,7 +909,7 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
       "ops[0].before",
     ]);
     expect(code({ kind: "task.create", title: SECRET, id })).toEqual(["VALIDATION_FAILED", "id"]);
-    expect(code({ kind: "note.delete", task: id })).toEqual(["VALIDATION_FAILED", "ops[0].kind"]);
+    expect(code({ kind: "note.patch", task: id })).toEqual(["VALIDATION_FAILED", "ops[0].kind"]);
     expect(lastSeq()).toBe(seq);
   });
 

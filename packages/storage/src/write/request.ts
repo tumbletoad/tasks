@@ -539,6 +539,26 @@ export interface NoteAdd {
   addressee?: Addressee;
 }
 
+/**
+ * `note.delete`: retracts one note of a task, by its ordinal. The row stays with its ordinal,
+ * author and audience, and every read of notes skips it. A removed note is unchanged. Needs a base.
+ */
+export interface NoteDelete {
+  kind: "note.delete";
+  task: string;
+  ordinal: number;
+}
+
+/**
+ * `note.restore`: puts back a note that `note.delete` retracted, as it was. A live note is
+ * unchanged. A note removed by an undo of its writing is Redo's to bring back. Needs a base.
+ */
+export interface NoteRestore {
+  kind: "note.restore";
+  task: string;
+  ordinal: number;
+}
+
 /** `log.add` (A1 3.6): a new log entry. Its session and run come from the credential. */
 export interface LogAdd {
   kind: "log.add";
@@ -933,6 +953,8 @@ export type Operation =
   | TaskDelete
   | TaskRestore
   | NoteAdd
+  | NoteDelete
+  | NoteRestore
   | LogAdd
   | SourceAdd
   | SourceUnlink
@@ -960,6 +982,8 @@ export const OPERATION_KINDS = [
   "task.delete",
   "task.restore",
   "note.add",
+  "note.delete",
+  "note.restore",
   "log.add",
   "source.add",
   "source.unlink",
@@ -1556,6 +1580,16 @@ function checkOperation(value: unknown, i: number): Operation {
         body: f.text("body", { bytes: WRITE_LIMITS.note }),
       };
       if (f.has("addressee")) note.addressee = f.oneOf("addressee", ADDRESSEES);
+      op = note;
+      break;
+    }
+    case "note.delete":
+    case "note.restore": {
+      const note: NoteDelete | NoteRestore = {
+        kind,
+        task: f.reference("task"),
+        ordinal: f.int("ordinal", 1, RANGES.seq.max),
+      };
       op = note;
       break;
     }
