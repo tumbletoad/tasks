@@ -90,6 +90,7 @@ import {
   encodeRevision,
   finishInterruptedRestore,
   formatRevision,
+  isId,
   LATEST_REVISION,
   readManifest,
   RANGES,
@@ -434,6 +435,11 @@ class Hosted {
   restored: Restored | undefined;
   /** The copy it is served as (copyToken), once it is served. */
   copy: string | undefined;
+  /**
+   * The served copy's incarnation, once it is served: the history its backups belong to
+   * (storage's backupHistories).
+   */
+  incarnation: Id<"ai"> | undefined;
   /** The space's machine-local backup folder, when one is set. */
   backupDir: string | undefined;
   /** The projection's worker while the space is open as this machine's. */
@@ -539,6 +545,7 @@ class Hosted {
     this.message = undefined;
     this.restored = undefined;
     this.copy = undefined;
+    this.incarnation = undefined;
     this.backups.reset();
   }
 
@@ -724,6 +731,23 @@ export class SpaceManager {
   /** The folder of a registered space, for the space verbs. */
   folderOf(entry: number): string {
     return this.#space(entry).folder;
+  }
+
+  /**
+   * The incarnation of the copy in the entry's folder, whose backups are its history: as served,
+   * else as its space.json names it when that names the entry's space. Undefined when neither says.
+   */
+  incarnationOf(entry: number): Id<"ai"> | undefined {
+    const space = this.#space(entry);
+    if (space.incarnation !== undefined) return space.incarnation;
+    try {
+      const read = readManifest(space.folder);
+      return read.state === "present" && read.manifest?.space_id === space.registered
+        ? read.manifest.authority.incarnation
+        : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /** The copy a registered space is served as (copyToken), while it is open or read-only. */
@@ -962,6 +986,7 @@ export class SpaceManager {
     space.restored = restoredOf(row?.transfer);
     const epoch = row?.authority_epoch;
     const incarnation = row?.authority_incarnation;
+    space.incarnation = isId(incarnation, "ai") ? incarnation : undefined;
     space.copy =
       typeof epoch === "number" && typeof incarnation === "string"
         ? copyToken(space.folder, epoch, incarnation, space.restored)
@@ -1863,7 +1888,8 @@ export class SpaceManager {
   #maintain(space: Hosted, atStart: boolean): void {
     const { maintenance, log } = this.#options;
     const spaceId = space.id;
-    if (maintenance === undefined || spaceId === undefined) return;
+    const { incarnation } = space;
+    if (maintenance === undefined || spaceId === undefined || incarnation === undefined) return;
     const now = (this.#options.now?.() ?? new Date()).getTime();
     const t0 = performance.now();
     const begun = space.backups.begin();
@@ -1871,6 +1897,7 @@ export class SpaceManager {
       .run({
         folder: space.folder,
         spaceId,
+        incarnation,
         ...(space.backupDir === undefined ? {} : { backupDir: space.backupDir }),
         // Only the space's own backups folder, which this service alone writes while it holds
         // the space's writer.lock (maintenance.ts).

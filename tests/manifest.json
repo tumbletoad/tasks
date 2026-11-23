@@ -664,7 +664,15 @@
     },
     {
       "id": "A1.5.backup.newest-work",
-      "title": "The newest backup of a space is the one holding the furthest saved work: a later incarnation, then a later commit, and a later time only for the same commit. After the clock was set back, restore latest takes the backup with the later commits, and retention and the upkeep keep it as the newest and as its day's",
+      "title": "Within one history of a space, the newest backup is the one holding the furthest saved work: a later commit, and a later time only for the same commit. After the clock was set back, restore latest takes the backup with the later commits, and retention and the upkeep keep it as the newest and as its day's",
+      "source": "A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.histories",
+      "title": "Each claim and restore in place starts a history of backups, and no history's backups are judged by another's: a daily of one copy does not stand for another's, retention keeps each history's newest backup that restores, restore latest takes the served copy's own history and, when it has none here, the one written to last while naming the others, and space backups tells the copies apart",
       "source": "A1 3.18",
       "owner": "M3",
       "kind": "ci",
@@ -672,7 +680,7 @@
     },
     {
       "id": "A1.5.restore.not-the-backup",
-      "title": "A failure that is not the backup's is said as itself: an I/O error on the destination stops restore latest instead of restoring older work, and a trial restore that the disk or its free space stops leaves the backup unchecked, so retention names no older backup the newest that restores and removes nothing",
+      "title": "Only a backup's own content makes it damaged, and any other failure is said as itself: an I/O error on the destination or SQLite out of memory stops restore latest instead of restoring older work, and a trial restore that the disk or its free space stops leaves the backup unchecked, so retention names no older backup the newest that restores and removes nothing",
       "source": "A1 3.18",
       "owner": "M3",
       "kind": "ci",

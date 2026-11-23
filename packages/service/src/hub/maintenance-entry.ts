@@ -4,10 +4,11 @@
 import { parentPort, workerData } from "node:worker_threads";
 import {
   applyRetention,
+  backupHistories,
   backupSpace,
   backupsFolder,
   CheckedDriver,
-  compareNewest,
+  compareInHistory,
   dailyBackupDue,
   DEFAULT_DRIVER,
   listBackups,
@@ -34,7 +35,12 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
   // Only in a backups folder this service alone writes: see maintenance.ts.
   const leftovers = job.cleanup ? removeBackupLeftovers(listing, { now: job.now }).length : 0;
   if (leftovers > 0) listing = listBackups(dir);
-  const due = dailyBackupDue(listing, clock, { atStart: job.atStart, spaceId: job.spaceId });
+  // Only this copy's history counts: another copy's daily in a shared folder is not this one's.
+  const due = dailyBackupDue(listing, clock, {
+    atStart: job.atStart,
+    spaceId: job.spaceId,
+    incarnation: job.incarnation,
+  });
   let searchIndexDamaged = false;
   let after = clock;
   if (due) {
@@ -49,33 +55,42 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
     if (taken.sidecar.created_at > after.now) after = { ...after, now: taken.sidecar.created_at };
   }
   // Retention verifies the newest backups in full, so it runs at the start and after a backup only.
+  // Each history is kept on its own; the report is of this copy's.
   const retention =
     due || job.atStart
       ? await applyRetention(
           checked,
           listing,
           planRetention(listing, after, { spaceId: job.spaceId }),
+          { history: job.incarnation },
         )
       : undefined;
+  const own = backupHistories(listing, job.spaceId).find((h) => h.incarnation === job.incarnation);
   const named = (name: string | undefined) =>
-    name === undefined ? undefined : listing.backups.find((b) => b.name === name);
+    name === undefined ? undefined : own?.backups.find((b) => b.name === name);
   const verified = named(retention?.verified);
   const verifiedAt = verified?.sidecar?.created_at;
-  // Backups of the space newer than the one that restores, or than the one whose trial could not
-  // run, whose files are no longer whole (data missing or of another size, a sidecar missing or
-  // unreadable): retention passes them over, and they do not restore either. One without a sidecar
-  // that reads names no space: in the space's own folder it is the space's, in a backup.dir that
-  // other spaces may share it is nobody's known.
+  // Backups of this copy's history newer than the one that restores, or than the one whose trial
+  // could not run, whose files are no longer whole (data missing or of another size): retention
+  // passes them over, and they do not restore either. A `.db.gz` whose sidecar is missing or does
+  // not read names no history: in the space's own folder, one of this copy's epoch is this copy's
+  // (each claim here takes a new epoch), in a backup.dir that other spaces and copies may share it
+  // is nobody's known.
   const ownFolder = job.backupDir === undefined;
+  const epoch = own?.backups[0]?.sidecar?.epoch;
   const newestKnown = verified ?? named(retention?.unchecked?.name);
   const broken =
     retention === undefined
       ? 0
-      : listing.backups.filter(
+      : [
+          ...(own?.backups ?? []),
+          ...listing.backups.filter(
+            (b) => b.sidecar === undefined && ownFolder && b.epoch === epoch,
+          ),
+        ].filter(
           (b) =>
             b.state !== "ok" &&
-            (b.sidecar === undefined ? ownFolder : b.sidecar.space_id === job.spaceId) &&
-            (newestKnown === undefined || compareNewest(b, newestKnown) < 0) &&
+            (newestKnown === undefined || compareInHistory(b, newestKnown) < 0) &&
             b.createdAt <= after.now,
         ).length;
   const unchecked = retention?.unchecked;

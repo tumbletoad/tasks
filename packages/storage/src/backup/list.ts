@@ -1,7 +1,8 @@
 // Listing a space's backups (A1 3.18, `ttasks space backups list` in M1.10). The listing reads each
 // sidecar and checks that its `.db.gz` is there with the size the sidecar records. It does not
 // decompress anything, and it verifies nothing: a restore checks the backup in full before it uses
-// it, and retention keeps the newest backup that a trial restore verified (verifyBackup).
+// it, and retention keeps, in each history, the newest backup that a trial restore verified
+// (verifyBackup).
 //
 // Files the listing does not recognise are never touched. LEFTOVERS are only a backup's own
 // temporary files, by their exact names (isBackupTemporary), which a crash can leave and
@@ -112,7 +113,14 @@ export interface BackupHistory {
   readonly lastWrittenAt: number;
 }
 
-const byWork = (a: ListedBackup, b: ListedBackup): number =>
+/**
+ * Orders two backups of ONE history newest first by the work they hold (BackupHistory.backups).
+ * Between histories it means nothing.
+ */
+export const compareInHistory = (
+  a: Pick<ListedBackup, "name" | "createdAt" | "seq">,
+  b: Pick<ListedBackup, "name" | "createdAt" | "seq">,
+): number =>
   b.seq - a.seq || b.createdAt - a.createdAt || (a.name < b.name ? 1 : a.name > b.name ? -1 : 0);
 
 const byClock = (a: { name: string; createdAt: number }, b: typeof a): number =>
@@ -132,7 +140,7 @@ function groupHistories(backups: readonly ListedBackup[]): BackupHistory[] {
       return {
         spaceId: sidecar.space_id,
         incarnation: sidecar.incarnation,
-        backups: members.sort(byWork),
+        backups: members.sort(compareInHistory),
         lastWrittenAt: Math.max(...members.map((b) => b.createdAt)),
       };
     })

@@ -17,6 +17,11 @@ import type { Id } from "@ttasks/storage";
 export interface MaintenanceJob {
   readonly folder: string;
   readonly spaceId: Id<"sp">;
+  /**
+   * The served copy's incarnation: its history is the one whose daily backup is due, and whose
+   * trial restore the report gives (storage's backupHistories).
+   */
+  readonly incarnation: Id<"ai">;
   /** The machine-local `backup.dir`, when set. Default: the space's own `backups/`. */
   readonly backupDir?: string;
   /** Remove leftovers: only in a folder this service alone writes (above). */

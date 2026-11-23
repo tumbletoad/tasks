@@ -45,6 +45,7 @@ import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
 import { shellLine } from "@ttasks/launch";
 import {
+  backupHistories,
   backupsFolder,
   exportsFolder,
   listBackups,
@@ -58,7 +59,7 @@ import type { ConnectionClass } from "../local/index.ts";
 import { ambiguousError, findSpace, isAmbiguity } from "../ops/copies.ts";
 import { isUserClass } from "../ops/index.ts";
 import { storageFailureBody } from "./space-errors.ts";
-import { AdminFailed, runAdmin, type AdminResult } from "./space-admin.ts";
+import { AdminFailed, historyView, runAdmin, type AdminResult } from "./space-admin.ts";
 import {
   because,
   forgetSpaceRecord,
@@ -96,6 +97,7 @@ export interface SpaceVerbsHost {
     | "rebuildView"
     | "repairSearch"
     | "backedUp"
+    | "incarnationOf"
   >;
   readonly machine: MachineInfo;
   /** The state folder, for each space's machine-local settings (`backup.dir`). */
@@ -735,26 +737,40 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
         const listing = listBackups(dir);
         // The space's own folder is made at its first backup: until then it holds none.
         if (set && !listing.present) throw backupsAway(dir);
+        // Each copy of the space writes its own history (a copy claimed on another machine, one a
+        // restore in place replaced): this copy's first, then the one written to last.
+        const own = manager.incarnationOf(view.entry);
+        const histories = id === undefined ? [] : backupHistories(listing, id);
+        const ordered = [
+          ...histories.filter((h) => h.incarnation === own),
+          ...histories.filter((h) => h.incarnation !== own),
+        ];
         return Promise.resolve({
           folder: dir,
+          histories: ordered.map((h) => ({
+            ...historyView(h),
+            this_copy: h.incarnation === own,
+          })),
           // A backup.dir can be shared: another space's backups are not this one's. One whose
-          // sidecar does not read names no space, and is listed for each.
-          backups: listing.backups
-            .filter((b) => b.sidecar === undefined || b.sidecar.space_id === id)
-            .map((b) => ({
-              name: b.name,
-              state: b.state,
-              created_at: new Date(b.createdAt).toISOString(),
-              ...(b.sidecar === undefined
-                ? {}
-                : {
-                    kind: b.sidecar.kind,
-                    epoch: b.sidecar.epoch,
-                    seq: b.sidecar.seq,
-                    size: b.sidecar.size,
-                    compressed_size: b.sidecar.compressed_size,
-                  }),
-            })),
+          // sidecar does not read names no space and no history, and is listed for each, last.
+          backups: [
+            ...ordered.flatMap((h) => h.backups),
+            ...listing.backups.filter((b) => b.sidecar === undefined),
+          ].map((b) => ({
+            name: b.name,
+            state: b.state,
+            created_at: new Date(b.createdAt).toISOString(),
+            ...(b.sidecar === undefined
+              ? {}
+              : {
+                  kind: b.sidecar.kind,
+                  history: b.sidecar.incarnation,
+                  epoch: b.sidecar.epoch,
+                  seq: b.sidecar.seq,
+                  size: b.sidecar.size,
+                  compressed_size: b.sidecar.compressed_size,
+                }),
+          })),
           leftovers: listing.leftovers,
         });
       } catch (error) {
@@ -840,17 +856,25 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
           }
           return await oneAtATime(async () => {
             refuseNetwork(await manager.checkFolder(target), "to");
+            // This copy's own history first: another copy's work is never taken in its place
+            // without the answer saying so (storage's restoreLatest).
+            const incarnation = manager.incarnationOf(of.entry);
             const restored = await runAdmin({
               kind: "restore-latest",
               backupDir: dir,
               spaceId,
               target,
+              ...(incarnation === undefined ? {} : { incarnation }),
             });
             return await openRestored(
               target,
               spaceOf(restored),
               restored.kind === "restore" && restored.backup !== undefined
-                ? { backup: restored.backup }
+                ? {
+                    backup: restored.backup,
+                    ...(restored.history === undefined ? {} : { history: { ...restored.history } }),
+                    other_histories: (restored.others ?? []).map((h) => ({ ...h })),
+                  }
                 : {},
             );
           });

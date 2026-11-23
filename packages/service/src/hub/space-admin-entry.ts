@@ -16,7 +16,7 @@ import {
   restoreLatest,
 } from "@ttasks/storage";
 import { makeDir } from "./files.ts";
-import type { AdminJob, AdminReply, AdminResult } from "./space-admin.ts";
+import { historyView, type AdminJob, type AdminReply, type AdminResult } from "./space-admin.ts";
 
 const reply = (message: AdminReply): void => {
   parentPort?.postMessage(message);
@@ -92,13 +92,20 @@ async function run(job: AdminJob): Promise<AdminResult> {
       return { kind: "restore", spaceId: restored.space.spaceId };
     }
     case "restore-latest": {
-      const { restored, backup } = await restoreLatest(
+      const latest = await restoreLatest(
         checked,
         job.backupDir,
         job.spaceId,
         job.target,
+        job.incarnation === undefined ? {} : { incarnation: job.incarnation },
       );
-      return { kind: "restore", spaceId: restored.space.spaceId, backup };
+      return {
+        kind: "restore",
+        spaceId: latest.restored.space.spaceId,
+        backup: latest.backup,
+        history: { ...historyView(latest.history), this_copy: latest.own },
+        others: latest.others.map(historyView),
+      };
     }
     case "rescue": {
       const rescued = rescueSpace(checked, job.folder, {

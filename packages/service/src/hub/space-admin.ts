@@ -5,7 +5,7 @@
 // connection (A1 3.9). Content-free replies: an error crosses as its code only, never a message
 // that could name a path.
 import { Worker } from "node:worker_threads";
-import type { Id } from "@ttasks/storage";
+import type { BackupHistory, Id } from "@ttasks/storage";
 
 export type AdminJob =
   | {
@@ -40,6 +40,8 @@ export type AdminJob =
       readonly backupDir: string;
       readonly spaceId: Id<"sp">;
       readonly target: string;
+      /** The incarnation of the copy this machine serves, when known: its history is taken first. */
+      readonly incarnation?: Id<"ai">;
     }
   /** The rows that can still be read, into `exchange/rescued/` (A1 3.2). */
   | {
@@ -60,6 +62,27 @@ export interface AdminBackup {
   readonly size: number;
   readonly compressed_size: number;
 }
+
+/**
+ * One history of a space's backups (storage's backupHistories) as a person tells it apart: when it
+ * was last written to and how far it goes, by its newest backup. Its incarnation is for programs.
+ */
+export interface AdminHistory {
+  readonly incarnation: string;
+  readonly last_written_at: string;
+  readonly newest: string;
+  readonly seq: number;
+  readonly backups: number;
+}
+
+/** A history as AdminHistory. */
+export const historyView = (history: BackupHistory): AdminHistory => ({
+  incarnation: history.incarnation,
+  last_written_at: new Date(history.lastWrittenAt).toISOString(),
+  newest: history.backups[0]?.name ?? "",
+  seq: history.backups[0]?.seq ?? 0,
+  backups: history.backups.length,
+});
 
 /** A published export bundle, as the CLI shows it. */
 export interface AdminExport {
@@ -86,7 +109,14 @@ export type AdminResult =
       readonly searchIndexDamaged?: true;
     }
   | { readonly kind: "export"; readonly export: AdminExport }
-  | { readonly kind: "restore"; readonly spaceId: Id<"sp">; readonly backup?: string }
+  | {
+      readonly kind: "restore";
+      readonly spaceId: Id<"sp">;
+      /** Restore latest's: the backup, its history, and the space's other histories. */
+      readonly backup?: string;
+      readonly history?: AdminHistory & { readonly this_copy: boolean };
+      readonly others?: readonly AdminHistory[];
+    }
   | {
       readonly kind: "rescue";
       readonly file: string;

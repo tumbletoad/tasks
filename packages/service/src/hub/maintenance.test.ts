@@ -49,6 +49,7 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
     const job = {
       folder: space.folder,
       spaceId: space.space.spaceId,
+      incarnation: space.space.authority.incarnation,
       cleanup: true,
       atStart: true,
       utcOffsetMinutes,
@@ -90,6 +91,7 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
     const job = {
       folder: space.folder,
       spaceId: space.space.spaceId,
+      incarnation: space.space.authority.incarnation,
       cleanup: true,
       atStart: true,
       utcOffsetMinutes: noonAt(start),
@@ -137,6 +139,7 @@ describe("[A1.5.backup.kept-unknown] the upkeep removes only files it knows to b
     const report = await runner.run({
       folder: space.folder,
       spaceId: space.space.spaceId,
+      incarnation: space.space.authority.incarnation,
       cleanup: true,
       atStart: true,
       now,
@@ -171,6 +174,7 @@ describe("[A1.5.backup.kept-unknown] the upkeep removes only files it knows to b
     const report = await runner.run({
       folder: space.folder,
       spaceId: space.space.spaceId,
+      incarnation: space.space.authority.incarnation,
       cleanup: true,
       atStart: true,
       now,

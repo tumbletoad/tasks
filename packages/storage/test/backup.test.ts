@@ -767,16 +767,17 @@ describe("[A1.5.backup.list] listing a space's backups", () => {
     writeFileSync(join(dir, "daily-20261107T000000.000Z-e1-s0.db.gz"), "orphan");
     writeFileSync(join(dir, "notes.txt"), "someone's own file");
     const listing = listBackups(dir);
+    // The space's one history first, then what belongs to none: a sidecar missing or unreadable.
     expect(listing.backups.map((x) => [x.name, x.state])).toEqual([
-      ["daily-20261107T000000.000Z-e1-s0", "missing_sidecar"],
-      ["daily-20261106T000000.000Z-e1-s0", "invalid_sidecar"],
       [e.name, "ok"],
-      [d.name, "invalid_sidecar"],
       [c.name, "size_mismatch"],
       [b.name, "missing_data"],
       [a.name, "ok"],
+      ["daily-20261107T000000.000Z-e1-s0", "missing_sidecar"],
+      ["daily-20261106T000000.000Z-e1-s0", "invalid_sidecar"],
+      [d.name, "invalid_sidecar"],
     ]);
-    expect(listing.backups[0]?.createdAt).toBe(Date.UTC(2026, 10, 7));
+    expect(listing.backups[4]?.createdAt).toBe(Date.UTC(2026, 10, 7));
     expect(listing.leftovers).toEqual([`${BACKUP_TEMP_PREFIX}0123456789abcdef.db`]);
     expect(removeBackupLeftovers(listing, AFTER_RESTART)).toEqual(listing.leftovers);
     expect(existsSync(join(dir, "notes.txt"))).toBe(true);

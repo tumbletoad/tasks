@@ -8,7 +8,6 @@ import { backupSpace, backupSpaceWith } from "../src/backup/backup.ts";
 import { BUNDLE_POLICY } from "../src/backup/policy.ts";
 import {
   listBackups,
-  newestFirst,
   verifyBackup,
   type BackupListing,
   type ListedBackup,
@@ -52,6 +51,8 @@ const NEWEST_ONLY: RetentionRules = { daily: 1, weekly: 1, dailyHour: 3 };
 
 const SPACE: Id<"sp"> = "sp_7c0hq2m4w9d8k1r6t3v5x0b2nf";
 const OTHER_SPACE: Id<"sp"> = "sp_2b8n4c6x0v1m3q5w7e9r0t2y4u";
+/** The incarnation of the epoch-1 backups these listings hold. */
+const FIRST: Id<"ai"> = "ai_5n0w8k3q7d1m9x4r2t6v0b8c3h";
 
 /** Where a backup stands in its space's history: its incarnation's epoch and its last commit. */
 interface Work {
@@ -76,7 +77,7 @@ function listed(
     created_at: createdAt,
     space_id: spaceId,
     epoch,
-    incarnation: epoch === 1 ? "ai_5n0w8k3q7d1m9x4r2t6v0b8c3h" : "ai_5d2m5q9w1x7k3r0t4v6b8c2n5h",
+    incarnation: epoch === 1 ? FIRST : "ai_5d2m5q9w1x7k3r0t4v6b8c2n5h",
     seq,
     user_version: 1,
     size: 4096,
@@ -123,34 +124,65 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
 
   test("a daily backup is due after 03:00 local, or at start when the last is a day old", () => {
     const clock = (now: number) => ({ now, utcOffsetMinutes: 60 });
-    expect(dailyBackupDue(listing([]), clock(WED), { atStart: false, spaceId: SPACE })).toBe(true);
+    expect(
+      dailyBackupDue(listing([]), clock(WED), {
+        atStart: false,
+        spaceId: SPACE,
+        incarnation: FIRST,
+      }),
+    ).toBe(true);
     // Yesterday's daily at 03:30 local: due once today's 03:00 local has passed.
     const yesterday = listing([listed("daily", WED - DAY + 2 * HOUR + 30 * 60_000)]);
     expect(
       dailyBackupDue(yesterday, clock(WED + HOUR + 59 * 60_000), {
         atStart: false,
         spaceId: SPACE,
+        incarnation: FIRST,
       }),
     ).toBe(false);
     expect(
-      dailyBackupDue(yesterday, clock(WED + 2 * HOUR), { atStart: false, spaceId: SPACE }),
+      dailyBackupDue(yesterday, clock(WED + 2 * HOUR), {
+        atStart: false,
+        spaceId: SPACE,
+        incarnation: FIRST,
+      }),
     ).toBe(true);
     // At start, a daily backup older than 24 hours is due at once, before 03:00 too.
     const late = listing([listed("daily", WED - DAY + 4 * HOUR)]);
-    expect(dailyBackupDue(late, clock(WED + HOUR), { atStart: false, spaceId: SPACE })).toBe(false);
-    expect(dailyBackupDue(late, clock(WED + 4 * HOUR + 1), { atStart: true, spaceId: SPACE })).toBe(
-      true,
-    );
-    expect(dailyBackupDue(late, clock(WED + HOUR), { atStart: true, spaceId: SPACE })).toBe(false);
+    expect(
+      dailyBackupDue(late, clock(WED + HOUR), {
+        atStart: false,
+        spaceId: SPACE,
+        incarnation: FIRST,
+      }),
+    ).toBe(false);
+    expect(
+      dailyBackupDue(late, clock(WED + 4 * HOUR + 1), {
+        atStart: true,
+        spaceId: SPACE,
+        incarnation: FIRST,
+      }),
+    ).toBe(true);
+    expect(
+      dailyBackupDue(late, clock(WED + HOUR), {
+        atStart: true,
+        spaceId: SPACE,
+        incarnation: FIRST,
+      }),
+    ).toBe(false);
     // Other kinds and incomplete backups do not count as the day's daily.
     const others = listing([
       listed("manual", WED + 3 * HOUR),
       listed("pre-migrate", WED + 3 * HOUR),
       listed("daily", WED + 3 * HOUR, "missing_data"),
     ]);
-    expect(dailyBackupDue(others, clock(WED + 5 * HOUR), { atStart: false, spaceId: SPACE })).toBe(
-      true,
-    );
+    expect(
+      dailyBackupDue(others, clock(WED + 5 * HOUR), {
+        atStart: false,
+        spaceId: SPACE,
+        incarnation: FIRST,
+      }),
+    ).toBe(true);
   });
 
   test("keeps 7 daily, 4 weekly, every backup that is not a daily one, and the newest", () => {
@@ -428,8 +460,16 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     expect(plan.keep).toEqual(ours.slice(0, 7).map((b) => b.name));
     // Today's daily of the other space does not count as this space's.
     const otherToday = listing([listed("daily", now - HOUR, "ok", OTHER_SPACE)]);
-    expect(dailyBackupDue(otherToday, clock, { atStart: false, spaceId: SPACE })).toBe(true);
-    expect(dailyBackupDue(otherToday, clock, { atStart: false, spaceId: OTHER_SPACE })).toBe(false);
+    expect(
+      dailyBackupDue(otherToday, clock, { atStart: false, spaceId: SPACE, incarnation: FIRST }),
+    ).toBe(true);
+    expect(
+      dailyBackupDue(otherToday, clock, {
+        atStart: false,
+        spaceId: OTHER_SPACE,
+        incarnation: FIRST,
+      }),
+    ).toBe(false);
   });
 
   test("a daily backup dated in the future does not hold back the next one", () => {
@@ -437,8 +477,12 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     // A clock that once ran a year ahead left a daily backup from the future.
     const ahead = listing([listed("daily", now + 365 * DAY)]);
     const clock = { now, utcOffsetMinutes: 0 };
-    expect(dailyBackupDue(ahead, clock, { atStart: false, spaceId: SPACE })).toBe(true);
-    expect(dailyBackupDue(ahead, clock, { atStart: true, spaceId: SPACE })).toBe(true);
+    expect(
+      dailyBackupDue(ahead, clock, { atStart: false, spaceId: SPACE, incarnation: FIRST }),
+    ).toBe(true);
+    expect(
+      dailyBackupDue(ahead, clock, { atStart: true, spaceId: SPACE, incarnation: FIRST }),
+    ).toBe(true);
   });
 });
 
@@ -533,7 +577,11 @@ describe("[A1.5.backup.histories] no history's backups are judged by another's",
     const { folder, space } = await createFixtureSpace(root);
     const shared = join(root, "shared-backups");
     mkdirSync(shared);
-    const first = await backupSpace(checked, folder, { kind: "manual", backupDir: shared });
+    const first = await backupSpace(checked, folder, {
+      kind: "manual",
+      backupDir: shared,
+      now: () => WED - 3 * DAY,
+    });
     const copy = async (slug: string) => {
       const at = join(root, slug);
       await restoreBackup(checked, first.file, at);

@@ -142,6 +142,20 @@ describe("[A2.3.10.cli.space] ttasks space through the service", () => {
     expect(inPlace.code, inPlace.stdout + inPlace.stderr).toBe(0);
     expect(parsed(inPlace.stdout)).toMatchObject({ epoch: 2, space: { state: "open" } });
     expect((await world.tasks(["show", "M-1", "--space", "Mira", "--json"])).code).toBe(0);
+    // [A1.5.backup.histories] The restore in place started this copy's own history: its backups
+    // are told apart from those of the copy it replaced, which came with the folder.
+    const own = await user(["space", "backup", "Mira", "--json"]);
+    expect(own.code, own.stdout + own.stderr).toBe(0);
+    const ownName = (parsed(own.stdout)["backup"] as { name: string }).name;
+    const told = (await user(["space", "backups", "Mira"])).stdout;
+    const heading = (whose: string, backup: string): RegExp =>
+      new RegExp(
+        `^${whose} backups, up to seq \\d+, the last made [0-9: -]+:\\n${backup.replaceAll(".", "\\.")}  ok`,
+        "mu",
+      );
+    expect(told).toMatch(heading("This copy's", ownName));
+    expect(told).toMatch(heading("Another copy's", name));
+    expect(told.indexOf("This copy's")).toBe(0);
 
     // Into a new folder while the space is open: a read-only copy, made but not opened beside the
     // space it is a copy of, and the answer says how to look inside it.

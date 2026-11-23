@@ -204,6 +204,7 @@ export {
 } from "./backup/backup.ts";
 export {
   backupHistories,
+  compareInHistory,
   listBackups,
   removeBackupLeftovers,
   verifyBackup,

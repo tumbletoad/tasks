@@ -12,11 +12,13 @@ import {
   createSpace,
   listBackups,
   newId,
+  restoreBackup,
   type Id,
 } from "@ttasks/storage";
 import { checkedDriver } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { writeCommits } from "../../storage/test/backup-helpers.ts";
+import { restoreInPlace } from "../../storage/src/restore/restore.ts";
 import { FIXTURE_MACHINE } from "../../storage/test/fixture-requests.ts";
 import { Maintenance } from "../src/hub/maintenance.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";
@@ -283,6 +285,7 @@ describe("[A1.5.backup.newest-work] the newest backup is the one that holds the 
         const report = await runner.run({
           folder: work.folder,
           spaceId: work.space.spaceId,
+          incarnation: work.space.authority.incarnation,
           cleanup: true,
           atStart: true,
           now,
@@ -297,6 +300,90 @@ describe("[A1.5.backup.newest-work] the newest backup is the one that holds the 
         await runner.stop();
       }
       expect(existsSync(later.file) && existsSync(later.sidecarFile)).toBe(true);
+    },
+    SLOW,
+  );
+});
+
+describe("[A1.5.backup.histories] no history's backups are judged by another's", () => {
+  test(
+    "two copies claimed apart share a backups folder: restore latest of the served copy takes its own newest and names the other copy's, space backups tells them apart, and its upkeep makes its own daily",
+    async () => {
+      const machine = FIXTURE_MACHINE.id;
+      const { root, home, spaces } = setUp("histories", machine);
+      const work = await fixtureSpace(join(spaces, "work"), machine);
+      const checked = await checkedDriver();
+      const shared = join(root, "shared");
+      mkdirSync(shared);
+      const now = Date.now();
+      const first = await backupSpace(checked, work.folder, {
+        kind: "manual",
+        backupDir: shared,
+        now: () => now - 3 * 24 * HOUR,
+      });
+      // Each copy claimed from the same backup: the same epoch, each its own incarnation.
+      const copy = async (slug: string) => {
+        const at = join(spaces, slug);
+        await restoreBackup(checked, first.file, at);
+        const { claim } = await restoreInPlace(checked, first.file, at, { machineId: machine });
+        return { folder: at, incarnation: claim.incarnation };
+      };
+      const laptop = await copy("laptop");
+      const desktop = await copy("desktop");
+      await writeCommits(laptop.folder, 2, "l");
+      const ours = await backupSpace(checked, laptop.folder, {
+        kind: "daily",
+        backupDir: shared,
+        now: () => now - 2 * 24 * HOUR,
+      });
+      // The other copy went further, and made its daily today.
+      await writeCommits(desktop.folder, 6, "d");
+      const theirs = await backupSpace(checked, desktop.folder, {
+        kind: "daily",
+        backupDir: shared,
+        now: () => now - HOUR,
+      });
+      expect(theirs.sidecar.seq).toBeGreaterThan(ours.sidecar.seq);
+      writeSettings(home, work.space.spaceId, { format: 1, backup: { dir: shared } });
+      const { user } = await start(home, [laptop.folder]);
+
+      const listed = await call(user, "space/backups", { space: laptop.folder });
+      expect(listed["histories"]).toMatchObject([
+        { incarnation: laptop.incarnation, this_copy: true, newest: ours.name },
+        { incarnation: desktop.incarnation, this_copy: false, newest: theirs.name },
+        { incarnation: first.sidecar.incarnation, this_copy: false, newest: first.name },
+      ]);
+      const restored = await call(user, "space/restore", {
+        backup: "latest",
+        of: laptop.folder,
+        to: join(spaces, "copy"),
+      });
+      expect(restored).toMatchObject({ backup: ours.name, history: { this_copy: true } });
+      expect((restored["other_histories"] as { newest: string }[]).map((h) => h.newest)).toEqual([
+        theirs.name,
+        first.name,
+      ]);
+
+      // The other copy's daily today does not stand for this copy's, and nothing of it goes.
+      const runner = new Maintenance();
+      try {
+        const report = await runner.run({
+          folder: laptop.folder,
+          spaceId: work.space.spaceId,
+          incarnation: laptop.incarnation,
+          backupDir: shared,
+          cleanup: false,
+          atStart: false,
+          now,
+          utcOffsetMinutes: noonAt(now),
+        });
+        expect(report).toMatchObject({ backup: "taken", checked: true, unverified: 0 });
+      } finally {
+        await runner.stop();
+      }
+      for (const kept of [first, ours, theirs]) {
+        expect(existsSync(kept.file) && existsSync(kept.sidecarFile), kept.name).toBe(true);
+      }
     },
     SLOW,
   );

@@ -68,15 +68,22 @@ the behaviour it describes, and keep each one to a sentence or two.
   `ttasks space list` and the page's space switcher say so and what to do, until a backup succeeds
   again. A trial restore that has no room to run is said as that, never as a backup that does not
   restore, and clean-up then removes nothing.
-- The newest backup is the one that holds your latest saved work, also after the clock was set
-  back. Clean-up never removes it, nor the newest backup that restores.
+- Each copy of a space keeps its own line of backups: a copy you claim, here or on another
+  machine, and the space after a restore over it start a new one. One copy's backups never decide
+  which of another's are kept, which is the newest, or whether its daily backup is due, also when
+  several copies share one backups folder. A line no copy writes any more keeps what clean-up kept
+  when it ended.
+- Within a copy's backups, the newest is the one that holds your latest saved work, also after the
+  clock was set back. Clean-up never removes it, nor the newest backup that restores.
 - A backups folder you set for a space that is not there, such as one on a drive that is not
   connected, is said as not there, with its path. No backup goes to a new folder in its place.
 - Making a backup or an export never overwrites an existing file.
 - A restore checks the backup first. A backup that is broken or too new leaves nothing half
   restored.
-- `ttasks space restore latest` restores the newest backup that restores. When the disk has no
-  room for it, or fails, it says so and restores no older one in its place.
+- `ttasks space restore latest` restores the newest backup of this copy that restores. When the
+  folder holds none of this copy's, it takes the copy whose backups were made last and says which
+  other copies it holds. When the disk has no room, fails, or a backup could not be checked for a
+  reason that is not the backup's own, it says so and restores no older one in its place.
 - `ttasks space rescue` writes every row saved before it began that can still be read, also while
   the space is in use. A space that keeps changing while its files are copied is refused.
 - Restoring over a space keeps what was there before, and takes only a backup of that space, also
