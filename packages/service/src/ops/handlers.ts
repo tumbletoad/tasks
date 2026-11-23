@@ -907,6 +907,9 @@ function differsWarnings(result: WriteResult, paths: ReadonlyMap<number, string>
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 
+/** The stand-in source of a link change in a request the writer replays. */
+const REPLAY_SOURCE = "s_00000000000000000000000000" as Id<"s">;
+
 /** A link a name resolved to: its source, and its version as read, when it was read. */
 interface NamedLink {
   readonly source: Id<"s">;
@@ -2329,6 +2332,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     let links: Row[] = [];
     let linkTask: Id<"t"> | undefined;
     if (detach.length > 0 || putBack.length > 0) {
+      // A retry of a request that committed gets its first answer: the writer replays it before
+      // it stages anything, so the names are not resolved against the links as they are now.
+      const replay = await applied(call);
       try {
         links = await readTaskLinks(readerOf(call.space), task);
       } catch (error) {
@@ -2336,9 +2342,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       }
       const [first] = links;
       if (first !== undefined) linkTask = text(first["task_id"]) as Id<"t">;
-      const detached = linksNamed(links, detach, "remove_sources");
-      const back = linksNamed(links, putBack, "put_back_sources");
-      const both = back.findIndex((b) => detached.some((d) => d.source === b.source));
+      const stand = (names: string[]): NamedLink[] => names.map(() => ({ source: REPLAY_SOURCE }));
+      const detached = replay ? stand(detach) : linksNamed(links, detach, "remove_sources");
+      const back = replay ? stand(putBack) : linksNamed(links, putBack, "put_back_sources");
+      const both = replay ? -1 : back.findIndex((b) => detached.some((d) => d.source === b.source));
       if (both >= 0) {
         throw invalid(
           `put_back_sources.${String(both)}`,

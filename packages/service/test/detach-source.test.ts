@@ -285,6 +285,25 @@ describe("[A3.source.detach] detaching a source and putting it back, through rea
     ]);
   });
 
+  test("a retry of a request that committed gets its first answer, even when its names fit other links by then", async () => {
+    const url = "https://tickets.example/retry";
+    const { ref } = await add({
+      title: "Fixture retry",
+      sources: [{ kind: "issue", title: "Only copy", url }],
+    });
+    const input = { task: ref, remove_sources: [url], base: await asOf(), request_id: rid() };
+    const first = await call("task.update", input);
+    expect(first).toMatchObject({ result: "updated" });
+    await update({
+      task: ref,
+      add_sources: [
+        { kind: "issue", title: "Later copy", url },
+        { kind: "issue", title: "Another copy", url },
+      ],
+    });
+    expect(await call("task.update", input)).toMatchObject({ ...first, replayed: true });
+  });
+
   test("a finished task takes a detach alone; mixed with another change it is refused whole", async () => {
     const { ref } = await add({ title: "Fixture finished", sources: [ticket("fix:DT-3")] });
     await call("task.finish", {
