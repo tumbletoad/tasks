@@ -4261,6 +4261,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.10.5.copies.recorded",
+      "title": "A backup taken while a run works, another waits and a terminal session is open: in the restored copy opened read-only the rows, runs, receipts and run list say recorded, nothing is busy and no session is held; a claim, a restore in place and a claim on another machine end each as restored, and no session of them is held for the Agents page",
+      "source": "A2 3.10.5, A4 3.9.3, A4 3.11.9, A5 Agents",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.receipt",
+      "title": "A receipt a restored copy records as open says it was open or opening when the backup was made; one a claim or a restore in place ended says it was interrupted by the restore",
+      "source": "A2 3.10.5, A5 3.9",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.agents.links.restored",
       "title": "A restored copy that is not claimed links none of the machine's agents to its tasks: its sessions are not read and no running launch is asked about",
       "source": "A5 Agents, A2 3.10.5",

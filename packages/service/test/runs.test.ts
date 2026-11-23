@@ -697,7 +697,7 @@ describe("[A4.3.11.9.run.restored] the runs a backup held open never start or go
     expect(tried).toMatchObject({ state: "failed", reason: "spawn_failed" });
   }, 120_000);
 
-  test("a restored copy that is not claimed lists the backup's runs as it recorded them, with nothing the machine knows of them now, and starts none", async () => {
+  test("a restored copy that is not claimed lists the backup's open runs as recorded, with nothing the machine knows of them now, and starts none", async () => {
     const w = await backedUpRuns("runs-copy");
     const { user } = w;
     await user.call("space/close", { space: w.folder }, { timeoutMs: 60_000 });
@@ -713,8 +713,8 @@ describe("[A4.3.11.9.run.restored] the runs a backup held open never start or go
       runs: { id: string; state: string; waiting?: string; quiet_since?: number }[];
     };
     const byId = new Map(listed.runs.map((run) => [run.id, run]));
-    expect(byId.get(w.working.id)).toMatchObject({ state: "running" });
-    expect(byId.get(w.queued.id)).toMatchObject({ state: "queued" });
+    expect(byId.get(w.working.id)).toMatchObject({ state: "recorded" });
+    expect(byId.get(w.queued.id)).toMatchObject({ state: "recorded", started_at: null });
     for (const run of listed.runs) {
       expect(run).not.toHaveProperty("waiting");
       expect(run).not.toHaveProperty("quiet_since");
@@ -725,7 +725,7 @@ describe("[A4.3.11.9.run.restored] the runs a backup held open never start or go
       { space: copy, run: w.working.id },
       { timeoutMs: 60_000 },
     )) as { state: string; answer: string | null };
-    expect(shown).toMatchObject({ state: "running", answer: null });
+    expect(shown).toMatchObject({ state: "recorded", answer: null });
     expect(w.boxes.started.length).toBe(before);
     user.close();
   }, 120_000);

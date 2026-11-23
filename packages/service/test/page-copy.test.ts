@@ -243,7 +243,7 @@ describe("[A2.3.10.5.copies.first-load] a tab sent to the folder the person open
 
 describe("[A2.3.10.5.copies.history] a restored copy shows its launches and runs as they were recorded", () => {
   test(
-    "a terminal launch running in the space shows as running there; in a restored copy of a backup made meanwhile its receipt is the recorded one with no live session, and its run history reads, on the page and in ttasks run list",
+    "a terminal launch running in the space shows as running there; in a restored copy of a backup made meanwhile its receipt is recorded, with no live session, and its run history reads, on the page and in ttasks run list",
     SLOW,
     async () => {
       const START = "windows:1";
@@ -327,7 +327,7 @@ describe("[A2.3.10.5.copies.history] a restored copy shows its launches and runs
       ).copy;
       const inCopy = { [SPACE_HEADER]: mira.id, [COPY_HEADER]: copy };
       const shown = await receipts(inCopy);
-      expect(shown).toEqual([expect.objectContaining({ id: launch, state: "confirmed" })]);
+      expect(shown).toEqual([expect.objectContaining({ id: launch, state: "recorded" })]);
       expect(shown[0]?.session).toBeUndefined();
       expect(await page("/api/v1/launch/runs", { task: task.id }, inCopy)).toEqual({
         result: { runs: [] },

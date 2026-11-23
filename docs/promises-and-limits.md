@@ -61,9 +61,11 @@ the behaviour it describes, and keep each one to a sentence or two.
 - To look inside a backup, restore it into a new folder, close the space, open that folder, look,
   close it, and open the space again. TTasks never opens two copies of one space together, so the
   page and the command line always show and change the copy you opened, and a restored copy says
-  so, with its folder and the backup it came from, and shows its agents and runs as they were.
+  so, with its folder and the backup it came from. An agent or a run that was working when the
+  backup was made is shown as working then, never as working now.
 - A restore over a space, or a claim of a restored copy, never starts or resumes a background run
-  the backup held open: each is shown as interrupted by the restore.
+  the backup held open, and never takes an agent session the backup held open for one of today:
+  each is shown as interrupted by the restore.
 - An agent you opened from a task writes only into the copy of the space it was opened in. After a
   restore over the space or a claim of a copy, it is told so and changes nothing: open it again
   from the task.

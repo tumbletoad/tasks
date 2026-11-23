@@ -71,8 +71,15 @@ export interface Run {
   readonly version: number;
 }
 
-export type ReceiptState =
+/** The states a launch's record moves through. */
+export type LaunchState =
   "prepared" | "dispatching" | "dispatched" | "confirmed" | "failed" | "unknown";
+
+/**
+ * A receipt's state: its launch's, or `recorded` for one a restored copy that is not claimed records
+ * as open, which was open when the backup was made and goes on nowhere now.
+ */
+export type ReceiptState = LaunchState | "recorded";
 
 /**
  * An agent app busy with a task on this machine (the service's UiBusy): an Open of it is on its
@@ -92,16 +99,17 @@ export interface Receipt {
   readonly route: string;
   readonly state: ReceiptState;
   readonly reason: string | null;
-  readonly at: Readonly<Partial<Record<ReceiptState, number>>>;
+  readonly at: Readonly<Partial<Record<LaunchState, number>>>;
   /** A terminal launch: the terminal Dispatched and why it was chosen, as fixed words. */
   readonly terminal?: { readonly app: string; readonly source: string };
   /** The note on the task that holds what the person asked the launch's agent, such as `n2`. */
   readonly request?: string;
   /**
-   * A Confirmed launch's session as the service knows it: `running` now, or `ended`. Absent when
-   * it cannot know, which the page never shows as running.
+   * A Confirmed launch's session as the service knows it: `running` now, `ended`, or `restored`
+   * when a claim or a restore in place ended it as a backup's. Absent when it cannot know, which the
+   * page never shows as running.
    */
-  readonly session?: "running" | "ended";
+  readonly session?: "running" | "ended" | "restored";
   /** How long its agent ran, when its end was reported with it. */
   readonly ran_ms?: number;
 }
@@ -475,9 +483,9 @@ export class Api {
       request_id: id,
     });
     const { launch } = result;
-    const at: Partial<Record<ReceiptState, number>> = {};
+    const at: Partial<Record<LaunchState, number>> = {};
     for (const [state, value] of Object.entries(launch.at)) {
-      if (typeof value === "number") at[state as ReceiptState] = value;
+      if (typeof value === "number") at[state as LaunchState] = value;
     }
     return {
       receipt: {

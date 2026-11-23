@@ -38,6 +38,8 @@ import {
   apart,
   CLAIM_WINDOW_MS,
   CLICK_SLACK_MS,
+  isOpening,
+  isOpenLaunch,
   PREPARED_TTL_MS,
   STEP_DEADLINE_MS,
   STORE_DEADLINE_MS,
@@ -363,9 +365,34 @@ export class LaunchMachine {
   /**
    * Restart recovery (A4 3.9.3): every open intent of this machine, settled by its route's rule.
    * It never dispatches. Returns the intents as recovery left them.
+   *
+   * `restored`: the launches a claim or a restore in place brought back from a backup while they
+   * were open (isOpenLaunch), whichever machine made them. Each is ended first, as restored: one
+   * still opening fails `restored`, a terminal session records `restored_at`. No process is asked
+   * about: a session writes only into the copy it was made in.
    */
-  async recover(): Promise<LaunchIntent[]> {
-    return (await this.#settleAll("restart")).map((s) => s.intent);
+  async recover(restored: ReadonlySet<string> = new Set()): Promise<LaunchIntent[]> {
+    const ended = await Promise.allSettled(
+      [...restored].map((id) =>
+        this.#section(id, () => this.#decide(id, (intent) => this.#restored(intent))),
+      ),
+    );
+    const left = (await this.#settleAll("restart")).map((s) => s.intent);
+    const failed = ended.find(
+      (r): r is PromiseRejectedResult =>
+        r.status === "rejected" && !(r.reason instanceof DeadlinePassed),
+    );
+    if (failed !== undefined) {
+      throw failed.reason instanceof Error ? failed.reason : new Error("A launch call failed");
+    }
+    return left;
+  }
+
+  /** How a launch a backup brought back while it was open ends: as restored. */
+  #restored(intent: LaunchIntent): Move | undefined {
+    if (isOpening(intent)) return { next: "failed", reason: "restored" };
+    if (isOpenLaunch(intent)) return { next: "confirmed", evidence: { restored_at: this.#now() } };
+    return undefined;
   }
 
   /**

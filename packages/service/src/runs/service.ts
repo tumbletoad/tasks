@@ -11,6 +11,7 @@ import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
 import {
   FINAL_RUN_STATES,
+  isOpenRun,
   normaliseRunText,
   RUN_LIMITS,
   type NewRun,
@@ -171,6 +172,11 @@ const ROUND_MS = 30_000;
 
 /** What a run's record cannot say, from this service: see RunService.live. */
 export interface RunLive {
+  /**
+   * The run is open in a restored copy that is not claimed: it was when the backup was made, and
+   * nothing of it runs now. Every view shows it `recorded`.
+   */
+  readonly recorded?: true;
   readonly waiting?: WaitReason;
   /** Wall clock milliseconds since when a running run wrote nothing. */
   readonly quietSince?: number;
@@ -637,6 +643,7 @@ export class RunService {
    * a run being stopped is not quiet, a started one does not wait.
    */
   live(run: RunRecord, space: ServedSpace): RunLive {
+    if (space.restored !== undefined) return isOpenRun(run) ? { recorded: true } : {};
     if (!this.#hosts(space)) return {};
     if (run.state === "queued") {
       const waiting = this.#supervisor.waiting(run.id);

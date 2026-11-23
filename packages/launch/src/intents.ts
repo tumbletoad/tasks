@@ -38,15 +38,32 @@ export const isOpening = (launch: { readonly state: string; readonly route: stri
 
 /**
  * How a Confirmed launch's record says its session stands: `ended` once its agent's end was
- * reported (an earlier build recorded the exit code alone), `lost` once its shim went without a
- * word, else `open`, which the shim host decides.
+ * reported (an earlier build recorded the exit code alone), `restored` once a claim or a restore in
+ * place ended it as a backup's, `lost` once its shim went without a word, else `open`, which the
+ * shim host decides.
  */
 export function sessionRecord(
   evidence: Readonly<Record<string, unknown>>,
-): "ended" | "lost" | "open" {
+): "ended" | "restored" | "lost" | "open" {
   if (evidence["ran_ms"] !== undefined || evidence["exit_code"] !== undefined) return "ended";
+  if (evidence["restored_at"] !== undefined) return "restored";
   return evidence["lost_at"] === undefined ? "open" : "lost";
 }
+
+/**
+ * Whether a launch's record holds something open: a launch still opening, or a terminal session
+ * whose end it does not record. A backup holds such records as they were when it was made: a
+ * restored copy shows them as recorded, and a claim or a restore in place ends them as restored.
+ */
+export const isOpenLaunch = (launch: {
+  readonly state: string;
+  readonly route: string;
+  readonly evidence: Readonly<Record<string, unknown>>;
+}): boolean =>
+  isOpening(launch) ||
+  (launch.state === "confirmed" &&
+    launch.route === "terminal" &&
+    sessionRecord(launch.evidence) === "open");
 
 /**
  * The legal transitions (A4 3.9.1). A self edge records evidence and changes no state: T3's repeat
@@ -124,6 +141,11 @@ export const FAIL_REASONS = [
   "folder_mismatch",
   /** Clipboard: the service stopped before the copy was reported. */
   "interrupted",
+  /**
+   * A backup brought the launch back while it was still opening, and a claim or a restore in
+   * place made that copy the space: nothing of it goes on here, whatever became of it elsewhere.
+   */
+  "restored",
   /** The folder no longer resolved right before the launch: its own reason. */
   ...RESOLVE_REASONS,
 ] as const;
@@ -196,6 +218,12 @@ export const EVIDENCE_FIELDS = {
    * agent most likely ended with it, but nothing says when or whether it did.
    */
   lost_at: "instant",
+  /**
+   * Terminal: when a claim or a restore in place ended the session of a Confirmed launch that a
+   * backup brought back. Its agent may still run where it started; nothing of it belongs to this
+   * copy of the space.
+   */
+  restored_at: "instant",
   /** The bridge redeemed the ticket or the launch reference (A3). */
   bound_at: "instant",
   /**

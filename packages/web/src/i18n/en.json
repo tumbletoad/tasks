@@ -366,6 +366,10 @@
   "receipt.copied": "Brief copied · not confirmed",
   "receipt.failed": "Did not open: {reason, select, agent_exited {the agent ended right after it started} not_claimed {the terminal did not start it} path_missing {the folder was not found on this machine} root_missing {the folder was not found on this machine} root_unavailable {the folder was not found on this machine} not_a_directory {the task's folder is a file on this machine} not_answering {the task's folder did not answer in time} invalid_path {the task's folder cannot be used on this machine} not_a_file {the task's folder cannot be used on this machine} escapes_root {the task's folder cannot be used on this machine} identity_mismatch {the task's folder cannot be used on this machine} identity_unavailable {the task's folder cannot be used on this machine} folder_changed {the task's folder cannot be used on this machine} unsafe_folder {the task's folder cannot be used on this machine} other {{words}}}",
   "receipt.unknown": "{product} lost track of this launch. It may have opened.",
+  "receipt.recorded": "{opened} · open when this backup was made",
+  "receipt.recordedOpening": "Was opening in {label} when this backup was made",
+  "receipt.restored": "{opened} · interrupted when the space was restored from a backup",
+  "receipt.restoredOpening": "Interrupted when the space was restored from a backup. Open it again to go on.",
 
   "run.asked": "You asked: {words}",
   "run.askedTask": "You asked it to work on the task.",
@@ -382,6 +386,7 @@
   "run.notStarted": "Did not start: {reason, select, task_closed {the task was finished or deleted first} instance_gone {{label} is no longer set up on this machine} folder_gone {the task's folder was not found, or its marker changed} start_timed_out {{label} did not start in time} other {{label} could not be started on this machine}}.",
   "run.serviceEnded": "Interrupted when {product} restarted. Run it again to go on.",
   "run.restored": "Interrupted when the space was restored from a backup. Run it again to go on.",
+  "run.recorded": "{started, select, no {{label} had not started on it when this backup was made.} other {{label} was working on it when this backup was made.}}",
   "run.failed": "{reason, select, agent_error {{label} ended with an error.} no_output {{label} ended without saying anything. Check that it is set up and signed in here.} no_result {{label} ended before it finished.} interrupted {{label} stopped before it finished.} max_turns {{label} stopped at its limit of steps.} max_budget {{label} stopped at its budget.} other {{label} ended without finishing.}}",
   "run.permissionRefused": "Its permission refused {count, plural, one {# request} other {# requests}} of {label}.",
   "run.cleanup.confirmed": "Nothing it started was left.",

@@ -718,10 +718,14 @@ export async function readTaskRef(
 // ---------------------------------------------------------------------------------------------
 // Agent sessions this machine started
 
+// Only what the space's current authority made links a session: a record a claim or a restore in
+// place brought back from a backup (made before `authority_since`) is history, whatever its state,
+// and its session ID names a conversation of the copy it was made in.
 const AGENT_LAUNCHES: Statement = {
   sql:
     "SELECT l.id, l.task_id, l.detail, t.ref AS task_ref FROM launches l " +
     "JOIN tasks t ON t.id = l.task_id AND t.deleted_at IS NULL " +
+    "JOIN space s ON s.one = 1 AND l.created_seq >= s.authority_since " +
     "WHERE l.machine_id = $machine AND l.route = 'terminal' " +
     "AND (l.updated_at >= $since OR l.id IN (SELECT value FROM json_each($running)))",
   mode: "all",
@@ -730,6 +734,7 @@ const AGENT_RUNS: Statement = {
   sql:
     "SELECT r.id, r.task_id, r.adapter, r.detail, r.ended_at, t.ref AS task_ref FROM runs r " +
     "JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL " +
+    "JOIN space s ON s.one = 1 AND r.created_seq >= s.authority_since " +
     "WHERE r.machine_id = $machine AND r.started_at IS NOT NULL " +
     "AND (r.ended_at IS NULL OR r.ended_at >= $since)",
   mode: "all",
@@ -895,6 +900,30 @@ const RUNS_RESTORED: Statement = {
 /** The IDs of RUNS_RESTORED: open runs a claim or a restore brought back. */
 export async function readRestoredRuns(reader: WorkerConnection): Promise<Set<string>> {
   const [rows] = await snapshot(reader, [RUNS_RESTORED]);
+  return new Set(
+    (rows as Row[]).flatMap((row) => (typeof row["id"] === "string" ? [row["id"]] : [])),
+  );
+}
+
+/**
+ * The launches that were open (isOpenLaunch) when the backup a claim or a restore in place brought
+ * back was made, whichever machine made them: still opening, or a terminal session whose end is not
+ * recorded. Launch recovery re-decides each on its record.
+ */
+const LAUNCHES_RESTORED: Statement = {
+  sql:
+    "SELECT l.id FROM launches l, space s WHERE s.one = 1 AND l.created_seq < s.authority_since " +
+    "AND (l.state IN ('prepared','dispatching') OR (l.route = 'terminal' AND (l.state = 'dispatched' " +
+    "OR (l.state = 'confirmed' AND json_extract(l.detail, '$.evidence.ran_ms') IS NULL " +
+    "AND json_extract(l.detail, '$.evidence.exit_code') IS NULL " +
+    "AND json_extract(l.detail, '$.evidence.restored_at') IS NULL " +
+    "AND json_extract(l.detail, '$.evidence.lost_at') IS NULL))))",
+  mode: "all",
+};
+
+/** The IDs of LAUNCHES_RESTORED: open launches a claim or a restore brought back. */
+export async function readRestoredLaunches(reader: WorkerConnection): Promise<Set<string>> {
+  const [rows] = await snapshot(reader, [LAUNCHES_RESTORED]);
   return new Set(
     (rows as Row[]).flatMap((row) => (typeof row["id"] === "string" ? [row["id"]] : [])),
   );

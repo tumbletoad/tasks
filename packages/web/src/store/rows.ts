@@ -86,7 +86,10 @@ export interface RowQuestion {
 /** A task's newest run as its row shows it, and the instance it runs with. */
 export interface RowRun {
   readonly id: string;
-  /** `working` or `needs_you`; another state is one this page does not know. */
+  /**
+   * `working` or `needs_you`; `recorded` in a restored copy, where it was open when the backup was
+   * made and nothing of it runs now; another state is one this page does not know.
+   */
   readonly state: string;
   readonly instance: string;
 }

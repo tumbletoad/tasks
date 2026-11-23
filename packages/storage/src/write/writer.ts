@@ -2004,7 +2004,17 @@ export class SpaceWriter {
             const row = conn.prepare(LAUNCH_SQL.launch).get({ id: op.launch });
             if (row === undefined)
               return problem("NOT_FOUND", "No launch has this ID", i, "launch");
-            if (row["machine_id"] !== request.actor.machine_id) {
+            // As a run's: a launch a claim or a restore in place brought back from a backup is
+            // ended as restored by the machine that holds the space, whichever machine made it.
+            const restored =
+              Number(row["created_seq"]) <
+              Number(conn.prepare(SQL.space).get()?.["authority_since"]);
+            const ends =
+              (op.next === "failed" && op.reason === "restored") ||
+              (op.expect === "confirmed" &&
+                op.next === "confirmed" &&
+                Object.keys(op.evidence ?? {}).join() === "restored_at");
+            if (row["machine_id"] !== request.actor.machine_id && !(restored && ends)) {
               problem(
                 "VALIDATION_FAILED",
                 "A launch moves only on the machine that dispatched it",

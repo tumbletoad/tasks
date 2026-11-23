@@ -19,12 +19,14 @@
 import { AppError, RequestId } from "@ttasks/contracts";
 import {
   isOpenRun,
+  RECORDED,
   RUN_REQUEST_MAX_BYTES,
   type RunRecord,
   type RunState,
 } from "@ttasks/contracts/runs";
 import {
   INSTANCE_KEY,
+  isOpenLaunch,
   isRoute,
   sessionRecord,
   TASK_ID,
@@ -115,8 +117,12 @@ export interface UiRunPort {
   onChange?(listener: (space: string) => void): () => void;
 }
 
-/** Why a queued run waits, since when a running one is quiet, and what a started one said so far. */
+/**
+ * Why a queued run waits, since when a running one is quiet, and what a started one said so far;
+ * or that the run is only recorded open, in a restored copy (RunLive).
+ */
 export interface UiRunLive {
+  readonly recorded?: true;
   readonly waiting?: string;
   readonly quietSince?: number;
   readonly said?: { readonly text: string; readonly final: boolean; readonly cut: boolean };
@@ -130,7 +136,8 @@ export interface UiRunLive {
 export interface UiRun {
   readonly id: string;
   readonly instance: string;
-  readonly state: RunState;
+  /** `recorded`: open in a restored copy that is not claimed, so nothing of it runs now. */
+  readonly state: RunState | typeof RECORDED;
   readonly reason: string | null;
   /** Why a queued run waits. */
   readonly waiting?: string;
@@ -166,7 +173,7 @@ export function uiRun(run: RunRecord, live: UiRunLive = {}): UiRun {
   return {
     id: run.id,
     instance: run.instance,
-    state: run.state,
+    state: live.recorded === true ? RECORDED : run.state,
     reason: run.reason,
     ...(waiting === undefined ? {} : { waiting }),
     ...(quietSince === undefined ? {} : { quiet_since: quietSince }),
@@ -203,7 +210,11 @@ export interface UiReceipt {
   readonly reference: string;
   readonly instance: string;
   readonly route: string;
-  readonly state: IntentState;
+  /**
+   * `recorded`: open (isOpenLaunch) in a restored copy that is not claimed, so nothing of it goes
+   * on now; `at` says how far it had come.
+   */
+  readonly state: IntentState | typeof RECORDED;
   readonly reason: string | null;
   /** When it entered each state, milliseconds since 1970. */
   readonly at: Readonly<Partial<Record<IntentState, number>>>;
@@ -217,10 +228,11 @@ export interface UiReceipt {
   readonly request?: string;
   /**
    * A Confirmed launch's session: `running` while this service follows it and it runs, `ended`
-   * once its agent's end was reported. Absent when the service does not know: a link or a T3
-   * launch, a shim that went without a word, a launch of another computer or of an earlier build.
+   * once its agent's end was reported, `restored` once a claim or a restore in place ended it as a
+   * backup's. Absent when the service does not know: a link or a T3 launch, a shim that went
+   * without a word, a launch of another computer or of an earlier build.
    */
-  readonly session?: "running" | "ended";
+  readonly session?: "running" | "ended" | "restored";
   /** How long its agent ran, when its end was reported with it. */
   readonly ran_ms?: number;
 }
@@ -276,11 +288,13 @@ const LIST_SQL =
 /**
  * A `launches` row as the page's receipt, or undefined for a detail that does not parse. `runs`
  * says whether this service follows the launch's session as running now: it counts only for a
- * Confirmed launch whose record names no end.
+ * Confirmed launch whose record names no end. `restored`: the row is read in a restored copy that
+ * is not claimed, where an open launch is `recorded`.
  */
 export function receiptOf(
   row: Record<string, unknown>,
   runs: (launch: string) => boolean = () => false,
+  restored = false,
 ): UiReceipt | undefined {
   let parsed: unknown;
   try {
@@ -310,18 +324,24 @@ export function receiptOf(
   const request = typeof asked === "string" && NOTE_REF.test(asked) ? asked : undefined;
   const id = String(row["id"]);
   const state = String(row["state"]) as IntentState;
+  const route = String(row["route"]);
   const reason = row["reason"];
   const ran = evidence["ran_ms"];
   const ranMs = typeof ran === "number" && Number.isSafeInteger(ran) && ran >= 0 ? ran : undefined;
-  const record = state === "confirmed" ? sessionRecord(evidence) : undefined;
+  const recorded = restored && isOpenLaunch({ state, route, evidence });
+  const record = state === "confirmed" && !recorded ? sessionRecord(evidence) : undefined;
   const session =
-    record === "ended" ? "ended" : record === "open" && runs(id) ? "running" : undefined;
+    record === "ended" || record === "restored"
+      ? record
+      : record === "open" && runs(id)
+        ? "running"
+        : undefined;
   return {
     id,
     reference: String(row["reference"]),
     instance: String(row["instance_id"]),
-    route: String(row["route"]),
-    state,
+    route,
+    state: recorded ? RECORDED : state,
     reason: typeof reason === "string" ? reason : null,
     at,
     ...(terminal === undefined ? {} : { terminal }),
@@ -473,9 +493,10 @@ export class UiLaunches {
     const rows = await reader.all(LIST_SQL, { task });
     const port = this.#options.port;
     // Only the copy a launch was made in shows its session as running: a restored copy shows its
-    // launches as they were recorded.
+    // open launches as recorded.
     const runs = (launch: string): boolean => port?.running?.(launch, space.copy) ?? false;
-    return rows.flatMap((r) => receiptOf(r, runs) ?? []).reverse();
+    const restored = space.restored !== undefined;
+    return rows.flatMap((r) => receiptOf(r, runs, restored) ?? []).reverse();
   }
 
   /**

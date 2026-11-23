@@ -103,7 +103,7 @@ import type { SpaceWriterHandle } from "@ttasks/storage";
 import type { ServedSpace } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
-import type { TaskFolder } from "../ops/read.ts";
+import { readRestoredLaunches, type TaskFolder } from "../ops/read.ts";
 import { agentHomeOf, homeDigest, physicalHome } from "../setup/agents.ts";
 import {
   briefNames,
@@ -1611,7 +1611,7 @@ ${instance}`;
     const made = this.#make(space, served);
     this.#hosted.set(space, { writer, made });
     made.then(
-      ({ machine }) => this.#recover(space, writer, machine),
+      ({ machine }) => this.#recover(space, served, machine),
       () => {
         if (this.#hosted.get(space)?.made === made) this.#hosted.delete(space);
       },
@@ -1859,10 +1859,13 @@ ${instance}`;
     return outcome;
   }
 
-  async #recover(space: string, writer: unknown, machine: LaunchMachine): Promise<void> {
+  async #recover(space: string, served: ServedSpace, machine: LaunchMachine): Promise<void> {
     const t0 = performance.now();
+    const writer = served.writer;
     try {
-      const left = await machine.recover();
+      const restored =
+        served.reader === undefined ? new Set<string>() : await readRestoredLaunches(served.reader);
+      const left = await machine.recover(restored);
       this.#options.log.log("launch.recovered", {
         space,
         open: left.length,

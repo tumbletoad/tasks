@@ -114,6 +114,7 @@ const SAMPLE = {
   state: "working",
   side: "older",
   percent: 40,
+  started: "yes",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

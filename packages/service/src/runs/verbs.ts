@@ -4,7 +4,7 @@
 // asking.
 import { RPC_ERROR, RpcError, type JsonObject } from "@ttasks/bridge/protocol";
 import { AppError, RequestId } from "@ttasks/contracts";
-import { RUN_REQUEST_MAX_BYTES, type RunRecord } from "@ttasks/contracts/runs";
+import { RECORDED, RUN_REQUEST_MAX_BYTES, type RunRecord } from "@ttasks/contracts/runs";
 import type { ConnectionClass } from "../local/index.ts";
 import type { UsableSpace } from "../ops/index.ts";
 import type { RunLive, RunService } from "./service.ts";
@@ -29,7 +29,7 @@ export function runView(run: RunRecord, task: string | null, live: RunLive = {})
     id: run.id,
     task,
     instance: run.instance,
-    state: run.state,
+    state: live.recorded === true ? RECORDED : run.state,
     reason: run.reason,
     ...(live.waiting === undefined ? {} : { waiting: live.waiting }),
     ...(live.quietSince === undefined ? {} : { quiet_since: live.quietSince }),

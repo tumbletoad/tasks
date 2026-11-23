@@ -5,12 +5,13 @@
 // its first three sources, where it opens on the machine that serves it, whether its newest
 // background run works or needs the person, and the start of each question agents asked that
 // waits for the person.
-import { isOpenRun, OPEN_RUN_STATES, type RunState } from "@ttasks/contracts/runs";
+import { isOpenRun, OPEN_RUN_STATES, RECORDED, type RunState } from "@ttasks/contracts/runs";
 import {
   decideLaunchFolder,
   FINISHED_AT_SQL,
   type FolderView,
   type Id,
+  READ_ONLY_COPY,
   type Row,
   type WorkerConnection,
 } from "@ttasks/storage";
@@ -41,12 +42,13 @@ export type CompactPlace =
 
 /**
  * The task's newest background run, as its row shows it: working (queued, running, stopping, or
- * not confirmed ended), or ended asking the person something. Absent otherwise.
+ * not confirmed ended), ended asking the person something, or, in a restored copy that is not
+ * claimed, working when the backup was made (`recorded`). Absent otherwise.
  */
 export interface CompactRun {
   /** The run's ID: the Agents page pairs it with the agent the Agent Monitor sees for it. */
   readonly id: string;
-  readonly state: "working" | "needs_you";
+  readonly state: "working" | "needs_you" | typeof RECORDED;
   /** The run's agent instance: machine.toml's key. */
   readonly instance: string;
 }
@@ -126,9 +128,17 @@ const OPEN_RUN =
   `(r.state IN (${OPEN_RUN_STATES.map((s) => `'${s}'`).join(", ")}) OR ` +
   "(r.state = 'unknown' AND r.reason = 'stop_timed_out'))";
 
-/** The task's newest run, of those `where` admits, as JSON: its ID, state, reason and instance. */
+/** The space read is a restored copy that is not claimed: storage's restore mark. */
+const RESTORED_COPY = `(SELECT json_extract(transfer, '$.state') FROM space WHERE one = 1) = '${READ_ONLY_COPY}'`;
+
+/**
+ * The task's newest run, of those `where` admits, as JSON: its ID, state, reason and instance. In a
+ * restored copy that is not claimed an open run is `recorded`: nothing of it runs now.
+ */
 const newestRun = (where: string) =>
-  "(SELECT json_object('id', r.id, 'state', r.state, 'reason', r.reason, 'instance', r.instance_id) " +
+  "(SELECT json_object('id', r.id, 'state', " +
+  `CASE WHEN ${OPEN_RUN} AND ${RESTORED_COPY} THEN '${RECORDED}' ELSE r.state END, ` +
+  "'reason', r.reason, 'instance', r.instance_id) " +
   `FROM runs r WHERE r.task_id = t.id${where} ORDER BY r.queued_at DESC, r.id DESC LIMIT 1)`;
 
 /**
@@ -249,6 +259,7 @@ function rowRun(value: unknown): CompactRun | undefined {
     return undefined;
   }
   const { id, state, reason, instance } = run;
+  if (state === RECORDED) return { id, state: RECORDED, instance };
   if (
     typeof state === "string" &&
     isOpenRun({ state: state as RunState, reason: typeof reason === "string" ? reason : null })

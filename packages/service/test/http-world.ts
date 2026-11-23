@@ -35,6 +35,7 @@ function start(
   http: HttpStart,
   launch?: LaunchOptions,
   monitor?: StartOptions["monitor"],
+  runs?: StartOptions["runs"],
 ): Promise<RunningService> {
   return startService({
     env: serviceEnv(home),
@@ -44,13 +45,14 @@ function start(
     http: { ports: [0], persist: false, ...http },
     ...(launch === undefined ? {} : { launch }),
     ...(monitor === undefined ? {} : { monitor }),
+    ...(runs === undefined ? {} : { runs }),
   });
 }
 
 /**
  * A service with its UI listener on an OS-chosen port and, unless `space` is false, one space.
  * `toml` is machine.toml's text before the first start (instances); `launch` the service's
- * launching seams (a test's terminal).
+ * launching seams (a test's terminal); `runs` its background runs' (a test's containers).
  */
 export async function httpWorld(
   label: string,
@@ -60,6 +62,7 @@ export async function httpWorld(
     toml?: string;
     launch?: LaunchOptions;
     monitor?: StartOptions["monitor"];
+    runs?: StartOptions["runs"];
   } = {},
 ): Promise<HttpWorld> {
   const temp = tempRoot(label);
@@ -73,6 +76,7 @@ export async function httpWorld(
     http,
     options.launch,
     options.monitor,
+    options.runs,
   );
   const sessions: RpcSession[] = [];
   const current = (): RunningService => {
@@ -101,7 +105,7 @@ export async function httpWorld(
     },
     restart: async (again = {}) => {
       await stop();
-      service = await start(home, again, options.launch, options.monitor);
+      service = await start(home, again, options.launch, options.monitor, options.runs);
       return service;
     },
     stop,

@@ -237,6 +237,13 @@ export const isOpenRun = (run: { state: RunState; reason: string | null }): bool
   (OPEN_RUN_STATES as readonly RunState[]).includes(run.state) || awaitsConfirmation(run);
 
 /**
+ * The state every read gives a run or a launch that a restored copy, not claimed, records as open:
+ * it was open when the backup was made, and nothing of it runs now. A claim or a restore in place
+ * ends such a record as `restored`, so no copy that takes changes shows one.
+ */
+export const RECORDED = "recorded";
+
+/**
  * The legal transitions. A self edge records evidence and changes no state: the agent's PID on
  * `starting` or `cancelling`, its native ID on `running`. A queued run has no container: a Stop
  * cancels it at once, and one that can no longer start (its task closed, its instance or folder
