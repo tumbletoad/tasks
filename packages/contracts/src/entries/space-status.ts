@@ -57,8 +57,13 @@ const HereRow = TaskRow.extend({
 
 export const SpaceStatusResult = z.strictObject({
   as_of: AsOf,
-  date: z.string().regex(patterns.isoDate).describe("Today in the space's time zone"),
-  time_zone: z.string().describe("IANA time zone of the space"),
+  date: z
+    .string()
+    .regex(patterns.isoDate)
+    .describe("Today in the time zone of the service's machine"),
+  time_zone: z
+    .string()
+    .describe("IANA time zone of the service's machine; the page uses the browser's"),
   autonomy: z.enum(["full", "review", "suggest"]).describe("Autonomy level for this session"),
   space: z
     .strictObject({
@@ -93,7 +98,7 @@ export const SpaceStatusResult = z.strictObject({
             count: Count.describe("Active tasks with it, outside the Inbox"),
           }),
         )
-        .describe("Active tasks per status, in the space's order"),
+        .describe("Per status, in the space's order; the sidebar counts custom statuses in Open"),
       inbox: Count.describe("Tasks in the Inbox"),
       proposals: Count.describe("Pending proposals"),
     })

@@ -1025,8 +1025,8 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `as_of` | string | yes | The space's position when this answer was made |
-| `date` | string | yes | Today in the space's time zone |
-| `time_zone` | string | yes | IANA time zone of the space |
+| `date` | string | yes | Today in the time zone of the service's machine |
+| `time_zone` | string | yes | IANA time zone of the service's machine; the page uses the browser's |
 | `autonomy` | "full" \| "review" \| "suggest" | yes | Autonomy level for this session |
 | `space` | object | yes | The space this session uses |
 | `space.id` | string | yes | Space ID |
@@ -1057,7 +1057,7 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `here[].live_sessions` | integer, 0 to 1000000000 | yes | Live agent sessions on it |
 | `here_total` | integer, 0 to 1000000000 | no | Active tasks for cwd in all |
 | `counts` | object | yes | Counts of active tasks |
-| `counts.statuses` | object[] | yes | Active tasks per status, in the space's order |
+| `counts.statuses` | object[] | yes | Per status, in the space's order; the sidebar counts custom statuses in Open |
 | `counts.statuses[].status` | string | yes | Status key |
 | `counts.statuses[].count` | integer, 0 to 1000000000 | yes | Active tasks with it, outside the Inbox |
 | `counts.inbox` | integer, 0 to 1000000000 | yes | Tasks in the Inbox |

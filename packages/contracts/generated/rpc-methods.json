@@ -2291,7 +2291,7 @@
                 "type": "integer"
               },
               "statuses": {
-                "description": "Active tasks per status, in the space's order",
+                "description": "Per status, in the space's order; the sidebar counts custom statuses in Open",
                 "items": {
                   "additionalProperties": false,
                   "properties": {
@@ -2323,7 +2323,7 @@
             "type": "object"
           },
           "date": {
-            "description": "Today in the space's time zone",
+            "description": "Today in the time zone of the service's machine",
             "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
             "type": "string"
           },
@@ -2703,7 +2703,7 @@
             "type": "object"
           },
           "time_zone": {
-            "description": "IANA time zone of the space",
+            "description": "IANA time zone of the service's machine; the page uses the browser's",
             "type": "string"
           }
         },
