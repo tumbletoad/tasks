@@ -377,6 +377,21 @@ describe("[A4.3.11.claude.driver] the claude driver's decisions: every phase aga
     }
   }
 
+  test("a result the program ends on without a line end settles the work as one with it does, short or too long to read whole", async () => {
+    for (const phase of ["turn", "between"] as const) {
+      for (const long of [false, true]) {
+        const bench = await driverIn(phase);
+        const result = { ...RESULT, result: "Done.", ...(long ? { bulk: BULK } : {}) };
+        await bench.say(backgroundOf(0));
+        await bench.raw(JSON.stringify(result));
+        bench.driver.ended({ code: 0, signal: null });
+        expect(await settledNow(bench.driver), `${phase}, long: ${String(long)}`).toEqual(
+          done({ ok: true, outcome: "success", text: "Done.", textFinal: true }),
+        );
+      }
+    }
+  });
+
   test("a follow-up turn that ends at once with no words leaves the last turn's words provisional, in one write or several", async () => {
     for (const together of [true, false]) {
       const bench = await driverIn("between");
