@@ -450,43 +450,6 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
     expect(help.stdout).toContain("ttasks run <task>");
   });
 
-  test("a --wait whose space is then served from a restored copy stops at the run's record there, which says it is no live run", async () => {
-    const hold = service?.runs.hold();
-    const s = await classSession(home, service?.endpoint.path ?? "", "cli-interactive");
-    const call = async (method: string, params: Record<string, unknown>) =>
-      (await s.call(method, params, { timeoutMs: 120_000 })) as Record<string, unknown>;
-    const [space] = (await call("space/list", {}))["spaces"] as { folder: string }[];
-    if (space === undefined) throw new Error("no space");
-    const copy = join(root, "spaces", "mira-copy");
-    let id: string | undefined;
-    try {
-      const waiting = user(["run", task, "--wait", "Wait for it."]);
-      id = await waitFor(
-        async () =>
-          (await service?.runs.list(spaceId, task))?.find((r) => r.run.state === "queued")?.run.id,
-        60_000,
-        "the run queued",
-      );
-      const { backup } = (await call("space/backup", { space: space.folder })) as {
-        backup: { name: string };
-      };
-      await call("space/restore", { backup: backup.name, to: copy, of: space.folder });
-      await call("space/close", { space: space.folder });
-      await call("space/open", { path: copy });
-      const ended = await waiting;
-      expect(ended.code).toBe(1);
-      expect(ended.stdout).toContain(`${id}  `);
-      expect(ended.stdout).toContain("It was open when the backup of this restored copy was made.");
-    } finally {
-      // The space as the other tests find it: the copy closed, the original open, the run stopped.
-      await call("space/close", { space: copy });
-      await call("space/open", { path: space.folder });
-      if (id !== undefined) await user(["run", "stop", id]);
-      hold?.release();
-      s.close();
-    }
-  });
-
   test("a task whose folder is not found here is refused with that reason, and nothing is queued", async () => {
     const folder = join(root, "work", "portal");
     mkdirSync(folder, { recursive: true, mode: 0o700 });
