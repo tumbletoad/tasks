@@ -68,9 +68,21 @@ export interface FeedEvent {
   readonly entities: readonly FeedEntity[];
 }
 
+/** Why the copy a page shows takes no change: the space's reason and its way out, for people. */
+export interface SpaceReadOnly {
+  readonly reason: string;
+  readonly message?: string;
+}
+
 export interface SnapshotMessage {
   readonly type: "snapshot";
-  readonly space: { readonly id: string; readonly name: string; readonly ref_prefix: string };
+  readonly space: {
+    readonly id: string;
+    readonly name: string;
+    readonly ref_prefix: string;
+    /** Set when the copy is read-only (the feed adds it: ws.ts). */
+    readonly read_only?: SpaceReadOnly;
+  };
   readonly cursor: Cursor;
   readonly tasks: readonly CompactRow[];
   readonly areas: readonly CompactRow[];

@@ -5,7 +5,8 @@
 // means the same copy:
 //
 // - A folder (an absolute path) names its own copy, in whatever state: the way to reach a copy that
-//   the rule below does not pick.
+//   the rule below does not pick. So does a copy's key (`copyKey`), which the page puts in its
+//   addresses so that a folder never goes into a URL.
 // - Among the copies that have the ID, or the copies of the one space that has the name, the copy
 //   that serves it best: the writable one (`open`); else one opening or closing, for a moment
 //   (whose answer is "retry"); else the space read-only for a reason of its own (its folder, a
@@ -16,6 +17,7 @@
 //   ID in a process), so that is two read-only copies, or two that are unavailable or closed. Two
 //   copies opening at once are not: either one answers that the space is still opening.
 // - A name that two different spaces have is `ambiguous` too: the ID names one of them.
+import { createHash } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
 import { AppError } from "@ttasks/contracts";
 
@@ -73,16 +75,34 @@ export function chooseCopy<S extends Copy>(copies: readonly S[]): Found<S> {
   return { ambiguous: "copies", candidates: top };
 }
 
-/** Whether two folders are one, as the OS compares names: case folded on Windows and macOS. */
+/** A folder as the OS compares names: resolved, case folded on Windows and macOS. */
+const folded = (path: string, platform: NodeJS.Platform): string =>
+  platform === "win32" || platform === "darwin" ? resolve(path).toLowerCase() : resolve(path);
+
+/** Whether two folders are one, as the OS compares names. */
 export function sameFolder(
   a: string,
   b: string,
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  const fold = (path: string) =>
-    platform === "win32" || platform === "darwin" ? path.toLowerCase() : path;
-  return fold(resolve(a)) === fold(resolve(b));
+  return folded(a, platform) === folded(b, platform);
 }
+
+/** A copy's key: its space's ID, `-copy-` and the start of its folder's digest. */
+const COPY_KEY = /^sp_[0-9a-z]{26}-copy-[0-9a-f]{12}$/u;
+
+/** The key that names the copy of space `id` in `folder`, and no other copy. */
+export function copyKey(
+  id: string,
+  folder: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const digest = createHash("sha256").update(folded(folder, platform)).digest("hex");
+  return `${id}-copy-${digest.slice(0, 12)}`;
+}
+
+/** Whether `wanted` names one copy (a folder or a copy's key), not whichever copy an ID means. */
+export const namesCopy = (wanted: string): boolean => isAbsolute(wanted) || COPY_KEY.test(wanted);
 
 /**
  * The copies of each space among `spaces`, by ID, the entry's ID for a copy not served yet; a space
@@ -108,6 +128,13 @@ export function findSpace<S extends Copy>(spaces: readonly S[], wanted: string):
   if (isAbsolute(wanted)) {
     return spaces.find((space) => space.folder !== undefined && sameFolder(space.folder, wanted));
   }
+  if (COPY_KEY.test(wanted)) {
+    // A copy that is opening again has only its entry's ID: it answers that it is opening.
+    return spaces.find((space) => {
+      const id = space.id ?? space.registered;
+      return id !== undefined && space.folder !== undefined && copyKey(id, space.folder) === wanted;
+    });
+  }
   const byId = spaces.filter((space) => space.id === wanted);
   if (byId.length > 0) return chooseCopy(byId);
   const folded = wanted.toLowerCase();
@@ -119,6 +146,19 @@ export function findSpace<S extends Copy>(spaces: readonly S[], wanted: string):
 /** The copy the space `id` means among `spaces`. */
 export function copyOf<S extends Copy>(spaces: readonly S[], id: string): Found<S> {
   return chooseCopy(spaces.filter((space) => space.id === id));
+}
+
+/**
+ * How the page names `copy`, one of `spaces`, in its addresses: by its space's ID while that ID
+ * means this copy and it is no restored copy waiting to be claimed; else by its key. A restored
+ * copy has its key from the start, so a tab that shows it stays on it when its original opens.
+ * Undefined for a copy not served yet, which has no ID.
+ */
+export function addressOf<S extends Copy>(spaces: readonly S[], copy: S): string | undefined {
+  const { id, folder } = copy;
+  if (id === undefined || folder === undefined) return id;
+  if (copy.reason !== "read_only_copy" && copyOf(spaces, id) === copy) return id;
+  return copyKey(id, folder);
 }
 
 /**

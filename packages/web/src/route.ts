@@ -5,12 +5,21 @@
 //
 //   /                              the machine's default space (A2 3.1), resolved by the page
 //   /?task=<ref>                   a task in the default space (`ttasks open <task>` without a space)
-//   /s/<space ID>/<view…>          a view of the space, at most four plain segments
-//   /s/<space ID>/task/<ref>       a task of the space, expanded
+//   /s/<space>/<view…>             a view of the space, at most four plain segments
+//   /s/<space>/task/<ref>          a task of the space, expanded
+//
+// <space> is the space's ID, which means the copy the service picks (the one that takes changes),
+// or a copy's own address, `<space ID>-copy-<digest>`, which means that copy and no other: a
+// restored copy opened to look inside it.
 //
 // The skeleton's task links (`/s/<space>/t/<ref>`) still land on the task.
 
 export const SPACE_ID = /^sp_[0-9a-z]{26}$/;
+/** A space's ID, or one copy's address: its ID, `-copy-` and a digest of its folder. */
+export const SPACE_ADDRESS = /^sp_[0-9a-z]{26}(?:-copy-[0-9a-f]{12})?$/;
+
+/** The space ID an address names a copy of. */
+export const spaceIdOf = (address: string): string => address.slice(0, 29);
 /** A plain path segment: a view, an ID or a task reference. */
 export const SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
 /** A sign-in code: 32 random bytes as base64url (A2 3.8.4). */
@@ -28,7 +37,7 @@ export function pagePath(path: string): string | undefined {
     return `/?task=${parts[1] ?? ""}`;
   }
   const [s, space, ...rest] = parts;
-  if (s !== "s" || space === undefined || !SPACE_ID.test(space)) return undefined;
+  if (s !== "s" || space === undefined || !SPACE_ADDRESS.test(space)) return undefined;
   if (rest.length > 4 || !rest.every((segment) => SEGMENT.test(segment))) return undefined;
   if (rest.length === 2 && rest[0] === "t") return `/s/${space}/task/${rest[1] ?? ""}`;
   return `/s/${[space, ...rest].join("/")}`;

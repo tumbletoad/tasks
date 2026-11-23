@@ -22,7 +22,7 @@
 // spaces never share one.
 import type { Api } from "../api.ts";
 import { SignedOut, StaleBuild } from "../api.ts";
-import type { PageRoute } from "../route.ts";
+import { spaceIdOf, type PageRoute } from "../route.ts";
 import { AgentsFeed } from "./agents.ts";
 import { browserAttention, type Attention } from "./browser-attention.ts";
 import { browserFrames } from "./browser-frames.ts";
@@ -74,7 +74,7 @@ export class Live {
   constructor(options: LiveOptions) {
     this.#options = options;
     this.store = new LiveStore({
-      space: options.route.space,
+      space: options.route.space === undefined ? undefined : spaceIdOf(options.route.space),
       frames: options.frames ?? browserFrames(),
       onResnapshot: () => {
         if (!this.#greeting) this.#subscribe(undefined);
@@ -95,9 +95,13 @@ export class Live {
     return this.store.onChanges(listener);
   }
 
-  /** The tab's space ID, once known. Every API call names it. */
+  /**
+   * The tab's space as its route names it (one copy's address, or the space's ID), else the first
+   * snapshot's ID: what its feed subscribes to, and what the text it keeps is kept under, so a
+   * restored copy and its original never share a draft.
+   */
   get spaceId(): string | undefined {
-    return this.store.space;
+    return this.#options.route.space ?? this.store.space;
   }
 
   /**
@@ -293,7 +297,7 @@ export class Live {
 
   #subscribe(cursor: Cursor | undefined): void {
     const message: Record<string, unknown> = { type: "subscribe" };
-    const space = this.store.space;
+    const space = this.spaceId;
     if (space !== undefined) message["space"] = space;
     if (cursor !== undefined) message["cursor"] = cursor;
     // Without a socket, the next `hello` subscribes: from no cursor while a snapshot is awaited.

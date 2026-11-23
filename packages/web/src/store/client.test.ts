@@ -71,11 +71,11 @@ const taskEvent = (row: ReturnType<typeof task>, seq?: number) => ({
 
 let frames: FakeFrames;
 
-function start(): Live {
+function start(space = SPACE): Live {
   const api = { ticket: () => Promise.resolve("t".repeat(32)) } as unknown as Api;
   const live = new Live({
     api,
-    route: { space: SPACE },
+    route: { space },
     build: "",
     onSpace: () => undefined,
     onSignedOut: () => undefined,
@@ -137,6 +137,27 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     // Another space's batch never lands in this tab.
     receive(batch(8, 9, [taskEvent(task("x", "Elsewhere"), 9)], "sp_11111111111111111111111111"));
     expect(live.getState().tasks.has("x")).toBe(false);
+    live.stop();
+  });
+
+  test("a restored copy's tab subscribes by the copy's address, every time, and takes its space's snapshot with why it is read-only", async () => {
+    const copy = `${SPACE}-copy-0123456789ab`;
+    const live = start(copy);
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b" });
+    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: copy });
+    const why = { reason: "read_only_copy", message: "This is a restored copy." };
+    receive({
+      ...snapshot(5),
+      space: { id: SPACE, name: "Mira", ref_prefix: "M", read_only: why },
+    });
+    expect(live.getState().phase).toBe("live");
+    expect(live.getState().space?.read_only).toEqual(why);
+    // Its kept text is kept under the copy's address, apart from the original's.
+    expect(live.spaceId).toBe(copy);
+    // A gap asks again for the copy, never for the space's ID (which means the original).
+    receive(batch(7, 8));
+    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: copy });
     live.stop();
   });
 

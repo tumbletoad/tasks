@@ -6,6 +6,8 @@ import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
 import { defaultRefPrefix } from "@ttasks/storage";
 import type { ConnectionClass } from "../local/index.ts";
+import { addressOf, sameFolder } from "../ops/copies.ts";
+import type { OpsHost } from "../ops/index.ts";
 import { shownPath } from "./agent-apps.ts";
 import { defaultSpaceFolder, type Layout } from "./paths.ts";
 import { spaceVerbs, type SpaceVerbsHost } from "./space-verbs.ts";
@@ -15,6 +17,8 @@ export interface PageSpacesHost {
   /** The account's home folder: `~` in a folder the page shows or sends. */
   readonly userHome: string | undefined;
   readonly spaces: SpaceVerbsHost;
+  /** The copies served now: the address of the one made or opened names it among them. */
+  readonly ops: Pick<OpsHost, "spaces">;
 }
 
 type Verb = (params: JsonObject, cls: ConnectionClass) => Promise<unknown>;
@@ -35,10 +39,15 @@ const nameOf = (params: JsonObject): string => {
 };
 
 /**
- * A space as the page needs it: its ID and name, and when machine.toml could not record it, the
- * line that says a restart will not reopen it and what to do.
+ * A space as the page needs it: its ID and name, the address of the copy in `folder` (a restored
+ * copy has its own, copies.ts), and when machine.toml could not record it, the line that says a
+ * restart will not reopen it and what to do.
  */
-function described(result: unknown): { id: string; name: string; not_remembered?: string } {
+function described(
+  result: unknown,
+  folder: string,
+  ops: Pick<OpsHost, "spaces">,
+): { id: string; address: string; name: string; not_remembered?: string } {
   const { space, not_remembered: line } = result as {
     space?: { id?: unknown; name?: unknown };
     not_remembered?: unknown;
@@ -46,8 +55,11 @@ function described(result: unknown): { id: string; name: string; not_remembered?
   if (typeof space?.id !== "string" || typeof space.name !== "string") {
     throw new AppError({ code: "internal", message: "The space has no ID." });
   }
+  const live = ops.spaces().filter((s) => s.state !== "closed");
+  const copy = live.find((s) => s.folder !== undefined && sameFolder(s.folder, folder));
   return {
     id: space.id,
+    address: (copy === undefined ? undefined : addressOf(live, copy)) ?? space.id,
     name: space.name,
     ...(typeof line === "string" ? { not_remembered: line } : {}),
   };
@@ -105,12 +117,12 @@ export function pageSpaceVerbs(host: PageSpacesHost): {
         { name, path, ...(prefix === undefined || prefix === "" ? {} : { ref_prefix: prefix }) },
         cls,
       );
-      return described(result);
+      return described(result, path, host.ops);
     },
     open: async (params, cls) => {
       const path = folderOf(params, "folder");
       if (path === undefined) throw invalid("folder", "Expected a folder");
-      return described(await verb("space/open")({ path }, cls));
+      return described(await verb("space/open")({ path }, cls), path, host.ops);
     },
   };
 }

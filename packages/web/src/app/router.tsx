@@ -26,7 +26,7 @@ import {
   Navigate,
   Outlet,
 } from "@tanstack/react-router";
-import { SPACE_ID, SEGMENT } from "../route.ts";
+import { SPACE_ADDRESS, SEGMENT } from "../route.ts";
 import { Landing } from "./Landing.tsx";
 import { AreaPage, SearchPage, TaskPage, ViewPage } from "./pages.tsx";
 import { SettingsPage } from "./Settings.tsx";
@@ -60,7 +60,7 @@ export const spaceRoute = createRoute({
   path: "/s/$space",
   component: function SpaceLayout() {
     const { space } = spaceRoute.useParams();
-    if (!SPACE_ID.test(space)) return <Navigate to="/" replace />;
+    if (!SPACE_ADDRESS.test(space)) return <Navigate to="/" replace />;
     return (
       <SpaceSession key={space} space={space}>
         <Shell space={space} />

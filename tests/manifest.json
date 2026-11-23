@@ -4170,6 +4170,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.10.5.copies.page",
+      "title": "A restored copy opened on the page beside its open original gets an address of its own: the list has a row per copy, the copy's address reads the copy and refuses a write with its reason, the space's ID still means the original, the feed by that address serves the copy and says why it is read-only, and after the original closes and the copy is claimed the same tab follows it and takes changes",
+      "source": "A2 3.10.5, A5 3.3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.19.web.contrast",
       "title": "Every allowed foreground and background token pair of Sumi and Washi meets its WCAG 2.x threshold (4.5:1 text, 3:1 controls, focus and marks), computed from the theme data the stylesheet is built from; the formula reproduces A5's values, the decorative pairs stay below 3:1 and outside the allowed pairs, and a token change that breaks a pair is caught",
       "source": "A5 3.19, A7 3.12 M5.01",

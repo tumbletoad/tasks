@@ -74,6 +74,17 @@ describe("[A2.3.9.cli.open] ttasks open", () => {
     const match = URL_SHAPE.exec(opened[0] ?? "");
     const to = decodeURIComponent(match?.[3] ?? "");
     expect(to).toMatch(/^\/s\/sp_[0-9a-z]{26}\/task\/M-1$/);
+    // A folder, in either OS's form, is refused: it never opens the default space in its place.
+    for (const folder of ["C:\\spaces\\mira-copy", "/spaces/mira-copy"]) {
+      const refused = await runMain(["open", "--space", folder], {
+        home: w.home,
+        tty: true,
+        main: { openUrl },
+      });
+      expect(refused.code).toBe(2);
+      expect(refused.stderr).toContain("--space takes a space ID or name");
+    }
+    expect(opened).toHaveLength(1);
     const json = await runMain(["open", "--json"], { home: w.home, tty: true, main: { openUrl } });
     expect(JSON.parse(json.stdout)).toEqual({ opened: true, port: w.port(), moved: false });
     const failed = await runMain(["open"], {

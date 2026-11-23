@@ -145,7 +145,7 @@ export function Sidebar({ space }: { readonly space: string }) {
 
   return (
     <div className={styles.sidebar}>
-      <SpaceSwitcher space={space} name={state.space?.name} />
+      <SpaceSwitcher space={space} name={state.space?.name} readOnly={state.space?.read_only} />
       <ul className={styles.list}>
         {[...entries].map(([view, { count, empty }]) => {
           const label = t(VIEW_LABEL[view]);

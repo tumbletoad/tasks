@@ -1082,6 +1082,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         layout,
         userHome: options.agentApps?.home ?? personHome,
         spaces: hub.spaces,
+        ops: hub.ops,
       });
       const apps = agentAppVerbs({
         platform,

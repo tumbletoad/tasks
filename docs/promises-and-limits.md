@@ -70,6 +70,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   cannot be written, TTasks says so and names the command that records it once the file is fixed.
 - When several copies of one space are on this machine, a command without a folder reaches the
   copy that takes changes, and after a restart that is still the copy you last changed.
+- A restored copy you open in the browser is the copy that page shows, in every tab and after a
+  reload, also when its original is open: the address names that copy, and the page says it is a
+  restored copy.
 
 ## Projects and folders
 

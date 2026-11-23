@@ -18,6 +18,7 @@ import {
   listSpaces,
   notOpen,
   type NotOpen,
+  type SpaceItem,
   type SpaceList,
 } from "./spaces.ts";
 import { LANDING } from "./views.ts";
@@ -69,23 +70,23 @@ export function Landing({ task }: { readonly task?: string }) {
       <p className={styles.line}>{t("app.pickSpace")}</p>
       <ul className={styles.spaces}>
         {served.map((item) => (
-          <li key={item.id}>
+          <li key={item.address}>
             {/* A task link keeps its task through the choice. */}
             {task === undefined ? (
               <Link
                 to="/s/$space/$view"
-                params={{ space: item.id, view: LANDING }}
+                params={{ space: item.address, view: LANDING }}
                 className={styles.space}
               >
-                <span dir="auto">{item.name}</span>
+                <SpaceName item={item} />
               </Link>
             ) : (
               <Link
                 to="/s/$space/task/$task"
-                params={{ space: item.id, task }}
+                params={{ space: item.address, task }}
                 className={styles.space}
               >
-                <span dir="auto">{item.name}</span>
+                <SpaceName item={item} />
               </Link>
             )}
           </li>
@@ -93,6 +94,18 @@ export function Landing({ task }: { readonly task?: string }) {
       </ul>
       <NotOpenNotes spaces={closed} className={styles.line} />
     </main>
+  );
+}
+
+/** A space's name, and for a restored copy that it is one. */
+function SpaceName({ item }: { readonly item: SpaceItem }) {
+  const t = useT();
+  return (
+    <span dir="auto">
+      {item.reason === "read_only_copy"
+        ? t("space.nameState", { name: item.name, state: t("space.restoredCopy") })
+        : item.name}
+    </span>
   );
 }
 
@@ -129,7 +142,7 @@ function FirstStart({ closed }: { readonly closed: readonly NotOpen[] }) {
             onDone={() => {
               void navigate({
                 to: "/s/$space/$view",
-                params: { space: step.made.id, view: LANDING },
+                params: { space: step.made.address, view: LANDING },
                 replace: true,
               });
             }}

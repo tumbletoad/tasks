@@ -42,7 +42,7 @@ export interface SearchPageProps {
 
 export function SearchPage({ q, task, onExpand }: SearchPageProps) {
   const t = useT();
-  const space = useLive().space?.id ?? "";
+  const space = useContext(Session).live.spaceId ?? "";
   useTitle(t("nav.search"));
   const [unindexed, setUnindexed] = useState(() => unindexedSpaces.has(space));
   const query = q.trim();

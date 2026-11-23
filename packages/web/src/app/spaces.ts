@@ -3,10 +3,13 @@
 // a tab that shows a space keeps it, whatever the default becomes. Every answer is checked by its
 // shape before the page uses it.
 import type { Api } from "../api.ts";
-import { SPACE_ID } from "../route.ts";
+import { SPACE_ADDRESS, SPACE_ID, spaceIdOf } from "../route.ts";
 
+/** One copy of a space: a restored copy beside its original is a row of its own. */
 export interface SpaceItem {
   readonly id: string;
+  /** What the tab's route names: the space's ID, or for a copy the ID does not mean, its own. */
+  readonly address: string;
   readonly name: string;
   /** `open`, `read_only`, `opening`, `unavailable`, … (A2 3.1). */
   readonly state: string;
@@ -95,15 +98,32 @@ export async function listSpaces(api: Api): Promise<SpaceList> {
     const backup = s["backup"];
     return typeof backup === "string" && REASON.test(backup) ? { backup } : {};
   };
-  const spaces = value["spaces"].flatMap((s): SpaceItem[] =>
-    isRecord(s) &&
-    typeof s["id"] === "string" &&
-    SPACE_ID.test(s["id"]) &&
-    typeof s["name"] === "string" &&
-    typeof s["state"] === "string"
-      ? [{ id: s["id"], name: s["name"], state: s["state"], ...reasonOf(s), ...backupOf(s) }]
-      : [],
-  );
+  const spaces = value["spaces"].flatMap((s): SpaceItem[] => {
+    if (
+      !isRecord(s) ||
+      typeof s["id"] !== "string" ||
+      !SPACE_ID.test(s["id"]) ||
+      typeof s["name"] !== "string" ||
+      typeof s["state"] !== "string"
+    ) {
+      return [];
+    }
+    const id = s["id"];
+    const address = s["address"];
+    return [
+      {
+        id,
+        address:
+          typeof address === "string" && SPACE_ADDRESS.test(address) && spaceIdOf(address) === id
+            ? address
+            : id,
+        name: s["name"],
+        state: s["state"],
+        ...reasonOf(s),
+        ...backupOf(s),
+      },
+    ];
+  });
   const unopened = (Array.isArray(value["unopened"]) ? value["unopened"] : []).flatMap(
     (s): UnopenedSpace[] =>
       isRecord(s) && typeof s["state"] === "string" ? [{ state: s["state"], ...reasonOf(s) }] : [],
@@ -127,13 +147,15 @@ export async function makeDefault(api: Api, space: string): Promise<string> {
 /**
  * The space a new tab opens (A2 3.1): the machine's default when it is served; when the machine
  * has no default, its one served space. A default that is not served is never replaced by another
- * space, and several spaces without a default leave the choice to the person.
+ * space, and several spaces without a default leave the choice to the person. A copy the space's
+ * ID does not mean (a restored copy) is never opened for them: they choose it.
  */
 export function landingSpace(list: SpaceList): string | undefined {
+  const spaces = list.spaces.filter((s) => s.address === s.id);
   if (list.default !== null) {
-    const chosen = list.spaces.find((s) => s.id === list.default);
+    const chosen = spaces.find((s) => s.id === list.default);
     return chosen !== undefined && isServed(chosen) ? chosen.id : undefined;
   }
-  const served = list.spaces.filter(isServed);
+  const served = spaces.filter(isServed);
   return served.length === 1 ? served[0]?.id : undefined;
 }

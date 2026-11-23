@@ -36,6 +36,8 @@
   "space.default": "Default",
   "space.unavailable": "Not open",
   "space.readOnly": "Read-only",
+  "space.restoredCopy": "Restored copy, read-only",
+  "space.nameState": "{name}, {state}",
   "space.madeDefault": "New tabs open {name}.",
   "space.defaultFailed": "The default space was not changed. Try again.",
   "space.listFailed": "The spaces could not be listed.",

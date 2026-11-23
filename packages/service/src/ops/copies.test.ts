@@ -3,11 +3,14 @@
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+  addressOf,
   ambiguousError,
   chooseCopy,
+  copyKey,
   copyOf,
   findSpace,
   isAmbiguity,
+  namesCopy,
   onlySpace,
   type Copy,
 } from "./copies.ts";
@@ -98,5 +101,40 @@ describe("[A2.3.10.5.copies.rule] the copy an ID or a name means", () => {
     const folded = findSpace([life], at("LIFE"));
     if (process.platform === "win32" || process.platform === "darwin") expect(folded).toBe(life);
     else expect(folded).toBeUndefined();
+  });
+
+  test("the page names each copy so that it never reaches another: the ID for the copy it means, a key for a restored copy and for a copy the ID does not mean", () => {
+    const original = space(MIRA, "mira", "open");
+    const copy = space(MIRA, "mira-copy", "read_only", "read_only_copy");
+    const spaces = [copy, original];
+    expect(addressOf(spaces, original)).toBe(MIRA);
+    const key = addressOf(spaces, copy) ?? "";
+    expect(key).toBe(copyKey(MIRA, at("mira-copy")));
+    expect(key).toMatch(/^sp_[0-9a-z]{26}-copy-[0-9a-f]{12}$/u);
+    expect(namesCopy(key)).toBe(true);
+    expect(namesCopy(MIRA)).toBe(false);
+    expect(findSpace(spaces, key)).toBe(copy);
+    expect(findSpace(spaces, MIRA)).toBe(original);
+    // A restored copy keeps its key while it is the only copy, so a tab on it never moves to an
+    // original that opens later; claimed, the space's ID means it, and its key still reaches it.
+    expect(addressOf([copy], copy)).toBe(key);
+    const claimed = space(MIRA, "mira-copy", "open");
+    const closed = space(MIRA, "mira", "closed");
+    expect(addressOf([closed, claimed], claimed)).toBe(MIRA);
+    expect(findSpace([closed, claimed], key)).toBe(claimed);
+    // The original beside a claimed copy that writes is named by its own key.
+    const behind = space(MIRA, "mira", "read_only", "not_authority");
+    expect(addressOf([behind, claimed], behind)).toBe(copyKey(MIRA, at("mira")));
+    // A copy opening again has only its entry's ID: its key finds it, to answer "opening".
+    const opening: Copy = {
+      id: undefined,
+      registered: MIRA,
+      state: "opening",
+      folder: at("mira-copy"),
+    };
+    expect(findSpace([original, opening], key)).toBe(opening);
+    // A key of another folder, or of another space, reaches nothing.
+    expect(findSpace(spaces, copyKey(MIRA, at("elsewhere")))).toBeUndefined();
+    expect(findSpace(spaces, copyKey(LIFE, at("mira-copy")))).toBeUndefined();
   });
 });

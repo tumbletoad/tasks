@@ -8,6 +8,7 @@
 // Stop, have routes of their own (`/api/v1/launch/…`).
 import { httpHeader } from "@ttasks/brand";
 import { createClient, type Client } from "@ttasks/contracts/generated/client.ts";
+import { SPACE_ADDRESS, spaceIdOf } from "./route.ts";
 import { TOKEN_SHAPE } from "./stored.ts";
 
 /** The headers the service reads (its http/app.ts): names from the identifier, never a display name. */
@@ -144,16 +145,22 @@ export class Refused extends Error {
 /** A space the page made or opened. */
 export interface MadeSpace {
   readonly id: string;
+  /** The address of the copy made or opened: a restored copy's own, never its original's. */
+  readonly address: string;
   readonly name: string;
   /** The space will not reopen after a restart: why, and what to do. */
   readonly notRemembered?: string;
 }
 
 function madeSpace(value: unknown): MadeSpace {
-  const { id, name, not_remembered: line } = (value ?? {}) as Record<string, unknown>;
+  const { id, address, name, not_remembered: line } = (value ?? {}) as Record<string, unknown>;
   if (typeof id !== "string" || typeof name !== "string") throw new Refused(200, "unknown");
   return {
     id,
+    address:
+      typeof address === "string" && SPACE_ADDRESS.test(address) && spaceIdOf(address) === id
+        ? address
+        : id,
     name,
     ...(typeof line === "string" && line.length <= 2000 ? { notRemembered: line } : {}),
   };

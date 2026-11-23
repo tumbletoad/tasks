@@ -4,6 +4,9 @@
 // view, feed and drafts. Each space has Make default, and the machine's default carries a mark.
 // The default decides only what a new tab (`/`) and an unbound CLI call open.
 //
+// Each copy of a space is a row of its own: a restored copy beside its original says that it is
+// one, and leads to that copy only. The trigger says it too, while the tab shows a read-only copy.
+//
 // A space whose backups are not working (its daily backup failed, or the newest one does not
 // restore) has a quiet mark on the trigger and a note in the popover that says what to run. The
 // list is read when the switcher appears, each time it opens, when the tab is shown again and every
@@ -18,6 +21,7 @@ import { SignedOut } from "../api.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useToast } from "./frame.ts";
 import { CheckIcon, ChevronIcon } from "./Icons.tsx";
+import type { ReadOnly } from "../store/rows.ts";
 import { useAuth, useMachineApi } from "./session.tsx";
 import { NotOpenNotes } from "./NotOpen.tsx";
 import { SpaceForm, type SpaceFormMode } from "./SpaceForm.tsx";
@@ -56,12 +60,23 @@ const sheet = classes(setup, ["dialog", "modal", "overlay"]);
 
 const RELIST_MS = 5 * 60_000;
 
+/** What a row and the trigger say of a copy that takes no change. */
+const stateWords = (state: string, reason: string | undefined) =>
+  state !== "read_only"
+    ? undefined
+    : reason === "read_only_copy"
+      ? "space.restoredCopy"
+      : "space.readOnly";
+
 export function SpaceSwitcher({
   space,
   name,
+  readOnly,
 }: {
+  /** The tab's route: the space's ID, or one copy's address. */
   readonly space: string;
   readonly name: string | undefined;
+  readonly readOnly?: ReadOnly | undefined;
 }) {
   const t = useT();
   const api = useMachineApi();
@@ -108,8 +123,9 @@ export function SpaceSwitcher({
     list !== undefined &&
     list !== "failed" &&
     list.spaces.some(
-      (item) => item.id === space && item.state === "open" && item.backup !== undefined,
+      (item) => item.address === space && item.state === "open" && item.backup !== undefined,
     );
+  const shownState = readOnly === undefined ? undefined : stateWords("read_only", readOnly.reason);
 
   const make = (id: string, title: string) => {
     setBusy(id);
@@ -137,11 +153,21 @@ export function SpaceSwitcher({
       >
         <Button
           className={styles.trigger}
-          aria-label={t(attention ? "space.switchBackup" : "space.switch", { name: name ?? "" })}
+          aria-label={t(attention ? "space.switchBackup" : "space.switch", {
+            name:
+              shownState === undefined
+                ? (name ?? "")
+                : t("space.nameState", { name: name ?? "", state: t(shownState) }),
+          })}
         >
           <span className={styles.name} dir="auto">
             {name ?? ""}
           </span>
+          {shownState === undefined ? null : (
+            <span className={styles.state} data-part="space-state">
+              {t(shownState)}
+            </span>
+          )}
           {attention ? <span className={styles.attention} data-part="backup-attention" /> : null}
           <ChevronIcon />
         </Button>
@@ -154,15 +180,18 @@ export function SpaceSwitcher({
                 <>
                   <ul className={styles.spaces}>
                     {(list?.spaces ?? []).map((item) => {
-                      const current = item.id === space;
-                      const isDefault = list?.default === item.id;
+                      const current = item.address === space;
+                      // The default names a space by its ID: the copy that ID means.
+                      const own = item.address === item.id;
+                      const isDefault = own && list?.default === item.id;
                       const served = isServed(item);
+                      const words = stateWords(item.state, item.reason);
                       return (
-                        <li key={item.id} className={styles.space}>
+                        <li key={item.address} className={styles.space}>
                           {served ? (
                             <Link
                               to="/s/$space/$view"
-                              params={{ space: item.id, view: LANDING }}
+                              params={{ space: item.address, view: LANDING }}
                               className={styles.pick}
                               {...(current ? { "aria-current": "page" as const } : {})}
                               onClick={close}
@@ -171,9 +200,9 @@ export function SpaceSwitcher({
                               <span className={styles.title} dir="auto">
                                 {item.name}
                               </span>
-                              {item.state === "read_only" ? (
-                                <span className={styles.state}>{t("space.readOnly")}</span>
-                              ) : null}
+                              {words === undefined ? null : (
+                                <span className={styles.state}>{t(words)}</span>
+                              )}
                             </Link>
                           ) : (
                             <span className={styles.pick} data-disabled="true">
@@ -186,7 +215,7 @@ export function SpaceSwitcher({
                           )}
                           {isDefault ? (
                             <span className={styles.default}>{t("space.default")}</span>
-                          ) : (
+                          ) : !own ? null : (
                             <Button
                               className={styles.make}
                               isDisabled={busy !== undefined}
@@ -256,7 +285,10 @@ export function SpaceSwitcher({
               onMade={(made) => {
                 setAdding(undefined);
                 if (made.notRemembered !== undefined) say(made.notRemembered);
-                void navigate({ to: "/s/$space/$view", params: { space: made.id, view: LANDING } });
+                void navigate({
+                  to: "/s/$space/$view",
+                  params: { space: made.address, view: LANDING },
+                });
               }}
             />
           </Dialog>

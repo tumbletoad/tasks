@@ -167,6 +167,14 @@ export interface SpaceHead {
   readonly id: string;
   readonly name: string;
   readonly ref_prefix: string;
+  /** The copy the tab shows takes no change: why, and the service's way out, for people. */
+  readonly read_only?: ReadOnly;
+}
+
+/** Why a space takes no change: a fixed word (`read_only_copy`, `format_too_new`, …) and words. */
+export interface ReadOnly {
+  readonly reason: string;
+  readonly message?: string;
 }
 
 /** The applied-through cursor (A1 3.7): the space's authority and the last seq accounted for. */
@@ -328,6 +336,21 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 const isSeq = (v: unknown): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 const isString = (v: unknown): v is string => typeof v === "string";
+
+const REASON = /^[a-z_]{1,40}$/u;
+
+/** A read-only state as the service sent it, checked by its shape; else undefined. */
+export function readOnlyOf(value: unknown): ReadOnly | undefined {
+  if (!isRecord(value) || !isString(value["reason"]) || !REASON.test(value["reason"])) {
+    return undefined;
+  }
+  const message = value["message"];
+  return {
+    reason: value["reason"],
+    ...(isString(message) && message.length <= 2000 ? { message } : {}),
+  };
+}
+
 const optional = (v: unknown, check: (v: unknown) => boolean): boolean =>
   v === undefined || check(v);
 const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -566,6 +589,9 @@ export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" 
           id: space["id"],
           name: isString(space["name"]) ? space["name"] : "",
           ref_prefix: isString(space["ref_prefix"]) ? space["ref_prefix"] : "",
+          ...(space["read_only"] === undefined
+            ? {}
+            : { read_only: readOnlyOf(space["read_only"]) ?? { reason: "read_only" } }),
         },
         cursor,
         tasks: rowsOf(value["tasks"], taskRow),

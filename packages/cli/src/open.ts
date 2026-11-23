@@ -280,7 +280,8 @@ export async function openCommand(
     }
   }
   const space = globals.space;
-  if (space !== undefined && (space.length > 200 || space.includes("/") || hasControl(space))) {
+  // A folder (either separator) is no space ID or name: it never opens the space's other copy.
+  if (space !== undefined && (space.length > 200 || /[\\/]/u.test(space) || hasControl(space))) {
     return printUsage(io, globals.json, "ttasks open --space takes a space ID or name");
   }
   let session: Session;

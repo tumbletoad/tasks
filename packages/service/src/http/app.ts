@@ -42,7 +42,7 @@ import {
 } from "@ttasks/contracts";
 import { hasControl } from "@ttasks/launch";
 import { WebSocketServer } from "ws";
-import { copyOf, isAmbiguity } from "../ops/copies.ts";
+import { addressOf } from "../ops/copies.ts";
 import { opCall, type OpsHost } from "../ops/index.ts";
 import { isLive, type Grant, type GrantStore } from "../local/index.ts";
 import {
@@ -828,9 +828,9 @@ export class HttpApp {
   }
 
   /**
-   * `POST /api/v1/space/<action>`: the space switcher's list (every space this service has, by ID,
-   * name, state and the reason it is not open, the spaces that never opened by state and reason,
-   * and the machine's default), or Make default. The UI's grant is the person, so Make default is
+   * `POST /api/v1/space/<action>`: the space switcher's list (every copy of a space this service
+   * has, by ID, address, name, state and the reason it is not open, the spaces that never opened by
+   * state and reason, and the machine's default), or Make default. The UI's grant is the person, so Make default is
    * the person's explicit act. Neither names a tab's space: a tab's space is its route, and the
    * default decides only what a new tab and an unbound CLI call use.
    */
@@ -846,23 +846,23 @@ export class HttpApp {
         const all = this.options.ops.spaces().filter((s) => s.state !== "closed");
         const reasonOf = (s: { readonly reason?: string }) =>
           s.reason === undefined ? {} : { reason: s.reason };
-        // One row per space: the page names a space by its ID, which means the copy copies.ts
-        // picks, so a restored copy beside its original is not a second row.
-        const live = all.filter((s) => s.id !== undefined);
-        const spaces = live
-          .filter((s, i) => live.findIndex((other) => other.id === s.id) === i)
-          .map((first) => {
-            const copy = copyOf(live, first.id ?? "");
-            const s = copy === undefined || isAmbiguity(copy) ? first : copy;
-            return {
+        // One row per copy, with the address that names it on the page (copies.ts): a restored
+        // copy beside its original is a row of its own, which never leads to the original.
+        const spaces = all.flatMap((s) => {
+          const address = addressOf(all, s);
+          if (s.id === undefined || address === undefined) return [];
+          return [
+            {
               id: s.id,
+              address,
               name: s.name ?? "",
               state: s.state,
               ...reasonOf(s),
               // An open space whose backups are not working: a fixed word (hub/backup-health.ts).
               ...(s.backup === undefined ? {} : { backup: s.backup }),
-            };
-          });
+            },
+          ];
+        });
         // A space that never opened has no ID or name yet, but the person must still learn that
         // it is there and why it is not open, never that the machine has no space.
         const unopened = all

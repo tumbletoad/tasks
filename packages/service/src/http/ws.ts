@@ -42,7 +42,7 @@ import type { AgentsView } from "@ttasks/contracts/monitor";
 import type { RawData, WebSocket } from "ws";
 import type { ServerTimer } from "../local/index.ts";
 import type { MonitorPace } from "../monitor/index.ts";
-import { copyOf, findSpace, isAmbiguity, onlySpace } from "../ops/copies.ts";
+import { copyOf, findSpace, isAmbiguity, namesCopy, onlySpace } from "../ops/copies.ts";
 import { defaultOf, type ServedSpace } from "../ops/index.ts";
 import type { HttpLog, WsClose } from "./events.ts";
 import {
@@ -53,6 +53,7 @@ import {
   type Cursor,
   type FeedHere,
   type SnapshotMessage,
+  type SpaceReadOnly,
   type Visibility,
 } from "./feed.ts";
 import type { UiInstance } from "./launches.ts";
@@ -125,6 +126,21 @@ function cursorOf(value: unknown): Cursor | undefined | "invalid" {
   return { epoch, incarnation, seq };
 }
 
+/**
+ * Why the copy a page shows takes no change, in the service's own words (space-ways.ts): the
+ * snapshot's `space.read_only`. Undefined for a copy that takes changes.
+ */
+function readOnlyOf(space: ServedSpace): SpaceReadOnly | undefined {
+  if (space.state !== "read_only") return undefined;
+  return {
+    reason: space.reason ?? "read_only",
+    ...(space.message === undefined ? {} : { message: space.message }),
+  };
+}
+
+const stringOf = (readOnly: SpaceReadOnly | undefined): string | undefined =>
+  readOnly === undefined ? undefined : JSON.stringify(readOnly);
+
 /** One page's feed connection. */
 class FeedSocket {
   readonly #ws: WebSocket;
@@ -133,6 +149,10 @@ class FeedSocket {
   readonly #conn: number;
   readonly #opened: number;
   #space: string | undefined;
+  /** The copy the page named (a copy's key or a folder), which the feed never leaves for another. */
+  #copy: string | undefined;
+  /** Why the copy served is read-only, as its last snapshot said; a change sends a new one. */
+  #readOnly: string | undefined;
   #cursor: Cursor | undefined;
   #generation = 0;
   #pumping = false;
@@ -450,9 +470,20 @@ class FeedSocket {
    * Sends a snapshot as the page takes it: with this machine's instances (A5 3.15 step 1). Every
    * snapshot goes through here, so none reaches the page without the instances for its tiles.
    */
-  #sendSnapshot(snapshot: SnapshotMessage, reason?: "epoch" | "cursor_ahead"): Promise<void> {
+  #sendSnapshot(
+    snapshot: SnapshotMessage,
+    from: ServedSpace,
+    reason?: "epoch" | "cursor_ahead",
+  ): Promise<void> {
     const instances: readonly UiInstance[] = this.#hub.options.instances?.() ?? [];
-    return this.#send({ ...snapshot, instances, ...(reason === undefined ? {} : { reason }) });
+    const readOnly = readOnlyOf(from);
+    this.#readOnly = stringOf(readOnly);
+    return this.#send({
+      ...snapshot,
+      space: { ...snapshot.space, ...(readOnly === undefined ? {} : { read_only: readOnly }) },
+      instances,
+      ...(reason === undefined ? {} : { reason }),
+    });
   }
 
   async #subscribe(ref: string | undefined, cursor: Cursor | undefined): Promise<void> {
@@ -485,6 +516,7 @@ class FeedSocket {
           if (generation !== this.#generation) return;
           await this.#sendSnapshot(
             snapshot,
+            found,
             sameAuthority(cursor, head.cursor) ? "cursor_ahead" : "epoch",
           );
           start = snapshot.cursor;
@@ -492,11 +524,12 @@ class FeedSocket {
       } else {
         const snapshot = await readSnapshot(reader, this.#hub.here());
         if (generation !== this.#generation) return;
-        await this.#sendSnapshot(snapshot);
+        await this.#sendSnapshot(snapshot, found);
         start = snapshot.cursor;
       }
       if (this.#closed || generation !== this.#generation || start === undefined) return;
       this.#space = found.id;
+      this.#copy = ref !== undefined && namesCopy(ref) ? ref : undefined;
       this.#cursor = start;
       this.#hub.watch(this);
       this.pump();
@@ -511,6 +544,7 @@ class FeedSocket {
     this.#generation += 1;
     this.#hub.unwatch(this);
     this.#space = undefined;
+    this.#copy = undefined;
     this.#cursor = undefined;
   }
 
@@ -541,12 +575,11 @@ class FeedSocket {
       const spaceId = this.#space;
       const cursor = this.#cursor;
       if (this.#closed || spaceId === undefined || cursor === undefined) return;
-      // The copy the space's ID means now (copies.ts), among the copies that are served: never a
-      // closed original listed before the copy that serves the ID.
-      const found = copyOf(
-        this.#hub.options.host.spaces().filter((s) => s.reader !== undefined),
-        spaceId,
-      );
+      // The copy the page named, else the copy the space's ID means now (copies.ts), among the
+      // copies that are served: never a closed original listed before the copy that serves the ID.
+      const served = this.#hub.options.host.spaces().filter((s) => s.reader !== undefined);
+      const found =
+        this.#copy === undefined ? copyOf(served, spaceId) : findSpace(served, this.#copy);
       const space = isAmbiguity(found) ? undefined : found;
       if (space?.reader === undefined) {
         this.#unsubscribe();
@@ -571,11 +604,13 @@ class FeedSocket {
       }
       if (generation !== this.#generation) return;
       const { head, batch } = read;
-      if (!sameAuthority(cursor, head.cursor)) {
-        // An epoch or incarnation change always means a fresh snapshot (A1 3.7).
+      const moved = !sameAuthority(cursor, head.cursor);
+      // An epoch or incarnation change always means a fresh snapshot (A1 3.7), and so does a copy
+      // that became writable (claimed) or read-only: the page says which it is.
+      if (moved || stringOf(readOnlyOf(space)) !== this.#readOnly) {
         const snapshot = await readSnapshot(space.reader, this.#hub.here());
         if (generation !== this.#generation) return;
-        await this.#sendSnapshot(snapshot, "epoch");
+        await this.#sendSnapshot(snapshot, space, moved ? "epoch" : undefined);
         this.#cursor = snapshot.cursor;
         continue;
       }

@@ -118,7 +118,7 @@ const A = "sp_aaaaaaaaaaaaaaaaaaaaaaaaaa";
 const B = "sp_bbbbbbbbbbbbbbbbbbbbbbbbbb";
 const list = (defaultId: string | null, states: [string, string][]): SpaceList => ({
   default: defaultId,
-  spaces: states.map(([id, state]) => ({ id, name: id.slice(3, 4), state })),
+  spaces: states.map(([id, state]) => ({ id, address: id, name: id.slice(3, 4), state })),
   unopened: [],
 });
 
@@ -171,6 +171,21 @@ describe("[A5.3.3.web.landing] what a new tab opens", () => {
       ),
     ).toBeUndefined();
     expect(landingSpace(list(null, []))).toBeUndefined();
+  });
+
+  test("a restored copy beside its original is never opened for the person: the ID's copy is, and a copy alone is their choice", () => {
+    const copy = {
+      id: A,
+      address: `${A}-copy-0123456789ab`,
+      name: "a",
+      state: "read_only",
+      reason: "read_only_copy",
+    };
+    const original = { id: A, address: A, name: "a", state: "open" };
+    for (const defaultId of [A, null]) {
+      expect(landingSpace({ default: defaultId, spaces: [copy, original], unopened: [] })).toBe(A);
+      expect(landingSpace({ default: defaultId, spaces: [copy], unopened: [] })).toBeUndefined();
+    }
   });
 
   test("a space that is not open is named with why, also one that never opened", () => {
