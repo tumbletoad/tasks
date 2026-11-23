@@ -1505,16 +1505,12 @@ export async function applyHome(
   if (!("entry" in written)) return { home, ...written, access: "off" };
   const record = written;
   // The entry as setup intended it, read back from its place: anything else there is not its own.
-  const placed = whoseIn(home, readHomeFile(home), record);
-  if (placed !== "own") {
-    forget(input, home);
-    return {
-      home,
-      result: "failed",
-      reason: "changed_meanwhile",
-      access: "off",
-      ...(placed === "edited" ? { notes: ["entry_left"] } : {}),
-    };
+  const placed = entryNow(home, record);
+  if (placed.whose !== "own") {
+    return undo(input, home, record, access, placed.reason, {
+      given: false,
+      readable: placed.whose !== "unchecked",
+    });
   }
   let grant: string;
   try {
@@ -1523,8 +1519,11 @@ export async function applyHome(
     // A row the service made before its answer was lost is taken back too.
     return undo(input, home, record, access, grantReason(error));
   }
-  if (whoseIn(home, readHomeFile(home), record) !== "own") {
-    return undo(input, home, record, access, "changed_meanwhile");
+  const after = entryNow(home, record);
+  if (after.whose !== "own") {
+    return undo(input, home, record, access, after.reason, {
+      readable: after.whose !== "unchecked",
+    });
   }
   try {
     putRecord(input.stateDir, input.platform, { ...record, state: "applied", grant });
@@ -1535,9 +1534,27 @@ export async function applyHome(
 }
 
 /**
+ * Setup's entry in the home's file as a read right now finds it. A read that fails cannot tell what
+ * is there (`unchecked`): only a read that succeeds decides that the entry is gone or not setup's.
+ */
+function entryNow(
+  home: AgentHome,
+  record: HomeRecord,
+):
+  | { readonly whose: "own" }
+  | { readonly whose: "edited" | "absent" | "unchecked"; readonly reason: OutcomeReason } {
+  const read = readHomeFile(home);
+  if (read.kind === "refused") return { whose: "unchecked", reason: read.refusal };
+  const whose = whoseIn(home, read, record);
+  return whose === "own" ? { whose } : { whose, reason: "changed_meanwhile" };
+}
+
+/**
  * Takes back an apply that cannot stand. The decision is recorded first (`removing`), then the
- * access goes, then the entry when it is still setup's own. A record that cannot be written stays
- * `applying`, which the next run finishes as a removal all the same.
+ * access goes (when it may have been given), then the entry when a read shows it is still setup's
+ * own. After a read that failed (`readable` false) the file is not touched: the record stays
+ * `removing`, and the next run takes the entry out. A record that cannot be written stays as it
+ * was, which the next run finishes as a removal all the same.
  */
 async function undo(
   input: SetupInput,
@@ -1545,14 +1562,24 @@ async function undo(
   record: HomeRecord,
   access: Access,
   reason: OutcomeReason,
+  { given = true, readable = true }: { readonly given?: boolean; readonly readable?: boolean } = {},
 ): Promise<Outcome> {
   const removing = { ...record, state: "removing" as const };
   try {
     putRecord(input.stateDir, input.platform, removing);
   } catch {
-    // Left `applying`: see above.
+    // Left as it was: see above.
   }
-  const off = await revoked(access, home);
+  const off = given ? await revoked(access, home) : true;
+  if (!readable) {
+    return {
+      home,
+      result: "failed",
+      reason,
+      access: off ? "off" : "unknown",
+      notes: ["undo_failed"],
+    };
+  }
   const out = await takeOut(input, home, removing, off);
   const note =
     out.kept === "own" ? "undo_failed" : out.kept === "edited" ? "entry_left" : undefined;

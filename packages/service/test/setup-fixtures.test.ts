@@ -462,6 +462,40 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
+    "a read that fails once right after the entry is written: access stays off, the record stays to take the entry out, and the next run does",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        const file = a.file(w);
+        seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
+        const before = readFileSync(file);
+        const view = await viewOf(w, a);
+        const [item] = planOf(w.input, [view], SPACE);
+        // A scanner holds the just-written file: the first open after it is in place fails once.
+        const outcome = await failingReadAfterWrite(file, () =>
+          applyHome(w.input, view, SPACE, w.rows, item?.change),
+        );
+        expect(outcome, a.app).toMatchObject({
+          result: "failed",
+          reason: "unreadable",
+          access: "off",
+          notes: ["undo_failed"],
+        });
+        expect(w.rows.asked, a.app).toEqual([]);
+        expect(readRecords(w.input.stateDir), a.app).toMatchObject([{ state: "removing" }]);
+        expect(entryIn(a, file), a.app).toBeDefined();
+        // Another app's setup settles it first: the entry comes out, the file is as it was.
+        expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
+          { result: "removed", access: "off" },
+        ]);
+        expect(readFileSync(file), a.app).toEqual(before);
+        expect(readRecords(w.input.stateDir), a.app).toEqual([]);
+      }
+    },
+    SLOW,
+  );
+
+  test(
     "a file changed since the plan was read is not written, and its newer bytes stay; Claude Code's file takes the entry as it is then",
     async () => {
       for (const a of ADAPTERS) {
@@ -1245,6 +1279,41 @@ async function faulty<T>(
       throw Object.assign(new Error("flush failed"), { code: "EIO" });
     }
     real.fsyncSync(fd);
+  };
+  syncBuiltinESMExports();
+  try {
+    return await body();
+  } finally {
+    Object.assign(fs, real);
+    syncBuiltinESMExports();
+  }
+}
+
+/**
+ * Runs `body` while the first open of `file` after a new one is renamed or linked into its place
+ * fails once with EBUSY, as when a scanner holds a file just written.
+ */
+async function failingReadAfterWrite<T>(file: string, body: () => Promise<T>): Promise<T> {
+  const real = { openSync: fs.openSync, renameSync: fs.renameSync, linkSync: fs.linkSync };
+  const name = basename(file);
+  let armed = false;
+  const placed = (to: fs.PathLike) => {
+    if (basename(String(to)) === name) armed = true;
+  };
+  fs.renameSync = (from: fs.PathLike, to: fs.PathLike) => {
+    real.renameSync(from, to);
+    placed(to);
+  };
+  fs.linkSync = (from: fs.PathLike, to: fs.PathLike) => {
+    real.linkSync(from, to);
+    placed(to);
+  };
+  fs.openSync = (path: fs.PathLike, ...rest: unknown[]) => {
+    if (armed && basename(String(path)) === name) {
+      armed = false;
+      throw Object.assign(new Error("held by a scanner"), { code: "EBUSY" });
+    }
+    return (real.openSync as (...args: unknown[]) => number)(path, ...rest);
   };
   syncBuiltinESMExports();
   try {
