@@ -19,6 +19,7 @@ import {
   type Instance,
   type LaunchIntent,
   type PackInput,
+  type Permission,
   type ResolveReason,
   type Route,
   type RouteDef,
@@ -37,8 +38,6 @@ export const UNAVAILABLE_REASONS = [
   "no_route",
   /** No product command or terminal for a terminal route. */
   "no_terminal",
-  /** No route of the target carries what the instance sets: its app opens with its own settings. */
-  "settings",
   /** The instance's `spaces` do not name this space. */
   "not_for_space",
   /** The task's folder, or its project's, is on another machine only: it opens there. */
@@ -51,6 +50,9 @@ export const UNAVAILABLE_REASONS = [
   "other_space",
 ] as const;
 export type UnavailableReason = (typeof UNAVAILABLE_REASONS)[number];
+
+/** What an Open or a run of an instance that is not for the space says (servesSpace). */
+export const NOT_FOR_SPACE = "This instance is set up for other spaces only. Nothing was started.";
 
 /**
  * The writer a click was checked against no longer serves its space (it closed, or another copy
@@ -123,13 +125,10 @@ export class LaunchUnavailable extends Error {
   readonly reason: UnavailableReason;
   /** `other_space`: the name of the space the home is registered for, when it is served. */
   readonly works: string | undefined;
-  /** What the instance sets that the routes usable here do not carry (chooseRoute). */
-  readonly settings: readonly Setting[];
-  constructor(reason: UnavailableReason, works?: string, settings: readonly Setting[] = []) {
+  constructor(reason: UnavailableReason, works?: string) {
     super(`This instance cannot open the task here: ${reason}`);
     this.reason = reason;
     this.works = works;
-    this.settings = settings;
   }
 }
 
@@ -210,6 +209,8 @@ export interface OpenTaskResult {
   readonly note?: string;
   /** The sanitiser removed something from the composer text (A4 3.15.6's quiet notice). */
   readonly removed: boolean;
+  /** What the instance sets that this way of opening could not carry (Choice). */
+  readonly leftOut: readonly LeftOut[];
 }
 
 /** The route an instance takes for a click, and its brief. */
@@ -222,7 +223,15 @@ export interface Choice {
   readonly prompt?: "sent" | "clipboard";
   /** The brief goes on the clipboard as well (Copy, the assisted open). */
   readonly copy: boolean;
+  /** What the instance sets that the route cannot carry: said to the person, never sent. */
+  readonly leftOut: readonly LeftOut[];
 }
+
+/**
+ * A setting an Open could not carry, as its receipt names it: a permission by its own name
+ * (`read-only`), the others by theirs.
+ */
+export type LeftOut = Exclude<Permission, "inherit"> | Exclude<Setting, "permission">;
 
 /** Copy (A4 3.4.6): the pointer brief on the clipboard, a launch with route `clipboard`. */
 export const COPY: Choice = {
@@ -230,6 +239,7 @@ export const COPY: Choice = {
   kind: "pointer",
   budget: routeOf("clipboard", "clipboard")?.budget ?? 20_000,
   copy: true,
+  leftOut: [],
 };
 
 /** The instance key a Copy launch records (the catalogue's single clipboard target). */
@@ -237,14 +247,16 @@ export const COPY_INSTANCE = "clipboard";
 
 /**
  * The route a click takes on an instance (A4 3.4), the one place that decides it for the tiles and
- * for Open: the first of its target's routes that is usable here and carries everything the
- * instance sets (settingsOf), routes of the instance's prompt mode first (`prompt = "prefill"`
- * asks for the prefill route, A4 L7). An instance that is not for this space has none. A fallback
- * is never chosen after a dispatch.
+ * for Open: the first of its target's routes usable here that carries everything the instance sets
+ * (settingsOf), routes of the instance's prompt mode first (`prompt = "prefill"` asks for the
+ * prefill route, A4 L7). When none carries it all, the usable route that leaves the prompt unsent
+ * and leaves out the least, naming what it leaves out: the person reads that before anything
+ * reaches the agent. A prompt is sent only on a route that carries it all. A fallback is never
+ * chosen after a dispatch.
  *
- * Throws LaunchUnavailable: `not_for_space`; `no_terminal` (or `not_set_up` without a command)
- * when only a terminal route would carry what the instance sets; `settings` when no route of its
- * target does; `no_route` when the target has none this choice opens (T3 opens through its own).
+ * Throws LaunchUnavailable: `not_for_space` (servesSpace); `no_terminal` (or `not_set_up` without
+ * a command) when only a terminal route opens the target; `no_route` when the target has none
+ * this choice opens (T3 opens through its own).
  */
 export function chooseRoute(
   instance: Instance,
@@ -260,25 +272,39 @@ export function chooseRoute(
   }
   if (!servesSpace(instance, options.space)) throw new LaunchUnavailable("not_for_space");
   const settings = settingsOf(instance, options.home, options.platform);
-  const carried = (route: RouteDef): boolean => settings.every((s) => route.carries.includes(s));
+  const lost = (route: RouteDef): Setting[] => settings.filter((s) => !route.carries.includes(s));
   const routes = targetDef(instance.target).routes.filter(
     (r) => r.kind === "terminal" || r.kind === "link",
   );
   const asked = (r: RouteDef): boolean => (instance.prompt === "sent") === (r.prompt === "sent");
-  const ordered = [...routes.filter(asked), ...routes.filter((r) => !asked(r))].filter(carried);
   const terminal = options.terminal && instance.exec !== undefined;
-  const route = ordered.find((r) => r.kind === "link" || terminal);
+  const usable = [...routes.filter(asked), ...routes.filter((r) => !asked(r))].filter(
+    (r) => r.kind === "link" || terminal,
+  );
+  const route =
+    usable.find((r) => lost(r).length === 0) ??
+    usable
+      .filter((r) => r.prompt !== "sent")
+      .reduce<RouteDef | undefined>(
+        (best, r) => (best === undefined || lost(r).length < lost(best).length ? r : best),
+        undefined,
+      );
   if (route === undefined) {
     if (routes.length === 0) throw new LaunchUnavailable("no_route");
-    if (ordered.length === 0) throw new LaunchUnavailable("settings", undefined, settings);
-    throw new LaunchUnavailable(
-      instance.exec === undefined ? "not_set_up" : "no_terminal",
-      undefined,
-      settings,
-    );
+    throw new LaunchUnavailable(instance.exec === undefined ? "not_set_up" : "no_terminal");
   }
+  const permission = instance.openPermission;
+  const leftOut = lost(route).flatMap((s): LeftOut[] =>
+    s !== "permission" ? [s] : permission === "inherit" ? [] : [permission],
+  );
   if (route.kind === "link") {
-    return { route: "link", kind: "prefilled", budget: route.budget, copy: route.copyBriefToo };
+    return {
+      route: "link",
+      kind: "prefilled",
+      budget: route.budget,
+      copy: route.copyBriefToo,
+      leftOut,
+    };
   }
   const prompt = route.prompt === "sent" ? "sent" : "clipboard";
   return {
@@ -287,6 +313,7 @@ export function chooseRoute(
     budget: route.budget,
     prompt,
     copy: route.copyBriefToo,
+    leftOut,
   };
 }
 

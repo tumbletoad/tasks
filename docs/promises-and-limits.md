@@ -247,10 +247,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   environment, so it works with the account signed in to that home; set one in the instance's
   `env` to use it there. The default home gets them as your setup gives them. Codex keeps its
   account in its home, and TTasks takes nothing away from a Codex instance's environment.
-- Open starts an agent only with everything its instance sets: its permission, extra arguments,
-  environment and home. A link or an app that cannot carry them is not used for it: Claude Code
-  set to prefill then opens in a terminal with the brief on the clipboard to paste, and where
-  nothing can, Open says so and starts nothing.
+- Open sends a prompt to an agent only with everything its instance sets: its permission, extra
+  arguments, environment and home. Claude Code set to prefill opens in a terminal for them, with
+  the brief on the clipboard to paste. Where no way of opening here carries them, as a link or a
+  desktop app, it opens without them, leaves the prompt for you to send, and says what it left
+  out.
 - An instance set for some spaces is offered, and opens, only in those.
 - TTasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.

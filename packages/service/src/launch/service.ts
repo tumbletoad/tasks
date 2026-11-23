@@ -718,6 +718,7 @@ export class LaunchService {
           composer: composerOf(given ? "request" : "none", note, session),
           ...(note === undefined ? {} : { note }),
           removed: false,
+          leftOut: [],
         };
       }
     }
@@ -900,6 +901,7 @@ export class LaunchService {
       composer,
       ...(note === undefined ? {} : { note }),
       removed: probe.removed,
+      leftOut: choice.leftOut,
     };
   }
 
@@ -1215,6 +1217,7 @@ ${instance}`;
       composer: composerOf(kind, note, intent),
       ...(note === undefined ? {} : { note }),
       removed: brief?.removed ?? false,
+      leftOut: choice?.route === intent.route ? choice.leftOut : [],
     };
   }
 

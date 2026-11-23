@@ -13,6 +13,7 @@
 // golden file per OS) and against the real one through nodeDetectHost().
 import { readdirSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
+import { ENV_PREFIX } from "@ttasks/brand";
 import {
   inTestedRange,
   isBuiltInTarget,
@@ -184,7 +185,8 @@ export function instanceHome(
 /**
  * What an instance sets beyond its app's own settings (SETTINGS): what a route must carry for its
  * agent to work as the person set it up. One rule for every route, the link's default home
- * included.
+ * included. A `TTASKS_*` variable is not one: the agent never gets it (shim/environment.ts). A
+ * home is one also for an app that has no home variable: nothing can select it.
  */
 export function settingsOf(
   instance: Pick<Instance, "target" | "env" | "configHome" | "openPermission" | "extraArgs">,
@@ -192,11 +194,14 @@ export function settingsOf(
   platform: NodeJS.Platform,
 ): Setting[] {
   const home = instanceHome(instance, userHome, platform);
+  const fold = platform === "win32";
+  const given = (name: string): boolean =>
+    !(fold ? name.toUpperCase() : name).startsWith(ENV_PREFIX);
   const set: Readonly<Record<Setting, boolean>> = {
     permission: instance.openPermission !== "inherit",
     arguments: instance.extraArgs.length > 0,
-    environment: Object.keys(instance.env).length > 0,
-    home: home !== undefined && !home.isDefault,
+    environment: Object.keys(instance.env).some(given),
+    home: home === undefined ? instance.configHome !== undefined : !home.isDefault,
   };
   return SETTINGS.filter((setting) => set[setting]);
 }

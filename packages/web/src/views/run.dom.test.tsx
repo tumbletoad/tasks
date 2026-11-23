@@ -7,6 +7,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { CLI_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
 import { Refused, type Api, type Busy, type Instance, type Opened, type Run } from "../api.ts";
 import { ToastContext } from "../app/frame.ts";
@@ -110,6 +111,7 @@ const opened = (call: number, text: Opened["text"]): Opened => ({
   copy: undefined,
   text,
   note: "n1",
+  leftOut: [],
 });
 /** How often the page read the runs. */
 let reads: number;
@@ -605,6 +607,19 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
       "Codex already had this task open or opening. What you typed is saved on the task as a note.",
       "Copied",
       "Codex already had this task open or opening. What you typed is saved on the task as a note.",
+    ]);
+  });
+
+  test("an Open that could not carry what its instance sets says what it left out, before anything is sent", async () => {
+    openAnswer = (call) =>
+      Promise.resolve({ ...opened(call, "request"), leftOut: ["read-only", "home"] });
+    await open();
+    openAnswer = (call) => Promise.resolve({ ...opened(call, "request"), leftOut: ["arguments"] });
+    type("And the receipts");
+    await open();
+    expect(toasts).toEqual([
+      `Opened in Codex without your read-only setting and the account you chose for it, which this way of opening cannot carry. A terminal can, where one is set up: see ${CLI_NAME} doctor.`,
+      `Opened in Codex without your extra arguments, which this way of opening cannot carry. A terminal can, where one is set up: see ${CLI_NAME} doctor.`,
     ]);
   });
 });

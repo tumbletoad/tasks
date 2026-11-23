@@ -618,6 +618,7 @@ Open a task in an agent app on this machine, or Copy its pointer brief.
 | `launch.route` | "terminal" \| "link" \| "t3-mcp" \| "t3-cli" \| "clipboard" | yes | How it opens |
 | `launch.state` | "prepared" \| "dispatching" \| "dispatched" \| "confirmed" \| "failed" \| "unknown" | yes | A4 3.9's state |
 | `launch.reason` | string, max 40 | no | Why it failed or is unknown: a fixed code |
+| `launch.left_out` | ("full-access" \| "auto-edit" \| "read-only" \| "arguments" \| "environment" \| "home")[], max 4 items | no | What this way of opening could not carry: a permission by name, args, env, home |
 | `launch.at` | object | yes | When it entered each state |
 | `launch.at.prepared` | integer, 0 to 253402300799999 | no | When it was recorded, in ms since 1970 |
 | `launch.at.dispatching` | integer, 0 to 253402300799999 | no | When its external step began |

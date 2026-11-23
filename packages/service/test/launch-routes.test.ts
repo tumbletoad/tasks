@@ -288,6 +288,7 @@ interface Opened {
     state: string;
     route: string;
     instance: string;
+    left_out?: string[];
   };
   readonly copy?: string;
   readonly text: string;
@@ -926,42 +927,78 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
     return undefined;
   };
 
-  test("a route is taken only when it carries what the instance sets; otherwise Open says which would", () => {
+  test("Open takes the route that carries what the instance sets; without one it opens with the prompt unsent and names what it left out", () => {
+    type Given = Parameters<typeof chooseRoute>[0];
+    const pick = (instance: Given, terminal: boolean) => {
+      const chosen = chooseRoute(instance, { ...here, terminal });
+      // A route that leaves something out never sends the prompt: the person reads what it left
+      // out first.
+      if (chosen.leftOut.length > 0) expect(chosen.kind).toBe("prefilled");
+      return [chosen.route, chosen.prompt ?? "unsent", [...chosen.leftOut]];
+    };
     const prefill = { ...base, prompt: "prefill" } as const;
-    // Nothing set beyond the app's own: Claude Code's link, terminal or not.
-    expect(chooseRoute(prefill, { ...here, terminal: true }).route).toBe("link");
-    expect(chooseRoute(prefill, { ...here, terminal: false }).route).toBe("link");
-    // A permission, arguments or an environment of its own: the link carries none of them, so
-    // the agent opens in a terminal with them and the brief to paste, never sent.
-    for (const set of [
-      { openPermission: "read-only" },
-      { extraArgs: ["--model", "fixture"] },
-      { env: { FIXTURE_SETTING: "1" } },
-    ] as const) {
-      const chosen = chooseRoute({ ...prefill, ...set }, { ...here, terminal: true });
-      expect([chosen.route, chosen.prompt, chosen.copy], JSON.stringify(set)).toEqual([
-        "terminal",
-        "clipboard",
-        true,
-      ]);
-      // Without a terminal nothing carries them: the terminal would.
-      expect(reason(() => chooseRoute({ ...prefill, ...set }, { ...here, terminal: false }))).toBe(
-        "no_terminal",
-      );
-    }
-    // The brief sent: the terminal, and without one the link only when it loses nothing.
-    const sent = { ...base, openPermission: "read-only" } as const;
-    expect(chooseRoute(sent, { ...here, terminal: true }).prompt).toBe("sent");
-    expect(reason(() => chooseRoute(sent, { ...here, terminal: false }))).toBe("no_terminal");
-    expect(chooseRoute(base, { ...here, terminal: false }).route).toBe("link");
-    // An app that opens with its own settings has no route for a permission of the instance's.
     const desktop = { ...base, id: "desktop", target: "claude-desktop", exec: undefined } as const;
-    expect(chooseRoute(desktop, { ...here, terminal: true }).route).toBe("link");
+    const codex = { ...base, id: "codex-x", target: "codex-cli" } as const;
+    const ownHome = { configHome: "/home/mira/.claude-work" } as const;
+    // instance, with a terminal, without one.
+    const table: readonly (readonly [string, Given, unknown, unknown])[] = [
+      ["nothing set, prefill", prefill, ["link", "unsent", []], ["link", "unsent", []]],
+      ["nothing set, sent", base, ["terminal", "sent", []], ["link", "unsent", []]],
+      [
+        "read-only, prefill",
+        { ...prefill, openPermission: "read-only" },
+        ["terminal", "clipboard", []],
+        ["link", "unsent", ["read-only"]],
+      ],
+      [
+        "read-only, sent",
+        { ...base, openPermission: "read-only" },
+        ["terminal", "sent", []],
+        ["link", "unsent", ["read-only"]],
+      ],
+      [
+        "arguments",
+        { ...prefill, extraArgs: ["--model", "fixture"] },
+        ["terminal", "clipboard", []],
+        ["link", "unsent", ["arguments"]],
+      ],
+      [
+        "environment",
+        { ...prefill, env: { FIXTURE_SETTING: "1" } },
+        ["terminal", "clipboard", []],
+        ["link", "unsent", ["environment"]],
+      ],
+      [
+        // The agent never gets a TTASKS_* variable: it is no setting to carry.
+        "a reserved variable only",
+        { ...prefill, env: { [envVar("FIXTURE")]: "1" } },
+        ["link", "unsent", []],
+        ["link", "unsent", []],
+      ],
+      [
+        "a home of its own",
+        { ...base, ...ownHome },
+        ["terminal", "sent", []],
+        ["link", "unsent", ["home"]],
+      ],
+      [
+        "an app with its own settings",
+        { ...desktop, openPermission: "auto-edit", env: { FIXTURE_SETTING: "1" }, ...ownHome },
+        ["link", "unsent", ["auto-edit", "environment", "home"]],
+        ["link", "unsent", ["auto-edit", "environment", "home"]],
+      ],
+      ["Codex, sent", { ...codex, openPermission: "read-only" }, ["terminal", "sent", []], null],
+      ["Codex, prefill", { ...codex, prompt: "prefill" }, ["terminal", "clipboard", []], null],
+    ];
+    for (const [name, instance, withTerminal, without] of table) {
+      expect(pick(instance, true), name).toEqual(withTerminal);
+      if (without !== null) expect(pick(instance, false), name).toEqual(without);
+    }
+    // Codex opens only in a terminal: without one, or without its command, nothing opens.
+    expect(reason(() => chooseRoute(codex, { ...here, terminal: false }))).toBe("no_terminal");
     expect(
-      reason(() =>
-        chooseRoute({ ...desktop, openPermission: "read-only" }, { ...here, terminal: true }),
-      ),
-    ).toBe("settings");
+      reason(() => chooseRoute({ ...codex, exec: undefined }, { ...here, terminal: true })),
+    ).toBe("not_set_up");
   });
 
   test("an instance set for some spaces opens only there, named by ID or name in any case", () => {
@@ -983,11 +1020,32 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
         instances: [
           { id: "claude-plan", prompt: "prefill", open_permission: "read-only" },
           { id: "claude-research", spaces: ["Research"] },
+          { id: "desktop-plan", target: "claude-desktop", open_permission: "read-only" },
         ],
       });
       const tiles = r.lab.running.launches.instances(r.lab.spaceId);
       expect(tiles.find((t) => t.key === "claude-plan")?.route).toBe("terminal");
+      expect(tiles.find((t) => t.key === "desktop-plan")?.route).toBe("link");
       expect(tiles.map((t) => t.key)).not.toContain("claude-research");
+
+      // The app opens with its own settings: it opens, with the prompt unsent, and the receipt
+      // names what it left out, also for a repeat of the click.
+      const linked = await addTask(r, "Fixture desktop plan");
+      const viaLink = await open(r, { task: linked.ref, instance: "desktop-plan" });
+      // The rig gives every instance its fake's env: the app cannot carry that either.
+      const leftOut = ["read-only", "environment"];
+      expect(viaLink.result.launch).toMatchObject({ route: "link", left_out: leftOut });
+      const again = await open(r, {
+        task: linked.ref,
+        instance: "desktop-plan",
+        request_id: viaLink.requestId,
+      });
+      expect(again.result.launch).toMatchObject({
+        id: viaLink.result.launch.id,
+        left_out: leftOut,
+      });
+      await waitFor(() => (opened.length > 0 ? true : undefined), LONG_MS, "the link's opener");
+      opened.length = 0;
 
       const task = await addTask(r, "Fixture plan only");
       const { result } = await open(r, { task: task.ref, instance: "claude-plan" });

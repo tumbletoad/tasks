@@ -125,6 +125,8 @@ export interface Opened {
    */
   readonly text: "none" | "inline" | "note" | "request";
   readonly note: string | undefined;
+  /** What the instance sets that this way of opening could not carry: a permission by name. */
+  readonly leftOut: readonly string[];
 }
 
 /** Open's terminal as Settings shows it (the service's TerminalView): fixed words only. */
@@ -502,6 +504,7 @@ export class Api {
       copy: result.copy,
       text: result.text,
       note: result.note,
+      leftOut: launch.left_out ?? [],
     };
   }
 

@@ -39,6 +39,15 @@ export function I18n({ children }: { readonly children: ReactNode }) {
 
 export type Translate = (id: MessageId, values?: Values) => string;
 
+/** Items joined as the page's locale joins a list: "a, b and c". */
+export function useList(): (items: readonly string[]) => string {
+  const intl = useIntl();
+  return useCallback(
+    (items: readonly string[]) => intl.formatList(items, { type: "conjunction" }),
+    [intl],
+  );
+}
+
 /** `t(id, values)`: the message in the page's locale, with the brand's names. */
 export function useT(): Translate {
   const intl = useIntl();

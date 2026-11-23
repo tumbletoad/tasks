@@ -24,7 +24,7 @@ import { starChange, statusChange, triageChange } from "../edit/change.ts";
 import { useEditState, useEdits } from "../edit/useEdits.ts";
 import { askFor, savedWords } from "../task/composer.ts";
 import { areaSlots, groupTasks, type Group, type GroupTasks } from "../groups.ts";
-import { useT } from "../i18n/intl.tsx";
+import { useList, useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
 import { itemsOf, type RowItem } from "../list/items.ts";
 import { List, type Place } from "../list/List.tsx";
@@ -32,6 +32,7 @@ import {
   busyByTask,
   folderRefusal,
   homeRefusal,
+  instanceRefusal,
   MARKER_REASONS,
   markerWords,
   type BusyOf,
@@ -163,6 +164,7 @@ export function TaskList({
   beneath,
 }: TaskListProps) {
   const t = useT();
+  const list = useList();
   const say = useToast();
   const { api, live } = useContext(Session);
   const state = useLive();
@@ -839,8 +841,14 @@ export function TaskList({
               }
               // The app takes the brief by paste: without it on the clipboard nothing opens.
               if (copy !== undefined && !(await toClipboard(copy))) return undefined;
-              // A second click while the first was opening got that launch: its words are a note.
-              if (opened.text === "note") say(t("row.openedEarlier", { label: instance.label }));
+              // What this way of opening could not carry is said before the person sends anything.
+              if (opened.leftOut.length > 0) {
+                const what = list(opened.leftOut.map((code) => t("row.leftOut", { what: code })));
+                say(t("row.openedWithout", { label: instance.label, what }));
+              } else if (opened.text === "note") {
+                // A second click while the first was opening got that launch: its words are a note.
+                say(t("row.openedEarlier", { label: instance.label }));
+              }
               return receipt;
             })
             .catch((error: unknown) => {
@@ -867,6 +875,16 @@ export function TaskList({
                   t("row.openOtherSpace", {
                     label: instance.label,
                     space: home.works ?? t("apps.otherSpace"),
+                  }),
+                );
+                return undefined;
+              }
+              const cannot = instanceRefusal(error);
+              if (cannot !== undefined) {
+                refuse(task.id, undefined);
+                say(
+                  t(cannot === "not_for_space" ? "row.openNotForSpace" : "row.openNoTerminal", {
+                    label: instance.label,
                   }),
                 );
                 return undefined;
@@ -1084,6 +1102,7 @@ export function TaskList({
     loadBusy,
     loadRuns,
     t,
+    list,
     toClipboard,
   ]);
 

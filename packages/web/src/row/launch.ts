@@ -126,6 +126,19 @@ export function homeRefusal(error: unknown): { readonly works?: string } | undef
   return typeof space === "string" ? { works: space } : {};
 }
 
+/**
+ * The service's refusal of an Open whose instance cannot open here: it is set up for other spaces,
+ * or no terminal can open it. Undefined for any other answer.
+ */
+export function instanceRefusal(error: unknown): "not_for_space" | "no_terminal" | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const data = (error as Error & { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return undefined;
+  const { field, reason } = data as Record<string, unknown>;
+  if (field !== "instance") return undefined;
+  return reason === "not_for_space" || reason === "no_terminal" ? reason : undefined;
+}
+
 /** The reasons a folder's marker gives: the person may open the task there anyway. */
 export const MARKER_REASONS: ReadonlySet<string> = new Set(["marker_missing", "marker_other"]);
 

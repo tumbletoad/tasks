@@ -61,6 +61,11 @@ export const LaunchReceipt = z.strictObject({
     .enum(["prepared", "dispatching", "dispatched", "confirmed", "failed", "unknown"])
     .describe("A4 3.9's state"),
   reason: z.string().max(40).describe("Why it failed or is unknown: a fixed code").optional(),
+  left_out: z
+    .array(z.enum(["full-access", "auto-edit", "read-only", "arguments", "environment", "home"]))
+    .max(4)
+    .describe("What this way of opening could not carry: a permission by name, args, env, home")
+    .optional(),
   at: z
     .strictObject({
       prepared: Millis.describe("When it was recorded, in ms since 1970").optional(),

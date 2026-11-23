@@ -72,7 +72,6 @@ import {
   MANUAL_INSTANCE,
   PACK_LOG,
   type LaunchIntent,
-  type Setting,
 } from "@ttasks/launch";
 import {
   ambiguousError,
@@ -89,6 +88,7 @@ import {
   LaunchFolderUnmarked,
   LaunchUnavailable,
   LaunchWriterGone,
+  NOT_FOR_SPACE,
   type OpenTaskRequest,
   type OpenTaskResult,
   type PackContent,
@@ -3067,7 +3067,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw launchError(error);
     }
     return {
-      launch: launchReceipt(opened.intent),
+      launch: {
+        ...launchReceipt(opened.intent),
+        ...(opened.leftOut.length === 0 ? {} : { left_out: [...opened.leftOut] }),
+      },
       ...(opened.copy === undefined ? {} : { copy: opened.copy }),
       text: opened.composer,
       ...(opened.note === undefined ? {} : { note: opened.note }),
@@ -4584,20 +4587,6 @@ async function unmarkedError(call: Call, error: LaunchFolderUnmarked): Promise<A
   });
 }
 
-/** An instance's settings as a refusal names them, and the machine.toml keys that hold them. */
-const SETTING_WORDS: Readonly<Record<Setting, string>> = {
-  permission: "permission",
-  arguments: "extra arguments",
-  environment: "environment",
-  home: "home",
-};
-const SETTING_KEYS: Readonly<Record<Setting, string>> = {
-  permission: "open_permission",
-  arguments: "extra_args",
-  environment: "env",
-  home: "config_home",
-};
-
 export function launchError(error: unknown): unknown {
   if (error instanceof LaunchUnavailable) {
     if (error.reason === "other_space") {
@@ -4612,9 +4601,6 @@ export function launchError(error: unknown): unknown {
         },
       });
     }
-    const settings = error.settings;
-    const set = settings.length === 0 ? "" : listed(settings.map((s) => SETTING_WORDS[s]));
-    const keys = listed(settings.map((s) => SETTING_KEYS[s]));
     const said = (() => {
       switch (error.reason) {
         case "not_set_up":
@@ -4623,20 +4609,12 @@ export function launchError(error: unknown): unknown {
           return { message: "This task's folder is on another machine." };
         case "not_for_space":
           return {
-            message: "This instance is set up for other spaces only. Nothing was started.",
+            message: NOT_FOR_SPACE,
             hint: "Add this space to its spaces in machine.toml, or open the task with another instance.",
-          };
-        case "settings":
-          return {
-            message: `This app opens with its own settings, so it cannot open with the ${set} this instance sets. Nothing was started.`,
-            hint: `Open the task with an instance that opens in a terminal, or take ${keys} out of this instance in machine.toml.`,
           };
         case "no_terminal":
           return {
-            message:
-              settings.length === 0
-                ? "No terminal can open this instance here. Nothing was started."
-                : `No terminal can open this instance here, and only a terminal carries the ${set} it sets. Nothing was started.`,
+            message: "No terminal can open this instance here. Nothing was started.",
             hint: `Run ${CLI_NAME} doctor to see which terminal it would use.`,
           };
         default:
@@ -4646,11 +4624,7 @@ export function launchError(error: unknown): unknown {
     return new AppError({
       code: "invalid_input",
       ...said,
-      data: {
-        field: "instance",
-        reason: error.reason,
-        ...(settings.length === 0 ? {} : { settings: [...settings] }),
-      },
+      data: { field: "instance", reason: error.reason },
     });
   }
   if (error instanceof LaunchFolderUnavailable) {
