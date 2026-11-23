@@ -1,7 +1,7 @@
 // Areas and projects by name, and possible duplicates by title (A3 3.4.5): the pure rules.
-import { AppError } from "@ttasks/contracts";
+import { AppError, closeName, sameName } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
-import { editDistance, resolveGroup } from "./groups.ts";
+import { resolveGroup } from "./groups.ts";
 import type { GroupNames } from "./read.ts";
 import { duplicateWarning, similarTitles } from "./similar.ts";
 
@@ -29,8 +29,8 @@ function failure(fn: () => unknown): AppError {
 }
 
 describe("[A3.3.4.add.names] names, typos and similar titles", () => {
-  test("a name matches by ID, slug, name ignoring case and spaces, or an old slug", () => {
-    for (const name of ["a_1", "client-work", "CLIENT  WORK", "Client work"]) {
+  test("a name matches by ID, slug, name ignoring case, accents and spaces, or an old slug", () => {
+    for (const name of ["a_1", "client-work", "CLIENT  WORK", "Client work", "Clïent wörk"]) {
       expect(resolveGroup(names, "area", name, "p")).toBe("a_1");
     }
     expect(resolveGroup(names, "area", "old-home", "p")).toBe("a_2");
@@ -72,8 +72,39 @@ describe("[A3.3.4.add.names] names, typos and similar titles", () => {
     // A lookup of an unknown name is not_found, with any close name.
     const lookup = failure(() => resolveGroup(names, "area", "Hme", "path", { lookup: true }));
     expect(lookup).toMatchObject({ code: "not_found", data: { suggestions: ["Home"] } });
-    expect(editDistance("kitten", "sitting", 5)).toBe(3);
-    expect(editDistance("a", "abcdef", 2)).toBe(3);
+  });
+
+  test("the page and the service share one rule: the same name, or one close to it", () => {
+    expect(sameName("Projects", "projécts")).toBe(true);
+    expect(sameName("Client work", " Client   Work ")).toBe(true);
+    expect(sameName("Projects", "Projcts")).toBe(false);
+    expect(closeName("Projects", "Projcts")).toBe(true);
+    expect(closeName("Projects", "PROJECTS")).toBe(false);
+    expect(closeName("QA", "UX")).toBe(false);
+    expect(closeName("Garden", "Projects")).toBe(false);
+  });
+
+  test("of several groups a name matches, the one named exactly wins, then a live one", () => {
+    const pair: GroupNames = {
+      areas: [
+        { id: "a_1", slug: "one", title: "One", area: null, archived: true },
+        { id: "a_2", slug: "one-2", title: "ONE", area: null },
+        { id: "a_3", slug: "two", title: "Two", area: null, archived: true },
+        { id: "a_4", slug: "two-2", title: "Two", area: null },
+        { id: "a_5", slug: "three", title: "Three", area: null },
+        { id: "a_6", slug: "three-2", title: "Three", area: null },
+      ],
+      projects: [],
+      aliases: [],
+    };
+    expect(resolveGroup(pair, "area", "One", "p")).toBe("a_1");
+    expect(resolveGroup(pair, "area", "ONE", "p")).toBe("a_2");
+    expect(resolveGroup(pair, "area", "Two", "p")).toBe("a_4");
+    // Two live groups of one name are still ambiguous: each is named by its ID.
+    expect(failure(() => resolveGroup(pair, "area", "Three", "p"))).toMatchObject({
+      code: "ambiguous",
+      data: { suggestions: ["a_5", "a_6"] },
+    });
   });
 
   test("similar titles: close trigrams, but other numbers are never close", () => {

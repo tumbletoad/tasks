@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./preferences": "./src/preferences.ts",
     "./query-terms": "./src/query-terms.ts",
+    "./group-names": "./src/group-names.ts",
     "./day": "./src/day.ts",
     "./day-cases": "./src/day-cases.ts",
     "./monitor": "./src/monitor.ts",

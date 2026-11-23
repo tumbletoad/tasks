@@ -1418,22 +1418,21 @@ const ACTIVE_IN = (column: string, owner: string): string =>
   `(SELECT count(*) FROM tasks t WHERE t.${column} = ${owner}.id AND t.lifecycle = 'active' ` +
   "AND t.deleted_at IS NULL)";
 
-const GROUP_COLUMNS = "id, slug, title, lifecycle, deleted_at";
+const GROUP_COLUMNS = "id, slug, title, lifecycle, position";
 const AREA_LIST: Statement = {
-  sql: `SELECT ${GROUP_COLUMNS}, ${ACTIVE_IN("area_id", "a")} AS active FROM areas a ORDER BY a.position, a.id`,
+  sql:
+    `SELECT ${GROUP_COLUMNS}, ${ACTIVE_IN("area_id", "a")} AS active FROM areas a ` +
+    "WHERE a.deleted_at IS NULL ORDER BY a.position, a.id",
   mode: "all",
 };
 const PROJECT_LIST: Statement = {
   sql:
     `SELECT ${GROUP_COLUMNS}, area_id, ${ACTIVE_IN("project_id", "p")} AS active ` +
-    "FROM projects p ORDER BY p.position, p.id",
+    "FROM projects p WHERE p.deleted_at IS NULL ORDER BY p.position, p.id",
   mode: "all",
 };
 
-/**
- * The space's areas and projects with their active task counts, in the space's order: archived and
- * deleted ones too, so a list can say where a page stopped whatever happened to that group since.
- */
+/** The space's areas and projects that are not deleted, archived ones too, in the space's order. */
 export async function readGroups(
   reader: WorkerConnection,
 ): Promise<{ space: SpaceFacts; areas: Row[]; projects: Row[] }> {
@@ -1448,6 +1447,7 @@ export interface GroupName {
   readonly title: string;
   /** A project's area. */
   readonly area: string | null;
+  readonly archived?: boolean;
 }
 
 /** Every area and project that is not deleted, and their old slugs (A1 3.3 aliases). */
@@ -1463,11 +1463,13 @@ export interface GroupNames {
 }
 
 const AREA_NAMES: Statement = {
-  sql: "SELECT id, slug, title FROM areas WHERE deleted_at IS NULL ORDER BY position, id",
+  sql: "SELECT id, slug, title, lifecycle FROM areas WHERE deleted_at IS NULL ORDER BY position, id",
   mode: "all",
 };
 const PROJECT_NAMES: Statement = {
-  sql: "SELECT id, area_id, slug, title FROM projects WHERE deleted_at IS NULL ORDER BY position, id",
+  sql:
+    "SELECT id, area_id, slug, title, lifecycle FROM projects WHERE deleted_at IS NULL " +
+    "ORDER BY position, id",
   mode: "all",
 };
 const GROUP_ALIASES: Statement = {
@@ -1482,6 +1484,7 @@ const nameOf = (row: Row): GroupName => ({
   slug: text(row["slug"]),
   title: text(row["title"]),
   area: typeof row["area_id"] === "string" ? row["area_id"] : null,
+  ...(row["lifecycle"] === "active" ? {} : { archived: true }),
 });
 
 /** The names a draft's area and project resolve against (A3 3.4.5), in one snapshot. */
