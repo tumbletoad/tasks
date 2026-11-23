@@ -22,8 +22,9 @@
 // - When the service ends, its runs' processes end with it (the container's own guarantee). A
 //   service that closes saves each agent's work first: its own end when it had settled, else what
 //   it said so far, the words of an answer still being written included. The next start settles
-//   each open run from its saved work: its own result, and the time limit that ended it, when the
-//   work had settled, else `service_ended` with the last saved answer.
+//   each open run from its saved work: its own result when the work had settled, else the last
+//   saved answer, as `timed_out` once a time limit had fired (saved the moment it fires), else as
+//   `service_ended`.
 // - A late PID, exit or event never revives a stopped run: the record's rules (machine.ts) refuse
 //   it, and a container that starts after its run gave up on it is killed.
 //
@@ -129,8 +130,10 @@ interface Flow {
   quietSince: number | undefined;
   /** While its agent runs: the driver of its protocol. */
   session: DriverSession | undefined;
-  /** The time limit that ended its work, once one did: saved with the work's result. */
+  /** The time limit that ended its work, once one fired: saved with every answer from then on. */
   limit: TimeLimit | undefined;
+  /** The answer last saved while the agent works, so the limit can be saved with it. */
+  said: SavedAnswer | undefined;
   readonly abort: AbortController;
   done: Promise<RunRecord | undefined>;
 }
@@ -173,14 +176,13 @@ function withCleanup(end: RunEnd, cleanup: RunCleanup): RunEnd {
   }
 }
 
-/** What the run's folder keeps of settled work: its answer, its result, the limit that ended it. */
-const settledAnswer = (work: Work, limit: TimeLimit | undefined): SavedAnswer => ({
+/** What the run's folder keeps of settled work: its answer and its result. */
+const settledAnswer = (work: Work): SavedAnswer => ({
   text: work.text,
   final: work.textFinal,
   cut: work.textCut,
   outcome: work.outcome,
   error: work.error,
-  ...(limit === undefined ? {} : { limit }),
 });
 
 /** The work, when the session settled already. */
@@ -480,16 +482,12 @@ export class RunHost {
     if (own === undefined) session.ended({ code: null, signal: null });
     const work = own ?? (await settledNow(session));
     if (work === undefined || (own === undefined && work.text === null)) return;
-    try {
-      this.#files.saveAnswer(
-        flow.id,
-        own === undefined
-          ? { text: work.text, final: work.textFinal, cut: work.textCut }
-          : settledAnswer(own, flow.limit),
-      );
-    } catch (error) {
-      this.#failed("answer", error);
-    }
+    this.#saveAnswer(
+      flow,
+      own === undefined
+        ? { text: work.text, final: work.textFinal, cut: work.textCut }
+        : settledAnswer(own),
+    );
   }
 
   #flow(id: string): Flow {
@@ -515,6 +513,7 @@ export class RunHost {
       quietSince: undefined,
       session: undefined,
       limit: undefined,
+      said: undefined,
       abort,
       done: Promise.resolve(undefined),
     };
@@ -725,7 +724,11 @@ export class RunHost {
       this.#limits(run, startedAt, () => lastOutput, limits.signal),
     ]);
     limits.abort();
-    if (why === "wall" || why === "idle") flow.limit = why;
+    if (why === "wall" || why === "idle") {
+      // Saved at once: a crash in the interrupt, the grace or the kill still records it.
+      flow.limit = why;
+      this.#saveAnswer(flow, flow.said ?? { text: null, final: false, cut: false });
+    }
 
     if (why === "stop" || flow.limit !== undefined) {
       // The agent is asked to stop, and may still say how its work ended.
@@ -759,11 +762,7 @@ export class RunHost {
       return undefined;
     }
     // The work's result first: a crash of the service from here on still records it.
-    try {
-      this.#files.saveAnswer(flow.id, settledAnswer(work, flow.limit));
-    } catch (error) {
-      this.#failed("answer", error);
-    }
+    this.#saveAnswer(flow, settledAnswer(work));
 
     // The protocol ends, and the agent gets time to end by itself; a Stop waits for nothing.
     session.close();
@@ -839,17 +838,26 @@ export class RunHost {
   /** What the parser reports, as it comes: the answer is saved first, at once. */
   #event(flow: Flow, event: RunEvent): void {
     if (event.kind === "answer") {
-      try {
-        this.#files.saveAnswer(flow.id, { text: event.text, final: event.final, cut: event.cut });
-      } catch (error) {
-        // The answer stays in memory and goes into the record when the run ends; only a crash
-        // before that loses what this write would have kept.
-        this.#failed("answer", error);
-      }
+      flow.said = { text: event.text, final: event.final, cut: event.cut };
+      this.#saveAnswer(flow, flow.said);
     } else if (event.kind === "native-id") {
       void this.#machine.evidence(flow.id, { native_id: event.id }).catch((error: unknown) => {
         this.#failed("evidence", error);
       });
+    }
+  }
+
+  /** Saves an answer of the run, with the time limit that ended its work once one fired. */
+  #saveAnswer(flow: Flow, answer: SavedAnswer): void {
+    try {
+      this.#files.saveAnswer(
+        flow.id,
+        flow.limit === undefined ? answer : { ...answer, limit: flow.limit },
+      );
+    } catch (error) {
+      // The answer stays in memory and goes into the record when the run ends; only a crash
+      // before that loses what this write would have kept.
+      this.#failed("answer", error);
     }
   }
 
@@ -891,8 +899,9 @@ export class RunHost {
   }
 
   /**
-   * The end a run gets once the service that hosted it is gone: its saved work, and the time limit
-   * that ended it, when the work had settled, else `service_ended` with its last saved answer.
+   * The end a run gets once the service that hosted it is gone, from its saved answer: `timed_out`
+   * once a time limit had fired, else its own end when the work had settled, else
+   * `service_ended`. The result is the work's own when it had settled, else the last answer.
    */
   #serviceEnded(run: RunRecord, cleanup?: RunCleanup): RunEnd {
     let saved: SavedAnswer | undefined;
@@ -903,10 +912,11 @@ export class RunHost {
       saved = undefined;
     }
     const result = savedResult(run, saved, cleanup);
-    if (saved?.outcome === undefined || result === null) return { kind: "service_ended", result };
-    return saved.limit === undefined
-      ? { kind: "exited", result }
-      : { kind: "timed_out", limit: saved.limit, result };
+    if (saved === undefined || result === null) return { kind: "service_ended", result };
+    if (saved.limit !== undefined) return { kind: "timed_out", limit: saved.limit, result };
+    return saved.outcome === undefined
+      ? { kind: "service_ended", result }
+      : { kind: "exited", result };
   }
 
   /**

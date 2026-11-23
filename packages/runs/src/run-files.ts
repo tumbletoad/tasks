@@ -1,8 +1,8 @@
 // A run's files in machine state, `<state>/runs/<run id>/`, which the space never holds:
 // - `answer.json`: the agent's last answer, replaced whole (temporary file and rename) as each
-//   one comes, so a crash of the service keeps the last one whose write ended; and once the work
-//   settled, the work's result with it, and the time limit that ended it, before anything of the
-//   run is closed. The next start copies it into the run's record.
+//   one comes, so a crash of the service keeps the last one whose write ended; with it the time
+//   limit that ended the work, from the moment it fired; and once the work settled, the work's
+//   result, before anything of the run is closed. The next start copies it into the run's record.
 // - `stdout.jsonl` and `stderr.log`: the agent's raw output for diagnosis, up to their caps. It is
 //   task text, like the answer, and goes with the folder.
 // - `tools.json`: TTasks's tools for an agent that takes them from a file (Claude Code), with the
@@ -49,7 +49,7 @@ export interface SavedAnswer {
   readonly outcome?: OutcomeReason;
   /** The agent's own words about what went wrong, once the work settled. */
   readonly error?: string | null;
-  /** The time limit that ended the work, once it settled. */
+  /** The time limit that ended the work, from the moment it fired. */
   readonly limit?: TimeLimit;
 }
 
@@ -142,9 +142,8 @@ export class RunFiles implements RunFolders {
       final: answer.final,
       cut: answer.cut,
       text: answer.text,
-      ...(answer.outcome === undefined
-        ? {}
-        : { outcome: answer.outcome, error: answer.error, limit: answer.limit }),
+      ...(answer.outcome === undefined ? {} : { outcome: answer.outcome, error: answer.error }),
+      ...(answer.limit === undefined ? {} : { limit: answer.limit }),
     });
     atomicWrite(join(this.folder(id), ANSWER_FILE), text, 0o600);
   }
@@ -167,7 +166,11 @@ export class RunFiles implements RunFolders {
     }
     // Written by this module within the caps; a longer one was changed by something else.
     if (text !== null && Buffer.byteLength(text, "utf8") > ANSWER_CAP_BYTES) return undefined;
-    if (outcome === undefined) return { text, final, cut };
+    if (limit !== undefined && !(RUN_REASONS.timed_out as readonly unknown[]).includes(limit)) {
+      return undefined;
+    }
+    const timed = limit === undefined ? {} : { limit: limit as TimeLimit };
+    if (outcome === undefined) return { text, final, cut, ...timed };
     if (!(OUTCOME_REASONS as readonly unknown[]).includes(outcome)) return undefined;
     if (
       error !== null &&
@@ -175,10 +178,7 @@ export class RunFiles implements RunFolders {
     ) {
       return undefined;
     }
-    const settled = { text, final, cut, outcome: outcome as OutcomeReason, error };
-    if (limit === undefined) return settled;
-    if (!(RUN_REASONS.timed_out as readonly unknown[]).includes(limit)) return undefined;
-    return { ...settled, limit: limit as TimeLimit };
+    return { text, final, cut, outcome: outcome as OutcomeReason, error, ...timed };
   }
 
   removeTemps(id: string): void {

@@ -389,7 +389,23 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(after.result).toMatchObject({ outcome: "success", text: "answer 2", textFinal: true });
   });
 
-  test("a run's folder keeps the time limit that ended its work for the next start, and a saved work that names no limit is no saved work", () => {
+  test("a crash while a time limit's interrupt and grace go on: the next start records the time limit, with the answer so far", async () => {
+    for (const [limits, reason] of [
+      [{ maxTurns: 50, idleMs: 60_000 }, "idle"],
+      [{ maxTurns: 50, wallMs: 60_000 }, "wall"],
+    ] as const) {
+      const { run, read } = await oneRun(limits);
+      // An agent that ignores the interrupt: the work has not settled when the service dies.
+      await run(start("ok", false), say(), tick(59_000), tick(2_000), { kind: "crash" });
+      await run(tick(1_000));
+      const after = await read();
+      expect(after).toMatchObject({ state: "timed_out", reason });
+      expect(after.result).toMatchObject({ outcome: "no_result", text: "answer 1" });
+      expect(after.result?.textFinal).toBeUndefined();
+    }
+  });
+
+  test("a run's folder keeps the time limit that ended its work for the next start, from the moment it fired, and a saved work that names no limit is no saved work", () => {
     const root = mkdtempSync(join(tmpdir(), "ttasks-answer-"));
     try {
       const id = "ru_0000000000000000000000000a";
@@ -402,6 +418,9 @@ describe("[A4.5.run.host] the run host's rules", () => {
         outcome: "success",
         error: null,
       };
+      const firing: SavedAnswer = { text: "Half done.", final: false, cut: false, limit: "idle" };
+      files.saveAnswer(id, firing);
+      expect(new RunFiles(root).readAnswer(id)).toEqual(firing);
       const saved: SavedAnswer = { ...plain, limit: "wall" };
       files.saveAnswer(id, saved);
       expect(new RunFiles(root).readAnswer(id)).toEqual(saved);
