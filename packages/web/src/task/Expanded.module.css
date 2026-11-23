@@ -659,6 +659,8 @@ a + .muted,
 }
 
 .input {
+  /* Focus scrolls the field out from under the sticky top bar (Ask from a card scrolled past it). */
+  scroll-margin-top: calc(var(--k-top) + 8px);
   display: block;
   width: 100%;
   min-height: 40px;

@@ -42,8 +42,6 @@
 
 html {
   background: var(--k-bg);
-  /* The sticky top bar covers this strip: what takes focus is scrolled out from under it. */
-  scroll-padding-top: calc(var(--k-top) + 8px);
 }
 
 body {

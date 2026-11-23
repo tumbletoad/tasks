@@ -270,7 +270,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     world.release(ref);
   });
 
-  test("Ask from a card scrolled past its composer brings the composer out from under the top bar", async ({
+  test("Ask from a card scrolled past its composer brings the composer out from under the top bar, and typing in the top field moves no list", async ({
     page,
     world,
   }) => {
@@ -315,6 +315,19 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     await expect
       .poll(async () => (await composer.boundingBox())?.y ?? 0)
       .toBeGreaterThanOrEqual(bar);
+
+    // The top field, typed into with the list scrolled down, leaves the list where it is.
+    await page.evaluate(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    });
+    const scrolled = await page.evaluate(() => window.scrollY);
+    expect(scrolled).toBeGreaterThan(0);
+    const field = page.getByRole("textbox", { name: "New task" });
+    await field.click();
+    await page.keyboard.type("Buy nails");
+    await expect(field).toHaveValue("Buy nails");
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
+    await field.fill("");
   });
 
   test("the composer takes keys from the card's first frame: after Ask, after a click into it, by Tab from the title, and with a kept draft, while the card's reads are held", async ({
