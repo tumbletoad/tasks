@@ -54,7 +54,6 @@
   "top.toSearch": "Search instead",
   "top.toAdd": "Add a task instead",
   "top.added": "Added to {where}",
-  "top.addedBefore": "Your earlier words were added to {where}. Press Enter to add these as well.",
   "top.needsTitle": "Add a title: the rest are shortcuts.",
   "top.title": "Title: {title}",
   "top.keepText": "Keep {text} as text",
