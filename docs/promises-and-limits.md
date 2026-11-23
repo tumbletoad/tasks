@@ -263,7 +263,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   address while TTasks is stopped.
 - A field edit that could not be saved is kept in this browser. Another browser does not have it,
   clearing the browser's data for the page loses it, and a browser whose storage is blocked or full
-  keeps it only until the page is reloaded or closed.
+  keeps it only until the page is reloaded or closed. When two tabs hold different unsaved values
+  for the same field of a task, the browser keeps one of them.
 - Undo, redo and restore compare folders by the text they were given in, not by what is on disk.
   One folder reached by two spellings, such as through a link, can end up on two projects that
   way.
