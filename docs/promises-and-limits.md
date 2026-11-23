@@ -251,12 +251,16 @@ the behaviour it describes, and keep each one to a sentence or two.
   `CLAUDE_CODE_USE_*` and `CLAUDE_CODE_OAUTH_*`), so it works with the account signed in to that
   home; set one in the instance's `env` to use it there. The default home gets them as your setup
   gives them. Codex keeps its account in its home, and TTasks takes nothing away from a Codex
-  instance's environment.
+  instance's environment. Not protected: a federation profile shared by all homes can still
+  outrank a home's own sign-in, and a cloud provider's own credentials (`AWS_*`, `GOOGLE_*`) stay,
+  so an instance that selects that provider can use them.
 - Open sends a prompt to an agent only with everything its instance sets: its permission, extra
   arguments, environment and home. Claude Code set to prefill opens in a terminal for them, with
   the brief on the clipboard to paste. Where no way of opening here carries them, as a link or a
   desktop app, it opens without them, leaves the prompt for you to send, and says what it left
-  out.
+  out. A Claude Code instance with a home of its own never opens in the default account instead:
+  where no terminal can start, Open starts nothing and says so. The desktop apps open with their
+  own account, and Open says so.
 - An instance set for some spaces is offered, opens and runs only in those: a run queued before
   its spaces changed does not start.
 - TTasks tells apart "asked the app to open" from "the agent connected", and says so when it does

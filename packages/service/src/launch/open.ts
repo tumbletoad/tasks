@@ -40,6 +40,8 @@ export const UNAVAILABLE_REASONS = [
   "no_route",
   /** No product command or terminal for a terminal route. */
   "no_terminal",
+  /** A home of its own, and no terminal: its app's link would open the default account instead. */
+  "own_home",
   /** The instance's `spaces` do not name this space. */
   "not_for_space",
   /** The task's folder, or its project's, is on another machine only: it opens there. */
@@ -271,8 +273,8 @@ export const COPY_INSTANCE = "clipboard";
  * chosen after a dispatch.
  *
  * Throws LaunchUnavailable: `not_for_space` (servesSpace); `no_terminal` (or `not_set_up` without
- * a command) when only a terminal route opens the target; `no_route` when the target has none
- * this choice opens (T3 opens through its own).
+ * a command) when only a terminal route opens the target, `own_home` when only a terminal opens it
+ * with its home; `no_route` when the target has none this choice opens (T3 opens through its own).
  */
 export function chooseRoute(
   instance: Instance,
@@ -289,25 +291,30 @@ export function chooseRoute(
   if (!servesSpace(instance, options.space)) throw new LaunchUnavailable("not_for_space");
   const settings = settingsOf(instance, options.home, options.platform);
   const lost = (route: RouteDef): Setting[] => settings.filter((s) => !route.carries.includes(s));
-  const routes = targetDef(instance.target).routes.filter(
-    (r) => r.kind === "terminal" || r.kind === "link",
-  );
+  const target = targetDef(instance.target);
+  const routes = target.routes.filter((r) => r.kind === "terminal" || r.kind === "link");
   const asked = (r: RouteDef): boolean => (instance.prompt === "sent") === (r.prompt === "sent");
   const terminal = options.terminal && instance.exec !== undefined;
   const usable = [...routes.filter(asked), ...routes.filter((r) => !asked(r))].filter(
     (r) => r.kind === "link" || terminal,
   );
+  // An app that keeps its accounts in homes opens another account's session on a route that
+  // leaves the home out: what the person types there goes to that account, so it is never taken.
+  const otherAccount = (r: RouteDef): boolean =>
+    target.detect.homes !== undefined && lost(r).includes("home");
+  const fallbacks = usable.filter((r) => r.prompt !== "sent");
   const route =
     usable.find((r) => lost(r).length === 0) ??
-    usable
-      .filter((r) => r.prompt !== "sent")
+    fallbacks
+      .filter((r) => !otherAccount(r))
       .reduce<RouteDef | undefined>(
         (best, r) => (best === undefined || lost(r).length < lost(best).length ? r : best),
         undefined,
       );
   if (route === undefined) {
     if (routes.length === 0) throw new LaunchUnavailable("no_route");
-    throw new LaunchUnavailable(instance.exec === undefined ? "not_set_up" : "no_terminal");
+    if (instance.exec === undefined) throw new LaunchUnavailable("not_set_up");
+    throw new LaunchUnavailable(fallbacks.some(otherAccount) ? "own_home" : "no_terminal");
   }
   const permission = instance.openPermission;
   const leftOut = lost(route).flatMap((s): LeftOut[] =>

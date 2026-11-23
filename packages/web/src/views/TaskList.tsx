@@ -56,6 +56,12 @@ const styles = classes(css, ["line", "announce"]);
 
 const NO_RECEIPTS: readonly Receipt[] = [];
 const NO_RUNS: readonly Run[] = [];
+/** What the page says of an Open its instance cannot do here (instanceRefusal). */
+const REFUSED_WORDS = {
+  not_for_space: "row.openNotForSpace",
+  no_terminal: "row.openNoTerminal",
+  own_home: "row.openOwnHome",
+} as const;
 /** How long a row an agent added keeps its accent (A5 3.20: 1.2 s). */
 const FRESH_MS = 1_200;
 /** Agents' changes are announced once the burst has been quiet this long (A5 3.15 item 10). */
@@ -897,7 +903,7 @@ export function TaskList({
               if (cannot !== undefined) {
                 refuse(task.id, undefined);
                 say(
-                  t(cannot === "not_for_space" ? "row.openNotForSpace" : "row.openNoTerminal", {
+                  t(REFUSED_WORDS[cannot], {
                     label: instance.label,
                   }),
                 );

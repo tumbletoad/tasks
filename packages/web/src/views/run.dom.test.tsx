@@ -643,6 +643,19 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
     ]);
   });
 
+  test("an Open its instance cannot do here says why and what would, and starts nothing", async () => {
+    for (const reason of ["no_terminal", "own_home", "not_for_space"]) {
+      openAnswer = () =>
+        Promise.reject(new Refused(400, "invalid_input", undefined, { field: "instance", reason }));
+      await open();
+    }
+    expect(toasts).toEqual([
+      `No terminal can open Codex here. Nothing was started. ${CLI_NAME} doctor says why.`,
+      `Only a terminal opens Codex with the account you chose for it, and none can start here. Nothing was started. ${CLI_NAME} doctor says why.`,
+      "Codex is set up for other spaces only. Nothing was started.",
+    ]);
+  });
+
   test("what an Open left out is said beside the clipboard's outcome, also when the browser did not allow copying", async () => {
     const leftOut = (call: Parameters<typeof opened>[0]) =>
       Promise.resolve({ ...opened(call, "request"), copy: "brief", leftOut: ["read-only"] });

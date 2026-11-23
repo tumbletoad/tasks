@@ -4624,6 +4624,12 @@ export function launchError(error: unknown): unknown {
             message: "No terminal can open this instance here. Nothing was started.",
             hint: `Run ${CLI_NAME} doctor to see which terminal it would use.`,
           };
+        case "own_home":
+          return {
+            message:
+              "Only a terminal opens this instance with the account chosen for it, and none can start here. Nothing was started.",
+            hint: `Run ${CLI_NAME} doctor to see which terminal it would use.`,
+          };
         default:
           return { message: "This instance cannot open the task here." };
       }

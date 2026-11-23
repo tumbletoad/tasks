@@ -1001,10 +1001,18 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
         ["link", "unsent", []],
       ],
       [
+        // Its link would open the default home's Claude Code: what the person types there goes
+        // to another account. Only a terminal opens it (below).
         "a home of its own",
         { ...base, ...ownHome },
         ["terminal", "sent", []],
-        ["link", "unsent", ["home"]],
+        null,
+      ],
+      [
+        "a home of its own, prefill",
+        { ...prefill, ...ownHome },
+        ["terminal", "clipboard", []],
+        null,
       ],
       [
         "an app with its own settings",
@@ -1024,6 +1032,14 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
     expect(
       reason(() => chooseRoute({ ...codex, exec: undefined }, { ...here, terminal: true })),
     ).toBe("not_set_up");
+    // A home of its own opens only where a route carries it: never the default home instead.
+    for (const own of [
+      { ...base, ...ownHome },
+      { ...prefill, ...ownHome, openPermission: "read-only" },
+      { ...base, env: { CLAUDE_CONFIG_DIR: "/home/mira/.claude-work" } },
+    ] as const) {
+      expect(reason(() => chooseRoute(own, { ...here, terminal: false }))).toBe("own_home");
+    }
   });
 
   test("where no terminal opens (macOS), each instance that can open or run for the space keeps its tile, offering what works", () => {
@@ -1040,15 +1056,18 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
       log: { log: () => undefined } as unknown as Logger,
       instances: [
         { ...base, id: "claude-plan", openPermission: "read-only" },
+        { ...base, id: "claude-work", configHome: "/Users/mira/.claude-work" },
         { ...base, id: "codex-x", target: "codex-cli" },
         { ...base, id: "claude-elsewhere", spaces: ["Research"] },
         { ...base, id: "t3-x", target: "t3", exec: undefined },
         { ...base, id: "claude-off", enabled: false },
       ],
     });
-    // Claude Code opens through its link, saying what it left out; Codex only runs here.
+    // Claude Code opens through its link, saying what it left out; with a home of its own, and
+    // Codex, it only runs here.
     expect(service.instances(SPACE.id).map((t) => [t.key, t.route ?? "runs only"])).toEqual([
       ["claude-plan", "link"],
+      ["claude-work", "runs only"],
       ["codex-x", "runs only"],
     ]);
   });
@@ -1158,9 +1177,14 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
     { timeout: 300_000 },
     async () => {
       opened.length = 0;
+      const homes = tempRoot("chosen-no-terminal-home");
+      cleanups.push(homes.cleanup);
       const r = await rig("chosen-no-terminal", 0, {
         noTerminal: true,
-        instances: [{ id: "claude-plan", prompt: "prefill", open_permission: "read-only" }],
+        instances: [
+          { id: "claude-plan", prompt: "prefill", open_permission: "read-only" },
+          { id: "claude-work", prompt: "prefill", config_home: join(homes.root, "claude-work") },
+        ],
       });
       const task = await addTask(r, "Fixture no terminal");
       const { result } = await open(r, { task: task.ref, instance: "claude-plan" });
@@ -1170,6 +1194,18 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
         left_out: ["read-only", "environment"],
       });
       await waitFor(() => (opened.length > 0 ? true : undefined), LONG_MS, "the link's opener");
+      // A home of its own: the link would open the default account's Claude Code instead.
+      opened.length = 0;
+      const refused = errorOf(
+        await open(r, { task: task.ref, instance: "claude-work" }).catch((e: unknown) => e),
+      );
+      expect(refused).toMatchObject({
+        code: "invalid_input",
+        message:
+          "Only a terminal opens this instance with the account chosen for it, and none can start here. Nothing was started.",
+        data: { field: "instance", reason: "own_home" },
+      });
+      expect(opened).toHaveLength(0);
     },
   );
 

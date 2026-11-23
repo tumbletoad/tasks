@@ -174,6 +174,7 @@
   "row.leftOut": "{what, select, arguments {your extra arguments} environment {your environment variables} home {the account you chose for it} other {your {what} setting}}",
   "row.openNotForSpace": "{label} is set up for other spaces only. Nothing was started.",
   "row.openNoTerminal": "No terminal can open {label} here. Nothing was started. {cli} doctor says why.",
+  "row.openOwnHome": "Only a terminal opens {label} with the account you chose for it, and none can start here. Nothing was started. {cli} doctor says why.",
   "row.openMarker": "{why, select, missing {The folder {folder} has no {product} marker} other {The {product} marker in {folder} names {owners}} unread {The {product} marker in {folder} cannot be read}}, so it may not be the folder set for {of, select, project {the task's project} other {this task}}. Nothing was started.",
   "row.openAnyway": "Use this folder",
   "row.openFolder": "{reason, select, path_missing {The folder {folder} was not found on this machine} not_a_directory {The task's folder {folder} is a file, not a folder} not_answering {The folder {folder} did not answer in time} other {The folder {folder} cannot be used on this machine}}. Nothing was started.",
