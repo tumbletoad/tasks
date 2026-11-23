@@ -61,7 +61,8 @@ const FRESH_MS = 1_200;
 const QUIET_MS = 2_000;
 /**
  * What a working run says changes nothing in its record, so the runs of a task with one are read
- * again this often: how long it has said nothing stays true.
+ * again this often: how long it has said nothing stays true. A failed read is tried again as often:
+ * what it would have brought may never be announced again.
  */
 const WORKING_REREAD_MS = 60_000;
 /** The waits before a failed read of busy is tried again, the last one repeating. */
@@ -71,6 +72,12 @@ const BUSY_RETRY_MS = [1_000, 2_000, 5_000, 15_000] as const;
  * The service answered with a refusal (the page's `Refused`, or the generated client's error, both
  * with a code): nothing was done. A lost reply, or the service's own failure, may follow a change.
  */
+function without(set: ReadonlySet<string>, item: string): ReadonlySet<string> {
+  const next = new Set(set);
+  next.delete(item);
+  return next;
+}
+
 function refusedBy(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const code = (error as Error & { code?: unknown }).code;
@@ -129,6 +136,11 @@ export interface TaskListProps {
    * task does not exist, and the URL drops it.
    */
   readonly onExpand?: (task: TaskRow | undefined, gone?: boolean) => void;
+  /**
+   * The expanded task was read again, apart from the feed: a view that keeps its own rows (a
+   * search's) shows the task as the read found it.
+   */
+  readonly onRead?: (task: TaskRow) => void;
   /** Tasks whose place in the view comes from a picture that is not current: their rows are muted. */
   readonly muted?: ReadonlySet<string>;
   /** What a task's row shows beneath its line, such as the agents that work on it. */
@@ -146,6 +158,7 @@ export function TaskList({
   keepsFinished = false,
   expand: wantedRef,
   onExpand,
+  onRead,
   muted,
   beneath,
 }: TaskListProps) {
@@ -178,9 +191,18 @@ export function TaskList({
   });
   /** The runs of the tasks the tab follows, oldest first, as the service last said. */
   const [runs, setRuns] = useState<ReadonlyMap<string, readonly Run[]>>(new Map());
-  /** The runs whose Stop is on its way, each with its version when Stop was pressed. */
-  const [stops, setStops] = useState<ReadonlyMap<string, number>>(new Map());
+  /**
+   * The runs whose Stop is on its way, each with its version when Stop was pressed and how many
+   * reads of runs had begun then.
+   */
+  const [stops, setStops] = useState<
+    ReadonlyMap<string, { readonly version: number; readonly reads: number }>
+  >(new Map());
+  /** How many reads of runs have begun. */
+  const runReadsBegun = useRef(0);
   const runReads = useRef(new Latest());
+  /** The tasks whose last read of their runs failed. */
+  const [runsFailed, setRunsFailed] = useState<ReadonlySet<string>>(new Set());
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [announcement, setAnnouncement] = useState("");
   /** The URL's task, read with `task.get` because the live rows do not hold it. */
@@ -195,8 +217,13 @@ export function TaskList({
   /** The expanded task's row as last seen: it stays while expanded, whatever the update did. */
   const held = useRef<TaskRow | undefined>(undefined);
   /** What the callbacks read: one object for every row, for good. */
-  const latest = useRef<{ expanded: string | undefined; today: string }>({
+  const latest = useRef<{
+    expanded: string | undefined;
+    unresolved: string | undefined;
+    today: string;
+  }>({
     expanded: undefined,
+    unresolved: undefined,
     today: "",
   });
   /** The URL's task whose `task.get` is on its way: asked once, not at every frame. */
@@ -213,6 +240,13 @@ export function TaskList({
   const leaving = useRef<{ ref: string | undefined } | undefined>(undefined);
   /** The URL's `task.get`: the newest one applies, and the person's own choice outdates it. */
   const lookups = useRef(new Latest());
+  /** The expanded task's read after a fresh snapshot left it out: the newest one applies. */
+  const rereads = useRef(new Latest());
+  /**
+   * The expanded task a fresh snapshot left out, until a read or the feed says how it is now; and
+   * whether the last read of it failed.
+   */
+  const [unresolved, setUnresolved] = useState<{ id: string; failed: boolean } | undefined>();
 
   // The expanded task's newest row: live, else the injected one, else the last one seen.
   const expandedRow =
@@ -344,41 +378,59 @@ export function TaskList({
   const loadRuns = useCallback(
     (task: string) => {
       const newest = runReads.current.begin(task);
+      const begun = ++runReadsBegun.current;
       api
         .runs(task)
         .then((list) => {
-          if (newest()) {
-            setRuns((known) => new Map(known).set(task, mergeRuns(known.get(task) ?? [], list)));
-          }
+          if (!newest()) return;
+          setRuns((known) => new Map(known).set(task, mergeRuns(known.get(task) ?? [], list)));
+          setRunsFailed((known) => (known.has(task) ? without(known, task) : known));
+          // A read that left after a Stop and still finds its run waiting or working: the Stop may
+          // never arrive, so it is offered again.
+          setStops((known) => {
+            const unstopped = list.filter(
+              (run) =>
+                (run.state === "queued" || run.state === "running") &&
+                (known.get(run.id)?.reads ?? begun) < begun,
+            );
+            if (unstopped.length === 0) return known;
+            const next = new Map(known);
+            for (const run of unstopped) next.delete(run.id);
+            return next;
+          });
         })
         .catch((error: unknown) => {
           live.failed(error);
+          if (!newest()) return;
+          // The thread draws all the same, and says what it shows of the runs may be old.
           setRuns((known) => (known.has(task) ? known : new Map(known).set(task, [])));
+          setRunsFailed((known) => (known.has(task) ? known : new Set(known).add(task)));
         });
     },
     [api, live],
   );
 
-  // Keyed by which tasks have a working run, not by each read: a read of another task's runs must
-  // not start the minute again.
-  const working = useMemo(
+  // The minute reads again the runs of every task with a working run, and while its card is open
+  // what a read failed to bring: the task's runs, or the task a fresh snapshot left out. Keyed by
+  // what it reads, not by each read: a read of another task's runs must not start the minute again.
+  const again = useMemo(
     () =>
-      [...runs]
-        .filter(([, list]) => list.some((run) => run.state === "running"))
-        .map(([task]) => task)
+      [
+        ...[...runs]
+          .filter(
+            ([task, list]) =>
+              (runsFailed.has(task) && task === expanded) ||
+              list.some((run) => run.state === "running"),
+          )
+          .map(([task]) => `runs:${task}`),
+        ...(unresolved?.failed === true && unresolved.id === expanded
+          ? [`task:${unresolved.id}`]
+          : []),
+      ]
         .sort()
         .join(" "),
-    [runs],
+    [runs, runsFailed, expanded, unresolved],
   );
-  useEffect(() => {
-    if (working === "") return;
-    const timer = setInterval(() => {
-      for (const task of working.split(" ")) loadRuns(task);
-    }, WORKING_REREAD_MS);
-    return () => {
-      clearInterval(timer);
-    };
-  }, [working, loadRuns]);
 
   // A launch event refreshes what busies the agent apps, for every row, and the receipts of its
   // task, which the tab follows from then on: a tile mirrors a launch made in another tab or at the
@@ -409,21 +461,90 @@ export function TaskList({
     [live, loadBusy, loadReceipts, loadRuns],
   );
 
+  const readOut = useRef(onRead);
+  readOut.current = onRead;
+
+  /**
+   * Reads the expanded task a fresh snapshot left out: the card shows it as the read found it, or
+   * closes and says so when it no longer exists. Until then it is unresolved: its card says so and
+   * offers nothing. Only the newest read applies, and none once the feed said something newer.
+   */
+  const readAgain = useCallback(
+    (id: string) => {
+      const newest = rereads.current.begin("expanded");
+      const applies = () => newest() && latest.current.expanded === id;
+      setUnresolved((known) => (known?.id === id ? known : { id, failed: false }));
+      api.client.task
+        .get({ task: id })
+        .then((answer) => {
+          if (!applies() || answer.view !== "digest") return;
+          const { areas, projects } = live.getState();
+          const row = rowOfFacts(answer.task, areas, projects, latest.current.today);
+          setUnresolved(undefined);
+          setInjected(row);
+          readOut.current?.(row);
+        })
+        .catch((error: unknown) => {
+          if (live.failed(error) || !applies()) return;
+          if ((error as { code?: unknown } | null)?.code !== "not_found") {
+            setUnresolved({ id, failed: true });
+            return;
+          }
+          setUnresolved(undefined);
+          setExpanded(undefined);
+          setInjected(undefined);
+          say(t("task.gone"));
+          changed.current?.(undefined, true);
+        });
+    },
+    [api, live, say, t],
+  );
+
+  useEffect(() => {
+    if (again === "") return;
+    const timer = setInterval(() => {
+      for (const key of again.split(" ")) {
+        const [kind, task = ""] = key.split(":");
+        if (kind === "task") readAgain(task);
+        else loadRuns(task);
+      }
+    }, WORKING_REREAD_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [again, loadRuns, readAgain]);
+
   // An update that takes the expanded task out of the live rows (completed, archived) carries its
-  // newest row: the card shows it until it is collapsed, as an injected row (A5 3.4, 3.15).
+  // newest row: the card shows it until it is collapsed, as an injected row (A5 3.4, 3.15). A fresh
+  // snapshot that leaves it out carries none: it is read again. Whatever the feed says of the task
+  // is newer than a read on its way.
   useEffect(
     () =>
-      live.onChanges(({ changes }) => {
+      live.onChanges(({ changes, reset }) => {
         const id = latest.current.expanded;
         if (id === undefined) return;
+        const inStore = live.getState().tasks.has(id);
+        if (reset && !inStore) {
+          readAgain(id);
+          return;
+        }
+        let named = reset;
         let left: TaskRow | undefined;
         for (const change of changes) {
-          if (change.type !== "task" || change.id !== id || change.after === undefined) continue;
-          left = live.getState().tasks.has(id) ? undefined : (change.after as TaskRow);
+          if (change.type !== "task" || change.id !== id) continue;
+          named = true;
+          left = inStore ? undefined : (change.after as TaskRow | undefined);
+        }
+        if (!named) return;
+        if (inStore || left !== undefined) {
+          rereads.current.begin("expanded");
+          setUnresolved(undefined);
+        } else if (latest.current.unresolved === id) {
+          readAgain(id);
         }
         if (left !== undefined) setInjected(left);
       }),
-    [live],
+    [live, readAgain],
   );
 
   // Rows an agent adds fade in; agents' changes to the view's tasks are announced once the burst
@@ -510,6 +631,7 @@ export function TaskList({
       // stays where it is if the view's next read leaves it out (A5 3.3).
       const inStore = live.getState().tasks.has(task.id);
       setInjected((known) => (known?.id === task.id ? known : inStore ? undefined : task));
+      setUnresolved((known) => (known?.id === task.id ? known : undefined));
       watched.current.add(task.id);
       loadReceipts(task.id);
       loadRuns(task.id);
@@ -591,6 +713,7 @@ export function TaskList({
     chosen(undefined);
     setExpanded(undefined);
     setInjected(undefined);
+    setUnresolved(undefined);
     changed.current?.(undefined);
   }, [chosen]);
 
@@ -656,7 +779,7 @@ export function TaskList({
   );
 
   // The row actions read the latest state through a ref: one object for every row, for good.
-  latest.current = { expanded, today: clock.today };
+  latest.current = { expanded, unresolved: unresolved?.id, today: clock.today };
   const actions = useMemo<RowActions>(() => {
     return {
       toggle: (task) => {
@@ -893,10 +1016,11 @@ export function TaskList({
           });
       },
       // Stop answers at once: the entry says it is stopping until the service answers, and the
-      // record then says what ended. Without an answer the run shows as the service last said,
-      // with its Stop.
+      // record then says what ended. Without an answer the Stop may have arrived: the run shows as
+      // the service last said, with its Stop, and is read again.
       stop: (task, run) => {
-        setStops((known) => new Map(known).set(run.id, run.version));
+        const reads = runReadsBegun.current;
+        setStops((known) => new Map(known).set(run.id, { version: run.version, reads }));
         const answered = () => {
           setStops((known) => {
             const next = new Map(known);
@@ -915,9 +1039,11 @@ export function TaskList({
             if (!live.failed(error)) {
               const readOnly = readOnlyReason(error);
               say(
-                readOnly === undefined
-                  ? t("run.stopFailed")
-                  : t("run.stopReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }),
+                readOnly !== undefined
+                  ? t("run.stopReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) })
+                  : refusedBy(error)
+                    ? t("run.stopFailed")
+                    : t("run.stopUnanswered"),
               );
             }
             loadRuns(task.id);
@@ -986,6 +1112,10 @@ export function TaskList({
       busy={busy.get(item.key)}
       runs={withStops(runs.get(item.key) ?? NO_RUNS, stops)}
       read={receipts.has(item.key) && runs.has(item.key)}
+      runsFailed={runsFailed.has(item.key)}
+      {...(unresolved?.id === item.key && expanded === item.key
+        ? { unresolved: unresolved.failed ? "failed" : "reading" }
+        : {})}
       ctx={item.finished && item.task.lifecycle !== "active" ? finishedCtx : ctx}
       expanded={expanded === item.key}
       current={place.current}

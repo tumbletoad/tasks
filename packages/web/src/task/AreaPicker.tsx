@@ -68,7 +68,7 @@ const AREA_NAME = 120;
 export function AreaPicker({ task }: { readonly task: TaskRow }) {
   const t = useT();
   const say = useToast();
-  const { api, live } = useContext(Session);
+  const { api } = useContext(Session);
   const edits = useEdits();
   const state = useLive();
   const [open, setOpen] = useState(false);
@@ -225,7 +225,7 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
               renderEmptyState={() => t("area.empty")}
               onAction={(key) => {
                 const choice = items.find((c) => c.id === key);
-                const seen = live.store.asOf;
+                const seen = edits.seen(task, ["grouping"]);
                 setOpen(false);
                 setTyped("");
                 if (choice === undefined || choice.id === current) return;

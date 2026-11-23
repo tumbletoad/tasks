@@ -116,9 +116,9 @@ function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
   const [sources] = useState(() => {
     const search = (input: Parameters<typeof api.client.task.search>[0]) =>
       api.client.task.search(input);
-    const rowOf = (row: SearchRow, found: Found) => {
+    const rowOf = (row: SearchRow, found: Found, read: number) => {
       const { areas, projects } = live.getState();
-      return rowOfFound(row, found, areas, projects);
+      return rowOfFound(row, found, areas, projects, read);
     };
     return {
       open: searchSource({ search, q, found: "open", rowOf, all: true }),
@@ -144,6 +144,16 @@ function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
     (_tasks, held) =>
       searchGroups(open.state.rows, done.state.rows, state.tasks, held, sortsByEffort(q)),
     [open.state.rows, done.state.rows, state.tasks, q],
+  );
+
+  // A task read again is shown as the read found it, where the search found it, also once its card
+  // closes.
+  const onRead = useCallback(
+    (row: TaskRow) => {
+      open.query.take(row);
+      done.query.take(row);
+    },
+    [open.query, done.query],
   );
 
   const ready = open.state.phase === "ready" && done.state.phase === "ready";
@@ -242,6 +252,7 @@ function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
           keepsFinished
           expand={task}
           onExpand={onExpand}
+          onRead={onRead}
         />
       )}
       {done.state.more && done.state.phase !== "failed" ? (

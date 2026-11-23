@@ -14,8 +14,10 @@
 // - Two windows, or a person and an agent, on one task: every edit carries a base (A1 3.5), so the
 //   service refuses a write over a change the person did not see, and the conflict names who made it.
 //
-// Bases. A control's edit takes the applied cursor when the person acts; an editor that stays open
-// while the person types (the title, a date) takes it when it opens. That is what the person saw.
+// Bases. A control's change takes what its row showed when the person acts (`seen`): the applied
+// cursor for the store's own row, the row's version for a row the screen holds from earlier (held
+// under focus, kept by a card); an editor that stays open while the person types (the title, a
+// date) takes it when it opens. That is what the person saw.
 // Edits of one task go out one after another: the next waits for the answer to the one before, and
 // for an undo or redo asked before it. A base moves past what the screen showed only over the
 // tab's own commits that directly follow it, or to the tab's own newest write of every field the
@@ -570,16 +572,25 @@ export class Edits {
   }
 
   /**
-   * The base of an edit of the task's fields the person begins now: what the screen shows of them.
-   * While an edit of theirs is on its way its value shows, and a newer one behind it does not, so
-   * it is what that edit was made against; otherwise the screen's now.
+   * The base of a change of the task's fields the person begins now, from `task`, the row the
+   * control showed: what the person saw of them. While an edit of theirs is on its way its value
+   * shows, and a newer one behind it does not, so it is what that edit was made against. A row
+   * that is the store's row of the task shows it as of the screen's now. A row that is not (held
+   * under focus, kept by an expanded card, read apart from the feed, a search's) shows the task as
+   * of its own version: nothing changed it between that version and when the row was read.
    */
-  seen(task: string, fields: readonly Field[]): string | undefined {
+  seen(
+    task: Pick<TaskRow, "id" | "ref" | "version">,
+    fields: readonly string[],
+  ): string | undefined {
     for (const field of fields) {
-      const own = this.#showing.get(keyOf(task, field));
+      const own = this.#showing.get(keyOf(task.id, field));
       if (own !== undefined) return own.seen;
     }
-    return this.#deps.asOf();
+    const now = this.#deps.asOf();
+    const parts = now === undefined ? null : AS_OF.exec(now);
+    if (parts === null || this.#deps.rowOf(task.ref)?.version === task.version) return now;
+    return `${String(parts[1])}.${String(task.version)}.${String(parts[3])}`;
   }
 
   /** Whether a write of the task's is on its way from this tab. */
@@ -607,7 +618,7 @@ export class Edits {
     const number = this.#edits;
     for (const field of change.fields) this.#latest.set(keyOf(task.id, field), number);
     // What the person saw: the editor's base, or what the screen shows of the fields now.
-    const seen = options.base ?? this.seen(task.id, change.fields);
+    const seen = options.base ?? this.seen(task, change.fields);
     const sent = this.#send(task.id, change, seen);
     for (const field of change.fields) this.#showing.set(keyOf(task.id, field), { number, seen });
     const shown = () => {
@@ -747,8 +758,12 @@ export class Edits {
     // Checked again after its undo: the row that waited to come back holds again.
     if (entry !== undefined) this.#drop(task.id);
     this.#leave(task, {});
-    const sent = this.#sendWith(task.id, ["lifecycle"], this.#deps.asOf(), (base, request) =>
-      this.#deps.client.task.finish({ task: task.id, base: base ?? "", request_id: request }),
+    const sent = this.#sendWith(
+      task.id,
+      ["lifecycle"],
+      this.seen(task, ["lifecycle"]),
+      (base, request) =>
+        this.#deps.client.task.finish({ task: task.id, base: base ?? "", request_id: request }),
     );
     this.#checks.set(task.id, sent);
     const done: Omit<Toast, "key"> = {
@@ -796,12 +811,16 @@ export class Edits {
    * finishes it again by its own commit. Its earlier outcome and learnings stay with it.
    */
   reopen(task: TaskRow): void {
-    const sent = this.#sendWith(task.id, ["lifecycle"], this.#deps.asOf(), (base, request) =>
-      this.#deps.client.task.reopen({
-        task: task.id,
-        base: base ?? "",
-        request_id: request,
-      }),
+    const sent = this.#sendWith(
+      task.id,
+      ["lifecycle"],
+      this.seen(task, ["lifecycle"]),
+      (base, request) =>
+        this.#deps.client.task.reopen({
+          task: task.id,
+          base: base ?? "",
+          request_id: request,
+        }),
     );
     const reopened: Omit<Toast, "key"> = {
       kind: "undo",
@@ -847,8 +866,12 @@ export class Edits {
    * works on the task goes on: the toast says so.
    */
   trash(task: TaskRow): void {
-    const sent = this.#sendWith(task.id, ["deleted"], this.#deps.asOf(), (base, request) =>
-      this.#deps.client.task.delete({ tasks: [task.id], base: base ?? "", request_id: request }),
+    const sent = this.#sendWith(
+      task.id,
+      ["deleted"],
+      this.seen(task, ["deleted"]),
+      (base, request) =>
+        this.#deps.client.task.delete({ tasks: [task.id], base: base ?? "", request_id: request }),
     );
     const moved: Omit<Toast, "key"> = {
       kind: "undo",
@@ -897,14 +920,18 @@ export class Edits {
    * Restore from the Trash: one action, with a base, and an Undo that moves it back by its own
    * commit. The toast names where it is back, once the service said.
    */
-  restore(task: Pick<TaskRow, "id" | "ref">): void {
-    const sent = this.#sendWith(task.id, ["deleted"], this.#deps.asOf(), (base, request) =>
-      this.#deps.client.task.delete({
-        tasks: [task.id],
-        restore: true,
-        base: base ?? "",
-        request_id: request,
-      }),
+  restore(task: Pick<TaskRow, "id" | "ref" | "version">): void {
+    const sent = this.#sendWith(
+      task.id,
+      ["deleted"],
+      this.seen(task, ["deleted"]),
+      (base, request) =>
+        this.#deps.client.task.delete({
+          tasks: [task.id],
+          restore: true,
+          base: base ?? "",
+          request_id: request,
+        }),
     );
     const undo = {
       label: { id: "toast.undo" },

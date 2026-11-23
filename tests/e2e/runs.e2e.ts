@@ -58,6 +58,16 @@ const markerOf = (page: Page, ref: string) =>
   rowOf(page, ref).locator("[data-row-line] > span").first();
 const toast = (page: Page) => page.locator('[data-part="toast-text"]');
 
+/** Pictures of the page at 1,440 and 390 px, `at` bringing the part into view at each width. */
+async function runPictures(page: Page, name: string, at: () => Promise<void>): Promise<void> {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await at();
+    await picture(page, `${name}-${String(width)}.png`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+}
+
 test.describe("[M6.page.e2e.run] Run from the page, with and without words, and read the answer", () => {
   test("Run without words works on the task; Ctrl+Shift+Enter runs with the words, which clear once queued; the answer is the agent's text, a long one folded", async ({
     page,
@@ -284,6 +294,51 @@ test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a sec
     await expect(queued.locator('[data-part="run-said"]')).toContainText(
       "Asked: Then check the results",
     );
+  });
+
+  test("a queued run's Stop on its way says it is stopping, and the service's answer how it ended; a read of the runs that failed says so @one-browser", async ({
+    page,
+    runs: world,
+  }) => {
+    const ref = await addTask(world, "Archive last year's invoices");
+    world.codex(ref, ["hold", "answer"]);
+    await openTask(page, world, ref);
+    await runButton(page, ref).click();
+    const first = runsOf(page, ref).first();
+    await expect(stateOf(first)).toContainText("is working on it", { timeout: SLOW_MS });
+    await composerOf(page, ref).fill("Then list what is missing");
+    await runButton(page, ref).click();
+    const queued = runsOf(page, ref).nth(1);
+    await expect(stateOf(queued)).toContainText("Waiting to start", { timeout: SLOW_MS });
+
+    // The Stop is held on its way: the run says it is stopping, never that it stopped.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/api/v1/launch/stop", async (route) => {
+      await held;
+      await route.continue();
+    });
+    await queued.getByRole("button", { name: /^Stop/u }).click();
+    await expect(stateOf(queued)).toHaveText("Stopping.");
+    await expect(queued.getByRole("button", { name: /^Stop/u })).toHaveCount(0);
+    await runPictures(page, "run-stop-on-its-way", () => queued.scrollIntoViewIfNeeded());
+    release();
+    await expect(stateOf(queued)).toHaveText("Stopped before it started.", { timeout: SLOW_MS });
+    await page.unroute("**/api/v1/launch/stop");
+
+    // A read of the runs that fails: the thread says so, and shows no run it cannot vouch for.
+    await page.route("**/api/v1/launch/runs", (route) => route.abort());
+    await page.reload();
+    const failed = rowOf(page, ref).locator('[data-part="runs-failed"]');
+    await expect(failed).toBeVisible({ timeout: SLOW_MS });
+    await runPictures(page, "runs-read-failed", () => failed.scrollIntoViewIfNeeded());
+    await page.unroute("**/api/v1/launch/runs");
+    await page.reload();
+    await expect(rowOf(page, ref).locator('[data-part="runs-failed"]')).toHaveCount(0);
+    const working = runsOf(page, ref).first();
+    await expect(stateOf(working)).toContainText("is working on it", { timeout: SLOW_MS });
+    await working.getByRole("button", { name: /^Stop/u }).click();
+    await expect(stateOf(working)).toContainText(/^Stopped\./u, { timeout: SLOW_MS });
   });
 });
 

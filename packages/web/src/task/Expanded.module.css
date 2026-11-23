@@ -13,6 +13,10 @@
   padding-top: 6px;
 }
 
+.body[hidden] {
+  display: none;
+}
+
 .content {
   grid-area: content;
   min-width: 0;
