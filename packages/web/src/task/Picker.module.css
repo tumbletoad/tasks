@@ -229,6 +229,11 @@
   outline-offset: -2px;
 }
 
+.option svg {
+  flex: none;
+  color: var(--k-muted);
+}
+
 .option[data-current] {
   color: var(--k-text);
   font-weight: 500;

@@ -4806,6 +4806,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.11.e2e.new-area",
+      "title": "In Chromium and Firefox against the real service: the area picker offers a name no area has as a new area, never one an area has in another case; Enter makes the area and moves the task into it with Undo, and Ctrl+Z takes back the move, then the area",
+      "source": "A5 3.7, A5 3.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.11.e2e.finished-title",
       "title": "In Chromium and Firefox against the real service: a title typed while the task is completed elsewhere is refused and shown under the title with Copy and Discard and no Try again, and once the task is reopened its Try again saves it",
       "source": "A5 3.11",

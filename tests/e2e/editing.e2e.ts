@@ -406,6 +406,64 @@ test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is fini
   });
 });
 
+test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a task, and Undo takes it back", () => {
+  test("a name no area has is offered as a new area; Enter makes it and moves the task there; Ctrl+Z moves it back, and again takes the area away", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const garden = `Garden ${tag}`;
+    const [ref] = await addTasks(world, [{ title: `Plant the tulips (${tag})`, area: "home" }]);
+    if (ref === undefined) throw new Error("the task was not added");
+    const areaOf = async () =>
+      ((await world.op(world.mira.id, "task.get", { task: ref })) as { task: { area?: string } })
+        .task.area;
+    const sidebarLink = page
+      .getByRole("navigation")
+      .getByRole("link", { name: new RegExp(`^${garden}, `) });
+    await watchViolations(page);
+    await openArea(page, world, "Home");
+    const title = rowOf(page, ref).locator('[data-part="title"]');
+    await title.focus();
+    await page.keyboard.press("Enter");
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+    const pill = rowOf(page, ref).locator('[data-part="area"]');
+    const field = page.getByRole("searchbox", { name: "Find an area or project" });
+    const offer = page.locator('[data-part="new-area"]');
+
+    // A name an area has, in any case, is that area: nothing new is offered.
+    await tabInto(page, pill);
+    await page.keyboard.press("Enter");
+    await expect(field).toBeFocused();
+    await page.keyboard.type("HOME");
+    await expect(page.getByRole("option", { name: "Home", exact: true })).toBeVisible();
+    await expect(offer).toHaveCount(0);
+    // Escape empties the field, then closes the list.
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await expect(pill).toBeFocused();
+
+    // A new name: the last choice makes the area, and the task moves into it.
+    await page.keyboard.press("Enter");
+    await page.keyboard.type(garden);
+    await expect(offer).toHaveText(`New area “${garden}”`);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect(toast(page)).toHaveText(`Moved to ${garden}`);
+    await expect(toastAction(page)).toHaveText("Undo");
+    await expect.poll(areaOf).toBe(garden);
+    await expect(sidebarLink).toBeVisible();
+
+    // Ctrl+Z takes back the move, and once more the area.
+    await page.keyboard.press("Control+z");
+    await expect(toast(page)).toHaveText("Undone");
+    await expect.poll(areaOf).toBe("Home");
+    await page.keyboard.press("Control+z");
+    await expect(sidebarLink).toHaveCount(0, { timeout: SLOW_MS });
+    expect(await violations(page)).toEqual([]);
+  });
+});
+
 test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots and axe", () => {
   test("Sumi and Washi at 1,440 px and 390 px, with the date popover and a toast, axe clean", async ({
     browser,

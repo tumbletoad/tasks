@@ -585,6 +585,9 @@
   "area.label": "Area and project",
   "area.search": "Find an area or project",
   "area.empty": "No area or project matches",
+  "area.new": "New area “{name}”",
+  "area.added": "Area {name} added",
+  "area.notAdded": "The area was not added. Try again.",
 
   "ask.tip": "Ask an agent to change this",
   "ask.summary": "Change the summary: ",

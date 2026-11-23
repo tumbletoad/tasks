@@ -1,9 +1,10 @@
 // The area and project control (A5 3.7, 3.11): a pill button with the area's dot that opens a
 // type-ahead over the area tree. Typing filters the areas and their projects; the arrows move in
-// the list while focus stays in the field, Enter or a click moves the task. Escape closes, and
-// focus returns to the pill. A task leaves its area only for another one: `task.update` moves a
-// task into an area or project, never out of every area.
-import { useMemo, useState } from "react";
+// the list while focus stays in the field, Enter or a click moves the task. A name no area has is
+// offered as a new area: chosen, the area is made as named and the task moves into it. Escape
+// closes, and focus returns to the pill. A task leaves its area only for another one: `task.update`
+// moves a task into an area or project, never out of every area.
+import { useContext, useMemo, useState } from "react";
 import {
   Autocomplete,
   Button,
@@ -17,8 +18,12 @@ import {
   useFilter,
 } from "react-aria-components";
 import { classes } from "../app/css.ts";
+import { useToast } from "../app/frame.ts";
+import { PlusIcon } from "../app/Icons.tsx";
+import { Session } from "../context.ts";
 import { groupingChange } from "../edit/change.ts";
 import { useEdits } from "../edit/useEdits.ts";
+import { refusalText } from "../folder/FolderDialog.tsx";
 import { areaSlots } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
@@ -47,11 +52,20 @@ interface Choice {
 const byPosition = <T extends { position: string }>(a: T, b: T) =>
   a.position < b.position ? -1 : a.position > b.position ? 1 : 0;
 
+/** The choice that makes a new area of what was typed. */
+const NEW_AREA = "new-area";
+
+/** An area's longest name. */
+const AREA_NAME = 120;
+
 export function AreaPicker({ task }: { readonly task: TaskRow }) {
   const t = useT();
+  const say = useToast();
+  const { api } = useContext(Session);
   const edits = useEdits();
   const state = useLive();
   const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
   const { contains } = useFilter({ sensitivity: "base" });
   const slots = useMemo(() => areaSlots(state.areas.values()), [state.areas]);
   const choices = useMemo(() => {
@@ -74,6 +88,51 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
     }
     return out;
   }, [state.areas, state.projects, slots, t]);
+  // A slash would make the name an area and a project.
+  const name = typed.replaceAll("/", " ").trim();
+  const known = [...state.areas.values()].some(
+    (a) => a.title.localeCompare(name, undefined, { sensitivity: "base" }) === 0,
+  );
+  // Its text holds what was typed, so the filter always keeps it.
+  const items: readonly Choice[] =
+    name === "" || known
+      ? choices
+      : [
+          ...choices,
+          {
+            id: NEW_AREA,
+            text: t("area.new", { name }),
+            area: { id: NEW_AREA, title: name },
+            slot: 0,
+          },
+        ];
+
+  /** Makes the area as the command line does, then moves the task into it. */
+  const addArea = (title: string) => {
+    edits
+      .write(
+        (request) =>
+          api.client.group.manage({
+            action: "create",
+            path: title,
+            mode: "apply",
+            request_id: request,
+          }),
+        // Known only from its receipt, the area is not named: the task stays, and the toast says so.
+        (result) =>
+          "receipt" in result ? { id: "area.added", values: { name: title } } : undefined,
+      )
+      .then(
+        (result) => {
+          const made = "receipt" in result ? undefined : result.group;
+          if (made?.kind !== "area") return;
+          edits.edit(task, groupingChange({ id: made.id, title: made.name }, undefined));
+        },
+        (failed: unknown) => {
+          say(refusalText(failed, t("area.notAdded")));
+        },
+      );
+  };
 
   const area = task.area_id === undefined ? undefined : state.areas.get(task.area_id);
   const project = task.project_id === undefined ? undefined : state.projects.get(task.project_id);
@@ -86,7 +145,13 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
         : t("fact.areaProject", { area: area.title, project: project.title });
   const current = task.project_id ?? task.area_id;
   return (
-    <DialogTrigger isOpen={open} onOpenChange={setOpen}>
+    <DialogTrigger
+      isOpen={open}
+      onOpenChange={(isOpen) => {
+        setOpen(isOpen);
+        if (!isOpen) setTyped("");
+      }}
+    >
       <Button
         className={shown === undefined ? `${styles.pill} ${styles.empty}` : styles.pill}
         data-part="area"
@@ -99,20 +164,26 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
       </Button>
       <Popover className={styles.popover} placement="bottom start">
         <Dialog className={styles.dialog} aria-label={t("area.label")}>
-          <Autocomplete filter={contains}>
+          <Autocomplete filter={contains} inputValue={typed} onInputChange={setTyped}>
             <SearchField aria-label={t("area.search")} autoFocus>
-              <Input className={styles.field} placeholder={t("area.search")} />
+              <Input
+                className={styles.field}
+                placeholder={t("area.search")}
+                maxLength={AREA_NAME}
+              />
             </SearchField>
             <ListBox
               className={styles.list}
               aria-label={t("area.label")}
-              items={choices}
+              items={items}
               renderEmptyState={() => t("area.empty")}
               onAction={(key) => {
-                const choice = choices.find((c) => c.id === key);
+                const choice = items.find((c) => c.id === key);
                 setOpen(false);
+                setTyped("");
                 if (choice === undefined || choice.id === current) return;
-                edits.edit(task, groupingChange(choice.area, choice.project));
+                if (choice.id === NEW_AREA) addArea(choice.area.title);
+                else edits.edit(task, groupingChange(choice.area, choice.project));
               }}
             >
               {(choice) => (
@@ -121,11 +192,16 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
                   textValue={choice.text}
                   className={styles.option}
                   data-current={choice.id === current || undefined}
+                  data-part={choice.id === NEW_AREA ? "new-area" : undefined}
                 >
-                  <span
-                    className={`${styles.dot} slot-${String(choice.slot)}`}
-                    aria-hidden="true"
-                  />
+                  {choice.id === NEW_AREA ? (
+                    <PlusIcon />
+                  ) : (
+                    <span
+                      className={`${styles.dot} slot-${String(choice.slot)}`}
+                      aria-hidden="true"
+                    />
+                  )}
                   <span dir="auto">{choice.text}</span>
                 </ListBoxItem>
               )}
