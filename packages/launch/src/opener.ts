@@ -10,7 +10,7 @@
 // - `no_session`: Linux without DISPLAY or WAYLAND_DISPLAY: nothing can show a window. Failed.
 // - `not_started`: no opener could be started at all (each one missing). Failed.
 // - `unknown`: the opener failed in a way that does not say whether anything opened, or did not
-//   end in time. The launch is Unknown ("it may have opened").
+//   end in time, and is left running. The launch is Unknown ("it may have opened").
 // A fallback opener is tried only when the one before it never started (its program is missing),
 // so one launch never opens the URL twice.
 import { win32 } from "node:path";
@@ -45,6 +45,11 @@ export interface OpenerOptions {
   /** The folder the opener runs in: any that exists, never the task's. */
   readonly cwd: string;
   readonly timeoutMs?: number;
+  /**
+   * The argv an opener starts with, so that it and what it opens outlive the service: on Linux a
+   * transient scope of its own (TerminalLauncher.outside). Default: as it is.
+   */
+  readonly outside?: (argv: readonly string[]) => Promise<readonly string[]>;
 }
 
 /** A program the OS opener runs, and what its exit codes say. */
@@ -151,10 +156,12 @@ async function run(
   if (list === "no_session") return { result: "no_session", opener: "none" };
   for (const candidate of list) {
     const request: SpawnRequest = {
-      argv: candidate.argv,
+      argv: options.outside === undefined ? candidate.argv : await options.outside(candidate.argv),
       cwd: options.cwd,
       env: { ...options.env },
-      detached: options.platform !== "win32",
+      // Never tied to the service: in a session of its own on Linux and macOS, and on Windows
+      // outside the kill-on-close job that ends a normal child when the service exits.
+      detached: true,
       hidden: true,
     };
     let started: Awaited<ReturnType<Spawner>>;
@@ -176,11 +183,9 @@ async function run(
         });
       }),
     ]);
-    if (ended === "timeout") {
-      // A helper the service started for itself: ended, and its answer is unknown.
-      started.stop();
-      return { result: "unknown", opener: candidate.name };
-    }
+    // Only the wait ends: an opener may stay in the foreground with the application it started,
+    // in its process group, so stopping it could end that application.
+    if (ended === "timeout") return { result: "unknown", opener: candidate.name };
     return { result: candidate.exit?.(ended) ?? "opened", opener: candidate.name };
   }
   return { result: "not_started", opener: "none" };

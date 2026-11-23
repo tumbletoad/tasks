@@ -217,8 +217,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - TTasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.
 - Restarting or updating TTasks does not end an agent it opened, and the agent stays its task's
-  session. On Linux this needs systemd to give each terminal a scope of its own: where it cannot, a
-  restart may end the agents in the terminals TTasks opened, and `ttasks doctor` warns of that.
+  session. Nor does it end an app TTasks asked the system to open, such as the file manager. On
+  Linux this needs systemd to give each terminal and each such app a scope of its own: where it
+  cannot, a restart may end them, and `ttasks doctor` warns of that.
 - The brief an agent gets when a task opens holds the task's reference, not its title, notes or
   sources. Copy's words too long for it are kept as a note, never cut.
 - The launch reference in a brief, such as `L7KQ2M`, is never given to another launch of the

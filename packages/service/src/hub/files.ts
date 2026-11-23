@@ -6,7 +6,7 @@
 // or folder that was already there keeps its mode (A2 3.2.2 rule 5). This module adds the service's
 // rule for who else may change a folder it writes in (permissions.ts).
 import { makeDir } from "@ttasks/files";
-import { currentPerson, factsOf, judgePath, problemOf, type Judged } from "./permissions.ts";
+import { isPrivateDir, judgePath, type Judged } from "./permissions.ts";
 
 export {
   appendPrivate,
@@ -18,7 +18,7 @@ export {
   writeAll,
   type MakeDirOptions,
 } from "@ttasks/files";
-export { judgePath, type Judged };
+export { isPrivateDir, judgePath, type Judged };
 
 /** An error with an errno code, as Node's own file system errors carry one, and no path. */
 const errnoError = (code: string, message: string): NodeJS.ErrnoException =>
@@ -43,15 +43,4 @@ export function ensurePrivateDir(
   // makeDir found or made it, so only a change in between hides it: never taken for safe.
   if (judged === "unseen") throw errnoError("EACCES", "The folder cannot be looked at");
   return judged;
-}
-
-/**
- * Whether `dir` is a real folder of this user that no one else can write, the person's own private
- * group aside (POSIX only, permissions.ts).
- */
-export function isPrivateDir(dir: string): boolean {
-  const person = currentPerson();
-  if (person === undefined) return false;
-  const facts = factsOf(dir, "folder", { followLink: false });
-  return typeof facts === "object" && problemOf(facts, person) === undefined;
 }

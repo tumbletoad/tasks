@@ -17,6 +17,7 @@
     "./skills": "./src/skills/index.ts",
     "./test/contract": "./test/contract/suite.ts",
     "./test/harness": "./test/harness.ts",
+    "./test/install-fakes": "./test/install-fakes.ts",
     "./test/http-client": "./test/http-client.ts",
     "./test/http-world": "./test/http-world.ts",
     "./test/ops-helpers": "./test/ops-helpers.ts",

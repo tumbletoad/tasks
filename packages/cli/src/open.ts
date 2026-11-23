@@ -36,6 +36,7 @@ import { connectService, stateDir, type ConnectOptions, type Session } from "./c
 import type { Io } from "./io.ts";
 import { listenerRequest } from "./listener-request.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
+import { refusedArgument, serviceUsage } from "./service.ts";
 import { asAppError } from "./verbs.ts";
 
 /** Whether a text holds a control character (C0, DEL). */
@@ -402,13 +403,10 @@ export async function servicePortCommand(
   const [value, ...rest] = args;
   const reuse = rest.includes("--reuse");
   const yes = rest.includes("--yes") || rest.includes("-y");
-  if (
-    value === undefined ||
-    !/^\d{1,5}$/.test(value) ||
-    rest.some((a) => a !== "--reuse" && a !== "--yes" && a !== "-y") ||
-    (yes && !reuse)
-  ) {
-    return printUsage(
+  const stray = rest.find((a) => a !== "--reuse" && a !== "--yes" && a !== "-y");
+  if (stray !== undefined) return serviceUsage(io, globals.json, refusedArgument("port", stray));
+  if (value === undefined || !/^\d{1,5}$/.test(value) || (yes && !reuse)) {
+    return serviceUsage(
       io,
       globals.json,
       "ttasks service port takes a port number, and --reuse with --yes to confirm without asking",
@@ -421,7 +419,7 @@ export async function servicePortCommand(
       ? undefined
       : (options.ask ?? (io.tty.stdin && io.tty.stdout ? terminalAsk : undefined));
     if (ask === undefined) {
-      return printUsage(
+      return serviceUsage(
         io,
         globals.json,
         "ttasks service port --reuse asks for a yes in a terminal; add --yes once every tab and app window is closed",

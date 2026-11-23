@@ -28,7 +28,8 @@
 // never given for a path that is a link, or that has a link on its way: chown -h does not follow
 // the path's own link, but a link above it would still be followed. Configuration is never read
 // through a link at all (machine-toml.ts), so a link there is named with where it points.
-import { lstatSync, readlinkSync, statSync, type Stats } from "node:fs";
+import { lstatSync, readlinkSync, rmSync, statSync, type Stats } from "node:fs";
+import { createConnection } from "node:net";
 import { userInfo } from "node:os";
 import { dirname, resolve } from "node:path";
 import { PRODUCT_NAME } from "@ttasks/brand";
@@ -217,6 +218,95 @@ export function judgePath(
   const problem = problemOf(facts, person);
   return problem === undefined ? undefined : { facts, problem };
 }
+
+/**
+ * Whether `dir` is a real folder of this user that no one else can write, the person's own private
+ * group aside (POSIX only).
+ */
+export function isPrivateDir(dir: string): boolean {
+  const person = currentPerson();
+  if (person === undefined) return false;
+  const facts = factsOf(dir, "folder", { followLink: false });
+  return typeof facts === "object" && problemOf(facts, person) === undefined;
+}
+
+/** What is at a Unix socket's path, the path's own link not followed. */
+export type AtSocketPath = "nothing" | "socket" | "file" | "folder" | "link" | "other";
+
+/** What keeps the service's socket from its path: what is there, or a socket something answers on. */
+export type SocketBlock = Exclude<AtSocketPath, "nothing" | "socket"> | "live";
+
+export function atSocketPath(path: string): AtSocketPath {
+  let stat: Stats;
+  try {
+    stat = lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "nothing";
+    throw error;
+  }
+  if (stat.isSocket()) return "socket";
+  if (stat.isSymbolicLink()) return "link";
+  return kindOf(stat);
+}
+
+/** Whether something answers on the socket at `path`: only a refused connection says nobody does. */
+const answers = (path: string): Promise<boolean> =>
+  new Promise((resolve) => {
+    const socket = createConnection(path);
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", (error: NodeJS.ErrnoException) => {
+      socket.destroy();
+      resolve(error.code !== "ECONNREFUSED" && error.code !== "ENOENT");
+    });
+  });
+
+/**
+ * What keeps the service's socket from `path`, or undefined: nothing is there, or a socket nobody
+ * answers on. A live socket can be another program's listener, or another home's service reached
+ * through a linked runtime folder; removing it would cut that listener off.
+ */
+export async function socketBlock(path: string): Promise<SocketBlock | undefined> {
+  const holds = atSocketPath(path);
+  if (holds === "nothing") return undefined;
+  if (holds !== "socket") return holds;
+  return (await answers(path)) ? "live" : undefined;
+}
+
+const identity = (path: string): string | undefined => {
+  try {
+    const stat = lstatSync(path, { bigint: true });
+    return `${String(stat.dev)}:${String(stat.ino)}`;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Makes way for the service's socket at `path`: a socket nobody answers on is removed, when it is
+ * still the same entry after the check. What else is there stays, and is returned.
+ */
+export async function clearSocketPath(path: string): Promise<SocketBlock | "removed" | undefined> {
+  const seen = identity(path);
+  const block = await socketBlock(path);
+  if (block !== undefined || seen === undefined || identity(path) !== seen) return block;
+  rmSync(path, { force: true });
+  return "removed";
+}
+
+const IN_THE_WAY: Readonly<Record<SocketBlock, string>> = {
+  file: "a file",
+  folder: "a folder",
+  link: "a link",
+  other: "something that is not a socket",
+  live: "a socket another program answers on",
+};
+
+/** Names what stands where the service's socket goes, which only the person may move. */
+export const socketBlockedMessage = (path: string, holds: SocketBlock): string =>
+  `${shellPath(path)} is ${IN_THE_WAY[holds]} where ${PRODUCT_NAME}'s socket goes, so the service does not start. ${holds === "live" ? "Stop the program that listens there" : "Move it elsewhere"}, then start the service again.`;
 
 /** This process's person, or on Windows one whose group never writes (the words still work). */
 const thisPerson = (): Person => currentPerson() ?? NOBODY_ELSE;

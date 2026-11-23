@@ -28,6 +28,8 @@ export interface Globals {
   readonly help: boolean;
   /** `--input <file or ->`: the whole input as JSON. */
   readonly input: string | undefined;
+  /** The global options this command line gave, as typed without a value: `--space`, `-q`. */
+  readonly given: readonly string[];
 }
 
 const VALUE_GLOBALS = new Set(["--space", "--request-id", "--timeout", "--input"]);
@@ -75,6 +77,7 @@ export function splitGlobals(argv: readonly string[]): { globals: Globals; rest:
     noColor: false,
     help: false,
     input: undefined as string | undefined,
+    given: [] as string[],
   };
   let ended = false;
   for (let i = 0; i < argv.length; i += 1) {
@@ -93,6 +96,7 @@ export function splitGlobals(argv: readonly string[]): { globals: Globals; rest:
         ? [token.slice(0, token.indexOf("=")), token.slice(token.indexOf("=") + 1)]
         : [token, undefined];
     if (FLAG_GLOBALS.has(name) && inline === undefined) {
+      g.given.push(name);
       if (name === "--json") g.json = true;
       else if (name === "-q" || name === "--quiet") g.quiet = true;
       else if (name === "--verbose") g.verbose = true;
@@ -101,6 +105,7 @@ export function splitGlobals(argv: readonly string[]): { globals: Globals; rest:
       continue;
     }
     if (VALUE_GLOBALS.has(name)) {
+      g.given.push(name);
       let value = inline;
       if (value === undefined) {
         i += 1;

@@ -64,7 +64,12 @@ import {
   type Judged,
 } from "./files.ts";
 import { detectIdentity, type Identity } from "./identity.ts";
-import { unsafeMessage, type UnsafeThing } from "./permissions.ts";
+import {
+  clearSocketPath,
+  socketBlockedMessage,
+  unsafeMessage,
+  type UnsafeThing,
+} from "./permissions.ts";
 import { readUmask, umaskRefusal, type UmaskRead } from "./umask.ts";
 import { KEY_FILE, loadOrCreateKey } from "./key.ts";
 import {
@@ -1027,10 +1032,16 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     let socketIdentity: { dev: bigint; ino: bigint } | undefined;
     for (let attempt = 1; bound === undefined; attempt += 1) {
       const path = plan.kind === "pipe" ? pipeName(plan, instance) : plan.path;
-      // The lock is ours and the socket folder is this install's own and private, so a socket
-      // file at our path is stale (A2 3.4).
-      if (plan.kind === "unix" && removeStaleSocket(path)) {
-        log.log("service.stale_removed", { what: "socket", count: 1 });
+      // The lock keeps a second start of this home out, not another program's listener: only a
+      // socket nobody answers on is a stale one of ours. Anything else there stays.
+      if (plan.kind === "unix") {
+        const cleared = await clearSocketPath(path);
+        if (cleared === "removed") {
+          log.log("service.stale_removed", { what: "socket", count: 1 });
+        } else if (cleared !== undefined) {
+          log.log("service.refused", { reason: "invalid_config" });
+          throw refuse(say, "invalid_config", socketBlockedMessage(path, cleared));
+        }
       }
       try {
         endpointServer = await listen({
@@ -1535,19 +1546,4 @@ export function removeIdleRuntime(runtime: Pick<RuntimeNames, "launch" | "runtim
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
     }
   }
-}
-
-/** Removes a stale socket file before listening. A folder at the path is refused (exit 64). */
-function removeStaleSocket(path: string): boolean {
-  let isDirectory: boolean;
-  try {
-    isDirectory = lstatSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-  if (isDirectory) {
-    throw new ServiceExit(EXIT.refused, "refused", "invalid_config");
-  }
-  rmSync(path, { force: true });
-  return true;
 }
