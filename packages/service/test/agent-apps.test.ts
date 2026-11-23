@@ -5,7 +5,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CLI_NAME } from "@ttasks/brand";
+import { CLI_NAME, MCP_SERVER_KEY } from "@ttasks/brand";
 import { installFakeAgents } from "@ttasks/testkit/fake-agents";
 import { FixedEnvironment } from "@ttasks/launch";
 import {
@@ -15,7 +15,7 @@ import {
   type AppsView,
 } from "../src/hub/agent-apps.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";
-import { configOf, removeRuntimeDir, serviceEnv, tempRoot } from "./harness.ts";
+import { configOf, removeRuntimeDir, serviceEnv, stateOf, tempRoot } from "./harness.ts";
 import { post } from "./http-client.ts";
 import { signIn } from "./http-world.ts";
 import { classSession } from "./ops-helpers.ts";
@@ -93,13 +93,15 @@ async function call<T = Record<string, unknown>>(
   return { status: reply.status, result: (JSON.parse(reply.body) as { result: T }).result };
 }
 
-/** TTasks's entry in the scratch Claude Code home, or undefined. */
+/** TTasks's entry in the scratch Claude Code home, or undefined (also when setup's file is gone). */
 const claudeEntry = (user: string): { args?: unknown } | undefined =>
-  (
-    JSON.parse(readFileSync(join(user, ".claude.json"), "utf8")) as {
-      mcpServers?: Record<string, { args?: unknown }>;
-    }
-  ).mcpServers?.["ttasks"];
+  existsSync(join(user, ".claude.json"))
+    ? (
+        JSON.parse(readFileSync(join(user, ".claude.json"), "utf8")) as {
+          mcpServers?: Record<string, { args?: unknown }>;
+        }
+      ).mcpServers?.["ttasks"]
+    : undefined;
 
 const row = (view: AppsView, app: string) => {
   const found = view.rows.find((r) => r.app === app);
@@ -173,7 +175,9 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
       expect(claude.home).toMatch(/^~[\\/]\.claude$/u);
       expect(claude.open).toMatchObject({ on: false, change: "add" });
       expect(claude.tools).toMatchObject({ on: false, change: "add" });
-      expect(claude.tools?.detail.join("\n")).toContain("mcp add");
+      // The lines its file gains, and no command a person could paste into another account.
+      expect(claude.tools?.detail.join("\n")).toContain(`mcpServers.${MCP_SERVER_KEY}.command`);
+      expect(claude.tools?.detail.join("\n")).not.toContain("mcp add");
       expect(codex.tools).toMatchObject({ on: false, change: "add" });
       // Nothing is written by looking.
       expect(existsSync(join(w.user, ".claude.json"))).toBe(false);
@@ -262,6 +266,110 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
       expect(readFileSync(join(w.user, ".codex", "config.toml"), "utf8")).toContain(
         "[mcp_servers.ttasks]",
       );
+    },
+    SLOW,
+  );
+
+  it(
+    "the tools switch shows the access, not the file: an unreadable file stays on and turns off; an entry that could not be taken out shows off, and turning it on again works",
+    async () => {
+      const file = join(w.user, ".claude.json");
+      const tools = async () =>
+        row((await call<AppsView>(w, "/api/v1/machine/apps", { space })).result, "claude-code");
+      const turn = async (on: boolean) => {
+        const found = await tools();
+        return call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: found.key, part: "tools", on, plan: found.tools?.plan }],
+        });
+      };
+      expect((await tools()).tools).toMatchObject({ on: false, change: "add" });
+      expect((await turn(true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      const withEntry = readFileSync(file, "utf8");
+
+      // A trailing comma someone typed: setup cannot read the file, and the access is still there.
+      const broken = withEntry.replace(/\}\s*$/u, ",}\n");
+      writeFileSync(file, broken);
+      expect((await tools()).tools).toMatchObject({
+        on: true,
+        change: "remove",
+        why: "file_unreadable",
+      });
+      const off = await turn(false);
+      expect(off.result.outcomes).toMatchObject([{ result: "done", kept: true }]);
+      expect(row(off.result.view, "claude-code").tools).toMatchObject({
+        on: false,
+        why: "file_unreadable",
+      });
+      expect(readFileSync(file, "utf8")).toBe(broken);
+
+      // Mended: the access is off and the entry is still there, and turning it on works.
+      writeFileSync(file, withEntry);
+      expect((await tools()).tools).toMatchObject({
+        on: false,
+        change: "add",
+        why: "entry_left",
+      });
+      const on = await turn(true);
+      expect(on.result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(row(on.result.view, "claude-code").tools).toMatchObject({ on: true });
+      expect(readFileSync(file, "utf8")).toBe(withEntry);
+
+      const done = await turn(false);
+      expect(done.result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(claudeEntry(w.user)).toBeUndefined();
+      expect(row(done.result.view, "claude-code").tools).toMatchObject({
+        on: false,
+        change: "add",
+      });
+    },
+    SLOW,
+  );
+
+  it(
+    "with setup's own record unreadable the page names it, every home with access turns off, nothing turns on, and no file changes",
+    async () => {
+      const record = join(stateOf(w.home), "setup", "agents.json");
+      const claudeFile = join(w.user, ".claude.json");
+      const look = async () => (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+      const first = await look();
+      const before = row(first, "claude-code");
+      if (!before.tools?.on) {
+        await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: before.key, part: "tools", on: true, plan: before.tools?.plan }],
+        });
+      }
+      const kept = readFileSync(record);
+      const damaged = '{"format": 2, "homes": [';
+      writeFileSync(record, damaged);
+      const files = [claudeFile, join(w.user, ".codex", "config.toml")];
+      const bytes = files.map((f) => readFileSync(f));
+      try {
+        const seen = await look();
+        expect(seen.record).toMatch(/agents\.json$/u);
+        const claude = row(seen, "claude-code");
+        expect(claude.tools).toMatchObject({
+          on: true,
+          change: "remove",
+          why: "record_unreadable",
+        });
+        const off = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: claude.key, part: "tools", on: false, plan: claude.tools?.plan }],
+        });
+        expect(off.result.outcomes).toMatchObject([{ result: "done" }]);
+        // Off, and it cannot be turned on again while the record cannot be read.
+        expect(row(off.result.view, "claude-code").tools).toMatchObject({
+          on: false,
+          change: null,
+          why: "record_unreadable",
+        });
+        expect(files.map((f) => readFileSync(f))).toEqual(bytes);
+        expect(readFileSync(record, "utf8")).toBe(damaged);
+      } finally {
+        writeFileSync(record, kept);
+      }
     },
     SLOW,
   );

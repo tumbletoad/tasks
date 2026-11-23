@@ -5,7 +5,13 @@
 // name or SID.
 import { win32 } from "node:path";
 import { helperOutput } from "@ttasks/launch/helpers";
-import { blockedMessage, metaContent, movedMessage } from "@ttasks/service/http/shared";
+import {
+  blockedMessage,
+  metaContent,
+  movedMessage,
+  portUnsaved,
+  unsavedMessage,
+} from "@ttasks/service/http/shared";
 import { countAccounts, type AccountFacts } from "./accounts.ts";
 import { listenerRequest } from "./listener-request.ts";
 
@@ -140,6 +146,10 @@ export async function httpCheck(
     if (platform === "win32" && (await windowsExcluded(http.persisted, env))) {
       notes.push(`Port ${String(http.persisted)} lies in a Windows excluded port range.`);
     }
+  }
+  if (portUnsaved(http)) {
+    status = "warn";
+    notes.push(unsavedMessage(port));
   }
   const problems = await selfTest(port);
   if (problems.length > 0) {

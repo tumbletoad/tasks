@@ -1,6 +1,5 @@
-// Lines printed for a person to paste (A3 3.13.7; launch's shell-line.ts, setup's print.ts): each
-// line is fed to the real shell it is for, and a harmless stub in place of the command reports the
-// argv and the variable it received. Windows: PowerShell 7 when it is on the PATH and Windows
+// Lines printed for a person to paste (A3 3.13.7; launch's shell-line.ts): each line is fed to the
+// real shell it is for, and a harmless stub in place of the command reports the argv it received. Windows: PowerShell 7 when it is on the PATH and Windows
 // PowerShell 5.1, each through an npm-style `.ps1` shim and an npm-style `.cmd` shim (which
 // PowerShell runs through cmd). Elsewhere: /bin/sh. Nothing real is run or configured: the stubs
 // live in this file's own temporary folder, which is removed afterwards.
@@ -9,18 +8,12 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { MCP_SERVER_KEY } from "@ttasks/brand";
-import { MAX_LINE_BYTES, pasteShell, shellLine, shellWord } from "@ttasks/launch";
-import { PrintRefused, snippetFor } from "../src/setup/index.ts";
+import { MAX_LINE_BYTES, shellLine, shellWord } from "@ttasks/launch";
 
 const windows = process.platform === "win32";
 const SLOW = 180_000;
 /** A variable the shell has: a line that expands anything shows its value. */
 const SENTINEL = "TTASKS_PRINT_SENTINEL";
-/** A space ID as an entry names it. */
-const SPACE = "sp_0123456789abcdefghijkl";
-/** The variable a line sets for its command. */
-const SET = "TTASKS_LINE_TEST";
 /** The byte order mark that makes Windows PowerShell 5.1 read a script as UTF-8. */
 const UTF8_BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
@@ -30,7 +23,7 @@ const stubs: { kind: string; dir: string; file: string }[] = [];
 
 beforeAll(() => {
   base = mkdtempSync(join(tmpdir(), "ttasks-print-quoting-"));
-  const report = `process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), set: process.env[${JSON.stringify(SET)}] ?? null }) + "\\n");\n`;
+  const report = `process.stdout.write(JSON.stringify({ argv: process.argv.slice(2) }) + "\\n");\n`;
   const node = process.execPath;
   const stub = (kind: string, name: string, text: string) => {
     const dir = join(base, kind);
@@ -60,7 +53,7 @@ afterAll(() => {
 
 interface Shell {
   readonly name: string;
-  run(line: string, path: string): { argv: string[]; set: string | null } | undefined;
+  run(line: string, path: string): { argv: string[] } | undefined;
 }
 
 /** The shells a line is fed to on this OS. */
@@ -75,9 +68,7 @@ function shells(): Shell[] {
       .split(/\r?\n/u)
       .reverse()
       .find((l) => l.startsWith("{"));
-    return line === undefined
-      ? undefined
-      : (JSON.parse(line) as { argv: string[]; set: string | null });
+    return line === undefined ? undefined : (JSON.parse(line) as { argv: string[] });
   };
   if (!windows) {
     return [
@@ -177,8 +168,6 @@ const WORDS = [
 
 describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste gives the command exactly its words", () => {
   test("words are quoted per shell, and a word no quoting keeps literal is refused", () => {
-    expect(pasteShell("win32")).toBe("PowerShell");
-    expect(pasteShell("linux")).toBe("a POSIX shell (sh, bash, zsh)");
     expect(shellWord("linux", "/opt/tasks")).toBe("/opt/tasks");
     expect(shellWord("linux", "it's")).toBe(`'it'\\''s'`);
     expect(shellWord("linux", "$HOME")).toBe(`'$HOME'`);
@@ -201,18 +190,13 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
     for (const word of ["a!b", "a&b", 'a"b', "a%b", ""]) {
       expect(shellWord("linux", word)).not.toBeUndefined();
     }
-    expect(shellLine("win32", ["C:\\a b\\claude.exe", "mcp"], { CODEX_HOME: "C:\\h" })).toBe(
-      "$env:CODEX_HOME = 'C:\\h'; & 'C:\\a b\\claude.exe' mcp",
-    );
-    expect(shellLine("linux", ["/a b/claude", "mcp"], { CODEX_HOME: "/h", X: "a b" })).toBe(
-      "CODEX_HOME=/h X='a b' '/a b/claude' mcp",
-    );
+    expect(shellLine("win32", ["C:\\a b\\claude.exe", "mcp"])).toBe("& 'C:\\a b\\claude.exe' mcp");
+    expect(shellLine("linux", ["/a b/claude", "mcp"])).toBe("'/a b/claude' mcp");
     expect(shellLine("linux", ["claude", "a\rb"])).toBeUndefined();
-    expect(shellLine("linux", ["claude"], { "BAD NAME": "x" })).toBeUndefined();
   });
 
   test(
-    "fed to the real shell, every word and variable reaches the command as it was",
+    "fed to the real shell, every word reaches the command as it was, also one given by its path",
     () => {
       expect(WORDS.length).toBeGreaterThan(20);
       for (const shell of shells()) {
@@ -224,13 +208,11 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
             stub.kind,
             WORDS,
           ]);
-          // The command by its path, with a variable set for it.
-          const value = `v $${SENTINEL} 'q' \`x\``;
-          const withEnv = shellLine(process.platform, [stub.file, ...WORDS], { [SET]: value });
-          expect([shell.name, stub.kind, shell.run(withEnv ?? "", stub.dir)]).toEqual([
+          const byPath = shellLine(process.platform, [stub.file, ...WORDS]);
+          expect([shell.name, stub.kind, shell.run(byPath ?? "", stub.dir)?.argv]).toEqual([
             shell.name,
             stub.kind,
-            { argv: WORDS, set: value },
+            WORDS,
           ]);
         }
       }
@@ -271,82 +253,14 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
         }
       }
       for (const platform of ["win32", "linux"] as const) {
-        // One byte past it, as a character or as the second byte of one; a variable counts too.
+        // One byte past it, as a character or as the second byte of one.
         expect(shellLine(platform, ["claude", "x".repeat(MAX_LINE_BYTES - head.length + 1)])).toBe(
           undefined,
         );
         expect(shellLine(platform, ["claude", "\u00e9".repeat(2100)])).toBeUndefined();
-        expect(shellLine(platform, ["claude"], { X: "x".repeat(MAX_LINE_BYTES) })).toBeUndefined();
         // A 9,000-character word: cmd.exe would refuse the line through an npm `.cmd` shim.
         expect(shellLine(platform, ["claude", "x".repeat(9000)])).toBeUndefined();
       }
-      // print refuses with its explained fallback.
-      expect(() =>
-        snippetFor(
-          {
-            platform: process.platform,
-            userHome: base,
-            env: {},
-            tasks: windows
-              ? `C:\\${"x".repeat(9000)}\\ttasks.exe`
-              : `/opt/${"x".repeat(9000)}/tasks`,
-          },
-          "claude-code",
-          SPACE,
-        ),
-      ).toThrow(PrintRefused);
-    },
-    SLOW,
-  );
-
-  test(
-    "print's Claude Code command registers exactly the install's path, whatever it holds",
-    () => {
-      const tasks = windows
-        ? `C:\\Fixture\\it's $${SENTINEL} (x86)\\ttasks.exe`
-        : `/opt/it's $${SENTINEL} \`x\`/bin/ttasks`;
-      const snippet = snippetFor(
-        { platform: process.platform, userHome: base, env: {}, tasks },
-        "claude-code",
-        SPACE,
-      );
-      expect(snippet.runIn).toBe(pasteShell(process.platform));
-      const line = snippet.text.trimEnd();
-      for (const shell of shells()) {
-        for (const stub of stubs) {
-          expect([shell.name, stub.kind, shell.run(line, stub.dir)?.argv]).toEqual([
-            shell.name,
-            stub.kind,
-            [
-              "mcp",
-              "add",
-              "--scope",
-              "user",
-              MCP_SERVER_KEY,
-              "--",
-              tasks,
-              "mcp",
-              "--space",
-              SPACE,
-              "--app",
-              "claude-code",
-            ],
-          ]);
-        }
-      }
-      // A path no quoting keeps literal gets no command at all.
-      expect(() =>
-        snippetFor(
-          {
-            platform: process.platform,
-            userHome: base,
-            env: {},
-            tasks: windows ? "C:\\a%PATH%\\ttasks.exe" : "/opt/a\rb/tasks",
-          },
-          "claude-code",
-          SPACE,
-        ),
-      ).toThrow(PrintRefused);
     },
     SLOW,
   );
