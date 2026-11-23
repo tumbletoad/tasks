@@ -48,7 +48,7 @@ import type { Io } from "./io.ts";
 import { listenerRequest } from "./listener-request.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
 import { refusedArgument, serviceUsage } from "./service.ts";
-import { namedSpace, type SpaceRow } from "./space.ts";
+import { namedSpace, noSuchSpace, type SpaceRow } from "./space.ts";
 import { asAppError } from "./verbs.ts";
 
 /** Opens a URL in the user's browser; false when no opener could. */
@@ -249,6 +249,9 @@ function notServedHere(folder: string, copy: Copy, serving: Copy | undefined): E
  * choose from. A folder means its own copy, so it is taken only while that copy serves the space.
  */
 async function resolveSpace(
+  io: Io,
+  globals: Globals,
+  given: string | undefined,
   session: Session,
   named: string,
 ): Promise<{ readonly id: string } | { readonly error: ErrorBody }> {
@@ -289,16 +292,7 @@ async function resolveSpace(
     };
   }
   if (found?.id !== undefined) return { id: found.id };
-  return {
-    error: {
-      code: "not_found",
-      message: isAbsolute(named)
-        ? "The service has no space in that folder."
-        : "The service has no space by that ID or name.",
-      hint: `${CLI_NAME} space list also shows the closed ones.`,
-      data: choices(live),
-    },
-  };
+  return { error: { ...noSuchSpace(io, globals, given, named), data: choices(live) } };
 }
 
 /** An error, and in text the spaces it offers, one a line: name, ID and folder. */
@@ -402,7 +396,7 @@ export async function openCommand(
     let space: string | undefined;
     if (named !== undefined) {
       try {
-        const resolved = await resolveSpace(session, named);
+        const resolved = await resolveSpace(io, globals, given, session, named);
         if ("error" in resolved) return printChoices(io, globals.json, resolved.error);
         space = resolved.id;
       } catch (error) {

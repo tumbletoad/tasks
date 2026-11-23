@@ -16,7 +16,7 @@ import { isRequestId, REQUEST_ID_RULE, UsageError, type Globals } from "./args.t
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
-import { namedSpace } from "./space.ts";
+import { checkedSpace } from "./space.ts";
 import { asAppError, newRequestId, readInput } from "./verbs.ts";
 
 /** `ttasks run --help` and `ttasks help run`. */
@@ -195,9 +195,10 @@ export async function runCommand(
   };
   // Every request of the verb goes to one space: the one the person named, then the one the start
   // was queued in, so a default that changes meanwhile moves nothing.
-  const named = namedSpace(io, globals);
-  let space: { space?: string } = named === undefined ? {} : { space: named };
+  let space: { space?: string } = {};
   try {
+    const named = await checkedSpace(io, globals, undefined, call);
+    if (named !== undefined) space = { space: named };
     const [first, ...rest] = args;
     if ((first === "list" || first === "show" || first === "stop") && globals.input !== undefined) {
       throw new UsageError(`${CLI_NAME} run ${first} takes no --input`);

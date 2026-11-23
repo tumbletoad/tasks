@@ -113,8 +113,22 @@ describe("[A2.3.9.cli.open] ttasks open", () => {
       expect(typo.code).toBe(3);
       expect(typo.stderr).toContain("The service has no space by that ID or name.");
       expect(typo.stderr).toMatch(/\n {2}Mira {2}sp_[0-9a-z]{26} {2}\S/);
-      const fromEnv = await open([], { TTASKS_SPACE: "Mra" });
+      // A TTASKS_SPACE left set that names no space is said to be that, wherever it names the space.
+      const stale = { TTASKS_SPACE: "Mra" };
+      const fromEnv = await open([], stale);
       expect(fromEnv.code).toBe(3);
+      expect(fromEnv.stderr).toContain("TTASKS_SPACE names a space the service does not have.");
+      expect(fromEnv.stderr).toContain("Clear TTASKS_SPACE to use the default space");
+      for (const argv of [
+        ["space", "backups"],
+        ["run", "list"],
+      ]) {
+        const ran = await runMain(argv, { home: w.home, tty: true, env: stale });
+        expect(ran.code, argv.join(" ")).toBe(3);
+        expect(ran.stderr).toContain("TTASKS_SPACE names a space the service does not have.");
+      }
+      expect((await open(["Mira"], stale)).code).toBe(0);
+      opened.pop();
 
       const user = await w.user();
       const other = (await user.call(
