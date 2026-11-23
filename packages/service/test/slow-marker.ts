@@ -23,14 +23,14 @@ export interface HeldWrite {
   /** The write has started and is held. */
   readonly reached: Promise<void>;
   /** Lets the write go on, or fails it with `failure`; answers the write's error, if any. */
-  land(failure?: Error): Promise<unknown>;
+  readonly land: (failure?: Error) => Promise<unknown>;
 }
 
 /** Holds the next owners file's write. */
 export function holdNextWrite(): HeldWrite {
   let reached = (): void => undefined;
   const started = new Promise<void>((resolve) => (reached = resolve));
-  let release = (_failure?: Error): void => undefined;
+  let release: (failure?: Error) => void = () => undefined;
   const gate = new Promise<Error | undefined>((resolve) => (release = resolve));
   let landed: Promise<unknown> = Promise.resolve();
   hold = (write) => {
