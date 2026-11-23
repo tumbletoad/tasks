@@ -132,9 +132,11 @@ function skillsAfter(entryName: string, result: unknown): string {
     const read = result as Status;
     return read.asked !== undefined || read.missing !== undefined
       ? skillTexts(read).join("\n\n")
-      : listText(read.skills ?? [], status);
+      : listText(read.skills ?? [], status, read.skills_unread);
   }
-  return entryName === "task.get" ? listText((result as TaskGet).skills ?? [], status) : "";
+  if (entryName !== "task.get") return "";
+  const read = result as TaskGet;
+  return listText(read.skills ?? [], status, read.skills_unread);
 }
 
 function statusParts(result: Status): Part[] {

@@ -22,6 +22,31 @@ export const FAKE_AGENT = here("agent.ts");
 export const FAKE_CLI_AGENT = here("cli-agent.ts");
 /** A fake clipboard tool: what it reads on stdin goes to a file (clipboard.ts). */
 export const FAKE_CLIPBOARD = here("clipboard.ts");
+/** A fake `ttam query` that replays one of TTAM's recorded conversations (ttam.ts). */
+export const FAKE_TTAM = here("ttam.ts");
+
+/** TTAM's recorded conversations: with usage queries on, and with them off in its configuration. */
+export const TTAM_CONVERSATIONS = {
+  on: fileURLToPath(new URL("../../../../fixtures/ttam/query-usage-on.jsonl", import.meta.url)),
+  off: fileURLToPath(new URL("../../../../fixtures/ttam/query-usage-off.jsonl", import.meta.url)),
+} as const;
+
+/** The fake `ttam`'s program and arguments, `query` left for the caller to add. */
+export function fakeTtam(options: {
+  readonly conversation?: keyof typeof TTAM_CONVERSATIONS;
+  readonly mode?: string;
+  readonly log?: string;
+}): { readonly file: string; readonly args: readonly string[] } {
+  return {
+    file: process.execPath,
+    args: [
+      FAKE_TTAM,
+      `--conversation=${TTAM_CONVERSATIONS[options.conversation ?? "on"]}`,
+      ...(options.mode === undefined ? [] : [`--mode=${options.mode}`]),
+      ...(options.log === undefined ? [] : [`--log=${options.log}`]),
+    ],
+  };
+}
 
 /** What the service asked a spawner to start, as the fake spawner recorded it. */
 export interface SpawnRecord {

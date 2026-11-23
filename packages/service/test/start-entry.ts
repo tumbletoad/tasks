@@ -7,17 +7,13 @@
 // Usage: start-entry.ts <TTASKS_HOME> <program> <unit folder> <home folder>
 // First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
 import "@ttasks/bridge/safe-exit";
-import { isAgentMarker } from "@ttasks/bridge/protocol";
+import { testEnv } from "@ttasks/testkit";
 import { startService } from "../src/install/commands.ts";
 import { defaultServiceContext } from "../src/install/context.ts";
 import { FakeService, FakeTools } from "./install-fakes.ts";
 
 const [root = "", program = "", unitDir = "", home = ""] = process.argv.slice(2);
-const env: Record<string, string | undefined> = {};
-for (const [name, value] of Object.entries(process.env)) {
-  if (!isAgentMarker(name) && !name.toUpperCase().startsWith("TTASKS_")) env[name] = value;
-}
-const real = defaultServiceContext({ env: { ...env, TTASKS_HOME: root }, program });
+const real = defaultServiceContext({ env: testEnv({ TTASKS_HOME: root }), program });
 const tools = new FakeTools(new FakeService(), unitDir, { userManager: true });
 const outcome = await startService({
   ...real,

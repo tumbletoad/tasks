@@ -8,7 +8,8 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { grantHome } from "../../packages/service/test/ops-helpers.ts";
 import { ShimLab } from "../../packages/service/test/shim-harness.ts";
-import { Bridge, Procs, cleanEnv, forwarderCommand, textOf } from "./harness.ts";
+import { testEnv } from "../../packages/testkit/src/env.ts";
+import { Bridge, Procs, forwarderCommand, textOf } from "./harness.ts";
 
 const procs = new Procs();
 const labs: ShimLab[] = [];
@@ -54,7 +55,7 @@ describe("[A3.3.7.binding.bridge-process] a launched agent's bridge is its sessi
         procs.spawn(
           command.file,
           command.args,
-          cleanEnv({ TTASKS_HOME: lab.home, TTASKS_TICKET: ticket }),
+          testEnv({ TTASKS_HOME: lab.home, TTASKS_TICKET: ticket }),
         ),
       );
       await bridge.initialize();

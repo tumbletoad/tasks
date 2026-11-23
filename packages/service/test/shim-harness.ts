@@ -19,7 +19,7 @@ import {
   type SpawnPlan,
 } from "@ttasks/launch";
 import { fakeAgentCommand } from "@ttasks/runs/fake-agents";
-import { layoutTestInstall, type TestInstall } from "@ttasks/testkit";
+import { layoutTestInstall, testEnv, type TestInstall } from "@ttasks/testkit";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
 import type { LaunchOptions, TerminalSeams } from "../src/launch/index.ts";
 import {
@@ -99,14 +99,9 @@ export function stopPid(pid: number): void {
   }
 }
 
-/** The environment of a shim under test: this process's without TTasks or agent variables. */
+/** The environment of a shim under test: a test's clean one (testEnv), with TTASKS_HOME set. */
 export function shimEnv(home: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  const marker = /^(TTASKS_|CLAUDE|CODEX_|T3CODE_)/i;
-  for (const [name, value] of Object.entries(process.env)) {
-    if (!marker.test(name)) env[name] = value;
-  }
-  return { ...env, TTASKS_HOME: home, ...extra };
+  return testEnv({ TTASKS_HOME: home, ...extra });
 }
 
 /** A shim's rpc session with the service: the `shim` class, as `ttasks shim` connects. */

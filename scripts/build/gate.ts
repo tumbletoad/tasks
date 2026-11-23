@@ -13,6 +13,7 @@ import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { hostFacts, resolveLayout } from "../../packages/service/src/hub/paths.ts";
+import { testEnv } from "../../packages/testkit/src/env.ts";
 import { layoutTestInstall } from "../../packages/testkit/src/install.ts";
 
 export interface GateRow {
@@ -40,13 +41,6 @@ export const GATE_ROWS = [
   "candidate-bridge",
 ] as const;
 
-/** The caller's environment without any TTasks variable, which the launcher would set or remove. */
-function cleanEnv(): NodeJS.ProcessEnv {
-  return Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("TTASKS_")),
-  );
-}
-
 export function runBuiltGate(
   versionFolder: string,
   work: string,
@@ -59,7 +53,7 @@ export function runBuiltGate(
   const run = (args: readonly string[]) =>
     spawnSync(install.versionLauncher, args, {
       cwd: root,
-      env: cleanEnv(),
+      env: testEnv(),
       encoding: "utf8",
       windowsHide: true,
       timeout: 120_000,

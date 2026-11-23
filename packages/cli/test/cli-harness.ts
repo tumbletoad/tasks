@@ -13,7 +13,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isAgentMarker, LocalError } from "@ttasks/bridge/protocol";
+import { LocalError } from "@ttasks/bridge/protocol";
 import {
   diagnostics,
   openSession,
@@ -52,15 +52,11 @@ export interface Ran {
 }
 
 /**
- * The environment of a `ttasks` child: the service's (TTASKS_HOME, no other TTasks variable), without
- * the agent markers of the shell that runs the tests, so the class is `cli-script` unless `extra`
- * adds a marker.
+ * The environment of a `ttasks` child: the service's (serviceEnv), so the class is `cli-script`
+ * unless `extra` adds a marker.
  */
 export function cliEnv(home: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const env = Object.fromEntries(
-    Object.entries(serviceEnv(home)).filter(([name]) => !isAgentMarker(name)),
-  );
-  return { ...env, ...extra };
+  return serviceEnv(home, extra);
 }
 
 export interface CliWorld {

@@ -104,6 +104,25 @@ const noConsoleless = [
       'A test\'s process started detached has no console on Windows, and each console program it starts opens a window. Use detached: process.platform !== "win32", or say in a disable comment why it starts none.',
   },
 ];
+// A test's child gets its clean environment from testEnv() of the test kit, the one place that also
+// names an Agent Monitor that does not exist: a launcher that removes TTasks's variables by hand
+// would let its service run the machine's `ttam`.
+const ENV_MESSAGE =
+  "Build a child's environment with testEnv() of the test kit: it removes every TTasks variable and names no real Agent Monitor.";
+const noHandEnv = [
+  {
+    selector: "CallExpression[callee.property.name='startsWith'] > Literal[value=/^TTASKS_$/i]",
+    message: ENV_MESSAGE,
+  },
+  {
+    selector: "CallExpression[callee.property.name='startsWith'] > Identifier[name='ENV_PREFIX']",
+    message: ENV_MESSAGE,
+  },
+  {
+    selector: "CallExpression[callee.property.name='test'][callee.object.regex.pattern=/TTASKS_/]",
+    message: ENV_MESSAGE,
+  },
+];
 const umaskImports = ["process", "node:process"].map((name) => ({
   name,
   importNames: ["umask"],
@@ -279,7 +298,7 @@ export default defineConfig([
   {
     files: TEST_FILES,
     rules: {
-      "no-restricted-syntax": ["error", ...noShell, ...noConsoleless],
+      "no-restricted-syntax": ["error", ...noShell, ...noConsoleless, ...noHandEnv],
       "no-restricted-imports": "off",
     },
   },

@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as esbuild from "esbuild";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { testEnv } from "../../packages/testkit/src/env.ts";
 import { repoRoot } from "../run.ts";
 import {
   BRIDGE_BUILTINS,
@@ -246,13 +247,10 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
 
   test("the bundled entry runs the CLI and turns on the compile cache under the install's cache", () => {
     const home = join(work, "home");
-    const env = Object.fromEntries(
-      Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("TTASKS_")),
-    );
     const ran = spawnSync(
       process.execPath,
       ["--report-exclude-env", join(work, "one", "lib", "ttasks.mjs"), "version"],
-      { env: { ...env, TTASKS_HOME: home }, encoding: "utf8", windowsHide: true, timeout: 60_000 },
+      { env: testEnv({ TTASKS_HOME: home }), encoding: "utf8", windowsHide: true, timeout: 60_000 },
     );
     expect(ran.stderr).toBe("");
     expect(ran.stdout.replaceAll("\r\n", "\n")).toBe(
@@ -308,9 +306,6 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
   });
 
   test("ttasks mcp through the bundled entry is the bridge, answering from lib/mcp-offline.json", () => {
-    const env = Object.fromEntries(
-      Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("TTASKS_")),
-    );
     // No service runs in this TTASKS_HOME, so the bridge answers initialize from its offline file.
     const initialize = {
       jsonrpc: "2.0",
@@ -326,7 +321,7 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
       process.execPath,
       ["--report-exclude-env", join(work, "one", "lib", "ttasks.mjs"), "mcp"],
       {
-        env: { ...env, TTASKS_HOME: join(work, "mcp-home") },
+        env: testEnv({ TTASKS_HOME: join(work, "mcp-home") }),
         input: `${JSON.stringify(initialize)}\n`,
         encoding: "utf8",
         windowsHide: true,
