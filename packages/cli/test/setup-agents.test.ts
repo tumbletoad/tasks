@@ -593,4 +593,40 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
     },
     SLOW,
   );
+
+  test(
+    "setup's own record unreadable: remove turns every home's access off by its row, says where the record is, and changes no file",
+    async () => {
+      const before = read();
+      const planned = JSON.parse((await run(["setup", "agents", "--json"], false)).stdout) as {
+        apply: string[];
+      };
+      expect((await run([...planned.apply.slice(1), "--json"])).code).toBe(0);
+      expect((await rows()).map((r) => r.app).sort()).toEqual(["claude-code", "codex"]);
+      const withEntries = read();
+      const kept = readFileSync(recordFile());
+      const damaged = '{"format": 2, "homes": [';
+      writeFileSync(recordFile(), damaged);
+      try {
+        // The preview turns nothing on.
+        const preview = await run(["setup", "agents"], false);
+        expect(preview.code, preview.stderr).toBe(0);
+        expect(preview.stdout).toContain("cannot read its own record of the agent homes");
+        expect(preview.stdout).toContain("Nothing was changed.");
+        const removed = await run(["setup", "agents", "--remove"]);
+        expect(removed.code, removed.stdout + removed.stderr).toBe(0);
+        expect(removed.stdout).toContain(recordFile());
+        expect(removed.stdout).toContain("Access is off.");
+        expect(await rows()).toEqual([]);
+        expect(read()).toEqual(withEntries);
+        expect(readFileSync(recordFile(), "utf8")).toBe(damaged);
+      } finally {
+        writeFileSync(recordFile(), kept);
+      }
+      // Readable again: the next remove takes the entries out.
+      expect((await run(["setup", "agents", "--remove"])).code).toBe(0);
+      expect(read()).toEqual(before);
+    },
+    SLOW,
+  );
 });

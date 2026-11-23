@@ -33,6 +33,8 @@ export interface AppRow {
 export interface AppsView {
   readonly space: string;
   readonly rows: readonly AppRow[];
+  /** Setup's own record when it cannot be read: only turning the tools off works then. */
+  readonly record: string | undefined;
 }
 
 export interface Outcome {
@@ -100,7 +102,7 @@ export function viewOf(value: unknown): AppsView {
       },
     ];
   });
-  return { space: value["space"], rows };
+  return { space: value["space"], rows, record: text(value["record"]) };
 }
 
 export function appliedOf(value: unknown): Applied {

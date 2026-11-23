@@ -93,6 +93,7 @@ import { parseStrictJson } from "./json.ts";
 import { listedAsManaged, trackedByAnotherRepository } from "./managed.ts";
 import {
   AGENT_APPS,
+  isAgentApp,
   readRecords,
   SetupStateInvalid,
   SetupStateTooLarge,
@@ -199,7 +200,12 @@ export type Refusal =
   /** Claude Desktop's file is not there yet: the app makes it in its developer settings. */
   | "not_set_up"
   /** Several Claude Desktop configuration files: `--home` names the one the app uses. */
-  | "ambiguous";
+  | "ambiguous"
+  /**
+   * Setup's own record cannot be read: a home's access can still be turned off, and no file, the
+   * record included, is changed until it can be read.
+   */
+  | "record_unreadable";
 
 export type HomeState =
   /** No entry of TTasks's name, and setup can add one. */
@@ -924,7 +930,13 @@ const recordOf = (records: readonly HomeRecord[], home: AgentHome, platform: Nod
  * home otherwise. Remove, then apply, moves an entry to what the machine says now.
  */
 export async function survey(input: SetupInput): Promise<HomeView[]> {
-  const records = readRecords(input.stateDir);
+  let records: HomeRecord[];
+  try {
+    records = readRecords(input.stateDir);
+  } catch (error) {
+    if (!(error instanceof SetupStateInvalid)) throw error;
+    return unrecorded(input);
+  }
   const found = discover(input);
   const homes = await agentHomes(input, found);
   for (const record of records) {
@@ -940,6 +952,45 @@ export async function survey(input: SetupInput): Promise<HomeView[]> {
     );
   }
   return views;
+}
+
+/**
+ * Every home while setup's own record cannot be read: the homes found, and the homes the service's
+ * live rows (`input.rows`) name, each with its row's instance and refused as `record_unreadable`.
+ * Turning one off revokes its access and nothing else (removeHome); no app's settings file is
+ * opened, and nothing can be turned on.
+ */
+async function unrecorded(input: SetupInput): Promise<HomeView[]> {
+  const found = discover(input);
+  const homes = await agentHomes(input, found);
+  const rows = input.rows ?? [];
+  for (const row of rows) {
+    if (!isAgentApp(row.app)) continue;
+    if (homes.some((h) => h.app === row.app && samePath(input.platform, h.home, row.home))) {
+      continue;
+    }
+    homes.push({
+      app: row.app,
+      home: row.home,
+      file: fileOf(input, row.app, row.home, false),
+      isDefault: false,
+      variable: targetDef(APPS[row.app].target).detect.homes?.env ?? "",
+      instance: row.instance,
+      account: "",
+      hosts: hostsOf(input, found, row.app, row.home, false),
+      managed: false,
+    });
+  }
+  return homes.map((home) => {
+    const row = rows.find((r) => r.app === home.app && samePath(input.platform, r.home, home.home));
+    return {
+      home: row === undefined ? home : { ...home, instance: row.instance },
+      state: "refused",
+      refusal: "record_unreadable",
+      sha256: null,
+      parent: false,
+    };
+  });
 }
 
 /**
@@ -1281,8 +1332,8 @@ function stillAsRead(home: AgentHome, before: Buffer | undefined): boolean {
  * Puts `whole` in place of the bytes `before` setup read (undefined: no file yet), with the file's
  * own mode. The new file is written and flushed beside the old one first; under the app's own lock
  * the file is only compared once more and the new one renamed over it, or, where there was no
- * file, linked into place, so a file that appeared meanwhile is never replaced. A file the OS will
- * not let setup write (read-only, held by another program, a full disk) is `unwritable`.
+ * file, put in place only where nothing is (StagedFile.create). A file the OS will not let setup
+ * write (read-only, held by another program, a full disk) is `unwritable`.
  */
 async function writeHomeFile(
   input: SetupInput,
@@ -1536,6 +1587,10 @@ export async function removeHome(
     };
   }
   if (record === undefined) {
+    // Without its record setup changes no file: the access is what turning off reaches.
+    if (view.refusal === "record_unreadable") {
+      return { home, result: "left", reason: "record_unreadable", access: "off" };
+    }
     return { home, result: "unchanged", reason: "not_registered", access: "off" };
   }
   const removing = { ...record, state: "removing" as const };
@@ -1605,9 +1660,16 @@ async function takeOut(
  * Settles what a setup run left midway (a crash, a closed terminal, an undo that could not finish):
  * run first by every setup that changes the homes, under the setup lock, so a record that is not
  * `applied` then is no other run's. Each is finished as a removal (removeHome), whatever it was.
+ * A record that cannot be read leaves nothing to settle: survey says so for each home.
  */
 export async function settleHomes(input: SetupInput, access: Access): Promise<Outcome[]> {
-  const records = readRecords(input.stateDir).filter((r) => r.state !== "applied");
+  let records: HomeRecord[];
+  try {
+    records = readRecords(input.stateDir).filter((r) => r.state !== "applied");
+  } catch (error) {
+    if (error instanceof SetupStateInvalid) return [];
+    throw error;
+  }
   if (records.length === 0) return [];
   const found = discover(input);
   const outcomes: Outcome[] = [];

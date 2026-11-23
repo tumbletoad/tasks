@@ -87,6 +87,8 @@ export class SetupStateUnsafe extends Error {
 }
 
 export const setupDir = (stateDir: string): string => join(stateDir, SETUP_DIR);
+/** Setup's record of the agent homes: the file a person is told of when it cannot be read. */
+export const recordFile = (stateDir: string): string => join(setupDir(stateDir), SETUP_FILE);
 
 const text = (value: unknown): value is string => typeof value === "string";
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every(text);
@@ -180,7 +182,7 @@ function fromFormat1(value: unknown): HomeRecord | undefined {
  * none; a damaged one throws.
  */
 export function readRecords(stateDir: string): HomeRecord[] {
-  const doc = readStateFile(join(setupDir(stateDir), SETUP_FILE));
+  const doc = readStateFile(recordFile(stateDir));
   if (doc === undefined) return [];
   const homes = stateField(doc, "homes");
   const format = stateField(doc, "format");

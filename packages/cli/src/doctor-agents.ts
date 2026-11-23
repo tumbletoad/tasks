@@ -249,7 +249,7 @@ export async function agentChecks(
       {
         id: "agents",
         status: "fail",
-        detail: `Setup's record of the agent homes (setup/agents.json in the state folder) cannot be read, so setup changes nothing. Move it aside, take ${PRODUCT_NAME}'s entries out of the apps by hand, then run: ${CLI_NAME} setup agents`,
+        detail: `Setup's record of the agent homes (setup/agents.json in the state folder) cannot be read, so setup changes no file. Turning access off still works (${CLI_NAME} setup agents --remove, or Settings). To clean up, move the record aside, take ${PRODUCT_NAME}'s entries out of the apps by hand, then run: ${CLI_NAME} setup agents`,
       },
       await blockCheck(io, state, options),
       ...SKIPPED_ROWS,

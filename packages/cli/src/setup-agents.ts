@@ -74,6 +74,7 @@ import {
   PRINT_APPS,
   PRINT_HOMES,
   PRINT_LABELS,
+  recordFile,
   removeHome,
   rowAccess,
   runCommand,
@@ -279,6 +280,7 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
   other_space: `it names another space: run ${CLI_NAME} setup agents --remove first`,
   grant_failed: `${PRODUCT_NAME}'s service did not give it its grant row, so its entry was taken out again`,
   instance_taken: `another agent home is registered as this instance, so its entry was taken out again: run ${CLI_NAME} setup agents again for a free one, or give this home an instance of its own in machine.toml`,
+  record_unreadable: `${PRODUCT_NAME} cannot read its own record of the agent homes, so it changes no file there: ${CLI_NAME} setup agents --remove still turns access off`,
   revoke_failed: `${PRODUCT_NAME}'s service did not take its access back, so nothing was changed: run ${CLI_NAME} setup agents --remove again while the service runs`,
   unwritable:
     "its file could not be written: it is read-only, another program holds it, or the disk is full",
@@ -569,9 +571,25 @@ export async function agentsCommand(
         const access = rowAccess(rowCall(call));
         const { outcomes, notes, blocks } = await withSetupLock(input.stateDir, async () => {
           const done: Outcome[] = mcp ? await settleHomes(input, access) : [];
-          const surveyed = await survey(input);
+          let surveyed = await survey(input);
           const said: string[] = [];
-          if (mcp) {
+          const unrecorded = surveyed.some((view) => view.refusal === "record_unreadable");
+          if (mcp && unrecorded) {
+            // Without its record setup reaches a home by its live row: the access goes, and no
+            // file changes.
+            const live = await withRows(input, call);
+            surveyed = await survey(live);
+            const rowed = (view: HomeView) =>
+              (live.rows ?? []).some(
+                (row) =>
+                  row.app === view.home.app && samePath(input.platform, row.home, view.home.home),
+              );
+            for (const view of surveyed.filter((v) => selected(v) && rowed(v))) {
+              done.push(await removeHome(input, view, access));
+            }
+            said.push(...(await revokeLeftRows(input, selected, call)));
+            said.push(recordUnreadableText(input.stateDir));
+          } else if (mcp) {
             const views = surveyed.filter((view) => selected(view) && view.record !== undefined);
             // Reverse order (A3 3.13.1): the latest apply first.
             views.sort((a, b) => (b.record?.at ?? "").localeCompare(a.record?.at ?? ""));
@@ -929,6 +947,10 @@ async function blockPlan(
   );
   return planBlocks(views.filter(selected));
 }
+
+/** What a remove says when setup's own record cannot be read: the access went, nothing else. */
+const recordUnreadableText = (stateDir: string): string =>
+  `${PRODUCT_NAME} cannot read its own record of the agent homes, ${recordFile(stateDir)}, so a remove only takes the access away and changes no file: the record and each app's entry stay as they are. ${CLI_NAME} doctor says how to clean them up.`;
 
 /** A remove of the entries leaves the blocks: they are a part of their own. */
 const BLOCKS_STAY = `The instruction blocks setup wrote stay: ${CLI_NAME} setup agents --remove --parts block takes them out.`;

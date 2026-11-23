@@ -15,7 +15,7 @@ import {
   type AppsView,
 } from "../src/hub/agent-apps.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";
-import { configOf, removeRuntimeDir, serviceEnv, tempRoot } from "./harness.ts";
+import { configOf, removeRuntimeDir, serviceEnv, stateOf, tempRoot } from "./harness.ts";
 import { post } from "./http-client.ts";
 import { signIn } from "./http-world.ts";
 import { classSession } from "./ops-helpers.ts";
@@ -322,6 +322,54 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
         on: false,
         change: "add",
       });
+    },
+    SLOW,
+  );
+
+  it(
+    "with setup's own record unreadable the page names it, every home with access turns off, nothing turns on, and no file changes",
+    async () => {
+      const record = join(stateOf(w.home), "setup", "agents.json");
+      const claudeFile = join(w.user, ".claude.json");
+      const look = async () => (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+      const first = await look();
+      const before = row(first, "claude-code");
+      if (!before.tools?.on) {
+        await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: before.key, part: "tools", on: true, plan: before.tools?.plan }],
+        });
+      }
+      const kept = readFileSync(record);
+      const damaged = '{"format": 2, "homes": [';
+      writeFileSync(record, damaged);
+      const files = [claudeFile, join(w.user, ".codex", "config.toml")];
+      const bytes = files.map((f) => readFileSync(f));
+      try {
+        const seen = await look();
+        expect(seen.record).toMatch(/agents\.json$/u);
+        const claude = row(seen, "claude-code");
+        expect(claude.tools).toMatchObject({
+          on: true,
+          change: "remove",
+          why: "record_unreadable",
+        });
+        const off = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: claude.key, part: "tools", on: false, plan: claude.tools?.plan }],
+        });
+        expect(off.result.outcomes).toMatchObject([{ result: "done" }]);
+        // Off, and it cannot be turned on again while the record cannot be read.
+        expect(row(off.result.view, "claude-code").tools).toMatchObject({
+          on: false,
+          change: null,
+          why: "record_unreadable",
+        });
+        expect(files.map((f) => readFileSync(f))).toEqual(bytes);
+        expect(readFileSync(record, "utf8")).toBe(damaged);
+      } finally {
+        writeFileSync(record, kept);
+      }
     },
     SLOW,
   );

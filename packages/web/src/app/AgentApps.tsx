@@ -218,6 +218,11 @@ export function AgentApps({
     <section className={styles.apps} aria-busy={busy}>
       {heading}
       <p className={styles.lead}>{t(firstStart ? "apps.leadFirst" : "apps.lead")}</p>
+      {view.record === undefined ? null : (
+        <p className={styles.note} data-part="record" role="status">
+          {t("apps.recordUnreadable", { file: view.record })}
+        </p>
+      )}
       {view.rows.length === 0 ? (
         <p className={styles.note}>{t("apps.none")}</p>
       ) : (

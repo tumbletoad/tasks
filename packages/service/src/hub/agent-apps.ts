@@ -49,6 +49,7 @@ import {
   planChange,
   planOf,
   planToken,
+  recordFile,
   removeHome,
   rowAccess,
   runCommand,
@@ -129,6 +130,11 @@ export interface AppsView {
   /** The space a new entry names: the tab's. */
   readonly space: string;
   readonly rows: readonly AppRow[];
+  /**
+   * Setup's own record, shown with `~`, when it cannot be read: each home's access can be turned
+   * off, and nothing else changes until it can be read.
+   */
+  readonly record?: string;
 }
 
 export interface AppsChange {
@@ -420,6 +426,9 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
         },
       };
     }),
+    ...(views.some((v) => v.refusal === "record_unreadable")
+      ? { record: shown(recordFile(host.stateDir)) }
+      : {}),
   };
   return { view, input, items, offers: byRow, owners };
 }

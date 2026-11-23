@@ -894,6 +894,57 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
+    "setup's own record unreadable: each home with access is turned off by its live row, nothing is turned on, and the record and the files stay as they are",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        const file = a.file(w);
+        seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
+        expect((await apply(w, a)).result, a.app).toBe("applied");
+        const selected = (await viewOf(w, a)).home;
+        const damaged = Buffer.from('{"format": 2, "homes": [');
+        writeFileSync(recordPath(w), damaged);
+        const before = readFileSync(file);
+        // A home that only the service's row still names, as after its folder was renamed.
+        const gone = join(w.home, ".codex-gone");
+        await w.rows.grant(
+          { ...selected, app: "codex", home: gone, instance: "codex-gone" },
+          SPACE,
+        );
+        const input: SetupInput = {
+          ...w.input,
+          rows: w.rows.live.map(({ app, home, instance }) => ({ app, home, instance })),
+        };
+        expect(await settleHomes(input, w.rows)).toEqual([]);
+        const views = await survey(input);
+        for (const v of views) {
+          expect(v, a.app).toMatchObject({ state: "refused", refusal: "record_unreadable" });
+        }
+        const view = views.find((v) => v.home.app === a.app && v.home.home === selected.home);
+        const rowOnly = views.find((v) => v.home.home === gone);
+        if (view === undefined || rowOnly === undefined) throw new Error(`no ${a.app} home`);
+        // Nothing is turned on.
+        expect(planOf(input, [view], SPACE)[0]?.change, a.app).toBeUndefined();
+        expect(await applyHome(input, view, SPACE, w.rows), a.app).toMatchObject({
+          result: "left",
+          reason: "record_unreadable",
+        });
+        for (const v of [view, rowOnly]) {
+          expect(await removeHome(input, v, w.rows), a.app).toMatchObject({
+            result: "left",
+            reason: "record_unreadable",
+            access: "off",
+          });
+        }
+        expect(w.rows.live, a.app).toEqual([]);
+        expect(readFileSync(file), a.app).toEqual(before);
+        expect(readFileSync(recordPath(w)), a.app).toEqual(damaged);
+      }
+    },
+    SLOW,
+  );
+
+  test(
     "on a volume without hard links (FAT, exFAT, a share) setup still creates a missing file whole, and removes it again",
     async () => {
       const real = fs.linkSync;
