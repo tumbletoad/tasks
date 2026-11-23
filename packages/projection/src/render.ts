@@ -20,6 +20,7 @@
 //   GFM viewer's link on a bare URL, which shows its own target, may still render. The catalogue
 //   holds every text exactly.
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { localDate } from "@ttasks/contracts/day";
 import { formatEntryRef, formatTaskRef } from "@ttasks/storage";
 
 /** The projection's format (A1 3.17 keeps it apart from the schema). A new one rebuilds the tree. */
@@ -137,18 +138,6 @@ export interface Groups {
   readonly projects: readonly Group[];
 }
 
-/** The calendar date of `ms` in `timeZone`, as `YYYY-MM-DD`. */
-export function dateIn(ms: number, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(ms));
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
-}
-
 /**
  * A title's slug: ASCII letters and digits in lower case, words joined by `-`, at most SLUG_MAX
  * characters, cut at a word where one fits. A title without any (CJK, emoji) gives `task`.
@@ -171,7 +160,7 @@ export function slugOf(title: string): string {
 export function taskPath(prefix: string, task: TaskInput, timeZone: string): string {
   const name = `${formatTaskRef(prefix, task.ref)}-${slugOf(task.title)}.md`;
   if (task.lifecycle === "active") return `open/${name}`;
-  const year = dateIn(task.completedAt ?? task.createdAt, timeZone).slice(0, 4);
+  const year = localDate(task.completedAt ?? task.createdAt, timeZone).slice(0, 4);
   return `${task.lifecycle}/${year}/${name}`;
 }
 
@@ -256,12 +245,12 @@ const sep = " · ";
 
 function noteLine(note: NoteInput, timeZone: string): string {
   const to = note.addressee === "agents" ? " → agents" : "";
-  const head = `${formatEntryRef("note", note.ordinal)}${sep}${dateIn(note.at, timeZone)}${sep}${mdLine(note.author)}${to}: `;
+  const head = `${formatEntryRef("note", note.ordinal)}${sep}${localDate(note.at, timeZone)}${sep}${mdLine(note.author)}${to}: `;
   return item(head, note.body);
 }
 
 function logLine(entry: LogInput, timeZone: string): string {
-  const head = `${formatEntryRef("log", entry.ordinal)}${sep}${dateIn(entry.at, timeZone)}${sep}${mdLine(entry.author)}${sep}${mdLine(entry.kind)}: `;
+  const head = `${formatEntryRef("log", entry.ordinal)}${sep}${localDate(entry.at, timeZone)}${sep}${mdLine(entry.author)}${sep}${mdLine(entry.kind)}: `;
   return item(head, entry.body);
 }
 
@@ -270,7 +259,7 @@ function sourceLine(source: SourceInput, timeZone: string): string {
     source.kind,
     source.title,
     source.who,
-    source.at === null ? null : dateIn(source.at, timeZone),
+    source.at === null ? null : localDate(source.at, timeZone),
     source.ref,
     source.url,
     source.key === null ? null : `key ${source.key}`,
@@ -428,12 +417,17 @@ export function projectionJson(mark: Watermark): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+/** A due's day: a date as it is, a due time's day in `timeZone`, as search and Today read it. */
+function dueDay(due: string, timeZone: string): string {
+  return due.length === 10 ? due : localDate(Date.parse(due), timeZone);
+}
+
 /** One open task's line in index.md. */
-function indexLine(entry: CatalogEntry): string {
+function indexLine(entry: CatalogEntry, timeZone: string): string {
   const facts = [
     entry.status,
     `P${String(entry.priority)}`,
-    ...(entry.due === null ? [] : [`due ${entry.due.slice(0, 10)}`]),
+    ...(entry.due === null ? [] : [`due ${dueDay(entry.due, timeZone)}`]),
   ];
   // The reference and the path follow the tree's grammar; the title and the facts are task text.
   return `- [${entry.ref}](${entry.path}) ${mdLine(entry.title)}${sep}${mdLine(facts.join(sep))}`;
@@ -488,7 +482,11 @@ function lookupOf(list: readonly Group[]): {
  * their groups once and each title is looked up once, so the cost grows with the tasks, not with
  * tasks times groups.
  */
-export function indexText(entries: Iterable<CatalogEntry>, groups: Groups): string {
+export function indexText(
+  entries: Iterable<CatalogEntry>,
+  groups: Groups,
+  timeZone: string,
+): string {
   const open = sortEntries(entries)
     .filter((e) => e.lifecycle === "active")
     .sort((a, b) => a.priority - b.priority || refNumber(a.ref) - refNumber(b.ref));
@@ -510,7 +508,7 @@ export function indexText(entries: Iterable<CatalogEntry>, groups: Groups): stri
         heading(3, project === null ? "No project" : (projects.titles.get(project) ?? project)),
         "",
       );
-      for (const task of byProject.get(project) ?? []) lines.push(indexLine(task));
+      for (const task of byProject.get(project) ?? []) lines.push(indexLine(task, timeZone));
       lines.push("");
     }
   }

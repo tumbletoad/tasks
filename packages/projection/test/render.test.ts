@@ -301,6 +301,7 @@ describe("[A1.5.projection.render] what a task's file shows", () => {
         ],
         projects: [{ slug: "lumen-portal", title: "Lumen portal", area: "lumen" }],
       },
+      "UTC",
     );
     expect(text).toBe(
       [
@@ -430,7 +431,7 @@ describe("[A1.5.projection.escape] task text in the view is shown, never run: on
     const text = indexText([entry], {
       areas: [{ slug: "lumen", title: "<b>Lumen</b>" }],
       projects: [{ slug: "lumen-portal", title: "[Portal](javascript:x)", area: "lumen" }],
-    });
+    }, "UTC");
     const lines = text.split("\n");
     const own = `[${entry.ref}](${entry.path})`;
     for (const line of lines.map((l) => unescaped(l.replace(own, "")))) {

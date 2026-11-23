@@ -731,7 +731,7 @@ export class Projector {
     };
     const contents: [string, string][] = [
       ["README.md", README_TEXT],
-      ["index.md", indexText(entries, read.groups)],
+      ["index.md", indexText(entries, read.groups, this.#timeZone)],
       ["catalog.jsonl", catalogText(mark, entries)],
       [".projection.json", projectionJson(mark)],
     ];

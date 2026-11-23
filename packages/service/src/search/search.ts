@@ -25,7 +25,7 @@ import {
   type SpaceRow,
   type TransactionMode,
 } from "@ttasks/storage";
-import { dateIn } from "../ops/dates.ts";
+import { localDate } from "@ttasks/contracts/day";
 import { invalid } from "../ops/errors.ts";
 import { keysOf, present, taskRow } from "../ops/read.ts";
 import { endingOf, endingText } from "../ops/task-rows.ts";
@@ -423,7 +423,7 @@ function rowOf(
       id: entry.id,
       task: formatTaskRef(prefix, Number(row["ref"])),
       title: cut(str(row["title"]), ROW_CUTS.title),
-      date: dateIn(Number(row["learned_at"]), timeZone),
+      date: localDate(Number(row["learned_at"]), timeZone),
       ...present("area", row["area_title"]),
       ...present("project", row["project_title"]),
       text: cut(str(row["learning"]), ROW_CUTS.learning),
@@ -455,7 +455,7 @@ function rowOf(
     kind: "task",
     title: cut(str(row["title"]), ROW_CUTS.title),
     ...(row["lifecycle"] !== "active" && typeof finishedAt === "number"
-      ? { completed: dateIn(finishedAt, timeZone) }
+      ? { completed: localDate(finishedAt, timeZone) }
       : {}),
     ...shown,
     ...ending,

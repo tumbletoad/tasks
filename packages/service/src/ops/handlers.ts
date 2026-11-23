@@ -38,6 +38,7 @@ import {
   type PreferenceSpec,
   type PrefValue,
 } from "@ttasks/contracts";
+import { localDate } from "@ttasks/contracts/day";
 import {
   folderKey,
   freeSlug,
@@ -94,7 +95,7 @@ import {
 } from "../launch/open.ts";
 import type { Session, SessionPort } from "./binding.ts";
 import { checkGrant, grantRefused, standingOf, type HomeGate } from "./grant.ts";
-import { dateIn, dueDate, localTimeZone, pastInstant } from "./dates.ts";
+import { dueDate, localTimeZone, pastInstant } from "./dates.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
 import {
   checkFolder,
@@ -434,7 +435,7 @@ async function callWith(
     entry,
     space,
     input: parsed.data,
-    today: dateIn(now, (host.timeZone ?? localTimeZone)()),
+    today: localDate(now, (host.timeZone ?? localTimeZone)()),
   };
   const handler = HANDLERS[entry.name];
   if (handler === undefined) throw opUnknown();

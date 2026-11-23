@@ -2,6 +2,7 @@
 // of this build are the common ones: today, tomorrow, +3d, +2w and a weekday (the next one, today
 // included). A phrase this build does not know is `invalid_input`, never a guess. Until a space
 // has its own time zone preference, the space's time zone is this machine's.
+import { localDate } from "@ttasks/contracts/day";
 
 const ISO = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/;
 const OFFSET = /^\+([1-9][0-9]{0,2})([dw])$/;
@@ -10,18 +11,6 @@ const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 /** This machine's IANA time zone. */
 export function localTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
-}
-
-/** The calendar date of `ms` in `timeZone`, as `YYYY-MM-DD`. */
-export function dateIn(ms: number, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(ms));
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
 /** `date` plus `days` calendar days. */
@@ -103,7 +92,7 @@ export function pastInstant(
   const value = text.trim();
   let at: number;
   if (isCalendarDate(value)) {
-    if (value > dateIn(now, timeZone)) return "future";
+    if (value > localDate(now, timeZone)) return "future";
     const nine = Date.parse(`${value}T09:00:00Z`);
     at = Math.min(nine - offsetAt(nine - offsetAt(nine, timeZone), timeZone), now);
   } else if (INSTANT.test(value) && isCalendarDate(value.slice(0, 10))) {

@@ -8,7 +8,8 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { CLI_NAME } from "@ttasks/brand";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
 import { toolCaller } from "../src/mcp/index.ts";
-import { dateIn, localTimeZone } from "../src/ops/dates.ts";
+import { localDate } from "@ttasks/contracts/day";
+import { localTimeZone } from "../src/ops/dates.ts";
 import { opCall, type Binding, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
@@ -270,7 +271,7 @@ describe("[A3.bulk.dates] work recreated from another tool keeps when it happene
       });
       const [byDay, byInstant] = added["tasks"] as Json[];
       const day = (await timesOf(byDay?.["ref"])).created;
-      expect(dateIn(Date.parse(day), localTimeZone())).toBe("2025-03-04");
+      expect(localDate(Date.parse(day), localTimeZone())).toBe("2025-03-04");
       expect((await timesOf(byInstant?.["ref"])).created).toBe("2025-03-04T13:05:00.000Z");
 
       await call("task.finish", {
@@ -292,7 +293,7 @@ describe("[A3.bulk.dates] work recreated from another tool keeps when it happene
         request_id: rid(),
       });
       const log = (await timesOf(byDay?.["ref"])).log;
-      expect(dateIn(Date.parse(String(log)), localTimeZone())).toBe("2025-03-05");
+      expect(localDate(Date.parse(String(log)), localTimeZone())).toBe("2025-03-05");
 
       // A second pass finds the task finished long ago by its key: nothing new.
       const keyed = {
