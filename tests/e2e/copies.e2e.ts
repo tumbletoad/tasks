@@ -3,6 +3,7 @@
 // copy and why before the person acts; an edit, Run and Stop there keep the person's words and
 // never reach the original. A tab on the original stops when the original closes, and its drafts
 // outlive that. Fixture data only.
+import { resolve } from "node:path";
 import { expect, type Page, type WebSocketRoute } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { openTask, picture, showsSpace, signIn, spaceSwitcher } from "./page.ts";
@@ -131,6 +132,14 @@ test.describe("[A2.3.10.5.copies.e2e] a restored copy on the page is the copy th
         .getByRole("button", { name: `Run with ${CODEX_INSTANCE.label}` });
 
     // A run of the original that works until it is stopped, recorded in the backup as working.
+    const copies = async () =>
+      (
+        (await world.space("list", {})) as {
+          spaces: { id?: string; folder: string; state: string }[];
+        }
+      ).spaces.filter((s) => s.id === world.mira.id);
+    const own = (await copies()).find((s) => s.state === "open")?.folder;
+    if (own === undefined) throw new Error("no original folder");
     const ref = await added("Check the restored runs");
     world.codex(ref, ["hold"]);
     await openTask(page, world, ref);
@@ -152,6 +161,13 @@ test.describe("[A2.3.10.5.copies.e2e] a restored copy on the page is the copy th
     expect(where).toHaveLength(count);
     expect(new Set(where).size).toBe(count);
     await page.keyboard.press("Escape");
+    // From here on one restored copy is open beside the original: once the original closes, the
+    // space's ID means that copy and no other.
+    for (const other of await copies()) {
+      if (!same(other.folder, own) && !same(other.folder, folder) && other.state !== "closed") {
+        await world.space("close", { space: other.folder });
+      }
+    }
 
     // The copy's tab shows the copy's record of that run: its Stop and a new Run are refused with
     // the copy's reason, and nothing reaches the original.
@@ -181,9 +197,6 @@ test.describe("[A2.3.10.5.copies.e2e] a restored copy on the page is the copy th
     await openTask(page, world, only);
     const words = `Ask about the March totals (${tag})`;
     await row(only).locator('[data-part="composer"]').fill(words);
-    const listed = (await world.space("list", {})) as { spaces: { id?: string; folder: string }[] };
-    const own = listed.spaces.find((s) => s.id === world.mira.id && s.folder !== folder)?.folder;
-    if (own === undefined) throw new Error("no original folder");
     const frame = page.locator("[data-phase]");
     await page.route("**/api/v1/ws-ticket", (route) => route.fulfill({ status: 503, body: "{}" }));
     await sockets.at(-1)?.close();
@@ -227,3 +240,9 @@ async function openFolder(page: Page, world: World, folder: string): Promise<str
   await expect(page).toHaveURL(address);
   return address.exec(page.url())?.[1] ?? "";
 }
+
+/** Whether two folders are one, as this OS compares names. */
+const same = (a: string, b: string): boolean =>
+  process.platform === "win32" || process.platform === "darwin"
+    ? resolve(a).toLowerCase() === resolve(b).toLowerCase()
+    : resolve(a) === resolve(b);
