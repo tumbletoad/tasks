@@ -992,7 +992,7 @@
     },
     {
       "id": "A1.5.search.repair",
-      "title": "A space whose search index alone is damaged still backs up and its backup restores whole; a writer's open makes the index again from the tasks, and leaves a sound one as it is",
+      "title": "A space whose search index alone is damaged still backs up and its backup restores whole; a writer's open makes the index again from the tasks, gives a sound one filled by another definition this build's documents, and leaves a sound and current one as it is",
       "source": "A1 3.12, A1 3.18",
       "owner": "M3",
       "kind": "ci",
@@ -2883,7 +2883,7 @@
     },
     {
       "id": "A3.5.search.ranking",
-      "title": "Ranking and rows: a task appears once, ranked by its best document with A3 3.9.3's boosts and a snippet from that document; scopes, the learnings scope and the default scope; the last word as a prefix of two characters or more; negated words; filters by area with its projects, priority, focus, id and has:; the order without text; sort:effort and sort:-effort by the space's scale with unsized tasks last, a sort never negated, in an OR or twice; an agent never matches or sees an only-me note; titles and snippets cut at 90 and 100 characters",
+      "title": "Ranking and rows: a task appears once, ranked by its best document with A3 3.9.3's boosts and a snippet from that document; words found in different texts of one task find it together, a phrase only within one text; a source's key and its link's host and path find its task; scopes, the learnings scope and the default scope; the last word as a prefix of two characters or more; negated words; filters by area with its projects, priority, focus, id and has:; the order without text; sort:effort and sort:-effort by the space's scale with unsized tasks last, a sort never negated, in an OR or twice; an agent never matches or sees an only-me note; titles and snippets cut at 90 and 100 characters",
       "source": "A3 3.9.1, A3 3.9.2, A3 3.9.3, A3 3.9.4, A7 3.10 M3.05",
       "owner": "M3",
       "kind": "ci",
