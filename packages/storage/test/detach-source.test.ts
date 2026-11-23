@@ -252,6 +252,37 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
     expect(found.results[0]).toMatchObject({ status: "existing", task: a });
   });
 
+  // Each order of an add, a detach and a put back of one link in one request ends as the last of
+  // them asks: an add or a put back leaves it linked, a detach leaves it detached.
+  const steps = ["add", "unlink", "relink"] as const;
+  type Step = (typeof steps)[number];
+  const orders: Step[][] = [
+    ...steps.flatMap((x) => steps.map((y) => [x, y])),
+    ...steps.flatMap((x) =>
+      steps.filter((y) => y !== x).map((y) => [x, y, ...steps.filter((z) => z !== x && z !== y)]),
+    ),
+  ];
+  test.each([true, false].flatMap((linked) => orders.map((order) => ({ linked, order }))))(
+    "one request that changes a link several times ends as its last step asks: linked $linked, $order",
+    ({ linked, order }) => {
+      const key = "jira:ORD-1";
+      const a = capture([ticket(key)]);
+      const source = sourceOf(key);
+      if (!linked) applied(unlink(a, source));
+      const ops = order.map((step): Operation =>
+        step === "add"
+          ? { kind: "source.add", task: a, source: ticket(key) }
+          : { kind: `source.${step}`, task: a, source },
+      );
+      const result = send("human", ops, { base: fx.base() });
+      expect(["applied", "unchanged"]).toContain(result.status);
+      const last = order.at(-1);
+      expect(holders(key)).toEqual(last === "unlink" ? [] : [a]);
+      expect(Number(one("SELECT count(*) FROM sources"))).toBe(1);
+      expect(Number(one("SELECT count(*) FROM task_sources"))).toBe(1);
+    },
+  );
+
   test("a holder that detached the source itself, or was deleted, holds the key no more", () => {
     const a = capture([ticket("jira:FIX-1")]);
     const fix1 = sourceOf("jira:FIX-1");

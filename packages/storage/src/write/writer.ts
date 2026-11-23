@@ -1725,14 +1725,17 @@ export class SpaceWriter {
               if (key !== undefined) draftSources.set(key, source);
             } else {
               source = new RowReader("sources", row).id("id", "s");
-              // A link that exists at the start and was removed: reviving it changes its one
-              // field, which needs its link version or a base (A1 3.5).
+              // A link that exists at the start and is removed, as the request's earlier
+              // operations leave it: reviving it changes its one field, which needs its link
+              // version or a base (A1 3.5).
               const link = drafts.has(parent)
                 ? undefined
                 : conn.prepare(SQL.link).get({ task: parent, source });
-              if (link !== undefined && link["removed_at"] !== null) {
-                const id = `${parent}|${source}`;
-                starts.set(rowKey("task_sources", id), linkState(link));
+              const id = `${parent}|${source}`;
+              if (link !== undefined && !(links.get(id) ?? link["removed_at"] === null)) {
+                links.set(id, true);
+                const startKey = rowKey("task_sources", id);
+                if (!starts.has(startKey)) starts.set(startKey, linkState(link));
                 touches.push({
                   entity: "task_sources",
                   id,
