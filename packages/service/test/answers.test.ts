@@ -1,6 +1,6 @@
 // What an agent is told about its write is what happened: a retry with the same request ID gets
-// the answer the first call got, also for a write that changed nothing. A service in this process,
-// fixture text and temporary folders only.
+// the answer the first call got, also for a write that changed nothing; an import makes groups only
+// for the drafts it adds. A service in this process, fixture text and temporary folders only.
 import { mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -170,5 +170,58 @@ describe("[A3.answers.replay] a retry gets the answer the first call got", () =>
     });
     const retry = await call("task.update", update, USER);
     expect(retry).toEqual({ ...first, replayed: true });
+  });
+});
+
+describe("[A3.answers.groups] an import makes groups only for the drafts it adds", () => {
+  const ticket = (key: string) => ({ key, kind: "ticket", title: "Fixture ticket" });
+
+  test("a draft that finds its task by key makes none of the groups it names", async () => {
+    await call("task.add", {
+      tasks: [{ title: "Keyed work", sources: [ticket("fixture:groups-1")] }],
+      request_id: rid(),
+    });
+    const again = await call("task.add", {
+      tasks: [
+        {
+          title: "Keyed work again",
+          area: "Unused area",
+          project: "Unused project",
+          sources: [ticket("fixture:groups-1")],
+        },
+      ],
+      request_id: rid(),
+    });
+    expect((again["tasks"] as Json[])[0]).toMatchObject({ result: "exists" });
+    expect(again["warnings"]).toEqual([]);
+    const names = await groupNames();
+    expect(names).not.toContain("Unused area");
+    expect(names).not.toContain("Unused project");
+  });
+
+  test("a group named by a matched draft and an added one is made once, for the added one", async () => {
+    await call("task.add", {
+      tasks: [{ title: "Keyed elsewhere", sources: [ticket("fixture:groups-2")] }],
+      request_id: rid(),
+    });
+    const added = await call("task.add", {
+      tasks: [
+        {
+          title: "Keyed elsewhere again",
+          area: "Shared area",
+          project: "Shared project",
+          sources: [ticket("fixture:groups-2")],
+        },
+        { title: "New in the shared project", area: "Shared area", project: "Shared project" },
+      ],
+      request_id: rid(),
+    });
+    expect((added["tasks"] as Json[]).map((t) => t["result"])).toEqual(["exists", "created"]);
+    const listed = (await call("group.manage", { action: "list" })) as {
+      areas: { name: string; projects: { name: string; active: number }[] }[];
+    };
+    expect(listed.areas.find((a) => a.name === "Shared area")?.projects).toEqual([
+      expect.objectContaining({ name: "Shared project", active: 1 }),
+    ]);
   });
 });

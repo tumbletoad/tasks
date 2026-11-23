@@ -408,8 +408,9 @@ interface StagedOp {
   learnings?: Id<"lr">[];
   /**
    * No write: `task.wrap_up` with `once` on a task wrapped already that it would not change, a
-   * matched draft's `log.add` whose entry the task has already, or a `task.delete` or
-   * `task.restore` that finds the task as it asks.
+   * matched draft's `log.add` whose entry the task has already, a `task.delete` or
+   * `task.restore` that finds the task as it asks, or a group create left out as unused
+   * (leaveOutUnusedGroups).
    */
   skip?: true;
   /** A skipped `task.restore` of a change: the task is in the Trash from a later change. */
@@ -1328,11 +1329,26 @@ export class SpaceWriter {
      */
     const changedFolders = new Set<string>();
 
+    /** The operations that name each area or project the request creates, by the group's ID. */
+    const users = new Map<string, Set<number>>();
+    const uses = (group: string, i: number) => {
+      const named = users.get(group);
+      if (named === undefined) users.set(group, new Set([i]));
+      else named.add(i);
+    };
+
     const ops = request.ops.map((op, i): StagedOp => {
       /** An area or project by ID or slug: first those the request creates, then the space's. */
-      const areaOf = (ref: string): Id<"a"> => draftAreas.get(ref) ?? resolveArea(conn, ref, i);
+      const areaOf = (ref: string): Id<"a"> => {
+        const drafted = draftAreas.get(ref);
+        if (drafted === undefined) return resolveArea(conn, ref, i);
+        uses(drafted, i);
+        return drafted;
+      };
       const projectOf = (ref: string): { id: Id<"p">; areaId: Id<"a"> | null } => {
-        const found = draftProjects.get(ref) ?? resolveProject(conn, ref, i);
+        const drafted = draftProjects.get(ref);
+        if (drafted !== undefined) uses(drafted.id, i);
+        const found = drafted ?? resolveProject(conn, ref, i);
         const moved = movedProjects.get(found.id);
         return moved === undefined ? found : { id: found.id, areaId: moved };
       };
@@ -2549,6 +2565,7 @@ export class SpaceWriter {
           throw misuse("An undo or redo is never staged");
       }
     });
+    leaveOutUnusedGroups(ops, users);
     return {
       ops,
       tasks,
@@ -2860,6 +2877,29 @@ function accepted(status: "applied" | "unchanged", asOf: AsOf): WriteResult {
 }
 
 /**
+ * An area or project the request creates for its other operations is left out when every one of
+ * them is: the drafts that name it all matched a task by key, so an import that adds nothing
+ * leaves no empty group behind. A group no operation names was asked for itself and stays. A
+ * project left out leaves its area unused too, so the projects are decided first.
+ */
+function leaveOutUnusedGroups(ops: StagedOp[], users: ReadonlyMap<string, ReadonlySet<number>>) {
+  const leftOut = (staged: StagedOp): boolean =>
+    staged.existing !== undefined || (isGroupCreate(staged.op) && staged.skip === true);
+  for (const staged of [...ops].reverse()) {
+    if (!isGroupCreate(staged.op)) continue;
+    const named = [...(users.get(staged.target) ?? [])].filter((i) => i !== staged.i);
+    if (named.length > 0 && named.every((i) => ops[i] !== undefined && leftOut(ops[i]))) {
+      // The commit keeps it in its place, without the text of a group nobody sees.
+      staged.skip = true;
+      staged.record = { unused: true };
+    }
+  }
+}
+
+const isGroupCreate = (op: Operation): boolean =>
+  op.kind === "area.create" || op.kind === "project.create";
+
+/**
  * One result per operation: created (it created its row), updated (it wrote a row the request
  * created, or a field of an existing row that changed) or unchanged.
  */
@@ -3082,6 +3122,8 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
       case "project.unarchive":
       case "project.delete":
       case "project.restore": {
+        // A group left out as unused (leaveOutUnusedGroups) has no row.
+        if (staged.skip === true) return { i, status, id: staged.target, version: 0 };
         const entity = op.kind.startsWith("area.") ? "areas" : "projects";
         const row = readRow(conn, entity, staged.target);
         return {
@@ -4232,6 +4274,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       return;
     }
     case "area.create": {
+      if (staged.skip === true) return;
       const last = conn.prepare(SQL.lastArea).get()?.["p"] ?? undefined;
       if (last !== undefined && !isPosition(last)) throw invalidValue("areas", "position");
       conn.prepare(SQL.insertAreaWith).run({
@@ -4249,6 +4292,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       return;
     }
     case "project.create": {
+      if (staged.skip === true) return;
       const area = staged.area ?? null;
       const last = conn.prepare(SQL.lastProject).get({ area })?.["p"] ?? undefined;
       if (last !== undefined && !isPosition(last)) throw invalidValue("projects", "position");

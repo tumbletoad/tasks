@@ -42,8 +42,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A task's reference, such as M-14, is not given to another task when the task is deleted or its
   creation is undone, when a backup is restored over the space, or when a restored copy is claimed.
 - Adding work by a source that an open task or a recently finished one already has finds that task
-  and keeps its fields. A task finished longer ago or a deleted one does not stand in the way of
-  new work.
+  and keeps its fields, and makes none of the areas or projects the work named. A task finished
+  longer ago or a deleted one does not stand in the way of new work.
 - A log entry given with such work, a finished task's follow-up included, goes on the one open task
   it found. When it found a finished task or several open ones, that request adds the entry to none
   of them, and the answer names the tasks it found and says so.

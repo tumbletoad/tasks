@@ -1853,8 +1853,14 @@ interface ResolvedDrafts {
   readonly list: Record<string, unknown>[];
   /** `area.create` and `project.create` for each new name, once per name, in first-named order. */
   readonly groups: Operation[];
-  /** One warning that names the groups the names made, so a name that matched nothing is seen. */
-  readonly made: string[];
+  /** Each group's kind and the input path of the name that made it, in the order of `groups`. */
+  readonly made: Made[];
+}
+
+/** A group a call's name makes: its kind, and the input path of that name. */
+interface Made {
+  readonly kind: "area" | "project";
+  readonly at: string;
 }
 
 /**
@@ -1892,8 +1898,7 @@ async function resolvedDrafts(
     throw storageFailure(error);
   }
   const groups: Operation[] = [];
-  /** The input paths of the names that made a group, by kind. */
-  const news = { area: [] as string[], project: [] as string[] };
+  const made: Made[] = [];
   const face = call.principal.origin;
   // The groups an earlier draft makes join the names, with the slugs the writer will give them, so
   // a later draft resolves them by the same rules as the space's own: one call answers as its
@@ -1901,7 +1906,8 @@ async function resolvedDrafts(
   const areas = [...names.areas];
   const projects = [...names.projects];
   const working: GroupNames = { areas, projects, aliases: names.aliases };
-  const made = new Set<string>();
+  /** The areas the call makes. */
+  const fresh = new Set<string>();
   const slugOf = (title: string, kind: "area" | "project"): string =>
     freeSlug(title, kind, (slug) =>
       (kind === "area" ? areas : projects).some((group) => group.slug === slug),
@@ -1915,7 +1921,7 @@ async function resolvedDrafts(
         let id = resolveGroup(working, "area", area, `${at}.area`, { face });
         if (id === undefined) {
           const created = newId("a");
-          made.add(created);
+          fresh.add(created);
           areas.push({
             id: created,
             slug: slugOf(area.trim(), "area"),
@@ -1923,7 +1929,7 @@ async function resolvedDrafts(
             area: null,
           });
           groups.push({ kind: "area.create", id: created, title: area.trim() });
-          news.area.push(`${at}.area`);
+          made.push({ kind: "area", at: `${at}.area` });
           id = created;
         }
         out["area"] = id;
@@ -1934,7 +1940,7 @@ async function resolvedDrafts(
         // An area the call makes holds only the projects the call makes there: a project of
         // that name elsewhere is no reason to refuse, and no typo of one there.
         const among =
-          within !== undefined && made.has(within)
+          within !== undefined && fresh.has(within)
             ? { ...working, projects: projects.filter((p) => p.area === within) }
             : working;
         let id = resolveGroup(among, "project", project, `${at}.project`, {
@@ -1955,14 +1961,14 @@ async function resolvedDrafts(
             title: project.trim(),
             ...(within === undefined ? {} : { area: within }),
           });
-          news.project.push(`${at}.project`);
+          made.push({ kind: "project", at: `${at}.project` });
           id = created;
         }
         out["project"] = id;
       }
       return out;
     });
-    return { list: resolved, groups, made: madeWarning(news.area, news.project) };
+    return { list: resolved, groups, made };
   } catch (error) {
     // A retry racing its first call: the request may have been decided meanwhile.
     if (error instanceof AppError && (await applied(call))) return standIns();
@@ -1975,9 +1981,22 @@ const MADE_SHOWN = 5;
 
 /**
  * The one warning for the groups a call's names made, whatever their number, so it fits the
- * answer. Not "<path>: ...": a draft that matched an existing task drops those, and its group was
- * made all the same. A project's name matched none in its area, which another area may have.
+ * answer, from the writer's result: a group that only drafts matching a task by key named is not
+ * made (the writer leaves it out), and is not said. Its names go with the request (`answer`), so a
+ * replay says the same. Not "<path>: ...": a draft that matched an existing task drops those, and
+ * a group it named first may be made for a later draft. A project's name matched none in its area,
+ * which another area may have. `at` is the index of the first group's result.
  */
+function madeOf(result: WriteResult, at: number): string[] {
+  const made = result.answer?.["made"];
+  if (!Array.isArray(made)) return [];
+  const created = (made as Made[]).filter((_, k) => result.results[at + k]?.status === "created");
+  return madeWarning(
+    created.filter((m) => m.kind === "area").map((m) => m.at),
+    created.filter((m) => m.kind === "project").map((m) => m.at),
+  );
+}
+
 function madeWarning(areas: readonly string[], projects: readonly string[]): string[] {
   const paths = [...areas, ...projects];
   if (paths.length === 0) return [];
@@ -1996,7 +2015,7 @@ const MADE = "Made ";
 
 /**
  * The warnings with the groups line first: a cut takes from the end, and the line says what no
- * other warning does. It is stored with the receipt, so a replay finds it there by its start.
+ * other warning does. A receipt of an earlier build holds it among its warnings, found by its start.
  */
 const madeFirst = (warnings: readonly string[]): string[] => [
   ...warnings.filter((w) => w.startsWith(MADE)),
@@ -2383,13 +2402,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // The folders' and the possible duplicates' warnings go with the request: the writer keeps
     // them with the result, so a replay says the first call's, never this call's late reading.
     // New groups first, so the drafts can name them; the drafts' results are read without them.
-    const result = ownResults(
-      await submit(call, [...named.groups, ...ops], {
-        warnings: [...named.made, ...duplicates, ...folders.warnings],
-        inserted: { at: 0, count: named.groups.length },
-        pathOf: draftPathOf(ops, ids, at, sourcePaths),
-      }),
-    );
+    const submitted = await submit(call, [...named.groups, ...ops], {
+      warnings: [...duplicates, ...folders.warnings],
+      answer: { made: named.made },
+      inserted: { at: 0, count: named.groups.length },
+      pathOf: draftPathOf(ops, ids, at, sourcePaths),
+    });
+    const result = ownResults(submitted);
     await markersAfter(call, ops, result);
     const outcomes = list.map((_, k) => draftOutcome(result, firsts[k] ?? 0));
     // A matched draft takes no folder and creates no task, so the warnings of its folder and its
@@ -2409,7 +2428,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...logAdded(result, draft, firsts[k] ?? 0),
         ...heldOf(result, sourcePaths, at(k)),
       })),
-      warnings: madeFirst([...sourceWarnings(result, sourcePaths), ...kept]),
+      warnings: madeFirst([
+        ...madeOf(submitted, 0),
+        ...sourceWarnings(result, sourcePaths),
+        ...kept,
+      ]),
       ...replayed(result),
     };
   },
@@ -2420,7 +2443,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const ops: Operation[] = [];
     /** The groups a new area or project name creates, before the task moves into them. */
     const groups: Operation[] = [];
-    const made: string[] = [];
+    const made: Made[] = [];
     const fields: string[] = [];
     const set = isRecord(input["set"]) ? input["set"] : {};
     // A3 3.4.6: a finished task is not a status. The input alone decides it, so no receipt.
@@ -2592,8 +2615,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         active: !anyLifecycle,
         ...(readBase === undefined || !dismissOnly ? {} : { base: readBase }),
         inserted: { at: 0, count: groups.length },
-        warnings: made,
-        answer: moveAnswer(move),
+        answer: { ...moveAnswer(move), made },
         pathOf: (i, field) =>
           ops[i]?.kind === "task.patch" && field !== undefined && /^[a-z_]+$/u.test(field)
             ? `set.${field}`
@@ -2619,7 +2641,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         : {}),
       as_of: result.as_of,
       ...(updated ? movedOf(result) : {}),
-      warnings: madeFirst([...sourceWarnings(result, sourcePaths), ...result.warnings]),
+      warnings: madeFirst([
+        ...madeOf(submitted, 0),
+        ...sourceWarnings(result, sourcePaths),
+        ...result.warnings,
+      ]),
       ...replayed(result),
     };
   },
@@ -2741,19 +2767,20 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // follow-ups that name them; the results are read without them.
     const groups = named.groups;
     const sent = [...ops.slice(0, own), ...groups, ...ops.slice(own)];
-    const result = ownResults(
-      await submit(call, sent, {
-        ...(own > 1 ? { wrapUp: 1 } : {}),
-        inserted: { at: own, count: groups.length },
-        warnings: [...named.made, ...folders.warnings],
-        pathOf: draftPathOf(ops, ids, at, sourcePaths),
-      }),
-    );
+    const submitted = await submit(call, sent, {
+      ...(own > 1 ? { wrapUp: 1 } : {}),
+      inserted: { at: own, count: groups.length },
+      warnings: folders.warnings,
+      answer: { made: named.made },
+      pathOf: draftPathOf(ops, ids, at, sourcePaths),
+    });
+    const result = ownResults(submitted);
     await markersAfter(call, ops, result);
     const outcomes = follow.map((_, k) => draftOutcome(result, firsts[k] ?? 0));
     // A matched follow-up takes no folder, so its folder's warning does not apply.
     const matched = follow.map((_, k) => at(k)).filter((_, k) => outcomes[k]?.result === "exists");
     const warnings = madeFirst([
+      ...madeOf(submitted, own),
       ...sourceWarnings(result, sourcePaths),
       ...result.warnings.filter((w) => !matched.some((m) => w.startsWith(`${m}.`))),
     ]);
