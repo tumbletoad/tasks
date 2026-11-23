@@ -764,16 +764,20 @@ export function TaskList({
     });
   }, []);
 
-  /** Puts a brief on the clipboard, in the person's click (A4 3.4.6). True once it is there. */
+  /**
+   * Puts a brief on the clipboard, in the person's click (A4 3.4.6). True once it is there. `then`
+   * is said after the copy's outcome, in the same toast when the copy failed, so neither hides it.
+   */
   const toClipboard = useCallback(
-    (text: string, pack = false): Promise<boolean> =>
+    (text: string, pack = false, then?: string): Promise<boolean> =>
       navigator.clipboard.writeText(text).then(
         () => {
           say(t(pack ? "row.packCopied" : "row.copied"));
+          if (then !== undefined) say(then);
           return true;
         },
         () => {
-          say(t("row.copyFailed"));
+          say(then === undefined ? t("row.copyFailed") : `${t("row.copyFailed")} ${then}`);
           return false;
         },
       ),
@@ -839,16 +843,21 @@ export function TaskList({
               if (text !== undefined && space !== undefined && opened.note !== undefined) {
                 savedWords(space, task.id, text);
               }
-              // The app takes the brief by paste: without it on the clipboard nothing opens.
-              if (copy !== undefined && !(await toClipboard(copy))) return undefined;
               // What this way of opening could not carry is said before the person sends anything.
-              if (opened.leftOut.length > 0) {
-                const what = list(opened.leftOut.map((code) => t("row.leftOut", { what: code })));
-                say(t("row.openedWithout", { label: instance.label, what }));
-              } else if (opened.text === "note") {
-                // A second click while the first was opening got that launch: its words are a note.
-                say(t("row.openedEarlier", { label: instance.label }));
-              }
+              // A second click while the first was opening got that launch: its words are a note.
+              const then =
+                opened.leftOut.length > 0
+                  ? t("row.openedWithout", {
+                      label: instance.label,
+                      what: list(opened.leftOut.map((code) => t("row.leftOut", { what: code }))),
+                    })
+                  : opened.text === "note"
+                    ? t("row.openedEarlier", { label: instance.label })
+                    : undefined;
+              // The app takes the brief by paste: it opens without it when the copy failed.
+              if (copy !== undefined)
+                return (await toClipboard(copy, false, then)) ? receipt : undefined;
+              if (then !== undefined) say(then);
               return receipt;
             })
             .catch((error: unknown) => {

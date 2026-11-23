@@ -642,6 +642,26 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
       `Opened in Codex without your extra arguments, which this way of opening cannot carry. A terminal can, where one is set up: see ${CLI_NAME} doctor.`,
     ]);
   });
+
+  test("what an Open left out is said beside the clipboard's outcome, also when the browser did not allow copying", async () => {
+    const leftOut = (call: Parameters<typeof opened>[0]) =>
+      Promise.resolve({ ...opened(call, "request"), copy: "brief", leftOut: ["read-only"] });
+    const without = `Opened in Codex without your read-only setting, which this way of opening cannot carry. A terminal can, where one is set up: see ${CLI_NAME} doctor.`;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new Error("denied")) },
+    });
+    openAnswer = leftOut;
+    await open();
+    expect(toasts).toEqual([`The browser did not allow copying. ${without}`]);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.resolve() },
+    });
+    type("And the receipts");
+    await open();
+    expect(toasts.slice(1)).toEqual(["Copied", without]);
+  });
 });
 
 describe("[M6.page.run-follow] a Stop that did not reach the service", () => {
