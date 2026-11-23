@@ -3,8 +3,9 @@
 //
 // - Content, with no section labels: first the composer (Composer.tsx), its field and the strip of
 //   what the text goes to, then the outcome and the task's own learnings once it is done, the
-//   context (Markdown, clamped at ten lines with More), one line per source with its own text, the
-//   place on this machine, a hairline, then the thread (Thread.tsx).
+//   context (Markdown, clamped at ten lines with More), one line per source with its own text and
+//   Remove, one collapsed line for the sources removed from it with Put back, the place on this
+//   machine, a hairline, then the thread (Thread.tsx).
 // - Facts (Facts.tsx): short muted labels and their controls, edited in place (A5 3.11). Each fact
 //   shows here and nowhere else in the card; the row's columns for them are hidden while it is
 //   expanded.
@@ -13,9 +14,18 @@
 // in the header) starts a request for an agent there. Everything a task holds is untrusted text: it
 // is rendered as text or as Markdown that is never HTML, and links open only through allowed
 // schemes (A5 3.26).
-import { useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import {
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
+import { Link } from "@tanstack/react-router";
 import type { Instance, Receipt, Run } from "../api.ts";
 import { classes } from "../app/css.ts";
+import { Session } from "../context.ts";
 import { useToast } from "../app/frame.ts";
 import { useT } from "../i18n/intl.tsx";
 import { Button } from "react-aria-components";
@@ -42,6 +52,7 @@ import type { Detail, SourceOutput } from "./detail.ts";
 import css from "./Expanded.module.css";
 import { Facts } from "./Facts.tsx";
 import { LINK_REL, Markdown } from "./markdown.tsx";
+import { useSourceWrites } from "./sourceWrites.ts";
 import { Thread } from "./Thread.tsx";
 import { useDetail } from "./useDetail.ts";
 
@@ -103,13 +114,18 @@ function SourceLine({
   source,
   task,
   onAsk,
+  acts,
 }: {
   readonly source: SourceOutput;
   readonly task: TaskRow;
   readonly onAsk: (event: MouseEvent<HTMLElement>) => void;
+  /** Its own words at the end of the line: Remove, or Put back on a detached link. */
+  readonly acts?: ReactNode;
 }) {
   const t = useT();
-  const ref = source.key === undefined ? undefined : keyRef(source.kind, source.key);
+  // A source linked as context keeps its key as its reference: the person still sees which item.
+  const key = source.key ?? source.ref;
+  const ref = key === undefined ? undefined : keyRef(source.kind, key);
   const link = source.url === undefined ? undefined : safeHref(source.url);
   const tip =
     link?.domain === undefined
@@ -146,6 +162,7 @@ function SourceLine({
       className={styles.link}
       data-part="source"
       data-kind={source.kind}
+      data-removed={source.removed === undefined ? undefined : ""}
       data-ask=""
       data-tip={t("ask.tip")}
       onClick={onAsk}
@@ -163,8 +180,146 @@ function SourceLine({
             {t("source.whoSuffix", { who: source.who })}
           </span>
         )}
+        {source.removed === undefined ? null : (
+          <span className={styles.muted}>
+            {t("source.removedBy", {
+              who: source.removed.by,
+              at: Date.parse(source.removed.at),
+            })}
+          </span>
+        )}
+        {source.captures_to === undefined ? null : (
+          <CapturesTo tasks={source.captures_to} more={source.captures_more} />
+        )}
       </span>
+      {acts === undefined ? null : <span className={styles.acts}>{acts}</span>}
     </li>
+  );
+}
+
+/**
+ * Where captures of a source's item go: the active tasks that hold its key now, as the card last
+ * read them, each a link, and how many more there are. Several make a capture ask which.
+ */
+function CapturesTo({
+  tasks,
+  more,
+}: {
+  readonly tasks: readonly string[];
+  readonly more?: number | undefined;
+}) {
+  const t = useT();
+  const { live } = useContext(Session);
+  return (
+    <span className={styles.muted} data-part="captures-to">
+      {t("source.capturesTo", { count: tasks.length })}
+      {tasks.map((task) => (
+        <Link key={task} to="/s/$space/task/$task" params={{ space: live.spaceId ?? "", task }}>
+          {task}
+        </Link>
+      ))}
+      {more === undefined ? null : t("source.capturesMore", { count: more })}
+    </span>
+  );
+}
+
+/**
+ * The task's sources, each with Remove once the card is read, then one collapsed line for the
+ * links detached from it, each with Put back: a wrong source is corrected here, and a correction
+ * that was itself a mistake is undone here, also after a reload or when an agent made it.
+ */
+function Sources({
+  task,
+  detail,
+  base,
+  onAsk,
+}: {
+  readonly task: TaskRow;
+  readonly detail: Detail | undefined;
+  /** Where the feed was when `detail` was read: a change is made from it. */
+  readonly base: string | undefined;
+  readonly onAsk: (event: MouseEvent<HTMLElement>) => void;
+}) {
+  const t = useT();
+  const say = useToast();
+  const writes = useSourceWrites();
+  const [open, setOpen] = useState(false);
+  const all = detail?.sources;
+  const live: readonly SourceOutput[] =
+    all?.filter((s) => s.removed === undefined) ??
+    (task.sources ?? []).map((s) => ({
+      id: s.id,
+      kind: s.kind as SourceOutput["kind"],
+      title: s.title,
+      ...(s.who === undefined ? {} : { who: s.who }),
+      ...(s.url === undefined ? {} : { url: s.url }),
+    }));
+  const removed = all?.filter((s) => s.removed !== undefined) ?? [];
+  const act = (
+    write: typeof writes.detach,
+    source: SourceOutput,
+    failed: MessageId,
+    quiet: boolean,
+    label: MessageId,
+  ) => (
+    <Button
+      className={line.act}
+      data-quiet={quiet || undefined}
+      onPress={() => {
+        write(task, source, base).catch((error: unknown) => {
+          say(refusalText(error, t(failed)));
+        });
+      }}
+    >
+      {t(label)}
+    </Button>
+  );
+  return (
+    <>
+      {live.map((source) => (
+        <SourceLine
+          key={source.id}
+          source={source}
+          task={task}
+          onAsk={onAsk}
+          {...(all === undefined
+            ? {}
+            : {
+                acts: act(writes.detach, source, "source.notRemoved", true, "source.remove"),
+              })}
+        />
+      ))}
+      {removed.length === 0 ? null : (
+        <li className={styles.link} data-part="removed">
+          <span className={styles.icon} aria-hidden="true" />
+          <span className={styles.muted} data-fact="">
+            {t("source.removedCount", { count: removed.length })}
+          </span>
+          <span className={styles.acts}>
+            <Button
+              className={line.act}
+              aria-expanded={open}
+              onPress={() => {
+                setOpen(!open);
+              }}
+            >
+              {t(open ? "source.hide" : "source.show")}
+            </Button>
+          </span>
+        </li>
+      )}
+      {open
+        ? removed.map((source) => (
+            <SourceLine
+              key={`removed:${source.id}`}
+              source={source}
+              task={task}
+              onAsk={onAsk}
+              acts={act(writes.putBack, source, "source.notPutBack", false, "source.putBack")}
+            />
+          ))
+        : null}
+    </>
   );
 }
 
@@ -456,14 +611,6 @@ export function Expanded({
   const [held, setHeld] = useState<{ refused: FolderRefusal; detail: Detail | undefined }>();
   if (refused !== held?.refused) setHeld(refused === undefined ? undefined : { refused, detail });
   const fresh = held !== undefined && held.refused === refused && held.detail === detail;
-  const sources: readonly SourceOutput[] =
-    detail?.sources ??
-    (task.sources ?? []).map((s) => ({
-      kind: s.kind as SourceOutput["kind"],
-      title: s.title,
-      ...(s.who === undefined ? {} : { who: s.who }),
-      ...(s.url === undefined ? {} : { url: s.url }),
-    }));
   const learnings = detail?.learnings ?? [];
   const ask = actions.ask;
   // A row read from search knows no creation time (Completed, A5 3.5): the digest's says it.
@@ -500,14 +647,7 @@ export function Expanded({
           <Context text={detail.context} onAsk={askOn(ask, task, "context")} />
         )}
         <ul className={styles.links}>
-          {sources.map((source, i) => (
-            <SourceLine
-              key={`${String(i)}:${source.key ?? source.title}`}
-              source={source}
-              task={task}
-              onAsk={askOn(ask, task, "sources")}
-            />
-          ))}
+          <Sources task={task} detail={detail} base={base} onAsk={askOn(ask, task, "sources")} />
           <PlaceLine
             task={task}
             detail={detail}

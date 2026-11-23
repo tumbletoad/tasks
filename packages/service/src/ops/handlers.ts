@@ -42,6 +42,7 @@ import {
   freeSlug,
   isId,
   newId,
+  normaliseSourceKey,
   type Id,
   type Operation,
   type OpResult,
@@ -146,6 +147,7 @@ import {
   readSpace,
   readStatus,
   readTask,
+  readTaskLinks,
   readKeyHolders,
   readTaskKeys,
   readTaskRef,
@@ -889,18 +891,130 @@ function draftPathOf(
   };
 }
 
+/** `refs` as a sentence lists them: "M-20", "M-20 and M-21", "M-20, M-21 and M-22". */
+const listed = (refs: readonly string[]): string =>
+  refs.length < 2 ? refs.join("") : `${refs.slice(0, -1).join(", ")} and ${refs.at(-1) ?? ""}`;
+
 /**
- * A1's `source_differs` (A3 3.4.6): a source that exists already keeps its metadata, and the reply
- * names the fields the input gave otherwise, by the input path of the source and the field names,
- * never a value. From the writer's result, so a replay warns the same.
+ * What a source the request added keeps or shares, from the writer's result, so a replay warns the
+ * same, by the input path of the source. A1's `source_differs` (A3 3.4.6): a source that exists
+ * already keeps its metadata, and the warning names the fields the input gave otherwise, never a
+ * value. `shared_key`: other active tasks hold the source's key too, so a capture of it asks which.
  */
-function differsWarnings(result: WriteResult, paths: ReadonlyMap<number, string>): string[] {
+function sourceWarnings(result: WriteResult, paths: ReadonlyMap<number, string>): string[] {
   return result.results.flatMap((op) => {
     const path = paths.get(op.i);
-    if (path === undefined || op.differs === undefined || op.differs.length === 0) return [];
-    return [
-      `The source at ${path} exists already and keeps its own ${op.differs.join(", ")} (source_differs).`,
-    ];
+    if (path === undefined) return [];
+    const warnings: string[] = [];
+    if (op.differs !== undefined && op.differs.length > 0) {
+      warnings.push(
+        `The source at ${path} exists already and keeps its own ${op.differs.join(", ")} (source_differs).`,
+      );
+    }
+    if (op.shared_with !== undefined && op.ref !== undefined) {
+      warnings.push(
+        `The source at ${path} is on ${listed(op.shared_with)} too: a capture of its key asks which of ${listed([op.ref, ...op.shared_with])} (shared_key).`,
+      );
+    }
+    return warnings;
+  });
+}
+
+const strings = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+
+/** The stand-in source of a link change in a request the writer replays. */
+const REPLAY_SOURCE = "s_00000000000000000000000000" as Id<"s">;
+
+/** A link a name resolved to: its source, and its version as read, when it was read. */
+interface NamedLink {
+  readonly source: Id<"s">;
+  readonly version?: number;
+}
+
+/**
+ * The links `names` name among all of a task's links, live and detached, at `path`: a source ID,
+ * or a key (normalised as it is stored) or URL that names one link. A name that fits several
+ * links is ambiguous and lists their IDs, whatever state each is in. Two names of one link are that
+ * link once. A name that fits none is not_found, except a source ID, which the writer decides.
+ */
+function linksNamed(links: readonly Row[], names: readonly string[], path: string): NamedLink[] {
+  const found = new Map<string, NamedLink>();
+  names.forEach((name, k) => {
+    const key = normaliseSourceKey(name) ?? name;
+    const fits = links.filter(
+      (row) =>
+        row["id"] === name ||
+        row["source_key"] === key ||
+        row["url"] === name ||
+        (row["source_key"] === null && row["ref"] === key),
+    );
+    const [one] = fits;
+    if (fits.length > 1) {
+      const ids = fits.map((row) => text(row["id"]));
+      throw new AppError({
+        code: "ambiguous",
+        message: "Several sources of the task have this key or URL.",
+        hint: `Name one by its ID: ${ids.join(", ")}.`,
+        data: {
+          issues: [{ path: `${path}.${String(k)}`, message: "Names several sources" }],
+          candidates: fits.map((row) => ({ id: text(row["id"]), title: text(row["title"]) })),
+        },
+      });
+    }
+    if (one !== undefined) {
+      const source = text(one["id"]) as Id<"s">;
+      found.set(source, { source, version: Number(one["version"]) });
+      return;
+    }
+    if (isId(name, "s")) {
+      found.set(name, { source: name });
+      return;
+    }
+    throw new AppError({
+      code: "not_found",
+      message: "No source of the task has this ID, key or URL.",
+      hint: "Read the task's sources for their IDs (ttasks show <task> --section sources).",
+      data: { issues: [{ path: `${path}.${String(k)}`, message: "Names no source of the task" }] },
+    });
+  });
+  return [...found.values()];
+}
+
+/**
+ * A put back refused because other active tasks hold the source's key: the writer names each
+ * holder's link in its conflicts, and this says where captures go, with the key from `links`.
+ * Undefined for any other refusal, such as a stale base on the task's own link.
+ */
+function keyHeld(error: unknown, task: Id<"t"> | undefined, links: readonly Row[]): unknown {
+  if (!(error instanceof AppError) || error.code !== "conflict" || task === undefined) {
+    return undefined;
+  }
+  const conflicts = (error.data["conflicts"] ?? []) as { task?: string; id?: string }[];
+  const held = new Map<string, string[]>();
+  for (const c of conflicts) {
+    const [holder, source] = (c.id ?? "").split("|");
+    if (holder === undefined || source === undefined || holder === task || c.task === undefined) {
+      return undefined;
+    }
+    held.set(source, [...(held.get(source) ?? []), c.task]);
+  }
+  if (held.size === 0) return undefined;
+  // A replay answers with the holders the request was refused for: they may hold it no more.
+  const then = error.data["replayed"] === true;
+  const said = [...held].map(([source, refs]) => {
+    const row = links.find((link) => link["id"] === source);
+    const key = typeof row?.["source_key"] === "string" ? row["source_key"] : "Its key";
+    if (then) return `${key} was on ${listed(refs)} when this was decided.`;
+    return refs.length === 1
+      ? `${key} is on ${listed(refs)} now: captures go there.`
+      : `${key} is on ${listed(refs)} now: a capture of it asks which.`;
+  });
+  return new AppError({
+    code: "conflict",
+    message: `${said.join(" ")} Nothing was put back.`,
+    hint: "Put it back once no other active task holds the key: finished, dropped, or the source detached from it.",
+    data: { ...error.data, reason: "key_held" },
   });
 }
 
@@ -2152,7 +2266,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           ...heldOf(result, sourcePaths, at(k)),
         };
       }),
-      warnings: madeFirst([...differsWarnings(result, sourcePaths), ...kept]),
+      warnings: madeFirst([...sourceWarnings(result, sourcePaths), ...kept]),
       ...replayed(result),
     };
   },
@@ -2227,6 +2341,43 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       sourcePaths.set(ops.length, at);
       ops.push({ kind: "source.add", task, source: sourceFields(source, at) });
     });
+    const detach = strings(input["remove_sources"]);
+    const putBack = strings(input["put_back_sources"]);
+    /** The task's links, live and detached: what the names name, and a refusal's keys. */
+    let links: Row[] = [];
+    let linkTask: Id<"t"> | undefined;
+    if (detach.length > 0 || putBack.length > 0) {
+      // A retry of a request that committed gets its first answer: the writer replays it before
+      // it stages anything, so the names are not resolved against the links as they are now.
+      const replay = await applied(call);
+      try {
+        links = await readTaskLinks(readerOf(call.space), task);
+      } catch (error) {
+        throw storageFailure(error);
+      }
+      const [first] = links;
+      if (first !== undefined) linkTask = text(first["task_id"]) as Id<"t">;
+      const stand = (names: string[]): NamedLink[] => names.map(() => ({ source: REPLAY_SOURCE }));
+      const detached = replay ? stand(detach) : linksNamed(links, detach, "remove_sources");
+      const back = replay ? stand(putBack) : linksNamed(links, putBack, "put_back_sources");
+      const both = replay ? -1 : back.findIndex((b) => detached.some((d) => d.source === b.source));
+      if (both >= 0) {
+        throw invalid(
+          `put_back_sources.${String(both)}`,
+          "Detach a source or put it back, not both",
+        );
+      }
+      // Without a base, each change is checked against the link's version as read just now.
+      const based = typeof input["base"] === "string";
+      const versioned = (link: NamedLink) =>
+        based || link.version === undefined ? {} : { link_version: link.version };
+      for (const link of detached) {
+        ops.push({ kind: "source.unlink", task, source: link.source, ...versioned(link) });
+      }
+      for (const link of back) {
+        ops.push({ kind: "source.relink", task, source: link.source, ...versioned(link) });
+      }
+    }
     // The folder last, so the other operations keep their indexes in a replay, which checks no
     // folder (draftFolders) and sends a stand-in when nothing else is in the request.
     const folder = set["folder"];
@@ -2256,21 +2407,28 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (clearFolder) ops.push({ kind: "task.folder_clear", task });
     fields.push(...Object.keys(set), ...clear);
     if (context !== undefined) fields.push("context");
-    if (added.length > 0) fields.push("sources");
+    if (added.length > 0 || detach.length > 0 || putBack.length > 0) fields.push("sources");
     if (ops.length === 0) throw invalid("set", "Nothing to change");
     // update_task changes an active task (A3 3.4.6): the writer refuses a completed or archived
-    // one with TASK_NOT_ACTIVE (wrong_tool), in the request's transaction, so it is receipted.
-    const result = ownResults(
-      await submit(call, [...groups, ...ops], {
-        active: true,
+    // one with TASK_NOT_ACTIVE (wrong_tool), in the request's transaction, so it is receipted. A
+    // request that only detaches or puts back sources also corrects a finished task, which still
+    // catches captures of its sources for a while.
+    const linksOnly = ops.every((op) => op.kind === "source.unlink" || op.kind === "source.relink");
+    let submitted: WriteResult;
+    try {
+      submitted = await submit(call, [...groups, ...ops], {
+        active: !linksOnly,
         inserted: { at: 0, count: groups.length },
         warnings: made,
         pathOf: (i, field) =>
           ops[i]?.kind === "task.patch" && field !== undefined && /^[a-z_]+$/u.test(field)
             ? `set.${field}`
             : undefined,
-      }),
-    );
+      });
+    } catch (error) {
+      throw keyHeld(error, linkTask, links) ?? error;
+    }
+    const result = ownResults(submitted);
     const updated = result.status === "applied";
     await markersAfter(call, ops, result, { move, cleared });
     const first = opAt(result, 0);
@@ -2287,7 +2445,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         : {}),
       as_of: result.as_of,
       warnings: madeFirst([
-        ...differsWarnings(result, sourcePaths),
+        ...sourceWarnings(result, sourcePaths),
         ...result.warnings,
         ...(updated && result.replayed !== true ? moveWarnings(move) : []),
       ]),
@@ -2399,7 +2557,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // A matched follow-up takes no folder, so its folder's warning does not apply.
     const matched = follow.map((_, k) => at(k)).filter((_, k) => outcomes[k]?.result === "exists");
     const warnings = madeFirst([
-      ...differsWarnings(result, sourcePaths),
+      ...sourceWarnings(result, sourcePaths),
       ...result.warnings.filter((w) => !matched.some((m) => w.startsWith(`${m}.`))),
     ]);
     const done = opAt(result, 0);

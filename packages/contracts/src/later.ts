@@ -32,7 +32,6 @@ export const LATER: readonly Later[] = [
     audience: "agent",
   },
   { entry: "prefs.manage", field: "set", step: SET_PREFERENCES, audience: "agent" },
-  { entry: "task.update", field: "remove_sources", step: "M3's source.unlink operation" },
   ...["task.add", "task.update", "task.finish", "task.reopen", "group.manage", "prefs.manage"].map(
     (entry): Later => ({ entry, field: "mode", value: "propose", step: PROPOSALS }),
   ),

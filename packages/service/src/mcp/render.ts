@@ -229,11 +229,16 @@ type LogEntry = {
   readonly slice?: Slice | undefined;
 };
 type Source = {
+  readonly id: string;
   readonly key?: string | undefined;
   readonly kind: string;
   readonly title: string;
   readonly who?: string | undefined;
   readonly url?: string | undefined;
+  readonly ref?: string | undefined;
+  readonly captures_to?: readonly string[] | undefined;
+  readonly captures_more?: number | undefined;
+  readonly removed?: { readonly at: string; readonly by: string } | undefined;
   readonly cut?: number | undefined;
 };
 
@@ -301,8 +306,23 @@ const logLines = (entry: LogEntry): string[] =>
     withCut(entry.text, entry.cut),
   );
 
+/** Where captures of a source's item go: one task, or several a capture asks between. */
+const capturesTo = (refs: readonly string[], more = 0): string =>
+  refs.length === 1 && more === 0
+    ? `captures go to ${refs.join("")}`
+    : `captures ask which of ${refs.join(", ")}${more > 0 ? ` and ${String(more)} more` : ""}`;
+
 const sourceLine = (source: Source): string =>
-  `- ${join(`[${source.kind}] "${withCut(source.title, source.cut)}"`, source.who, source.key !== undefined && `key ${source.key}`, source.url)}`;
+  `- ${join(
+    source.removed !== undefined && `detached ${day(source.removed.at)} by ${source.removed.by}:`,
+    `[${source.kind}] "${withCut(source.title, source.cut)}"`,
+    source.who,
+    source.key !== undefined && `key ${source.key}`,
+    source.ref !== undefined && `ref ${source.ref}`,
+    source.url,
+    source.captures_to !== undefined && capturesTo(source.captures_to, source.captures_more),
+    source.id,
+  )}`;
 
 function headerLine(
   task: RowLike & { readonly wrap_state?: string | undefined },
@@ -1009,6 +1029,12 @@ interface Conflict {
 const asText = (value: unknown): string =>
   typeof value === "string" ? value : value === undefined ? "" : JSON.stringify(value);
 
+/** What the conflicts of a refusal are, by its reason, when they are not changes since the base. */
+const CONFLICT_LEADS: ReadonlyMap<unknown, string> = new Map([
+  ["already_wrapped", "Wrapped up already"],
+  ["key_held", "Holds the key"],
+]);
+
 /** An error body as the text a tool result carries, within A3's error budget. */
 export function renderError(body: ErrorBody, random?: Random): string {
   const data = body.data ?? {};
@@ -1034,8 +1060,8 @@ export function renderError(body: ErrorBody, random?: Random): string {
         ),
       conflicts.length === 0
         ? undefined
-        : // A wrap-up held whatever the base (A3 3.4.8) did not change since it.
-          `${data["reason"] === "already_wrapped" ? "Wrapped up already" : "Changed since your base"}: ${conflicts
+        : // A wrap-up or a key held whatever the base did not change since it (A3 3.4.8).
+          `${CONFLICT_LEADS.get(data["reason"]) ?? "Changed since your base"}: ${conflicts
             .slice(0, 5)
             .map((c) => `${where(c)} (v${asText(c.version)})`)
             .join(", ")}`,

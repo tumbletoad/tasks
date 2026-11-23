@@ -284,6 +284,25 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     expect(folderLine({ machine: "mira-laptop" })).toBe("  folder: on mira-laptop");
   });
 
+  test("a source's line says where captures of it go, and how many more tasks there are", () => {
+    const line = (source: Record<string, unknown>) =>
+      render(
+        "task.get",
+        {
+          as_of: "1.1046.5n0w8k3q",
+          task: { ref: "M-25", title: "Fixture task", status: "open", priority: 2 },
+          sections: { sources: [{ id: "s_1", kind: "ticket", title: "Fixture", ...source }] },
+        },
+        "Mira",
+      ).split("\n")[1];
+    expect(line({ ref: "fix:1", captures_to: ["M-2"] })).toBe(
+      "  source: Fixture [fix:1 · captures go to M-2 · s_1]",
+    );
+    expect(line({ ref: "fix:1", captures_to: ["M-2", "M-3"], captures_more: 4 })).toBe(
+      "  source: Fixture [fix:1 · captures ask which of M-2, M-3 and 4 more · s_1]",
+    );
+  });
+
   test("no service: exit 6 with A2 3.3.6's message, and tasks alone still answers", async () => {
     const home = mkdtempSync(join(tmpdir(), "kc-"));
     try {

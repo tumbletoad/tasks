@@ -1,12 +1,12 @@
 // Dedupe by source key (A1 3.6, R4; A3 3.4.5, 3.11.1): which task a draft's keys name. The writer's
 // staging (writer.ts) asks this module for each `task.create` and tells it what the request itself
-// does, so a draft sees the request's earlier work the way execution will:
+// does, so a draft, and a link put back, see the request's earlier work the way execution will:
 //
 // - A key's holders are the tasks linked to the live source with that key by a live link, that
 //   are not deleted: those at the start of the request, read once for every key the request names,
-//   and those the request links before the draft. A draft the request creates holds its own keys
-//   from its create on, so two drafts of one request with one key are one task, whatever the order
-//   of their source operations.
+//   and those the request links before the draft, less those it detaches. A draft the request
+//   creates holds its own keys from its create on, so two drafts of one request with one key are
+//   one task, whatever the order of their source operations.
 // - A holder's lifecycle and tombstone are its own at the start, or what the request's earlier
 //   operations left: `task.complete`, `task.archive` and `task.reopen` move its lifecycle, and
 //   `task.delete` and `task.restore` its tombstone, so a task the request deletes no longer holds
@@ -43,6 +43,7 @@ const DAY_MS = 86_400_000;
 
 const SQL = {
   sourceByKey: "SELECT id FROM sources WHERE source_key = $key AND deleted_at IS NULL",
+  keyOf: "SELECT source_key FROM sources WHERE id = $id AND deleted_at IS NULL",
   holders:
     "SELECT source_id, task_id FROM task_sources WHERE removed_at IS NULL " +
     "AND source_id IN (SELECT value FROM json_each($sources))",
@@ -118,7 +119,7 @@ export class Dedupe {
   readonly #conn: Connection;
   /** The request's instant: a task finished in the request finished then. */
   readonly #at: number;
-  /** Every key the request's `source.add` operations name. */
+  /** Every key the request's `source.add` operations name, and those of the links it changes. */
   readonly #keys: ReadonlySet<string>;
   /** The keys of the `source.add` operations that name each task reference, in request order. */
   readonly #named = new Map<string, string[]>();
@@ -128,6 +129,8 @@ export class Dedupe {
   readonly #holders = new Map<Id<"t">, Holder>();
   /** The tasks the request links each key to, so far. */
   readonly #links = new Map<string, Set<Id<"t">>>();
+  /** The tasks whose link to each key the request removes, of the links at the start. */
+  readonly #unlinked = new Map<string, Set<Id<"t">>>();
   /** The tasks the request links to a source of each key without the key. */
   readonly #plain = new Map<string, Set<Id<"t">>>();
   #drafts = 0;
@@ -137,6 +140,12 @@ export class Dedupe {
     this.#at = at;
     const keys = new Set<string>();
     for (const op of ops) {
+      if (op.kind === "source.unlink" || op.kind === "source.relink") {
+        const row = conn.prepare(SQL.keyOf).get({ id: op.source });
+        const key = row === undefined ? null : new RowReader("sources", row).optText("source_key");
+        if (key !== null) keys.add(key);
+        continue;
+      }
       if (op.kind !== "source.add" || op.source.key === undefined) continue;
       keys.add(op.source.key);
       const named = this.#named.get(op.task) ?? [];
@@ -173,6 +182,16 @@ export class Dedupe {
     const tasks = this.#links.get(key) ?? new Set();
     tasks.add(task);
     this.#links.set(key, tasks);
+    this.#unlinked.get(key)?.delete(task);
+  }
+
+  /** The request removes `task`'s link to the source of `key`: it no longer holds the key. */
+  unlinked(key: string, task: Id<"t">): void {
+    if (this.#keys.size === 0) return;
+    this.#links.get(key)?.delete(task);
+    const tasks = this.#unlinked.get(key) ?? new Set();
+    tasks.add(task);
+    this.#unlinked.set(key, tasks);
   }
 
   /**
@@ -217,7 +236,10 @@ export class Dedupe {
   match(keys: readonly string[], linkSources: boolean): { active: Id<"t">[]; match?: Match } {
     const found = new Set<Id<"t">>();
     for (const key of keys) {
-      for (const task of this.#startHolders().get(key) ?? []) found.add(task);
+      const unlinked = this.#unlinked.get(key);
+      for (const task of this.#startHolders().get(key) ?? []) {
+        if (unlinked?.has(task) !== true) found.add(task);
+      }
       for (const task of this.#links.get(key) ?? []) found.add(task);
     }
     const holders = [...found].map((id) => ({ id, ...this.#holder(id) })).filter((h) => !h.deleted);
@@ -318,12 +340,13 @@ export class Dedupe {
 
   /**
    * The keys `task` has: those its live links hold, and those of its sources linked without
-   * their key (the source's `ref`), at the start and as the request adds them.
+   * their key (the source's `ref`), at the start and as the request adds and removes them.
    */
   #keysHad(task: Id<"t">): Set<string> {
     const keys = new Set<string>();
     for (const row of this.#conn.prepare(SQL.keysOf).all({ task })) {
-      keys.add(new RowReader("sources", row).text("k"));
+      const key = new RowReader("sources", row).text("k");
+      if (this.#unlinked.get(key)?.has(task) !== true) keys.add(key);
     }
     for (const links of [this.#links, this.#plain]) {
       for (const [key, tasks] of links) if (tasks.has(task)) keys.add(key);

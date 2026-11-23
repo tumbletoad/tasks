@@ -833,6 +833,22 @@
           ]
         },
         {
+          "field": "remove_sources",
+          "flag": "--remove-source",
+          "help": "Sources to detach (ID, key or URL): captures stop finding this task",
+          "repeat": true,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "put_back_sources",
+          "flag": "--put-back-source",
+          "help": "Detached sources to link again; refused on an active task if another has the key",
+          "repeat": true,
+          "required": false,
+          "type": "string"
+        },
+        {
           "field": "reason",
           "flag": "--reason",
           "help": "Why, shown in history",
@@ -943,7 +959,7 @@
           "type": "string"
         }
       ],
-      "summary": "Change an active task's fields, summary, context, group or sources.",
+      "summary": "Change a task's fields, summary, context, group or sources; a finished one's sources only.",
       "verb": "set"
     },
     {

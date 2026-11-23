@@ -234,6 +234,12 @@ export interface OpResult {
    * source was linked without the key (Dedupe.decide).
    */
   held_by?: string;
+  /**
+   * A keyed `source.add` that leaves its link live on an active task: the other active tasks whose
+   * live link to that source holds the key too, lowest reference first. A capture of the key asks
+   * between them and this task.
+   */
+  shared_with?: string[];
   /** A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). */
   matched_by?: "source_key";
   lifecycle?: TaskLifecycle;
@@ -531,6 +537,31 @@ export interface SourceAdd {
   /** Default `origin`. */
   role?: LinkRole;
   /** The link's version, for a revival (A1 3.5). */
+  link_version?: number;
+}
+
+/**
+ * `source.unlink`: removes one task's link to a source. The source and every other task's link to
+ * it stay, and its key no longer finds this task. A removed link is unchanged. Needs the link's
+ * version or a base.
+ */
+export interface SourceUnlink {
+  kind: "source.unlink";
+  task: string;
+  source: Id<"s">;
+  link_version?: number;
+}
+
+/**
+ * `source.relink`: brings back a link that `source.unlink` removed, as the same pair with its role,
+ * position and version. While another active task holds the source's key it is a conflict on that
+ * task's link: captures of the item go there. A live link is unchanged. Needs the link's version
+ * or a base.
+ */
+export interface SourceRelink {
+  kind: "source.relink";
+  task: string;
+  source: Id<"s">;
   link_version?: number;
 }
 
@@ -868,6 +899,8 @@ export type Operation =
   | NoteAdd
   | LogAdd
   | SourceAdd
+  | SourceUnlink
+  | SourceRelink
   | PlaceSet
   | PlaceClear
   | LaunchCreate
@@ -893,6 +926,8 @@ export const OPERATION_KINDS = [
   "note.add",
   "log.add",
   "source.add",
+  "source.unlink",
+  "source.relink",
   "place.set",
   "place.clear",
   "launch.create",
@@ -1213,7 +1248,7 @@ class Fields {
     return value;
   }
 
-  id<P extends "t" | "ac" | "m" | "se" | "ru" | "ro" | "sp" | "la" | "op">(
+  id<P extends "t" | "ac" | "m" | "se" | "ru" | "ro" | "sp" | "la" | "op" | "s">(
     key: string,
     prefix: P,
   ): Id<P> {
@@ -1503,6 +1538,17 @@ function checkOperation(value: unknown, i: number): Operation {
       if (f.has("role")) add.role = f.oneOf("role", LINK_ROLES);
       if (f.has("link_version")) add.link_version = f.int("link_version", 0, RANGES.seq.max);
       op = add;
+      break;
+    }
+    case "source.unlink":
+    case "source.relink": {
+      const link: SourceUnlink | SourceRelink = {
+        kind,
+        task: f.reference("task"),
+        source: f.id("source", "s"),
+      };
+      if (f.has("link_version")) link.link_version = f.int("link_version", 0, RANGES.seq.max);
+      op = link;
       break;
     }
     case "place.set": {

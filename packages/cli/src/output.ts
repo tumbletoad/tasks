@@ -257,6 +257,16 @@ function insideLines(result: Result): string[] {
   return lines;
 }
 
+/** Where captures of a source's item go: one task, or several a capture asks between. */
+function capturesTo(source: Result): string | undefined {
+  const value = source["captures_to"];
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const refs = value.map(String);
+  const more = typeof source["captures_more"] === "number" ? source["captures_more"] : 0;
+  if (refs.length === 1 && more === 0) return `captures go to ${refs.join("")}`;
+  return `captures ask which of ${refs.join(", ")}${more > 0 ? ` and ${String(more)} more` : ""}`;
+}
+
 /** What the command asked that a command it prints must ask again. */
 export interface Asked {
   /** `--space` as given. */
@@ -377,9 +387,19 @@ export function render(entry: string, result: Result, space: string, asked: Aske
         lines.push("", sections["context"]);
       }
       for (const source of (sections["sources"] as Result[] | undefined) ?? []) {
-        lines.push(
-          `  source: ${String(source["title"])}${typeof source["key"] === "string" ? ` [${source["key"]}]` : ""}`,
-        );
+        const removed = source["removed"] as Result | undefined;
+        const key = source["key"] ?? source["ref"];
+        const facts = [
+          typeof key === "string" ? key : undefined,
+          typeof source["url"] === "string" ? source["url"] : undefined,
+          capturesTo(source),
+          String(source["id"]),
+        ].filter((fact) => fact !== undefined);
+        const label =
+          removed === undefined
+            ? "source"
+            : `detached ${String(removed["at"]).slice(0, 10)} by ${String(removed["by"])}`;
+        lines.push(`  ${label}: ${String(source["title"])} [${facts.join(" · ")}]`);
       }
       // A digest holds the first lessons and counts them all; the outcome section holds them all.
       const outcome = result["sections"] === undefined ? undefined : sections["outcome"];

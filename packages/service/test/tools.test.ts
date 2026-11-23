@@ -1067,12 +1067,6 @@ describe("[A3.3.4.tools.five] update_task, add_entry and complete_task", () => {
     const cases: [string, Json, string, string][] = [
       [
         "task.update",
-        { task, remove_sources: ["jira:X-1"], base, request_id: rid() },
-        "remove_sources",
-        "M3",
-      ],
-      [
-        "task.update",
         { task, set: { summary: "x" }, mode: "propose", base, request_id: rid() },
         "mode",
         "M4.02",

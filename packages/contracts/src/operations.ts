@@ -73,6 +73,7 @@ export const OPERATIONS: Readonly<Record<string, OpSpec>> = {
   "source.patch": agent(true),
   // A link version or a base.
   "source.unlink": agent(false),
+  "source.relink": agent(false),
   // A base only when the owner already has a place on this machine.
   "place.set": agent(false),
   "place.clear": agent(false),

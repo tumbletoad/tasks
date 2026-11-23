@@ -173,9 +173,15 @@ a + .muted,
   margin-inline-start: 4px;
 }
 
+[data-part="captures-to"] > a {
+  margin-inline-start: 4px;
+}
+
 .acts {
   display: inline-flex;
+  flex: none;
   gap: 2px;
+  white-space: nowrap;
   margin-inline-start: 4px;
   transform: translateY(3px);
 }
@@ -204,20 +210,24 @@ a + .muted,
   height: 14px;
 }
 
-/* The folder's own words (change, clear) stay out of sight until the line is reached for, in
-   their places, so nothing moves when they show. */
-[data-part="place"] [data-quiet] {
+/* A line's own words (a folder's change and clear, a source's remove) stay out of sight until
+   the line is reached for, in their places, so nothing moves when they show. */
+[data-part="place"] [data-quiet],
+[data-part="source"] [data-quiet] {
   opacity: 0;
   transition: opacity var(--k-fast) var(--k-ease);
 }
 
 [data-part="place"]:hover [data-quiet],
-[data-part="place"]:focus-within [data-quiet] {
+[data-part="place"]:focus-within [data-quiet],
+[data-part="source"]:hover [data-quiet],
+[data-part="source"]:focus-within [data-quiet] {
   opacity: 1;
 }
 
 @media (hover: none) {
-  [data-part="place"] [data-quiet] {
+  [data-part="place"] [data-quiet],
+  [data-part="source"] [data-quiet] {
     opacity: 1;
   }
 }
