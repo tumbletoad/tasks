@@ -250,6 +250,41 @@ describe("[A3.source.detach] detaching a source and putting it back, through rea
     ).toMatchObject({ result: "updated" });
   });
 
+  test("a URL two links share is ambiguous whether each is linked or detached; a key is normalised; a key and an ID of one link are that link once", async () => {
+    const url = "https://tickets.example/twice";
+    const { ref } = await add({
+      title: "Fixture shared URL",
+      sources: [
+        { ...ticket("fix:DT-7"), url },
+        { ...ticket("fix:DT-8"), url },
+      ],
+    });
+    const [first, second] = (await sources(ref)) as [Source, Source];
+    await update({ task: ref, remove_sources: [first.id] });
+    for (const field of ["remove_sources", "put_back_sources"]) {
+      const both = await refusal("task.update", {
+        task: ref,
+        [field]: [url],
+        base: await asOf(),
+        request_id: rid(),
+      });
+      expect(both).toMatchObject({ code: "ambiguous", data: { issues: [{ path: `${field}.0` }] } });
+      expect(both.hint).toContain(first.id);
+      expect(both.hint).toContain(second.id);
+    }
+    expect((await sources(ref)).find((s) => s.id === second.id)?.removed).toBeUndefined();
+    // The key as the caller spelled it at capture finds the stored one.
+    expect(await update({ task: ref, put_back_sources: ["FIX:DT-7"] })).toMatchObject({
+      result: "updated",
+    });
+    // Its key and its ID in one request: one link, detached once.
+    const once = await update({ task: ref, remove_sources: ["fix:DT-7", first.id] });
+    expect(once).toMatchObject({ result: "updated" });
+    expect((await sources(ref)).filter((s) => s.removed !== undefined).map((s) => s.id)).toEqual([
+      first.id,
+    ]);
+  });
+
   test("a finished task takes a detach alone; mixed with another change it is refused whole", async () => {
     const { ref } = await add({ title: "Fixture finished", sources: [ticket("fix:DT-3")] });
     await call("task.finish", {

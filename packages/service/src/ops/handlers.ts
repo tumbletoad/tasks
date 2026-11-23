@@ -41,6 +41,7 @@ import {
   freeSlug,
   isId,
   newId,
+  normaliseSourceKey,
   type Id,
   type Operation,
   type OpResult,
@@ -914,19 +915,20 @@ interface NamedLink {
 
 /**
  * The links `names` name among all of a task's links, live and detached, at `path`: a source ID,
- * or a key or URL that names one link. A name that fits several
+ * or a key (normalised as it is stored) or URL that names one link. A name that fits several
  * links is ambiguous and lists their IDs, whatever state each is in. Two names of one link are that
  * link once. A name that fits none is not_found, except a source ID, which the writer decides.
  */
 function linksNamed(links: readonly Row[], names: readonly string[], path: string): NamedLink[] {
   const found = new Map<string, NamedLink>();
   names.forEach((name, k) => {
+    const key = normaliseSourceKey(name) ?? name;
     const fits = links.filter(
       (row) =>
         row["id"] === name ||
-        row["source_key"] === name ||
+        row["source_key"] === key ||
         row["url"] === name ||
-        (row["source_key"] === null && row["ref"] === name),
+        (row["source_key"] === null && row["ref"] === key),
     );
     const [one] = fits;
     if (fits.length > 1) {
