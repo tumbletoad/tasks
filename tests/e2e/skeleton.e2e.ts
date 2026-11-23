@@ -265,6 +265,11 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
       await expect(said).toBeVisible({ timeout: SLOW_MS });
       expect(world.terminal()).toHaveLength(before);
       await picture(page, "open-marker-missing.png");
+      // Narrow, the warning is still there to read.
+      await page.setViewportSize({ width: 390, height: 900 });
+      await expect(said).toBeVisible();
+      await picture(page, "open-marker-missing-390.png");
+      await page.setViewportSize({ width: 1440, height: 900 });
 
       // Nothing started, so the words wait in the field.
       await expect(composer).toHaveValue("Tag it after the tests pass");

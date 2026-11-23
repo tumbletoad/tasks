@@ -193,6 +193,15 @@ test.describe("[A7.3.12.m5-01.e2e.strict-csp] The shell under the strict CSP", (
     });
     expect(styles.length).toBeGreaterThan(0);
     expect(styles.every((s) => s.ok)).toBe(true);
+    // Every script and stylesheet the live page holds is a file of the build with its hash.
+    const files = await page.evaluate(() =>
+      [...document.querySelectorAll("script[src], link[rel=stylesheet]")].map(
+        (el) =>
+          `${el.getAttribute("src") ?? el.getAttribute("href") ?? ""} ${el.getAttribute("integrity") ?? "no hash"}`,
+      ),
+    );
+    expect(files.length).toBeGreaterThanOrEqual(2);
+    for (const file of files) expect(file).toMatch(/^\/assets\/\S+ sha384-/);
 
     // The bundled faces load from this origin.
     const faces = await page.evaluate(async () => {

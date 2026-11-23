@@ -4222,7 +4222,7 @@
     },
     {
       "id": "A7.3.12.m5-01.e2e.strict-csp",
-      "title": "In Chromium and Firefox the shell under the strict CSP: React Aria's popover, radio group and drawer press without a violation, every style element carries the response's nonce, the theme switches live (System follows the colour scheme) and holds after a reload, the bundled fonts load, no request leaves the origin, the manifest and its icons are served and no service worker is registered",
+      "title": "In Chromium and Firefox the shell under the strict CSP: React Aria's popover, radio group and drawer press without a violation, every style element carries the response's nonce, every script and stylesheet the live page holds carries its sha384 integrity hash, the theme switches live (System follows the colour scheme) and holds after a reload, the bundled fonts load, no request leaves the origin, the manifest and its icons are served and no service worker is registered",
       "source": "A5 3.19, A5 3.24, A5 3.26, A2 3.8.3, A7 3.12 M5.01",
       "owner": "M5",
       "kind": "ci",
