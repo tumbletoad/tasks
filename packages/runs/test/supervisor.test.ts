@@ -22,7 +22,7 @@ import {
   type RunFolders,
   type SavedAnswer,
 } from "../src/index.ts";
-import { MACHINE, settle } from "./supervisor-world.ts";
+import { held, MACHINE, settle } from "./supervisor-world.ts";
 
 const DAY = 24 * 60 * 60_000;
 const TASK = "t_0000000000000000000000000a";
@@ -74,7 +74,7 @@ function folders(now: () => number) {
     prepare: (id) => kept.set(id, { changedAt: now() }),
     saveAnswer: (id, answer) => kept.set(id, { changedAt: now(), answer }),
     readAnswer: (id) => kept.get(id)?.answer,
-    hasAnswer: (id) => kept.get(id)?.answer !== undefined,
+    heldAnswer: (id) => held(kept.get(id)?.answer),
     logs: () => ({ stdout: () => undefined, stderr: () => undefined, close: () => undefined }),
     removeTemps: () => undefined,
     list: () => [...kept].map(([id, f]) => ({ id, changedAt: f.changedAt })),
@@ -339,6 +339,62 @@ describe("[A4.5.run.supervisor] the supervisor's rules: a start whose record lan
       rmSync(answer);
       expect(await supervisor.retain()).toBe(1);
       expect(files.list()).toEqual([]);
+      supervisor.close();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("retention removes the folder of a run that ended with no answer once its record holds that end, and keeps one whose end only the folder holds", async () => {
+    const b = bench();
+    const said = {
+      outcome: "agent_error" as const,
+      error: "Not signed in. Sign in with: codex login",
+    };
+    const recorded = await b.queue();
+    const starting = await b.store.transitionRun(
+      recorded.id,
+      { state: "queued", version: recorded.version },
+      "starting",
+    );
+    const running = await b.store.transitionRun(recorded.id, seenRun(starting), "running", {
+      evidence: { pid: 7 },
+    });
+    await b.store.transitionRun(recorded.id, seenRun(running), "failed", {
+      reason: "agent_error",
+      result: {
+        ok: false,
+        ...said,
+        exitCode: 1,
+        signal: null,
+        nativeId: null,
+        text: null,
+        usage: null,
+        appTools: null,
+        declined: 0,
+        permissionDenials: 0,
+        durationMs: 1,
+      },
+    });
+    const unrecorded = await b.queue();
+    await failedWithoutAnswer(b.store, unrecorded);
+    const root = mkdtempSync(join(tmpdir(), "ttasks-retain-"));
+    try {
+      const files = new RunFiles(root);
+      for (const run of [recorded, unrecorded]) {
+        files.prepare(run.id);
+        files.saveAnswer(run.id, { text: null, final: false, cut: false, ...said });
+      }
+      const supervisor = new Supervisor({
+        lanes: () => [b.lane],
+        limits: () => ({ runs: 3, perInstance: 2, perTask: 1 }),
+        prepare: () => Promise.resolve({ refused: "spawn_failed" }),
+        folders: files,
+        retention: { days: 14, count: 0 },
+        now: b.now,
+      });
+      expect(await supervisor.retain()).toBe(1);
+      expect(files.list().map((folder) => folder.id)).toEqual([unrecorded.id]);
       supervisor.close();
     } finally {
       rmSync(root, { recursive: true, force: true });

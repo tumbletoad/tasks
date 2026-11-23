@@ -24,6 +24,7 @@ import {
 } from "@ttasks/contracts/runs";
 import type { AgentCommand, RunHost } from "./host.ts";
 import type { RunMachine, StartRefusal } from "./machine.ts";
+import type { HeldAnswer } from "./run-files.ts";
 
 export { QUEUE_LIMITS, type QueueLimits } from "@ttasks/contracts/runs";
 
@@ -65,8 +66,8 @@ export interface Blocker {
 export interface RunFolderList {
   list(): readonly { readonly id: string; readonly changedAt: number }[];
   remove(id: string): void;
-  /** Whether the folder may hold an answer: one is there, or it could not be told. */
-  hasAnswer(id: string): boolean;
+  /** What the folder holds of the run's answer. */
+  heldAnswer(id: string): HeldAnswer;
 }
 
 /** How long run folders are kept: a folder older than `days`, or past the newest `count`, goes. */
@@ -566,9 +567,10 @@ export class Supervisor {
 
   /**
    * Removes the run folders past the newest `count` or older than `days`, each only when its run
-   * is final, its end confirmed, its host done with it, and its answer saved in its space (its
-   * record holds the answer, or the folder has no answer file). A folder whose run no open space
-   * knows stays: its space may open again. Returns how many went.
+   * is final, its end confirmed, its host done with it, and its answer saved in its space: its
+   * record holds the answer, or the folder holds none (no answer file, or one without words whose
+   * run's record keeps the run's result). A folder whose run no open space knows stays: its space
+   * may open again. Returns how many went.
    */
   async retain(): Promise<number> {
     const folders = this.#options.folders;
@@ -606,7 +608,11 @@ export class Supervisor {
       if (!FINAL.has(run.state) || awaitsConfirmation(run)) return false;
       if (lane.host.hosted().includes(id) || this.#starting.has(id)) return false;
       if (typeof run.result?.text === "string") return true;
-      return !folders.hasAnswer(id);
+      const held = folders.heldAnswer(id);
+      return (
+        held.kind === "none" ||
+        (held.kind === "saved" && held.answer.text === null && run.result !== null)
+      );
     }
     return false;
   }

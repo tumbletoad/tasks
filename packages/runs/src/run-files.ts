@@ -53,6 +53,13 @@ export interface SavedAnswer {
   readonly limit?: TimeLimit;
 }
 
+/** What a run's folder holds of its answer. */
+export type HeldAnswer =
+  | { readonly kind: "none" }
+  /** A file is there, but it is not an answer this module wrote, or it could not be read. */
+  | { readonly kind: "unreadable" }
+  | { readonly kind: "saved"; readonly answer: SavedAnswer };
+
 /** A run's raw output files, written as the output comes, each up to its cap. */
 export interface RunLogs {
   stdout(chunk: Uint8Array): void;
@@ -188,14 +195,17 @@ export class RunFiles implements RunFolders {
     return path;
   }
 
-  /** Whether the run's answer file is there, or could not be told (any error but its absence). */
-  hasAnswer(id: string): boolean {
+  /** What the run's folder holds of its answer: none, one that cannot be read, or the saved one. */
+  heldAnswer(id: string): HeldAnswer {
     try {
       lstatSync(join(this.folder(id), ANSWER_FILE));
-      return true;
     } catch (error) {
-      return (error as NodeJS.ErrnoException).code !== "ENOENT";
+      return (error as NodeJS.ErrnoException).code === "ENOENT"
+        ? { kind: "none" }
+        : { kind: "unreadable" };
     }
+    const answer = this.readAnswer(id);
+    return answer === undefined ? { kind: "unreadable" } : { kind: "saved", answer };
   }
 
   /** The run folders there are, each with when it last changed (ms), in no order. */
