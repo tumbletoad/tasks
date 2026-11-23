@@ -10,7 +10,9 @@
 //   `rg '^status: waiting' view/open` works. `seq` is the commit of the task's last change (its
 //   `touched`): the file reflects the task as of that commit, which is what a fresh render gives.
 // - Then the title as H1, the summary, and the sections Context, Sources, Notes and Log. A
-//   completed or archived task leads with Outcome and Learnings and keeps the rest under Record.
+//   completed or archived task leads with why it was dropped, its Outcome and Learnings, and keeps
+//   the rest under Record. An outcome that is not this finish's (the task was reopened, dropped,
+//   or checked off without a new one) is shown as earlier: after the Context of an open task.
 //   Only notes for every audience are read (read.ts), so no other note is ever written.
 // - **Task text is shown, never run** (A1 3.13): agents write most of it, some from mail and
 //   tickets, so a Markdown viewer must run or load nothing it says: no HTML, no link or image whose
@@ -65,9 +67,10 @@ export interface SourceInput {
   readonly key: string | null;
 }
 
-export interface PlaceInput {
+/** The folder a task opens in on one machine, as that machine spells it. */
+export interface FolderInput {
+  /** The machine's name. */
   readonly machine: string;
-  readonly root: string;
   readonly path: string;
 }
 
@@ -80,6 +83,8 @@ export interface TaskInput {
   readonly context: string;
   readonly lifecycle: Lifecycle;
   readonly status: string;
+  /** Who or what the task waits on. */
+  readonly waitingOn: string | null;
   readonly priority: number;
   readonly effort: string | null;
   /** An ISO date, or the ISO instant of a due time. */
@@ -91,9 +96,17 @@ export interface TaskInput {
   readonly touched: number;
   readonly createdAt: number;
   readonly completedAt: number | null;
+  /**
+   * The outcome is this finish's: the task is completed and wrapped up. A reopen, a drop and a
+   * check-off without a new outcome keep the one there, which is then an earlier finish's.
+   */
+  readonly wrapped: boolean;
   readonly outcome: string | null;
+  /** Why an archived task was dropped. */
+  readonly dropped: string | null;
   readonly labels: readonly string[];
-  readonly places: readonly PlaceInput[];
+  /** Where Open starts it on each machine that has a folder for it. */
+  readonly folders: readonly FolderInput[];
   readonly notes: readonly NoteInput[];
   readonly log: readonly LogInput[];
   readonly sources: readonly SourceInput[];
@@ -281,25 +294,22 @@ export function renderTask(
 ): RenderedTask {
   const path = taskPath(space.refPrefix, task, timeZone);
   const ref = formatTaskRef(space.refPrefix, task.ref);
-  const place =
-    task.places.length === 0
-      ? null
-      : task.places.length === 1
-        ? yamlValue(placeText(task.places[0]))
-        : `[${task.places.map((p) => yamlValue(placeText(p))).join(", ")}]`;
+  const folders = task.folders.map((f) => yamlValue(`${f.machine}:${f.path}`));
+  const folder = folders.length < 2 ? (folders[0] ?? "") : `[${folders.join(", ")}]`;
   const front: [string, string][] = [
     ["generated", "true"],
     ["space", yamlValue(space.spaceId)],
     ["ref", yamlValue(ref)],
     ["id", yamlValue(task.id)],
     ["status", yamlValue(task.status)],
+    ["waiting_on", yamlValue(task.waitingOn)],
     ["lifecycle", yamlValue(task.lifecycle)],
     ["priority", yamlValue(task.priority)],
     ["effort", yamlValue(task.effort)],
     ["due", yamlValue(task.due)],
     ["area", yamlValue(task.area)],
     ["project", yamlValue(task.project)],
-    ["place", place ?? ""],
+    ["folder", folder],
     ["version", yamlValue(task.version)],
     ["seq", yamlValue(task.touched)],
   ];
@@ -308,6 +318,16 @@ export function renderTask(
   const notes = task.notes.map((n) => noteLine(n, timeZone));
   const log = task.log.map((l) => logLine(l, timeZone));
   const done = task.lifecycle !== "active";
+  const now = task.lifecycle === "completed" && task.wrapped;
+  const ending = [
+    ...(task.lifecycle === "archived" ? section(2, "Why it was dropped", [block(task.dropped ?? "")]) : []),
+    ...section(2, now ? "Outcome" : "Earlier outcome", [block(task.outcome ?? "")]),
+    ...section(
+      2,
+      now ? "Learnings" : "Earlier learnings",
+      task.learnings.map((l) => item("", l)),
+    ),
+  ];
   const record = done
     ? [
         ...section(3, "Context", [context]),
@@ -317,17 +337,10 @@ export function renderTask(
       ]
     : [];
   const body = done
-    ? [
-        ...section(2, "Outcome", [block(task.outcome ?? "")]),
-        ...section(
-          2,
-          "Learnings",
-          task.learnings.map((l) => item("", l)),
-        ),
-        ...(record.length === 0 ? [] : ["## Record", "", ...record]),
-      ]
+    ? [...ending, ...(record.length === 0 ? [] : ["## Record", "", ...record])]
     : [
         ...section(2, "Context", [context]),
+        ...ending,
         ...section(2, "Sources", sources),
         ...section(2, "Notes", notes),
         ...section(2, "Log", log),
@@ -361,9 +374,6 @@ export function renderTask(
   };
   return { path, content: `${lines.join("\n").replace(/\n+$/u, "")}\n`, entry };
 }
-
-const placeText = (place: PlaceInput | undefined): string =>
-  place === undefined ? "" : `${place.machine}:${place.root}/${place.path}`;
 
 const LIFECYCLE_ORDER: Readonly<Record<Lifecycle, number>> = {
   active: 0,
