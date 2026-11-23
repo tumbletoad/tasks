@@ -329,9 +329,11 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
       },
     };
   }, [state.areas, state.projects]);
-  const inArea = location.pathname.startsWith(`/s/${space}/area/`);
-  const hereArea = inArea ? params.area : undefined;
-  const hereProject = inArea ? params.project : undefined;
+  // Only an area's and a project's routes have these. On a project's page a capture goes where the
+  // project is now, whatever area its address names.
+  const hereProject = params.project;
+  const hereArea =
+    hereProject === undefined ? params.area : state.projects.get(hereProject)?.area_id;
   const capture = useMemo(() => {
     const here =
       hereArea === undefined

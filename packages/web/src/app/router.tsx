@@ -29,7 +29,7 @@ import {
 } from "@tanstack/react-router";
 import { SPACE_ID, SEGMENT } from "../route.ts";
 import { Landing } from "./Landing.tsx";
-import { AreaPage, SearchPage, TaskPage, ViewPage } from "./pages.tsx";
+import { AreaPage, ProjectPage, SearchPage, TaskPage, ViewPage } from "./pages.tsx";
 import { SettingsPage } from "./Settings.tsx";
 import { SpaceSession } from "./session.tsx";
 import { Shell } from "./Shell.tsx";
@@ -109,9 +109,9 @@ const projectRoute = createRoute({
   path: "area/$area/project/$project",
   validateSearch: taskSearch,
   component: function ProjectRoute() {
-    const { area, project } = projectRoute.useParams();
+    const { space, area, project } = projectRoute.useParams();
     const { task } = projectRoute.useSearch();
-    return <AreaPage area={area} project={project} task={task} />;
+    return <ProjectPage space={space} area={area} project={project} task={task} />;
   },
 });
 
@@ -120,9 +120,9 @@ const looseProjectRoute = createRoute({
   path: "project/$project",
   validateSearch: taskSearch,
   component: function LooseProjectRoute() {
-    const { project } = looseProjectRoute.useParams();
+    const { space, project } = looseProjectRoute.useParams();
     const { task } = looseProjectRoute.useSearch();
-    return <AreaPage project={project} task={task} />;
+    return <ProjectPage space={space} project={project} task={task} />;
   },
 });
 

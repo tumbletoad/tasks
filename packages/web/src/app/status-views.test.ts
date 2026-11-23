@@ -9,7 +9,7 @@ import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 import type { Changes } from "../store/store.ts";
 import { ChangeLog } from "./changes.ts";
 import {
-  areaFilter,
+  projectFilter,
   COUNTED,
   countedViewOf,
   recentOf,
@@ -138,7 +138,7 @@ describe("[A5.3.5.web.view-groups] each view's grouping", () => {
       "s:pj_portal",
     ]);
     const project = projectGroups(
-      tasks.filter(areaFilter("ar_lumen", "pj_portal")),
+      tasks.filter(projectFilter("pj_portal")),
       [lumen],
       [portal, sync],
     );

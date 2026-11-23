@@ -162,12 +162,12 @@ export const VIEW_LIST: Readonly<Record<CountedView, ViewList>> = {
   backlog: { grouping: "area", group: groupTasks, empty: "view.empty.backlog" },
 };
 
-/** An area view: every open task of the area, or of one of its projects. */
-export function areaFilter(area: string, project?: string): (task: TaskRow) => boolean {
-  return (task) => task.area_id === area && (project === undefined || task.project_id === project);
+/** An area view: every open task of the area, its projects' included. */
+export function areaFilter(area: string): (task: TaskRow) => boolean {
+  return (task) => task.area_id === area;
 }
 
-/** A project's view without its area: the project's open tasks, whatever their area. */
+/** A project's view: the project's open tasks, whatever area its address names. */
 export function projectFilter(project: string): (task: TaskRow) => boolean {
   return (task) => task.project_id === project;
 }
