@@ -21,8 +21,8 @@ import {
   isOpenRun,
   RECORDED,
   RUN_REQUEST_MAX_BYTES,
+  type ReadRunState,
   type RunRecord,
-  type RunState,
 } from "@ttasks/contracts/runs";
 import {
   INSTANCE_KEY,
@@ -137,7 +137,7 @@ export interface UiRun {
   readonly id: string;
   readonly instance: string;
   /** `recorded`: open in a restored copy that is not claimed, so nothing of it runs now. */
-  readonly state: RunState | typeof RECORDED;
+  readonly state: ReadRunState;
   readonly reason: string | null;
   /** Why a queued run waits. */
   readonly waiting?: string;

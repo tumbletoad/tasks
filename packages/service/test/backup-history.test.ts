@@ -310,6 +310,10 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
           { id: f.run, state: "recorded" },
         );
       }
+      const finished = await finishedRows(inCopy);
+      for (const task of finishedTasks) {
+        expect(finished.get(task)).toMatchObject({ state: "recorded" });
+      }
       const open = await snapshotRows();
       for (const task of activeTasks) expect(open.get(task)).toMatchObject({ state: "recorded" });
       // A batch from before the fixture carries every task's row as the copy holds it now.

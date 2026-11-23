@@ -5,7 +5,13 @@
 // its first three sources, where it opens on the machine that serves it, whether its newest
 // background run works or needs the person, and the start of each question agents asked that
 // waits for the person.
-import { isOpenRun, OPEN_RUN_STATES, RECORDED, type RunState } from "@ttasks/contracts/runs";
+import {
+  isOpenRun,
+  OPEN_RUN_STATES,
+  RECORDED,
+  type RowRunState,
+  type RunState,
+} from "@ttasks/contracts/runs";
 import {
   decideLaunchFolder,
   FINISHED_AT_SQL,
@@ -48,7 +54,7 @@ export type CompactPlace =
 export interface CompactRun {
   /** The run's ID: the Agents page pairs it with the agent the Agent Monitor sees for it. */
   readonly id: string;
-  readonly state: "working" | "needs_you" | typeof RECORDED;
+  readonly state: RowRunState;
   /** The run's agent instance: machine.toml's key. */
   readonly instance: string;
 }

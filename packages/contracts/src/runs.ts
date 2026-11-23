@@ -243,6 +243,19 @@ export const isOpenRun = (run: { state: RunState; reason: string | null }): bool
  */
 export const RECORDED = "recorded";
 
+/** The states a read gives a run besides its record's own (RUN_STATES). */
+export const READ_RUN_STATES = [RECORDED] as const;
+
+/** A run's state as a read gives it: its record's, or one of READ_RUN_STATES. */
+export type ReadRunState = RunState | (typeof READ_RUN_STATES)[number];
+
+/**
+ * A task's newest run as its row shows it: working (open), ended asking the person, or a state a
+ * read gives besides its record's, which every row then takes too.
+ */
+export const ROW_RUN_STATES = ["working", "needs_you", ...READ_RUN_STATES] as const;
+export type RowRunState = (typeof ROW_RUN_STATES)[number];
+
 /**
  * The legal transitions. A self edge records evidence and changes no state: the agent's PID on
  * `starting` or `cancelling`, its native ID on `running`. A queued run has no container: a Stop
