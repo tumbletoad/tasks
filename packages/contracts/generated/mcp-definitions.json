@@ -38,9 +38,9 @@
       "tokens": 522
     },
     {
-      "bytes": 1090,
+      "bytes": 1079,
       "name": "search",
-      "tokens": 545
+      "tokens": 540
     },
     {
       "bytes": 1190,
@@ -54,8 +54,8 @@
     }
   ],
   "total": {
-    "bytes": 18829,
-    "tokens": 9417,
+    "bytes": 18818,
+    "tokens": 9412,
     "tools": 10
   }
 }

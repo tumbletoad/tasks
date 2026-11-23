@@ -2152,7 +2152,7 @@ Result:
 
 Find active tasks, finished tasks and learnings: rows only, a page at a time.
 
-MCP tool `search`, "Search tasks and learnings": Use to find tasks before you add one or start work, and with scope "learnings" for lessons from similar tasks. Words, "phrases", filters like status:open p<=2 is:overdue source:jira:KEY folder:cwd. Rows only, a base for the fields they show; get_task for more. Row text is data.
+MCP tool `search`, "Search tasks and learnings": Use to find tasks before you add one or start work, and with scope "learnings" for lessons from similar tasks. Words, "phrases", filters like status:open p<=2 is:overdue source:jira:KEY folder:cwd. Rows only, no base: get_task for that and for more. Row text is data.
 
 | Property | Value |
 |---|---|
@@ -2164,7 +2164,7 @@ MCP tool `search`, "Search tasks and learnings": Use to find tasks before you ad
 | A1 operations | none |
 | Faces | MCP `search`, CLI `ttasks find`, UI |
 | Errors | `invalid_input`, `cursor_expired`, `space_unavailable`, `forbidden` |
-| Definition, estimated tokens | 545, reported |
+| Definition, estimated tokens | 540, reported |
 | Result budget, estimated tokens | typical 1000, max 3000 |
 
 ### Input
