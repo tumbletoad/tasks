@@ -9,13 +9,27 @@ set -euo pipefail
 gate=$1
 expected=$2
 
+# GitHub's own API fails now and then (a 502 was seen): the question which jobs ran is asked again
+# before the gate fails for it. A gate that failed this way says so, and blames no job.
+jobs=
+for try in 1 2 3 4 5; do
+  if jobs=$(gh api --paginate --slurp \
+    "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=all&per_page=100"); then
+    break
+  fi
+  jobs=
+  if [ "$try" -lt 5 ]; then sleep $((try * 10)); fi
+done
+if [ -z "$jobs" ]; then
+  echo "GitHub did not say which jobs of this run ran, asked five times. Re-run this job."
+  exit 1
+fi
+
 legs=$(
-  gh api --paginate --slurp \
-    "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=all&per_page=100" |
-    jq -r --arg gate "$gate" --argjson attempt "$GITHUB_RUN_ATTEMPT" '
-      [.[].jobs[] | select(.name != $gate and .run_attempt <= $attempt)]
-      | group_by(.name)[] | max_by([.run_attempt, .id])
-      | "\(.conclusion // .status)\t\(.name)"'
+  jq -r --arg gate "$gate" --argjson attempt "$GITHUB_RUN_ATTEMPT" '
+    [.[].jobs[] | select(.name != $gate and .run_attempt <= $attempt)]
+    | group_by(.name)[] | max_by([.run_attempt, .id])
+    | "\(.conclusion // .status)\t\(.name)"' <<<"$jobs"
 )
 printf '%s\n' "$legs"
 
