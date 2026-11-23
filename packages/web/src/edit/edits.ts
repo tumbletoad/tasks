@@ -496,6 +496,14 @@ export class Edits {
   readonly #remote = new Map<string, Remote>();
   /** The timers of the rows that leave, per task. */
   readonly #holds = new Map<string, unknown[]>();
+  /**
+   * Per task and field, the newest edit of the tab's whose value the screen shows until its write
+   * settles, with what it was made against: a newer value behind it is not on the screen.
+   */
+  readonly #showing = new Map<
+    string,
+    { readonly number: number; readonly seen: string | undefined }
+  >();
   #marks = 0;
   #toasts = 0;
 
@@ -558,6 +566,19 @@ export class Edits {
     void this.#edit(task, change, options).finally(settled);
   }
 
+  /**
+   * The base of an edit of the task's fields the person begins now: what the screen shows of them.
+   * While an edit of theirs is on its way its value shows, and a newer one behind it does not, so
+   * it is what that edit was made against; otherwise the screen's now.
+   */
+  seen(task: string, fields: readonly Field[]): string | undefined {
+    for (const field of fields) {
+      const own = this.#showing.get(keyOf(task, field));
+      if (own !== undefined) return own.seen;
+    }
+    return this.#deps.asOf();
+  }
+
   /** Whether a write of the task's is on its way from this tab. */
   sending(task: string): boolean {
     return this.#chains.has(task);
@@ -582,9 +603,17 @@ export class Edits {
     this.#edits += 1;
     const number = this.#edits;
     for (const field of change.fields) this.#latest.set(keyOf(task.id, field), number);
-    // What the person saw: the editor's base, or the screen's now.
-    const seen = options.base ?? this.#deps.asOf();
+    // What the person saw: the editor's base, or what the screen shows of the fields now.
+    const seen = options.base ?? this.seen(task.id, change.fields);
     const sent = this.#send(task.id, change, seen);
+    for (const field of change.fields) this.#showing.set(keyOf(task.id, field), { number, seen });
+    const shown = () => {
+      for (const field of change.fields) {
+        const key = keyOf(task.id, field);
+        if (this.#showing.get(key)?.number === number) this.#showing.delete(key);
+      }
+    };
+    void sent.settled.then(shown, shown);
     const saved: Omit<Toast, "key"> = {
       kind: "undo",
       text: change.said,

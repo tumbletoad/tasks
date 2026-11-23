@@ -812,6 +812,63 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
         "Try again: who it waits on",
       );
     });
+
+    test("typed on while the first save is on its way and an agent changes the field: the next edit's base is what the person was looking at", async () => {
+      mount(<TaskList view="open" filter={OPEN} empty="" />);
+      apply(snapshot([task(1, { status: "waiting", waiting_on: "Dee Park" })]));
+      expand("t_00001");
+      const field = waitingField("t_00001");
+      act(() => {
+        field?.focus();
+      });
+      type(field, "Ana");
+      press(field, "Enter");
+      await settle();
+      apply(
+        batch(
+          11,
+          [task(1, { status: "waiting", waiting_on: "Ben Ito", version: 2 })],
+          ["waiting_on"],
+        ),
+      );
+      // The field shows the person's first edit, not Codex's change behind it.
+      expect(field?.value).toBe("Ana");
+      type(field, "Ana Reyes");
+      press(field, "Enter");
+      refuse(conflict());
+      await settle();
+      expect(
+        waitingSets().map((u) => [(u["set"] as { waiting_on: string }).waiting_on, u["base"]]),
+      ).toEqual([
+        ["Ana", "1.10.01234567"],
+        ["Ana Reyes", "1.10.01234567"],
+      ]);
+    });
+
+    test("after a change by someone else shows, typing the old value back and pressing Enter sends it against what the person began from", () => {
+      mount(<TaskList view="open" filter={OPEN} empty="" />);
+      apply(snapshot([task(1, { status: "waiting", waiting_on: "Ana Reyes" })]));
+      expand("t_00001");
+      const field = waitingField("t_00001");
+      act(() => {
+        field?.focus();
+      });
+      type(field, "Ana Reyes!");
+      apply(
+        batch(
+          11,
+          [task(1, { status: "waiting", waiting_on: "Ben Ito", version: 2 })],
+          ["waiting_on"],
+        ),
+      );
+      expect(card()?.querySelector('[data-part="remote"]')?.textContent).toContain("Codex");
+      type(field, "Ana Reyes");
+      press(field, "Enter");
+      expect(field?.value).toBe("Ana Reyes");
+      expect(waitingSets()).toEqual([
+        expect.objectContaining({ set: { waiting_on: "Ana Reyes" }, base: "1.10.01234567" }),
+      ]);
+    });
   });
 
   test("a title a reload brought back whose save was on its way: when the title arrives as those words, the editor closes and lets them go", async () => {

@@ -4,10 +4,9 @@
 // under the control (edit/Unsaved.tsx). A fact without a value is an empty control a person can
 // fill. Editable values sit in outlined controls; that outline is the only hint that a value can be
 // changed by hand. A finished task's facts are read-only text.
-import { useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ToggleButton, ToggleButtonGroup, type Key } from "react-aria-components";
 import { classes } from "../app/css.ts";
-import { Session } from "../context.ts";
 import {
   effortChange,
   priorityChange,
@@ -221,11 +220,12 @@ function Segmented({
 /**
  * Who the task waits on: a text field that saves on Enter or when focus leaves it, with the people
  * the space's tasks wait on as suggestions. Escape puts the saved value back. Only what the person
- * typed is sent: its base is taken when they start to type (again, after an Enter). Until then the
- * field shows the saved value as it changes; after that a change by someone else shows under it
- * while the typed text stays, and leaving sends the text against what the person saw, so the
- * change is a conflict they choose on. A field that goes away while the person edits it (the card
- * collapses, the task leaves the view) saves what was typed, as leaving it does.
+ * typed is sent: its base, what the field showed, is taken when they start to type (again, after
+ * an Enter). Until then the field shows the saved value as it changes; after that a change by
+ * someone else shows under it while the typed text stays, and leaving or Enter sends the text
+ * against what the person saw, so the change is a conflict they choose on. A field that goes away
+ * while the person edits it (the card collapses, the task leaves the view) saves what was typed,
+ * as leaving it does.
  */
 function WaitingOn({
   task,
@@ -237,7 +237,6 @@ function WaitingOn({
 }) {
   const t = useT();
   const edits = useEdits();
-  const { live } = useContext(Session);
   const state = useLive();
   const field = useRef<HTMLInputElement>(null);
   /** Set once the person types: the base, the mark and the value they started from. */
@@ -257,14 +256,23 @@ function WaitingOn({
     .filter((p) => p !== "")
     .sort((a, b) => a.localeCompare(b));
   const begin = () => {
-    opened.current ??= { base: live.store.asOf, mark: edits.mark(), value: saved };
+    opened.current ??= {
+      base: edits.seen(task.id, ["waiting_on"]),
+      mark: edits.mark(),
+      value: saved,
+    };
   };
-  const send = (value: string | undefined) => {
+  /**
+   * Sends what was typed. Leaving the field sends nothing when the text is what the person began
+   * from; an Enter (`chosen`) sends it all the same when someone changed the field since.
+   */
+  const send = (value: string | undefined, chosen = false) => {
     const was = opened.current;
     opened.current = undefined;
     typed.current = undefined;
     const text = (value ?? "").trim();
-    if (was === undefined || value === undefined || text === was.value) {
+    const unchanged = chosen ? text === (latest.current.waiting_on ?? "") : text === was?.value;
+    if (was === undefined || value === undefined || unchanged) {
       // Nothing to send: the field shows what is saved, also a change made while it was open.
       if (field.current !== null) field.current.value = latest.current.waiting_on ?? "";
       return;
@@ -275,8 +283,8 @@ function WaitingOn({
       was.base === undefined ? {} : { base: was.base },
     );
   };
-  const save = () => {
-    send(field.current?.value);
+  const save = (chosen = false) => {
+    send(field.current?.value, chosen);
   };
   // Gone under the person: what they typed is saved, never dropped. `send` reads only refs.
   const sendRef = useRef(send);
@@ -317,7 +325,7 @@ function WaitingOn({
           if (event.nativeEvent.isComposing) return;
           if (event.key === "Enter") {
             event.preventDefault();
-            save();
+            save(true);
           } else if (event.key === "Escape" && opened.current !== undefined) {
             // Escape puts the saved value back; a second one leaves for the list.
             if (field.current !== null && field.current.value !== saved) {

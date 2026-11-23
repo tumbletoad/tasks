@@ -7,10 +7,9 @@
 // The popover is an editor that stays open while the person reads and types: its base is taken
 // when it opens, so a due date someone else changed meanwhile is a conflict, never overwritten, and
 // the popover says so while it is open (A5 3.15 item 9).
-import { useContext, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
 import { classes } from "../app/css.ts";
-import { Session } from "../context.ts";
 import { dueChange } from "../edit/change.ts";
 import { addDays, addMonths, quickPicks, readDue, weekdayOf } from "../edit/due.ts";
 import { whoOf } from "../edit/edits.ts";
@@ -72,7 +71,6 @@ export function DuePicker({
 }) {
   const t = useT();
   const edits = useEdits();
-  const { live } = useContext(Session);
   const [open, setOpen] = useState(false);
   const opened = useRef<{ base: string | undefined; mark: number; due: string } | undefined>(
     undefined,
@@ -91,7 +89,13 @@ export function DuePicker({
     <DialogTrigger
       isOpen={open}
       onOpenChange={(next) => {
-        if (next) opened.current = { base: live.store.asOf, mark: edits.mark(), due: dueKey(task) };
+        if (next) {
+          opened.current = {
+            base: edits.seen(task.id, ["due"]),
+            mark: edits.mark(),
+            due: dueKey(task),
+          };
+        }
         setOpen(next);
       }}
     >

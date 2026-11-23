@@ -333,7 +333,7 @@ function TitleEditor({
     // Words whose save is still on its way are the title shown: the editor starts from it.
     const kept = found?.typed.trim() === task.title ? undefined : found;
     return {
-      base: kept === undefined ? live.store.asOf : kept.base,
+      base: kept === undefined ? edits.seen(task.id, ["title"]) : kept.base,
       mark: edits.mark(),
       title: kept?.title ?? task.title,
       typed: kept?.typed,
