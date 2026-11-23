@@ -281,7 +281,15 @@ export async function openCommand(
   }
   const space = globals.space;
   // A folder (either separator) is no space ID or name: it never opens the space's other copy.
-  if (space !== undefined && (space.length > 200 || /[\\/]/u.test(space) || hasControl(space))) {
+  // The page opens a folder itself.
+  if (space !== undefined && /[\\/]/u.test(space)) {
+    return printError(io, globals.json, {
+      code: "invalid_input",
+      message: `${CLI_NAME} open --space takes a space ID or name, not a folder.`,
+      hint: `Run ${CLI_NAME} open, then choose Open folder in the page's space list to open that folder.`,
+    });
+  }
+  if (space !== undefined && (space.length > 200 || hasControl(space))) {
     return printUsage(io, globals.json, "ttasks open --space takes a space ID or name");
   }
   let session: Session;

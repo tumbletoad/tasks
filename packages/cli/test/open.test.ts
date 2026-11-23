@@ -82,7 +82,8 @@ describe("[A2.3.9.cli.open] ttasks open", () => {
         main: { openUrl },
       });
       expect(refused.code).toBe(2);
-      expect(refused.stderr).toContain("--space takes a space ID or name");
+      expect(refused.stderr).toContain("--space takes a space ID or name, not a folder");
+      expect(refused.stderr).toContain("choose Open folder");
     }
     expect(opened).toHaveLength(1);
     const json = await runMain(["open", "--json"], { home: w.home, tty: true, main: { openUrl } });

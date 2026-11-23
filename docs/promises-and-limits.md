@@ -70,9 +70,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   cannot be written, TTasks says so and names the command that records it once the file is fixed.
 - When several copies of one space are on this machine, a command without a folder reaches the
   copy that takes changes, and after a restart that is still the copy you last changed.
-- A restored copy you open in the browser is the copy that page shows, in every tab and after a
-  reload, also when its original is open: the address names that copy, and the page says it is a
-  restored copy.
+- A browser tab shows one copy of a space for as long as it is open, and nothing you do there,
+  Run and Stop included, reaches another copy: when its copy is closed or claimed, the tab says so
+  and stops. A restored copy's address names that copy, also after a reload.
+- A copy's address names its folder: a backup restored later into the same folder answers to an
+  address saved for the copy that was there before.
 - In a space that takes no change, such as a restored copy or one another machine owns, the page
   says why and what would let it change, and keeps what you typed there to copy, never offering a
   Try again that cannot work.
