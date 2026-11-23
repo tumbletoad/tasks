@@ -21,6 +21,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -34,6 +35,7 @@ import { unsafeConfigMessage } from "../src/config/messages.ts";
 import { ServiceExit } from "../src/hub/exit.ts";
 import {
   atSocketPath,
+  clearSocketPath,
   currentPerson,
   factsOf,
   fixCommand,
@@ -41,6 +43,7 @@ import {
   repairOf,
   shellArg,
   shellPath,
+  socketBlock,
   socketBlockedMessage,
   unsafeMessage,
   type Need,
@@ -1083,24 +1086,54 @@ describe("[A2.3.4.hub.stale-recovery] only a socket at the socket's path is the 
     expect(socketBlockedMessage(folder, "folder")).toContain("is a folder where");
   });
 
-  test.skipIf(!posix)("Linux and macOS: a socket and a link to one", async () => {
-    const root = temp("at-socket-unix");
-    const path = join(root, "ttasks.sock");
-    const server = createServer();
-    await new Promise<void>((resolve) => {
-      server.listen(path, resolve);
-    });
-    try {
-      expect(atSocketPath(path)).toBe("socket");
-      const link = join(root, "link.sock");
-      symlinkSync(path, link);
-      expect(atSocketPath(link)).toBe("link");
-    } finally {
+  test.skipIf(!posix)(
+    "Linux and macOS: a socket something answers on stays, one nobody answers on is removed, a link stays",
+    async () => {
+      const root = temp("at-socket-unix");
+      const path = join(root, "ttasks.sock");
+      const server = createServer((socket) => socket.destroy());
+      const close = () =>
+        new Promise<void>((resolve) => {
+          server.close(() => {
+            resolve();
+          });
+        });
       await new Promise<void>((resolve) => {
-        server.close(() => {
+        server.listen(path, resolve);
+      });
+      try {
+        expect(atSocketPath(path)).toBe("socket");
+        expect(await socketBlock(path)).toBe("live");
+        expect(await clearSocketPath(path)).toBe("live");
+        expect(atSocketPath(path)).toBe("socket");
+        expect(socketBlockedMessage(path, "live")).toBe(
+          `${shellPath(path)} is a socket another program answers on where TTasks's socket goes, so the service does not start. Stop the program that listens there, then start the service again.`,
+        );
+        const link = join(root, "link.sock");
+        symlinkSync(path, link);
+        expect(atSocketPath(link)).toBe("link");
+        expect(await clearSocketPath(link)).toBe("link");
+        expect(lstatSync(link).isSymbolicLink()).toBe(true);
+      } finally {
+        await close();
+      }
+      // A socket its listener left behind: Node removes its own on close, so it is moved first.
+      const left = join(root, "left.sock");
+      const ended = createServer();
+      await new Promise<void>((resolve) => {
+        ended.listen(join(root, "ended.sock"), resolve);
+      });
+      renameSync(join(root, "ended.sock"), left);
+      await new Promise<void>((resolve) => {
+        ended.close(() => {
           resolve();
         });
       });
-    }
-  });
+      expect(atSocketPath(left)).toBe("socket");
+      expect(await socketBlock(left)).toBeUndefined();
+      expect(await clearSocketPath(left)).toBe("removed");
+      expect(atSocketPath(left)).toBe("nothing");
+      expect(await clearSocketPath(left)).toBeUndefined();
+    },
+  );
 });

@@ -65,7 +65,7 @@ import {
 } from "./files.ts";
 import { detectIdentity, type Identity } from "./identity.ts";
 import {
-  atSocketPath,
+  clearSocketPath,
   socketBlockedMessage,
   unsafeMessage,
   type UnsafeThing,
@@ -1032,16 +1032,15 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     let socketIdentity: { dev: bigint; ino: bigint } | undefined;
     for (let attempt = 1; bound === undefined; attempt += 1) {
       const path = plan.kind === "pipe" ? pipeName(plan, instance) : plan.path;
-      // The lock is ours and the socket folder is this install's own and private, so a socket at
-      // our path is a stale one of ours. Anything else there is the person's, and stays.
+      // The lock keeps a second start of this home out, not another program's listener: only a
+      // socket nobody answers on is a stale one of ours. Anything else there stays.
       if (plan.kind === "unix") {
-        const holds = atSocketPath(path);
-        if (holds === "socket") {
-          rmSync(path, { force: true });
+        const cleared = await clearSocketPath(path);
+        if (cleared === "removed") {
           log.log("service.stale_removed", { what: "socket", count: 1 });
-        } else if (holds !== "nothing") {
+        } else if (cleared !== undefined) {
           log.log("service.refused", { reason: "invalid_config" });
-          throw refuse(say, "invalid_config", socketBlockedMessage(path, holds));
+          throw refuse(say, "invalid_config", socketBlockedMessage(path, cleared));
         }
       }
       try {

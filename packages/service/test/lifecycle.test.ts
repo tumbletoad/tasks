@@ -11,6 +11,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createConnection, createServer } from "node:net";
 import { basename, dirname, join } from "node:path";
 import { openRpc } from "@ttasks/bridge/protocol";
 import { afterEach, describe, expect, test } from "vitest";
@@ -246,7 +247,7 @@ describe("[A2.3.4.hub.stale-recovery] a crash leaves what the next start recover
 
 describe("[A2.3.3.hub.exit-codes] exit codes and refusals as a process", () => {
   test.skipIf(WIN)(
-    "Linux and macOS: a file where the socket goes is kept, and the start refuses with 64 and names it",
+    "Linux and macOS: a file, or a socket another program listens on, where the socket goes is kept, and the start refuses with 64 and names it",
     async () => {
       const h = home("in-the-way");
       const first = services.start(h);
@@ -271,6 +272,35 @@ describe("[A2.3.3.hub.exit-codes] exit codes and refusals as a process", () => {
       );
       expect(stale).toEqual([]);
       rmSync(path);
+
+      // Another program's listener there keeps every new connection.
+      const other = createServer((socket) => {
+        socket.end("other");
+      });
+      await new Promise<void>((resolve) => {
+        other.listen(path, resolve);
+      });
+      try {
+        const again = services.start(h);
+        expect((await within(again.exit, EXIT_MS, "refusal")).code).toBe(EXIT.refused);
+        expect(again.stderr()).toContain("is a socket another program answers on where");
+        const answer = await new Promise<string>((resolve, reject) => {
+          const socket = createConnection(path);
+          let text = "";
+          socket.on("data", (chunk) => (text += String(chunk)));
+          socket.on("end", () => {
+            resolve(text);
+          });
+          socket.on("error", reject);
+        });
+        expect(answer).toBe("other");
+      } finally {
+        await new Promise<void>((resolve) => {
+          other.close(() => {
+            resolve();
+          });
+        });
+      }
     },
     LONG,
   );

@@ -55,9 +55,9 @@ import {
   type Layout,
 } from "@ttasks/service/paths";
 import {
-  atSocketPath,
   isPrivateDir,
   judgePath,
+  socketBlock,
   socketBlockedMessage,
   unsafeMessage,
   type UnsafeThing,
@@ -66,6 +66,7 @@ import type { GateFacts } from "@ttasks/service/runtime-gate";
 import type { VersionManifest } from "@ttasks/service/version-folder";
 import { CLI_SPEC, type Globals } from "./args.ts";
 import {
+  alive,
   CLI_BUILD,
   connectService,
   readServiceRecord,
@@ -408,21 +409,22 @@ export async function requestCheck(session: Session, spaces: Status["spaces"]): 
   }
 }
 
-/** What stands where the service's socket goes (Linux and macOS), which keeps it from starting. */
-export function socketBlocked(
+/**
+ * What stands where a stopped service's socket goes (Linux and macOS), which keeps it from
+ * starting: anything but nothing or a socket nobody answers on.
+ */
+async function socketBlocked(
   io: Pick<Io, "env" | "platform">,
   layout: Layout,
   state: string,
-): string | undefined {
+): Promise<string | undefined> {
   if (io.platform === "win32") return undefined;
   try {
     const id = installId(canonicalStatePath(realpathSync.native(state), io.platform));
     const plan = runtimeNames(layout, id, hostFacts(io.env, io.platform), isPrivateDir).endpoint;
     if (plan.kind !== "unix") return undefined;
-    const holds = atSocketPath(plan.path);
-    return holds === "nothing" || holds === "socket"
-      ? undefined
-      : socketBlockedMessage(plan.path, holds);
+    const block = await socketBlock(plan.path);
+    return block === undefined ? undefined : socketBlockedMessage(plan.path, block);
   } catch {
     // A state folder that cannot be read is the paths row's to report.
     return undefined;
@@ -441,7 +443,7 @@ async function serviceChecks(
   const launch = await import("./doctor-launch.ts");
   const record = readServiceRecord(state);
   if (record === undefined) {
-    const blocked = socketBlocked(io, layout, state);
+    const blocked = await socketBlocked(io, layout, state);
     return [
       {
         id: "service",
@@ -522,8 +524,15 @@ async function serviceChecks(
     const body = bodyOf(asAppError(error));
     const given = body.data?.["reason"];
     const reason = typeof given === "string" ? given : body.code;
+    // A record a crash or a restore left: its process is gone, so what answers at the socket's
+    // path is not this service.
+    const blocked = alive(record.pid) ? undefined : await socketBlocked(io, layout, state);
     return [
-      { id: "service", status: "fail", detail: body.message },
+      {
+        id: "service",
+        status: "fail",
+        detail: blocked === undefined ? body.message : `${body.message} ${blocked}`,
+      },
       {
         id: "endpoint",
         status: "fail",
