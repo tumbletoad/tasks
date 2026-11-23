@@ -99,7 +99,12 @@ export function Tips() {
       hide();
     };
     const onScroll = () => {
+      const element = current;
+      const byFocus = focused;
       hide();
+      // The page moved, and the mouse may rest on the same element still: no pointer event tells
+      // of that, so its label comes after the rest, as if the mouse had just arrived.
+      if (element !== undefined && !byFocus && element.matches(":hover")) show(element, REST_MS);
     };
     document.addEventListener("pointerover", onOver);
     document.addEventListener("focusin", onFocus);
