@@ -93,22 +93,20 @@ const GRANT_TEXT = renderError(GRANT);
 
 /**
  * The grant refusal of a bridge that is no session, when its home may use another space now, with
- * what moves it there: for a hand-made entry a restart, after taking out a space it names; for a
- * registered home a restart with that space named in its entry.
+ * what moves it there: a restart with that space named in its entry, or for a hand-made entry
+ * that names no space a restart alone.
  */
 const elsewhere = (
   name: string,
   space: string,
-  entry: "hand-made" | "hand-made naming a space" | "registered",
+  entry: "names a space" | "hand-made naming none",
 ): string =>
   renderError({
     ...GRANT,
     hint:
-      entry === "registered"
+      entry === "names a space"
         ? `It may use the space ${name} now: ask the user to check that the agent's ${PRODUCT_NAME} entry names it (--space ${space}), then to restart the agent app.`
-        : entry === "hand-made naming a space"
-          ? `It may use the space ${name} now: ask the user to take the space out of the agent's ${PRODUCT_NAME} entry, then to restart the agent app.`
-          : `It may use the space ${name} now: ask the user to restart the agent app to work there.`,
+        : `It may use the space ${name} now: ask the user to restart the agent app to work there.`,
     data: { rule: "grant", space },
   });
 
@@ -226,7 +224,7 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
         // Its entry's space is the one it works in: the refusal names the space its home may use.
         for (const [op, input] of CALLS.filter(([op]) => op !== "receipt.get")) {
           expect(await refusedText(other, op, withRequest(input), host), `${why}: ${op}`).toBe(
-            elsewhere("Life", life, "registered"),
+            elsewhere("Life", life, "names a space"),
           );
         }
         expect(touched, why).toEqual([]);
@@ -254,7 +252,7 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       const pinned = await connect({ instance: "home-life", space: w.space });
       const { host, touched } = trapped(w.space);
       expect(await refusedText(pinned, "task.get", { launch: launch.reference }, host)).toBe(
-        elsewhere("Life", life, "registered"),
+        elsewhere("Life", life, "names a space"),
       );
       expect(touched).toEqual([]);
       expect((await evidenceOf(launch.id)).bound_at).toBeUndefined();
@@ -497,7 +495,8 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
       // Two spaces and no default yet: neither is the machine's default.
       const manual = await connect({ instance: null, space: w.space });
       expect(await refusedText(manual, "space.status")).toBe(GRANT_TEXT);
-      // The entry setup prints names no space: with no default to take, it is told to set one.
+      // An entry naming no space, as setup printed it before: with no default to take, it is told
+      // to set one.
       const printed = await connect({ instance: null });
       expect(printed.binding).toEqual({ space: null, state: "unbound" });
       const none = await printed.refusal("space.status");
@@ -518,22 +517,23 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
       ).toMatch(/^logged /);
       expect((await logOf("M-4"))[0]?.["author"]).toBe("agent:manual");
       // An instance that is not an instance ID is a hand-made entry as well.
-      // In another space each is refused, naming the default it may use. A restart would bind the
-      // space its entry names again, so it is told to take that out.
+      // In another space each is refused, naming the default it may use, for its entry to name.
       const odd = await connect({ instance: "Not An Instance!", space: life });
       expect(await refusedText(odd, "space.status")).toBe(
-        elsewhere("Mira", w.space, "hand-made naming a space"),
+        elsewhere("Mira", w.space, "names a space"),
       );
       const manualLife = await connect({ instance: null, space: life });
       expect(await refusedText(manualLife, "space.status")).toBe(
-        elsewhere("Mira", w.space, "hand-made naming a space"),
+        elsewhere("Mira", w.space, "names a space"),
       );
       // Without --space too: the default space when it binds, which is what taking it out gives.
       const plain = await connect({ instance: null });
       expect(await plain.call("space.status")).toContain("Space: Mira (M)");
       // When the default moves, a restart is what moves it: the next process takes the new one.
       await asUser("space/use", { space: life });
-      expect(await refusedText(plain, "space.status")).toBe(elsewhere("Life", life, "hand-made"));
+      expect(await refusedText(plain, "space.status")).toBe(
+        elsewhere("Life", life, "hand-made naming none"),
+      );
       const restarted = await connect({ instance: null });
       expect(await restarted.call("space.status")).toContain("Space: Life (L)");
       await asUser("space/use", { space: w.space });
@@ -736,9 +736,13 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       await asUser("space/use", { space: w.space });
       const agent = await connect({ instance: "home-life" });
       expect(agent.binding).toEqual({ space: w.space, state: "unbound" });
-      expect(await refusedText(agent, "space.status")).toBe(elsewhere("Life", life, "registered"));
+      expect(await refusedText(agent, "space.status")).toBe(
+        elsewhere("Life", life, "names a space"),
+      );
       await asUser("space/use", { space: life });
-      expect(await refusedText(agent, "space.status")).toBe(elsewhere("Life", life, "registered"));
+      expect(await refusedText(agent, "space.status")).toBe(
+        elsewhere("Life", life, "names a space"),
+      );
       // The same process again holds Mira; a new one takes Life.
       const again = await connect({ instance: "home-life", held_space: w.space });
       expect(again.binding).toEqual({ space: w.space, state: "unbound" });
@@ -814,7 +818,7 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
   );
 
   test(
-    "an entry edited by hand is told what works with the default left where it is: a registered home to name its space, a hand-made entry to take a misspelled space out",
+    "an entry edited by hand is told what works with the default left where it is: each to name the space it may use",
     { timeout: LONG },
     async () => {
       await grant("home-edited", life);
@@ -823,7 +827,9 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       // Its space taken out: it binds the default, Mira, which it may not use.
       const bare = await connect({ instance: "home-edited" });
       expect(bare.binding).toEqual({ space: w.space, state: "unbound" });
-      expect(await refusedText(bare, "space.status")).toBe(elsewhere("Life", life, "registered"));
+      expect(await refusedText(bare, "space.status")).toBe(
+        elsewhere("Life", life, "names a space"),
+      );
       // Its space misspelled: no space, and the same advice.
       const typo = await connect({ instance: "home-edited", space: "Lief" });
       expect(typo.binding).toEqual({ space: null, state: "unbound" });
@@ -833,10 +839,10 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       // Followed, with the default still Mira: the next process works in Life.
       const fixed = await connect({ instance: "home-edited", space: life });
       expect(await fixed.call("space.status")).toContain("Space: Life (L)");
-      // A hand-made entry's misspelled space: taking it out gives the default, which it may use.
+      // A hand-made entry's misspelled space: it is told the default, the space it may use.
       const manualTypo = await connect({ instance: null, space: "Mira typo" });
       expect((await manualTypo.refusal("space.status")).text).toContain(
-        "take the space out of the entry",
+        `It may use the space Mira: ask the user to name it in the agent's ${PRODUCT_NAME} entry (--space ${w.space})`,
       );
       const manualFixed = await connect({ instance: null });
       expect(await manualFixed.call("space.status")).toContain("Space: Mira (M)");

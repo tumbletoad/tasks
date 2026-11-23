@@ -7,11 +7,12 @@
 // Zed, VS Code with Copilot) get their own format: each becomes a managed integration when a person
 // asks for it (A3 3.13.7).
 //
-// A printed entry is a hand-made one (A3 3.7.4): no `--instance` and no `--space`. Setup keeps no
-// agent-home row for a file it does not write, and the grant gate refuses an instance without a
-// live row (A3 3.7.8), so an entry that named one would fail at every call. A hand-made entry
-// reaches the machine's default space, which an entry without `--space` uses, so it keeps working
-// when the person changes that default.
+// A printed entry is a hand-made one: no `--instance`. Setup keeps no agent-home row for a file it
+// does not write, and the grant gate refuses an instance without a live row, so an entry that named
+// one would fail at every call. A hand-made entry may use the machine's default space only, and it
+// names that space by ID: an agent app restarted after the default moved is refused and told what
+// to change, rather than working in the new default, where the same task reference can name
+// another task.
 //
 // `approve-tools` (A3 3.13.2, 3.13.4) would approve TTasks's tools in the app's settings. Setup never
 // changes another app's approval settings (A3 3.13.1), so the part is only ever shown as a change
@@ -108,15 +109,10 @@ const appData = (input: PrintInput): string => {
 
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
-/** The entry's argv for an app: TTasks's stable command as a hand-made entry (see above). */
-export function printArgv(input: PrintInput, app: PrintApp): string[] {
-  return [input.tasks, "mcp", "--app", app];
-}
-
-/** The snippet a person adds by hand for `app`, with the file it belongs in. */
-export function snippetFor(input: PrintInput, app: PrintApp): Snippet {
+/** The snippet a person adds by hand for `app` in `space` (an `sp_` ID), with its file. */
+export function snippetFor(input: PrintInput, app: PrintApp, space: string): Snippet {
   const p = pathOf(input.platform);
-  const argv = printArgv(input, app);
+  const argv = [input.tasks, "mcp", "--space", space, "--app", app];
   const [command = "", ...args] = argv;
   const plain = { command, args };
   switch (app) {

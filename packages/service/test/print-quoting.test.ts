@@ -17,6 +17,8 @@ const windows = process.platform === "win32";
 const SLOW = 180_000;
 /** A variable the shell has: a line that expands anything shows its value. */
 const SENTINEL = "TTASKS_PRINT_SENTINEL";
+/** A space ID as an entry names it. */
+const SPACE = "sp_0123456789abcdefghijkl";
 /** The variable a line sets for its command. */
 const SET = "TTASKS_LINE_TEST";
 /** The byte order mark that makes Windows PowerShell 5.1 read a script as UTF-8. */
@@ -290,6 +292,7 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
               : `/opt/${"x".repeat(9000)}/tasks`,
           },
           "claude-code",
+          SPACE,
         ),
       ).toThrow(PrintRefused);
     },
@@ -305,6 +308,7 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
       const snippet = snippetFor(
         { platform: process.platform, userHome: base, env: {}, tasks },
         "claude-code",
+        SPACE,
       );
       expect(snippet.runIn).toBe(pasteShell(process.platform));
       const line = snippet.text.trimEnd();
@@ -322,6 +326,8 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
               "--",
               tasks,
               "mcp",
+              "--space",
+              SPACE,
               "--app",
               "claude-code",
             ],
@@ -338,6 +344,7 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
             tasks: windows ? "C:\\a%PATH%\\ttasks.exe" : "/opt/a\rb/tasks",
           },
           "claude-code",
+          SPACE,
         ),
       ).toThrow(PrintRefused);
     },
