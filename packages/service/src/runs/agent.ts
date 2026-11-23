@@ -12,6 +12,7 @@ import type { RunAdapterId, RunPermission, RunRecord } from "@ttasks/contracts/r
 import {
   ADDED,
   agentEnvironment,
+  instanceHome,
   nodeDetectHost,
   resolveProgram,
   sanitiseComposer,
@@ -32,6 +33,7 @@ import {
 import type { RunFolderFound } from "../launch/index.ts";
 import type { ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
+import { homeDigest } from "../setup/agents.ts";
 
 /** What building a run needs of the service. */
 export interface RunAgents {
@@ -196,6 +198,9 @@ export async function buildRun(
   );
   if (!program.ok) return "spawn_failed";
   const request = runBrief(task.ref, task.title, run.request);
+  // The home the app keeps the run's session in, as the link to the monitor's agents reads it.
+  const home = instanceHome(instance, agents.home, agents.platform)?.path;
+  const evidence = home === undefined ? {} : { home: homeDigest(agents.platform, home) };
   const tools = (app: string) => ({
     command: command[0] ?? "",
     args: [...command.slice(1), "mcp", "--space", space, "--instance", instance.id, "--app", app],
@@ -209,6 +214,7 @@ export async function buildRun(
         cwd: folder.path,
         env,
         open: claudeDriver({ request }),
+        evidence,
       },
       toolsFile: claudeToolsFile(tools("claude-code")),
     };
@@ -219,6 +225,7 @@ export async function buildRun(
       args: [...program.args, ...CODEX_ARGS],
       cwd: folder.path,
       env,
+      evidence,
       open: codexDriver({
         inFolder: sameFolder(folder.path, agents.platform),
         request,

@@ -26,7 +26,13 @@
 //
 // Every limit runs on the monotonic clock: the start time, the run's wall and idle times, the
 // stop's grace, the close, the confirmation and the drain of the output.
-import type { RunCleanup, RunEvent, RunRecord, RunResult } from "@ttasks/contracts/runs";
+import type {
+  RunCleanup,
+  RunEvent,
+  RunEvidence,
+  RunRecord,
+  RunResult,
+} from "@ttasks/contracts/runs";
 import { SIGNAL_NAME, TEXT_CAP_BYTES } from "@ttasks/contracts/runs";
 import type {
   AgentExit,
@@ -76,6 +82,8 @@ export const RUN_TIMES: Readonly<RunTimes> = {
  */
 export interface AgentCommand extends Omit<ContainerSpec, "name"> {
   readonly open?: OpenDriver;
+  /** What the run records once its agent started, besides its PID. */
+  readonly evidence?: RunEvidence;
 }
 
 /** What the host logs: codes and counts only, never a run's text. */
@@ -513,7 +521,7 @@ export class RunHost {
     if (started === undefined) return this.#startTimedOut(flow, starting);
     // The container's contract: a refused start leaves nothing running and no container.
     if (!started.ok) return this.#settle(flow.id, { kind: "start_failed", reason: "spawn_failed" });
-    return this.#running(flow, run, started.contained, open);
+    return this.#running(flow, run, started.contained, open, prepared.evidence);
   }
 
   /**
@@ -576,6 +584,7 @@ export class RunHost {
     run: RunRecord,
     contained: Contained,
     open: OpenDriver,
+    evidence: RunEvidence = {},
   ): Promise<RunRecord | undefined> {
     if (flow.stopping()) return this.#stoppedAtStart(flow, contained);
     const name = contained.name;
@@ -625,9 +634,11 @@ export class RunHost {
       return exit;
     });
 
-    await this.#machine.started(flow.id, contained.pid, this.#now()).catch((error: unknown) => {
-      this.#failed("started", error);
-    });
+    await this.#machine
+      .started(flow.id, contained.pid, this.#now(), evidence)
+      .catch((error: unknown) => {
+        this.#failed("started", error);
+      });
 
     const limits = new AbortController();
     flow.abort.signal.addEventListener("abort", () => {

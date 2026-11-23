@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { HttpTimerKind } from "../src/http/index.ts";
 import { testClock } from "./clock.ts";
 import { instanceToml } from "./harness.ts";
+import { homeDigest } from "../src/setup/agents.ts";
 import { httpWorld, openFeed, signIn, type FeedClient, type HttpWorld } from "./http-world.ts";
 
 const LOOKED = { agents: true, visible: true, focused: true };
@@ -28,11 +29,22 @@ const ID = {
   twin: "aaaaaaaa-1111-4111-8111-000000000006",
   ended: "aaaaaaaa-1111-4111-8111-000000000007",
   trashed: "aaaaaaaa-1111-4111-8111-000000000008",
+  moved: "aaaaaaaa-1111-4111-8111-000000000009",
+  homeless: "aaaaaaaa-1111-4111-8111-00000000000a",
 } as const;
 
 let w: HttpWorld;
 let dir: string;
 let feed: FeedClient;
+/** The agent homes the instances name in machine.toml. */
+let homes: { claude: string; other: string; twin: string; codex: string };
+const homeOfInstance = (instance: string): string =>
+  ({
+    "claude-work": homes.claude,
+    "claude-other": homes.other,
+    "claude-twin": homes.twin,
+    "codex-work": homes.codex,
+  })[instance] ?? "";
 const tasks = new Map<string, { id: string; ref: string; space: string }>();
 let n = 0;
 const rid = () => `fixture-links-${String((n += 1)).padStart(6, "0")}`;
@@ -67,12 +79,16 @@ async function storeOf(space: string): Promise<SpaceExecutionStore> {
   });
 }
 
-/** A terminal launch of `title`'s task with `instance`, its record holding `evidence`. */
+/**
+ * A terminal launch of `title`'s task with `instance`, its record holding `evidence` and the agent
+ * home its click started the app in: by default the one the instance names now, null for none.
+ */
 async function launch(
   title: string,
   instance: string,
   evidence: { preset?: string; thread?: string },
   ended = false,
+  home: string | null = homeOfInstance(instance),
 ): Promise<void> {
   const task = tasks.get(title);
   if (task === undefined) throw new Error(`no task ${title}`);
@@ -84,7 +100,10 @@ async function launch(
       ...base,
       taskVersion: 1,
       briefHash: HASH,
-      ...(evidence.preset === undefined ? {} : { evidence: { preset: evidence.preset } }),
+      evidence: {
+        ...(evidence.preset === undefined ? {} : { preset: evidence.preset }),
+        ...(home === null ? {} : { home: homeDigest(process.platform, home) }),
+      },
     },
     rid(),
   );
@@ -172,7 +191,7 @@ async function run(title: string, nativeId: string): Promise<void> {
     starting.id,
     { state: "starting", version: starting.version },
     "running",
-    { evidence: { native_id: nativeId } },
+    { evidence: { native_id: nativeId, home: homeDigest(process.platform, homes.codex) } },
   );
   await store.transitionRun(
     running.id,
@@ -200,7 +219,7 @@ async function run(title: string, nativeId: string): Promise<void> {
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "ttasks-links-"));
-  const homes = {
+  homes = {
     claude: join(dir, "claude-home"),
     other: join(dir, "claude-other"),
     twin: join(dir, "claude-twin"),
@@ -249,7 +268,17 @@ beforeAll(async () => {
     { name: "Studio", path: join(w.root, "s", "studio"), ref_prefix: "S" },
     { timeoutMs: 60_000 },
   );
-  for (const title of ["Terminal", "Thread", "Missing", "Shared", "Twin", "Ended", "Trashed"]) {
+  for (const title of [
+    "Terminal",
+    "Thread",
+    "Missing",
+    "Shared",
+    "Twin",
+    "Ended",
+    "Trashed",
+    "Moved",
+    "Homeless",
+  ]) {
     await addTask("Mira", title);
   }
   for (const title of ["Run", "Shared too"]) await addTask("Studio", title);
@@ -263,6 +292,10 @@ beforeAll(async () => {
   await run("Run", ID.run);
   await launch("Trashed", "claude-work", { preset: ID.trashed });
   await trashAfterRestore("Trashed");
+  // Started in a home the instance named then; machine.toml names another one now.
+  await launch("Moved", "claude-work", { preset: ID.moved }, false, join(dir, "claude-before"));
+  // A record from before the click recorded its home.
+  await launch("Homeless", "claude-work", { preset: ID.homeless }, false, null);
 
   const agent = (row: string, provider: string, home: string, session: string, name: string) =>
     ttamAgent({ row, provider, home, session, name, activity: "working" });
@@ -295,6 +328,8 @@ beforeAll(async () => {
         agent("f-twin", "claude", "twin-a", ID.twin, "Fixture twin home"),
         agent("g-ended", "claude", "claude-test", ID.ended, "Fixture ended launch"),
         agent("i-trashed", "claude", "claude-test", ID.trashed, "Fixture trashed task"),
+        agent("j-moved", "claude", "claude-test", ID.moved, "Fixture moved home"),
+        agent("k-homeless", "claude", "claude-test", ID.homeless, "Fixture no home recorded"),
         // A Claude session ID of a launch, under Codex: another app's session.
         agent("h-other-app", "codex", "codex-test", ID.terminal, "Fixture other app"),
       ],
@@ -359,10 +394,12 @@ describe("[A5.agents.links] each agent of the monitor is shown with the task TTa
     // A launch whose agent ended still links its session: the person may have resumed it.
     expect(byTitle(p, "Fixture ended launch")?.task).toMatchObject(linked("Ended") ?? {});
     // A home TTAM does not list, one two of its homes could be, a session two tasks hold, the
-    // same ID under another app, and a task trashed in the space but kept in a restored copy of
-    // it: no link.
+    // same ID under another app, a task trashed in the space but kept in a restored copy of it, a
+    // home that is not the one the launch recorded, and a record without one: no link.
     for (const title of [
       "Fixture trashed task",
+      "Fixture moved home",
+      "Fixture no home recorded",
       "Fixture missing home",
       "Fixture twin home",
       "Fixture shared session",

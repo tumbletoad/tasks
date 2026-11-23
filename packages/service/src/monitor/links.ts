@@ -3,13 +3,13 @@
 // home TTAM does not list, a home two of its homes could be, or a session TTasks holds for two
 // tasks links nothing, since a wrong task is worse than none. No process ID is used.
 import type { AgentsTask, MonitorAgent, MonitorSnapshot } from "@ttasks/contracts/monitor";
-import { samePath } from "../setup/agents.ts";
+import { homeDigest } from "../setup/agents.ts";
 
 /** An agent session TTasks started, as its own records hold it. */
 export interface HeldSession {
   readonly task: AgentsTask;
   readonly provider: "claude" | "codex";
-  /** The agent home's absolute path on this machine. */
+  /** The agent home it started the app in, as a digest (`homeDigest`). */
   readonly home: string;
   /** The agent app's own session ID. */
   readonly sessionId: string;
@@ -29,7 +29,7 @@ function homeOf(
   platform: NodeJS.Platform,
 ): MonitorSnapshot["homes"][number] | undefined {
   const homes = snapshot.homes.filter(
-    (h) => h.provider === held.provider && samePath(platform, h.path, held.home),
+    (h) => h.provider === held.provider && homeDigest(platform, h.path) === held.home,
   );
   return homes.length === 1 ? homes[0] : undefined;
 }

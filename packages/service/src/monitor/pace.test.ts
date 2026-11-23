@@ -6,6 +6,7 @@
 import type { AgentsView, MonitorSnapshot } from "@ttasks/contracts/monitor";
 import { describe, expect, test } from "vitest";
 import { testClock } from "../../test/clock.ts";
+import { homeDigest } from "../setup/agents.ts";
 import type { HeldSession } from "./links.ts";
 import type { MonitorAnswer, MonitorStatus } from "./monitor.ts";
 import { MonitorPace, PACE, type PaceTimerKind } from "./pace.ts";
@@ -255,7 +256,13 @@ describe("[A5.agents.pace] the slow flag goes with the next answer, never before
 
 describe("[A5.agents.unseen] an agent TTasks holds as running that the monitor does not see", () => {
   const held = (running = true): HeldSession[] => [
-    { task: TASK, provider: "claude", home: HOME, sessionId: SESSION, running },
+    {
+      task: TASK,
+      provider: "claude",
+      home: homeDigest(process.platform, HOME),
+      sessionId: SESSION,
+      running,
+    },
   ];
   const seen: MonitorSnapshot["agents"] = [
     {
@@ -315,14 +322,14 @@ describe("[A5.agents.unseen] an agent TTasks holds as running that the monitor d
       {
         task: TASK,
         provider: "claude",
-        home: `${HOME}-elsewhere`,
+        home: homeDigest(process.platform, `${HOME}-elsewhere`),
         sessionId: SESSION,
         running: true,
       },
       {
         task: { ...TASK, id: "t_run", started: "run" },
         provider: "claude",
-        home: HOME,
+        home: homeDigest(process.platform, HOME),
         sessionId: SESSION,
         running: true,
       },

@@ -1,8 +1,8 @@
 // The agent sessions TTasks started on this machine, in every open space, as the links to tasks
-// read them (links.ts): each terminal launch and background run whose agent app's session ID its
-// record holds, with the agent home its instance starts the app on. A launch counts while its
-// agent runs and for a day after its record last changed, so an agent the person resumes by hand
-// in the same session still shows with its task.
+// read them (links.ts): each terminal launch and background run whose record holds its agent app,
+// the home it started the app in and the app's session ID, as they were when it started. A launch
+// counts while its agent runs and for a day after its record last changed, so a conversation the
+// person resumes by hand still shows with its task.
 import { copyOf, isAmbiguity } from "../ops/copies.ts";
 import { readAgentSessions, type ServedSpace } from "../ops/index.ts";
 import type { HeldSession } from "./links.ts";
@@ -14,10 +14,6 @@ export interface HeldSources {
   spaces(): readonly ServedSpace[];
   /** This machine's ID: only its own launches and runs count. */
   readonly machine: string;
-  /** The agent app and home an instance starts, for one TTAM can list; else undefined. */
-  agentOf(
-    instance: string,
-  ): { readonly provider: "claude" | "codex"; readonly home: string } | undefined;
   /** The terminal launches of a space whose agent runs now, as the shims say. */
   running(space: string): readonly string[];
   /** Wall clock milliseconds. */
@@ -47,25 +43,19 @@ export async function heldSessions(sources: HeldSources): Promise<HeldSession[]>
         running,
       }).catch(() => undefined);
       if (found === undefined) return [];
-      return found.rows.flatMap((row): HeldSession[] => {
-        const agent = sources.agentOf(row.instance);
-        if (agent === undefined) return [];
-        return [
-          {
-            task: {
-              space: id,
-              spaceName: found.space.name,
-              id: row.task,
-              ref: row.ref,
-              started: row.started,
-            },
-            provider: agent.provider,
-            home: agent.home,
-            sessionId: row.sessionId,
-            running: row.started === "terminal" && !row.ended && running.includes(row.id),
-          },
-        ];
-      });
+      return found.rows.map((row): HeldSession => ({
+        task: {
+          space: id,
+          spaceName: found.space.name,
+          id: row.task,
+          ref: row.ref,
+          started: row.started,
+        },
+        provider: row.provider,
+        home: row.home,
+        sessionId: row.sessionId,
+        running: row.started === "terminal" && !row.ended && running.includes(row.id),
+      }));
     }),
   );
   return read.flat();

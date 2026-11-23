@@ -209,6 +209,11 @@ export const EVIDENCE_FIELDS = {
    * reference, such as `n2`. Known at Prepared: the note is saved before the launch is recorded.
    */
   request: "id",
+  /**
+   * Terminal: the agent home the click started the app in, as a digest (`homeDigest`): the link
+   * to the monitor's agents compares it, and the path itself is never stored.
+   */
+  home: "id",
 } as const satisfies Record<string, EvidenceKind>;
 
 export type EvidenceKey = keyof typeof EVIDENCE_FIELDS;

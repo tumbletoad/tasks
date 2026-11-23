@@ -427,6 +427,23 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(saved.get(id)?.text).toBe("Done at once.");
   });
 
+  test("what the command says the run started with is recorded with its PID", async () => {
+    const { host, id } = await bareHost({ containers: childContainers() });
+    const home = "a".repeat(64);
+    await host.start(id, () => ({
+      command: process.execPath,
+      args: ["-e", ""],
+      cwd: process.cwd(),
+      env: Object.fromEntries(
+        Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
+      ),
+      evidence: { home },
+    }));
+    const after = await host.ended(id);
+    expect(after?.evidence.home).toBe(home);
+    expect(after?.evidence.pid).toBeGreaterThan(0);
+  });
+
   test("Stop while the agent's command is still being prepared: cancelled at once, and nothing starts", async () => {
     let starts = 0;
     const { host, id } = await bareHost({

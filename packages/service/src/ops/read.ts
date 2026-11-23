@@ -609,7 +609,7 @@ export async function readTaskRef(
 
 const AGENT_LAUNCHES: Statement = {
   sql:
-    "SELECT l.id, l.task_id, l.instance_id, l.detail, t.ref AS task_ref FROM launches l " +
+    "SELECT l.id, l.task_id, l.detail, t.ref AS task_ref FROM launches l " +
     "JOIN tasks t ON t.id = l.task_id AND t.deleted_at IS NULL " +
     "WHERE l.machine_id = $machine AND l.route = 'terminal' " +
     "AND (l.updated_at >= $since OR l.id IN (SELECT value FROM json_each($running)))",
@@ -617,21 +617,26 @@ const AGENT_LAUNCHES: Statement = {
 };
 const AGENT_RUNS: Statement = {
   sql:
-    "SELECT r.id, r.task_id, r.instance_id, r.detail, r.ended_at, t.ref AS task_ref FROM runs r " +
+    "SELECT r.id, r.task_id, r.adapter, r.detail, r.ended_at, t.ref AS task_ref FROM runs r " +
     "JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL " +
     "WHERE r.machine_id = $machine AND r.started_at IS NOT NULL " +
     "AND (r.ended_at IS NULL OR r.ended_at >= $since)",
   mode: "all",
 };
 
-/** A terminal launch or a background run of this machine, with the agent app's session ID. */
+/**
+ * A terminal launch or a background run of this machine, with its agent app, the home it started
+ * the app in and the app's session ID, all as its record holds them.
+ */
 export interface AgentSessionRow {
   readonly started: "terminal" | "run";
   /** The `la_` or `ru_` ID. */
   readonly id: string;
   readonly task: string;
   readonly ref: string;
-  readonly instance: string;
+  readonly provider: "claude" | "codex";
+  /** The agent home's digest, as the click or the run's start recorded it (`homeDigest`). */
+  readonly home: string;
   /** Claude Code's preset session or Codex's thread for a launch, the reported one for a run. */
   readonly sessionId: string;
   /** A launch whose record says its agent ended. */
@@ -649,8 +654,9 @@ const evidenceOf = (detail: unknown): Readonly<Record<string, unknown>> => {
 };
 
 /**
- * The terminal launches and background runs of `machine` whose agent app's session ID is known:
- * those that changed or ended since `since`, and the launches `running` names whatever their age.
+ * The terminal launches and background runs of `machine` whose record holds the agent app, its
+ * home and its session ID: those that changed or ended since `since`, and the launches `running`
+ * names whatever their age. A record without its home is left out.
  */
 export async function readAgentSessions(
   reader: WorkerConnection,
@@ -664,29 +670,41 @@ export async function readAgentSessions(
   const facts = spaceFacts(space);
   const rows: AgentSessionRow[] = [];
   const add = (
-    started: AgentSessionRow["started"],
     row: Row,
+    held: Pick<AgentSessionRow, "started" | "provider" | "ended">,
+    evidence: Readonly<Record<string, unknown>>,
     sessionId: unknown,
-    ended: boolean,
   ): void => {
+    const home = evidence["home"];
     if (typeof sessionId !== "string" || sessionId === "") return;
+    if (typeof home !== "string" || home === "") return;
     rows.push({
-      started,
+      ...held,
       id: text(row["id"]),
       task: text(row["task_id"]),
       ref: formatTaskRef(facts.refPrefix, Number(row["task_ref"])),
-      instance: text(row["instance_id"]),
+      home,
       sessionId,
-      ended,
     });
   };
   for (const row of launches as Row[]) {
     const evidence = evidenceOf(row["detail"]);
     const ended = sessionRecord(evidence) !== "open";
-    add("terminal", row, evidence["preset"] ?? evidence["thread"], ended);
+    // A terminal launch's session ID says which app it started: the click presets Claude Code's,
+    // and Codex's thread is found in its session files.
+    const preset = evidence["preset"];
+    const thread = evidence["thread"];
+    if (preset !== undefined) {
+      add(row, { started: "terminal", provider: "claude", ended }, evidence, preset);
+    } else if (thread !== undefined) {
+      add(row, { started: "terminal", provider: "codex", ended }, evidence, thread);
+    }
   }
   for (const row of runs as Row[]) {
-    add("run", row, evidenceOf(row["detail"])["native_id"], row["ended_at"] !== null);
+    const evidence = evidenceOf(row["detail"]);
+    const provider = row["adapter"] === "claude-print" ? "claude" : "codex";
+    const ended = row["ended_at"] !== null;
+    add(row, { started: "run", provider, ended }, evidence, evidence["native_id"]);
   }
   return { space: facts, rows };
 }

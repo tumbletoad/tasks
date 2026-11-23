@@ -319,6 +319,16 @@ export function samePath(platform: NodeJS.Platform, a: string, b: string): boole
 
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 
+/**
+ * An agent home as a launch or a run records it: a digest of its path as `samePath` compares it,
+ * so two spellings of one home are one, and a space never holds the path.
+ */
+export function homeDigest(platform: NodeJS.Platform, home: string): string {
+  const path = pathOf(platform).resolve(home);
+  const folded = platform === "win32" || platform === "darwin" ? path.toLowerCase() : path;
+  return createHash("sha256").update(`agent-home\0${folded}`).digest("hex");
+}
+
 // ---------------------------------------------------------------------------------------------
 // The homes
 
