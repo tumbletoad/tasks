@@ -619,7 +619,8 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
         request_id: rid(),
       });
     }
-    // Each project has a long folder on this machine.
+    // Each project has a long folder on this machine, and one a folder too long for a page.
+    const huge = `~/${"g".repeat(1453)}/x`;
     const listed = GroupManageResult.parse(
       await call(long, script, "group.manage", { action: "list", path: "Long" }),
     );
@@ -632,7 +633,7 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
           id: `f_${String(k).padStart(26, "0")}`,
           owner: p.id,
           machine: MACHINE.id,
-          path: `~/${"f".repeat(180)}/${String(k)}`,
+          path: k === 12 ? huge : `~/${"f".repeat(180)}/${String(k)}`,
         },
       );
     }
@@ -651,6 +652,8 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
     expect(texts.length).toBeGreaterThan(1);
     const all = texts.join("\n");
     expect(all).toContain(`~/${"f".repeat(180)}/0`);
+    // The project with the long folder keeps its line, with the folder shortened.
+    expect(all).toContain(`${projects[12] ?? ""} (0, ${huge.slice(0, 240)}... (+1217 chars))`);
     for (const name of projects) expect(all.split(name).length - 1, name).toBe(1);
   });
 

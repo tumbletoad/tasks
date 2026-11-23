@@ -720,12 +720,16 @@ function addRendered(result: OutputOf<"task.add">): Rendered {
 
 type Groups = OutputOf<"group.manage">;
 
+/** The most characters of a folder a list shows. */
+const LIST_FOLDER = 240;
+
 function groupsRendered(result: Groups, organize: string): Rendered {
   // A group's facts after its count: archived, and the ID that names it where its name does not.
   const facts = (g: { archived?: true | undefined; ref?: string | undefined }) =>
     `${g.archived === true ? ", archived" : ""}${g.ref === undefined ? "" : `, id ${g.ref}`}`;
+  // A folder is shortened, so the line of any group fits a page and no group is left out of the text.
   const project = (p: Groups["projects"][number]) =>
-    `${p.name}${p.repo === undefined ? "" : ` [${p.repo}]`} (${String(p.active)}${facts(p)}${p.folder === undefined ? "" : `, ${p.folder}`})`;
+    `${p.name}${p.repo === undefined ? "" : ` [${p.repo}]`} (${String(p.active)}${facts(p)}${p.folder === undefined ? "" : `, ${clip(p.folder, LIST_FOLDER)}`})`;
   const inside = result.followed ?? result.kept ?? [];
   const insideLine =
     inside.length === 0
