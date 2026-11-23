@@ -1461,7 +1461,7 @@
     },
     {
       "id": "A2.3.1.hub.migration-timeout",
-      "title": "A migration that runs past the open's bound is waited for: one that succeeds leaves the space open for writing at the new revision without a restart, with the revisions and the backup from before it recorded for the space list; one that fails is a failed migration like any other, the space unchanged and read-only with its failure recorded",
+      "title": "A migration that runs past the open's bound is waited for: one that succeeds leaves the space open for writing at the new revision without a restart, with the revisions and the backup from before it recorded for the space list, which sends the person to that backup only while it is in the backups folder; one that fails is a failed migration like any other, the space unchanged and read-only with its failure recorded",
       "source": "A1 3.17, A2 3.1, A7 3.10 M3.01",
       "owner": "M3",
       "kind": "ci",

@@ -575,7 +575,18 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
         new Date(Date.now() - 31 * 86_400_000),
       );
       const later = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
-      expect(later[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.5", backup });
+      expect(later[0]?.["migrated"]).toMatchObject({
+        from: "0.1",
+        to: "0.5",
+        backup,
+        backup_listed: true,
+      });
+      // Where an earlier build already removed it, the list still names it, as no longer there.
+      for (const suffix of [".db.gz", ".json"]) {
+        rmSync(join(backupsFolder(space.folder), `${backup ?? ""}${suffix}`));
+      }
+      const gone = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
+      expect(gone[0]?.["migrated"]).toMatchObject({ backup, backup_listed: false });
       await stop(service);
       const after = await dbState(space.folder);
       expect(after.revision).toEqual({ major: 0, minor: 5 });

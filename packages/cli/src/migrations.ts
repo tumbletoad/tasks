@@ -11,6 +11,8 @@ export interface Migrated {
   readonly to: string;
   readonly at: string;
   readonly backup?: string;
+  /** Whether that backup is still in the space's backups folder. An older service leaves it out. */
+  readonly backup_listed?: boolean;
 }
 
 interface Row {
@@ -29,12 +31,17 @@ function local(at: string): string {
   return `${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** One sentence: what the migration did, and the backup from just before it. */
+/**
+ * One sentence: what the migration did, and the backup taken just before it. The person is sent to
+ * the list only while the backup is there.
+ */
 export function migratedLine(migrated: Migrated): string {
   const backup =
     migrated.backup === undefined
       ? ""
-      : ` The backup from just before it: ${migrated.backup} (${CLI_NAME} space backups lists it).`;
+      : migrated.backup_listed === false
+        ? ` The backup taken just before it was ${migrated.backup}.`
+        : ` The backup from just before it: ${migrated.backup} (${CLI_NAME} space backups lists it).`;
   return `Updated from schema ${migrated.from} to ${migrated.to} on ${local(migrated.at)}.${backup}`;
 }
 

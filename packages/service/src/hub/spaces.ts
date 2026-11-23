@@ -79,10 +79,11 @@
 // ends, or the process exit does. The lock lives in the space's worker, beside the writer it
 // guards, so a worker that hangs keeps both until the process exits.
 import { createHash } from "node:crypto";
-import { realpathSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { CLI_NAME } from "@ttasks/brand";
 import {
+  backupsFolder,
   DATABASE_FILE,
   DEFAULT_DRIVER,
   decodeRevision,
@@ -223,10 +224,10 @@ export interface SpaceView {
    */
   readonly message?: string;
   /**
-   * The newest migration this machine ran on the space, with the backup from just before it: in
-   * described(), for people.
+   * The newest migration this machine ran on the space, with the backup from just before it, and
+   * whether that backup is still in the space's backups folder: in described(), for people.
    */
-  readonly migrated?: LastMigration;
+  readonly migrated?: LastMigration & { readonly backup_listed?: boolean };
   /** An open space whose backups are not working: what happened and what to do. */
   readonly backup?: BackupTroubleView;
   /** A restored copy that is not claimed: its own record, whatever its state's reason. */
@@ -671,10 +672,15 @@ export class SpaceManager {
    */
   described(): SpaceView[] {
     return this.#spaces.map((space) => {
-      const migrated = readSpaceSettings(
-        this.#options.settingsDir,
-        space.id ?? space.registered,
-      ).lastMigration;
+      const settings = readSpaceSettings(this.#options.settingsDir, space.id ?? space.registered);
+      const last = settings.lastMigration;
+      // The backup from before it is sent to only while it is there: a build before this one
+      // removed it after 30 days, and a person may have since.
+      const dir = settings.backupDir ?? backupsFolder(space.folder);
+      const migrated =
+        last?.backup === undefined
+          ? last
+          : { ...last, backup_listed: existsSync(join(dir, `${last.backup}.db.gz`)) };
       return {
         ...space.view(),
         registered: space.registered,
