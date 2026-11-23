@@ -231,15 +231,15 @@ export function stopping(run: Run): Run {
 }
 
 /**
- * A task's runs as the page shows them: a run whose Stop is on its way (`stops`, its version when
- * Stop was pressed) shows as stopping, unless the service already has it further along. The same
- * list when no Stop applies, so a row keeps its props.
+ * A task's runs as the page shows them: a run whose Stop is on its way (`stops`, with its version
+ * when Stop was pressed) shows as stopping, unless the service already has it further along. The
+ * same list when no Stop applies, so a row keeps its props.
  */
 export function withStops(
   runs: readonly Run[],
-  stops: ReadonlyMap<string, number>,
+  stops: ReadonlyMap<string, { readonly version: number }>,
 ): readonly Run[] {
-  const held = (run: Run) => (stops.get(run.id) ?? -1) >= run.version;
+  const held = (run: Run) => (stops.get(run.id)?.version ?? -1) >= run.version;
   return runs.some(held) ? runs.map((run) => (held(run) ? stopping(run) : run)) : runs;
 }
 

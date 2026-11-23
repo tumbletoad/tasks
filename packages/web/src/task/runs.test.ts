@@ -202,7 +202,7 @@ describe("[M6.page.run-follow] the page shows a run as the service has it", () =
     const working = run({ state: "running", version: 4 });
     const other = run({ id: "ru_00r5mfcw5rfzxb9enb2vg50z3h", state: "running", version: 2 });
     const list = [working, other];
-    const pressed = new Map([[working.id, 4]]);
+    const pressed = new Map([[working.id, { version: 4 }]]);
     const shown = withStops(list, pressed);
     expect(shown.map((r) => r.state)).toEqual(["cancelling", "running"]);
     expect(runView(shown[0] ?? working, "Codex").stoppable).toBe(false);
@@ -219,7 +219,8 @@ describe("[M6.page.run-follow] the page shows a run as the service has it", () =
     expect(runView(after[0] ?? working, "Codex").stoppable).toBe(true);
     // A queued run stops as any other: only the service says it stopped before it started.
     expect(
-      withStops([run({ state: "queued", version: 1 })], new Map([[working.id, 1]]))[0]?.state,
+      withStops([run({ state: "queued", version: 1 })], new Map([[working.id, { version: 1 }]]))[0]
+        ?.state,
     ).toBe("cancelling");
   });
 

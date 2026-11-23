@@ -191,8 +191,15 @@ export function TaskList({
   });
   /** The runs of the tasks the tab follows, oldest first, as the service last said. */
   const [runs, setRuns] = useState<ReadonlyMap<string, readonly Run[]>>(new Map());
-  /** The runs whose Stop is on its way, each with its version when Stop was pressed. */
-  const [stops, setStops] = useState<ReadonlyMap<string, number>>(new Map());
+  /**
+   * The runs whose Stop is on its way, each with its version when Stop was pressed and how many
+   * reads of runs had begun then.
+   */
+  const [stops, setStops] = useState<
+    ReadonlyMap<string, { readonly version: number; readonly reads: number }>
+  >(new Map());
+  /** How many reads of runs have begun. */
+  const runReadsBegun = useRef(0);
   const runReads = useRef(new Latest());
   /** The tasks whose last read of their runs failed. */
   const [runsFailed, setRunsFailed] = useState<ReadonlySet<string>>(new Set());
@@ -371,12 +378,26 @@ export function TaskList({
   const loadRuns = useCallback(
     (task: string) => {
       const newest = runReads.current.begin(task);
+      const begun = ++runReadsBegun.current;
       api
         .runs(task)
         .then((list) => {
           if (!newest()) return;
           setRuns((known) => new Map(known).set(task, mergeRuns(known.get(task) ?? [], list)));
           setRunsFailed((known) => (known.has(task) ? without(known, task) : known));
+          // A read that left after a Stop and still finds its run waiting or working: the Stop may
+          // never arrive, so it is offered again.
+          setStops((known) => {
+            const unstopped = list.filter(
+              (run) =>
+                (run.state === "queued" || run.state === "running") &&
+                (known.get(run.id)?.reads ?? begun) < begun,
+            );
+            if (unstopped.length === 0) return known;
+            const next = new Map(known);
+            for (const run of unstopped) next.delete(run.id);
+            return next;
+          });
         })
         .catch((error: unknown) => {
           live.failed(error);
@@ -389,15 +410,17 @@ export function TaskList({
     [api, live],
   );
 
-  // The minute reads again the runs of every task with a working run or whose last read of them
-  // failed, and the expanded task a fresh snapshot left out whose read failed. Keyed by
+  // The minute reads again the runs of every task with a working run, and while its card is open
+  // what a read failed to bring: the task's runs, or the task a fresh snapshot left out. Keyed by
   // what it reads, not by each read: a read of another task's runs must not start the minute again.
   const again = useMemo(
     () =>
       [
         ...[...runs]
           .filter(
-            ([task, list]) => runsFailed.has(task) || list.some((run) => run.state === "running"),
+            ([task, list]) =>
+              (runsFailed.has(task) && task === expanded) ||
+              list.some((run) => run.state === "running"),
           )
           .map(([task]) => `runs:${task}`),
         ...(unresolved?.failed === true && unresolved.id === expanded
@@ -996,7 +1019,8 @@ export function TaskList({
       // record then says what ended. Without an answer the Stop may have arrived: the run shows as
       // the service last said, with its Stop, and is read again.
       stop: (task, run) => {
-        setStops((known) => new Map(known).set(run.id, run.version));
+        const reads = runReadsBegun.current;
+        setStops((known) => new Map(known).set(run.id, { version: run.version, reads }));
         const answered = () => {
           setStops((known) => {
             const next = new Map(known);

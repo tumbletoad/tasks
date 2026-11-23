@@ -2653,7 +2653,7 @@
     },
     {
       "id": "M6.page.run-follow",
-      "title": "The page shows a run as the service has it: a read keeps a newer state and a run queued after the read began; a Stop on its way shows as stopping, a queued one too, and the service's answer says how it ended; one whose answer was lost says it may have stopped and leaves the run as the service last said, with its Stop; a failed read of the runs says so in the thread and is read again with the minute's read; a tab whose copy of the space is gone offers no Stop; the row's marker says working or needs you by the instance's label; Run is offered by what the service says an instance can do; a refusal's words come from the service's reason",
+      "title": "The page shows a run as the service has it: a read keeps a newer state and a run queued after the read began; a Stop on its way shows as stopping, a queued one too, and the service's answer says how it ended; one whose answer was lost says it may have stopped and leaves the run as the service last said, with its Stop, and one whose answer never comes is offered again once a read since finds the run waiting or working; a failed read of the runs says so in the thread and is read again with the minute's read while its card is open; a tab whose copy of the space is gone offers no Stop; the row's marker says working or needs you by the instance's label; Run is offered by what the service says an instance can do; a refusal's words come from the service's reason",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

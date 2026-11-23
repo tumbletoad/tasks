@@ -85,6 +85,8 @@ let listed: readonly Run[];
 let stopAnswer: () => Promise<Run>;
 /** The service does not answer: a read of the runs fails as Run does. */
 let down: boolean;
+/** While set, a read of the runs answers once it settles. */
+let runsHeld: Promise<void> | undefined;
 let opens: (Started & { readonly another: boolean })[];
 /** What a read of busy answers. */
 let busyNow: Busy[];
@@ -117,6 +119,7 @@ beforeEach(async () => {
   listed = [];
   reads = 0;
   down = false;
+  runsHeld = undefined;
   startAnswer = () => Promise.resolve(record({ state: "queued", version: 1 }));
   stopAnswer = () => Promise.reject(new TypeError("Failed to fetch"));
   opens = [];
@@ -178,7 +181,9 @@ beforeEach(async () => {
     receipts: () => (down ? lost() : Promise.resolve([])),
     runs: () => {
       reads += 1;
-      return down ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve(listed);
+      const answer = () =>
+        down ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve(listed);
+      return runsHeld === undefined ? answer() : runsHeld.then(answer);
     },
     startRun: (_task: string, _instance: string, id: string, text?: string) => {
       started.push({ id, text });
@@ -668,6 +673,17 @@ describe("[M6.page.run-follow] a Stop on its way, and what the service said of i
     expect(state()).toContain("Stopped before it started");
   });
 
+  test("a Stop whose answer never comes is offered again once a read since says the run still waits", async () => {
+    expect(stop()).toBeNull();
+    act(() => {
+      live.store.push({ ...snapshot(), cursor: { ...snapshot().cursor, seq: 12 } });
+      live.store.flush();
+    });
+    await settle();
+    expect(state()).toContain("Waiting to start");
+    expect(stop()).not.toBeNull();
+  });
+
   test("a Stop whose answer was lost does not say it never arrived: the run shows as the service has it, with its Stop", async () => {
     answer.fail(new TypeError("Failed to fetch"));
     await settle();
@@ -675,6 +691,33 @@ describe("[M6.page.run-follow] a Stop on its way, and what the service said of i
     expect(toasts.at(-1)).toMatch(/may have stopped/u);
     expect(state()).toContain("Waiting to start");
     expect(stop()).not.toBeNull();
+  });
+});
+
+describe("[M6.page.run-follow] a read that left before a Stop says nothing of it", () => {
+  test("the run it finds still waiting stays stopping", async () => {
+    listed = [record({ state: "queued", started_at: null, version: 1 })];
+    click(1);
+    await settle();
+    const entry = () =>
+      container.querySelector<HTMLElement>(`li[data-key="${TASK.id}"] [data-entry="run"]`);
+    let release: () => void = () => undefined;
+    runsHeld = new Promise((resolve) => {
+      release = resolve;
+    });
+    act(() => {
+      live.store.push({ ...snapshot(), cursor: { ...snapshot().cursor, seq: 12 } });
+      live.store.flush();
+    });
+    stopAnswer = () => new Promise(() => undefined);
+    act(() => {
+      entry()?.querySelector<HTMLButtonElement>('[data-part="run-stop"]')?.click();
+    });
+    runsHeld = undefined;
+    release();
+    await settle();
+    expect(entry()?.querySelector('[data-part="run-state"]')?.textContent).toContain("Stopping");
+    expect(entry()?.querySelector('[data-part="run-stop"]')).toBeNull();
   });
 });
 
@@ -718,6 +761,38 @@ describe("[M6.page.run-follow] a read of the runs that failed says so and is rea
       expect(failedLine()).toBeNull();
       expect(entry()?.querySelector('[data-part="run-state"]')?.textContent).toContain("Done");
       expect(entry()?.querySelector('[data-part="run-stop"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("[M6.page.run-follow] a failed read of the runs is tried again while its card is open", () => {
+  test("once the card closes, the minute reads nothing more", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      down = true;
+      act(() => {
+        live.store.push({ ...snapshot(), cursor: { ...snapshot().cursor, seq: 12 } });
+        live.store.flush();
+      });
+      await settle();
+      const title = () =>
+        container.querySelector<HTMLElement>(`li[data-key="${TASK.id}"] [data-part="title"]`);
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      await settle();
+      const open = reads;
+      act(() => {
+        title()?.click();
+      });
+      await settle();
+      act(() => {
+        vi.advanceTimersByTime(180_000);
+      });
+      await settle();
+      expect(reads).toBe(open);
     } finally {
       vi.useRealTimers();
     }
