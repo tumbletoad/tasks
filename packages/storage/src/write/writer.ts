@@ -1683,11 +1683,11 @@ export class SpaceWriter {
             }
             from = new RowReader("commits", commit).int("seq", "seq");
           }
-          // A task already as asked is no change: two tabs that both asked get the same answer.
-          if ((tombstones.get(target) ?? start?.deleted ?? false) === deleting) return skip;
-          // Only a task removed on purpose comes back (trash.ts): an undone creation is Redo's,
-          // which brings its notes and links with it. The whole request is refused.
-          if (!deleting && !tombstones.has(target)) {
+          const deleted = tombstones.get(target) ?? start?.deleted ?? false;
+          // Only a task removed on purpose is in the Trash (trash.ts): an undone creation is Redo's,
+          // which brings its notes and links with it. Neither a restore nor a removal takes it, and
+          // neither calls it there already: the whole request is refused, naming it.
+          if (deleted && !tombstones.has(target)) {
             const found = conn.prepare(SQL.inTrash).get({ id: target });
             if (found?.["yes"] !== 1) {
               throw new RequestProblem({
@@ -1699,6 +1699,8 @@ export class SpaceWriter {
               });
             }
           }
+          // A task already as asked is no change: two tabs that both asked get the same answer.
+          if (deleted === deleting) return skip;
           // Restoring a change: only a tombstone that change set and nothing since. Provenance, not
           // a base, says so, so a task restored and removed again since stays with the later change.
           if (from !== undefined) {

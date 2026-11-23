@@ -242,9 +242,17 @@ export async function runVerb(
       }
       const source = input["base"] === undefined ? baseRead(verb, input) : undefined;
       if (source !== undefined) {
-        const read = (await opCall(session, globals, source.op, source.input)) as {
-          as_of?: string;
-        };
+        const read = (await opCall(session, globals, source.op, source.input).catch(
+          (error: unknown) => {
+            // A verb about several tasks reads one only for a base: one it cannot read (its
+            // creation undone, or none) is the write's to name, with what to do. Without a base
+            // the write changes nothing.
+            if (Array.isArray(input["tasks"]) && bodyOf(asAppError(error)).code === "not_found") {
+              return {};
+            }
+            throw error;
+          },
+        )) as { as_of?: string };
         if (typeof read.as_of === "string") input["base"] = read.as_of;
       }
     }

@@ -186,9 +186,10 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     expect([deleted(a), deleted(b)]).toEqual([false, false]);
   });
 
-  test("a task whose creation was undone is not restored, alone, by its undo's change or beside another: the request is refused whole and Redo brings it back with its links", () => {
+  test("a task whose creation was undone is neither restored nor removed, alone, by its undo's change or beside another: the request is refused whole and Redo brings it back with its links", () => {
     const live = task("Renew the passport");
     remove(live);
+    const other = task("Book the dentist");
     const a = task("Answer the clinic", [ticket("jira:FIX-7")]);
     const undo = applied(fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }])));
     expect(deleted(a)).toBe(true);
@@ -199,6 +200,12 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
         { kind: "task.restore", task: live },
         { kind: "task.restore", task: a },
       ],
+      // Removed with a live task: never "in the Trash already", and the live task stays.
+      [{ kind: "task.delete", task: a }],
+      [
+        { kind: "task.delete", task: other },
+        { kind: "task.delete", task: a },
+      ],
     ] as Operation[][]) {
       const refused = send("human", ops);
       expectStatus(refused, "rejected");
@@ -208,7 +215,7 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
         reason: "creation_undone",
       });
     }
-    expect([deleted(live), deleted(a)]).toEqual([true, true]);
+    expect([deleted(live), deleted(other), deleted(a)]).toEqual([true, false, true]);
     applied(fx.writer.submit(fx.request(fx.human, [{ kind: "redo" }])));
     expect(deleted(a)).toBe(false);
     expect(holders("jira:FIX-7")).toEqual([a]);

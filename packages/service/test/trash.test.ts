@@ -322,9 +322,11 @@ describe("[A3.trash] the Trash through real requests", () => {
     ]);
   });
 
-  test("a restore of a task whose creation was undone is refused for the whole request, and Redo brings it back with its sources and log", async () => {
+  test("a restore or a removal of a task whose creation was undone is refused for the whole request, naming it, and Redo brings it back with its sources and log", async () => {
     const live = await add({ title: "Fixture live beside an undone one" });
     await remove([live]);
+    // Made before the undo: a change after it would take the Redo.
+    const beside = await add({ title: "Fixture live, named with an undone one" });
     const made = await call("task.add", {
       tasks: [
         {
@@ -337,10 +339,16 @@ describe("[A3.trash] the Trash through real requests", () => {
     });
     const undone = (made["tasks"] as { ref: string; id: string }[])[0];
     await call("history.undo", { request_id: rid() });
-    for (const named of [[undone?.ref], [undone?.id], [live, undone?.ref]]) {
+    for (const [named, restoring] of [
+      [[undone?.ref], true],
+      [[undone?.id], true],
+      [[live, undone?.ref], true],
+      [[undone?.ref], false],
+      [[beside, undone?.ref], false],
+    ] as const) {
       const refused = await refusal("task.delete", {
         tasks: named,
-        restore: true,
+        ...(restoring ? { restore: true } : {}),
         base: await asOf(),
         request_id: rid(),
       });
@@ -348,8 +356,9 @@ describe("[A3.trash] the Trash through real requests", () => {
       expect(refused.message).toContain(`${undone?.ref ?? ""}'s creation was undone`);
       expect(refused.hint).toContain("Redo");
     }
-    // Nothing moved, the live one included, and Redo brings the task back whole.
+    // Nothing moved, the live ones included, and Redo brings the task back whole.
     expect(refs((await trash({ q: live })).rows)).toEqual([live]);
+    expect(refs((await trash({ q: beside })).rows)).toEqual([]);
     await call("history.redo", { request_id: rid() });
     const back = await call("task.get", { task: undone?.ref, sections: ["sources", "log"] });
     const sections = back["sections"] as Json;
