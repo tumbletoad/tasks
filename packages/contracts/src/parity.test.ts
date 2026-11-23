@@ -10,6 +10,7 @@ import {
   inputSchemaFor,
   isAgentAllowed,
   parseInput,
+  shownSchemaFor,
   type AnyEntry,
   type Audience,
   type Defaults,
@@ -21,6 +22,7 @@ import {
   toJsonSchema,
   type JsonSchema,
 } from "./json-schema.ts";
+import { laterIn } from "./later.ts";
 import { registry } from "./registry.ts";
 import { safeLine } from "./safe-text.ts";
 
@@ -104,14 +106,26 @@ interface Pair {
   json: JsonSchema;
 }
 
-function pairsFor(entry: AnyEntry, actor: "agent" | "user"): { input: Pair[]; output: Pair } {
+/**
+ * The schemas to compare. Agents are shown their input without what a later step builds, so the
+ * agent pair compares that, and an example of a later feature has no agent pair.
+ */
+function pairsFor(
+  entry: AnyEntry,
+  actor: "agent" | "user",
+  example: Json,
+): { input: Pair[]; output: Pair } {
   const input: Pair[] = [
     { label: "input", zod: inputSchemaFor(entry, "user"), json: inputJsonSchema(entry) },
   ];
-  if (actor === "agent" && isAgentAllowed(entry)) {
+  if (
+    actor === "agent" &&
+    isAgentAllowed(entry) &&
+    laterIn(entry.name, example as Record<string, unknown>) === undefined
+  ) {
     input.push({
       label: "agent input",
-      zod: inputSchemaFor(entry, "agent"),
+      zod: shownSchemaFor(entry, "agent"),
       json: agentInputJsonSchema(entry),
     });
   }
@@ -338,7 +352,7 @@ function boundaryDisagreements(pair: Pair) {
 describe("[A3.5.registry.zod-ajv-parity] Zod and Ajv agree at every field's boundaries", () => {
   for (const entry of registry as readonly AnyEntry[]) {
     test(`${entry.name}: every field, used by an example or not`, () => {
-      const { input, output } = pairsFor(entry, "agent");
+      const { input, output } = pairsFor(entry, "agent", {});
       for (const pair of [...input, output]) {
         const { disagreements, verdicts, slots: visited } = boundaryDisagreements(pair);
         expect(disagreements, `${entry.name} ${pair.label}`).toEqual([]);
@@ -471,7 +485,7 @@ describe("[A3.5.registry.zod-ajv-parity] Zod and Ajv agree on every example", ()
     test(`${entry.name}: every example and its mutations get the same verdict`, () => {
       for (const example of entry.examples) {
         const actor = example.actor ?? (isAgentAllowed(entry) ? "agent" : "user");
-        const { input, output } = pairsFor(entry, actor);
+        const { input, output } = pairsFor(entry, actor, example.input as Json);
         for (const [pair, value] of [
           ...input.map((p) => [p, example.input] as const),
           [output, example.output] as const,

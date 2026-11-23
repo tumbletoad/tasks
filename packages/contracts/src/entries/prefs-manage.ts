@@ -36,7 +36,7 @@ const PrefValueOutput = z.union([
 export const PREFS_ACTIONS = ["describe", "get", "set"] as const;
 
 export const PrefsManageInput = z.strictObject({
-  action: z.enum(PREFS_ACTIONS).describe("describe: the keys; get: their values; set: change them"),
+  action: z.enum(PREFS_ACTIONS).describe("describe: the keys; get: their values"),
   keys: z
     .array(z.string().max(64))
     .max(20)
@@ -65,7 +65,7 @@ const PrefRow = z.strictObject({
   value: PrefValueOutput.describe("Its value now (get)").optional(),
   default: PrefValueOutput.describe("Its default"),
   is_default: z.boolean().describe("The value is the default (get)").optional(),
-  writable: z.boolean().describe("Whether this caller may set it"),
+  writable: z.boolean().describe("Whether this caller may change it"),
   policy: z.literal(true).describe("Policy: the user's own (A3 3.8)").optional(),
 });
 
@@ -73,7 +73,7 @@ export const PrefsManageResult = z.strictObject({
   action: z.enum(PREFS_ACTIONS).describe("The action"),
   as_of: AsOf,
   prefs: z.array(PrefRow).describe("The keys asked for, sorted"),
-  result: z.enum(["updated", "no_change", "proposed"]).describe("set: what happened").optional(),
+  result: z.enum(["updated", "no_change", "proposed"]).describe("What a change did").optional(),
   changed: z
     .array(
       z.strictObject({
@@ -82,7 +82,7 @@ export const PrefsManageResult = z.strictObject({
         to: PrefValueOutput.describe("Its value now"),
       }),
     )
-    .describe("set: the keys it changed")
+    .describe("The keys a change changed")
     .optional(),
   proposal: ProposalId.optional(),
   replayed: Replayed.optional(),
@@ -108,7 +108,7 @@ export const prefsManage = defineEntry({
       tool: "preferences",
       title: "Read or change settings",
       description:
-        "Use when the user asks to see or change a setting. describe lists the keys and who may change them, get reads values, set changes them (null resets a key) with base and a request_id. Autonomy and other policy stay the user's.",
+        "Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Changing them is not built yet: tell the user. Autonomy and other policy stay the user's.",
     },
   },
   budget: { typical: 600, max: 2000 },

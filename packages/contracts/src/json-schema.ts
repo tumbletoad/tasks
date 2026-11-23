@@ -1,7 +1,14 @@
 // JSON Schema draft 2020-12 from the Zod schemas (A3 decision 2: `z.toJSONSchema`), the MCP tool
 // definition and the token estimator (A3 3.2.5).
 import { z } from "zod";
-import { inputSchemaFor, type AnyEntry, type EntryKind } from "./define.ts";
+import {
+  inputSchemaFor,
+  shownKind,
+  shownSchemaFor,
+  type AnyEntry,
+  type EntryKind,
+} from "./define.ts";
+import { isOffered } from "./later.ts";
 
 export const JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema";
 
@@ -28,9 +35,12 @@ export function inputJsonSchema(entry: AnyEntry): JsonSchema {
   return toJsonSchema(inputSchemaFor(entry, "user"), "input");
 }
 
-/** The input agents see: hidden fields gone, required fields required, agent limits applied. */
+/**
+ * The input agents see: hidden fields gone, required fields required, agent limits applied, and
+ * nothing a later step builds (later.ts).
+ */
 export function agentInputJsonSchema(entry: AnyEntry): JsonSchema {
-  return toJsonSchema(inputSchemaFor(entry, "agent"), "input");
+  return toJsonSchema(shownSchemaFor(entry, "agent"), "input");
 }
 
 export function outputJsonSchema(entry: AnyEntry): JsonSchema {
@@ -73,15 +83,16 @@ export interface McpTool {
   readonly _meta?: { readonly [ALWAYS_LOAD_META]: true };
 }
 
+/** The tool of an entry, or undefined for an entry with no MCP face or none offered yet. */
 export function mcpTool(entry: AnyEntry): McpTool | undefined {
   const face = entry.faces.mcp;
-  if (face === undefined) return undefined;
+  if (face === undefined || !isOffered(entry.name)) return undefined;
   return {
     name: face.tool,
     title: face.title,
     description: face.description,
     inputSchema: agentInputJsonSchema(entry),
-    annotations: annotationsFor(entry.kind),
+    annotations: annotationsFor(shownKind(entry)),
     ...(face.alwaysLoad === true ? { _meta: { [ALWAYS_LOAD_META]: true } } : {}),
   };
 }

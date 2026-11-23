@@ -31,7 +31,6 @@ import {
   type QueryKey,
   type QueryOp,
 } from "@ttasks/contracts";
-import { unsupported } from "../ops/errors.ts";
 
 export const QUERY_LIMITS = { length: 500, terms: 20 } as const;
 
@@ -73,21 +72,13 @@ export const IS_VALUES = [
   "inbox",
   "focus",
   "overdue",
-  "new",
   "proposed",
   "bound",
-  "changed",
   "completed",
   "archived",
   "unwrapped",
 ] as const;
 export type IsValue = (typeof IS_VALUES)[number];
-
-/** `is:` values whose data a later step brings: refused naming the step, never ignored. */
-const IS_LATER: Readonly<Partial<Record<IsValue, string>>> = {
-  new: "M5.09 (the seen cursor)",
-  changed: "M5.09 (the seen cursor)",
-};
 
 export const HAS_VALUES = [
   "folder",
@@ -192,8 +183,6 @@ function checkValue(key: Key, op: Op, value: string): void {
       if (!(IS_VALUES as readonly string[]).includes(v)) {
         throw queryProblem("Unknown is: value", didYouMean(suggest(v, IS_VALUES)));
       }
-      const later = IS_LATER[v as IsValue];
-      if (later !== undefined) throw unsupported("q", later);
       return;
     }
     case "has":

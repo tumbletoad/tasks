@@ -185,7 +185,7 @@
             "type": "string"
           },
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "The as_of of the last answer that showed it to you, verbatim; no read needed",
             "maxLength": 40,
             "type": "string"
           },
@@ -442,7 +442,7 @@
             "type": "string"
           },
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "The as_of of the last answer that showed it to you, verbatim; no read needed",
             "maxLength": 40,
             "type": "string"
           },
@@ -1324,7 +1324,7 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "describe: the keys; get: their values; set: change them",
+            "description": "describe: the keys; get: their values",
             "enum": [
               "describe",
               "get",
@@ -1333,7 +1333,7 @@
             "type": "string"
           },
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "The as_of of the last answer that showed it to you, verbatim; no read needed",
             "maxLength": 40,
             "type": "string"
           },
@@ -1439,7 +1439,7 @@
             "type": "string"
           },
           "changed": {
-            "description": "set: the keys it changed",
+            "description": "The keys a change changed",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -1584,7 +1584,7 @@
                   "description": "Its value now (get)"
                 },
                 "writable": {
-                  "description": "Whether this caller may set it",
+                  "description": "Whether this caller may change it",
                   "type": "boolean"
                 }
               },
@@ -1607,7 +1607,7 @@
             "type": "boolean"
           },
           "result": {
-            "description": "set: what happened",
+            "description": "What a change did",
             "enum": [
               "updated",
               "no_change",
@@ -2979,7 +2979,7 @@
         "additionalProperties": false,
         "properties": {
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "The as_of of the last answer that showed it to you, verbatim; no read needed",
             "maxLength": 40,
             "type": "string"
           },
@@ -3147,7 +3147,7 @@
             "type": "array"
           },
           "learnings": {
-            "description": "Lessons reusable beyond this task",
+            "description": "Lessons reusable beyond this task; a task keeps 20 at most",
             "items": {
               "maxLength": 1024,
               "type": "string"
@@ -3165,7 +3165,7 @@
             "type": "string"
           },
           "outcome": {
-            "description": "What changed and the evidence; agents must give it",
+            "description": "What changed and the evidence; agents must give it, at most 600 characters",
             "maxLength": 4096,
             "type": "string"
           },
@@ -5251,7 +5251,7 @@
         "additionalProperties": false,
         "properties": {
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "The as_of of the last answer that showed it to you, verbatim; no read needed",
             "maxLength": 40,
             "type": "string"
           },
@@ -5760,7 +5760,7 @@
             "type": "array"
           },
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "The as_of of the last answer that showed it to you, verbatim; no read needed",
             "maxLength": 40,
             "type": "string"
           },
@@ -5820,7 +5820,7 @@
             "type": "string"
           },
           "reason": {
-            "description": "Why, shown in history and proposals",
+            "description": "Why, shown in history",
             "maxLength": 200,
             "type": "string"
           },

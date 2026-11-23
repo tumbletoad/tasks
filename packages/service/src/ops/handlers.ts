@@ -16,7 +16,6 @@ import {
   findEntry,
   AppError,
   FINISHED_CURSOR,
-  fitsShape,
   GROUP_LIMITS,
   isKeyList,
   mayWrite,
@@ -86,7 +85,7 @@ import {
 import type { Session, SessionPort } from "./binding.ts";
 import { checkGrant, grantRefused, standingOf, type HomeGate } from "./grant.ts";
 import { addDays, dateIn, dueDate, localTimeZone, pastInstant } from "./dates.ts";
-import { GUIDE_STEPS, GUIDES } from "./guides.ts";
+import { GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
 import {
   checkFolder,
@@ -111,8 +110,8 @@ import {
   resultFailure,
   schemaFailure,
   spaceUnavailable,
+  refuseLater,
   storageFailure,
-  unsupported,
   type PathOf,
 } from "./errors.ts";
 import type { FolderMarkers } from "./marker.ts";
@@ -387,6 +386,7 @@ async function callWith(
     if (Object.hasOwn(entry.input.shape, "request_id")) input["request_id"] = params.request_id;
   }
   checkHiddenFields(entry, input, principal.audience);
+  refuseLater(entry.name, input);
   const parsed = parseInput(entry, principal.audience, input);
   if (!parsed.success) throw schemaFailure(parsed.error, input, principal.origin, entry.name);
   checkActionFields(entry, parsed.data);
@@ -1567,6 +1567,8 @@ interface ResolvedDrafts {
   readonly list: Record<string, unknown>[];
   /** `area.create` and `project.create` for each new name, once per name, in first-named order. */
   readonly groups: Operation[];
+  /** One warning per group a name created, so the caller learns of a name that matched nothing. */
+  readonly made: string[];
 }
 
 /**
@@ -1586,7 +1588,7 @@ async function resolvedDrafts(
   path: (k: number) => string,
 ): Promise<ResolvedDrafts> {
   const named = list.some((d) => d["area"] !== undefined || d["project"] !== undefined);
-  if (!named) return { list: [...list], groups: [] };
+  if (!named) return { list: [...list], groups: [], made: [] };
   const standIns = (): ResolvedDrafts => ({
     list: list.map((draft) => ({
       ...draft,
@@ -1594,6 +1596,7 @@ async function resolvedDrafts(
       ...(typeof draft["project"] === "string" ? { project: REPLAY_GROUP } : {}),
     })),
     groups: [],
+    made: [],
   });
   if (await applied(call)) return standIns();
   let names: GroupNames;
@@ -1603,6 +1606,8 @@ async function resolvedDrafts(
     throw storageFailure(error);
   }
   const groups: Operation[] = [];
+  // Not "<path>: ...": a draft that matched an existing task drops those, and its group was made.
+  const news: string[] = [];
   const face = call.principal.origin;
   // The groups an earlier draft makes join the names, with the slugs the writer will give them, so
   // a later draft resolves them by the same rules as the space's own: one call answers as its
@@ -1632,6 +1637,7 @@ async function resolvedDrafts(
             area: null,
           });
           groups.push({ kind: "area.create", id: created, title: area.trim() });
+          news.push(`New area for ${at}.area: no area had this name.`);
           id = created;
         }
         out["area"] = id;
@@ -1663,13 +1669,14 @@ async function resolvedDrafts(
             title: project.trim(),
             ...(within === undefined ? {} : { area: within }),
           });
+          news.push(`New project for ${at}.project: no project had this name.`);
           id = created;
         }
         out["project"] = id;
       }
       return out;
     });
-    return { list: resolved, groups };
+    return { list: resolved, groups, made: news };
   } catch (error) {
     // A retry racing its first call: the request may have been decided meanwhile.
     if (error instanceof AppError && (await applied(call))) return standIns();
@@ -1775,10 +1782,6 @@ function draftOps(
 /** Status values that mean a finished task: complete_task's, never update_task's (A3 3.4.6). */
 const FINISHED: ReadonlySet<string> = new Set(["done", "completed", "dropped"]);
 
-function checkMode(input: Record<string, unknown>): void {
-  if (input["mode"] === "propose") throw unsupported("mode", "M4.02 (autonomy and proposals)");
-}
-
 /** A link's URL: a scheme, then no blank, control, format character, quote or angle bracket. */
 const LINK_URL = /^[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"\p{Cc}\p{Cf}]+$/u;
 
@@ -1818,9 +1821,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   "space.status": async (call) => {
     const { input } = call;
     const guide = typeof input["guide"] === "string" ? input["guide"] : undefined;
-    if (guide !== undefined && !Object.hasOwn(GUIDES, guide)) {
-      throw unsupported("guide", GUIDE_STEPS[guide] ?? "a later step");
-    }
     const reader = readerOf(call.space);
     const now = (call.host.now ?? Date.now)();
     // A guide is one workflow text instead of the overview (A3 3.4.2): no sections, no `here`.
@@ -1853,7 +1853,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       as_of: status.space.asOf,
       date: call.today,
       time_zone: (call.host.timeZone ?? localTimeZone)(),
-      autonomy: status.autonomy,
+      // Nothing in this build holds an agent's change for the user: every change applies at once.
+      autonomy: "full",
       space: { id: status.space.id, name: status.space.name, ref_prefix: status.space.refPrefix },
       session: sessionOf(call, status.bound),
       ...(here === undefined
@@ -1994,7 +1995,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
   "task.add": async (call) => {
     const { input } = call;
-    checkMode(input);
     const agent = call.principal.actorKind !== "human";
     const at = (k: number): string => `tasks.${String(k)}`;
     const named = await resolvedDrafts(call, drafts(input["tasks"]), at);
@@ -2016,7 +2016,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // New groups first, so the drafts can name them; the drafts' results are read without them.
     const result = ownResults(
       await submit(call, [...named.groups, ...ops], {
-        warnings: [...duplicates, ...folders.warnings],
+        warnings: [...named.made, ...duplicates, ...folders.warnings],
         inserted: { at: 0, count: named.groups.length },
         pathOf: draftPathOf(ops, ids, at, sourcePaths),
       }),
@@ -2052,11 +2052,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
   "task.update": async (call) => {
     const { input, today } = call;
-    checkMode(input);
     const task = await taskOf(call);
     const ops: Operation[] = [];
     /** The groups a new area or project name creates, before the task moves into them. */
     const groups: Operation[] = [];
+    const made: string[] = [];
     const fields: string[] = [];
     const set = isRecord(input["set"]) ? input["set"] : {};
     // A3 3.4.6: a finished task is not a status. The input alone decides it, so no receipt.
@@ -2103,6 +2103,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       const resolved = await resolvedDrafts(call, [set], () => "set");
       const [group = set] = resolved.list;
       groups.push(...resolved.groups);
+      made.push(...resolved.made);
       ops.push({
         kind: "task.move",
         task,
@@ -2119,10 +2120,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       sourcePaths.set(ops.length, at);
       ops.push({ kind: "source.add", task, source: sourceFields(source, at) });
     });
-    if (Array.isArray(input["remove_sources"]) && input["remove_sources"].length > 0) {
-      // source.unlink is M3's (A1 3.6), with the link versions of A1 3.5.
-      throw unsupported("remove_sources", "M3's source.unlink operation");
-    }
     // The folder last, so the other operations keep their indexes in a replay, which checks no
     // folder (draftFolders) and sends a stand-in when nothing else is in the request.
     const folder = set["folder"];
@@ -2160,6 +2157,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       await submit(call, [...groups, ...ops], {
         active: true,
         inserted: { at: 0, count: groups.length },
+        warnings: made,
         pathOf: (i, field) =>
           ops[i]?.kind === "task.patch" && field !== undefined && /^[a-z_]+$/u.test(field)
             ? `set.${field}`
@@ -2228,7 +2226,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
   "task.finish": async (call) => {
     const { input } = call;
-    checkMode(input);
     const task = await taskOf(call);
     const outcome = typeof input["outcome"] === "string" ? input["outcome"] : undefined;
     const learnings = Array.isArray(input["learnings"]) ? (input["learnings"] as string[]) : [];
@@ -2283,7 +2280,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       await submit(call, sent, {
         ...(own > 1 ? { wrapUp: 1 } : {}),
         inserted: { at: own, count: groups.length },
-        warnings: folders.warnings,
+        warnings: [...named.made, ...folders.warnings],
         pathOf: draftPathOf(ops, ids, at, sourcePaths),
       }),
     );
@@ -2336,7 +2333,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
   "task.reopen": async (call) => {
     const { input } = call;
-    checkMode(input);
     const task = await taskOf(call);
     const reason = input["reason"];
     const result = await submit(call, [
@@ -2569,7 +2565,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { input } = call;
     const action = String(input["action"]);
     if (action !== "list") {
-      checkMode(input);
       // The input rules of a write come first, so the agent fixes its call once (A3 3.4.10): every
       // write names its group, and a change to an existing one needs base (A1 3.5).
       if (input["path"] === undefined) {
@@ -2624,19 +2619,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { input } = call;
     const action = String(input["action"]);
     const actor = call.principal.actorKind;
-    if (action === "set") {
-      checkMode(input);
-      if (input["keys"] !== undefined) {
-        throw invalid("keys", "A set names its keys in set", "Leave out keys.");
-      }
-      checkPrefSets(input["set"], actor);
-      // A1's pref.set exists (A1 3.16); this tool's set waits for the step that submits it, with
-      // `undoable: false` and the autonomy rules of A3 3.8 (A3 3.4.11).
-      throw unsupported("set", "the step that connects this tool to A1's pref.set");
-    }
-    if (input["set"] !== undefined) {
-      throw invalid("set", `A ${action} changes nothing`, "Use action set to change a key.");
-    }
     const declared = prefsAsked(input["keys"]);
     let read;
     try {
@@ -3271,62 +3253,11 @@ function unknownPref(path: string, key: string): AppError {
 /** Whether `actor` may set the key here (A1 3.16): never a policy key, else by its writers. */
 const prefWritable = (p: PreferenceSpec, actor: string): boolean => !p.policy && mayWrite(p, actor);
 
-/** A tool value as the registry stores it: a list of keys becomes the list of `{key}` objects. */
-function storedValue(p: PreferenceSpec, value: unknown): unknown {
-  return isKeyList(p.shape) && Array.isArray(value)
-    ? value.map((key: unknown) => ({ key }))
-    : value;
-}
-
 /** A stored or default value as the tool shows it: a list of `{key}` objects as its keys. */
 function shownValue(p: PreferenceSpec, value: PrefValue | null): PrefValue | null {
   return isKeyList(p.shape) && Array.isArray(value)
     ? value.map((item: unknown) => String((item as { key?: unknown }).key))
     : value;
-}
-
-/**
- * Each pair of a `set` (A3 3.4.11), checked as far as the input decides: a declared key, once; a
- * policy key is `forbidden` with rule `policy` for every actor (policy changes through the user's
- * own settings, A3 3.8.2), a key whose writers leave the caller out is `forbidden` with rule
- * `user_only`, and a value other than null must fit its key's own shape in the registry.
- */
-function checkPrefSets(pairs: unknown, actor: string): void {
-  const list = Array.isArray(pairs) ? (pairs as Record<string, unknown>[]) : [];
-  if (list.length === 0) throw invalid("set", "Name the keys to set", "Pass set: [{key, value}].");
-  const seen = new Set<string>();
-  list.forEach((pair, k) => {
-    const at = `set.${String(k)}`;
-    const key = String(pair["key"]);
-    const declared = TOOL_PREFERENCES.find((p) => p.key === key);
-    if (declared === undefined) throw unknownPref(`${at}.key`, key);
-    if (seen.has(key)) throw invalid(`${at}.key`, "This key is set twice");
-    seen.add(key);
-    if (declared.policy) {
-      throw new AppError({
-        code: "forbidden",
-        message: "This setting is policy: only the user changes it.",
-        hint: `Ask the user to change it in ${PRODUCT_NAME}'s settings.`,
-        data: { rule: "policy", issues: [{ path: `${at}.key`, message: "Policy key" }] },
-      });
-    }
-    if (!prefWritable(declared, actor)) {
-      throw new AppError({
-        code: "forbidden",
-        message: "Only the user can change this setting.",
-        hint: `Ask the user to change it in ${PRODUCT_NAME}.`,
-        data: { rule: "user_only", issues: [{ path: `${at}.key`, message: "The user's key" }] },
-      });
-    }
-    const value = pair["value"];
-    if (value !== null && !fitsShape(declared.shape, storedValue(declared, value))) {
-      throw invalid(
-        `${at}.value`,
-        "Not a value of this key",
-        `It takes ${shapeText(declared.shape)}.`,
-      );
-    }
-  });
 }
 
 /** One key's row: its value as the registry reads it (the default unless it fits), A1 3.16. */

@@ -96,15 +96,6 @@
             "maxLength": 4096,
             "type": "string"
           },
-          "mode": {
-            "default": "apply",
-            "description": "propose: ask the user to decide",
-            "enum": [
-              "apply",
-              "propose"
-            ],
-            "type": "string"
-          },
           "request_id": {
             "description": "New per intended change; reuse it only to retry that call",
             "maxLength": 64,
@@ -282,12 +273,12 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Use when a task is done or dropped: records the outcome and learnings and creates follow-ups in one call. Also wraps up a task the user checked off. Pass base. A review or proposed result is normal: the user decides.",
+      "description": "Use when a task is done or dropped: records the outcome and learnings and creates follow-ups in one call. Also wraps up a task the user checked off. Pass base: the as_of of the last answer that showed you the task, a search row too; no read is needed first.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "The as_of of the last answer that showed it to you, verbatim; no read needed",
             "maxLength": 40,
             "type": "string"
           },
@@ -455,7 +446,7 @@
             "type": "array"
           },
           "learnings": {
-            "description": "Lessons reusable beyond this task",
+            "description": "Lessons reusable beyond this task; a task keeps 20 at most",
             "items": {
               "maxLength": 300,
               "type": "string"
@@ -463,17 +454,8 @@
             "maxItems": 8,
             "type": "array"
           },
-          "mode": {
-            "default": "apply",
-            "description": "propose: ask the user to decide",
-            "enum": [
-              "apply",
-              "propose"
-            ],
-            "type": "string"
-          },
           "outcome": {
-            "description": "What changed and the evidence; agents must give it",
+            "description": "What changed and the evidence; agents must give it, at most 600 characters",
             "maxLength": 600,
             "type": "string"
           },
@@ -598,7 +580,7 @@
             "type": "string"
           },
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "The as_of of the last answer that showed it to you, verbatim; no read needed",
             "maxLength": 40,
             "type": "string"
           },
@@ -611,15 +593,6 @@
             "description": "create, set_folder: the project's folder here, \"cwd\" or an absolute path",
             "maxLength": 4096,
             "minLength": 1,
-            "type": "string"
-          },
-          "mode": {
-            "default": "apply",
-            "description": "propose: ask the user to decide",
-            "enum": [
-              "apply",
-              "propose"
-            ],
             "type": "string"
           },
           "path": {
@@ -652,24 +625,18 @@
         "destructiveHint": false,
         "idempotentHint": true,
         "openWorldHint": false,
-        "readOnlyHint": false
+        "readOnlyHint": true
       },
-      "description": "Use when the user asks to see or change a setting. describe lists the keys and who may change them, get reads values, set changes them (null resets a key) with base and a request_id. Autonomy and other policy stay the user's.",
+      "description": "Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Changing them is not built yet: tell the user. Autonomy and other policy stay the user's.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "describe: the keys; get: their values; set: change them",
+            "description": "describe: the keys; get: their values",
             "enum": [
               "describe",
-              "get",
-              "set"
+              "get"
             ],
-            "type": "string"
-          },
-          "base": {
-            "description": "as_of from your last read, verbatim",
-            "maxLength": 40,
             "type": "string"
           },
           "keys": {
@@ -679,70 +646,6 @@
               "type": "string"
             },
             "maxItems": 20,
-            "type": "array"
-          },
-          "mode": {
-            "default": "apply",
-            "description": "propose: ask the user to decide",
-            "enum": [
-              "apply",
-              "propose"
-            ],
-            "type": "string"
-          },
-          "request_id": {
-            "description": "New per intended change; reuse it only to retry that call",
-            "maxLength": 64,
-            "pattern": "^[A-Za-z0-9_-]{16,64}$",
-            "type": "string"
-          },
-          "set": {
-            "description": "set: the keys and their new values",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "key": {
-                  "description": "A key describe lists",
-                  "maxLength": 64,
-                  "type": "string"
-                },
-                "value": {
-                  "anyOf": [
-                    {
-                      "maxLength": 64,
-                      "type": "string"
-                    },
-                    {
-                      "maximum": 1000000,
-                      "minimum": -1000000,
-                      "type": "integer"
-                    },
-                    {
-                      "type": "boolean"
-                    },
-                    {
-                      "items": {
-                        "maxLength": 64,
-                        "type": "string"
-                      },
-                      "maxItems": 20,
-                      "type": "array"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "description": "The new value; null resets it to its default"
-                }
-              },
-              "required": [
-                "key",
-                "value"
-              ],
-              "type": "object"
-            },
-            "maxItems": 10,
-            "minItems": 1,
             "type": "array"
           }
         },
@@ -761,22 +664,13 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Use when a completed or archived task needs work again, instead of adding a new one. Its earlier outcome and learnings stay. Pass base and a reason. update_task changes only active tasks.",
+      "description": "Use when a completed or archived task needs work again, instead of adding a new one. Its earlier outcome and learnings stay. Pass a reason, and base: the as_of of the last answer that showed you the task. update_task changes only active tasks.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "The as_of of the last answer that showed it to you, verbatim; no read needed",
             "maxLength": 40,
-            "type": "string"
-          },
-          "mode": {
-            "default": "apply",
-            "description": "propose: ask the user to decide",
-            "enum": [
-              "apply",
-              "propose"
-            ],
             "type": "string"
           },
           "reason": {
@@ -805,78 +699,6 @@
       },
       "name": "reopen_task",
       "title": "Reopen a finished task"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false,
-        "readOnlyHint": false
-      },
-      "description": "Use only inside a routine or run, just before you end: one row per source (ok, partial or unreachable, and the items you read) and a short summary. Anywhere else it returns not_permitted.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "request_id": {
-            "description": "New per intended change; reuse it only to retry that call",
-            "maxLength": 64,
-            "pattern": "^[A-Za-z0-9_-]{16,64}$",
-            "type": "string"
-          },
-          "sources": {
-            "description": "One row per source the routine names",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "items_seen": {
-                  "description": "Items you read there",
-                  "maximum": 1000000,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "name": {
-                  "description": "The source, as the routine names it",
-                  "maxLength": 120,
-                  "type": "string"
-                },
-                "note": {
-                  "description": "What went wrong, in one line",
-                  "maxLength": 200,
-                  "type": "string"
-                },
-                "state": {
-                  "description": "How far you could read it",
-                  "enum": [
-                    "ok",
-                    "partial",
-                    "unreachable"
-                  ],
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name",
-                "state",
-                "items_seen"
-              ],
-              "type": "object"
-            },
-            "maxItems": 20,
-            "type": "array"
-          },
-          "summary": {
-            "description": "Counts created, updated, unchanged; what was unsure",
-            "maxLength": 1000,
-            "type": "string"
-          }
-        },
-        "required": [
-          "request_id"
-        ],
-        "type": "object"
-      },
-      "name": "run_report",
-      "title": "Report a routine's coverage"
     },
     {
       "annotations": {
@@ -936,7 +758,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Call first when a session did not start from a task, and to refresh. Returns the date, autonomy, whether this is a task's session, the tasks matching cwd and counts. include adds sections. guide returns a workflow guide instead. You cannot open or run agents: ask the user.",
+      "description": "Call first when a session did not start from a task, and again later. Returns the date, autonomy, whether this is a task's session, the tasks matching cwd and counts. include adds sections. guide returns a workflow guide instead. You cannot open or run agents: ask the user.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -949,7 +771,6 @@
             "description": "Return this workflow guide instead",
             "enum": [
               "work",
-              "refresh",
               "triage",
               "organize"
             ],
@@ -990,7 +811,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Use to change a task's fields, summary, context, group or sources. Pass base: the as_of of your last read; a context append needs none. Set focus or priority only when the user asks. Use complete_task to finish. proposed and review results are normal: do not retry.",
+      "description": "Use to change a task's fields, summary, context, group or sources. Pass base: the as_of of the last answer that showed you the task (a search row too): no read is needed; a context append needs none. Set focus or priority only when the user asks. Use complete_task to finish.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1050,7 +871,7 @@
             "type": "array"
           },
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "The as_of of the last answer that showed it to you, verbatim; no read needed",
             "maxLength": 40,
             "type": "string"
           },
@@ -1100,28 +921,10 @@
             "maxLength": 4096,
             "type": "string"
           },
-          "mode": {
-            "default": "apply",
-            "description": "propose: ask the user to decide",
-            "enum": [
-              "apply",
-              "propose"
-            ],
-            "type": "string"
-          },
           "reason": {
-            "description": "Why, shown in history and proposals",
+            "description": "Why, shown in history",
             "maxLength": 200,
             "type": "string"
-          },
-          "remove_sources": {
-            "description": "Source keys or URLs to unlink",
-            "items": {
-              "maxLength": 2048,
-              "type": "string"
-            },
-            "maxItems": 10,
-            "type": "array"
           },
           "request_id": {
             "description": "New per intended change; reuse it only to retry that call",

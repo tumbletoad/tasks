@@ -17,6 +17,7 @@ import {
   renderError,
   renderResult,
 } from "../src/mcp/index.ts";
+import { toolEntry } from "../src/mcp/tools.ts";
 import { grantRefused, opCall, type Binding } from "../src/ops/index.ts";
 import {
   ContractError,
@@ -146,7 +147,7 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
       modernLists.add((await boundModern.request("tools/list", modern())).result ?? "");
       expect([...legacy]).toEqual([JSON.stringify(offline.tools_list.result)]);
       expect([...modernLists]).toEqual([JSON.stringify(offline.tools_list.modern_result)]);
-      // The list is the generated one: A3's eleven tools (M4.01). The instructions are v0's.
+      // The list is the generated one: run_report comes with run bindings. The instructions are v0's.
       const tools = (offline.tools_list.result["tools"] as Json[]).map((tool) => tool["name"]);
       expect(tools).toEqual([
         "add_entry",
@@ -156,7 +157,6 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
         "organize",
         "preferences",
         "reopen_task",
-        "run_report",
         "search",
         "status",
         "update_task",
@@ -170,7 +170,7 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
 
 describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding", () => {
   test(
-    "a connection that is no session gets not_permitted, in both eras and from the CLI, and nothing is written",
+    "no tool is offered for it, a call by its name is an unknown tool in both eras, the CLI gets not_permitted, and nothing is written",
     async () => {
       const w = await opened("rr");
       await grantHome(w.home, w.path, { instance: "test-agent", space: w.space });
@@ -193,21 +193,16 @@ describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding"
           request_id: `fixture-request-rr-${String(n).padStart(4, "0")}`,
         },
       });
-      const refused = (reply: { result?: string | undefined }) => {
-        const result = JSON.parse(reply.result ?? "{}") as { isError?: boolean };
-        expect(result.isError).toBe(true);
-        return textOf(result);
+      const unknown = (reply: { result?: string | undefined; error?: unknown }) => {
+        expect(reply.result).toBeUndefined();
+        expect(JSON.stringify(reply.error)).toContain("Unknown tool");
       };
       const unbound = await raw(w, bridgeContext({ space: w.space }));
       await unbound.initialize();
       const modernUnbound = await raw(w, bridgeContext({ space: w.space }));
       const before = await asOf();
-      expect(refused(await unbound.request("tools/call", report(2)))).toMatch(
-        /^error not_permitted: This works only in a run or routine. Nothing to report outside a run./u,
-      );
-      expect(
-        refused(await modernUnbound.request("tools/call", modern("2026-07-28", report(3)))),
-      ).toMatch(/^error not_permitted: .* Nothing to report outside a run./u);
+      unknown(await unbound.request("tools/call", report(2)));
+      unknown(await modernUnbound.request("tools/call", modern("2026-07-28", report(3))));
       // The CLI: a person's terminal and an agent's shell are no run either.
       for (const cls of ["cli-interactive", "cli-agent"] as const) {
         const session = await classSession(w.home, w.path, cls, {
@@ -588,7 +583,10 @@ function mcpContract(era: "legacy" | "modern"): () => Promise<ContractTransport>
           }
         }
         const tool = entry?.faces.mcp?.tool;
-        if (entry === undefined || tool === undefined) return direct(name, input);
+        // An entry with no tool offered goes to the request path as the same connection.
+        if (entry === undefined || tool === undefined || toolEntry(tool) === undefined) {
+          return direct(name, input);
+        }
         const result = await client.callTool({ name: tool, arguments: input });
         const text = textOf(result);
         if (result.isError === true) {

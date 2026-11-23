@@ -634,10 +634,6 @@ const STATUS_ORDER: Statement = {
   sql: "SELECT value, schema_ver FROM preferences WHERE key = 'tasks.statuses'",
   mode: "get",
 };
-const AUTONOMY: Statement = {
-  sql: "SELECT value, schema_ver FROM preferences WHERE key = 'autonomy.level'",
-  mode: "get",
-};
 const COUNTS: Statement = {
   sql:
     "SELECT status, count(*) AS n FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL " +
@@ -809,11 +805,6 @@ export async function readTaskKeys(
   };
 }
 
-function levelOf(row: unknown): "full" | "review" | "suggest" {
-  const { value } = readPreference("autonomy.level", storedOf(row));
-  return value === "full" || value === "suggest" ? value : "review";
-}
-
 /** space.status for a connection that is not bound (A3 3.4.2). */
 export async function readStatus(
   reader: WorkerConnection,
@@ -829,7 +820,6 @@ export async function readStatus(
   },
 ): Promise<{
   space: SpaceFacts;
-  autonomy: "full" | "review" | "suggest";
   statuses: { status: string; count: number }[];
   inbox: number;
   sections: {
@@ -850,7 +840,6 @@ export async function readStatus(
     [
       SPACE,
       STATUS_ORDER,
-      AUTONOMY,
       COUNTS,
       INBOX,
       ...(options.bound === undefined ? [] : [BOUND]),
@@ -865,7 +854,7 @@ export async function readStatus(
       bound: options.bound ?? null,
     },
   );
-  const [space, order, autonomy, counts, inbox, ...rest] = results;
+  const [space, order, counts, inbox, ...rest] = results;
   const boundRow = options.bound === undefined ? undefined : rest.shift();
   const here = options.here === undefined ? [] : ((rest.shift() ?? []) as Row[]);
   const found = rest;
@@ -896,7 +885,6 @@ export async function readStatus(
   });
   return {
     space: facts,
-    autonomy: levelOf(autonomy),
     statuses: keys.map((status) => ({ status, count: byStatus.get(status) ?? 0 })),
     inbox: Number((inbox as Row | null)?.["n"] ?? 0),
     sections,

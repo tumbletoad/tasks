@@ -89,7 +89,10 @@ export const RequestId = z
   .describe("New per intended change; reuse it only to retry that call");
 
 /** The one `base` schema, which the registry check requires on writes that change fields. */
-export const Base = z.string().max(40).describe("as_of from your last read, verbatim");
+export const Base = z
+  .string()
+  .max(40)
+  .describe("The as_of of the last answer that showed it to you, verbatim; no read needed");
 
 /** Each entry that takes it gives it the default `"apply"` in its `defaults`. */
 export const Mode = z

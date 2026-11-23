@@ -97,8 +97,8 @@ Usage: `ttasks done [<task>] [flags]`
 |---|---|---|---|
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--status` | `status` | "done" \| "dropped" | dropped: abandoned |
-| `--outcome` | `outcome` | string | What changed and the evidence; agents must give it |
-| `--learning` | `learnings` | string | Lessons reusable beyond this task (repeatable) |
+| `--outcome` | `outcome` | string | What changed and the evidence; agents must give it, at most 600 characters |
+| `--learning` | `learnings` | string | Lessons reusable beyond this task; a task keeps 20 at most (repeatable) |
 | `--finished` | `finished` | string | When it was done, only for work done before it was recorded: ISO date or instant |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 
@@ -157,7 +157,7 @@ Usage: `ttasks prefs <action> [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<action>` | `action` | string | describe: the keys; get: their values; set: change them |
+| `<action>` | `action` | string | describe: the keys; get: their values |
 | `--keys` | `keys` | string | Keys, or prefixes ending in ".*"; default every key (repeatable) |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 
@@ -218,7 +218,7 @@ Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--clear` | `clear` | "summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus" | Fields to clear (repeatable) |
 | `--remove-source` | `remove_sources` | string | Source keys or URLs to unlink (repeatable) |
-| `--reason` | `reason` | string | Why, shown in history and proposals |
+| `--reason` | `reason` | string | Why, shown in history |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 | `title=` | `set.title` | string | Title |
 | `summary=` | `set.summary` | string | One line: the next step |

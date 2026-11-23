@@ -43,24 +43,15 @@ const status = () =>
   });
 
 describe("[A1.3.16.prefs.read] the service reads preferences through the registry", () => {
-  test("status follows the space's statuses and autonomy level, and their defaults after a reset", async () => {
+  test("status follows the space's statuses, and their default after a reset", async () => {
     const before = await status();
     expect(before.statuses.map((s) => s.status)).toEqual(["open", "waiting", "review", "backlog"]);
-    expect(before.autonomy).toBe("review");
-    submit([
-      { kind: "pref.set", key: "tasks.statuses", value: ["open", "doing"] },
-      { kind: "pref.set", key: "autonomy.level", value: "suggest" },
-    ]);
+    submit([{ kind: "pref.set", key: "tasks.statuses", value: ["open", "doing"] }]);
     const set = await status();
     expect(set.statuses.map((s) => s.status)).toEqual(["open", "doing"]);
-    expect(set.autonomy).toBe("suggest");
-    submit([
-      { kind: "pref.set", key: "tasks.statuses", value: null },
-      { kind: "pref.set", key: "autonomy.level", value: null },
-    ]);
+    submit([{ kind: "pref.set", key: "tasks.statuses", value: null }]);
     const reset = await status();
     expect(reset.statuses.map((s) => s.status)).toEqual(["open", "waiting", "review", "backlog"]);
-    expect(reset.autonomy).toBe("review");
   });
 
   test("the snapshot carries every space preference and flag; a batch names a changed one", async () => {

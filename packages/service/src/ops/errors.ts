@@ -2,16 +2,28 @@
 // map through contracts' table (A3 3.5). Bodies never quote a value the caller sent: issues
 // name a path and a fixed sentence, and storage's messages are fixed sentences.
 import { CLI_NAME } from "@ttasks/brand";
-import { a1ErrorBody, AppError, cliFaces, findEntry, type ErrorBody } from "@ttasks/contracts";
+import {
+  a1ErrorBody,
+  AppError,
+  cliFaces,
+  findEntry,
+  laterIn,
+  type ErrorBody,
+} from "@ttasks/contracts";
 import { StorageError, type WriteResult } from "@ttasks/storage";
 
-/** A feature of an entry that a later step builds. Never a silent drop of what the caller sent. */
-export function unsupported(path: string, owner: string): AppError {
-  return new AppError({
+/**
+ * Refuses a call that uses what a later step builds (contracts' later.ts), naming the step. The
+ * list is the only source of this refusal, so nothing an agent is shown offers what it refuses.
+ */
+export function refuseLater(entry: string, input: Readonly<Record<string, unknown>>): void {
+  const row = laterIn(entry, input);
+  if (row === undefined) return;
+  throw new AppError({
     code: "invalid_input",
     message: "This service does not support that field yet.",
-    hint: `It arrives with ${owner}.`,
-    data: { issues: [{ path, message: "Not supported by this service yet" }] },
+    hint: `It arrives with ${row.step}.`,
+    data: { issues: [{ path: row.field, message: "Not supported by this service yet" }] },
   });
 }
 
