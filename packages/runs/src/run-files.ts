@@ -1,8 +1,8 @@
 // A run's files in machine state, `<state>/runs/<run id>/`, which the space never holds:
 // - `answer.json`: the agent's last answer, replaced whole (temporary file and rename) as each
 //   one comes, so a crash of the service keeps the last one whose write ended; and once the work
-//   settled, the work's result with it, before anything of the run is closed. The next start
-//   copies it into the run's record.
+//   settled, the work's result with it, and the time limit that ended it, before anything of the
+//   run is closed. The next start copies it into the run's record.
 // - `stdout.jsonl` and `stderr.log`: the agent's raw output for diagnosis, up to their caps. It is
 //   task text, like the answer, and goes with the folder.
 // - `tools.json`: TTasks's tools for an agent that takes them from a file (Claude Code), with the
@@ -16,9 +16,13 @@ import { atomicWrite, createFile, makeDir, removeStaleTemps, writeAll } from "@t
 import {
   ANSWER_CAP_BYTES,
   OUTCOME_REASONS,
+  RUN_REASONS,
   TEXT_CAP_BYTES,
   type OutcomeReason,
 } from "@ttasks/contracts/runs";
+
+/** The run's time limit that ended its work: its wall time, or its time without output. */
+export type TimeLimit = (typeof RUN_REASONS.timed_out)[number];
 
 /** The folder under `<state>` that holds one folder per run. */
 export const RUNS_FOLDER = "runs";
@@ -45,6 +49,8 @@ export interface SavedAnswer {
   readonly outcome?: OutcomeReason;
   /** The agent's own words about what went wrong, once the work settled. */
   readonly error?: string | null;
+  /** The time limit that ended the work, once it settled. */
+  readonly limit?: TimeLimit;
 }
 
 /** A run's raw output files, written as the output comes, each up to its cap. */
@@ -129,7 +135,9 @@ export class RunFiles implements RunFolders {
       final: answer.final,
       cut: answer.cut,
       text: answer.text,
-      ...(answer.outcome === undefined ? {} : { outcome: answer.outcome, error: answer.error }),
+      ...(answer.outcome === undefined
+        ? {}
+        : { outcome: answer.outcome, error: answer.error, limit: answer.limit }),
     });
     atomicWrite(join(this.folder(id), ANSWER_FILE), text, 0o600);
   }
@@ -142,7 +150,7 @@ export class RunFiles implements RunFolders {
       return undefined;
     }
     if (typeof value !== "object" || value === null) return undefined;
-    const { text, final, cut, outcome, error } = value as Record<string, unknown>;
+    const { text, final, cut, outcome, error, limit } = value as Record<string, unknown>;
     if (
       (typeof text !== "string" && text !== null) ||
       typeof final !== "boolean" ||
@@ -160,7 +168,10 @@ export class RunFiles implements RunFolders {
     ) {
       return undefined;
     }
-    return { text, final, cut, outcome: outcome as OutcomeReason, error };
+    const settled = { text, final, cut, outcome: outcome as OutcomeReason, error };
+    if (limit === undefined) return settled;
+    if (!(RUN_REASONS.timed_out as readonly unknown[]).includes(limit)) return undefined;
+    return { ...settled, limit: limit as TimeLimit };
   }
 
   removeTemps(id: string): void {

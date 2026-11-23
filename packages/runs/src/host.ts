@@ -22,8 +22,8 @@
 // - When the service ends, its runs' processes end with it (the container's own guarantee). A
 //   service that closes saves each agent's work first: its own end when it had settled, else what
 //   it said so far, the words of an answer still being written included. The next start settles
-//   each open run from its saved work: its own result when the work had settled, else
-//   `service_ended` with the last saved answer.
+//   each open run from its saved work: its own result, and the time limit that ended it, when the
+//   work had settled, else `service_ended` with the last saved answer.
 // - A late PID, exit or event never revives a stopped run: the record's rules (machine.ts) refuse
 //   it, and a container that starts after its run gave up on it is killed.
 //
@@ -47,7 +47,7 @@ import type {
 import { printDriver } from "./drivers/print.ts";
 import type { DriverSession, OpenDriver, Work } from "./drivers/types.ts";
 import { RunMachine, type RunEnd } from "./machine.ts";
-import type { RunFolders, SavedAnswer } from "./run-files.ts";
+import type { RunFolders, SavedAnswer, TimeLimit } from "./run-files.ts";
 import { STREAM_KINDS, type StreamKind } from "./streams/index.ts";
 import { capText } from "./streams/values.ts";
 
@@ -129,6 +129,8 @@ interface Flow {
   quietSince: number | undefined;
   /** While its agent runs: the driver of its protocol. */
   session: DriverSession | undefined;
+  /** The time limit that ended its work, once one did: saved with the work's result. */
+  limit: TimeLimit | undefined;
   readonly abort: AbortController;
   done: Promise<RunRecord | undefined>;
 }
@@ -170,6 +172,16 @@ function withCleanup(end: RunEnd, cleanup: RunCleanup): RunEnd {
       return end;
   }
 }
+
+/** What the run's folder keeps of settled work: its answer, its result, the limit that ended it. */
+const settledAnswer = (work: Work, limit: TimeLimit | undefined): SavedAnswer => ({
+  text: work.text,
+  final: work.textFinal,
+  cut: work.textCut,
+  outcome: work.outcome,
+  error: work.error,
+  ...(limit === undefined ? {} : { limit }),
+});
 
 /** The work, when the session settled already. */
 async function settledNow(session: DriverSession): Promise<Work | undefined> {
@@ -469,12 +481,12 @@ export class RunHost {
     const work = own ?? (await settledNow(session));
     if (work === undefined || (own === undefined && work.text === null)) return;
     try {
-      this.#files.saveAnswer(flow.id, {
-        text: work.text,
-        final: work.textFinal,
-        cut: work.textCut,
-        ...(own === undefined ? {} : { outcome: own.outcome, error: own.error }),
-      });
+      this.#files.saveAnswer(
+        flow.id,
+        own === undefined
+          ? { text: work.text, final: work.textFinal, cut: work.textCut }
+          : settledAnswer(own, flow.limit),
+      );
     } catch (error) {
       this.#failed("answer", error);
     }
@@ -502,6 +514,7 @@ export class RunHost {
       settling: false,
       quietSince: undefined,
       session: undefined,
+      limit: undefined,
       abort,
       done: Promise.resolve(undefined),
     };
@@ -712,8 +725,9 @@ export class RunHost {
       this.#limits(run, startedAt, () => lastOutput, limits.signal),
     ]);
     limits.abort();
+    if (why === "wall" || why === "idle") flow.limit = why;
 
-    if (why === "stop" || why === "wall" || why === "idle") {
+    if (why === "stop" || flow.limit !== undefined) {
       // The agent is asked to stop, and may still say how its work ended.
       if (!session.interrupt()) await this.#containers.interrupt(name).catch(() => false);
       await this.#within(
@@ -746,13 +760,7 @@ export class RunHost {
     }
     // The work's result first: a crash of the service from here on still records it.
     try {
-      this.#files.saveAnswer(flow.id, {
-        text: work.text,
-        final: work.textFinal,
-        cut: work.textCut,
-        outcome: work.outcome,
-        error: work.error,
-      });
+      this.#files.saveAnswer(flow.id, settledAnswer(work, flow.limit));
     } catch (error) {
       this.#failed("answer", error);
     }
@@ -779,9 +787,9 @@ export class RunHost {
       cleanup,
     );
     const end: RunEnd =
-      why === "wall" || why === "idle"
-        ? { kind: "timed_out", limit: why, result }
-        : { kind: "exited", result };
+      flow.limit === undefined
+        ? { kind: "exited", result }
+        : { kind: "timed_out", limit: flow.limit, result };
     return this.#confirmed(flow, end, confirmed);
   }
 
@@ -883,8 +891,8 @@ export class RunHost {
   }
 
   /**
-   * The end a run gets once the service that hosted it is gone: its saved work when the work had
-   * settled, else `service_ended` with its last saved answer.
+   * The end a run gets once the service that hosted it is gone: its saved work, and the time limit
+   * that ended it, when the work had settled, else `service_ended` with its last saved answer.
    */
   #serviceEnded(run: RunRecord, cleanup?: RunCleanup): RunEnd {
     let saved: SavedAnswer | undefined;
@@ -895,9 +903,10 @@ export class RunHost {
       saved = undefined;
     }
     const result = savedResult(run, saved, cleanup);
-    return saved?.outcome !== undefined && result !== null
+    if (saved?.outcome === undefined || result === null) return { kind: "service_ended", result };
+    return saved.limit === undefined
       ? { kind: "exited", result }
-      : { kind: "service_ended", result };
+      : { kind: "timed_out", limit: saved.limit, result };
   }
 
   /**

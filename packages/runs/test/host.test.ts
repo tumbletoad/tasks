@@ -2,6 +2,7 @@
 // Stop before the agent's PID, while it runs and after it exited, the start time, the run's limits,
 // a container that refuses to empty and End by force, and the next start after a crash.
 import { spawn, type ChildProcess } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -11,7 +12,9 @@ import type { RunStore } from "@ttasks/launch/execution-store";
 import { MemoryDurable, MemoryExecutionStore } from "@ttasks/launch/memory-store";
 import { describe, expect, test } from "vitest";
 import {
+  ANSWER_FILE,
   claudeDriver,
+  RunFiles,
   RunHost,
   RunMachine,
   UngroupedContainers,
@@ -372,6 +375,46 @@ describe("[A4.5.run.host] the run host's rules", () => {
     const after = await read();
     expect(after.state).toBe("succeeded");
     expect(after.result).toMatchObject({ ok: true, outcome: "success", text: "answer 1" });
+  });
+
+  test("a crash after a time limit ended the work and its result was saved: the next start records the time limit, with the answer", async () => {
+    const { run, read } = await oneRun();
+    // A process that refuses to end holds the cleanup, so the service dies after the save.
+    await run(start("ok", true), say(), { kind: "fork", pick: 0 }, { kind: "stick", pick: 0 });
+    await run(tick(59_000), tick(2_000), tick(5_500), { kind: "crash" }, tick(1_000));
+    expect(await read()).toMatchObject({ state: "unknown", reason: "stop_timed_out" });
+    await run({ kind: "release", pick: 0 }, { kind: "forceEnd", pick: 0 }, tick(1_000));
+    const after = await read();
+    expect(after).toMatchObject({ state: "timed_out", reason: "idle" });
+    expect(after.result).toMatchObject({ outcome: "success", text: "answer 2", textFinal: true });
+  });
+
+  test("a run's folder keeps the time limit that ended its work for the next start, and a saved work that names no limit is no saved work", () => {
+    const root = mkdtempSync(join(tmpdir(), "ttasks-answer-"));
+    try {
+      const id = "ru_0000000000000000000000000a";
+      const files = new RunFiles(root);
+      files.prepare(id);
+      const plain: SavedAnswer = {
+        text: "Found it.",
+        final: true,
+        cut: false,
+        outcome: "success",
+        error: null,
+      };
+      const saved: SavedAnswer = { ...plain, limit: "wall" };
+      files.saveAnswer(id, saved);
+      expect(new RunFiles(root).readAnswer(id)).toEqual(saved);
+      files.saveAnswer(id, plain);
+      expect(new RunFiles(root).readAnswer(id)).toEqual(plain);
+      writeFileSync(
+        join(files.folder(id), ANSWER_FILE),
+        JSON.stringify({ ...saved, limit: "lunch" }),
+      );
+      expect(new RunFiles(root).readAnswer(id)).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("a crash mid run: the next start ends it as interrupted with the last saved answer", async () => {
