@@ -987,8 +987,27 @@ describe("[A4.5.routes.markers] a launch reads its folder's marker before an age
       const free = (await open(r, { task: plain.ref, instance: "claude" })).result.launch;
       await waitFor(() => r.lab.folders.get(free.id), LONG_MS, "the terminal's folder");
 
+      // A marked folder replaced by one that takes no marker (a read-only share that came back as
+      // another device) asks once: opened anyway, it opens from then on without a marker.
+      renameSync(join(r.lab.work, "shared-folder"), join(r.lab.work, "shared-aside-2"));
+      mkdirSync(join(r.lab.work, "shared-folder"));
+      writeFileSync(join(r.lab.work, "shared-folder", FOLDER_MARKER), "the person's own file");
+      const asks = errorOf(
+        await open(r, { task: own.ref, instance: "claude" }).catch((e: unknown) => e),
+      );
+      expect(asks).toMatchObject({ data: { reason: "marker_missing", of: "task" } });
+      const chosen = (await open(r, { task: own.ref, instance: "claude", mark_folder: true }))
+        .result.launch;
+      await waitFor(() => r.lab.folders.get(chosen.id), LONG_MS, "the terminal's folder");
+      const again = (await open(r, { task: own.ref, instance: "claude" })).result.launch;
+      await waitFor(() => r.lab.folders.get(again.id), LONG_MS, "the terminal's folder");
+
       const events = readLog(r.lab.home).filter((e) => e["ev"] === "launch.folder_unmarked");
-      expect(events.map((e) => e["reason"])).toEqual(["marker_missing", "marker_other"]);
+      expect(events.map((e) => e["reason"])).toEqual([
+        "marker_missing",
+        "marker_other",
+        "marker_missing",
+      ]);
     },
   );
 

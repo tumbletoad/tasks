@@ -325,7 +325,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A folder on a drive or share that does not answer is refused after a few seconds, but the look
   at it keeps one of TTasks's file threads busy until the system gives up.
 - A folder TTasks cannot write to, such as a read-only one, gets no marker and opens as before,
-  without that check, and so does a folder whose marker cannot be read within two seconds.
+  without that check, and so does a folder whose marker cannot be read within two seconds. When
+  Open asked about such a folder and you chose to use it, it does not ask again while it stays
+  that folder.
 - On a file system that records no creation time, a folder whose marker could not be written
   within two seconds when it was set is not protected: its next Open marks whatever folder is at
   the path then.

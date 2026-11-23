@@ -13,7 +13,8 @@
 // A write slower than its bound is abandoned, so it never lands in a folder made at the path since
 // or after a clear; the folder still counts as marked when its identity is known, so a busy machine
 // keeps the protection. A folder TTasks cannot write to (read-only, a share) gets no marker and is
-// opened as before: that is the limit of the protection, not a refusal.
+// opened as before: that is the limit of the protection, not a refusal. When the person chose to
+// use such a folder, its identity is what is remembered.
 import { readFileSync } from "node:fs";
 import { lstat, readFile, rm, rmdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -384,14 +385,26 @@ export class FolderMarkers {
     return found === true ? { open } : { open, identity: found };
   }
 
-  /** Marks the folder `stored` as `owner`'s. False when it takes no marker. */
+  /** Marks the folder `stored` as `owner`'s: it was set. False when it takes no marker. */
   mark(owner: MarkerOwner, stored: string): Promise<boolean> {
+    return this.#mark(owner, stored, false);
+  }
+
+  /**
+   * Marks the folder `stored` as `owner`'s because the person chose to use it as it is now: that
+   * is remembered by its identity also when it takes no marker. False when it takes none.
+   */
+  use(owner: MarkerOwner, stored: string): Promise<boolean> {
+    return this.#mark(owner, stored, true);
+  }
+
+  #mark(owner: MarkerOwner, stored: string, chosen: boolean): Promise<boolean> {
     return this.#turn(async () => {
       const folder = await this.#folder(stored);
       if (folder === undefined) return false;
       const { open, identity } = folder;
       const before = await bounded(() => readMarker(open), MARKER_MS);
-      return this.#write(this.#key(owner, stored), open, owner, before, identity);
+      return this.#write(this.#key(owner, stored), open, owner, before, identity, chosen);
     });
   }
 
@@ -399,7 +412,8 @@ export class FolderMarkers {
    * Adds `owner` to the marker of the folder at `open`, and keeps what this machine marked. A write
    * that did not answer within the bound is abandoned, and the folder answered as itself: known by
    * its identity, it stays this owner's, so a folder made at the path meanwhile still asks and this
-   * one takes its marker at the next look.
+   * one takes its marker at the next look. A folder the person `chosen` is kept by its identity
+   * whatever the write did; without one there is nothing to keep it by, and it opens as before.
    */
   async #write(
     key: string,
@@ -407,13 +421,18 @@ export class FolderMarkers {
     owner: MarkerOwner,
     before: MarkerRead | "not_answering",
     identity: string | undefined,
+    chosen = false,
   ): Promise<boolean> {
     const written =
       before === "not_answering"
         ? before
         : await bounded((signal) => addOwnerNow(open, owner, before, signal), MARKER_MS);
-    if (written === true || (written === "not_answering" && identity !== undefined)) {
+    if (identity !== undefined && (chosen || written !== false)) {
       this.#marks.set(key, true, identity);
+    } else if (written === true) {
+      this.#marks.set(key, true);
+    } else if (chosen) {
+      this.#marks.set(key, false);
     }
     return written === true;
   }

@@ -1038,7 +1038,7 @@ ${instance}`;
     if (markers === undefined || (folder.kind !== "task" && folder.kind !== "project")) return;
     const owner = { space, kind: folder.kind, id: folder.owner };
     if (mark) {
-      await markers.mark(owner, folder.path);
+      await markers.use(owner, folder.path);
       return;
     }
     const found = await markers.check(owner, folder.path);

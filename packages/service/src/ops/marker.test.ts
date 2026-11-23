@@ -244,6 +244,26 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
     expect(await readMarker(cleared.folder)).toEqual({ state: "none" });
   });
 
+  test("Use this folder is remembered for a folder that takes no marker", async () => {
+    const { folder, markers, file } = fresh();
+    await markers.mark(project, folder);
+    // Another folder at the path, one TTasks cannot mark (a read-only share that came back as
+    // another device): it asks, and the person says to use it.
+    renameSync(folder, `${folder}-aside`);
+    mkdirSync(folder);
+    writeFileSync(join(folder, FOLDER_MARKER), "a file of the person's");
+    expect(await markers.check(project, folder)).toEqual({ kind: "missing" });
+    expect(await markers.use(project, folder)).toBe(false);
+    expect(await markers.check(project, folder)).toEqual({ kind: "ok" });
+    expect(await new FolderMarkers({ file, home: base }).check(project, folder)).toEqual({
+      kind: "ok",
+    });
+    // Another folder made there after that still asks.
+    renameSync(folder, `${folder}-again`);
+    mkdirSync(folder);
+    expect(await markers.check(project, folder)).toEqual({ kind: "missing" });
+  });
+
   test("a file system that keeps no creation time or no usable file number gives no identity, so a gone marker still asks", () => {
     const known = { dev: 7n, ino: 42n, birthtimeNs: 1_700_000_000_000_000_000n };
     expect(identityFrom(known)).toBe("7:42:1700000000000000000");

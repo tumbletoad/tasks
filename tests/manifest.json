@@ -840,7 +840,7 @@
     },
     {
       "id": "A1.3.15.folders.marker",
-      "title": "The marker in a project's or a task's folder: the owners' IDs and an ignore file, no task text; a launch's look finds its own marker, another owner's or another space's, a marker gone after it was written from a folder made again at the path, a marker that cannot be read; an old folder without one is marked quietly, and so is the folder that was marked when only its marker went (git clean -x); a marker not written within its bound still keeps the folder and its write lands nothing later, not in a folder moved to the path nor after a clear: one made again at the path asks, and the very folder, also one shared with another owner, takes its marker; what was marked outlives a restart; a folder that takes no marker opens as before; a clear takes the owner off and the last one the marker; a folder moved with another keeps its marker; a checkout's git status stays clean",
+      "title": "The marker in a project's or a task's folder: the owners' IDs and an ignore file, no task text; a launch's look finds its own marker, another owner's or another space's, a marker gone after it was written from a folder made again at the path, a marker that cannot be read; an old folder without one is marked quietly, and so is the folder that was marked when only its marker went (git clean -x); a marker not written within its bound still keeps the folder and its write lands nothing later, not in a folder moved to the path nor after a clear: one made again at the path asks, and the very folder, also one shared with another owner, takes its marker; Use this folder on a folder that takes no marker is remembered by its identity; what was marked outlives a restart; a folder that takes no marker opens as before; a clear takes the owner off and the last one the marker; a folder moved with another keeps its marker; a checkout's git status stays clean",
       "source": "A1 3.15",
       "owner": "M4",
       "kind": "ci",
@@ -2560,7 +2560,7 @@
     },
     {
       "id": "A4.5.routes.markers",
-      "title": "A launch reads its folder's marker before an agent starts: a folder set through the service is marked with IDs only; its own marker opens; a checkout moved aside with an unrelated one at its path opens nothing, says its marker is missing and opens once the person opens it anyway, marking it; a task's folder replaced by one whose marker names another project opens nothing and names that project; Copy reads no marker; a folder that takes no marker opens as before; a folder whose marker was not written before the set answered, replaced at its path, opens nothing",
+      "title": "A launch reads its folder's marker before an agent starts: a folder set through the service is marked with IDs only; its own marker opens; a checkout moved aside with an unrelated one at its path opens nothing, says its marker is missing and opens once the person opens it anyway, marking it; a task's folder replaced by one whose marker names another project opens nothing and names that project; Copy reads no marker; a folder that takes no marker opens as before; a folder whose marker was not written before the set answered, replaced at its path, opens nothing; a marked folder replaced by one that takes no marker asks once and, opened anyway, opens from then on",
       "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
