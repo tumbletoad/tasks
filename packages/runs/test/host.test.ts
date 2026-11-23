@@ -15,9 +15,11 @@ import {
   type AgentCommand,
   type AgentExit,
   type Containers,
+  type OpenDriver,
   type RunFolders,
   type RunTimes,
   type SavedAnswer,
+  type Work,
 } from "../src/index.ts";
 import { endMove } from "../src/machine.ts";
 import { MODEL_LIMITS, World, type Event } from "./host-world.ts";
@@ -67,7 +69,7 @@ async function bareHost(options: {
     },
     "host-bare-00000001",
   );
-  return { host, id: queued.id, saved };
+  return { host, id: queued.id, saved, machine, files };
 }
 
 /** Containers that run each agent as a plain child process, and one that refuses every start. */
@@ -370,6 +372,132 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(after.result?.text).toBe("answer 2");
     expect(after.result?.textFinal).toBeUndefined();
     expect(world.boxes.get(after.id)?.procs).toBe(0);
+  });
+
+  /** Containers whose one agent runs until it is killed, and a driver's work. */
+  const boxed = (): Containers => {
+    let killed: () => void = () => undefined;
+    const exited = new Promise<AgentExit>((resolve) => {
+      killed = () => {
+        resolve({ code: null, signal: "SIGTERM" });
+      };
+    });
+    return {
+      ...refusing,
+      start: (spec) =>
+        Promise.resolve({
+          name: spec.name,
+          pid: 4242,
+          stdin: new PassThrough(),
+          stdout: new PassThrough(),
+          stderr: new PassThrough(),
+          exited,
+        }),
+      kill: () => {
+        killed();
+        return Promise.resolve();
+      },
+    };
+  };
+  const workOf = (more: Partial<Work>): Work => ({
+    ok: false,
+    outcome: "no_result",
+    nativeId: null,
+    text: null,
+    textCut: false,
+    textFinal: false,
+    error: null,
+    usage: null,
+    appTools: null,
+    declined: 0,
+    permissionDenials: 0,
+    ...more,
+  });
+
+  test("a service that closes while the agent writes its answer saves the words so far for the next start", async () => {
+    const { host, id, saved, machine, files } = await bareHost({ containers: boxed() });
+    let opened: () => void = () => undefined;
+    const open = new Promise<void>((resolve) => {
+      opened = resolve;
+    });
+    // An agent that said one whole message and is writing the next: its driver has the words.
+    const writing: OpenDriver = (_pipes, report) => {
+      opened();
+      report({ kind: "answer", text: "Looking.", final: false, cut: false });
+      let settle: (work: Work) => void = () => undefined;
+      const settled = new Promise<Work>((resolve) => {
+        settle = resolve;
+      });
+      return {
+        settled,
+        interrupt: () => false,
+        close: () => undefined,
+        ended: () => {
+          settle(workOf({ text: "The export drops" }));
+        },
+      };
+    };
+    void host.start(id, () =>
+      Promise.resolve({ command: "codex", args: [], cwd: ".", env: {}, open: writing }),
+    );
+    await open;
+    expect(saved.get(id)).toMatchObject({ text: "Looking." });
+    await host.close();
+    expect(saved.get(id)).toEqual({ text: "The export drops", final: false, cut: false });
+    await new RunHost({ machine, containers: refusing, files }).recover();
+    expect(await machine.read(id)).toMatchObject({
+      state: "failed",
+      reason: "service_ended",
+      result: { text: "The export drops" },
+    });
+  });
+
+  test("a service that closes after the agent's work settled, before its end was recorded: the next start records the work's own end", async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { host, id, machine, files } = await bareHost({
+      containers: boxed(),
+      // The `running` commit is slow: the run's end waits behind it when the service closes.
+      wrap: (store) => ({
+        createRun: (input, request) => store.createRun(input, request),
+        replayedRun: (request) => store.replayedRun(request),
+        readRun: (run) => store.readRun(run),
+        openWork: (machine) => store.openWork(machine),
+        transitionRun: async (run, seen, next, patch) => {
+          if (next === "running") await held;
+          return store.transitionRun(run, seen, next, patch);
+        },
+      }),
+    });
+    let opened: () => void = () => undefined;
+    const open = new Promise<void>((resolve) => {
+      opened = resolve;
+    });
+    const answer = "The export drops the last row.";
+    const answered: OpenDriver = () => {
+      opened();
+      return {
+        settled: Promise.resolve(
+          workOf({ ok: true, outcome: "success", text: answer, textFinal: true }),
+        ),
+        interrupt: () => false,
+        close: () => undefined,
+        ended: () => undefined,
+      };
+    };
+    void host.start(id, () =>
+      Promise.resolve({ command: "codex", args: [], cwd: ".", env: {}, open: answered }),
+    );
+    await open;
+    await host.close();
+    release();
+    await new RunHost({ machine, containers: refusing, files }).recover();
+    expect(await machine.read(id)).toMatchObject({
+      state: "succeeded",
+      result: { outcome: "success", text: answer, textFinal: true },
+    });
   });
 
   test("a crash after a Stop: the next start ends the run cancelled", async () => {
