@@ -5,8 +5,9 @@
 // shows in its month with its own mark, and a task finished while the list is open joins it with
 // every row it showed still there. Screenshots in Sumi and Washi at 1440 and 390 px. Fixture data.
 import { expect, type Page, type Route } from "@playwright/test";
+import { monthOf, onOneDay } from "./days.ts";
 import { FINISHED_TASKS, test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import { picture, showsSpace, signIn, themes, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const SUMMARY = "Check the beds after the frost";
@@ -32,6 +33,42 @@ const largestSetSize = (page: Page) =>
       ),
     ),
   );
+
+/**
+ * The months of the finished tasks that are not checked off, newest first, each with its tasks'
+ * references newest first, as the service lists them: what Completed groups, known without it.
+ */
+async function monthsOf(world: World): Promise<string[][]> {
+  const months: { month: number; refs: string[] }[] = [];
+  let cursor: string | undefined;
+  do {
+    const read = (await world.op(world.mira.id, "task.finished", {
+      checked_off: false,
+      limit: 200,
+      ...(cursor === undefined ? {} : { cursor }),
+    })) as { rows: { ref: string; finished_at: number }[]; cursor?: string };
+    for (const row of read.rows) {
+      const month = monthOf(row.finished_at);
+      const last = months.at(-1);
+      if (last?.month === month) last.refs.push(row.ref);
+      else months.push({ month, refs: [row.ref] });
+    }
+    cursor = read.cursor;
+  } while (cursor !== undefined);
+  return months.map((m) => m.refs);
+}
+
+/** End from the list: the oldest month's last row, at its place in that month. */
+async function expectEnd(page: Page, months: readonly string[][]): Promise<void> {
+  const oldest = months.at(-1) ?? [];
+  await page.locator('main li[data-task] [data-part="title"]').last().focus();
+  await page.keyboard.press("End");
+  const focused = page.locator("main li[data-task]:focus-within");
+  await expect(focused).toBeInViewport();
+  await expect(focused).toHaveAttribute("data-task", oldest.at(-1) ?? "");
+  await expect(focused).toHaveAttribute("aria-posinset", String(oldest.length));
+  await expect(focused).toHaveAttribute("aria-setsize", String(oldest.length));
+}
 
 /** Each mounted row's title and the line under it (its ending, else its summary). */
 const linesOf = (page: Page) =>
@@ -177,7 +214,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
       "Dropped summary",
       "Finished ending",
     ]);
-    await page.screenshot({ path: test.info().outputPath("completed-first-page.png") });
+    await picture(page, "completed-first-page.png");
 
     // From the keyboard: reaching "Show more" brings it on screen, which reads on; out of sight
     // again, with focus kept on it, Enter reads the next page.
@@ -229,46 +266,61 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
     }
     await gate.release();
     expect(pages).toBeGreaterThan(50);
-    const monthSize = await largestSetSize(page);
-    expect(monthSize).toBeGreaterThanOrEqual(FINISHED_TASKS.done + FINISHED_TASKS.dropped);
+    // Every month as large as the service says, the fixture's thousands in one of them.
+    const months = await monthsOf(finished);
+    const largest = Math.max(...months.map((m) => m.length));
+    expect(largest).toBeGreaterThanOrEqual(FINISHED_TASKS.done + FINISHED_TASKS.dropped);
+    expect(await largestSetSize(page)).toBe(largest);
     // Focus stayed on the button through the last page, which now says the list is whole; it goes
     // when focus leaves it.
     const whole = page.getByRole("button", { name: "Everything is shown", exact: true });
     await expect(whole).toBeFocused();
 
-    // End reaches the month's last row.
+    // End reaches the last row of the oldest month.
     await page.locator('main li[data-task] [data-part="title"]').last().focus();
     await expect(whole).toHaveCount(0);
-    await page.keyboard.press("End");
-    const focused = page.locator("main li[data-task]:focus-within");
-    await expect(focused).toBeInViewport();
-    expect(Number(await focused.getAttribute("aria-posinset"))).toBe(monthSize);
-    await page.screenshot({ path: test.info().outputPath("completed-end.png") });
+    await expectEnd(page, months);
+    await picture(page, "completed-end.png");
 
-    // A task finished while the list is open joins its month at the top, saying how it ended. The
-    // list read again holds every row it showed: the month is one larger at once.
-    const task = finished.task;
-    const read = (await finished.op(finished.mira.id, "task.get", { task: task.ref })) as {
-      as_of: string;
-    };
-    await finished.op(finished.mira.id, "task.finish", {
-      task: task.ref,
-      outcome: "Finished while Completed was open.\nThe rest of the outcome.",
-      base: read.as_of,
-    });
-    await expect.poll(() => largestSetSize(page), { timeout: SLOW_MS }).toBe(monthSize + 1);
-    await expect(more).toHaveCount(0);
-    // The month's first row is the task just finished: Home, then the next group.
-    await expect(async () => {
+    // A task finished while the list is open joins its month at the top, saying how it ended, and
+    // the list read again holds every row it showed. Its month is the sample's, or one begun since
+    // the worker made the sample: the service says which.
+    const focused = page.locator("main li[data-task]:focus-within");
+    await onOneDay(async (_today, attempt) => {
+      const added = (await finished.op(finished.mira.id, "task.add", {
+        tasks: [{ title: `Close the season's ledger ${String(attempt)}`, inbox: true }],
+      })) as { tasks: { ref: string }[] };
+      const ref = added.tasks[0]?.ref ?? "";
+      const read = (await finished.op(finished.mira.id, "task.get", { task: ref })) as {
+        as_of: string;
+      };
+      await finished.op(finished.mira.id, "task.finish", {
+        task: ref,
+        outcome: "Finished while Completed was open.\nThe rest of the outcome.",
+        base: read.as_of,
+      });
+      // First the task shows: the month's first row, Home then the next group.
+      await expect(async () => {
+        await page.keyboard.press("Home");
+        await page.keyboard.press("]");
+        await expect(focused).toHaveAttribute("data-task", ref, { timeout: 1_000 });
+      }).toPass({ timeout: SLOW_MS });
+      const now = await monthsOf(finished);
+      expect(now[0]?.[0]).toBe(ref);
+      await expect(focused).toHaveAttribute("aria-posinset", "1");
+      await expect(focused).toHaveAttribute("aria-setsize", String(now[0]?.length ?? 0));
+      await expect(focused.locator("[data-part='ending'] > [dir]")).toHaveText(
+        "Finished while Completed was open.",
+      );
+      // Then the older months are whole: the largest as large, End at the oldest month's last row.
+      await expect(more).toHaveCount(0);
+      expect(await largestSetSize(page)).toBe(Math.max(...now.map((m) => m.length)));
+      await expectEnd(page, now);
       await page.keyboard.press("Home");
       await page.keyboard.press("]");
-      await expect(focused).toHaveAttribute("data-task", task.ref, { timeout: 1_000 });
-    }).toPass({ timeout: SLOW_MS });
-    await expect(focused).toHaveAttribute("aria-posinset", "1");
-    await expect(focused.locator("[data-part='ending'] > [dir]")).toHaveText(
-      "Finished while Completed was open.",
-    );
-    await page.screenshot({ path: test.info().outputPath("completed-joined.png") });
+      await expect(focused).toHaveAttribute("data-task", ref);
+    });
+    await picture(page, "completed-joined.png");
     expect(await violations(page)).toEqual([]);
   });
 
@@ -276,7 +328,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
     browser,
     finished,
   }) => {
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       await finished.machine("ui.theme", theme);
       for (const width of [1440, 390]) {
         const context = await browser.newContext({
@@ -297,9 +349,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
             if (row !== null) window.scrollBy(0, row.getBoundingClientRect().top - 120);
           });
           await expect(page.locator("main [data-part='ending']").first()).toBeVisible();
-          await page.screenshot({
-            path: test.info().outputPath(`completed-${theme}-${String(width)}.png`),
-          });
+          await picture(page, `completed-${theme}-${String(width)}.png`);
         } finally {
           await context.close();
         }

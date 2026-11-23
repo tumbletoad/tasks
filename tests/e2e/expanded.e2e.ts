@@ -5,16 +5,18 @@
 // opens it; the keyboard path passes. Also: untrusted text in every part of a task stays text,
 // only allowed schemes become links, no CSP report, axe finds nothing in the expanded task in
 // either theme, and the screenshots in Sumi and Washi at 1,440 px (and 390 px) for review.
-//
-// Two lifecycles are not linked here, because no operation makes them before M3.04: an archived
-// (dropped) task (`task.finish` refuses `status: dropped` until then) and a restorable deleted
-// one (no tombstone, and `task.get` reads none). Their host views are a unit test
-// (`A5.3.3.web.task-host`).
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import {
+  axeFound,
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  themes,
+  violations,
+  watchViolations,
+} from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 interface Added {
@@ -410,8 +412,7 @@ test.describe("[A7.3.12.m5-06.e2e.screens] The expanded task in both themes: scr
   }) => {
     const tag = `${test.info().project.name}-screens`;
     const { ref } = await richTask(world, tag);
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       // axe runs its own script in the page: a context of its own without the page's CSP.
       const context = await browser.newContext({
         bypassCSP: true,
@@ -430,27 +431,11 @@ test.describe("[A7.3.12.m5-06.e2e.screens] The expanded task in both themes: scr
         });
         await expect(row.locator("[data-entry]").first()).toBeVisible({ timeout: SLOW_MS });
         await row.scrollIntoViewIfNeeded();
-        await page.screenshot({ path: test.info().outputPath(`expanded-${theme}-1440.png`) });
-        await row.screenshot({ path: test.info().outputPath(`expanded-${theme}-1440-card.png`) });
+        await picture(page, `expanded-${theme}-1440.png`);
+        await picture(row, `expanded-${theme}-1440-card.png`);
 
-        await page.evaluate(axe);
-        const found = await page.evaluate(async (selector) => {
-          const run = (
-            window as unknown as {
-              axe: {
-                run: (
-                  context: unknown,
-                  options: unknown,
-                ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-              };
-            }
-          ).axe.run;
-          const result = await run({ include: [selector] }, { resultTypes: ["violations"] });
-          return result.violations.map(
-            (v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`,
-          );
-        }, `li[data-task="${ref}"]`);
-        expect(found, `axe in ${theme}`).toEqual([]);
+        if (pictures())
+          expect(await axeFound(page, [`li[data-task="${ref}"]`]), `axe in ${theme}`).toEqual([]);
 
         await page.setViewportSize({ width: 390, height: 900 });
         await row.scrollIntoViewIfNeeded();
@@ -458,10 +443,7 @@ test.describe("[A7.3.12.m5-06.e2e.screens] The expanded task in both themes: scr
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
         );
         expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
-        await page.screenshot({
-          path: test.info().outputPath(`expanded-${theme}-390.png`),
-          fullPage: true,
-        });
+        await picture(page, `expanded-${theme}-390.png`, { fullPage: true });
       } finally {
         await context.close();
       }

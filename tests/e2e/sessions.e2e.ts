@@ -5,7 +5,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { openTask, showsSpace, signIn } from "./page.ts";
+import { openTask, picture, showsSpace, signIn, themes } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 /** A new task of Mira's in the Inbox, for one test alone. */
@@ -257,7 +257,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     world.hold(ref);
     await openRunning(world, p);
 
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       await world.machine("ui.theme", theme);
       // Signed in where the sidebar names the space, then narrowed.
       await page.setViewportSize({ width: 1440, height: 900 });
@@ -273,9 +273,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
         );
         expect(scroll, `horizontal scroll at ${String(width)} px`).toBeLessThanOrEqual(0);
         await p.row.scrollIntoViewIfNeeded();
-        await p.row.screenshot({
-          path: test.info().outputPath(`sessions-${theme}-${String(width)}.png`),
-        });
+        await picture(p.row, `sessions-${theme}-${String(width)}.png`);
       }
     }
     await world.machine("ui.theme", null);
