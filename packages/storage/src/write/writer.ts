@@ -2020,6 +2020,20 @@ export class SpaceWriter {
           if (!mayWrite(spec, request.actor.actor_kind)) {
             problem("PREFERENCE_FORBIDDEN", "Only the user changes this preference", i, "key");
           }
+          const row = conn.prepare(SQL.preferenceRow).get({ id: op.key });
+          // A newer build's value is kept unchanged: read-only here (A1 3.16). Said before any
+          // other reason, so nobody changes tasks for a change this build cannot make.
+          if (
+            row !== undefined &&
+            new RowReader("preferences", row).int("schema_ver", "count") > spec.schemaVer
+          ) {
+            problem(
+              "VALIDATION_FAILED",
+              "A newer build wrote this preference: it is read-only here",
+              i,
+              "key",
+            );
+          }
           // A task keeps its status and effort whatever the scale says, so a scale never drops a
           // key an active task holds: the person moves those tasks first and loses nothing.
           if (isScaleKey(op.key)) {
@@ -2039,17 +2053,7 @@ export class SpaceWriter {
             }
           }
           const touches: Touch[] = [];
-          const row = conn.prepare(SQL.preferenceRow).get({ id: op.key });
           if (row !== undefined) {
-            // A newer build's value is kept unchanged: read-only here (A1 3.16).
-            if (new RowReader("preferences", row).int("schema_ver", "count") > spec.schemaVer) {
-              problem(
-                "VALIDATION_FAILED",
-                "A newer build wrote this preference: it is read-only here",
-                i,
-                "key",
-              );
-            }
             // Changing a stored value, or resetting it, needs a base (A1 3.5).
             const key = rowKey("preferences", op.key);
             if (!starts.has(key)) {

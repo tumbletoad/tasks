@@ -54,14 +54,16 @@ test.describe("[A5.3.7.e2e.effort-scales] one size, ten sizes and the longest na
           const effort = facts.getByRole("radiogroup", { name: "Effort" });
           await expect(effort.getByRole("radio")).toHaveCount(sizes.length, { timeout: SLOW_MS });
           expect(await effort.getByRole("radio").allInnerTexts()).toEqual(sizes);
-          const cut = await effort
-            .getByRole("radio")
-            .evaluateAll((cells) =>
-              cells
-                .filter((c) => c.scrollWidth > c.clientWidth || c.scrollHeight > c.clientHeight)
-                .map((c) => c.textContent),
-            );
-          expect(cut).toEqual([]);
+          /** The sizes whose name does not fit its button. */
+          const cut = () =>
+            effort
+              .getByRole("radio")
+              .evaluateAll((cells) =>
+                cells
+                  .filter((c) => c.scrollWidth > c.clientWidth || c.scrollHeight > c.clientHeight)
+                  .map((c) => c.textContent),
+              );
+          expect(await cut()).toEqual([]);
           await picture(facts, `effort-card-${String(sizes.length)}.png`);
 
           // The largest size, the longest name of the ten, chosen in the card.
@@ -85,6 +87,7 @@ test.describe("[A5.3.7.e2e.effort-scales] one size, ten sizes and the longest na
               { timeout: SLOW_MS },
             );
             expect(await sideways(page), `sideways at ${String(width)} px`).toBeLessThanOrEqual(0);
+            expect(await cut(), `cut at ${String(width)} px`).toEqual([]);
             await picture(page, `effort-card-${String(sizes.length)}-${String(width)}.png`);
             // Collapsed, the row marks the size: its name, whole in the tip; none where narrow.
             const title = row.locator('[data-part="title"]');

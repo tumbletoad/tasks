@@ -87,6 +87,20 @@ describe("[A1.3.16.prefs.effort-any] every reader takes the names of any stored 
       request_id: w.rid(),
     });
     expect(changed.code).toBe("invalid_input");
+    // Also when the change would drop a size a task holds: the reason is the newer build, said
+    // first, so nobody moves tasks for a change this build cannot make.
+    const dropping = await w.refusal("prefs.manage", {
+      action: "set",
+      set: [{ key: "tasks.effort_scale", value: "S,M,L" }],
+      base: await w.base(),
+      request_id: w.rid(),
+    });
+    expect(dropping.message).toContain("newer build");
+    expect(dropping.message).not.toContain("Active tasks");
+    const shown = (await w.call("prefs.manage", { action: "get", keys: ["tasks.effort_scale"] }))[
+      "prefs"
+    ] as Json[];
+    expect(shown[0]).toMatchObject({ key: "tasks.effort_scale", writable: false });
     expect((await readSnapshot(readerOf(w.fx.reader))).preferences).toContainEqual(scale);
   });
 
