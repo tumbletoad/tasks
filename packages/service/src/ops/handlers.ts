@@ -4318,7 +4318,7 @@ async function prefsSet(call: Call): Promise<unknown> {
     as_of: result.as_of,
     prefs: asked.map((p) => prefRow(p, "get", after.reads.get(p.key), call.principal)),
     result: result.status === "applied" ? "updated" : "no_change",
-    // A receipt of a build that kept no answer says only that it changed something.
+    // A receipt of a build that kept no answer says only whether it changed anything.
     ...(said === undefined
       ? {}
       : { changed: said.filter((_, k) => result.results[k]?.status !== "unchanged") }),
