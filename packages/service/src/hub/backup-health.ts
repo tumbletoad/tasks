@@ -60,8 +60,10 @@ export function afterRun(health: BackupHealth, report: MaintenanceReport): Backu
   // A run without a verdict found no daily backup due: a complete one is there since the last
   // daily hour, so a failure before is over. A backup that does not restore, or that could not be
   // checked, is still there.
-  const still = health.trouble?.why === "unverified" || health.trouble?.why === "unchecked";
-  return still && health.trouble !== undefined ? { ...base, trouble: health.trouble } : base;
+  const { trouble } = health;
+  return trouble?.why === "unverified" || trouble?.why === "unchecked"
+    ? { ...base, trouble }
+    : base;
 }
 
 /** After an upkeep run that failed with `code`, the service's drain aside. */
