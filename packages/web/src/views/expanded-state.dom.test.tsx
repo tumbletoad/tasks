@@ -327,6 +327,44 @@ describe("[A5.3.15.web.expanded-state] the expanded task's state holds against t
     ]);
   });
 
+  test("a fresh snapshot without the expanded active task shows it as it is now: finished elsewhere, without a star to press, with Reopen", async () => {
+    answer = (input) =>
+      input.sections === undefined
+        ? Promise.resolve(digest(1, { version: 15 }))
+        : Promise.resolve({ view: "sections", as_of: "1.20.01234567", sections: {} });
+    mount(<TaskList view="open" filter={OPEN} empty="" onExpand={() => undefined} />);
+    apply(snapshot([task(1), task(2)]));
+    act(() => {
+      titleOf("t_00001")?.click();
+    });
+    await settle();
+    const card = () => container.querySelector<HTMLElement>(`li[data-key="t_00001"]`);
+    const star = () => card()?.querySelector<HTMLElement>('[data-part="star"]');
+    expect(star()?.getAttribute("aria-disabled")).toBeNull();
+    // Completed elsewhere while the tab heard nothing: the snapshot after it leaves the task out.
+    apply(snapshot([task(2)], 20));
+    await settle();
+    expect(expandedOf("t_00001")).toBe("true");
+    expect(star()?.getAttribute("aria-disabled")).toBe("true");
+    expect(card()?.querySelector<HTMLInputElement>('[data-part="check"]')?.checked).toBe(true);
+    expect(card()?.querySelector('[data-part="reopen"]')).not.toBeNull();
+    expect(card()?.querySelector('[data-part="status"]')).toBeNull();
+  });
+
+  test("a fresh snapshot without the expanded task, which no longer exists, closes its card and drops it from the URL", async () => {
+    const onExpand = vi.fn<(task: TaskRow | undefined, gone?: boolean) => void>();
+    mount(<TaskList view="open" filter={OPEN} empty="" onExpand={onExpand} />);
+    apply(snapshot([task(1), task(2)]));
+    act(() => {
+      titleOf("t_00001")?.click();
+    });
+    await settle();
+    apply(snapshot([task(2)], 20));
+    await settle();
+    expect(keys()).toEqual(["t_00002"]);
+    expect(onExpand).toHaveBeenLastCalledWith(undefined, true);
+  });
+
   test("Collapse puts focus on the title, as Escape does", () => {
     const tasks = [task(1), task(2)];
     mount(<TaskList view="open" filter={OPEN} empty="" />);

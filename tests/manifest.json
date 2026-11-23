@@ -5044,7 +5044,7 @@
     },
     {
       "id": "A5.3.15.web.expanded-state",
-      "title": "The expanded task's state holds: a lookup of the URL's task that answers after the person chose another row, or a frame that renders with the old URL, changes nothing; an injected row leaves when another task expands and shows a cut title as cut; a fresh snapshot reads the detail again; the title editor saves against the cursor it opened at; Collapse focuses the title; a focused thread entry stays shown while entries arrive",
+      "title": "The expanded task's state holds: a lookup of the URL's task that answers after the person chose another row, or a frame that renders with the old URL, changes nothing; an injected row leaves when another task expands and shows a cut title as cut; a fresh snapshot reads the detail again, and one that leaves the expanded task out shows it as a read says it is now (finished: no star, Reopen) or closes its card when it no longer exists; the title editor saves against the cursor it opened at; Collapse focuses the title; a focused thread entry stays shown while entries arrive",
       "source": "A5 3.3, A5 3.7, A5 3.15, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",

@@ -213,6 +213,8 @@ export function TaskList({
   const leaving = useRef<{ ref: string | undefined } | undefined>(undefined);
   /** The URL's `task.get`: the newest one applies, and the person's own choice outdates it. */
   const lookups = useRef(new Latest());
+  /** The expanded task's read after a fresh snapshot left it out: the newest one applies. */
+  const rereads = useRef(new Latest());
 
   // The expanded task's newest row: live, else the injected one, else the last one seen.
   const expandedRow =
@@ -410,12 +412,35 @@ export function TaskList({
   );
 
   // An update that takes the expanded task out of the live rows (completed, archived) carries its
-  // newest row: the card shows it until it is collapsed, as an injected row (A5 3.4, 3.15).
+  // newest row: the card shows it until it is collapsed, as an injected row (A5 3.4, 3.15). A fresh
+  // snapshot carries none: the task is read again, and the card shows it as it is now, or closes
+  // and says so when it no longer exists.
   useEffect(
     () =>
-      live.onChanges(({ changes }) => {
+      live.onChanges(({ changes, reset }) => {
         const id = latest.current.expanded;
         if (id === undefined) return;
+        if (reset) {
+          if (live.getState().tasks.has(id)) return;
+          const newest = rereads.current.begin("expanded");
+          const applies = () => newest() && latest.current.expanded === id;
+          api.client.task
+            .get({ task: id })
+            .then((read) => {
+              if (!applies() || read.view !== "digest") return;
+              const { areas, projects } = live.getState();
+              setInjected(rowOfFacts(read.task, areas, projects, latest.current.today));
+            })
+            .catch((error: unknown) => {
+              if (live.failed(error) || !applies()) return;
+              if ((error as { code?: unknown } | null)?.code !== "not_found") return;
+              setExpanded(undefined);
+              setInjected(undefined);
+              say(t("task.gone"));
+              changed.current?.(undefined, true);
+            });
+          return;
+        }
         let left: TaskRow | undefined;
         for (const change of changes) {
           if (change.type !== "task" || change.id !== id || change.after === undefined) continue;
@@ -423,7 +448,7 @@ export function TaskList({
         }
         if (left !== undefined) setInjected(left);
       }),
-    [live],
+    [live, api, say, t],
   );
 
   // Rows an agent adds fade in; agents' changes to the view's tasks are announced once the burst
