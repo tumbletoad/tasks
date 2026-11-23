@@ -201,7 +201,8 @@ export class UngroupedContainers implements Containers {
     if (this.platform === "win32") {
       await this.taskkillTree(live.pid);
       try {
-        if (!live.done) live.child.kill("SIGKILL");
+        // By the agent's own handle, which reaches nothing once it exited.
+        live.child.kill("SIGKILL");
       } catch {
         // Its confirmation says whether it is still there.
       }
