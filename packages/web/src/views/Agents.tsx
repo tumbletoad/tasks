@@ -1,20 +1,25 @@
 // Agents as far as the page's data allows: first "Needs you", the open tasks whose newest
-// background run stopped to ask the person, and "Working", those whose run works now, both from
-// the live rows; then "Recent", the tasks an agent or a routine changed while this tab followed
-// the space, the ones it finished included, newest first, one small heading per day. The rows are
-// ordinary rows, so a task expands to its thread, where its runs, Stop and the changes are.
-// Below them, every agent on this computer and the plan usage of each account, from the Agent
-// Monitor (Computer.tsx). "Routines" and the full history with Revert wait for the service's read
-// of sessions and routines.
-import { useCallback, useContext, useSyncExternalStore } from "react";
+// background run stopped to ask the person or whose agent in a terminal waits for them, and
+// "Working", those whose run or agent works now; then "With an agent", the tasks whose agent is in
+// any other state, under that state; then "Recent", the tasks an agent or a routine changed while
+// this tab followed the space, the ones it finished included, newest first, one small heading per
+// day. The runs' states come from the live rows, the terminal agents' from the Agent Monitor
+// (agents-merge.ts), and each task is in one group. The rows are ordinary rows, so a task expands
+// to its thread, where its runs, Stop and the changes are. A row the monitor put in its group is
+// muted while the monitor's picture is not current. Below them, every other agent on this
+// computer and the plan usage of each account (Computer.tsx). "Routines" and the full history with
+// Revert wait for the service's read of sessions and routines.
+import { useCallback, useContext, useMemo, useSyncExternalStore } from "react";
 import { changeLogOf } from "../app/changes.ts";
 import { recentOf } from "../app/views.ts";
 import { Session } from "../context.ts";
 import type { Group } from "../groups.ts";
-import { useT } from "../i18n/intl.tsx";
+import { useT, type Translate } from "../i18n/intl.tsx";
 import { formatDay } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
+import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
+import { mergeAgents, OTHER_STATES } from "./agents-merge.ts";
 import { Computer } from "./Computer.tsx";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
 
@@ -60,6 +65,12 @@ function keepIn(
     .filter(hasTasks);
 }
 
+/** The heading of a group of agents' own, by its key. */
+const runTitle = (key: string, t: Translate): string =>
+  t(
+    key === "r:needs" ? "agents.needsYou" : key === "r:working" ? "agents.working" : "agents.other",
+  );
+
 export interface AgentsProps {
   readonly task?: string | undefined;
   readonly onExpand: (task: TaskRow | undefined, gone?: boolean) => void;
@@ -71,17 +82,41 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const log = changeLogOf(live);
   const changes = useSyncExternalStore(log.subscribe, log.getEntries);
   const clock = useClock(false);
+  const { tasks: rows } = useLive();
+  const agents = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
+  const picture = agents.view?.picture ?? null;
+  const merged = useMemo(
+    () => mergeAgents(picture, live.spaceId, rows),
+    [picture, live.spaceId, rows],
+  );
+  // What the monitor put in a group is as old as its picture: muted while that is not current.
+  const muted = useMemo(
+    () =>
+      agents.current
+        ? new Set<string>()
+        : new Set([...merged.needs, ...merged.working, ...merged.other.keys()]),
+    [agents.current, merged],
+  );
   const groups = useCallback<GroupsOf>(
     (tasks, held) => {
-      // First what needs the person, then what works now: from the rows, so every tab and a
-      // reload show the same. Each task once: it leaves Recent while it is in one of them.
+      // First what needs the person, then what works now, then what has an agent in another
+      // state. Each task once: it leaves Recent while it is in one of them.
       const needs: TaskRow[] = [];
       const working: TaskRow[] = [];
+      const other = new Map<string, TaskRow[]>(OTHER_STATES.map((state) => [state, []]));
       for (const row of tasks.values()) {
-        if (row.run?.state === "needs_you") needs.push(row);
-        else if (row.run?.state === "working") working.push(row);
+        const state = merged.other.get(row.id);
+        if (row.run?.state === "needs_you" || merged.needs.has(row.id)) needs.push(row);
+        else if (row.run?.state === "working" || merged.working.has(row.id)) working.push(row);
+        else if (state !== undefined) other.get(state)?.push(row);
       }
-      const ran = new Set([...needs, ...working].map((r) => r.id));
+      const ran = new Set([...needs, ...working, ...[...other.values()].flat()].map((r) => r.id));
+      const otherSections = OTHER_STATES.flatMap((state) => {
+        const listed = other.get(state) ?? [];
+        return listed.length === 0
+          ? []
+          : [{ key: `r:other:${state}`, title: t("agents.state", { state }), tasks: listed }];
+      });
       const days = recentOf(changes, tasks, clock.timeZone)
         .map((day) => ({ ...day, tasks: day.tasks.filter((r) => !ran.has(r.id)) }))
         .filter((day) => day.tasks.length > 0);
@@ -104,6 +139,16 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
                 kind: "label" as const,
                 title: t("agents.working"),
                 sections: [{ key: "r:working", tasks: working }],
+              },
+            ]),
+        ...(otherSections.length === 0
+          ? []
+          : [
+              {
+                key: "r:other",
+                kind: "label" as const,
+                title: t("agents.other"),
+                sections: otherSections,
               },
             ]),
       ];
@@ -131,7 +176,7 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
           const group: Group = {
             key: from,
             kind: "label",
-            title: t(from === "r:needs" ? "agents.needsYou" : "agents.working"),
+            title: runTitle(from, t),
             sections: [{ key: from, tasks: [held.task] }],
           };
           return [group, ...out.map((g) => without(g, id))].filter(hasTasks);
@@ -158,7 +203,7 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
         ...rest,
       ];
     },
-    [changes, clock, t],
+    [changes, clock, t, merged],
   );
   return (
     <div>
@@ -172,8 +217,9 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
         empty={t("view.empty.agents")}
         expand={task}
         onExpand={onExpand}
+        muted={muted}
       />
-      <Computer />
+      <Computer shown={merged.shown} />
     </div>
   );
 }

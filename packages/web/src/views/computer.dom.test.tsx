@@ -12,7 +12,12 @@ import {
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { AgentsAccount, AgentsSession, AgentsView } from "@ttasks/contracts/monitor";
+import type {
+  AgentsAccount,
+  AgentsSession,
+  AgentsTask,
+  AgentsView,
+} from "@ttasks/contracts/monitor";
 import { FakeFrames } from "../../test/fake-frames.ts";
 import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
@@ -55,6 +60,7 @@ function snapshot(tasks: readonly TaskRow[]): SnapshotMessage {
 function session(n: number, fields: Partial<AgentsSession> = {}): AgentsSession {
   return {
     key: `s${String(n)}`,
+    task: null,
     app: "claude",
     appName: "claude",
     account: "work",
@@ -99,8 +105,14 @@ function account(fields: Partial<AgentsAccount> = {}): AgentsAccount {
 const picture = (
   sessions: readonly AgentsSession[],
   accounts: readonly AgentsAccount[] = [account()],
-  more: { ageMs?: number; settling?: boolean } = {},
-) => ({ ageMs: more.ageMs ?? 0, settling: more.settling ?? false, sessions, accounts });
+  more: { ageMs?: number; settling?: boolean; unseen?: readonly AgentsTask[] } = {},
+) => ({
+  ageMs: more.ageMs ?? 0,
+  settling: more.settling ?? false,
+  sessions,
+  unseen: more.unseen ?? [],
+  accounts,
+});
 
 let container: HTMLDivElement;
 let root: Root;
@@ -155,7 +167,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function mount() {
+async function mount(tasks: readonly TaskRow[] = [working]) {
   const router = createRouter({
     routeTree: createRootRoute({
       component: () => (
@@ -173,7 +185,7 @@ async function mount() {
     root.render(<RouterProvider router={router} />);
   });
   act(() => {
-    live.store.push(snapshot([working]));
+    live.store.push(snapshot(tasks));
     live.store.flush();
   });
 }
@@ -467,6 +479,26 @@ describe("[A5.agents.web-page] the Agents page shows the monitor's every state i
     expect(accounts[4]?.textContent).toContain("The last check failed");
   });
 
+  test("a limit read more than a minute apart from its account says how old its own reading is", async () => {
+    await mount();
+    const base = account().windows[0];
+    if (base === undefined) throw new Error("no window");
+    show({
+      picture: picture(
+        [],
+        [account({ windows: [base, { ...base, kind: "weekly", readingAgeMs: 7 * MIN }] })],
+      ),
+      trouble: null,
+    });
+    const figures = [...container.querySelectorAll('[data-part="window"]')].map(
+      (w) => w.lastElementChild?.textContent,
+    );
+    expect(figures).toEqual([
+      "6% usedresets in 2 h 30 min",
+      "6% usedresets in 2 h 30 minRead 7 min ago",
+    ]);
+  });
+
   test("the page unmounted: the picture is dropped", async () => {
     await mount();
     show({ picture: picture([session(1)]), trouble: null });
@@ -475,5 +507,149 @@ describe("[A5.agents.web-page] the Agents page shows the monitor's every state i
     });
     expect(live.agents.getState().view).toBeUndefined();
     root = createRoot(container);
+  });
+});
+
+/** A task of the space on screen, open, without a run. */
+const task = (n: number): TaskRow => {
+  const { run: _run, ...open } = working;
+  return {
+    ...open,
+    id: `t_0000${String(n)}`,
+    ref: `M-${String(n)}`,
+    title: `Fixture task ${String(n)}`,
+    position: `p${String(n)}`,
+  };
+};
+
+/** The task `row` as the service links a session to it. */
+const linkTo = (row: TaskRow, started: AgentsTask["started"] = "terminal"): AgentsTask => ({
+  space: SPACE.id,
+  spaceName: SPACE.name,
+  id: row.id,
+  ref: row.ref,
+  started,
+});
+
+/** TTasks' own groups and labels with their rows' references, in order. */
+const layout = () =>
+  [...container.querySelectorAll<HTMLElement>("h2, h3, li[data-task]")]
+    .filter((e) => e.closest('[data-part="computer"], [data-part="usage"]') === null)
+    .map((e) => (e.tagName === "LI" ? e.dataset["task"] : `${e.tagName}:${e.textContent}`));
+
+describe("[A5.agents.web-merge] an agent working on a task of this space is shown as the task's row", () => {
+  test("by its state: needs you, working, or under its own state with an agent; never twice", async () => {
+    const [waits, works, idle, shell, unknown, unseen] = [2, 3, 4, 5, 6, 7].map((n) => task(n));
+    if (!waits || !works || !idle || !shell || !unknown || !unseen) throw new Error("no rows");
+    await mount([working, waits, works, idle, shell, unknown, unseen]);
+    show({
+      picture: picture(
+        [
+          session(1, { task: linkTo(waits), activity: "waiting" }),
+          session(2, { task: linkTo(works), activity: "working" }),
+          session(3, { task: linkTo(idle), activity: "idle" }),
+          session(4, { task: linkTo(shell), activity: "shell" }),
+          session(5, { task: linkTo(unknown), activity: "unknown" }),
+          session(6, { title: "Agent of no task" }),
+        ],
+        [],
+        { unseen: [linkTo(unseen)] },
+      ),
+      trouble: null,
+    });
+    expect(layout()).toEqual([
+      "H2:Needs you",
+      "M-2",
+      "H2:Working",
+      "M-1",
+      "M-3",
+      "H2:With an agent",
+      "H3:Idle",
+      "M-4",
+      "H3:At a shell",
+      "M-5",
+      "H3:State unknown",
+      "M-6",
+      "H3:Not seen by TTAM",
+      "M-7",
+    ]);
+    // "On this computer" lists only the agent no row above shows.
+    expect(sessions().map(([title]) => title)).toEqual(["Agent of no task"]);
+    // A session of this space whose task the page does not hold is listed, with its task's link.
+    show({
+      picture: picture([
+        session(7, { task: { ...linkTo(waits), id: "t_absent", ref: "M-9" }, title: "Agent 7" }),
+      ]),
+      trouble: null,
+    });
+    expect(sessions().map(([title]) => title)).toEqual(["Agent 7"]);
+    expect(text("session-task")).toBe("Task M-9");
+  });
+
+  test("a background run's row keeps TTasks' own state, and its agent is that row", async () => {
+    await mount();
+    show({
+      picture: picture([session(1, { task: linkTo(working, "run"), activity: "idle" })]),
+      trouble: null,
+    });
+    expect(layout()).toEqual(["H2:Working", "M-1"]);
+    expect(sessions()).toEqual([]);
+    expect(text("monitor-status")).toBe("");
+  });
+
+  test("an agent of another space is listed with a link that opens its task there", async () => {
+    await mount();
+    show({
+      picture: picture([
+        session(1, {
+          task: {
+            space: "sp_9876543210abcdefghjkmnpqrs",
+            spaceName: "Studio",
+            id: "t_studio",
+            ref: "S-4",
+            started: "terminal",
+          },
+          title: "Agent of Studio",
+        }),
+      ]),
+      trouble: null,
+    });
+    const link = container.querySelector<HTMLAnchorElement>('[data-part="session-task"]');
+    expect(link?.textContent).toBe("Task S-4 in Studio");
+    expect(link?.getAttribute("href")).toBe("/s/sp_9876543210abcdefghjkmnpqrs/agents?task=S-4");
+  });
+
+  test("a picture that is not current mutes the rows it placed, and moves none", async () => {
+    const waits = task(2);
+    await mount([working, waits]);
+    show({
+      picture: picture([session(1, { task: linkTo(waits), activity: "waiting" })]),
+      trouble: null,
+    });
+    const before = layout();
+    act(() => {
+      live.agents.cut();
+    });
+    expect(layout()).toEqual(before);
+    const muted = (ref: string) =>
+      container.querySelector(`li[data-task="${ref}"]`)?.hasAttribute("data-muted");
+    expect(muted("M-2")).toBe(true);
+    expect(muted("M-1")).toBe(false);
+  });
+
+  test("two folders of one name are told apart by as much of their paths as it takes", async () => {
+    await mount();
+    show({
+      picture: picture([
+        session(1, { folder: "/home/mira/work/portal" }),
+        session(2, { folder: "/home/mira/play/portal" }),
+        session(3, { folder: "/home/mira/api" }),
+      ]),
+      trouble: null,
+    });
+    const folders = [...container.querySelectorAll('[data-part="session"] [title]')].map(
+      (e) => e.textContent,
+    );
+    expect(folders.sort()).toEqual(["api", "play/portal", "work/portal"]);
   });
 });

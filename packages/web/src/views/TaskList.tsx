@@ -124,6 +124,8 @@ export interface TaskListProps {
    * task does not exist, and the URL drops it.
    */
   readonly onExpand?: (task: TaskRow | undefined, gone?: boolean) => void;
+  /** Tasks whose place in the view comes from a picture that is not current: their rows are muted. */
+  readonly muted?: ReadonlySet<string>;
 }
 
 export function TaskList({
@@ -137,6 +139,7 @@ export function TaskList({
   keepsFinished = false,
   expand: wantedRef,
   onExpand,
+  muted,
 }: TaskListProps) {
   const t = useT();
   const say = useToast();
@@ -949,6 +952,7 @@ export function TaskList({
       actions={actions}
       leaving={leavingOf(item.key)}
       refused={refusals.get(item.key)}
+      muted={muted?.has(item.key) === true}
       {...(place.index === undefined ? {} : { index: place.index })}
       {...(place.start === undefined ? {} : { start: place.start })}
       measure={place.measure}

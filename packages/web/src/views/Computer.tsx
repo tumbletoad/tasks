@@ -1,5 +1,7 @@
 // The Agents page's parts from the Agent Monitor (TTAM), under TTasks' own rows: "On this
-// computer", every agent running here with its state, and "Plan usage", each account's limits.
+// computer", every agent running here with its state that the rows above do not show already,
+// each with a link to the task TTasks started it for when it has one (in this space or another),
+// and "Plan usage", each account's limits.
 // They come below the rows so that their arrival never moves what the person reads. A tab without
 // TTAM shows one quiet line. While it watches, the tab tells the service, which asks TTAM at the
 // tab's pace; the picture lives in memory only and is dropped when the page unmounts.
@@ -7,11 +9,18 @@
 // Each state says what it is in words: what needs you first, then what works, then the rest in
 // the order they started, so a new agent joins at the end of its group. Unknown is shown as
 // unknown, never as idle.
-import { useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { Link } from "@tanstack/react-router";
+import { useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
-import type { AgentsAccount, AgentsSession, AgentsView, MonitorWindow } from "../store/agents.ts";
+import type {
+  AgentsAccount,
+  AgentsSession,
+  AgentsTask,
+  AgentsView,
+  MonitorWindow,
+} from "../store/agents.ts";
 import css from "./Computer.module.css";
 
 const styles = classes(css, [
@@ -61,12 +70,35 @@ export function sessionOrder(sessions: readonly AgentsSession[]): AgentsSession[
   );
 }
 
-/** The folder's last part: what names a project. */
-const folderName = (folder: string): string =>
+const partsOf = (folder: string): string[] =>
   folder
     .replace(/[\\/]+$/, "")
     .split(/[\\/]/)
-    .at(-1) ?? folder;
+    .filter((part) => part !== "");
+
+/**
+ * Each folder by as few of its last parts as tell it apart from the others: its own name, which
+ * names a project, and more of its path only where two folders share that name.
+ */
+export function folderLabels(folders: readonly string[]): Map<string, string> {
+  const unique = [...new Set(folders)];
+  const parts = new Map(unique.map((f) => [f, partsOf(f)]));
+  const labelOf = (folder: string, n: number): string =>
+    (parts.get(folder) ?? []).slice(-n).join("/") || folder;
+  const out = new Map<string, string>();
+  for (const folder of unique) {
+    const own = parts.get(folder)?.length ?? 1;
+    let n = 1;
+    while (
+      n < own &&
+      unique.some((other) => other !== folder && labelOf(other, n) === labelOf(folder, n))
+    ) {
+      n += 1;
+    }
+    out.set(folder, labelOf(folder, n));
+  }
+  return out;
+}
 
 /** Ages move on while the page is shown, once every TICK_MS. */
 function useNow(): number {
@@ -124,12 +156,35 @@ function App({ app, name }: { readonly app: string; readonly name: string }) {
   return <span>{t("computer.app", { app, name })}</span>;
 }
 
+/** The task TTasks started the agent for: a link that opens it on its own space's Agents page. */
+function TaskLink({ task, here }: { readonly task: AgentsTask; readonly here: boolean }) {
+  const t = useT();
+  return (
+    <Link
+      to="/s/$space/$view"
+      params={{ space: task.space, view: "agents" }}
+      search={{ task: task.ref }}
+      data-part="session-task"
+    >
+      {here
+        ? t("computer.taskHere", { ref: task.ref })
+        : t("computer.taskThere", { ref: task.ref, space: task.spaceName })}
+    </Link>
+  );
+}
+
 function SessionItem({
   session,
   since,
+  folder,
+  space,
 }: {
   readonly session: AgentsSession;
   readonly since: number;
+  /** The folder as this list names it. */
+  readonly folder: string | undefined;
+  /** The space on screen. */
+  readonly space: string | undefined;
 }) {
   const t = useT();
   const age = session.ageMs === null ? undefined : spanOf(session.ageMs + since, t);
@@ -144,10 +199,11 @@ function SessionItem({
       <div className={styles.meta}>
         <App app={session.app} name={session.appName} />
         <span>{session.account}</span>
-        {session.folder === null ? null : (
-          <span title={session.folder}>{folderName(session.folder)}</span>
-        )}
+        {session.folder === null ? null : <span title={session.folder}>{folder}</span>}
         {age === undefined ? null : <span>{t("computer.started", { age })}</span>}
+        {session.task === null ? null : (
+          <TaskLink task={session.task} here={session.task.space === space} />
+        )}
       </div>
       {session.nested.length === 0 ? null : (
         <ul
@@ -171,12 +227,17 @@ function SessionItem({
   );
 }
 
+/** A limit read this much before or after its account says how old its own reading is. */
+const OWN_AGE_MS = 60_000;
+
 function WindowLine({
   window: w,
   since,
+  accountAgeMs,
 }: {
   readonly window: MonitorWindow;
   readonly since: number;
+  readonly accountAgeMs: number | null;
 }) {
   const t = useT();
   const percent = Math.round(Math.min(100, Math.max(0, w.usedPercent)));
@@ -201,6 +262,9 @@ function WindowLine({
               : t("computer.resets", { age: spanOf(resets, t) })}
           </span>
         )}
+        {accountAgeMs !== null && Math.abs(w.readingAgeMs - accountAgeMs) > OWN_AGE_MS ? (
+          <span>{t("computer.read", { age: spanOf(w.readingAgeMs + since, t) })}</span>
+        ) : null}
       </span>
     </li>
   );
@@ -244,7 +308,12 @@ function AccountItem({
       {account.windows.length === 0 ? null : (
         <ul className={styles.windows}>
           {account.windows.map((w, i) => (
-            <WindowLine key={`${w.kind}:${w.scope ?? ""}:${String(i)}`} window={w} since={since} />
+            <WindowLine
+              key={`${w.kind}:${w.scope ?? ""}:${String(i)}`}
+              window={w}
+              since={since}
+              accountAgeMs={account.readingAgeMs}
+            />
           ))}
         </ul>
       )}
@@ -252,15 +321,26 @@ function AccountItem({
   );
 }
 
-/** The parts from TTAM, for the tab's Agents page. */
-export function Computer() {
+/**
+ * The parts from TTAM, for the tab's Agents page. `shown`: the sessions the rows above show with
+ * their task, which this list leaves out.
+ */
+export function Computer({ shown }: { readonly shown: ReadonlySet<string> }) {
   const t = useT();
   const { live } = useContext(Session);
   useEffect(() => live.watchAgents(), [live]);
   const { view, at, current } = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
   const now = useNow();
+  const picture = view?.picture ?? null;
+  const listed = useMemo(
+    () => sessionOrder((picture?.sessions ?? []).filter((s) => !shown.has(s.key))),
+    [picture, shown],
+  );
+  const folders = useMemo(
+    () => folderLabels(listed.flatMap((s) => (s.folder === null ? [] : [s.folder]))),
+    [listed],
+  );
   if (view === undefined) return null;
-  const picture = view.picture;
   // How much older the picture is now than when the service sent it.
   const since = Math.max(0, Math.max(now, at) - at) + (picture?.ageMs ?? 0);
   const note = noteOf(view, t);
@@ -288,10 +368,16 @@ export function Computer() {
         <p className={styles.line} role="status" data-part="monitor-status">
           {status}
         </p>
-        {picture === null || picture.sessions.length === 0 ? null : (
+        {listed.length === 0 ? null : (
           <ul className={styles.list}>
-            {sessionOrder(picture.sessions).map((session) => (
-              <SessionItem key={session.key} session={session} since={since} />
+            {listed.map((session) => (
+              <SessionItem
+                key={session.key}
+                session={session}
+                since={since}
+                folder={session.folder === null ? undefined : folders.get(session.folder)}
+                space={live.spaceId}
+              />
             ))}
           </ul>
         )}

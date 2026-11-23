@@ -5441,6 +5441,27 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.agents.links",
+      "title": "Each agent the Agent Monitor reports is linked to the task TTasks started it for, through the service with the fake ttam: by agent app, home and session ID together, in every open space, for a Claude Code terminal launch by its preset session, a Codex terminal launch by its matched thread, a background run by the session it reported and a launch that ended within a day; an agent inside a session shares its link; a home the monitor does not list, a home two of its homes could be, a session two tasks hold and the same ID under another app link nothing; and no session ID or home path reaches the page or the log",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.agents.unseen",
+      "title": "An agent in a terminal that TTasks holds as running and the Agent Monitor has not seen in two complete answers over at least 10 s, on a clock the test moves, is sent as not seen: a settling answer counts neither way, seen again it is linked and counts from the start, and one no longer running, a background run or one in a home the monitor does not list is never not seen",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.agents.run-nudge",
+      "title": "A run a person queues or stops, from the page or with ttasks run, reaches the page's feed and asks the Agent Monitor again, through the runs' own change; none after the page's listener closes",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.agents.web-watch",
       "title": "The tab tells the service on its feed whether an Agents page is mounted, the tab visible and its window focused: on each change only and again after every hello, nothing before the page mounts, the view kept only while it is mounted and dropped with the listeners when it unmounts, the view not current from a lost connection until the next one sends its view and for good once the service runs another build (which the page then neither tells nor takes a view from), and a view of another shape is no view",
       "owner": "M6",
@@ -5449,7 +5470,14 @@
     },
     {
       "id": "A5.agents.web-page",
-      "title": "The Agents page in a DOM: TTasks' own rows first, then the monitor's every state in words (nothing before it says anything; not installed, a script or too old as one quiet line; does not fit naming the side to update and older or newer only for a version that differs; looking, settling and no agents; failed with run ttam doctor and not updating; a picture that is not current muting both parts with its age and no check said to run now), sessions with what needs you first, then what works, then the rest as they started and unknown never idle, a session's app, account, folder, age and agents inside, plan usage per account with each limit, a limit reached, a reading from an earlier period, none yet, none for the sign-in, a check running or failed, and the picture dropped when the page unmounts",
+      "title": "The Agents page in a DOM: TTasks' own rows first, then the monitor's every state in words (nothing before it says anything; not installed, a script or too old as one quiet line; does not fit naming the side to update and older or newer only for a version that differs; looking, settling and no agents; failed with run ttam doctor and not updating; a picture that is not current muting both parts with its age and no check said to run now), sessions with what needs you first, then what works, then the rest as they started and unknown never idle, a session's app, account, folder, age and agents inside, plan usage per account with each limit, a limit reached, a reading from an earlier period, none yet, none for the sign-in, a check running or failed, a limit read more than a minute apart from its account with its own age, and the picture dropped when the page unmounts",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.agents.web-merge",
+      "title": "The Agents page in a DOM shows an agent working on a task of this space as the task's row: in Needs you or Working by the monitor's state, otherwise under With an agent with its state named (idle, at a shell, suspended, unknown never idle, not seen by the monitor), once and never again under On this computer; a background run's row keeps TTasks' own state; an agent of another space or of a task the page does not hold is listed with a link to its task in its own space; a picture that is not current mutes the rows it placed and moves none; and two folders of one name are told apart by their paths",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

@@ -166,6 +166,12 @@
   text-decoration: line-through;
 }
 
+/* A row an agent's state placed, from a picture that is not current: as Computer's muted parts. */
+.row[data-muted] .title,
+.row[data-muted] .summary {
+  color: var(--k-muted);
+}
+
 /* After the hold the row leaves: it fades in 180 ms, at once under reduced motion (A5 3.12). */
 .row[data-leaving="out"] {
   opacity: 0;

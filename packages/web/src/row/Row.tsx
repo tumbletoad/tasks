@@ -101,6 +101,8 @@ export interface RowProps {
   readonly leaving?: Leaving | undefined;
   /** Its last Open, refused on its folder: the expanded task says so at once. */
   readonly refused?: FolderRefusal | undefined;
+  /** Its place in the view comes from what an agent did when the page last heard: shown muted. */
+  readonly muted?: boolean;
   /** In a virtual list: the item's index and its offset from the list's top, in px. */
   readonly index?: number;
   readonly start?: number;
@@ -425,6 +427,7 @@ function RowView({
   actions,
   leaving,
   refused,
+  muted = false,
   index,
   start,
   measure,
@@ -498,6 +501,7 @@ function RowView({
       data-current={current}
       data-fresh={fresh || undefined}
       data-done={leaving?.done === true || undefined}
+      data-muted={muted || undefined}
       data-leaving={leaving === undefined ? undefined : leaving.out ? "out" : "hold"}
       aria-posinset={posinset}
       aria-setsize={setsize}
