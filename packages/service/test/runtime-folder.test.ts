@@ -76,6 +76,39 @@ describe("[A2.3.2.1.hub.runtime-folder] the runtime folder: nothing left after a
     },
   );
 
+  test.skipIf(!LINUX)(
+    "a start that fails after making its runtime folder leaves nothing there, as a clean stop does",
+    { timeout: 300_000 },
+    async () => {
+      const temp = tempRoot("rt-failed");
+      const runtime = testRuntimeBase("rt-failed");
+      const home = join(temp.root, "h");
+      try {
+        let made = false;
+        const failed = startService({
+          env: serviceEnv(home),
+          identity: () => PLAIN,
+          maintenance: false,
+          say: () => undefined,
+          runUserBase: runtime.base,
+          listen: () => {
+            const dir = runtimeDirOf(home, runtime.base);
+            made = dir !== undefined && existsSync(dir);
+            return Promise.reject(Object.assign(new Error("fixture listen"), { code: "EIO" }));
+          },
+        });
+        await expect(failed).rejects.toMatchObject({ code: EXIT.crashed });
+        // The folder was there when the start failed, and the start took it away.
+        expect(made).toBe(true);
+        expect(runtime.leftovers()).toEqual([]);
+      } finally {
+        removeRuntimeDirOf(home, runtime.base);
+        runtime.remove();
+        temp.cleanup();
+      }
+    },
+  );
+
   test("only empty folders go: a launch folder, or anything else, keeps the runtime folder whole", () => {
     const temp = tempRoot("rt-idle");
     try {

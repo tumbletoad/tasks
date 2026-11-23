@@ -646,7 +646,7 @@ describe("[A3.3.7.binding.reference] a launch reference reads its task on any co
   );
 
   test(
-    "the person's classes and a script read it as well, and are no session",
+    "the person's classes and a script read it as well, and are no session; a caller that still sends bind is told to leave it out",
     { timeout: LONG },
     async () => {
       const launch = await w.launch("M-1");
@@ -658,10 +658,17 @@ describe("[A3.3.7.binding.reference] a launch reference reads its task on any co
         )) as Json;
         expect(read, cls).toMatchObject({ view: "digest", bound: false, task: { ref: "M-1" } });
       }
+      // A caller that still sends bind is told which field, and what to do.
       const old = await connect();
-      expect((await old.refusal("task.get", { task: "M-1", bind: true })).code).toBe(
-        "invalid_input",
-      );
+      const refused = await old.refusal("task.get", { task: "M-1", bind: true });
+      expect(refused.code).toBe("invalid_input");
+      expect(refused.text).toContain("bind: No longer taken");
+      expect(refused.text).toContain("bind is no longer taken: leave it out.");
+      // A key no build took is named by no table: the caller hears only that it is unknown.
+      const made = await old.refusal("task.get", { task: "M-1", bind: true, bindd: 1 });
+      expect(made.text).toContain("bind: No longer taken");
+      expect(made.text).toContain("Unknown field");
+      expect(made.text).not.toContain("bindd");
       await old.close();
     },
   );

@@ -771,6 +771,63 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
   );
 });
 
+describe("[A3.3.7.grant.space] Open says at the click when its agent's home is registered for another space", () => {
+  test(
+    "refused before anything is saved or started, naming the space it works in; a home of no row is not, and registered for the space it opens",
+    { timeout: 300_000 },
+    async () => {
+      const r = await rig("home-space");
+      const task = await addTask(r, "Fixture task for a home");
+      const life = (
+        (await r.user.call(
+          "space/create",
+          { name: "Life", path: join(r.lab.root, "spaces", "life"), ref_prefix: "L" },
+          { timeoutMs: 60_000 },
+        )) as { space: { id: string } }
+      ).space.id;
+      const register = (space: string) =>
+        r.user.call(
+          "setup/home_grant",
+          { app: "codex", home: r.codexHome, instance: "codex-home", account: "", space },
+          { timeoutMs: 60_000 },
+        );
+      const spawns = opened.length;
+      await register(life);
+      let refused;
+      try {
+        await open(r, { task: task.ref, instance: "codex", text: "Fixture words." });
+      } catch (error) {
+        refused = errorOf(error);
+      }
+      expect(refused).toMatchObject({
+        code: "invalid_input",
+        message: `This agent app works in the space Life, so it could not use ${PRODUCT_NAME} in this one. Nothing was started.`,
+        hint: expect.stringContaining("Agent apps") as unknown,
+        data: { field: "instance", reason: "other_space", space: "Life" },
+      });
+      // The refused click saved no words and started nothing.
+      const digest = (await r.user.call(
+        "op/call",
+        { space: r.lab.spaceId, op: "task.get", input: { task: task.ref } },
+        { timeoutMs: 60_000 },
+      )) as { task: { instructions: unknown[]; more: { instructions: number } } };
+      expect(digest.task.instructions.length + digest.task.more.instructions).toBe(0);
+      expect(opened.length).toBe(spawns);
+      // Claude Code's home never had a row: Open starts it, as before.
+      expect((await open(r, { task: task.ref, instance: "claude" })).result.launch.route).toBe(
+        "terminal",
+      );
+      // Registered for this space, Codex opens.
+      await register(r.lab.spaceId);
+      const { result } = await open(r, { task: task.ref, instance: "codex" });
+      expect(result.launch.route).toBe("terminal");
+      for (const name of ["claude", "codex"]) {
+        expect((await reportAt(r.report(name))).argv.length, name).toBeGreaterThan(0);
+      }
+    },
+  );
+});
+
 describe("[A4.5.routes.folders] a launch opens in the task's folder, else its project's, else on its machine, else in the work folder", () => {
   test(
     "the terminal starts there, the link names it and Copy says it; a folder only on another machine opens nothing here",

@@ -602,21 +602,20 @@ function spaceWords(host: OpsHost, space: string): string {
 /**
  * A bridge whose bind found no space it can be sure of: refused on every call, saying what settles
  * it. Its entry named a space that is no one space here; or it named none, and its process
- * started with no default to take, or an older bridge reconnected without its space. It serves
- * two entries: a registered home with one space it may use, told to name that space, and a
- * hand-made entry, told what the default needs. A registered home with no such space gets the
- * grant refusal instead (pickSpace).
+ * started with no default to take, or an older bridge reconnected without its space. An entry
+ * that names a space, or a registered home's, is told the one space it may use; a hand-made entry
+ * that names none, what the default needs. A registered home with no such space gets the grant
+ * refusal instead (pickSpace).
  */
 function noSpace(host: OpsHost, entry: EntryFacts): AppError {
   const unknown = entry.named
     ? `The agent's ${PRODUCT_NAME} entry names a space this machine has none of, or two of (${CLI_NAME} space list). `
     : "";
   let fix: string;
-  if (!entry.manual && entry.mayUse !== undefined) {
+  if ((entry.named || !entry.manual) && entry.mayUse !== undefined) {
     fix = `It may use ${spaceWords(host, entry.mayUse)}: ask the user to name it in ${ENTRY} (--space ${entry.mayUse}), then to restart the agent app.`;
   } else if (entry.named) {
-    fix =
-      "Ask the user to take the space out of the entry, which then uses the default space, or to correct it, then restart the agent app.";
+    fix = `Ask the user to set a default space (${CLI_NAME} space use) and name it in ${ENTRY}, then to restart the agent app.`;
   } else if (host.defaultSpace?.() !== undefined) {
     fix = "Ask the user to restart the agent app: it then works in the default space.";
   } else {
@@ -632,15 +631,14 @@ function noSpace(host: OpsHost, entry: EntryFacts): AppError {
 
 /**
  * The grant refusal of a bridge whose home may use another space now, which it names, with what
- * moves it there. A hand-made entry: a restart, which takes the default, after taking out a space
- * it names. A registered home: a restart with that space named in its entry, as setup writes it.
+ * moves it there: a restart with that space named in its entry, as setup and its print write it.
+ * A hand-made entry that names no space takes the default at a restart.
  */
 function grantedElsewhere(host: OpsHost, space: string, entry: EntryFacts): AppError {
   const there = spaceWords(host, space);
-  const hint = !entry.manual
-    ? `It may use ${there} now: ask the user to check that ${ENTRY} names it (--space ${space}), then to restart the agent app.`
-    : entry.named
-      ? `It may use ${there} now: ask the user to take the space out of ${ENTRY}, then to restart the agent app.`
+  const hint =
+    entry.named || !entry.manual
+      ? `It may use ${there} now: ask the user to check that ${ENTRY} names it (--space ${space}), then to restart the agent app.`
       : `It may use ${there} now: ask the user to restart the agent app to work there.`;
   return new AppError({
     code: "forbidden",
@@ -3814,6 +3812,18 @@ async function unmarkedError(call: Call, error: LaunchFolderUnmarked): Promise<A
 
 export function launchError(error: unknown): unknown {
   if (error instanceof LaunchUnavailable) {
+    if (error.reason === "other_space") {
+      return new AppError({
+        code: "invalid_input",
+        message: `This agent app works in ${error.works === undefined ? "another space" : `the space ${error.works}`}, so it could not use ${PRODUCT_NAME} in this one. Nothing was started.`,
+        hint: `Register it for this space: in Settings under Agent apps, or with ${CLI_NAME} setup agents.`,
+        data: {
+          field: "instance",
+          reason: error.reason,
+          ...(error.works === undefined ? {} : { space: error.works }),
+        },
+      });
+    }
     return new AppError({
       code: "invalid_input",
       message:

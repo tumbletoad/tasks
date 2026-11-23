@@ -38,6 +38,8 @@ export const UNAVAILABLE_REASONS = [
   "unc",
   /** The brief does not fit the route's budget (A4 3.15.3). */
   "too_long",
+  /** The agent's home is registered for another space: its agent could not use TTasks here. */
+  "other_space",
 ] as const;
 export type UnavailableReason = (typeof UNAVAILABLE_REASONS)[number];
 
@@ -85,12 +87,26 @@ export class LaunchFolderUnmarked extends Error {
   }
 }
 
+/**
+ * The space the agent home a terminal click records is registered for, when its live registration
+ * names another space than `space`: a session there could not use TTasks. Undefined when the home
+ * may use `space`, has no live registration, or its registrations could not be read.
+ */
+export type RegisteredElsewhere = (
+  app: string,
+  home: string | undefined,
+  space: string,
+) => string | undefined;
+
 export class LaunchUnavailable extends Error {
   override readonly name = "LaunchUnavailable";
   readonly reason: UnavailableReason;
-  constructor(reason: UnavailableReason) {
+  /** `other_space`: the name of the space the home is registered for, when it is served. */
+  readonly works: string | undefined;
+  constructor(reason: UnavailableReason, works?: string) {
     super(`This instance cannot open the task here: ${reason}`);
     this.reason = reason;
+    this.works = works;
   }
 }
 
