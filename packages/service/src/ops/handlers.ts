@@ -3872,9 +3872,8 @@ async function prefsSet(call: Call): Promise<unknown> {
   if (items.length === 0) throw invalid("set", "Required to set", "Give a key and its new value.");
   const changes = items.map((item, k): PrefChange => {
     const path = `set.${String(k)}`;
-    const p = TOOL_PREFERENCES.find((spec) => spec.key === item.key);
-    if (p === undefined) throw unknownPref(`${path}.key`, item.key, TOOL_PREFERENCES);
-    const step = laterStep(p);
+    // Before the lookup: a machine key nothing reads yet is not one of the tool's, and still says so.
+    const step = LATER_PREFERENCES.find((later) => later.key === item.key)?.step;
     if (step !== undefined) {
       throw invalid(
         `${path}.key`,
@@ -3882,6 +3881,8 @@ async function prefsSet(call: Call): Promise<unknown> {
         `It arrives with ${step}.`,
       );
     }
+    const p = TOOL_PREFERENCES.find((spec) => spec.key === item.key);
+    if (p === undefined) throw unknownPref(`${path}.key`, item.key, TOOL_PREFERENCES);
     const setStep = laterSet(p);
     if (setStep !== undefined) {
       throw invalid(

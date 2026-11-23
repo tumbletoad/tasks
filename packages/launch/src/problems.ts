@@ -45,6 +45,11 @@ export const PROBLEM_CODES = [
   "single_instance",
   /** A section this build no longer reads (`[roots]`): its lines do nothing. A warning. */
   "retired",
+  /**
+   * A preference this build declares and does not read yet (`LATER_PREFERENCES`): its value changes
+   * nothing. A warning.
+   */
+  "not_read",
 ] as const;
 
 export type ProblemCode = (typeof PROBLEM_CODES)[number];

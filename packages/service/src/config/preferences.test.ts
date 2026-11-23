@@ -40,7 +40,10 @@ describe("[A1.3.16.prefs.machine] machine preferences live in machine.toml with 
       ].join("\n"),
       "linux",
     );
-    expect(problems).toEqual([]);
+    // Read and kept, and named as a key this build does not act on yet (later.ts).
+    expect(problems).toEqual([
+      { key: "preferences.projection.dir", code: "not_read", severity: "warning" },
+    ]);
     expect(readMachinePreferences(config)).toEqual([
       { key: "ui.theme", value: "washi", state: "set" },
       { key: "ui.single_keys", value: false, state: "set" },
