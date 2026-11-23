@@ -3,7 +3,7 @@
 // so an edited skill never breaks a call and a renamed tool never leaves an old call in a file.
 // Tool names come from the registry, so a rename changes them here too.
 import { PRODUCT_NAME } from "@ttasks/brand";
-import { AGENT_LIMITS, findEntry } from "@ttasks/contracts";
+import { AGENT_LIMITS, findEntry, readPreference } from "@ttasks/contracts";
 
 /**
  * One effort size of a space. A size is a key today; a time and a description of what belongs on
@@ -68,10 +68,13 @@ const ORGANIZING = [
   DATA,
 ];
 
+/** Days a finished task still matches a draft by source key, unless the space changed it. */
+const DEDUPE_DAYS = readPreference("tasks.dedupe_window_days", undefined).value as number;
+
 const WRITING = [
-  `- A draft in ${addTasks}: title (at most ${String(AGENT_LIMITS.title)} characters), summary (one line, at most ${String(AGENT_LIMITS.summary)}), context (Markdown, at most ${String(AGENT_LIMITS.context)}). A draft with no area or project goes to the Inbox.`,
-  `- An item from email, chat or a ticket gets a source with its key (jira:KEY): adding it again finds the task instead of a second one. Other links go in sources without a key.`,
-  `- Changing one: ${updateTask} with set or a context append. Pass base: the as_of of your last ${getTask} that showed the field, of the ${addTasks} that created the task, or of your own ${updateTask} that set it.`,
+  `- A draft in ${addTasks}: title (at most ${String(AGENT_LIMITS.title)} characters), summary (one line, at most ${String(AGENT_LIMITS.summary)}), context (Markdown, at most ${String(AGENT_LIMITS.context)}). A draft with no area or project goes to the Inbox, unless its folder (such as "cwd") is in a project's folder: then it joins that project.`,
+  `- An item from email, chat or a ticket gets a source with its key (jira:KEY): adding it again returns that task instead of a second one, also when it was finished in the last ${String(DEDUPE_DAYS)} days (the space may change that): check its lifecycle. Other links go in sources without a key.`,
+  `- Changing one: ${updateTask}. set, clear and a context replace take base: the as_of of your last ${getTask} that showed the field, of the ${addTasks} that created the task, or of your own ${updateTask} that set it. A context append takes none.`,
   `- Every write takes a new request_id; reuse one only to retry that call. ${DATA}`,
 ];
 
