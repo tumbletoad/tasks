@@ -336,6 +336,14 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
   const priority = level === 1 || level === 2 || level === 3 ? String(level) : undefined;
 
   const trashed = task.deleted_at !== undefined;
+  // Move to Trash goes with its button: focus moves to the Restore that takes its place, never to
+  // the page.
+  const moved = useRef(false);
+  const restoreRef = (button: HTMLButtonElement | null): void => {
+    if (button === null || !moved.current) return;
+    moved.current = false;
+    button.focus({ preventScroll: true });
+  };
   // At the foot of the facts, for an active or a finished task: one change, with its Undo.
   const moveToTrash = (
     <p className={styles.trash}>
@@ -344,6 +352,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
         className={styles.trashButton}
         data-part="move-to-trash"
         onClick={() => {
+          moved.current = true;
           edits.trash(task);
         }}
       >
@@ -365,6 +374,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
                   type="button"
                   className={`${styles.move} ${styles.reopen}`}
                   data-part="restore"
+                  ref={restoreRef}
                   onClick={() => {
                     edits.restore(task);
                   }}

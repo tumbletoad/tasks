@@ -157,6 +157,17 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     expect(back.results[0]?.status).toBe("updated");
   });
 
+  test("a named Undo or Redo of a change the space does not have says so, and changes nothing", () => {
+    const a = task("Renew the passport");
+    remove(a);
+    for (const kind of ["undo", "redo"] as const) {
+      const gone = fx.writer.submit(fx.request(fx.human, [{ kind, commit: newId("op") }]));
+      expectStatus(gone, "rejected");
+      expect(gone.error).toMatchObject({ code: "NOT_FOUND", field: "commit" });
+    }
+    expect(deleted(a)).toBe(true);
+  });
+
   test("a removal with a base from before any change to one of its tasks is a conflict that names that task, and nothing moves", () => {
     const a = task("Renew the passport");
     const b = task("Book the dentist");

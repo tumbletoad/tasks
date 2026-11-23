@@ -2595,6 +2595,14 @@ export class SpaceWriter {
     const { actor } = request;
     const principal = actor.principal_id;
     const undo = op.kind === "undo";
+    // A named change the space does not have (a typo, or one from before a backup was restored
+    // over the space): it is said as such, never as a change that is no longer the newest.
+    if (
+      op.commit !== undefined &&
+      conn.prepare(SQL.commitSeq).get({ id: op.commit }) === undefined
+    ) {
+      problem("NOT_FOUND", "The space has no change with this ID", 0, "commit");
+    }
     const target = undo ? undoTarget(conn, principal) : redoTarget(conn, principal);
     if (target === undefined) {
       return undo

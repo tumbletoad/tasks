@@ -914,12 +914,15 @@ async function inTrash(
   });
 }
 
-/** A change the space does not have: one from before a backup was restored over the space. */
+/**
+ * A change the space does not have: a mistyped ID, or one from before a backup was restored over
+ * the space. Which, the service cannot tell, so the answer does not say.
+ */
 function changeGone(): AppError {
   return new AppError({
     code: "not_found",
-    message: "The space has no such change: it was restored from a backup since.",
-    hint: "Nothing was restored. The Trash shows what is there now.",
+    message: "The space has no change with this ID, so nothing was restored.",
+    hint: "The Trash shows what is there now, with each change's ID.",
     data: { field: "change", reason: "change_gone" },
   });
 }

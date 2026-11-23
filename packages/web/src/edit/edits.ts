@@ -1259,6 +1259,10 @@ export class Edits {
       case "INVALID_TRANSITION":
         say({ kind: "info", text: { id: "toast.newerFirst" } });
         return;
+      // The named change is not in the space now: nothing was undone, whatever is newest.
+      case "NOT_FOUND":
+        say({ kind: "info", text: { id: "toast.undoGone" } });
+        return;
       case "UNDO_CONFLICT":
         break;
       default:

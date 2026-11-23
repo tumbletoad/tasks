@@ -23,7 +23,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   outcome and what was learned.
 - Moving a task to the Trash deletes nothing: its notes, log, sources and history stay, nothing
   empties the Trash, and Restore brings it back as it was. A task whose project or area is gone
-  comes back in its area, or the Inbox.
+  comes back in its area, or the Inbox. A task someone changed since you looked is not moved.
+- A task in the Trash changes only by Restore: its card is for reading, and what you typed for it
+  stays as you typed it. A task whose creation you undid is not in the Trash: Redo brings it back
+  whole.
 - A restored task never takes a source back from a task that took it meanwhile: captures go on
   there, and the restored task lists the source as removed, saying where captures go.
 - A run or an agent working on a task you move to the Trash goes on, and stays on the Agents page

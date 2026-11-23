@@ -169,7 +169,7 @@ function TrashList({ q, task, onExpand }: TrashProps & { readonly q: string }) {
     () => ({
       title: (removal: Removal) => changeTitle(removal, clock, t),
       restore: (removal: Removal) => ({
-        label: t("trash.restoreThese"),
+        label: t("trash.restoreThese", { count: removal.count }),
         run: () => {
           restoreChange(removal);
         },
