@@ -533,6 +533,13 @@ a + .muted,
   opacity: 1;
 }
 
+/* Without hover, an entry's actions are in sight: a tap never lands on one it cannot see. */
+@media (hover: none) {
+  .entry .acts {
+    opacity: 1;
+  }
+}
+
 /* Facts: one calm block. Short muted labels, and every control on one 30 px rhythm with the same
    outline and corners: the option grids, the due date and the area. */
 .facts {

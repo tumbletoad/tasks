@@ -70,6 +70,7 @@ function render(
   notes: readonly DetailNote[],
   receipts: readonly Receipt[],
   onOpenAgain?: (note: DetailNote, instance: Instance) => void,
+  taken: { removed?: readonly DetailNote[]; onRemove?: (note: DetailNote) => void } = {},
 ): void {
   act(() => {
     root ??= createRoot(host);
@@ -82,6 +83,7 @@ function render(
           instances={[CLAUDE]}
           partial={false}
           {...(onOpenAgain === undefined ? {} : { onOpenAgain })}
+          {...taken}
         />
       </I18n>,
     );
@@ -275,5 +277,47 @@ describe("[A5.while-away.web.thread-older] Earlier shows what the page holds, th
       button()?.click();
     });
     expect(asked).toBe(2);
+  });
+});
+
+describe("[A5.note.retract.web.thread] a note is taken back from its line in the thread", () => {
+  const removeButtons = () => [
+    ...host.querySelectorAll<HTMLButtonElement>("[data-part='remove-note']"),
+  ];
+
+  test("Remove on a note and on a session's request takes back that note; a card that only reads offers none", () => {
+    const mine = note("n1", "Meant for another task", []);
+    const asked = note("n2", "Check the clinic export first", ["L7KQ21"]);
+    const taken: string[] = [];
+    render([mine, asked], [receipt("la_1", "L7KQ21", "confirmed", AT + 60_000)], undefined, {
+      onRemove: (n) => taken.push(n.ref),
+    });
+    const buttons = removeButtons();
+    expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Remove your note",
+      "Remove the request to Claude Code · work",
+    ]);
+    act(() => {
+      for (const button of buttons) button.click();
+    });
+    expect(taken).toEqual(["n1", "n2"]);
+
+    render([mine, asked], [receipt("la_1", "L7KQ21", "confirmed", AT + 60_000)]);
+    expect(removeButtons()).toEqual([]);
+  });
+
+  test("a session whose request was taken back says so, without its words, and offers no Remove", () => {
+    const asked = note("n2", "Check the clinic export first", ["L7KQ21"]);
+    render([], [{ ...receipt("la_1", "L7KQ21", "confirmed", AT), request: "n2" }], undefined, {
+      removed: [asked],
+      onRemove: () => undefined,
+    });
+    expect(entries()).toHaveLength(1);
+    expect(askedIn(entries()[0])).toBeUndefined();
+    expect(entries()[0]?.querySelector("[data-part='asked-removed']")?.textContent).toBe(
+      "Request removed",
+    );
+    expect(entries()[0]?.textContent).not.toContain("Check the clinic export first");
+    expect(removeButtons()).toEqual([]);
   });
 });

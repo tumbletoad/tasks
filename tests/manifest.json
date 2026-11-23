@@ -2164,6 +2164,27 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.note.retract.web.thread",
+      "title": "In the thread, Remove on a note and on a session's request takes back that note, named for whose it is; a card that only reads offers none; a session whose request was taken back says so without its words",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.note.retract.e2e",
+      "title": "A note taken back in the page: Remove on its line and the toast's Undo, Remove by keyboard, and after a reload the removed line with who took it back, Show and Put back by keyboard, the note back in its place; an agent's note offers Remove too",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.note.retract.e2e.screens",
+      "title": "The thread's Remove and the removed line with a note at 1,440 and 390 px in Sumi and Washi: axe clean, and nothing wider than the screen at 390 px",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.note.retract",
       "title": "A note retracted from a task, by the writer: the row stays with its number, author and audience and put back brings back the same note; the task and its other notes are untouched; an agent's note too; a repeat is unchanged; a base is needed and a stale one is a conflict; a number the task has no note under is not found and leaves the task as it was; undo and redo take a retraction back and forth as the same change; a note whose writing was undone is Redo's, not put back; a task in the Trash takes none; the search index drops and regains the note",
       "owner": "M5",

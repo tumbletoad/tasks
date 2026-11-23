@@ -287,6 +287,12 @@
   "source.removedBy": "· removed by {who, select, user {you} import {the import} other {{who}}} {at, date, medium}",
   "source.putBack": "Put back",
   "source.notPutBack": "The source was not put back. Try again.",
+  "note.kind": "Note",
+  "note.removedCount": "{count, plural, one {# note removed} other {# notes removed}}",
+  "note.removedBy": "{author} · removed by {by, select, user {you} import {the import} other {{by}}} {at, date, medium}",
+  "note.notRemoved": "The note was not removed. Try again.",
+  "note.notPutBack": "The note was not put back. Try again.",
+  "task.removedCount": "{count} removed",
   "source.capturesTo": "{count, plural, one {· captures go to} other {· a capture asks which of}}",
   "source.capturesMore": " and {count} more",
   "source.kind": "{kind, select, email {Mail} chat {Chat} ticket {Ticket} pr {Pull request} issue {Issue} doc {Document} calendar {Event} crash {Crash} session {Session} book {Book} web {Web page} other {Source}}",
@@ -357,6 +363,11 @@
   "thread.olderFailed": "Older entries could not be read.",
   "thread.copy": "Copy",
   "thread.copyEntry": "Copy the entry by {who}",
+  "thread.remove": "Remove",
+  "thread.removeNote": "Remove the note by {who}",
+  "thread.removeMine": "Remove your note",
+  "thread.removeRequest": "Remove the request to {who}",
+  "thread.requestRemoved": "Request removed",
 
   "receipt.dispatching": "Opening in {label}…",
   "receipt.dispatchedTerminal": "Opening…",
@@ -758,5 +769,7 @@
   "toast.folderSetStayed": "Folder set to {folder}. The old folder is still there, so {count, plural, one {# folder} other {# folders}} inside it stayed: {names}",
   "toast.folderCleared": "Folder cleared",
   "toast.sourceRemoved": "Source removed from {ref}",
-  "toast.sourcePutBack": "Source put back on {ref}"
+  "toast.sourcePutBack": "Source put back on {ref}",
+  "toast.noteRemoved": "Note removed from {ref}",
+  "toast.notePutBack": "Note put back on {ref}"
 }

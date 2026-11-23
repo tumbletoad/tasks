@@ -19,6 +19,7 @@ type Sections = SectionsView["sections"];
 export type TaskFacts = DigestView["task"];
 export type SourceOutput = NonNullable<Sections["sources"]>[number];
 type NoteOutput = NonNullable<Sections["notes"]>[number];
+type RemovedOutput = NonNullable<DigestView["removed_notes"]>[number];
 type LogOutput = NonNullable<Sections["log"]>[number];
 
 export interface DetailNote {
@@ -30,6 +31,11 @@ export interface DetailNote {
   readonly forAgents: boolean;
   /** The launches this note was the person's request for, oldest first, by reference. */
   readonly requestFor?: readonly { readonly launch: string; readonly instance: string }[];
+}
+
+/** A note the person took back: no agent reads it, and the card lists it to put back. */
+export interface RemovedNote extends DetailNote {
+  readonly removed: { readonly at: string; readonly by: string };
 }
 
 export interface DetailLog {
@@ -49,6 +55,8 @@ export interface Detail {
   /** Every log entry, oldest first. */
   readonly log: readonly DetailLog[];
   readonly sources: readonly SourceOutput[];
+  /** The notes taken back, newest removal first. */
+  readonly removedNotes: readonly RemovedNote[];
   readonly outcome?: string;
   readonly learnings: readonly string[];
   /** The pages ran out before the end: older notes and log entries are not here. */
@@ -60,6 +68,7 @@ export interface ThreadRead {
   readonly detail: Detail;
   readonly facts: TaskFacts;
   readonly named: readonly NoteOutput[];
+  readonly removed: readonly RemovedOutput[];
   readonly pages: readonly Sections[];
   /** Where the next page starts; none when the read reached the first entry. */
   readonly before?: string;
@@ -107,6 +116,7 @@ export function mergePages(
   pages: readonly Sections[],
   partial: boolean,
   named: readonly NoteOutput[] = [],
+  removed: readonly RemovedOutput[] = [],
 ): Detail {
   const whole = new Map(named.map((note) => [note.ref, note]));
   const paged = [
@@ -145,6 +155,7 @@ export function mergePages(
       }))
       .sort(byTime),
     sources: pages.flatMap((p) => p.sources ?? []),
+    removedNotes: removed.map((n): RemovedNote => ({ ...toNote(n), removed: n.removed })),
     ...(outcome === "" ? {} : { outcome }),
     learnings: [...new Set(learnings)],
     partial,
@@ -224,12 +235,14 @@ async function readPages(
 const threadRead = (
   facts: TaskFacts,
   named: readonly NoteOutput[],
+  removed: readonly RemovedOutput[],
   pages: readonly Sections[],
   before: string | undefined,
 ): ThreadRead => ({
-  detail: mergePages(facts, pages, before !== undefined, named),
+  detail: mergePages(facts, pages, before !== undefined, named, removed),
   facts,
   named,
+  removed,
   pages,
   ...(before === undefined ? {} : { before }),
 });
@@ -253,7 +266,13 @@ export async function readDetail(
   const read = await readPages(client, task, undefined, pages, stale);
   const facts = await digest;
   if (facts.view !== "digest") throw new Error("task.get answered without a digest");
-  return threadRead(facts.task, facts.notes ?? [], read.pages, read.before);
+  return threadRead(
+    facts.task,
+    facts.notes ?? [],
+    facts.removed_notes ?? [],
+    read.pages,
+    read.before,
+  );
 }
 
 /** `PAGES` more of the thread `from` holds, from where it ended: the pages before are not read again. */
@@ -264,5 +283,11 @@ export async function readOlder(
   stale: () => boolean = () => false,
 ): Promise<ThreadRead> {
   const read = await readPages(client, task, from.before, PAGES, stale);
-  return threadRead(from.facts, from.named, [...from.pages, ...read.pages], read.before);
+  return threadRead(
+    from.facts,
+    from.named,
+    from.removed,
+    [...from.pages, ...read.pages],
+    read.before,
+  );
 }
