@@ -2452,7 +2452,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (typeof reviewed === "string") {
       let read: Awaited<ReturnType<typeof readReviewedMark>>;
       try {
-        read = await readReviewedMark(readerOf(call.space), task, Number(reviewed.slice(1)));
+        read = await readReviewedMark(readerOf(call.space), task, reviewed);
       } catch (error) {
         throw storageFailure(error);
       }

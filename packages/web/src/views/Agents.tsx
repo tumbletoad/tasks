@@ -21,6 +21,7 @@
 // "Routines" and the full history with Revert wait for the service's read of sessions and routines.
 import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
+import type { Instance } from "../api.ts";
 import { changeLogOf } from "../app/changes.ts";
 import { classes } from "../app/css.ts";
 import { recentOf } from "../app/views.ts";
@@ -31,6 +32,7 @@ import { useT, type Translate } from "../i18n/intl.tsx";
 import { formatDay, type Clock } from "../row/dates.ts";
 import { focusAfter } from "../row/Row.tsx";
 import { useClock } from "../row/useClock.ts";
+import { questionBy } from "../task/runs.ts";
 import { useLive } from "../store/hooks.ts";
 import { questionsWaiting, taskRow, type TaskRow } from "../store/rows.ts";
 import { Latest } from "../latest.ts";
@@ -147,7 +149,7 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const log = changeLogOf(live);
   const changes = useSyncExternalStore(log.subscribe, log.getEntries);
   const clock = useClock(false);
-  const { tasks: open, asking } = useLive();
+  const { tasks: open, asking, instances } = useLive();
   const agents = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
   const picture = agents.view?.picture ?? null;
   const named = useMemo(
@@ -211,6 +213,7 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
           {asked ? (
             <Questions
               row={row}
+              instances={instances}
               onDismiss={(newest) => {
                 edits.dismissQuestions(row, newest);
               }}
@@ -220,7 +223,7 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
         </>
       );
     },
-    [merged, agents.current, edits, t],
+    [merged, agents.current, edits, t, instances],
   );
   const groups = useCallback<GroupsOf>(
     (tasks, held) => {
@@ -291,14 +294,16 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
 
 /**
  * The questions agents asked that wait for the person, newest first, each in its own words:
- * answered by a note on the task, or set aside with Dismiss, which names the newest one shown so
+ * answered by a note on the task or a run after it, or set aside with Dismiss, which names the newest one shown so
  * that a question asked after it still waits.
  */
 function Questions({
   row,
+  instances,
   onDismiss,
 }: {
   readonly row: TaskRow;
+  readonly instances: readonly Instance[];
   readonly onDismiss: (newest: string) => void;
 }) {
   const t = useT();
@@ -314,7 +319,9 @@ function Questions({
         <ul>
           {questions.map((question) => (
             <li key={question.ref}>
-              <p className={styles.asks}>{t("agents.asks", { by: question.by })}</p>
+              <p className={styles.asks}>
+                {t("agents.asks", { by: questionBy(question, instances) })}
+              </p>
               <p className={styles.words} dir="auto">
                 {question.text}
               </p>

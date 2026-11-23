@@ -263,7 +263,7 @@ Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 | `project=` | `set.project` | string | Project name or slug |
 | `folder=` | `set.folder` | string | "cwd", an absolute folder or one under ~ |
 | `focus=` | `set.focus` | boolean | Star it: on Today until cleared. Only when the user asks |
-| `reviewed=` | `set.reviewed` | string | Newest agent question the user read, such as l4: it and earlier ones are done |
+| `reviewed=` | `set.reviewed` | string | Newest agent question the user read, l4 or a run ID: it and earlier are done |
 
 Only through `--input`: `context`, `add_sources`.
 

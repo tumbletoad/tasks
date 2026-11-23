@@ -32,6 +32,7 @@ import {
   compact,
   taskColumns,
   taskRows,
+  RUN_WAITS,
   WAITS,
   type CompactRow,
   type FeedHere,
@@ -185,8 +186,13 @@ const agentChangedRows = (folders: boolean) =>
 /** The rows of the finished and dropped tasks a question waits on (task-rows.ts's `WAITS`). */
 const askingRows = (folders: boolean) =>
   `SELECT ${taskColumns(folders)} FROM tasks t WHERE t.lifecycle <> 'active' AND ` +
-  "t.deleted_at IS NULL AND t.id IN (SELECT task_id FROM log_entries WHERE kind = 'question' " +
-  `AND deleted_at IS NULL) AND EXISTS (SELECT 1 FROM log_entries q WHERE ${WAITS})`;
+  "t.deleted_at IS NULL AND ((t.id IN (SELECT task_id FROM log_entries WHERE kind = 'question' " +
+  `AND deleted_at IS NULL) AND EXISTS (SELECT 1 FROM log_entries q WHERE ${WAITS}))` +
+  (folders
+    ? " OR (t.id IN (SELECT task_id FROM runs WHERE state = 'failed' AND reason = 'needs_input') " +
+      `AND EXISTS (SELECT 1 FROM runs r WHERE ${RUN_WAITS}))`
+    : "") +
+  ")";
 
 const IN_BATCH = "seq > $after AND seq <= $upto";
 const COMMITS =

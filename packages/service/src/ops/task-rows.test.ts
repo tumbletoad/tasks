@@ -63,69 +63,46 @@ describe("[A3.3.4.here.folders] a row opens where the launch would", () => {
   });
 });
 
-describe("[M6.page.run-row] a row says when its newest run works or needs the person", () => {
-  const run = (state: string, reason: string | null = null): Row => ({
-    id: "t_run",
-    ref: 2,
-    title: "run",
-    x_run: JSON.stringify({ id: "ru_1", state, reason, instance: "codex-work" }),
-  });
-  test("queued to stopping, and not confirmed ended, is working; a question is needs_you; the rest nothing", async () => {
+describe("[M6.page.run-row] a row says when a run works or waits for the person's answer", () => {
+  const json = (state: string, reason: string | null = null) =>
+    JSON.stringify({ id: `ru_${state}`, state, reason, instance: "codex-work" });
+  test("queued to stopping, and not confirmed ended, is working; else a run whose question waits needs you", async () => {
     const rows = await taskRows(
       [
-        run("queued"),
-        run("running"),
-        run("cancelling"),
-        run("unknown", "stop_timed_out"),
-        run("failed", "needs_input"),
-        run("failed", "agent_error"),
-        run("succeeded"),
-        run("cancelled"),
-        { id: "t_none", ref: 3, title: "none", x_run: null },
-      ],
-      "M",
-    );
-    const working = { id: "ru_1", state: "working", instance: "codex-work" };
-    expect(rows.map((r) => r["run"])).toEqual([
-      working,
-      working,
-      working,
-      working,
-      { id: "ru_1", state: "needs_you", instance: "codex-work" },
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-    ]);
-    expect(rows[0]).not.toHaveProperty("x_run");
-  });
-
-  test("a newer run's question shows over an older run that may still work; an ended follow-up does not hide it", async () => {
-    const json = (state: string, reason: string | null = null) =>
-      JSON.stringify({ id: `ru_${state}`, state, reason, instance: "codex-work" });
-    const rows = await taskRows(
-      [
+        ...["queued", "running", "cancelling"].map((state) => ({
+          id: `t_${state}`,
+          ref: 2,
+          title: state,
+          x_run_open: json(state),
+        })),
+        { id: "t_t", ref: 3, title: "t", x_run_open: json("unknown", "stop_timed_out") },
+        { id: "t_a", ref: 4, title: "a", x_run_asks: json("failed", "needs_input") },
         {
-          id: "t_asks",
-          ref: 4,
-          title: "asks",
-          x_run: json("failed", "needs_input"),
-          x_run_open: json("unknown", "stop_timed_out"),
-        },
-        {
-          id: "t_works",
+          id: "t_b",
           ref: 5,
-          title: "works",
-          x_run: json("cancelled"),
+          title: "b",
           x_run_open: json("running"),
+          x_run_asks: json("failed", "needs_input"),
         },
+        { id: "t_none", ref: 6, title: "none", x_run_open: null, x_run_asks: null },
       ],
       "M",
     );
+    const working = (state: string) => ({
+      id: `ru_${state}`,
+      state: "working",
+      instance: "codex-work",
+    });
     expect(rows.map((r) => r["run"])).toEqual([
+      working("queued"),
+      working("running"),
+      working("cancelling"),
+      working("unknown"),
       { id: "ru_failed", state: "needs_you", instance: "codex-work" },
-      { id: "ru_running", state: "working", instance: "codex-work" },
+      working("running"),
+      undefined,
     ]);
-    expect(rows[0]).not.toHaveProperty("x_run_open");
+    expect(rows[5]).not.toHaveProperty("x_run_open");
+    expect(rows[5]).not.toHaveProperty("x_run_asks");
   });
 });

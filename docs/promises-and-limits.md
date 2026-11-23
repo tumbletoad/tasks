@@ -198,9 +198,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   from then on no agent and no search reads it, the task's readable file loses it within about a
   second, a launch it was the request of says the request was taken back, and Put back brings it
   back as it was. Only you take notes back, and nothing is deleted for good.
-- A question an agent logs on a task waits for you under Needs you on the Agents page, also once
-  the task is finished or dropped, until you write a note on the task after it or dismiss it.
-  A note you take back answers nothing. Dismiss sets aside only the questions you were shown; Undo
+- A question an agent logs on a task, or a background run ends with, waits for you under Needs you
+  on the Agents page, also once the task is finished or dropped and whatever runs came before or
+  after it, until you write a note on the task after it, run an agent on it after it that gets to
+  work, or dismiss it. A note you take back answers nothing. Dismiss sets aside only the questions you were shown; Undo
   brings them back.
 - Your skills, the files in `skills/` of TTasks's folder, are your instructions to every agent that
   uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, an

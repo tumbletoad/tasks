@@ -1067,7 +1067,7 @@
           },
           {
             "field": "set.reviewed",
-            "help": "Newest agent question the user read, such as l4: it and earlier ones are done",
+            "help": "Newest agent question the user read, l4 or a run ID: it and earlier are done",
             "key": "reviewed",
             "type": "string"
           }

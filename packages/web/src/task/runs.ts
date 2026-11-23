@@ -192,9 +192,15 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
   }
 }
 
+/** Who asked a waiting question: a run's agent by its instance's label, else the agent's own. */
+export const questionBy = (question: RowQuestion, instances: readonly Instance[]): string =>
+  question.instance === undefined
+    ? question.by
+    : runLabel({ instance: question.instance }, instances);
+
 /**
- * The row's marker for what agents ask of the person: its newest run working or needing them, or
- * else the newest question an agent asked that waits for them; none otherwise.
+ * The row's marker for what agents ask of the person: its run needing them, else the newest
+ * question that waits for them, else its run working; none otherwise.
  */
 export function agentMarker(
   run: RowRun | undefined,
@@ -203,7 +209,7 @@ export function agentMarker(
 ): MarkerFact | undefined {
   const by = run === undefined ? undefined : runLabel(run, instances);
   if (by !== undefined && run?.state === "needs_you") return { kind: "needs_input", by };
-  if (question !== undefined) return { kind: "needs_input", by: question.by };
+  if (question !== undefined) return { kind: "needs_input", by: questionBy(question, instances) };
   if (by !== undefined && run?.state === "working") return { kind: "working", by };
   return undefined;
 }

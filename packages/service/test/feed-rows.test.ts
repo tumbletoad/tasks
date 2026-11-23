@@ -274,12 +274,15 @@ describe("[M6.page.run-feed] a run's change carries its task's row, which shows 
     );
     seen = await runOf(from);
     expect(seen.row).toMatchObject({ run: { state: "working", instance: "codex-work" } });
-    // A newer run's question shows over the older run that still works.
+    // A newer run's question waits beside the older run that still works.
     const question = await store.createRun(input, rid());
     from = (await readHead(reader)).cursor.seq;
     await asks(question);
     seen = await runOf(from);
-    expect(seen.row).toMatchObject({ run: { state: "needs_you", instance: "codex-work" } });
+    expect(seen.row).toMatchObject({
+      run: { state: "working", instance: "codex-work" },
+      questions: [{ ref: question.id, text: "Fixture question?" }],
+    });
   });
 });
 

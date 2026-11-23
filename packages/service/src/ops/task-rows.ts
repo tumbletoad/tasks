@@ -2,9 +2,9 @@
 // 3.15), and the read of finished tasks behind the page's Completed view, which gives the same
 // rows and one line of how each task ended. A column that is null in the space is left out. No
 // context, outcome or other long text is in it: only what a row shows of the task's children,
-// its first three sources, where it opens on the machine that serves it, whether its newest
-// background run works or needs the person, and the start of each question agents asked that
-// waits for the person.
+// its first three sources, where it opens on the machine that serves it, whether a background run
+// works or waits for the person's answer, and the start of each question agents asked that waits
+// for the person, logged or a run's last words.
 import {
   isOpenRun,
   OPEN_RUN_STATES,
@@ -47,9 +47,10 @@ export type CompactPlace =
   | { readonly state: "elsewhere"; readonly machine: string };
 
 /**
- * The task's newest background run, as its row shows it: working (queued, running, stopping, or
- * not confirmed ended), ended asking the person something, or, in a restored copy that is not
- * claimed, working when the backup was made (`recorded`). Absent otherwise.
+ * The task's background run as its row shows it: the newest that works (queued, running, stopping,
+ * or not confirmed ended), or, in a restored copy that is not claimed, worked when the backup was
+ * made (`recorded`); else the newest that ended asking the person something still unanswered
+ * (`RUN_WAITS`). Absent otherwise.
  */
 export interface CompactRun {
   /** The run's ID: the Agents page pairs it with the agent the Agent Monitor sees for it. */
@@ -59,12 +60,14 @@ export interface CompactRun {
   readonly instance: string;
 }
 
-/** A question an agent asked on the task that waits for the person (`WAITS`). */
+/** A question an agent asked on the task that waits for the person (`WAITS`, `RUN_WAITS`). */
 export interface CompactQuestion {
-  /** The log entry, such as `l3`. */
+  /** The log entry, such as `l3`, or the run that ended with it. */
   readonly ref: string;
-  /** The agent's label. */
+  /** The agent's label; a run's instance key, which the page names by `instance`. */
   readonly by: string;
+  /** A run's instance key: machine.toml's. */
+  readonly instance?: string;
   /** Its first `QUESTION_CHARS` characters. */
   readonly text: string;
   readonly at: number;
@@ -103,36 +106,86 @@ export const QUESTION_CHARS = 300;
 /** At most this many waiting questions ride on a task's row, newest first; it counts the rest. */
 export const ROW_QUESTIONS = 10;
 
+/** The run `r` may still hold processes (contracts' `isOpenRun`). */
+const openRun = (r: string): string =>
+  `(${r}.state IN (${OPEN_RUN_STATES.map((s) => `'${s}'`).join(", ")}) OR ` +
+  `(${r}.state = 'unknown' AND ${r}.reason = 'stop_timed_out'))`;
+
+/** A run that may still hold processes (contracts' `isOpenRun`). */
+export const OPEN_RUN = openRun("r");
+
 /**
- * Whether the log entry `q` is a question that waits for the person on the task `t`, whatever the
- * task's lifecycle: an agent or a routine asked it, no note of the person's came after it, and it
+ * Whether a question on the task `t` that arrived with the commit `asked` was still unanswered
+ * before the commit `before` (now when absent): no note of the person's came after it, and it
  * arrived after the question the person last dismissed (`reviewed_at` holds that one's arrival,
  * read.ts's `readReviewedMark`) or after the dismissal itself. Arrival is the commit's time, which
  * only moves forward and can stand still, so a question committed after the dismissal waits by
- * its place in history whatever the clock said; the entry's own `created_at` may be dated back.
+ * its place in history whatever the clock said.
+ */
+const unanswered = (asked: string, before?: string): string =>
+  `(t.reviewed_at IS NULL OR (SELECT at FROM commits WHERE seq = ${asked}) > t.reviewed_at ` +
+  `OR ${asked} > json_extract(t.fp, '$.reviewed_at')` +
+  `${before === undefined ? "" : ` OR json_extract(t.fp, '$.reviewed_at') >= ${before}`}) ` +
+  "AND NOT EXISTS (SELECT 1 FROM notes n JOIN actors na ON na.id = n.author_id WHERE " +
+  "n.task_id = t.id AND n.deleted_at IS NULL AND na.kind = 'human' AND " +
+  `n.created_seq > ${asked}${before === undefined ? "" : ` AND n.created_seq < ${before}`})`;
+
+/**
+ * Whether the log entry `q` is a question that waits for the person on the task `t`, whatever the
+ * task's lifecycle: an agent or a routine asked it and it is `unanswered`. The entry's own
+ * `created_at` may be dated back, so its commit decides.
  */
 export const WAITS =
   "q.task_id = t.id AND q.kind = 'question' AND q.deleted_at IS NULL AND " +
   "(SELECT kind FROM actors WHERE id = q.author_id) IN ('agent', 'routine') AND " +
-  "(t.reviewed_at IS NULL OR (SELECT at FROM commits WHERE seq = q.created_seq) > t.reviewed_at " +
-  "OR q.created_seq > json_extract(t.fp, '$.reviewed_at')) " +
-  "AND NOT EXISTS (SELECT 1 FROM notes n JOIN actors na ON na.id = n.author_id WHERE " +
-  "n.task_id = t.id AND n.deleted_at IS NULL AND na.kind = 'human' AND " +
-  "n.created_seq > q.created_seq)";
+  unanswered("q.created_seq");
 
-/** The task's waiting questions as JSON, newest first, and how many there are. */
-const WAITING_QUESTIONS =
-  "(SELECT json_group_array(json_object('seq', x.created_seq, 'o', x.ordinal, 'ref', 'l' || x.ordinal, 'by', " +
-  "x.label, 'text', x.text, 'at', x.created_at)) FROM (SELECT q.created_seq, q.ordinal, " +
-  `(SELECT label FROM actors WHERE id = q.author_id) AS label, substr(q.body, 1, ${String(QUESTION_CHARS + 1)}) ` +
-  `AS text, q.created_at FROM log_entries q WHERE ${WAITS} ORDER BY q.created_seq DESC, q.ordinal DESC ` +
-  `LIMIT ${String(ROW_QUESTIONS)}) x) AS x_questions, ` +
-  `(SELECT count(*) FROM log_entries q WHERE ${WAITS}) AS x_question_count`;
+/** The commit that ended the run `r`: its state's. */
+export const runAsked = (r: string): string =>
+  `COALESCE(json_extract(${r}.fv, '$.state'), ${r}.version)`;
 
-/** A run that may still hold processes (contracts' `isOpenRun`). */
-export const OPEN_RUN =
-  `(r.state IN (${OPEN_RUN_STATES.map((s) => `'${s}'`).join(", ")}) OR ` +
-  "(r.state = 'unknown' AND r.reason = 'stop_timed_out'))";
+/**
+ * Whether the run `r` ended with a question that waited for the person on the task `t` before the
+ * commit `before` (now when absent): it ended needing the person, the question is `unanswered`,
+ * and no run of the task queued after it carries a reply: one that works, or got as far as running.
+ * A reply that never ran (stopped while queued, or never started) answers nothing.
+ */
+export const runWaits = (before?: string): string => {
+  const asked = runAsked("r");
+  return (
+    "r.task_id = t.id AND r.state = 'failed' AND r.reason = 'needs_input' AND " +
+    `${before === undefined ? "" : `${asked} < ${before} AND `}${unanswered(asked, before)} AND ` +
+    "NOT EXISTS (SELECT 1 FROM runs a WHERE a.task_id = t.id AND " +
+    `a.created_seq > ${asked}${before === undefined ? "" : ` AND a.created_seq < ${before}`} AND ` +
+    `(${openRun("a")} OR a.started_at IS NOT NULL))`
+  );
+};
+export const RUN_WAITS = runWaits();
+
+const CUT = String(QUESTION_CHARS + 1);
+
+/**
+ * The task's waiting questions as JSON, newest first, and how many there are: those logged, and,
+ * where the space has runs, each run's last words while its question waits.
+ */
+function waitingQuestions(runs: boolean): string {
+  const logged =
+    "SELECT q.created_seq AS seq, q.ordinal AS o, 'l' || q.ordinal AS ref, (SELECT label FROM " +
+    `actors WHERE id = q.author_id) AS label, NULL AS instance, substr(q.body, 1, ${CUT}) AS text, ` +
+    `q.created_at AS at FROM log_entries q WHERE ${WAITS}`;
+  const asked =
+    `SELECT ${runAsked("r")} AS seq, 0 AS o, r.id AS ref, r.instance_id AS label, r.instance_id ` +
+    `AS instance, substr(COALESCE(json_extract(r.result, '$.text'), ''), 1, ${CUT}) AS text, ` +
+    `COALESCE(r.ended_at, r.queued_at) AS at FROM runs r WHERE ${RUN_WAITS}`;
+  const all = runs ? `${logged} UNION ALL ${asked}` : logged;
+  return (
+    "(SELECT json_group_array(json_object('seq', x.seq, 'o', x.o, 'ref', x.ref, 'by', x.label, " +
+    "'instance', x.instance, 'text', x.text, 'at', x.at)) FROM (SELECT * FROM (" +
+    `${all}) ORDER BY seq DESC, o DESC LIMIT ${String(ROW_QUESTIONS)}) x) AS x_questions, ` +
+    `((SELECT count(*) FROM log_entries q WHERE ${WAITS})` +
+    `${runs ? ` + (SELECT count(*) FROM runs r WHERE ${RUN_WAITS})` : ""}) AS x_question_count`
+  );
+}
 
 /** The space read is a restored copy that is not claimed: storage's restore mark. */
 const RESTORED_COPY = `(SELECT json_extract(transfer, '$.state') FROM space WHERE one = 1) = '${READ_ONLY_COPY}'`;
@@ -175,11 +228,11 @@ export function taskColumns(folders: boolean): string {
     "AS x_sources, " +
     "(SELECT count(*) FROM task_sources ts JOIN sources s ON s.id = ts.source_id WHERE " +
     "ts.task_id = t.id AND ts.removed_at IS NULL AND s.deleted_at IS NULL) AS x_source_count, " +
-    WAITING_QUESTIONS +
+    waitingQuestions(folders) +
     (folders
       ? `, ${foldersOf("task", "t.id")} AS x_folders_own, ` +
         `${foldersOf("project", "t.project_id")} AS x_folders_project, ` +
-        `${newestRun("")} AS x_run, ${newestRun(` AND ${OPEN_RUN}`)} AS x_run_open`
+        `${newestRun(` AND ${OPEN_RUN}`)} AS x_run_open, ${newestRun(` AND ${RUN_WAITS}`)} AS x_run_asks`
       : "")
   );
 }
@@ -258,7 +311,7 @@ function sourcesOf(value: unknown): CompactSource[] {
   return out;
 }
 
-/** A run of `x_run` or `x_run_open` as the row shows it on its own, or nothing. */
+/** A run of `x_run_open` or `x_run_asks` as the row shows it on its own, or nothing. */
 function rowRun(value: unknown): CompactRun | undefined {
   const run = parsed(value);
   if (!isPlain(run) || typeof run["instance"] !== "string" || typeof run["id"] !== "string") {
@@ -277,12 +330,12 @@ function rowRun(value: unknown): CompactRun | undefined {
 }
 
 /**
- * What the row shows of a task's runs: its newest, while it works or asks the person something;
- * else an older one that may still hold processes, so stopping a follow-up never hides a run that
- * still works.
+ * What the row shows of a task's runs: the newest that may still hold processes, else the newest
+ * whose question waits for the person. That question is among the row's questions too, so a run
+ * that works never hides it.
  */
-export function runOf(newest: unknown, open?: unknown): CompactRun | undefined {
-  return rowRun(newest) ?? rowRun(open);
+export function runOf(open: unknown, asks?: unknown): CompactRun | undefined {
+  return rowRun(open) ?? rowRun(asks);
 }
 
 /** A question's start, at most `QUESTION_CHARS` UTF-16 units, cut between graphemes. */
@@ -303,12 +356,20 @@ function questionsOf(value: unknown): CompactQuestion[] {
   return list
     .filter(isPlain)
     .sort((a, b) => Number(b["seq"]) - Number(a["seq"]) || Number(b["o"]) - Number(a["o"]))
-    .flatMap(({ ref, by, text, at }) =>
+    .flatMap(({ ref, by, instance, text, at }) =>
       typeof ref === "string" &&
       typeof by === "string" &&
       typeof text === "string" &&
       typeof at === "number"
-        ? [{ ref, by, text: cutQuestion(text), at }]
+        ? [
+            {
+              ref,
+              by,
+              ...(typeof instance === "string" ? { instance } : {}),
+              text: cutQuestion(text),
+              at,
+            },
+          ]
         : [],
     );
 }
@@ -361,8 +422,8 @@ export async function taskRows(
         x_source_count: count,
         x_folders_own: ownFolders,
         x_folders_project: projectFolders,
-        x_run: newest,
         x_run_open: open,
+        x_run_asks: asks,
         x_questions: asked,
         x_question_count: askedCount,
         x_reason: reason,
@@ -387,7 +448,7 @@ export async function taskRows(
         }),
       );
       if (ended !== undefined) out["ending"] = ended;
-      const run = runOf(newest, open);
+      const run = runOf(open, asks);
       if (run !== undefined) out["run"] = run;
       const questions = questionsOf(asked);
       if (questions.length > 0) out["questions"] = questions;

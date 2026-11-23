@@ -319,6 +319,141 @@ describe("[A5.while-away.service.question] the questions agents asked wait on th
   });
 });
 
+describe("[A5.while-away.service.run-question] a run that ended asking keeps its question on the task's row until it is answered", () => {
+  const ui = (): Credential => ({ ...fx.human, scope_id: "ui:fixture", origin: "ui" });
+  /** A run of `task` queued now, its ID. */
+  function queue(task: Id<"t">): Id<"ru"> {
+    clock += 60_000;
+    const result = fx.writer.submit(
+      fx.request(ui(), [
+        {
+          kind: "run.create",
+          task,
+          instance: "codex-work",
+          adapter: "codex",
+          place: null,
+          request: "Fixture request",
+          brief_hash: "a1b2c3d4".repeat(8),
+          permission: "full-access",
+          limits: { max_turns: 50, wall_ms: 1_800_000, idle_ms: 600_000 },
+        },
+      ]),
+    );
+    if (result.status !== "applied") throw new Error(JSON.stringify(result.error));
+    return result.results[0]?.id as Id<"ru">;
+  }
+  function move(run: Id<"ru">, next: string, more: Record<string, unknown> = {}): void {
+    clock += 60_000;
+    const record = fx.writer.run(run);
+    const result = fx.writer.submit(
+      fx.request(ui(), [
+        {
+          kind: "run.transition",
+          run,
+          expect: record?.state,
+          expect_version: record?.version ?? 0,
+          next,
+          ...more,
+        } as Operation,
+      ]),
+    );
+    if (result.status !== "applied") throw new Error(JSON.stringify(result.error));
+  }
+  const QUESTION = "Fixture which draft?\n1. The short one\n2. The long one";
+  function asks(run: Id<"ru">): void {
+    move(run, "starting");
+    move(run, "running");
+    move(run, "failed", {
+      reason: "needs_input",
+      result: {
+        ok: false,
+        outcome: "needs_input",
+        exit_code: 0,
+        signal: null,
+        native_id: null,
+        text: QUESTION,
+        error: null,
+        usage: null,
+        app_tools: null,
+        declined: 0,
+        permission_denials: 0,
+        duration_ms: 1,
+      },
+    });
+  }
+  function task(): {
+    task: Id<"t">;
+    row: () => Promise<Readonly<Record<string, unknown>> | undefined>;
+  } {
+    const id = newId("t");
+    submit(
+      fx.human,
+      [{ kind: "task.create", id, title: "Fixture runs", area: fx.areas.home }],
+      (clock += 60_000),
+    );
+    return {
+      task: id,
+      row: async () =>
+        (await readSnapshot(readerOf(fx.reader), undefined, clock)).tasks.find(
+          (t) => t["id"] === id,
+        ),
+    };
+  }
+
+  test("a run queued before the question neither hides it while it works nor takes it along when it is stopped", async () => {
+    const { task: id, row } = task();
+    const first = queue(id);
+    const second = queue(id);
+    asks(first);
+    const waiting = {
+      questions: [{ ref: first, by: "codex-work", instance: "codex-work", text: QUESTION }],
+    };
+    expect(await row()).toMatchObject({ ...waiting, run: { id: second, state: "working" } });
+    move(second, "cancelled");
+    expect(await row()).toMatchObject({ ...waiting, run: { id: first, state: "needs_you" } });
+    // A run the person queues after it carries the reply; one that never ran answers nothing.
+    const reply = queue(id);
+    expect(await row()).not.toHaveProperty("questions");
+    expect(await row()).toMatchObject({ run: { id: reply, state: "working" } });
+    move(reply, "cancelled");
+    expect(await row()).toMatchObject({ ...waiting, run: { id: first, state: "needs_you" } });
+    const ran = queue(id);
+    move(ran, "starting");
+    move(ran, "running");
+    move(ran, "cancelling");
+    move(ran, "cancelled");
+    expect(await row()).not.toHaveProperty("questions");
+    expect(await row()).not.toHaveProperty("run");
+  });
+
+  test("the person's note answers it, Dismiss sets it aside and Undo brings it back, on a finished task too", async () => {
+    const { task: id, row } = task();
+    const run = queue(id);
+    asks(run);
+    submit(fx.human, [{ kind: "note.add", task: id, body: "Fixture answer" }], (clock += 60_000));
+    expect(await row()).not.toHaveProperty("questions");
+    expect(await row()).not.toHaveProperty("run");
+
+    const later = queue(id);
+    asks(later);
+    submit(fx.human, [{ kind: "task.complete", task: id }], (clock += 60_000));
+    const asking = async () =>
+      (await readSnapshot(readerOf(fx.reader), undefined, clock)).asking.find(
+        (r) => r["id"] === id,
+      );
+    expect(await asking()).toMatchObject({ questions: [{ ref: later }] });
+    await expect(
+      call("task.update", { task: id, set: { reviewed: later }, request_id: rid() }),
+    ).resolves.toMatchObject({ result: "updated", fields: ["reviewed"] });
+    expect(await asking()).toBeUndefined();
+    await call("history.undo", { request_id: rid() });
+    expect(await asking()).toMatchObject({
+      questions: [{ ref: later }],
+      run: { id: later, state: "needs_you" },
+    });
+  });
+});
+
 describe("[A5.while-away.service.reads] a waiting question breaks no read of task rows", () => {
   test("the views' snapshot, Completed, search, status and a task's read, with one on an active, a completed and a dropped task", async () => {
     const next = () => (clock += 60_000);
