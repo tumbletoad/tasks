@@ -36,7 +36,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   and the answer says which task holds that source.
 - A source detached from a task, by you or an agent, no longer brings captures of its item there,
   and Put back brings the same link back. While another active task holds its key, captures go
-  there and Put back is refused, naming that task: one item never gets two homes this way.
+  there and Put back on an active task is refused, naming that task.
+- A finished task takes a detached source back even while an active task holds its key, and
+  captures still go to the active one. Reopening that finished task makes them ask which of the two.
 
 ## Backups, restore and export
 

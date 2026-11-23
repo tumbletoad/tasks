@@ -235,10 +235,6 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
     expect(Number(one("SELECT count(*) FROM sources"))).toBe(sources);
     expect(Number(one("SELECT count(*) FROM task_sources WHERE task_id = $a", { a }))).toBe(1);
     expect(holders("jira:FIX-1")).toEqual([c]);
-    // A finished task is refused alike: reopened, it would be a second holder.
-    applied(send("codex", [{ kind: "task.complete", task: a }], { base: fx.base() }));
-    expectStatus(relink(a, fix1), "conflict");
-    applied(send("codex", [{ kind: "task.reopen", task: a }], { base: fx.base() }));
     // Once C no longer holds the key, put back works and captures find A again.
     applied(send("codex", [{ kind: "task.complete", task: c }], { base: fx.base() }));
     applied(relink(a, fix1));
@@ -250,6 +246,30 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
     ]);
     expectStatus(found, "unchanged");
     expect(found.results[0]).toMatchObject({ status: "existing", task: a });
+  });
+
+  test("a finished task takes its link back while an active task holds the key, by put back or by undo, and captures stay with the active one", () => {
+    const a = capture([ticket("jira:FIX-1")]);
+    const fix1 = sourceOf("jira:FIX-1");
+    applied(send("codex", [{ kind: "task.complete", task: a }], { base: fx.base() }));
+    applied(unlink(a, fix1));
+    const c = capture([ticket("jira:FIX-1")]);
+    applied(relink(a, fix1));
+    expect(holders("jira:FIX-1")).toEqual([a, c].sort());
+    expect(Number(one("SELECT count(*) FROM sources"))).toBe(1);
+    const next = newId("t");
+    const found = send("codex", [
+      { kind: "task.create", id: next, title: "Answer again" },
+      { kind: "source.add", task: next, source: ticket("jira:FIX-1") },
+    ]);
+    expect(found.results[0]).toMatchObject({ status: "existing", task: c });
+    // Undo of the detach agrees with put back.
+    const d = capture([ticket("jira:FIX-2")]);
+    applied(send("codex", [{ kind: "task.complete", task: d }], { base: fx.base() }));
+    applied(unlink(d, sourceOf("jira:FIX-2")));
+    const e = capture([ticket("jira:FIX-2")]);
+    applied(undo());
+    expect(holders("jira:FIX-2")).toEqual([d, e].sort());
   });
 
   // Each order of an add, a detach and a put back of one link in one request ends as the last of

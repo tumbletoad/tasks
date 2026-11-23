@@ -1787,10 +1787,14 @@ export class SpaceWriter {
               );
             }
           }
-          if (op.kind === "source.relink" && key !== null) {
+          const active =
+            (lifecycles.get(parent) ?? tasks.get(parent)?.lifecycle ?? "active") === "active";
+          if (op.kind === "source.relink" && key !== null && active) {
             // A link has one identity: while another active task holds its key, captures of the
-            // item go there, and putting this link back would make a second holder. Refused,
-            // naming each holder's link; one the request itself made has no row to name.
+            // item go there, and putting this link back on an active task would make a second
+            // active holder. Refused, naming each holder's link; one the request itself made has
+            // no row to name. A finished task takes its link back as undo does: an active holder
+            // comes first for captures.
             const holders = dedupe.match([key], false).active.filter((other) => other !== parent);
             const touches: Touch[] = [];
             for (const holder of holders) {
