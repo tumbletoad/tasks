@@ -2,7 +2,7 @@
 // mounted, visible and focused, and the service asks the test kit's fake `ttam` at the pace of the
 // most attentive one. The pace's timers and the steady clock are virtual (clock.ts): the test
 // moves the time, and a request's answer is the fake's real one. Fixture data only.
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakeTtam, readJsonLines } from "@ttasks/testkit";
@@ -314,6 +314,38 @@ describe("[A5.agents.pace] the service asks the monitor at the pace of the most 
       feed.send({ type: "watch", ...LOOKED });
       expect(await view(feed)).toMatchObject({ trouble: { kind: "not_installed" } });
       expect(p.looked()).toBe(2);
+    },
+  );
+});
+
+describe("[A5.agents.privacy] nothing the monitor reports leaves the page and the service", () => {
+  test(
+    "the service's log gets none of it, and the page none of its IDs or paths",
+    SLOW,
+    async () => {
+      const p = await paced("pace-private");
+      const feed = await p.tab(LOOKED);
+      await answer(feed);
+      p.clock.advance(1_000);
+      await answer(feed);
+      const sent = JSON.stringify(feed.messages.filter((m) => m["type"] === "agents"));
+      expect(sent).toContain("Release checklist");
+      const log = readFileSync(p.w.service.log.path, "utf8");
+      expect(log).toContain("monitor.started");
+      for (const text of [
+        "synthetic-project",
+        "Release checklist",
+        "Survey the fixtures",
+        "/home/mira",
+        "Claude Max",
+        "11111111-2222-4333-8444-555555555555",
+        "4242",
+      ]) {
+        expect(log).not.toContain(text);
+      }
+      for (const text of ["11111111-2222-4333-8444-555555555555", "/home/mira/.claude", "4242"]) {
+        expect(sent).not.toContain(text);
+      }
     },
   );
 });

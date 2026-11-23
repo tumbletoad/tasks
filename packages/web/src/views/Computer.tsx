@@ -256,9 +256,16 @@ export function Computer() {
         : picture.sessions.length === 0
           ? t("computer.empty")
           : undefined);
+  // A picture that does not update shows its states muted: what worked then may not work now.
+  const stale = trouble !== undefined || undefined;
   return (
     <>
-      <section className={styles.part} aria-labelledby="computer-heading" data-part="computer">
+      <section
+        className={styles.part}
+        aria-labelledby="computer-heading"
+        data-part="computer"
+        data-stale={stale}
+      >
         <h2 className={styles.heading} id="computer-heading">
           {t("computer.heading")}
         </h2>

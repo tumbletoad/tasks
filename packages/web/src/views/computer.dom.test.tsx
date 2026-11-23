@@ -261,10 +261,18 @@ describe("[A5.agents.web-page] the Agents page shows the monitor's every state i
       "TTAM stopped answering. If this lasts, run ttam doctor. Not updating: this is what it saw 3 min ago.",
     );
     expect(sessions()).toHaveLength(1);
+    // Its states no longer look live.
+    expect(container.querySelector<HTMLElement>('[data-part="computer"]')?.dataset["stale"]).toBe(
+      "true",
+    );
     show({ picture: picture([session(1)], [], { ageMs: 2 * MIN }), trouble: { kind: "slow" } });
     expect(text("monitor-status")).toBe(
       "TTAM has not answered for a while. Not updating: this is what it saw 2 min ago.",
     );
+    show({ picture: picture([session(1)]), trouble: null });
+    expect(
+      container.querySelector<HTMLElement>('[data-part="computer"]')?.dataset["stale"],
+    ).toBeUndefined();
   });
 
   test("what needs you first, then what works, then the rest as they started; unknown is never idle", async () => {

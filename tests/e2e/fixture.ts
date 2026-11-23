@@ -17,8 +17,29 @@ function built(): string {
 
 export const test = base.extend<
   object,
-  { world: World; bulk: World; finished: World; runs: World; restartable: World; large: World }
+  {
+    world: World;
+    bulk: World;
+    finished: World;
+    runs: World;
+    restartable: World;
+    large: World;
+    monitored: World;
+  }
 >({
+  // One started only by the tests that use it: the fake `ttam` as the Agent Monitor.
+  monitored: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const world = await startWorld(built(), { monitor: true });
+      try {
+        await use(world);
+      } finally {
+        await world.close();
+      }
+    },
+    { scope: "worker", timeout: 240_000 },
+  ],
   // A world of its own for the tests that stop and start its service, so no other test meets it.
   restartable: [
     // eslint-disable-next-line no-empty-pattern

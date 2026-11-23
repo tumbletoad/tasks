@@ -5400,6 +5400,27 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.agents.e2e.none",
+      "title": "In Chromium and Firefox: without TTAM the Agents page shows TTasks' own part and one quiet line about TTAM, and no part of the monitor",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.agents.e2e.screens",
+      "title": "In Chromium and Firefox, against the fake ttam: the Agents page looking, settling, with agents and plan usage, with none running, not updating, failed, not installed and with either side to update, each in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll, no control in the monitor's parts, and nothing of the monitor in the browser's storage or in an address the page asked for (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.agents.privacy",
+      "title": "Nothing the Agent Monitor reports leaves the page and the service: none of a session's title, folder, account, plan, session ID or process in the service's log while a tab watches, and no session ID, home path or process in what the page is sent",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.agents.picture",
       "title": "The Agents page's picture of a snapshot: each conversation once with every agent inside it one level under it, a parent that is gone or a loop standing on its own, an unknown agent app by its name and an unknown state as unknown, plan usage per account, keys stable between snapshots, and no session ID, home path or process in it",
       "owner": "M6",
