@@ -177,7 +177,7 @@ export function ProjectPage({
       <ArchivedLine area={area} project={project} />
       <ProjectFolder key={project} project={project} />
       <TaskList
-        key={project}
+        key={`list/${project}`}
         view="area"
         grouping="project"
         group={projectGroups}

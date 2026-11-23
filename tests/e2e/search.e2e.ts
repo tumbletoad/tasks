@@ -163,7 +163,7 @@ test.describe("[A7.3.12.m5-10.e2e.capture] A capture shows its shortcuts before 
 
     await field.fill(`Sweep the ${word} path`);
     await panel(page).getByRole("button", { name: "Do not put it in Home" }).click();
-    await expect(panel(page)).toHaveCount(0);
+    await expect(panel(page).getByRole("listitem")).toHaveText(["Inbox"]);
     await field.press("Enter");
     await expect(toast(page)).toHaveText("Added to Inbox");
     expect(await taskTitled(world, word, `Sweep the ${word} path`)).toMatchObject({ inbox: true });
