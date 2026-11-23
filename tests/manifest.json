@@ -2474,6 +2474,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "M6.page.e2e.run-finished",
+      "title": "In the browser: a finished task shows no Run; Reopen stands in its place with Run's key, which reopens it, and Run is back; screenshots at 1,440 px and 390 px in Sumi and Washi, axe clean",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "M6.page.e2e.run",
       "title": "In the browser: Run without words works on the task, Ctrl+Shift+Enter runs with the words, which clear once queued; the answer is the agent's text rendered as the thread renders text, a long one folded",
       "owner": "M6",

@@ -474,3 +474,49 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
     await last.context().close();
   });
 });
+
+test.describe("[M6.page.e2e.run-finished] A finished task offers Reopen where Run would stand", () => {
+  test("no Run on a finished task: Reopen stands in its place with Run's key, which reopens it, and Run is back; at 1,440 px and 390 px in Sumi and Washi", async ({
+    browser,
+    runs: world,
+  }) => {
+    test.setTimeout(240_000);
+    const ref = await addTask(world, "Finished: renew the library card");
+    const { as_of } = (await world.op(world.mira.id, "task.get", { task: ref })) as {
+      as_of: string;
+    };
+    await world.op(world.mira.id, "task.finish", { task: ref, base: as_of });
+    const reopen = (page: Page) => stripOf(page, ref).getByRole("button", { name: "Reopen" });
+    for (const theme of themes()) {
+      const context = await browser.newContext({
+        bypassCSP: true,
+        viewport: { width: 1440, height: 1000 },
+        reducedMotion: "reduce",
+      });
+      try {
+        const shot = await context.newPage();
+        await world.machine("ui.theme", theme);
+        await openTask(shot, world, ref);
+        await expect(reopen(shot)).toHaveAttribute("aria-keyshortcuts", "Control+Shift+Enter");
+        await expect(runButton(shot, ref)).toHaveCount(0);
+        await rowOf(shot, ref).locator('[data-part="strip"]').scrollIntoViewIfNeeded();
+        await picture(shot, `run-finished-${theme}-1440.png`);
+        if (pictures())
+          expect(await axeFound(shot, [`li[data-task="${ref}"]`]), `axe in ${theme}`).toEqual([]);
+        await shot.setViewportSize({ width: 390, height: 900 });
+        await rowOf(shot, ref).locator('[data-part="strip"]').scrollIntoViewIfNeeded();
+        await picture(shot, `run-finished-${theme}-390.png`);
+      } finally {
+        await context.close();
+      }
+    }
+    await world.machine("ui.theme", null);
+    const page = await (await browser.newContext()).newPage();
+    await openTask(page, world, ref);
+    await composerOf(page, ref).press("Control+Shift+Enter");
+    await expect(runButton(page, ref)).toBeVisible({ timeout: SLOW_MS });
+    await expect(reopen(page)).toHaveCount(0);
+    await expect(runsOf(page, ref)).toHaveCount(0);
+    await page.context().close();
+  });
+});
