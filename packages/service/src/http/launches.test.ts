@@ -263,3 +263,33 @@ describe("[M6.page.run-view] the page's view of a run", () => {
     expect(shown[0]?.id).toBe(listed[12]?.id);
   });
 });
+
+describe("[A5.agents.run-nudge] a run a person queues or stops anywhere reaches the page", () => {
+  test("the runs' change, from the page or `ttasks run`, pokes the feed and the monitor; none after close", () => {
+    let listener: ((space: string) => void) | undefined;
+    const changed: string[] = [];
+    const launches = new UiLaunches({
+      host: { machine: { id: "m_00r5mfcw5rfzxb9enb2vg50z3j" }, spaces: () => [] },
+      port: { instances: () => [] },
+      runs: {
+        runnable: () => true,
+        queueTask: () => Promise.reject(new Error("not here")),
+        list: () => Promise.resolve([]),
+        stop: () => Promise.resolve(undefined),
+        live: () => ({}),
+        onChange: (heard) => {
+          listener = heard;
+          return () => {
+            listener = undefined;
+          };
+        },
+      },
+      log: () => undefined,
+      changed: (space) => changed.push(space),
+    });
+    listener?.("sp_00r5mfcw5rfzxb9enb2vg50z3k");
+    expect(changed).toEqual(["sp_00r5mfcw5rfzxb9enb2vg50z3k"]);
+    launches.close();
+    expect(listener).toBeUndefined();
+  });
+});

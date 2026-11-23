@@ -126,6 +126,7 @@ import { SeenCalls } from "./agent-homes.ts";
 import { agentAppVerbs, personEnv } from "./agent-apps.ts";
 import {
   findMonitor,
+  heldSessions,
   Monitor,
   MONITOR_VARIABLE,
   type MonitorCommand,
@@ -248,6 +249,8 @@ export interface StartOptions {
     readonly command: () => Promise<MonitorCommand>;
     /** Its deadlines, for tests that hold it in a state. Default: MONITOR_TIMES. */
     readonly times?: Partial<MonitorTimes>;
+    /** How long a running agent must be missed before it is not seen. Default: UNSEEN_MS. */
+    readonly unseenMs?: number;
   };
 }
 
@@ -777,6 +780,14 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         httpRunning?.app.agents?.changed();
       },
     });
+    // The sessions TTasks started here, which link the monitor's agents to their tasks.
+    const held = () =>
+      heldSessions({
+        spaces: knownSpaces,
+        machine: machine.id,
+        running: (space) => launching.service?.host.runningIn(space) ?? [],
+        now: Date.now,
+      });
     const hub = {
       status,
       requestStop: (o: { restart: boolean }) => {
@@ -1130,6 +1141,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           project: (input, space) => pageFolders.project(input, "ui", space),
         },
         monitor,
+        held,
+        ...(options.monitor?.unseenMs === undefined ? {} : { unseenMs: options.monitor.unseenMs }),
         db: grantsDb.db,
         grants: grantsDb.grants,
         log: httpLog,
@@ -1142,6 +1155,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           list: (space, task) => runs.list(space, task),
           stop: (space, run) => runs.stop(space, run),
           live: (run) => runs.live(run),
+          onChange: (listener) => runs.onChange(listener),
           runnable: (key) => {
             const instance = instances.find((i) => i.id === key);
             return instance !== undefined && runsWith(instance);

@@ -25,6 +25,8 @@ export interface RowItem {
   readonly task: TaskRow;
   readonly group: string;
   readonly section: string;
+  /** Its section's own key (`Section.key`). */
+  readonly sectionKey: string;
   /** The row's place in its list (its project's, or its group's), 1-based, and that list's size. */
   readonly posinset: number;
   readonly setsize: number;
@@ -74,6 +76,7 @@ export function itemsOf(
           task,
           group: group.key,
           section: sectionKey,
+          sectionKey: section.key,
           posinset: i + 1,
           setsize: section.tasks.length,
           area: task.area_id === undefined ? undefined : areas.get(task.area_id),

@@ -3,7 +3,8 @@
 // terminal that records the command line it is given and runs that shim (E2E_TERMINAL, the file it
 // records into), a file manager that records the folders it is asked to show (E2E_FOLDERS), and,
 // with E2E_MONITOR, the test kit's fake `ttam` steered by that file: `none` is no TTAM at all,
-// another word is the fake's mode (packages/testkit/src/fakes/ttam.ts). Without it, as in every
+// another word is the fake's mode (packages/testkit/src/fakes/ttam.ts), and the file beside it
+// with `.agents` added holds the homes and agents it reports besides. Without it, as in every
 // test, there is no TTAM. The page opens through the service's own `launch.open` and launch
 // machines, as `ttasks serve` does. The listener takes a port the OS assigns, and machine.toml's
 // port is never written. Tests only.
@@ -72,12 +73,18 @@ const code = await runServe({
           // A fake the test holds stays held: no deadline fails it, and an answer held is soon
           // overdue (4 passes of the recording's half a second).
           times: { helloMs: 3_600_000, answerMs: 3_600_000, slowMs: 1_000, retryMs: [1_000] },
+          // An agent the test takes out of the monitor's answers is not seen after two of them.
+          unseenMs: 0,
           command: () => {
             if (readFileSync(monitor, "utf8").trim() === "none") {
               return Promise.resolve({ ok: false as const, reason: "not_found" as const });
             }
             // It lives as long as the world: a fake that ended by itself would be a failure.
-            const fake = fakeTtam({ control: monitor, maxMs: 3_600_000 });
+            const fake = fakeTtam({
+              control: monitor,
+              agents: `${monitor}.agents`,
+              maxMs: 3_600_000,
+            });
             return Promise.resolve({
               ok: true as const,
               file: fake.file,

@@ -202,8 +202,13 @@ export class RunMachine {
    * The agent's PID and start time: `starting → running`. On a run whose Stop was accepted they
    * are recorded and it stays `cancelling`; any other run is returned as it is.
    */
-  started(id: string, pid: number, at: number): Promise<RunRecord | undefined> {
-    const evidence: RunEvidence = { pid, pid_started_at: at };
+  started(
+    id: string,
+    pid: number,
+    at: number,
+    more: RunEvidence = {},
+  ): Promise<RunRecord | undefined> {
+    const evidence: RunEvidence = { ...more, pid, pid_started_at: at };
     return this.#section(id, () =>
       this.#decide(id, (run) => {
         if (run.state === "starting") return { next: "running", patch: { evidence } };

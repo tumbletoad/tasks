@@ -86,6 +86,7 @@ export const RUN_EVIDENCE_FIELDS = {
   pid: "count",
   pid_started_at: "instant",
   native_id: "id",
+  home: "id",
 } as const satisfies Record<string, "id" | "instant" | "count">;
 
 /** An ID in a run's evidence or result: plain characters only. */

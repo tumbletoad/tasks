@@ -109,6 +109,15 @@ export interface World {
    * the recording as it is, or `none` for no TTAM at all.
    */
   monitor(mode: string): void;
+  /**
+   * The homes and agents the fake `ttam` reports besides its recording (ttam.ts `--agents`), from
+   * its next answer on; null for none.
+   */
+  monitorAgents(more: { homes: unknown[]; agents: unknown[] } | null): void;
+  /** The agent home the fake agent's instance starts it on: the one the monitor reports it in. */
+  readonly agentHome: string;
+  /** The session IDs the held fake agents of this task were started with, oldest first. */
+  agentSessions(ref: string): string[];
   /** The cases the next runs of the task `ref` play, in order (a world with runs). */
   codex(ref: string, cases: readonly FakeCodexCase[]): void;
   /**
@@ -312,6 +321,14 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     writeFileSync(shown, "");
     const monitor = join(temp.root, "monitor.txt");
     writeFileSync(monitor, "");
+    writeFileSync(`${monitor}.agents`, "");
+    // Where the service starts the fake agent's Claude Code: no home is named, so the default.
+    const agentHomeHere =
+      agentHomeOf(
+        { target: "claude-cli", env: {}, configHome: undefined },
+        homeFolder(hostFacts(serviceEnv(home), process.platform)),
+        process.platform,
+      )?.home ?? "";
     /** One life of the service: its process, its page's origin and its two sessions. */
     const boot = async () => {
       const proc = services.start(home, {
@@ -429,6 +446,19 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         }
         const reply = await post(port, "/api/v1/machine/pref", { key, value }, { token });
         if (reply.status !== 200) throw new Error(`machine/pref answered ${String(reply.status)}`);
+      },
+      monitorAgents: (more) => {
+        atomicWrite(`${monitor}.agents`, more === null ? "" : JSON.stringify(more));
+      },
+      agentHome: agentHomeHere,
+      agentSessions: (ref) => {
+        try {
+          return readFileSync(join(holds, `${ref}.sessions`), "utf8")
+            .split("\n")
+            .filter(Boolean);
+        } catch {
+          return [];
+        }
       },
       monitor: (mode) => {
         atomicWrite(monitor, mode);

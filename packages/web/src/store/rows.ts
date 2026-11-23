@@ -66,6 +66,7 @@ export interface TaskRow {
 
 /** A task's newest run as its row shows it, and the instance it runs with. */
 export interface RowRun {
+  readonly id: string;
   /** `working` or `needs_you`; another state is one this page does not know. */
   readonly state: string;
   readonly instance: string;
@@ -373,7 +374,7 @@ const isPlace = (v: unknown): boolean =>
 
 /** A state the page does not know yet is shown as no run, never an unreadable row. */
 const isRun = (v: unknown): boolean =>
-  isRecord(v) && isString(v["state"]) && isString(v["instance"]);
+  isRecord(v) && isString(v["id"]) && isString(v["state"]) && isString(v["instance"]);
 
 /**
  * A task's compact row, when it has the fields the page relies on with their types. Its other

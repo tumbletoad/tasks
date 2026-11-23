@@ -72,7 +72,7 @@ import { UiLaunches, type UiLaunchPort, type UiRunPort } from "./launches.ts";
 import type { HttpLimits } from "./limits.ts";
 import { shellFor, type UiBundle } from "./page.ts";
 import type { StartHttpTimer } from "./timers.ts";
-import { MonitorPace, type Monitor } from "../monitor/index.ts";
+import { MonitorPace, type HeldSession, type Monitor } from "../monitor/index.ts";
 import { FeedHub, WS_CLOSE } from "./ws.ts";
 
 /** The protocol `/.well-known/ttasks` names (A2 3.8.5). */
@@ -117,6 +117,10 @@ export interface AppOptions {
   readonly folders?: UiFolders;
   /** The Agent Monitor, asked at the pace of the tabs that show an Agents page. None: no part. */
   readonly monitor?: Pick<Monitor, "ask" | "recheck" | "status">;
+  /** The agent sessions TTasks holds, which link the monitor's agents to tasks. Default: none. */
+  readonly held?: () => Promise<readonly HeldSession[]>;
+  /** How long a running agent must be missed before it is not seen. Default: UNSEEN_MS. */
+  readonly unseenMs?: number;
   /** A steady clock in ms, for the monitor's pace and ages. Default: performance.now(). */
   readonly steady?: () => number;
 }
@@ -293,6 +297,9 @@ export class HttpApp {
             monitor: options.monitor,
             timers: options.timers,
             now: options.steady ?? (() => performance.now()),
+            platform: options.ops.platform ?? process.platform,
+            ...(options.held === undefined ? {} : { held: options.held }),
+            ...(options.unseenMs === undefined ? {} : { unseenMs: options.unseenMs }),
           });
     this.feed = new FeedHub({
       host: options.ops,

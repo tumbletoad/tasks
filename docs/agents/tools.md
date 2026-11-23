@@ -1675,6 +1675,7 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].place.state` | "elsewhere" | yes | Only on another machine |
 | `rows[].place.machine` | string | yes | That machine's name |
 | `rows[].run` | object | no | Its newest background run, while it works or needs the person |
+| `rows[].run.id` | string | yes | The run's ID |
 | `rows[].run.state` | "working" \| "needs_you" | yes | Its newest background run works, or ended asking the person |
 | `rows[].run.instance` | string | yes | The run's agent instance |
 | `rows[].ending` | string, max 300 | no | How it ended, one line: why it was dropped, or its outcome once wrapped up |

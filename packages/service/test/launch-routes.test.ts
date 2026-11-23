@@ -33,6 +33,7 @@ import {
 } from "@ttasks/launch";
 import { FAKE_CLI_AGENT, type CliAgentReport } from "@ttasks/testkit";
 import { briefNames, chooseRoute, codexEntryOf, LaunchUnavailable } from "../src/launch/open.ts";
+import { homeDigest, physicalHome } from "../src/setup/agents.ts";
 import { instanceToml, readLog, stateOf, tempRoot, waitFor } from "./harness.ts";
 import { errorOf, classSession } from "./ops-helpers.ts";
 import { LONG_MS, ShimLab } from "./shim-harness.ts";
@@ -363,8 +364,12 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       const id = statSync(folder, { bigint: true });
       expect(report.cwdId).toBe(`${id.dev.toString()}:${id.ino.toString()}`);
       expect(report.envNames).toContain(envVar("TICKET"));
-      // The record holds the preset session and the brief's hash, never its text.
+      // The record holds the preset session, the home the click started the agent in as a digest
+      // (never its path), and the brief's hash, never its text.
       expect(confirmed.evidence.preset).toBe(session);
+      expect(confirmed.evidence.home).toBe(
+        homeDigest(process.platform, await physicalHome(process.platform, clicked?.home ?? "")),
+      );
       expect(confirmed.briefHash).toMatch(/^[0-9a-f]{64}$/);
       // Nothing of the task, the folder or the composer text in the service's log.
       const log = readFileSync(join(r.lab.home, "state", "logs", "service.log"), "utf8");

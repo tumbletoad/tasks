@@ -245,3 +245,21 @@
     grid-column: 1 / -1;
   }
 }
+
+/* A task's agents beneath its row: aligned with its title, quieter than the row. */
+.agents {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent {
+  padding: 2px 0;
+}
+
+.agents[data-stale] .state {
+  font-weight: 400;
+  color: var(--k-muted);
+}

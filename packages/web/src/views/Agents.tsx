@@ -1,64 +1,49 @@
 // Agents as far as the page's data allows: first "Needs you", the open tasks whose newest
-// background run stopped to ask the person, and "Working", those whose run works now, both from
-// the live rows; then "Recent", the tasks an agent or a routine changed while this tab followed
-// the space, the ones it finished included, newest first, one small heading per day. The rows are
-// ordinary rows, so a task expands to its thread, where its runs, Stop and the changes are.
-// Below them, every agent on this computer and the plan usage of each account, from the Agent
-// Monitor (Computer.tsx). "Routines" and the full history with Revert wait for the service's read
-// of sessions and routines.
-import { useCallback, useContext, useSyncExternalStore } from "react";
+// background run stopped to ask the person or whose agent in a terminal waits for them, and
+// "Working", those whose run or agent works now; then "With an agent", the tasks whose agents are
+// in any other state; then "Recent", the tasks an agent or a routine changed while this tab
+// followed the space, the ones it finished included, newest first, one small heading per day. The
+// runs' states come from the live rows, the terminal agents' from the Agent Monitor
+// (agents-merge.ts). A task is in one group, by the agent that asks most of the person, and every
+// one of its agents is listed beneath its row in its own state: the lines say what is true now,
+// and no heading can hold a state that is gone. The rows are ordinary rows, so a task expands to
+// its thread, where its runs, Stop and the changes are; it stays where it was until it collapses.
+// A row the monitor put in its group is muted while the monitor's picture is not current. Below
+// them, every other agent on this computer and the plan usage of each account (Computer.tsx).
+// "Routines" and the full history with Revert wait for the service's read of sessions and routines.
+import { useCallback, useContext, useMemo, useSyncExternalStore } from "react";
 import { changeLogOf } from "../app/changes.ts";
 import { recentOf } from "../app/views.ts";
 import { Session } from "../context.ts";
 import type { Group } from "../groups.ts";
-import { useT } from "../i18n/intl.tsx";
-import { formatDay } from "../row/dates.ts";
+import { useT, type Translate } from "../i18n/intl.tsx";
+import { formatDay, type Clock } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
+import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
-import { Computer } from "./Computer.tsx";
-import { TaskList, type GroupsOf } from "./TaskList.tsx";
+import { mergeAgents, type AgentState } from "./agents-merge.ts";
+import { Computer, TaskAgents } from "./Computer.tsx";
+import { TaskList, type GroupsOf, type HeldRow } from "./TaskList.tsx";
 
 /** Agents' changes may touch any task: its rows fade in and are announced like Today's. */
 const ANY = (): boolean => true;
 
-/** `group` without the task `id`. */
-function without(group: Group, id: string): Group {
-  return {
-    ...group,
-    sections: group.sections.map((s) => ({ ...s, tasks: s.tasks.filter((r) => r.id !== id) })),
-  };
-}
+/** The groups of tasks with agents in the page's order: "Needs you", "Working", "With an agent". */
+const AGENT_GROUPS: readonly string[] = ["r:needs", "r:working", "r:other"];
 
-const hasTasks = (group: Group): boolean => group.sections.some((s) => s.tasks.length > 0);
+/** The group of a task with agents, by the state of the agent that asks most of the person. */
+const groupOf = (state: AgentState): string =>
+  state === "waiting" ? "r:needs" : state === "working" ? "r:working" : "r:other";
 
-/**
- * The groups with `task` in the group `key` at `index`, and nowhere else; undefined when no group
- * has that key now.
- */
-function keepIn(
-  groups: readonly Group[],
-  key: string,
-  task: TaskRow,
-  index: number,
-): Group[] | undefined {
-  if (!groups.some((g) => g.key === key)) return undefined;
-  return groups
-    .map((g) => {
-      if (g.key !== key) return without(g, task.id);
-      const [section, ...rest] = g.sections;
-      const tasks = section?.tasks ?? [];
-      if (tasks.some((r) => r.id === task.id)) return g;
-      const at = Math.min(index, tasks.length);
-      return {
-        ...g,
-        sections: [
-          { key: section?.key ?? key, tasks: [...tasks.slice(0, at), task, ...tasks.slice(at)] },
-          ...rest,
-        ],
-      };
-    })
-    .filter(hasTasks);
-}
+/** The section the expanded task stays in: the one it was shown in, if it was in one of them. */
+const heldIn = (held: HeldRow): string | undefined =>
+  held.section !== undefined &&
+  (AGENT_GROUPS.includes(held.section) || /^d:\d{4}-\d{2}-\d{2}$/.test(held.section))
+    ? held.section
+    : undefined;
+
+const byRef = (a: TaskRow, b: TaskRow): number =>
+  a.ref.localeCompare(b.ref, "en", { numeric: true });
 
 export interface AgentsProps {
   readonly task?: string | undefined;
@@ -71,94 +56,73 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const log = changeLogOf(live);
   const changes = useSyncExternalStore(log.subscribe, log.getEntries);
   const clock = useClock(false);
+  const { tasks: rows } = useLive();
+  const agents = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
+  const picture = agents.view?.picture ?? null;
+  const merged = useMemo(
+    () => mergeAgents(picture, live.spaceId, rows),
+    [picture, live.spaceId, rows],
+  );
+  // What the monitor put in a group is as old as its picture: muted while that is not current.
+  const muted = useMemo(
+    () =>
+      agents.current
+        ? new Set<string>()
+        : new Set([...merged.tasks].flatMap(([id, placed]) => (placed.own ? [] : [id]))),
+    [agents.current, merged],
+  );
+  const beneath = useCallback(
+    (row: TaskRow) => {
+      const listed = merged.tasks.get(row.id)?.agents ?? [];
+      return listed.length === 0 ? undefined : (
+        <TaskAgents agents={listed} current={agents.current} />
+      );
+    },
+    [merged, agents.current],
+  );
   const groups = useCallback<GroupsOf>(
     (tasks, held) => {
-      // First what needs the person, then what works now: from the rows, so every tab and a
-      // reload show the same. Each task once: it leaves Recent while it is in one of them.
-      const needs: TaskRow[] = [];
-      const working: TaskRow[] = [];
-      for (const row of tasks.values()) {
-        if (row.run?.state === "needs_you") needs.push(row);
-        else if (row.run?.state === "working") working.push(row);
+      // Each task in one section: its agents' group first, else the day of Recent of its newest
+      // change.
+      const sections = new Map<string, TaskRow[]>(AGENT_GROUPS.map((key) => [key, []]));
+      const placed = new Set<string>();
+      const put = (key: string, row: TaskRow): void => {
+        if (placed.has(row.id)) return;
+        placed.add(row.id);
+        const list = sections.get(key);
+        if (list === undefined) sections.set(key, [row]);
+        else list.push(row);
+      };
+      // Nothing moves that did not change: TTasks' own rows first, in their order, then the rows
+      // the monitor placed as their agents started, a new one last.
+      const own = (row: TaskRow) => (merged.tasks.get(row.id)?.own === true ? 0 : 1);
+      const age = (row: TaskRow) => merged.tasks.get(row.id)?.ageMs ?? -1;
+      const withAgents = [...tasks.values()]
+        .filter((row) => merged.tasks.has(row.id))
+        .sort((a, b) => own(a) - own(b) || (own(a) === 0 ? 0 : age(b) - age(a) || byRef(a, b)));
+      for (const row of withAgents) {
+        const state = merged.tasks.get(row.id)?.state;
+        if (state !== undefined) put(groupOf(state), row);
       }
-      const ran = new Set([...needs, ...working].map((r) => r.id));
-      const days = recentOf(changes, tasks, clock.timeZone)
-        .map((day) => ({ ...day, tasks: day.tasks.filter((r) => !ran.has(r.id)) }))
-        .filter((day) => day.tasks.length > 0);
-      const runGroups: Group[] = [
-        ...(needs.length === 0
-          ? []
-          : [
-              {
-                key: "r:needs",
-                kind: "label" as const,
-                title: t("agents.needsYou"),
-                sections: [{ key: "r:needs", tasks: needs }],
-              },
-            ]),
-        ...(working.length === 0
-          ? []
-          : [
-              {
-                key: "r:working",
-                kind: "label" as const,
-                title: t("agents.working"),
-                sections: [{ key: "r:working", tasks: working }],
-              },
-            ]),
-      ];
-      const out: Group[] = days.map((day) => ({
-        key: `d:${day.date}`,
-        kind: "label",
-        title:
-          day.date === clock.today
-            ? t("row.today")
-            : t("row.fullDate", {
-                weekday: formatDay(day.date, clock.locale, { weekday: "long" }),
-                day: Number(day.date.slice(8, 10)),
-                month: formatDay(day.date, clock.locale, { month: "long" }),
-              }),
-        sections: [{ key: `d:${day.date}`, tasks: day.tasks }],
-      }));
-      out.unshift(...runGroups);
-      // The expanded task stays in the group it was shown in while it is expanded: a run that
-      // starts or ends moves it to its new group only once it is collapsed.
-      const from = held?.group;
-      if (held !== undefined && from !== undefined) {
-        const id = held.task.id;
-        const kept = keepIn(out, from, held.task, held.index ?? 0);
-        if (kept === undefined && from.startsWith("r:")) {
-          const group: Group = {
-            key: from,
-            kind: "label",
-            title: t(from === "r:needs" ? "agents.needsYou" : "agents.working"),
-            sections: [{ key: from, tasks: [held.task] }],
-          };
-          return [group, ...out.map((g) => without(g, id))].filter(hasTasks);
+      for (const day of recentOf(changes, tasks, clock.timeZone)) {
+        for (const row of day.tasks) put(`d:${day.date}`, row);
+      }
+      // The expanded task stays in the section it was shown in, at its place there, until it is
+      // collapsed; one the list has not shown yet joins the top of the first section.
+      const into = held === undefined ? undefined : heldIn(held);
+      if (held !== undefined && (into !== undefined || !placed.has(held.task.id))) {
+        for (const list of sections.values()) {
+          const at = list.findIndex((r) => r.id === held.task.id);
+          if (at >= 0) list.splice(at, 1);
         }
-        if (kept !== undefined) return kept;
+        const key = into ?? [...sections].find(([, list]) => list.length > 0)?.[0] ?? "d:";
+        const list = sections.get(key) ?? [];
+        list.splice(into === undefined ? 0 : Math.min(held.index ?? 0, list.length), 0, held.task);
+        sections.set(key, list);
       }
-      // The expanded task stays shown while it is expanded, at the top of the list.
-      const shown =
-        held !== undefined &&
-        out.some((g) => g.sections.some((s) => s.tasks.some((r) => r.id === held.task.id)));
-      if (held === undefined || shown) return out;
-      const [first, ...rest] = out;
-      if (first === undefined) {
-        return [{ key: "d:", kind: "flat", sections: [{ key: "d:", tasks: [held.task] }] }];
-      }
-      const section = first.sections[0];
-      return [
-        {
-          ...first,
-          sections: [
-            { key: section?.key ?? first.key, tasks: [held.task, ...(section?.tasks ?? [])] },
-          ],
-        },
-        ...rest,
-      ];
+      return groupsOf(sections, t, clock);
     },
-    [changes, clock, t],
+    [changes, clock, t, merged],
   );
   return (
     <div>
@@ -172,8 +136,50 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
         empty={t("view.empty.agents")}
         expand={task}
         onExpand={onExpand}
+        muted={muted}
+        beneath={beneath}
       />
-      <Computer />
+      <Computer shown={merged.shown} />
     </div>
   );
+}
+
+/** The page's groups: the three of agents, then one per day of Recent, newest first. */
+function groupsOf(
+  sections: ReadonlyMap<string, readonly TaskRow[]>,
+  t: Translate,
+  clock: Clock,
+): Group[] {
+  const listed = (key: string) => sections.get(key) ?? [];
+  const label = (key: string, title: string): Group[] =>
+    listed(key).length === 0
+      ? []
+      : [{ key, kind: "label", title, sections: [{ key, tasks: listed(key) }] }];
+  const days = [...sections.keys()]
+    .filter((key) => key.startsWith("d:") && key !== "d:")
+    .sort()
+    .reverse()
+    .flatMap((key) => {
+      const date = key.slice(2);
+      return label(
+        key,
+        date === clock.today
+          ? t("row.today")
+          : t("row.fullDate", {
+              weekday: formatDay(date, clock.locale, { weekday: "long" }),
+              day: Number(date.slice(8, 10)),
+              month: formatDay(date, clock.locale, { month: "long" }),
+            }),
+      );
+    });
+  const loose = listed("d:");
+  return [
+    ...(loose.length === 0
+      ? []
+      : [{ key: "d:", kind: "flat" as const, sections: [{ key: "d:", tasks: loose }] }]),
+    ...label("r:needs", t("agents.needsYou")),
+    ...label("r:working", t("agents.working")),
+    ...label("r:other", t("agents.other")),
+    ...days,
+  ];
 }

@@ -337,6 +337,8 @@ export const RUN_EVIDENCE_FIELDS = {
   pid_started_at: "instant",
   /** The agent's native session or thread ID. */
   native_id: "id",
+  /** The agent home the run started its app in, as a digest: never the path. */
+  home: "id",
 } as const satisfies Record<string, RunEvidenceKind>;
 
 export type RunEvidenceKey = keyof typeof RUN_EVIDENCE_FIELDS;
