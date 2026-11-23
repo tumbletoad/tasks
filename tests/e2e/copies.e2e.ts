@@ -256,6 +256,8 @@ async function shots(page: Page, name: string): Promise<void> {
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await sideScroll(page), `sideways scroll at ${String(width)} px`).toBe(0);
+    // A popover that is still fading in would show the page through it.
+    await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
     await picture(page, `${name}-${String(width)}.png`);
   }
   await page.setViewportSize({ width: 1440, height: 900 });
