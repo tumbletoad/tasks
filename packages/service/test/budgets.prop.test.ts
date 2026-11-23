@@ -9,7 +9,7 @@ import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { normaliseText, resultTokens } from "@ttasks/contracts";
 import { bridgePrincipal, toolCaller } from "../src/mcp/index.ts";
-import { SKILL_LIST_TOKENS } from "../src/mcp/render.ts";
+import { SKILL_LIST_BYTES } from "../src/skills/index.ts";
 import { DATA_WORD, closeMarker, openMarker } from "../src/mcp/text.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { join } from "node:path";
@@ -167,7 +167,7 @@ function budgetOf(tool: string, args: Json, isError: boolean): number {
       // so has the list of skills.
       return Array.isArray(args["skills"])
         ? 1_500 * (1 + args["skills"].length)
-        : 1_500 + SKILL_LIST_TOKENS;
+        : 1_500 + SKILL_LIST_BYTES / 1.5;
     case "get_task":
       return args["sections"] === undefined ? 1_200 : 4_000;
     case "update_task":

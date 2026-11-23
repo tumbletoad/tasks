@@ -23,6 +23,8 @@ import {
   listSkills,
   readSkills,
   servedText,
+  skillCatalogue,
+  type SkillFiles,
 } from "./index.ts";
 
 const REPO_SKILLS = join(import.meta.dirname, "..", "..", "..", "..", "skills");
@@ -212,13 +214,69 @@ describe("[A3.3.6.mcp.skills] the user's skills folder", () => {
     expect(sizing?.problem).toContain("it is a link");
   });
 
-  test("a skills folder that does not answer in time gives the defaults, and why", async () => {
-    const stalled = () => new Promise<never>(() => undefined);
-    const { skills } = await listSkills(root, 10, stalled);
-    expect(skills.map((skill) => skill.name)).toEqual([...DEFAULTS.keys()]);
-    for (const skill of skills) {
-      expect(skill.origin).toBe("default");
-      expect(skill.problem).toBe("the skills folder: it did not answer within 0.01 s");
+  test("a stalled folder is read once however many requests wait, and each gets the defaults in time", async () => {
+    let lists = 0;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+    const files: SkillFiles = {
+      list: async () => {
+        lists += 1;
+        await held;
+        return new Map();
+      },
+      read: () => Promise.reject(new Error("no file is read while the listing stalls")),
+    };
+    const catalogue = skillCatalogue(files, { withinMs: 10, freshMs: 0 });
+    for (let n = 0; n < 3; n += 1) {
+      const { skills } = await catalogue.list(root);
+      expect(skills.map((skill) => skill.name)).toEqual([...DEFAULTS.keys()]);
+      for (const skill of skills) {
+        expect(skill.problem).toBe("the skills folder: it did not answer within 0.01 s");
+      }
+      const named = await catalogue.read(root, ["sizing-effort", "own-one"]);
+      expect(named.skills.map((skill) => skill.problem)).toEqual([
+        "the skills folder: it did not answer within 0.01 s",
+        "the skills folder: it did not answer within 0.01 s",
+      ]);
+    }
+    expect(lists).toBe(1);
+    release();
+    await catalogue.list(root);
+    // Once it answered, a later request reads the folder again.
+    await catalogue.list(root);
+    expect(lists).toBe(2);
+  });
+
+  test("a burst of requests reads the folder once", async () => {
+    let lists = 0;
+    const files: SkillFiles = {
+      list: () => {
+        lists += 1;
+        return Promise.resolve(new Map());
+      },
+      read: () => Promise.reject(new Error("no file to read")),
+    };
+    const catalogue = skillCatalogue(files, { freshMs: 60_000 });
+    await Promise.all([catalogue.list(root), catalogue.list(root), catalogue.read(root, ["a"])]);
+    await catalogue.list(root);
+    expect(lists).toBe(1);
+  });
+
+  test("the listing decides a name for the list and for a read by name alike", async () => {
+    write(root, "Case-Test", "A rule.\n");
+    writeFileSync(join(root, "sample.md"), "A loose file.\n");
+    mkdirSync(join(root, "huge"));
+    writeFileSync(join(root, "huge", "SKILL.md"), "z".repeat(SKILL_BYTES + 1));
+    const listed = new Map((await listSkills(root)).skills.map((skill) => [skill.name, skill]));
+    const named = await readSkills(root, ["case-test", "Case-Test", "sample", "huge"]);
+    // A spelling the folder does not have is no skill, also where the disk ignores case.
+    expect(named.missing).toEqual(["case-test"]);
+    for (const skill of named.skills) {
+      expect(skill.problem, skill.name).toBe(listed.get(skill.name)?.problem);
+      expect(skill.problem, skill.name).toBeDefined();
+      expect(skill.body, skill.name).toBeUndefined();
     }
   });
 

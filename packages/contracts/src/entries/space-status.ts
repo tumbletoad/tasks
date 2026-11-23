@@ -114,9 +114,11 @@ export const SpaceStatusResult = z.strictObject({
     )
     .describe("The sections asked for with include")
     .optional(),
-  skills: z
+  skills: z.array(SkillRow).describe("The user's skills: read one with skills").optional(),
+  asked: z
     .array(SkillRow)
-    .describe("The user's skills, or the ones asked for with their text")
+    .max(MAX_SKILLS)
+    .describe("The skills asked for, with their text or why they cannot be used")
     .optional(),
   missing: z
     .array(z.string())
@@ -261,7 +263,7 @@ export const spaceStatus = defineEntry({
           inbox: 0,
           proposals: 0,
         },
-        skills: [
+        asked: [
           {
             ...SIZING,
             text:

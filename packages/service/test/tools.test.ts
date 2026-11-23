@@ -5,7 +5,7 @@
 // service in this process, fixture text and temporary folders only.
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { PRODUCT_NAME } from "@ttasks/brand";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
 import type { WriteRequest } from "@ttasks/storage";
@@ -289,9 +289,17 @@ describe("[A3.3.4.tools.five] status: here and the session", () => {
 
 describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read through status", () => {
   const skillsDir = () => join(w.home, "skills");
+  // A read of the skills folder is used again for a moment: the clock moves past it after each
+  // change, as the next call after that moment sees an edit.
+  let clock = Date.now() + 60_000;
+  const later = () => {
+    clock += 2_000;
+    vi.setSystemTime(clock);
+  };
   const writeSkill = (name: string, text: string | Uint8Array) => {
     mkdirSync(join(skillsDir(), name), { recursive: true });
     writeFileSync(join(skillsDir(), name, "SKILL.md"), text);
+    later();
   };
   const named = (rows: unknown, name: string): Json | undefined =>
     (rows as Json[]).find((row) => row["name"] === name);
@@ -306,8 +314,13 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
     ).content[0].text;
   const USERS_RULE = "Every title starts with a verb in capitals.";
 
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: clock });
+  });
   afterEach(() => {
     rmSync(skillsDir(), { recursive: true, force: true });
+    later();
+    vi.useRealTimers();
   });
 
   test(
@@ -350,10 +363,10 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
     const prefs = await call("prefs.manage", { action: "get", keys: ["tasks.effort_scale"] });
     const scale = (prefs["prefs"] as Json[])[0]?.["value"] as string[];
     expect(scale.length).toBeGreaterThan(0);
-    const sizing = String(named(read["skills"], "sizing-effort")?.["text"]);
+    const sizing = String(named(read["asked"], "sizing-effort")?.["text"]);
     expect(sizing).toContain(`This space's sizes, smallest first: ${scale.join(", ")}.`);
     expect(sizing).toContain("Never estimate hours or minutes.");
-    expect(String(named(read["skills"], "working-a-task")?.["text"])).toContain("get_task");
+    expect(String(named(read["asked"], "working-a-task")?.["text"])).toContain("get_task");
     const text = await statusText({ skills: ["sizing-effort"] });
     expect(text).toContain("Never estimate hours or minutes.");
     expect(text).not.toContain("Counts:");
@@ -366,7 +379,7 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
       `---\nname: sizing-effort\ndescription: Use when sizing.\n---\n${USERS_RULE}\n`,
     );
     const first = named(
-      (await call("space.status", { skills: ["sizing-effort"] }))["skills"],
+      (await call("space.status", { skills: ["sizing-effort"] }))["asked"],
       "sizing-effort",
     );
     expect(first?.["when"]).toBe("Use when sizing.");
@@ -375,7 +388,7 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
     expect(String(first?.["text"])).not.toContain("Never estimate hours");
     writeSkill("sizing-effort", "No front matter: the whole file is the user's part.\n");
     const second = named(
-      (await call("space.status", { skills: ["sizing-effort"] }))["skills"],
+      (await call("space.status", { skills: ["sizing-effort"] }))["asked"],
       "sizing-effort",
     );
     expect(String(second?.["text"])).toContain(
@@ -391,7 +404,7 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
     writeSkill("big-own", "y".repeat(17 * 1024));
     const read = (
       await call("space.status", { skills: ["sizing-effort", "organizing", "big-own"] })
-    )["skills"];
+    )["asked"];
     const sizing = named(read, "sizing-effort");
     expect(String(sizing?.["text"])).toContain("Never estimate hours or minutes.");
     expect(String(sizing?.["text"])).not.toContain(USERS_RULE);
@@ -414,7 +427,7 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
       `---\nname: ticket-export\ndescription: "Use when you turn tasks into tickets."\n---\n\n${body}\n`,
     );
     const read = named(
-      (await call("space.status", { skills: ["ticket-export"] }))["skills"],
+      (await call("space.status", { skills: ["ticket-export"] }))["asked"],
       "ticket-export",
     );
     expect(read).toEqual({

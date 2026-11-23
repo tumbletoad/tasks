@@ -11,7 +11,7 @@ import {
   type ErrorBody,
   type OutputOf,
 } from "@ttasks/contracts";
-import { listLine, SKILL_LIST_ROWS } from "../skills/index.ts";
+import { listText, oneLine } from "../skills/index.ts";
 import { toolOf } from "./tools.ts";
 import {
   clip,
@@ -102,75 +102,40 @@ function sessionLine(session: Status["session"]): string {
   )}`;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Skills: the user's instructions to their agents, as a note for agents is, so they stand outside
-// every data block. They are never cut: a skill file has a size limit instead.
-
-type SkillOut = NonNullable<Status["skills"]>[number];
-
 const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/u;
 
-/**
- * The list a session's first call gives: one short line per skill, at most SKILL_LIST_ROWS, and a
- * line for the rest. It has room of its own on top of the budget, so it never takes the task's.
- */
-function skillListParts(skills: readonly SkillOut[] | undefined): Part[] {
-  const listed = (skills ?? []).filter((skill) => skill.text === undefined);
-  if (listed.length === 0) return [];
-  const shown = listed.slice(0, SKILL_LIST_ROWS);
-  const rest = listed.length - shown.length;
-  return [
-    {
-      fixed: true,
-      whole: true,
-      units: [
-        [
-          `Skills, the user's ways of working: before you act, read the ones that apply with ${toolOf("space.status")} skills [names].`,
-        ],
-        ...shown.map((skill) => [listLine(skill.name, skill.when, skill.problem !== undefined)]),
-        ...(rest === 0
-          ? []
-          : [
-              [
-                `  +${String(rest)} more, not listed here: the user lists them all with ${CLI_NAME} skills.`,
-              ],
-            ]),
-      ],
-    },
-  ];
-}
-
-/** The most the list of skills adds to an answer, in estimated tokens. */
-export const SKILL_LIST_TOKENS = 1_000;
+// ---------------------------------------------------------------------------------------------
+// Skills: the user's instructions to their agents, as a note for agents is. They follow the
+// answer, which is fitted to its own budget as if there were none, outside every data block.
 
 /** The skills asked for, each whole, and the names that are no skill. */
-function skillTextParts(result: Status): Part[] {
-  const read = (result.skills ?? []).filter((skill) => skill.text !== undefined);
-  return [
-    ...read.map((skill): Part => ({
-      fixed: true,
-      whole: true,
-      units: [
-        [`Skill ${skill.name}${skill.when === undefined ? "" : `: ${skill.when}`}`],
-        ...(skill.problem === undefined ? [] : [[skill.problem]]),
-        ...(skill.text ?? "").split(LINE_BREAK).map((line) => [line]),
-      ],
-    })),
-    ...(result.missing === undefined
-      ? []
-      : [
-          fixed(
-            `No skill is named ${result.missing.join(", ")}. ${toolOf("space.status")} without skills lists them.`,
-          ),
-        ]),
-  ];
+function skillTexts(result: Status): string[] {
+  const blocks = (result.asked ?? []).map((skill) =>
+    [
+      `Skill ${skill.name}${skill.when === undefined ? "" : `: ${oneLine(skill.when)}`}`,
+      ...(skill.problem === undefined ? [] : [skill.problem]),
+      ...(skill.text === undefined ? [] : ["", skill.text.split(LINE_BREAK).join("\n")]),
+    ].join("\n"),
+  );
+  if (result.missing !== undefined) {
+    blocks.push(
+      `No skill is named ${result.missing.join(", ")}. ${toolOf("space.status")} without skills lists them.`,
+    );
+  }
+  return blocks;
 }
 
-/** The tokens of parts that are never cut: their room on top of the result's budget. */
-const wholeTokens = (parts: readonly Part[]): number =>
-  parts.length === 0
-    ? 0
-    : resultTokens(parts.flatMap((part) => part.units.flat()).join("\n")) + parts.length;
+/** What follows an answer: the skills a status asked for, or the list a first call gives. */
+function skillsAfter(entryName: string, result: unknown): string {
+  const status = toolOf("space.status");
+  if (entryName === "space.status") {
+    const read = result as Status;
+    return read.asked !== undefined || read.missing !== undefined
+      ? skillTexts(read).join("\n\n")
+      : listText(read.skills ?? [], status);
+  }
+  return entryName === "task.get" ? listText((result as TaskGet).skills ?? [], status) : "";
+}
 
 function statusParts(result: Status): Part[] {
   const counts = result.counts;
@@ -179,9 +144,8 @@ function statusParts(result: Status): Part[] {
     join(PRODUCT_NAME, withWeekday(result.date), result.time_zone, `autonomy ${result.autonomy}`),
     sessionLine(result.session),
   );
-  // Skills asked for come instead of the overview.
-  const texts = skillTextParts(result);
-  if (texts.length > 0) return [header, ...texts, ...skillListParts(result.skills)];
+  // Skills asked for come instead of the overview, after the header.
+  if (result.asked !== undefined || result.missing !== undefined) return [header];
   const parts: Part[] = [
     header,
     {
@@ -221,7 +185,6 @@ function statusParts(result: Status): Part[] {
       ],
     ],
   });
-  parts.push(...skillListParts(result.skills));
   for (const section of result.sections ?? []) {
     parts.push({
       data: true,
@@ -440,7 +403,6 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
       getTask,
       task.ref,
     ),
-    ...skillListParts(result.skills),
     {
       data: true,
       fixed: true,
@@ -518,7 +480,6 @@ function sectionsRendered(
   const parts: Part[] = [fixed(headerLine(task, result.as_of))];
   parts.push(fixed(sessionOfRead(result.bound, task.ref)));
   parts.push(...requestPart(result.request, getTask, task.ref));
-  parts.push(...skillListParts(result.skills));
   let byOthers: Note[] = [];
   if (sections.instructions !== undefined) {
     // Only what the user wrote stands outside the data block as instructions (A3 3.10).
@@ -849,16 +810,9 @@ type Renderer = (
 };
 
 const RENDERERS: Readonly<Record<string, Renderer>> = {
-  // The list of skills and a skill's text get room of their own: neither takes the task's.
-  "space.status": (result: Status) => ({
-    parts: statusParts(result),
-    more: STATUS_MORE,
-    extra: wholeTokens([...skillTextParts(result), ...skillListParts(result.skills)]),
-  }),
+  "space.status": (result: Status) => ({ parts: statusParts(result), more: STATUS_MORE }),
   "task.get": (result: TaskGet, { getTask }) => {
-    const extra =
-      requestTokens(result.request, getTask, result.task.ref) +
-      wholeTokens(skillListParts(result.skills));
+    const extra = requestTokens(result.request, getTask, result.task.ref);
     if (result.view === "digest") {
       return { ...digestRendered(result, getTask), max: DIGEST_TOKENS, extra };
     }
@@ -981,7 +935,9 @@ export function renderResult(entryName: string, result: unknown, random?: Random
       random,
     );
   }
-  return fit(shaped.text, shaped.max, random);
+  const answer = fit(shaped.text, shaped.max, random);
+  const after = skillsAfter(entryName, result);
+  return after === "" ? answer : `${answer}\n${after}`;
 }
 
 /** Whether an entry's result shows whole in its tool's text: nothing of it is cut. */

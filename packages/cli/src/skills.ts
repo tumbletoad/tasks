@@ -98,7 +98,7 @@ async function list(io: Io, globals: Globals, folder: string): Promise<number> {
   if (skills.length > SKILL_LIST_ROWS) {
     lines.push(
       "",
-      `Agents' list shows the first ${String(SKILL_LIST_ROWS)}. They read the others only by name.`,
+      `Agents' list shows at most ${String(SKILL_LIST_ROWS)}. They read the others only by name.`,
     );
   }
   if (unread > 0) {

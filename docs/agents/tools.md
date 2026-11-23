@@ -1002,11 +1002,16 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `sections[].total` | integer, 0 to 1000000000 | yes | Its tasks not listed in an earlier section |
 | `sections[].more` | true | no | It has more tasks than total says |
 | `sections[].above` | integer, 1 to 1000 | no | Its tasks listed in an earlier section |
-| `skills` | object[] | no | The user's skills, or the ones asked for with their text |
+| `skills` | object[] | no | The user's skills: read one with skills |
 | `skills[].name` | string | yes | Skill name |
 | `skills[].when` | string | no | When to read it |
 | `skills[].problem` | string | no | Why the user's file for it is not used |
 | `skills[].text` | string | no | The skill: the user's instructions, when asked for |
+| `asked` | object[], max 6 items | no | The skills asked for, with their text or why they cannot be used |
+| `asked[].name` | string | yes | Skill name |
+| `asked[].when` | string | no | When to read it |
+| `asked[].problem` | string | no | Why the user's file for it is not used |
+| `asked[].text` | string | no | The skill: the user's instructions, when asked for |
 | `missing` | string[], max 6 items | no | Skills asked for that do not exist |
 | `hint` | string | no | What to do next |
 
@@ -1238,7 +1243,7 @@ Result:
     "inbox": 0,
     "proposals": 0
   },
-  "skills": [
+  "asked": [
     {
       "name": "sizing-effort",
       "when": "Use before you give a task a size, when you add tasks or change a task's effort.",

@@ -443,9 +443,10 @@ function meaning(entry: string, value: Value): unknown {
         ]),
         hint: typeof value["hint"] === "string",
         // The skills read with their text: the list depends on the person's own files.
-        read: ((value["skills"] as Value[] | undefined) ?? [])
-          .filter((s) => s["text"] !== undefined)
-          .map((s) => s["name"]),
+        asked: ((value["asked"] as Value[] | undefined) ?? []).map((s) => [
+          s["name"],
+          typeof s["text"],
+        ]),
         missing: value["missing"],
       };
     }

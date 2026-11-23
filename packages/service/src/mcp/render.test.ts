@@ -3,15 +3,8 @@
 // text and editable names only inside the data block (A3 3.10, X14).
 import { findEntry, registry, REQUEST_CHARS, resultTokens, type AnyEntry } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
-import { SKILL_LINE_CHARS, SKILL_LIST_ROWS } from "../skills/index.ts";
-import {
-  DIGEST_TOKENS,
-  ERROR_TOKENS,
-  hasRenderer,
-  renderError,
-  renderResult,
-  SKILL_LIST_TOKENS,
-} from "./render.ts";
+import { SKILL_LINE_BYTES, SKILL_LIST_BYTES, SKILL_LIST_ROWS } from "../skills/index.ts";
+import { DIGEST_TOKENS, ERROR_TOKENS, hasRenderer, renderError, renderResult } from "./render.ts";
 import { DATA_WORD, closeMarker, openMarker } from "./text.ts";
 import { TOOLS } from "./tools.ts";
 
@@ -258,8 +251,8 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
       const parsed = entry(name).output.safeParse(result);
       expect(parsed.success, `${name}: the worst case is a valid result`).toBe(true);
       const text = renderResult(name, result);
-      // The list of skills has room of its own on top.
-      const room = result["skills"] === undefined ? 0 : SKILL_LIST_TOKENS;
+      // The list of skills follows the answer, in bytes of its own.
+      const room = result["skills"] === undefined ? 0 : SKILL_LIST_BYTES / 1.5;
       expect(resultTokens(text), name).toBeLessThanOrEqual(cap + room);
       // A write names every item it decided, whole (A3 3.2.5): only the others cut.
       if (name === "task.finish") {
@@ -463,39 +456,57 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     });
     expect(entry("task.get").output.safeParse(digest).success).toBe(true);
     const text = renderResult("task.get", digest);
-    expect(resultTokens(text)).toBeLessThanOrEqual(DIGEST_TOKENS + SKILL_LIST_TOKENS);
+    expect(resultTokens(text)).toBeLessThanOrEqual(DIGEST_TOKENS + SKILL_LIST_BYTES / 1.5);
     expect(text.isWellFormed()).toBe(true);
     const { inside, outside } = split(text);
     expect(inside[0]).toMatch(/^Title: (😀)+(\.\.\. \(\+\d+ chars\))?$/);
     expect(outside.some((line) => line.startsWith("More: get_task"))).toBe(true);
   });
 
-  test("[A3.3.6.mcp.skills] a long list of skills takes none of the task's room: one short line each, the rest counted", () => {
+  test("[A3.3.6.mcp.skills] an answer is byte for byte the same with skills as without; the list follows it in its own bytes", () => {
+    // The data markers are drawn at random: the same draws for both answers.
+    const draws = (): ((max: number) => number) => {
+      let n = 0;
+      return (max) => (n += 7) % max;
+    };
     const many = Array.from({ length: SKILL_LIST_ROWS + 2 }, (_, n) => ({
       name: `${"s".repeat(60)}-${String(n).padStart(2, "0")}`,
-      when: "Use when ".padEnd(1_024, "x"),
+      when: `Use when\nyou *add* tasks${"😀".repeat(300)}`,
       ...(n === 0 ? { problem: `The user's file ${"p".repeat(300)} cannot be used.` } : {}),
     }));
-    const status = { ...example("space.status", 0), skills: many };
-    const digest = { ...example("task.get", 0), skills: many };
-    for (const [name, result, cap] of [
-      ["space.status", status, 1_500],
-      ["task.get", digest, DIGEST_TOKENS],
-    ] as const) {
-      expect(entry(name).output.safeParse(result).success, name).toBe(true);
-      const text = renderResult(name, result);
-      expect(resultTokens(text), name).toBeLessThanOrEqual(cap + SKILL_LIST_TOKENS);
-      // Without the list, the task's own lines are the same: the list took nothing from them.
-      const without = renderResult(name, { ...result, skills: [] });
-      const rows = text.split("\n").filter((line) => line.startsWith("  sssss"));
-      expect(rows.length, name).toBe(SKILL_LIST_ROWS);
-      for (const row of rows) expect(Array.from(row).length).toBeLessThanOrEqual(SKILL_LINE_CHARS);
-      expect(text, name).toContain(
-        "  +2 more, not listed here: the user lists them all with ttasks skills.",
+    const row = example("space.status", 0)["here"] as Json[];
+    const today = Array.from({ length: 8 }, (_, n) => {
+      const task = Object.fromEntries(
+        Object.entries(row[0] ?? {}).filter(([key]) => key !== "match" && key !== "live_sessions"),
       );
-      // The data block's marker is drawn per answer: compare the lines outside it.
-      for (const line of split(without).outside) expect(split(text).outside, name).toContain(line);
-      for (const line of split(without).inside) expect(split(text).inside, name).toContain(line);
+      return { ...task, ref: `M-${String(40 + n)}`, title: "t".repeat(168) };
+    });
+    const status = {
+      ...example("space.status", 0),
+      sections: [{ name: "today", tasks: today, total: 8 }],
+    };
+    const digest = example("task.get", 0);
+    for (const [name, result] of [
+      ["space.status", status],
+      ["task.get", digest],
+    ] as const) {
+      const listed = { ...result, skills: many };
+      expect(entry(name).output.safeParse(listed).success, name).toBe(true);
+      const alone = renderResult(name, { ...result, skills: [] }, draws());
+      const text = renderResult(name, listed, draws());
+      expect(text.startsWith(`${alone}\n`), name).toBe(true);
+      const list = text.slice(alone.length + 1);
+      expect(Buffer.byteLength(list), name).toBeLessThanOrEqual(SKILL_LIST_BYTES);
+      expect(list, name).not.toContain(DATA_WORD);
+      const lines = list.split("\n");
+      for (const line of lines) {
+        expect(Buffer.byteLength(line), name).toBeLessThanOrEqual(SKILL_LINE_BYTES);
+      }
+      // Each skill is one line, and the rest are counted.
+      expect(lines.filter((line) => line.startsWith("  sss")).length, name).toBeLessThan(
+        many.length,
+      );
+      expect(lines.at(-1), name).toMatch(/^ {2}\+\d+ more, not listed here/u);
     }
   });
 
