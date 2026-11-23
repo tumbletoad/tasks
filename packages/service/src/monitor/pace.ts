@@ -11,11 +11,13 @@
 // An answer that says `settling` is followed after 1 s, at most three times in a row. A launch or
 // a stop in TTasks while someone watches asks once more right after the answer on its way. A tab
 // that starts watching gets the newest picture, or why there is none, at once; the newest
-// snapshot is kept for 30 s after the last tab stopped watching. A monitor that is missing or does
-// not fit is looked for again when an Agents page opens or a tab showing one gets the focus back.
+// snapshot is kept for 30 s after the last tab stopped watching, and an answer that comes later
+// is not kept at all. A monitor that is missing or does not fit is looked for again when an
+// Agents page opens or a tab showing one gets the focus back.
 //
-// Ages count on the service's steady clock from the moment a snapshot arrived, never from a time
-// in it.
+// Attention is read on the steady clock when a request is made, so a request that falls due late
+// (a machine that slept) asks for what the tabs' attention is then. Ages count on the same clock
+// from the moment a snapshot arrived, never from a time in it.
 import type { AgentsView, AgentsWatch, MonitorProblem } from "@ttasks/contracts/monitor";
 import type { Monitor, MonitorAnswer } from "./monitor.ts";
 import { pictureOf } from "./picture.ts";
@@ -36,7 +38,7 @@ export const PACE = {
   keepMs: 30_000,
 } as const;
 
-export type PaceTimerKind = "monitor_ask" | "monitor_focus" | "monitor_keep";
+export type PaceTimerKind = "monitor_ask" | "monitor_keep";
 
 export type PaceTimers = (
   spec: { readonly kind: PaceTimerKind; readonly conn: number | undefined; readonly ms: number },
@@ -52,10 +54,9 @@ type Attention = "none" | "visible" | "looked";
 const RANK: Readonly<Record<Attention, number>> = { none: 0, visible: 1, looked: 2 };
 
 interface Watching {
-  facts: AgentsWatch;
-  /** Focused within focusMs. */
-  recent: boolean;
-  focus: ReturnType<PaceTimers> | undefined;
+  readonly facts: AgentsWatch;
+  /** On the steady clock: looked at until then. Infinity while focused. */
+  readonly lookedUntil: number;
 }
 
 const verdict = (problem: MonitorProblem | undefined): boolean =>
@@ -80,6 +81,8 @@ export class MonitorPace {
   #again = false;
   #slow = false;
   #ask: ReturnType<PaceTimers> | undefined;
+  /** Nobody watches: until then the newest is kept, and an answer after it is not. */
+  #keepUntil: number | undefined;
   #keep: ReturnType<PaceTimers> | undefined;
   #closed = false;
 
@@ -90,47 +93,37 @@ export class MonitorPace {
   /** A tab's facts, as it sent them. */
   watch(watcher: Watcher, facts: AgentsWatch): void {
     if (this.#closed) return;
+    const now = this.#options.now();
     const before = this.#watching.get(watcher);
-    const was = before === undefined ? "none" : this.#attention(before);
-    const entry: Watching = before ?? { facts, recent: false, focus: undefined };
+    const was = before === undefined ? "none" : this.#attention(before, now);
     const opened = facts.agents && before?.facts.agents !== true;
     const focusBack = facts.focused && before?.facts.focused !== true;
-    if (facts.focused) {
-      entry.focus?.clear();
-      entry.focus = undefined;
-      entry.recent = true;
-    } else if (before?.facts.focused === true) {
-      entry.focus?.clear();
-      entry.focus = this.#options.timers(
-        { kind: "monitor_focus", conn: undefined, ms: PACE.focusMs },
-        () => {
-          entry.focus = undefined;
-          entry.recent = false;
-          this.#plan();
-        },
-      );
-    }
-    entry.facts = facts;
+    const lookedUntil = facts.focused
+      ? Infinity
+      : before?.facts.focused === true
+        ? now + PACE.focusMs
+        : (before?.lookedUntil ?? -Infinity);
+    const entry: Watching = { facts, lookedUntil };
     this.#watching.set(watcher, entry);
     if ((opened || focusBack) && verdict(this.#problem)) {
       this.#problem = undefined;
       this.#answeredAt = undefined;
       this.#options.monitor.recheck();
     }
-    if (was === "none" && this.#attention(entry) !== "none") {
-      this.#keep?.clear();
-      this.#keep = undefined;
-      watcher.show(this.#view());
-    }
+    if (was === "none" && this.#attention(entry, now) !== "none") watcher.show(this.#view());
     this.#plan();
   }
 
-  /** The tab's connection closed, or its sign-in ended. */
-  leave(watcher: Watcher): void {
-    const entry = this.#watching.get(watcher);
-    if (entry === undefined) return;
-    entry.focus?.clear();
-    this.#watching.delete(watcher);
+  /**
+   * The tab's connection closed, or its sign-in ended (`signedOut`): when it was the last that
+   * watched, what it was to be shown is dropped now, the answer on its way included.
+   */
+  leave(watcher: Watcher, signedOut = false): void {
+    if (!this.#watching.delete(watcher)) return;
+    if (signedOut && this.#level() === "none") {
+      this.#keepUntil = this.#options.now();
+      this.#drop();
+    }
     this.#plan();
   }
 
@@ -156,19 +149,19 @@ export class MonitorPace {
     this.#closed = true;
     this.#ask?.clear();
     this.#keep?.clear();
-    for (const entry of this.#watching.values()) entry.focus?.clear();
     this.#watching.clear();
   }
 
-  #attention(entry: Watching): Attention {
+  #attention(entry: Watching, now: number): Attention {
     if (!entry.facts.agents || !entry.facts.visible) return "none";
-    return entry.recent ? "looked" : "visible";
+    return now < entry.lookedUntil ? "looked" : "visible";
   }
 
   #level(): Attention {
+    const now = this.#options.now();
     let level: Attention = "none";
     for (const entry of this.#watching.values()) {
-      const attention = this.#attention(entry);
+      const attention = this.#attention(entry, now);
       if (RANK[attention] > RANK[level]) level = attention;
     }
     return level;
@@ -186,6 +179,15 @@ export class MonitorPace {
     return Math.min(PACE.restMaxMs, Math.max(PACE.restMinMs, PACE.restPasses * pass));
   }
 
+  /** What no tab watches any more: the newest, and the rest that counted from it. */
+  #drop(): void {
+    this.#keep?.clear();
+    this.#keep = undefined;
+    this.#newest = undefined;
+    this.#answeredAt = undefined;
+    this.#settlingRun = 0;
+  }
+
   /** Sets the next request by the most attentive tab, or none; keeps or drops the newest. */
   #plan(): void {
     if (this.#closed) return;
@@ -193,19 +195,20 @@ export class MonitorPace {
     if (level === "none") {
       this.#ask?.clear();
       this.#ask = undefined;
-      if (this.#newest !== undefined && this.#keep === undefined) {
+      if (this.#keepUntil === undefined) {
+        this.#keepUntil = this.#options.now() + PACE.keepMs;
         this.#keep = this.#options.timers(
           { kind: "monitor_keep", conn: undefined, ms: PACE.keepMs },
           () => {
-            this.#keep = undefined;
-            this.#newest = undefined;
-            this.#answeredAt = undefined;
-            this.#settlingRun = 0;
+            this.#drop();
           },
         );
       }
       return;
     }
+    this.#keepUntil = undefined;
+    this.#keep?.clear();
+    this.#keep = undefined;
     if (this.#asking) return;
     this.#ask?.clear();
     this.#ask = undefined;
@@ -216,9 +219,10 @@ export class MonitorPace {
       this.#request();
       return;
     }
+    // When it fires the plan is made again: the attention may have changed meanwhile.
     this.#ask = this.#options.timers({ kind: "monitor_ask", conn: undefined, ms: wait }, () => {
       this.#ask = undefined;
-      this.#request();
+      this.#plan();
     });
   }
 
@@ -238,15 +242,17 @@ export class MonitorPace {
     if (this.#closed) return;
     const now = this.#options.now();
     this.#answeredAt = now;
+    this.#slow = this.#options.monitor.status().slow;
     if (answer.ok) {
-      this.#newest = { answer, at: now };
       this.#problem = undefined;
       this.#settlingRun = answer.snapshot.settling ? this.#settlingRun + 1 : 0;
+      // An answer that comes after the newest would have been dropped is not kept either.
+      if (this.#keepUntil !== undefined && now >= this.#keepUntil) this.#drop();
+      else this.#newest = { answer, at: now };
     } else {
       this.#problem = answer.problem;
       if (verdict(answer.problem)) this.#newest = undefined;
     }
-    this.#slow = this.#options.monitor.status().slow;
     this.#show();
     if (this.#again && this.#level() !== "none") this.#request();
     else this.#plan();
@@ -264,7 +270,8 @@ export class MonitorPace {
 
   /** Every tab that watches gets the view now. */
   #show(): void {
-    const watchers = [...this.#watching].filter(([, e]) => this.#attention(e) !== "none");
+    const now = this.#options.now();
+    const watchers = [...this.#watching].filter(([, e]) => this.#attention(e, now) !== "none");
     if (watchers.length === 0) return;
     const view = this.#view();
     for (const [watcher] of watchers) watcher.show(view);

@@ -612,7 +612,9 @@ class FeedSocket {
     this.#output = undefined;
     this.#ping.clear();
     this.#hub.unwatch(this);
-    this.#hub.options.agents?.leave(this);
+    // A sign-in that ended takes what its tabs were to be shown with it.
+    const signedOut = reason === "revoked" || reason === "expired" || reason === "blocked";
+    this.#hub.options.agents?.leave(this, signedOut);
     this.#hub.forget(this);
     this.#hub.options.log({
       ev: "http.ws_closed",

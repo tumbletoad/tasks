@@ -55,7 +55,7 @@ async function paced(
   options: { command?: () => MonitorCommand; toml?: string } = {},
 ): Promise<Paced> {
   const clock = testClock<HttpTimerKind>({
-    virtual: ["monitor_ask", "monitor_focus", "monitor_keep"],
+    virtual: ["monitor_ask", "monitor_keep"],
   });
   const dir = mkdtempSync(join(tmpdir(), "ttasks-pace-"));
   dirs.push(dir);
@@ -184,18 +184,23 @@ describe("[A5.agents.pace] the service asks the monitor at the pace of the most 
     const p = await paced("pace-focus");
     const feed = await p.tab(LOOKED);
     await answer(feed);
+    // The service has the blur when it plans the next request again.
+    const planned = p.clock.find({ kind: "monitor_ask" }).length;
     feed.send({ type: "watch", ...VISIBLE });
     await expect
-      .poll(() => p.clock.live({ kind: "monitor_focus" }).length, { timeout: 30_000 })
-      .toBe(1);
+      .poll(() => p.clock.find({ kind: "monitor_ask" }).length, { timeout: 30_000 })
+      .toBe(planned + 1);
     // Within the five minutes it is still looked at: the settling answer's follow-up is live.
     p.clock.advance(299_999);
     await answer(feed);
     expect(p.gets().at(-1)).toEqual({ get: 2, usage: "live" });
     expect(p.due()).toBe(rest(2));
-    p.clock.advance(1);
-    expect(p.due()).toBe(29_999);
-    p.clock.advance(29_999);
+    // The five minutes end before that request falls due: it waits for the 30 s of a tab that is
+    // only visible, counted from the answer.
+    p.clock.advance(1 + rest(2));
+    expect(p.gets()).toHaveLength(2);
+    expect(p.due()).toBe(30_000 - 1 - rest(2));
+    p.clock.advance(30_000 - 1 - rest(2));
     await answer(feed);
     expect(p.gets().at(-1)).toEqual({ get: 3, usage: "cached" });
     // The focus back: looked at again, and asked after four passes from the last answer.
@@ -321,8 +326,9 @@ describe("[A5.agents.pace] the service asks the monitor at the pace of the most 
 });
 
 describe("[A5.agents.pace] a tab that stops watching gets nothing more", () => {
-  test("a view queued behind a slow write is dropped when the tab stops watching", async () => {
+  test("a view queued behind a slow write is dropped when the tab stops watching; an ended sign-in says so", async () => {
     const watchers: Watcher[] = [];
+    const left: (boolean | undefined)[] = [];
     const hub = new FeedHub({
       host: { spaces: () => [] },
       limits: DEFAULT_HTTP_LIMITS,
@@ -335,7 +341,9 @@ describe("[A5.agents.pace] a tab that stops watching gets nothing more", () => {
         watch: (watcher) => {
           if (!watchers.includes(watcher)) watchers.push(watcher);
         },
-        leave: () => undefined,
+        leave: (_watcher, signedOut) => {
+          left.push(signedOut);
+        },
       },
     });
     const sent: Record<string, unknown>[] = [];
@@ -381,7 +389,9 @@ describe("[A5.agents.pace] a tab that stops watching gets nothing more", () => {
     message({ type: "watch", ...LOOKED });
     tab.show(view(5));
     expect(views().map((m) => (m["picture"] as { ageMs: number }).ageMs)).toEqual([1, 5]);
-    handlers.get("close")?.();
+    // Its sign-in ends: the pace hears that it left with it.
+    hub.closeGrant("gr_x");
+    expect(left).toEqual([true]);
   });
 });
 
