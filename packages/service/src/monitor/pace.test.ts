@@ -144,6 +144,24 @@ describe("[A5.agents.pace] the pace's follow-ups", () => {
     expect(s.asks).toHaveLength(3);
   });
 
+  test("a failed monitor is asked again at the page's pace, so a TTAM taken away is found missing", async () => {
+    const s = setup();
+    await s.reply(false);
+    s.clock.advance(2_000);
+    s.asks.at(-1)?.resolve({ ok: false, problem: { kind: "failed", reason: "exited" } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(s.views.at(-1)?.trouble?.kind).toBe("failed");
+    expect(s.due()).toBe(2_000);
+    s.clock.advance(2_000);
+    expect(s.asks).toHaveLength(3);
+    s.asks.at(-1)?.resolve({ ok: false, problem: { kind: "not_installed", reason: "not_found" } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(s.views.at(-1)).toEqual({
+      picture: null,
+      trouble: { kind: "not_installed", reason: "not_found" },
+    });
+  });
+
   test("a launch while nobody watches asks nothing", async () => {
     const s = setup();
     await s.reply(false);
