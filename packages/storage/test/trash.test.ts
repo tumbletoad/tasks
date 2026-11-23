@@ -194,7 +194,7 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
           entity,
           task: target,
           field,
-          by: expect.objectContaining({ kind: "agent" }),
+          by: expect.objectContaining({ kind: "agent" }) as unknown,
         }),
       );
       expect(deleted(target), what).toBe(false);
