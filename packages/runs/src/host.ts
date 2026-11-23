@@ -177,9 +177,8 @@ function withCleanup(end: RunEnd, cleanup: RunCleanup): RunEnd {
   switch (end.kind) {
     case "exited":
     case "timed_out":
-      return { ...end, result: { ...end.result, cleanup } };
     case "service_ended":
-      return end.result === null ? end : { ...end, result: { ...end.result, cleanup } };
+      return { ...end, result: { ...end.result, cleanup } };
     default:
       return end;
   }
@@ -240,25 +239,25 @@ export function resultOf(
 
 /**
  * The result recovery records from a run's saved work: its own verdict when the work had settled,
- * else `no_result` with the last answer, since the run did not end by itself.
+ * else `no_result` with the last answer, or none when the agent had said nothing, since the run
+ * did not end by itself. It holds what recovery found of the run's processes either way.
  */
 export function savedResult(
   run: RunRecord,
   saved: SavedAnswer | undefined,
   cleanup?: RunCleanup,
-): RunResult | null {
-  if (saved === undefined) return null;
-  const outcome = saved.outcome ?? "no_result";
+): RunResult {
+  const outcome = saved?.outcome ?? "no_result";
   return {
     ok: outcome === "success",
     outcome,
     exitCode: null,
     signal: null,
     nativeId: run.evidence.native_id ?? null,
-    text: saved.text,
-    ...(saved.cut ? { textCut: true } : {}),
-    ...(saved.final ? { textFinal: true } : {}),
-    error: saved.error ?? null,
+    text: saved?.text ?? null,
+    ...(saved?.cut === true ? { textCut: true } : {}),
+    ...(saved?.final === true ? { textFinal: true } : {}),
+    error: saved?.error ?? null,
     usage: null,
     appTools: null,
     declined: 0,
@@ -939,7 +938,8 @@ export class RunHost {
   /**
    * The end a run gets once the service that hosted it is gone, from its saved answer: `timed_out`
    * once a time limit had fired, else its own end when the work had settled, else
-   * `service_ended`. The result is the work's own when it had settled, else the last answer.
+   * `service_ended`. The result is the work's own when it had settled, else the last answer, if
+   * any, and holds `cleanup`.
    */
   #serviceEnded(run: RunRecord, cleanup?: RunCleanup): RunEnd {
     let saved: SavedAnswer | undefined;
@@ -950,7 +950,7 @@ export class RunHost {
       saved = undefined;
     }
     const result = savedResult(run, saved, cleanup);
-    if (saved === undefined || result === null) return { kind: "service_ended", result };
+    if (saved === undefined) return { kind: "service_ended", result };
     if (saved.limit !== undefined) return { kind: "timed_out", limit: saved.limit, result };
     return saved.outcome === undefined
       ? { kind: "service_ended", result }

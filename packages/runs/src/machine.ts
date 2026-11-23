@@ -44,8 +44,8 @@ export type RunEnd =
   | { readonly kind: "timed_out"; readonly limit: "wall" | "idle"; readonly result: RunResult }
   /** No agent ran: it could not start, or gave no PID within the start time. */
   | { readonly kind: "start_failed"; readonly reason: "spawn_failed" | "start_timed_out" }
-  /** The service ended while the run was open; the result holds the last saved answer. */
-  | { readonly kind: "service_ended"; readonly result: RunResult | null }
+  /** The service ended while the run was open; the result holds the last saved answer, if any. */
+  | { readonly kind: "service_ended"; readonly result: RunResult }
   /** A claim or a restore in place brought the run back open from a backup: it never goes on. */
   | { readonly kind: "restored" }
   /** The container could not be confirmed empty. */
@@ -147,10 +147,7 @@ export function endMove(run: RunRecord, end: RunEnd): Move | undefined {
     case "start_failed":
       return { next: "failed", patch: { reason: end.reason } };
     case "service_ended":
-      return {
-        next: "failed",
-        patch: { reason: "service_ended", ...(result === null ? {} : { result }) },
-      };
+      return { next: "failed", patch: { reason: "service_ended", result: end.result } };
     case "restored":
       return { next: "failed", patch: { reason: "restored" } };
   }

@@ -587,7 +587,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
     });
   });
 
-  test("after a restart, a run is asked about as its record says it started: a group is counted, a run without one is never confirmed ended, and neither is one whose record does not say", async () => {
+  test("after a restart, a run is asked about as its record says it started: a group is counted, a run without one is never confirmed ended, and neither is one whose record does not say; what was found is recorded also when the agent had said nothing", async () => {
     // A group that holds nothing by any name: what a job helper says of a run it never held.
     const group: Containers = { ...refusing, kind: () => Promise.resolve("job" as const) };
     const cases = [
@@ -596,20 +596,48 @@ describe("[A4.5.run.host] the run host's rules", () => {
       { held: undefined, cleanup: "ended_found" },
     ] as const;
     for (const { held, cleanup } of cases) {
-      const { id, machine, files } = await bareHost({ containers: refusing });
-      await machine.begin(id, held === undefined ? {} : { container: held });
-      await machine.started(id, 4242, Date.UTC(2026, 10, 16));
-      await machine.cancel(id);
-      files.saveAnswer(id, { text: "Half done.", final: false, cut: false });
-      const containers = new FallbackContainers(group, new UngroupedContainers(), () =>
-        Promise.resolve(true),
-      );
-      await new RunHost({ machine, containers, files }).recover();
-      expect(await machine.read(id), String(held)).toMatchObject({
-        state: "cancelled",
-        result: { text: "Half done.", cleanup },
-      });
+      for (const said of ["Half done.", null]) {
+        const { id, machine, files } = await bareHost({ containers: refusing });
+        await machine.begin(id, held === undefined ? {} : { container: held });
+        await machine.started(id, 4242, Date.UTC(2026, 10, 16));
+        await machine.cancel(id);
+        if (said !== null) files.saveAnswer(id, { text: said, final: false, cut: false });
+        const containers = new FallbackContainers(group, new UngroupedContainers(), () =>
+          Promise.resolve(true),
+        );
+        await new RunHost({ machine, containers, files }).recover();
+        expect(await machine.read(id), `${String(held)}, ${String(said)}`).toMatchObject({
+          state: "cancelled",
+          result: { text: said, cleanup },
+        });
+      }
     }
+  });
+
+  test("a Stop before the agent said anything, a restart, a group that still holds something, then End by force: what it ended is recorded", async () => {
+    // The process in the group refuses to end at the restart, and ends at End by force.
+    let ends = 0;
+    const group: Containers = {
+      ...refusing,
+      confirmEmpty: () => Promise.resolve({ state: "occupied", detail: "one process" }),
+      recover: () => {
+        ends += 1;
+        return Promise.resolve(
+          ends === 1 ? { state: "occupied", detail: "one process" } : { state: "empty" },
+        );
+      },
+    };
+    const { id, machine, files } = await bareHost({ containers: refusing });
+    await machine.begin(id, { container: "job" });
+    await machine.started(id, 4242, Date.UTC(2026, 10, 16));
+    await machine.cancel(id);
+    const host = new RunHost({ machine, containers: group, files });
+    await host.recover();
+    expect(await machine.read(id)).toMatchObject({ state: "unknown", result: null });
+    expect(await host.forceEnd(id)).toMatchObject({
+      state: "cancelled",
+      result: { text: null, cleanup: "ended_leftovers" },
+    });
   });
 
   test("a run records how its processes start before its agent starts, and starts so", async () => {
