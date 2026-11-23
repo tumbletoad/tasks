@@ -333,6 +333,7 @@
   "thread.earlier": "Earlier · {count}",
   "thread.older": "Older entries",
   "thread.loadingOlder": "Reading older entries…",
+  "thread.olderFailed": "Older entries could not be read.",
   "thread.copy": "Copy",
   "thread.copyEntry": "Copy the entry by {who}",
 

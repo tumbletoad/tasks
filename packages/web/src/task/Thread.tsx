@@ -178,6 +178,8 @@ export interface ThreadProps {
   readonly onOlder?: (() => void) | undefined;
   /** Older entries were asked for and have not come yet. */
   readonly loadingOlder?: boolean;
+  /** The last read of older entries failed. */
+  readonly olderFailed?: boolean;
   /** Open an instance again with a request already on the task (its note). */
   readonly onOpenAgain?: (note: DetailNote, instance: Instance) => void;
   /** The person's Stop of a run. */
@@ -193,6 +195,7 @@ export function Thread({
   partial,
   onOlder,
   loadingOlder = false,
+  olderFailed = false,
   onOpenAgain,
   onStop,
 }: ThreadProps) {
@@ -346,10 +349,16 @@ export function Thread({
     // The button went with the last of them: the place stays with the entry.
     if (document.activeElement === document.body) entry.focus({ preventScroll: true });
   });
-  if (items.length === 0) return <p className={styles.line}>{t("thread.empty")}</p>;
   const older = hidden === 0 && partial && onOlder !== undefined;
+  // A thread whose first pages held no entry has older ones: it is not empty.
+  if (items.length === 0 && !older) return <p className={styles.line}>{t("thread.empty")}</p>;
   return (
     <>
+      {older && olderFailed ? (
+        <p className={styles.line} role="status">
+          {t("thread.olderFailed")}
+        </p>
+      ) : null}
       {hidden > 0 || older ? (
         <button
           type="button"

@@ -5661,14 +5661,14 @@
     },
     {
       "id": "A5.while-away.web.thread-pages",
-      "title": "A thread's read takes as many pages of task.get as the person asked for, says when more remain, reads up to the first entry when asked for more, and stops between pages once no one waits for it",
+      "title": "A thread's read takes the first pages of task.get, and each Older entries reads more from where the last read ended without reading the earlier pages again, up to the first entry; a first page with no entry but more behind it is partial; a read no one waits for stops between pages",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A5.while-away.web.thread-older",
-      "title": "The thread's Earlier reveals the entries the page holds, then Older entries asks for more once per press, says while it reads, and goes when the first entry is there",
+      "title": "Earlier shows what the page holds, then Older entries asks once and says it reads; a first read with no entry but more behind it offers Older entries instead of saying nothing was logged; a failed read says so in one line and the button can be pressed again",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

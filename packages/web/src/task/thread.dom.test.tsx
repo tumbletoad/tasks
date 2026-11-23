@@ -234,4 +234,46 @@ describe("[A5.while-away.web.thread-older] Earlier shows what the page holds, th
     expect(button()).toBeNull();
     expect(entries()).toHaveLength(9);
   });
+
+  test("a first read with no entry but more behind it offers Older entries; a failed read says so once and can be pressed again", () => {
+    let asked = 0;
+    const draw = (shown: DetailNote[], olderFailed: boolean) => {
+      act(() => {
+        root ??= createRoot(host);
+        root.render(
+          <I18n>
+            <Thread
+              notes={shown}
+              log={[]}
+              receipts={[]}
+              instances={[CLAUDE]}
+              partial
+              onOlder={() => {
+                asked += 1;
+              }}
+              olderFailed={olderFailed}
+            />
+          </I18n>,
+        );
+      });
+    };
+    const button = () => host.querySelector<HTMLButtonElement>("[data-part='earlier']");
+    draw([], false);
+    expect(host.textContent).not.toContain("Nothing logged yet.");
+    expect(button()?.textContent).toBe("Older entries");
+    act(() => {
+      button()?.click();
+    });
+    expect(asked).toBe(1);
+    draw([], true);
+    expect(host.querySelector("[role='status']")?.textContent).toBe(
+      "Older entries could not be read.",
+    );
+    expect(button()?.textContent).toBe("Older entries");
+    expect(button()?.getAttribute("aria-busy")).toBe("false");
+    act(() => {
+      button()?.click();
+    });
+    expect(asked).toBe(2);
+  });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
-import { mergePages, readDetail, rowOfFacts, type TaskFacts } from "./detail.ts";
+import { mergePages, PAGES, readDetail, readOlder, rowOfFacts, type TaskFacts } from "./detail.ts";
 
 const FACTS: TaskFacts = {
   id: "t_0123456789abcdefghjkmnpqrs",
@@ -149,23 +149,45 @@ describe("[A5.while-away.web.thread-pages] a thread reads as many pages as the p
       },
     }) as unknown as Client;
 
-  test("the first pages, then more of them up to the first entry; a read no one waits for stops", async () => {
+  test("the first pages, then each press reads on from where the last read ended, up to the first entry; a read no one waits for stops", async () => {
     const asked: string[] = [];
-    const first = await readDetail(client(5, asked), "M-3", [], 2);
-    expect(first.partial).toBe(true);
-    expect(first.notes.map((n) => n.text)).toEqual(["Note 4", "Note 5"]);
-    const all = await readDetail(client(5, asked), "M-3", [], 4 + 2);
-    expect(all.partial).toBe(false);
-    expect(all.notes.map((n) => n.text)).toEqual([
-      "Note 1",
-      "Note 2",
-      "Note 3",
-      "Note 4",
-      "Note 5",
-    ]);
+    const count = 2 * PAGES + 5;
+    const first = await readDetail(client(count, asked), "M-3", []);
+    expect(first.detail.partial).toBe(true);
+    expect(first.detail.notes).toHaveLength(PAGES);
+    expect(asked).toHaveLength(PAGES);
+    asked.length = 0;
+    const second = await readOlder(client(count, asked), "M-3", first);
+    // Only the pages after the last one read.
+    expect(asked).toEqual(Array.from({ length: PAGES }, (_, k) => String(PAGES + k)));
+    expect(second.detail.partial).toBe(true);
+    asked.length = 0;
+    const all = await readOlder(client(count, asked), "M-3", second);
+    expect(asked).toHaveLength(5);
+    expect(all.detail.partial).toBe(false);
+    expect(all.detail.notes.map((n) => n.text)).toEqual(
+      Array.from({ length: count }, (_, k) => `Note ${String(k + 1)}`),
+    );
     asked.length = 0;
     let reads = 0;
     await readDetail(client(5, asked), "M-3", [], 6, () => (reads += 1) > 1);
     expect(asked).toEqual(["0"]);
+  });
+
+  test("a first page with no entry but more behind it is partial, not an empty thread", async () => {
+    const empty = {
+      task: {
+        get: (input: { before?: string; sections?: readonly string[] }) =>
+          Promise.resolve(
+            input.sections === undefined
+              ? { view: "digest", task: FACTS, as_of: "1.1.a" }
+              : { view: "sections", sections: { context: "x" }, before: "c1", as_of: "1.1.a" },
+          ),
+      },
+    } as unknown as Client;
+    const read = await readDetail(empty, "M-3", [], 1);
+    expect(read.detail.notes).toEqual([]);
+    expect(read.detail.log).toEqual([]);
+    expect(read.detail.partial).toBe(true);
   });
 });
