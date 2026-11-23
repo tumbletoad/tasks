@@ -231,9 +231,9 @@ Not in the base count. No step of the plan holds this work, so the rows have no 
 | A person who comes back sees what agents changed in the last 7 days and the questions they wait on | 147 | done |
 | The Trash: a person moves tasks to it and restores them, in the page and on the command line (the Trash, step 2) | 148 | done |
 | The Trash, step 3: agents remove tasks, and the keyboard shortcut | none | ready |
-| The Trash, step 4: retracting a note | none | ready |
+| The Trash, step 4: retracting a note | 154 | done |
 | A folder's marker keeps protecting when the machine is slow or the service is held up | 152 | done |
-| One copy of a space served at a time, and a restored copy that says so | 146 | review |
+| One copy of a space served at a time, and a restored copy that says so | 146 | done |
 
 A space's statuses, the page's Settings for the sizes and an agent's `set` (M3.11's part for agents) are not built: `ttasks prefs set` and the `preferences` tool refuse them.
 

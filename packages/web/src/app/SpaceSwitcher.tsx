@@ -208,7 +208,7 @@ export function SpaceSwitcher({
                             </Button>
                           )}
                           {item.restored === undefined ? null : (
-                            <span className={styles.where} dir="auto">
+                            <span className={styles.where} data-machine="" dir="auto">
                               {t("space.restoredIn", {
                                 at: Date.parse(item.restored.at),
                                 folder: item.folder ?? "",
