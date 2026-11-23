@@ -1464,13 +1464,10 @@ async function writeEntry(
 
 /**
  * Registers TTasks in one home that has no entry yet, and gives the home its access once the entry
- * is in place. The record is written before the file (writeEntry). The access is asked for only once
- * the entry is read back as setup intended it, and the file is read once more after the service's
- * answer: a save meanwhile that changed or took out the entry, a refused row or a record that cannot
- * be written takes it all back (undo), so a home never has access without its entry. A registered
- * home keeps its row, renewed for the space its entry names (`space` is empty when the apply
- * registers no new home). `planned` is the change the plan holds for it (planOf), when the caller
- * has one.
+ * is in place (giveAccess). The record is written before the file (writeEntry). A registered home
+ * gets its row, or keeps it, for the space its entry names (`space` is empty when the apply
+ * registers no new home), through the same checks of its entry. `planned` is the change the plan
+ * holds for it (planOf), when the caller has one.
  */
 export async function applyHome(
   input: SetupInput,
@@ -1486,14 +1483,7 @@ export async function applyHome(
     if (record === undefined) return { home, result: "left", reason: "missing" };
     const target = space === "" ? record.space : space;
     if (record.space !== target) return { home, result: "left", reason: "other_space" };
-    let grant: string;
-    try {
-      grant = await access.grant(home, target);
-    } catch (error) {
-      return { home, result: "failed", reason: grantReason(error) };
-    }
-    if (record.grant !== grant) putRecord(input.stateDir, input.platform, { ...record, grant });
-    return { home, result: "unchanged", access: "on" };
+    return giveAccess(input, home, record, target, access, true);
   }
   if (view.state === "refused")
     return { home, result: "left", reason: view.refusal ?? "unreadable" };
@@ -1503,12 +1493,29 @@ export async function applyHome(
 
   const written = await writeEntry(input, view, space, change);
   if (!("entry" in written)) return { home, ...written, access: "off" };
-  const record = written;
+  return giveAccess(input, home, written, space, access, false);
+}
+
+/**
+ * Gives a home whose entry is in its file its access, for a new install and a registered home
+ * alike: the entry is read and must be the one setup intended, the access is asked for, the file is
+ * read once more after the service's answer, and the record says `applied` with the row. Anything
+ * else takes it all back (undo). `registered`: the home was registered before this apply, so it may
+ * have access already, and a row the service refuses leaves that as it was.
+ */
+async function giveAccess(
+  input: SetupInput,
+  home: AgentHome,
+  record: HomeRecord,
+  space: string,
+  access: Access,
+  registered: boolean,
+): Promise<Outcome> {
   // The entry as setup intended it, read back from its place: anything else there is not its own.
   const placed = entryNow(home, record);
   if (placed.whose !== "own") {
     return undo(input, home, record, access, placed.reason, {
-      given: false,
+      given: registered,
       readable: placed.whose !== "unchecked",
     });
   }
@@ -1516,6 +1523,7 @@ export async function applyHome(
   try {
     grant = await access.grant(home, space);
   } catch (error) {
+    if (registered) return { home, result: "failed", reason: grantReason(error) };
     // A row the service made before its answer was lost is taken back too.
     return undo(input, home, record, access, grantReason(error));
   }
@@ -1525,12 +1533,14 @@ export async function applyHome(
       readable: after.whose !== "unchecked",
     });
   }
-  try {
-    putRecord(input.stateDir, input.platform, { ...record, state: "applied", grant });
-  } catch {
-    return undo(input, home, record, access, "state_unwritable");
+  if (record.state !== "applied" || record.grant !== grant) {
+    try {
+      putRecord(input.stateDir, input.platform, { ...record, state: "applied", grant });
+    } catch {
+      return undo(input, home, record, access, "state_unwritable");
+    }
   }
-  return { home, result: "applied", access: "on" };
+  return { home, result: registered ? "unchanged" : "applied", access: "on" };
 }
 
 /**
@@ -1554,7 +1564,8 @@ function entryNow(
  * access goes (when it may have been given), then the entry when a read shows it is still setup's
  * own. After a read that failed (`readable` false) the file is not touched: the record stays
  * `removing`, and the next run takes the entry out. A record that cannot be written stays as it
- * was, which the next run finishes as a removal all the same.
+ * was: an unfinished one the next run finishes as a removal all the same, a registered home's stays
+ * registered with its access off until the person asks again.
  */
 async function undo(
   input: SetupInput,

@@ -462,6 +462,81 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
+    "giving a registered home its access back checks its entry as a new install does: before the grant, after it, and when the record cannot be written",
+    async () => {
+      for (const a of ADAPTERS) {
+        for (const event of [
+          "a save before the grant changes the entry",
+          "a save during the grant changes the entry",
+          "the record cannot be written",
+        ] as const) {
+          const what = `${a.app}: ${event}`;
+          const w = await world();
+          const file = a.file(w);
+          seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
+          let armed = false;
+          let saved = "";
+          const change = () => {
+            const text = readFileSync(file, "utf8");
+            saved =
+              a.format === "json"
+                ? text.replace(`"args": [`, `"env": {"PERSON": "1"},\n      "args": [`)
+                : `${text}tool_timeout_sec = 99\n`;
+            writeFileSync(file, saved);
+          };
+          const rows = keptRows((verb) => {
+            if (armed && verb === "grant" && event === "a save during the grant changes the entry")
+              change();
+          });
+          const first = await viewOf(w, a);
+          const [item] = planOf(w.input, [first], SPACE);
+          expect((await applyHome(w.input, first, SPACE, rows, item?.change)).result).toBe(
+            "applied",
+          );
+          // The "off until asked" row: registered, and its access gone.
+          await rows.revoke(first.home);
+          const view = await viewOf(w, a);
+          expect(view.state, what).toBe("registered");
+          rows.asked.length = 0;
+          armed = true;
+          if (event === "a save before the grant changes the entry") change();
+          const restore =
+            event === "the record cannot be written" ? unwritable(recordPath(w)) : null;
+          let outcome;
+          try {
+            outcome = await applyHome(w.input, view, "", rows);
+          } finally {
+            restore?.();
+          }
+          expect(outcome, what).toMatchObject({ result: "failed", access: "off" });
+          expect(rows.live, what).toEqual([]);
+          if (event === "the record cannot be written") {
+            expect(outcome.reason, what).toBe("state_unwritable");
+            expect(
+              rows.asked.map((x) => x.verb),
+              what,
+            ).toEqual(["grant", "revoke"]);
+          } else {
+            expect(outcome.reason, what).toBe("changed_meanwhile");
+            // The person's save stays, and is theirs from then on.
+            expect(readFileSync(file, "utf8"), what).toBe(saved);
+            expect(readRecords(w.input.stateDir), what).toEqual([]);
+            expect(
+              rows.asked.map((x) => x.verb),
+              what,
+            ).toEqual(
+              event === "a save before the grant changes the entry"
+                ? ["revoke"]
+                : ["grant", "revoke"],
+            );
+          }
+        }
+      }
+    },
+    SLOW,
+  );
+
+  test(
     "a read that fails once right after the entry is written: access stays off, the record stays to take the entry out, and the next run does",
     async () => {
       for (const a of ADAPTERS) {
