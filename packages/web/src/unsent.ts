@@ -180,13 +180,29 @@ export interface KeptTitle {
 
 const TAB_NAME = /^[a-z0-9]{1,16}$/u;
 
-/** This tab's name for its titles: kept for the tab, so its reload finds them again. */
+/**
+ * This tab's name for its titles and its refused edits: its reload finds them again. A browser
+ * copies a tab's storage into a duplicate of it, so the name is out of that storage while the page
+ * lives and goes back only as the page leaves: a copy finds none and is a tab of its own, which
+ * never takes the original's words for its own.
+ */
 const TAB = ((): string => {
   const known = tabKept.read("tab");
-  if (known !== undefined && TAB_NAME.test(known)) return known;
-  const made = Math.random().toString(36).slice(2, 12) || "tab";
-  tabKept.keep("tab", made);
-  return made;
+  const name =
+    known !== undefined && TAB_NAME.test(known)
+      ? known
+      : Math.random().toString(36).slice(2, 12) || "tab";
+  tabKept.keep("tab", undefined);
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", () => {
+      tabKept.keep("tab", name);
+    });
+    // Back from the back-forward cache, the page lives on.
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted) tabKept.keep("tab", undefined);
+    });
+  }
+  return name;
 })();
 
 function titleOf(value: unknown): TitleDraft | undefined {

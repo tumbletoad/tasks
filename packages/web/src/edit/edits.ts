@@ -506,6 +506,8 @@ export class Edits {
   >();
   #marks = 0;
   #toasts = 0;
+  /** Kept edits let go elsewhere while they are sent again from here: a refusal keeps none. */
+  readonly #letGo = new Set<Unsaved>();
 
   constructor(deps: EditDeps) {
     this.#deps = deps;
@@ -518,6 +520,7 @@ export class Edits {
     // Let go in another tab or at the foot of the Trash: the line goes here too, if it still shows.
     deps.keeper?.onGone((line) => {
       if (this.unsaved(line.task, line.field) === line) this.#forget(line.task, line.field);
+      else if ([...this.#state.retrying.values()].includes(line)) this.#letGo.add(line);
     });
     deps.onChanges(({ changes }) => {
       this.#heard(changes);
@@ -724,6 +727,7 @@ export class Edits {
     void decided.then(() => {
       const retrying = new Map(this.#state.retrying);
       for (const [key, line] of keys) if (retrying.get(key) === line) retrying.delete(key);
+      for (const line of lines) this.#letGo.delete(line);
       this.#set({ ...this.#state, retrying });
     });
   }
@@ -1631,11 +1635,21 @@ export class Edits {
     // of one field drops only its own part.
     const next = new Map(this.#state.unsaved);
     const lines = new Map<Change, Unsaved>();
+    const sentAgain = (change: Change) =>
+      retried.find((line) => line.change.fields.some((f) => change.fields.includes(f)));
+    // Discarded elsewhere while it was on its way: the person let those words go.
+    const discarded = (change: Change) => {
+      const before = sentAgain(change);
+      return before !== undefined && this.#letGo.has(before);
+    };
+    if (parts.length > 0 && parts.every(discarded)) {
+      say(undefined);
+      return lines;
+    }
+    parts = parts.filter((change) => !discarded(change));
     for (const change of parts) {
       const conflict = conflictOf(change);
-      const before = retried.find((line) =>
-        line.change.fields.some((f) => change.fields.includes(f)),
-      );
+      const before = sentAgain(change);
       const base = before === undefined ? seen : before.base;
       const unsaved: Unsaved = {
         id: before?.id ?? crypto.randomUUID(),

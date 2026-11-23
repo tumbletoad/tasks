@@ -1713,6 +1713,41 @@ describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives 
     expect(w.lastToast()?.action).toBeUndefined();
   });
 
+  test("a kept edit discarded in another tab while it is sent again from here stays gone when that request is refused", async () => {
+    let gone: (unsaved: Unsaved) => void = () => undefined;
+    let held: readonly Unsaved[] = [];
+    const keeper: Keeper = {
+      load: () => [],
+      save: (unsaved) => {
+        held = [...new Set(unsaved.values())];
+      },
+      onGone: (listener) => {
+        gone = listener;
+        return () => undefined;
+      },
+    };
+    const w = new World([task(1)], keeper);
+    w.answer("task.update", () => {
+      throw new Error("network");
+    });
+    w.edits.edit(task(1), titleChange("Oil the gate"), { base: w.asOf(10) });
+    await flush();
+    const line = w.edits.unsaved("t_00001", "title");
+    if (line === undefined) throw new Error("the refused edit was not kept");
+    hanging(w, "task.update");
+    w.edits.apply("t_00001", "title");
+    await flush();
+    expect(w.edits.sendingKept(line.id)).toBe(true);
+    expect(held).toEqual([line]);
+    // The other tab's Discard arrives while the request is on its way, and no answer comes.
+    gone(line);
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(w.edits.unsaved("t_00001", "title")).toBeUndefined();
+    expect(held).toEqual([]);
+    expect(w.lastToast()).toBeUndefined();
+  });
+
   test("a late refusal keeps the person's newer choices: a discarded value stays gone, a newer edit stands, and a newer toast stays", async () => {
     const w = new World([task(1), task(2)]);
     const one = hanging(w, "task.update");
