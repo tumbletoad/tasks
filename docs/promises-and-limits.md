@@ -60,8 +60,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A backup that is called verified has passed a trial restore. So has every backup you make with
   `ttasks space backup`.
 - While a space is open for changes, TTasks backs it up once a day. It keeps the backups of seven
-  recent days and four recent weeks, and removes older scheduled ones. Backups you make by hand
-  stay until you remove them.
+  recent days and four recent weeks, and removes older daily ones. Backups you make by hand, and
+  the one taken before an upgrade, stay until you remove them.
+- A backup whose `.json` beside it went missing is kept: `ttasks space backups` lists it as
+  `missing_sidecar`, and it restores again once its `.json` is back.
 - When a daily backup fails, or the newest backup does not pass a trial restore, `ttasks doctor`,
   `ttasks space list` and the page's space switcher say so and what to do, until a backup succeeds
   again.

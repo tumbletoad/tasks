@@ -3,18 +3,21 @@
 // decompress anything, and it verifies nothing: a restore checks the backup in full before it uses
 // it, and retention keeps the newest backup that a trial restore verified (verifyBackup).
 //
-// Files the listing does not recognise are never touched. A crash leaves two kinds of LEFTOVERS,
-// which the listing names and removeBackupLeftovers deletes: a backup's own temporary files, by
-// their exact names (isBackupTemporary), and a `.db.gz` whose sidecar was never written. Both are
-// regular files: a folder or a link is never a leftover. A leftover is removed only once it has
-// not changed for an hour: a younger one may belong to a backup in progress, in this process or
-// in another (a backups folder that two spaces share), whose files look exactly the same. A
-// running backup refreshes its files' times well within that hour (backup.ts). The age is no lock:
-// A1 3.18 names the window that remains, and M1.08 cleans only folders it alone writes.
+// Files the listing does not recognise are never touched. LEFTOVERS are only a backup's own
+// temporary files, by their exact names (isBackupTemporary), which a crash can leave and
+// removeBackupLeftovers deletes. A `.db.gz` without its sidecar is listed as a backup in the state
+// `missing_sidecar`, never as a leftover: a crash between the publication of the two files leaves
+// one, and so does a person who copied or moved the pair apart, and the two cannot be told apart.
+// It holds the whole database, so it stays for a person. A leftover is a regular file, never a
+// folder or a link, and is removed only once it has not changed for an hour: a younger one may
+// belong to a backup in progress, in this process or in another (a backups folder that two spaces
+// share), whose files look exactly the same. A running backup refreshes its files' times well
+// within that hour (backup.ts). The age is no lock: A1 3.18 names the window that remains, and
+// M1.08 cleans only folders it alone writes.
 //
 // A backup's two files are looked up by their paths, as a restore looks them up, not matched by the
 // names the folder lists: on a file system that ignores case, `X.JSON` is the sidecar of `X.db.gz`
-// for a restore, so it must be for the listing too, or cleanup would delete restorable data.
+// for a restore, so it must be for the listing too.
 import { lstatSync, readdirSync, rmSync, type Dirent, type Stats } from "node:fs";
 import { join } from "node:path";
 import { errnoCode, fsCall, fsError } from "../files.ts";
@@ -41,10 +44,14 @@ export type ListedState =
   /** The `.db.gz` differs in size from what the sidecar records. */
   | "size_mismatch"
   /** The sidecar is not a regular file, too large, unreadable as a sidecar, or names another backup. */
-  | "invalid_sidecar";
+  | "invalid_sidecar"
+  /** The `.db.gz` is there without a sidecar: whose it is, and whether it is whole, is not known. */
+  | "missing_sidecar";
 
 export interface ListedBackup {
   name: string;
+  /** When the backup began, by its name: known also when its sidecar is not. */
+  createdAt: number;
   /** The `.db.gz` file (it may be missing: see `state`). */
   file: string;
   sidecarFile: string;
@@ -57,7 +64,7 @@ export interface BackupListing {
   folder: string;
   /** Newest first, by the time each backup began. */
   backups: ListedBackup[];
-  /** Names of files a crash left: a backup's temporary files and `.db.gz` files without a sidecar. */
+  /** Names of a backup's temporary files: a crash left them, or a backup is writing them now. */
   leftovers: string[];
 }
 
@@ -102,9 +109,12 @@ export function listBackups(
     const file = join(backupDir, `${base}${DATA_SUFFIX}`);
     const sidecarFile = join(backupDir, `${base}${SIDECAR_SUFFIX}`);
     const data = look(file);
+    const listed = { name: base, createdAt: parts.createdAt, file, sidecarFile };
     if (look(sidecarFile) === undefined) {
-      // No sidecar under any name the file system matches: the data is a crash's leftover.
-      if (data?.isFile() === true) leftovers.push(`${base}${DATA_SUFFIX}`);
+      // No sidecar under any name the file system matches.
+      if (data?.isFile() === true) {
+        backups.push({ ...listed, state: "missing_sidecar", sidecar: undefined });
+      }
       continue;
     }
     const read = readSidecar(sidecarFile, policy.maxOtherFileBytes);
@@ -114,12 +124,11 @@ export function listBackups(
     if (sidecar === undefined) state = "invalid_sidecar";
     else if (data?.isFile() !== true) state = "missing_data";
     else state = data.size === sidecar.compressed_size ? "ok" : "size_mismatch";
-    backups.push({ name: base, file, sidecarFile, state, sidecar });
+    backups.push({ ...listed, state, sidecar });
   }
-  backups.sort((a, b) => {
-    const at = (x: ListedBackup): number => parseBackupName(x.name)?.createdAt ?? 0;
-    return at(b) - at(a) || (a.name < b.name ? 1 : a.name > b.name ? -1 : 0);
-  });
+  backups.sort(
+    (a, b) => b.createdAt - a.createdAt || (a.name < b.name ? 1 : a.name > b.name ? -1 : 0),
+  );
   return { folder: backupDir, backups, leftovers: leftovers.sort() };
 }
 
@@ -129,8 +138,8 @@ export const LEFTOVER_MIN_AGE_MS = 3_600_000;
 /**
  * Removes the leftovers a listing found that have not changed for `minAgeMs` (default an hour)
  * before `now`. Run it at the service's start (A1 3.7) and before a daily backup. Each is looked
- * at again first: only a regular file goes, never a folder or a link's target, and a `.db.gz`
- * stays when its sidecar has appeared since the listing. Returns the names it removed.
+ * at again first: only a backup's own temporary file goes, as a regular file, never a folder or a
+ * link's target. Returns the names it removed.
  */
 export function removeBackupLeftovers(
   listing: BackupListing,
@@ -143,11 +152,8 @@ export function removeBackupLeftovers(
     const path = join(listing.folder, name);
     try {
       const stats = look(path);
-      if (stats?.isFile() !== true || now - stats.mtimeMs < minAge) continue;
-      if (name.endsWith(DATA_SUFFIX) && !isBackupTemporary(name)) {
-        const sidecar = `${name.slice(0, -DATA_SUFFIX.length)}${SIDECAR_SUFFIX}`;
-        if (look(join(listing.folder, sidecar)) !== undefined) continue;
-      }
+      if (!isBackupTemporary(name) || stats?.isFile() !== true) continue;
+      if (now - stats.mtimeMs < minAge) continue;
       // Not recursive: a leftover is one file.
       rmSync(path, { force: true });
       removed.push(name);

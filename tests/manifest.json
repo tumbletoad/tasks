@@ -536,7 +536,7 @@
     },
     {
       "id": "A1.5.backup.retention",
-      "title": "Daily backups are due after 03:00 local time or at start after 24 hours, a future-dated one aside; retention of one space's backups keeps 7 daily, 4 weekly, pre-migration backups for 30 days, manual ones, the newest complete backup, and never the newest that passes every check a restore makes; it removes only the regular files it listed",
+      "title": "Daily backups are due after 03:00 local time or at start after 24 hours, a future-dated one aside; retention of one space's backups keeps 7 daily, 4 weekly, every backup that is not a daily one (manual, pre-migration, pre-import), the newest complete backup, and never the newest that passes every check a restore makes; it removes only the regular files it listed",
       "source": "A1 3.18",
       "owner": "M1",
       "kind": "ci",
@@ -576,7 +576,7 @@
     },
     {
       "id": "A1.5.backup.rotation",
-      "title": "Rotation removes only what A1's retention allows: a property test over random backup sets, clocks and offsets never removes a manual backup, the newest complete one, a pre-migration one under 30 days, another space's or a damaged one; on real files manual backups, the newest verified one and a damaged newer one stay",
+      "title": "Rotation removes only what A1's retention allows: a property test over random backup sets, clocks and offsets removes only daily backups, never the newest complete one, another space's or a damaged one; on real files manual backups, the newest verified one and a damaged newer one stay",
       "source": "A1 3.18, A7 3.10 M3.07",
       "owner": "M3",
       "kind": "ci",
@@ -658,6 +658,14 @@
       "id": "A1.5.backup.failure-shown",
       "title": "A failed daily backup, or a newest backup that does not restore, is shown by doctor and the space list with its cause and what to run, through a running service, and goes when a backup succeeds again",
       "source": "A1 3.18, A2 3.13",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.kept-unknown",
+      "title": "The upkeep removes only a backup's own temporary files: a backup's data whose sidecar is missing stays, listed as such, and restores once its sidecar is back; a backup taken before an upgrade stays until the person removes it",
+      "source": "A1 3.18",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

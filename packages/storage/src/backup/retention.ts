@@ -5,9 +5,9 @@
 // - Daily: at the first idle minute after 03:00 local time, or at start when the last daily backup
 //   is older than 24 hours.
 // - Kept: the newest daily backup of each of the 7 most recent local days that have one, the newest
-//   daily backup of each of the 4 most recent local weeks (Monday to Sunday) that have one,
-//   pre-migration and pre-import backups for 30 days, manual backups always (the person asked for
-//   them), and never the newest complete backup of any kind.
+//   daily backup of each of the 4 most recent local weeks (Monday to Sunday) that have one, and
+//   never the newest complete backup. Only daily backups are ever removed: a manual backup is the
+//   person's, and a pre-migration or pre-import backup may be the last one an older build reads.
 // - Only complete backups (state "ok") of THIS space take part. A backups folder can hold another
 //   space's backups (a machine-local backup.dir set to one folder twice): those are neither kept,
 //   removed nor counted. A backup the listing could not verify is never removed here: a person
@@ -44,7 +44,6 @@ const DAY = 24 * HOUR;
 export interface RetentionRules {
   daily: number;
   weekly: number;
-  preMigrateDays: number;
   /** The local hour after which the daily backup is due. */
   dailyHour: number;
 }
@@ -53,7 +52,6 @@ export interface RetentionRules {
 export const RETENTION: Readonly<RetentionRules> = Object.freeze({
   daily: 7,
   weekly: 4,
-  preMigrateDays: 30,
   dailyHour: 3,
 });
 
@@ -146,16 +144,7 @@ export function planRetention(
   };
   pickNewestPer((ms) => localDay(ms, offset), rules.daily);
   pickNewestPer((ms) => localWeek(ms, offset), rules.weekly);
-  for (const b of backups) {
-    if (b.sidecar?.kind === "manual") keep.add(b.name);
-    // A barrier backup, before a migration or an import, is kept as long (A1 3.18).
-    if (
-      (b.sidecar?.kind === "pre-migrate" || b.sidecar?.kind === "pre-import") &&
-      clock.now - createdAt(b) < rules.preMigrateDays * DAY
-    ) {
-      keep.add(b.name);
-    }
-  }
+  for (const b of backups) if (b.sidecar?.kind !== "daily") keep.add(b.name);
   return {
     spaceId: options.spaceId,
     keep: all.filter((b) => keep.has(b.name)).map((b) => b.name),
@@ -311,7 +300,7 @@ export async function applyRetentionWith(
     try {
       rmSync(dataFile, { force: true });
     } catch {
-      // Without its sidecar the data is a leftover now, which the next cleanup removes.
+      // Without its sidecar the data is listed as `missing_sidecar` now, for a person.
     }
     removed.push(b.name);
   }

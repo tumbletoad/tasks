@@ -57,20 +57,20 @@ try {
       ? undefined
       : listing.backups.find((b) => b.name === retention.verified)?.sidecar?.created_at;
   // Backups of the space newer than the one that restores whose files are no longer whole (data
-  // missing or of another size): retention passes them over, and they do not restore either.
+  // missing or of another size, a sidecar missing or unreadable): retention passes them over, and
+  // they do not restore either. One without a sidecar that reads names no space: in the space's own
+  // folder it is the space's, in a backup.dir that other spaces may share it is nobody's known.
+  const ownFolder = job.backupDir === undefined;
   const broken =
     retention === undefined
       ? 0
-      : listing.backups.filter((b) => {
-          const at = b.sidecar?.created_at;
-          return (
+      : listing.backups.filter(
+          (b) =>
             b.state !== "ok" &&
-            b.sidecar?.space_id === job.spaceId &&
-            at !== undefined &&
-            at > (verifiedAt ?? 0) &&
-            at <= after.now
-          );
-        }).length;
+            (b.sidecar === undefined ? ownFolder : b.sidecar.space_id === job.spaceId) &&
+            b.createdAt > (verifiedAt ?? 0) &&
+            b.createdAt <= after.now,
+        ).length;
   reply({
     ok: true,
     report: {

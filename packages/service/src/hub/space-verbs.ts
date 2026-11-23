@@ -718,11 +718,11 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
           backups: listing.backups.map((b) => ({
             name: b.name,
             state: b.state,
+            created_at: new Date(b.createdAt).toISOString(),
             ...(b.sidecar === undefined
               ? {}
               : {
                   kind: b.sidecar.kind,
-                  created_at: new Date(b.sidecar.created_at).toISOString(),
                   epoch: b.sidecar.epoch,
                   seq: b.sidecar.seq,
                   size: b.sidecar.size,

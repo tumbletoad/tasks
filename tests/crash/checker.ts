@@ -59,7 +59,7 @@
 //   after every round.
 // - backup-complete-or-absent: every backup with a sidecar is complete and verifies as a restore
 //   would (again whenever its bytes change), every backup that completed is still there, and only
-//   leftovers are incomplete.
+//   leftovers and a data file whose sidecar was never published are incomplete.
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -1363,6 +1363,8 @@ async function checkBackups(
   for (const folder of folders) {
     try {
       for (const backup of listBackups(folder).backups) {
+        // A kill between the publication of the data and of its sidecar leaves this.
+        if (backup.state === "missing_sidecar") continue;
         if (backup.state !== "ok" || backup.sidecar === undefined) {
           found.add("backup-complete-or-absent", `a backup is ${backup.state}`);
           continue;

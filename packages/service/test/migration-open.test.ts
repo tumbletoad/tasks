@@ -567,7 +567,7 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       expect(added).toHaveProperty("tasks");
       const listed = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
       expect(listed[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.5", backup });
-      // Past the time retention keeps a barrier backup, the list no longer names it.
+      // A month later the backup from before is still there, and still named: retention keeps it.
       recordMigration(
         stateOf(home),
         id,
@@ -575,8 +575,7 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
         new Date(Date.now() - 31 * 86_400_000),
       );
       const later = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
-      expect(later[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.5" });
-      expect(later[0]?.["migrated"]).not.toHaveProperty("backup");
+      expect(later[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.5", backup });
       await stop(service);
       const after = await dbState(space.folder);
       expect(after.revision).toEqual({ major: 0, minor: 5 });

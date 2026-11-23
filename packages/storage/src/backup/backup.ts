@@ -25,8 +25,9 @@
 // Crash windows (each leaves the space untouched, because a backup only reads it):
 // - Before the data's publication: temporary files `.backup.tmp-*` only. A listing reports them as
 //   leftovers, and removeBackupLeftovers deletes them when no backup runs (A1 3.7: at start).
-// - After it, before the sidecar's: a `.db.gz` without its sidecar. It is never listed as a
-//   backup, only as a leftover.
+// - After it, before the sidecar's: a `.db.gz` without its sidecar. It is never a complete
+//   backup: the listing names it `missing_sidecar` and keeps it, because a pair a person moved
+//   apart looks the same.
 // - After the sidecar's: a complete backup. Its folder fsync makes it durable.
 // A failure (not a crash) before the sidecar is published removes the `.db.gz` while it is still
 // this backup's own file. Once the sidecar is published the pair is a backup like any other: a

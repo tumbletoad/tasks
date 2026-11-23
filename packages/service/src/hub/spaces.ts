@@ -92,7 +92,6 @@ import {
   LATEST_REVISION,
   readManifest,
   RANGES,
-  RETENTION,
   SpaceLockedElsewhere,
   StorageError,
   StorageWorker,
@@ -671,18 +670,11 @@ export class SpaceManager {
    * (status, `ttasks space`).
    */
   described(): SpaceView[] {
-    const now = (this.#options.now?.() ?? new Date()).getTime();
     return this.#spaces.map((space) => {
-      const last = readSpaceSettings(
+      const migrated = readSpaceSettings(
         this.#options.settingsDir,
         space.id ?? space.registered,
       ).lastMigration;
-      // Retention keeps a barrier backup only so long: past that it is not named as one to go to.
-      const migrated =
-        last?.backup !== undefined &&
-        now - Date.parse(last.at) >= RETENTION.preMigrateDays * 86_400_000
-          ? { from: last.from, to: last.to, at: last.at }
-          : last;
       return {
         ...space.view(),
         registered: space.registered,
