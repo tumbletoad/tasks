@@ -211,21 +211,38 @@ export async function folderState(
   return found === true ? "here" : "missing";
 }
 
-/** Runs a look at the disk, or answers `not_answering` once it took longer than `ms`. */
+/** How many ticks a look's limit is counted in: a stall of this process counts as one of them. */
+const TICKS = 20;
+
+/**
+ * Runs a look at the disk, or answers `not_answering` once it had `ms` of the time this process
+ * was running, and aborts the signal it was given. The limit is for the disk: a stall of this
+ * process, however long, counts as one tick of `ms / 20`, so a look of several steps still gets
+ * its whole limit after the service was held up between them.
+ */
 export async function bounded<T>(
-  look: () => Promise<T>,
+  look: (signal: AbortSignal) => Promise<T>,
   ms = LOOK_MS,
 ): Promise<T | "not_answering"> {
+  const ticks = Math.max(1, Math.min(TICKS, Math.floor(ms)));
+  const giveUp = new AbortController();
   let timer: NodeJS.Timeout | undefined;
   const late = new Promise<"not_answering">((resolve) => {
-    timer = setTimeout(() => {
-      resolve("not_answering");
-    }, ms);
+    let left = ticks;
+    timer = setInterval(
+      () => {
+        left -= 1;
+        if (left > 0) return;
+        giveUp.abort();
+        resolve("not_answering");
+      },
+      Math.ceil(ms / ticks),
+    );
   });
   try {
-    return await Promise.race([look(), late]);
+    return await Promise.race([look(giveUp.signal), late]);
   } finally {
-    clearTimeout(timer);
+    clearInterval(timer);
   }
 }
 

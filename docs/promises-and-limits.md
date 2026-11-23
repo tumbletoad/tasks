@@ -179,9 +179,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   its project when its marker is gone or now names only other projects, tasks or spaces. Open says
   so, and you choose to use the folder, which marks it, or to give the task another folder. A
   folder this machine never marked for it is marked at its next Open without a question, and so
-  is the very folder that was marked when only its marker went (`git clean -x`). A folder made
-  again at the same path, such as a fresh clone, asks, and so does any folder whose marker went on
-  a file system that records no creation time.
+  is the very folder that was marked when only its marker went (`git clean -x`) or changed. A
+  folder made again at the same path, such as a fresh clone, asks, also when the machine was too
+  busy to write the marker when the folder was set, and so does any folder whose marker went on a
+  file system that records no creation time. A marker write given up after two seconds changes
+  nothing in the folder afterwards.
 - Opening with a particular account uses that account's settings of the agent app.
 - TTasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.
@@ -339,4 +341,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A folder on a drive or share that does not answer is refused after a few seconds, but the look
   at it keeps one of TTasks's file threads busy until the system gives up.
 - A folder TTasks cannot write to, such as a read-only one, gets no marker and opens as before,
-  without that check, and so does a folder whose marker cannot be read within two seconds.
+  without that check, and so does a folder whose marker cannot be read within two seconds. When
+  Open asked about such a folder and you chose to use it, it does not ask again while it stays
+  that folder.
+- On a file system that records no creation time, a folder whose marker could not be written
+  within two seconds when it was set is not protected: its next Open marks whatever folder is at
+  the path then.
