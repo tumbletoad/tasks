@@ -407,13 +407,14 @@ test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is fini
 });
 
 test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a task, and Undo takes it back", () => {
-  test("a typo takes the area it is close to; a name no area has is offered as a new area; Enter makes it and moves the task there; Ctrl+Z moves it back, and again takes the area away", async ({
+  test("a typo takes the live area it is close to, never an archived one; a new name close to an area is one Down away; Enter makes it and moves the task there; Ctrl+Z moves it back, and again takes the area away", async ({
     page,
     world,
   }) => {
     const tag = test.info().project.name;
-    const garden = `Garden ${tag}`;
     const seedlings = `Seedlings ${tag}`;
+    // A new name close to an existing one, meant as a new area.
+    const garden = `Seedling ${tag}`;
     await world.op(world.mira.id, "group.manage", { action: "create", path: seedlings });
     const [ref] = await addTasks(world, [{ title: `Plant the tulips (${tag})`, area: "home" }]);
     if (ref === undefined) throw new Error("the task was not added");
@@ -458,11 +459,13 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await expect(toast(page)).toHaveText("Undone");
     await expect.poll(areaOf).toBe("Home");
 
-    // A new name: the only choice makes the area, and the task moves into it.
+    // A new name close to an area: the area comes first, the new one is the next choice down.
     await pill.focus();
     await page.keyboard.press("Enter");
     await page.keyboard.type(garden);
-    await expect(offer).toHaveText(`New area “${garden}”`);
+    await expect(page.getByRole("option").first()).toHaveText(seedlings);
+    await expect(page.getByRole("option").nth(1)).toHaveText(`New area “${garden}”`);
+    await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(toast(page)).toHaveText(`Moved to ${garden}`);
     await expect(toastAction(page)).toHaveText("Undo");
@@ -475,6 +478,23 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await expect.poll(areaOf).toBe("Home");
     await page.keyboard.press("Control+z");
     await expect(sidebarLink).toHaveCount(0, { timeout: SLOW_MS });
+
+    // The same typo once the area is archived: the archived area comes last, marked, and Enter
+    // makes the area typed.
+    const { as_of: base } = (await world.op(world.mira.id, "group.manage", {
+      action: "list",
+    })) as { as_of: string };
+    await world.op(world.mira.id, "group.manage", { action: "archive", path: seedlings, base });
+    await pill.focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type(typo);
+    const shelved = page.getByRole("option", { name: seedlings, exact: true });
+    await expect(shelved).toHaveAccessibleDescription("archived");
+    await expect(page.getByRole("option").first()).toHaveText(`New area “${typo}”`);
+    await expect(page.getByRole("option").last()).toHaveAccessibleName(seedlings);
+    await page.keyboard.press("Enter");
+    await expect(toast(page)).toHaveText(`Moved to ${typo}`);
+    await expect.poll(areaOf).toBe(typo);
     expect(await violations(page)).toEqual([]);
   });
 

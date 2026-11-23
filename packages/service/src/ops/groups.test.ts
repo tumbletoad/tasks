@@ -113,7 +113,12 @@ describe("[A3.3.4.add.names] names, typos and similar titles", () => {
     ];
     for (const [areas, name, expected] of table) {
       const groups: GroupNames = {
-        areas: areas.map(([title, slug], k) => ({ id: `a_${String(k + 1)}`, slug, title, area: null })),
+        areas: areas.map(([title, slug], k) => ({
+          id: `a_${String(k + 1)}`,
+          slug,
+          title,
+          area: null,
+        })),
         projects: [],
         aliases: [],
       };

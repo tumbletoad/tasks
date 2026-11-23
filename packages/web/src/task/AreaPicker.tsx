@@ -1,11 +1,11 @@
 // The area and project control (A5 3.7, 3.11): a pill button with the area's dot that opens a
 // type-ahead over the area tree. Typing filters the areas and their projects; the arrows move in
-// the list while focus stays in the field, Enter or a click moves the task. A name no area has is
-// offered as a new area, after any area whose name is close to it: the first choice is what Enter
-// takes, and a typo should land in the area meant, as it does when an agent files by name. Escape
-// closes, and focus returns to the pill. A task leaves its area only for another one: `task.update`
-// moves a task into an area or project, never out of every area.
-import { closeName, sameName } from "./areaNames.ts";
+// the list while focus stays in the field, Enter or a click moves the task. The first choice is
+// what Enter takes, so a live area whose name is close to what was typed comes first and a typo
+// lands in the area meant. A name no area has is offered as a new area below it, and archived areas
+// and projects come last, marked. Escape closes, and focus returns to the pill. A task leaves its
+// area only for another one: `task.update` moves a task into an area or project, never out of every
+// area.
 import { useContext, useMemo, useState } from "react";
 import {
   Autocomplete,
@@ -17,6 +17,7 @@ import {
   ListBoxItem,
   Popover,
   SearchField,
+  Text,
   useFilter,
 } from "react-aria-components";
 import { classes } from "../app/css.ts";
@@ -30,6 +31,7 @@ import { areaSlots } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
+import { closeName, sameName } from "./areaNames.ts";
 import css from "./Picker.module.css";
 
 const styles = classes(css, [
@@ -41,6 +43,7 @@ const styles = classes(css, [
   "list",
   "option",
   "dot",
+  "mark",
 ]);
 
 interface Choice {
@@ -49,6 +52,8 @@ interface Choice {
   readonly area: { readonly id: string; readonly title: string };
   readonly project?: { readonly id: string; readonly title: string };
   readonly slot: number;
+  /** An archived area, or a project archived or in an archived area. */
+  readonly archived?: boolean;
 }
 
 const byPosition = <T extends { position: string }>(a: T, b: T) =>
@@ -76,7 +81,8 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
     for (const area of [...state.areas.values()].sort(byPosition)) {
       const slot = slots.get(area.id) ?? 1;
       const a = { id: area.id, title: area.title };
-      out.push({ id: area.id, text: area.title, area: a, slot });
+      const shelved = area.lifecycle === "archived";
+      out.push({ id: area.id, text: area.title, area: a, slot, archived: shelved });
       for (const project of projects) {
         if (project.area_id !== area.id) continue;
         out.push({
@@ -85,6 +91,7 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
           area: a,
           project: { id: project.id, title: project.title },
           slot,
+          archived: shelved || project.lifecycle === "archived",
         });
       }
     }
@@ -93,15 +100,24 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
   // A slash would make the name an area and a project.
   const name = typed.replaceAll("/", " ").trim();
   const areas = [...state.areas.values()].sort(byPosition);
-  const same = name === "" ? [] : areas.filter((a) => sameName(a.title, name));
-  const close = name === "" ? [] : areas.filter((a) => closeName(a.title, name));
-  // The areas the name means come first, whatever the filter's spelling: the same name, then one
-  // close to it. A new area is offered only when no area has the name.
-  const meant = new Set([...same, ...close].map((a) => a.id));
+  // The areas the name likely means are shown whatever the filter's spelling: the same name, then a
+  // close one. The live ones come first; an archived one stays with the archived ones, last. A new
+  // area is offered unless an area has the name, since making it would give that one.
+  const near =
+    name === ""
+      ? []
+      : [
+          ...areas.filter((a) => sameName(a.title, name)),
+          ...areas.filter((a) => closeName(a.title, name)),
+        ];
+  const meant = near.filter((a) => a.lifecycle !== "archived");
+  const first = new Set(meant.map((a) => a.id));
+  const listed = new Set(near.map((a) => a.id));
+  const named = name !== "" && areas.some((a) => sameName(a.title, name));
   const items: readonly Choice[] = [
-    ...[...same, ...close].flatMap((a) => choices.find((c) => c.id === a.id) ?? []),
-    ...choices.filter((c) => !meant.has(c.id)),
-    ...(name === "" || same.length > 0
+    ...meant.flatMap((a) => choices.find((c) => c.id === a.id) ?? []),
+    ...choices.filter((c) => c.archived !== true && !first.has(c.id)),
+    ...(name === "" || named
       ? []
       : [
           {
@@ -111,9 +127,10 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
             slot: 0,
           },
         ]),
+    ...choices.filter((c) => c.archived === true),
   ];
   const filter = (text: string, input: string, node: { readonly key: unknown }) =>
-    node.key === NEW_AREA || meant.has(String(node.key)) || contains(text, input);
+    node.key === NEW_AREA || listed.has(String(node.key)) || contains(text, input);
 
   /**
    * Makes the area as the command line does, then moves the task into it from what the person saw
@@ -217,7 +234,13 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
                       aria-hidden="true"
                     />
                   )}
-                  <span dir="auto">{choice.text}</span>
+                  <Text slot="label" dir="auto">
+                    {choice.text}
+                  </Text>
+                  {/* Always there, so an area archived while the list is open is described too. */}
+                  <Text slot="description" className={styles.mark}>
+                    {choice.archived === true ? t("area.archived") : ""}
+                  </Text>
                 </ListBoxItem>
               )}
             </ListBox>

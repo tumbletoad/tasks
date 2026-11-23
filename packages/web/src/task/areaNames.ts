@@ -8,10 +8,7 @@ const key = (name: string): string =>
 
 /** A name without its accents too, for a guess. */
 const loose = (name: string): string =>
-  key(name)
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/gu, "")
-    .normalize("NFC");
+  key(name).normalize("NFKD").replace(/[̀-ͯ]/gu, "").normalize("NFC");
 
 /** Whether an area of name `name` is the area named `typed`: making it gives that area back. */
 export const sameName = (name: string, typed: string): boolean => key(name) === key(typed);
