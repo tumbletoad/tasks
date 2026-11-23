@@ -5,7 +5,7 @@
 // input method composes; the top field, a task's draft and a field edit that was not saved are
 // back after a reload, also with a second tab open, and nothing is left behind once saved.
 import { expect, type Page, type Request } from "@playwright/test";
-import { PRODUCT_NAME, PRODUCT_ID } from "../../packages/brand/src/index.ts";
+import { CLI_NAME, PRODUCT_NAME, PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import {
@@ -435,6 +435,44 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
       another: true,
     });
     world.release(ref);
+  });
+});
+
+test.describe("[A7.3.12.launch.e2e.left-out] An Open that could not carry what its instance sets says what it left out", () => {
+  test("the toast names the setting and the way that carries it, at 1,440 and 390 px without sideways scroll", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, { title: `Plan the garden (${tag})`, area: "home" });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await openTask(page, world, ref);
+    // The service's answer as a route that cannot carry the permission gives it: the launch is
+    // the real one, its receipt names what was left out.
+    await page.route("**/api/v1/op/launch.open", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      const answer = ("launch" in body ? body : body["result"]) as {
+        launch: Record<string, unknown>;
+      };
+      answer.launch["left_out"] = ["read-only"];
+      await route.fulfill({ response, json: body });
+    });
+    const said = `Opened in ${FAKE_INSTANCE.label} without your read-only setting, which this way of opening cannot carry. A terminal can, where one is set up: see ${CLI_NAME} doctor.`;
+    const open = stripOf(page, ref).getByRole("button", {
+      name: `Open in ${FAKE_INSTANCE.label}`,
+    });
+    await open.click();
+    await expect(toast(page)).toHaveText(said, { timeout: SLOW_MS });
+    await picture(page, "left-out-1440.png");
+    await page.unroute("**/api/v1/op/launch.open");
+    await page.setViewportSize({ width: 390, height: 900 });
+    await expect(toast(page)).toHaveText(said);
+    const scroll = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
+    await picture(page, "left-out-390.png");
   });
 });
 
