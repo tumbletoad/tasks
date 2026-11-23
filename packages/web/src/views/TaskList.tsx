@@ -61,7 +61,8 @@ const FRESH_MS = 1_200;
 const QUIET_MS = 2_000;
 /**
  * What a working run says changes nothing in its record, so the runs of a task with one are read
- * again this often: how long it has said nothing stays true.
+ * again this often: how long it has said nothing stays true. A failed read is tried again as often:
+ * what it would have brought may never be announced again.
  */
 const WORKING_REREAD_MS = 60_000;
 /** The waits before a failed read of busy is tried again, the last one repeating. */
@@ -71,6 +72,12 @@ const BUSY_RETRY_MS = [1_000, 2_000, 5_000, 15_000] as const;
  * The service answered with a refusal (the page's `Refused`, or the generated client's error, both
  * with a code): nothing was done. A lost reply, or the service's own failure, may follow a change.
  */
+function without(set: ReadonlySet<string>, item: string): ReadonlySet<string> {
+  const next = new Set(set);
+  next.delete(item);
+  return next;
+}
+
 function refusedBy(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const code = (error as Error & { code?: unknown }).code;
@@ -181,6 +188,8 @@ export function TaskList({
   /** The runs whose Stop is on its way, each with its version when Stop was pressed. */
   const [stops, setStops] = useState<ReadonlyMap<string, number>>(new Map());
   const runReads = useRef(new Latest());
+  /** The tasks whose last read of their runs failed. */
+  const [runsFailed, setRunsFailed] = useState<ReadonlySet<string>>(new Set());
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [announcement, setAnnouncement] = useState("");
   /** The URL's task, read with `task.get` because the live rows do not hold it. */
@@ -349,28 +358,33 @@ export function TaskList({
       api
         .runs(task)
         .then((list) => {
-          if (newest()) {
-            setRuns((known) => new Map(known).set(task, mergeRuns(known.get(task) ?? [], list)));
-          }
+          if (!newest()) return;
+          setRuns((known) => new Map(known).set(task, mergeRuns(known.get(task) ?? [], list)));
+          setRunsFailed((known) => (known.has(task) ? without(known, task) : known));
         })
         .catch((error: unknown) => {
           live.failed(error);
+          if (!newest()) return;
+          // The thread draws all the same, and says what it shows of the runs may be old.
           setRuns((known) => (known.has(task) ? known : new Map(known).set(task, [])));
+          setRunsFailed((known) => (known.has(task) ? known : new Set(known).add(task)));
         });
     },
     [api, live],
   );
 
-  // Keyed by which tasks have a working run, not by each read: a read of another task's runs must
-  // not start the minute again.
+  // Keyed by which tasks are read again, not by each read: a read of another task's runs must not
+  // start the minute again.
   const working = useMemo(
     () =>
       [...runs]
-        .filter(([, list]) => list.some((run) => run.state === "running"))
+        .filter(
+          ([task, list]) => runsFailed.has(task) || list.some((run) => run.state === "running"),
+        )
         .map(([task]) => task)
         .sort()
         .join(" "),
-    [runs],
+    [runs, runsFailed],
   );
   useEffect(() => {
     if (working === "") return;
@@ -1013,6 +1027,7 @@ export function TaskList({
       busy={busy.get(item.key)}
       runs={withStops(runs.get(item.key) ?? NO_RUNS, stops)}
       read={receipts.has(item.key) && runs.has(item.key)}
+      runsFailed={runsFailed.has(item.key)}
       ctx={item.finished && item.task.lifecycle !== "active" ? finishedCtx : ctx}
       expanded={expanded === item.key}
       current={place.current}

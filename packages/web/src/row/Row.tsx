@@ -105,6 +105,8 @@ export interface RowProps {
   readonly runs: readonly Run[];
   /** Whether the task's receipts and runs were read: until then its card's thread waits. */
   readonly read?: boolean;
+  /** The last read of its runs failed: the thread says so until a read goes through. */
+  readonly runsFailed?: boolean;
   readonly ctx: RowContext;
   readonly expanded: boolean;
   /** The row in the tab order (the roving tabindex). */
@@ -501,6 +503,7 @@ function RowView({
   busy,
   runs,
   read = true,
+  runsFailed = false,
   ctx,
   expanded,
   current,
@@ -781,6 +784,7 @@ function RowView({
             busy={busy}
             runs={runs}
             read={read}
+            runsFailed={runsFailed}
             instances={instances}
             actions={actions}
             refused={refused}

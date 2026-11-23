@@ -375,6 +375,7 @@
   "thread.older": "Older entries",
   "thread.loadingOlder": "Reading older entries…",
   "thread.olderFailed": "Older entries could not be read.",
+  "thread.runsFailed": "Its background runs could not be read just now, so what shows of them may be out of date. They are read again in a minute.",
   "thread.copy": "Copy",
   "thread.copyEntry": "Copy the entry by {who}",
   "thread.remove": "Remove",
