@@ -601,9 +601,27 @@ class FeedSocket {
       this.pump();
     } catch {
       if (generation !== this.#generation || this.#closed) return;
+      const id = found.id;
+      if (id !== undefined && this.#interrupted(id, reader)) {
+        // The space's close cut the read off (a claim, a restore in place): the subscription is
+        // made again once it has settled, and what the space is then decides what the tab is told.
+        this.#waiting = { ref: id, cursor, copy };
+        this.#space = id;
+        this.#hub.watch(this);
+        this.pump();
+        return;
+      }
       this.#hub.options.log({ ev: "http.feed_failed", stage: "snapshot" });
       await this.#send({ type: "error", code: "space_unavailable" }).catch(() => undefined);
     }
+  }
+
+  /**
+   * Whether a read through `reader` of the space `id` (its ID) was cut off by the space's close:
+   * the folder that serves it no longer reads through `reader`, or is being closed or opened again.
+   */
+  #interrupted(id: string, reader: unknown): boolean {
+    return copyOf(this.#hub.options.host.spaces(), id)?.reader !== reader || this.#settling(id);
   }
 
   #unsubscribe(): void {
@@ -680,7 +698,7 @@ class FeedSocket {
         if (this.#isClosed() || generation !== this.#generation) return;
         // A read the space's close interrupted (a claim, a restore in place, a close) says nothing
         // of what the space is now: the next poll reads that once it has settled.
-        if (copyOf(this.#hub.options.host.spaces(), spaceId)?.reader !== reader) return;
+        if (this.#interrupted(spaceId, reader)) return;
         this.#hub.options.log({ ev: "http.feed_failed", stage: "batch" });
         this.#unsubscribe();
         await this.#send({ type: "error", code: "space_unavailable" }).catch(() => undefined);
