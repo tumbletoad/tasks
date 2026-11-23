@@ -32,6 +32,7 @@ const task = (extra: Partial<TaskInput> = {}): TaskInput => ({
   context: "Dates are stored without zone.\n\nThey are converted twice.\n",
   lifecycle: "active",
   status: "waiting",
+  waitingOn: "Tomas",
   priority: 1,
   effort: "M",
   due: "2026-11-13",
@@ -42,8 +43,9 @@ const task = (extra: Partial<TaskInput> = {}): TaskInput => ({
   createdAt: DAY,
   completedAt: null,
   outcome: null,
+  dropped: null,
   labels: ["clinic"],
-  places: [{ machine: "mira-desktop", root: "work", path: "lumen/portal" }],
+  folders: [{ machine: "mira-desktop", path: "~/work/lumen/portal" }],
   notes: [
     { ordinal: 1, addressee: "self", author: "Mira Okafor", at: DAY, body: "Ask Tomas first." },
     {
@@ -133,13 +135,14 @@ describe("[A1.5.projection.render] what a task's file shows", () => {
         "ref: M-14",
         "id: t_0c71c0065aaaaaaaaaaaaaaaaa",
         "status: waiting",
+        "waiting_on: Tomas",
         "lifecycle: active",
         "priority: 1",
         "effort: M",
         "due: 2026-11-13",
         "area: lumen",
         "project: lumen-portal",
-        "place: mira-desktop:work/lumen/portal",
+        'folder: "mira-desktop:~/work/lumen/portal"',
         "version: 12",
         "seq: 15",
         "---",
@@ -205,7 +208,8 @@ describe("[A1.5.projection.render] what a task's file shows", () => {
         learnings: ["Store UTC plus the zone ID."],
         notes: [],
         log: [],
-        places: [],
+        folders: [],
+        waitingOn: null,
         due: null,
         effort: null,
       }),
@@ -243,7 +247,94 @@ describe("[A1.5.projection.render] what a task's file shows", () => {
       ].join("\n"),
     );
     expect(content).toContain("\neffort:\ndue:\n");
-    expect(content).toContain("\nplace:\n");
+    expect(content).toContain("\nfolder:\n");
+    expect(content).toContain("\nwaiting_on:\n");
+  });
+
+  test("an open task's outcome is an earlier one and follows the context; a finished task's is its outcome, however it was finished; a dropped task says why first", () => {
+    const earlier = { outcome: "Shipped in 2.3.", learnings: ["Store UTC plus the zone ID."] };
+    const reopened = renderTask(
+      SPACE,
+      task({ ...earlier, notes: [], log: [], sources: [] }),
+      "UTC",
+    );
+    expect(reopened.content.slice(reopened.content.indexOf("## "))).toBe(
+      [
+        "## Context",
+        "",
+        "```text",
+        "Dates are stored without zone.",
+        "",
+        "They are converted twice.",
+        "```",
+        "",
+        "## Earlier outcome",
+        "",
+        "Shipped in 2.3.",
+        "",
+        "## Earlier learnings",
+        "",
+        "- Store UTC plus the zone ID.",
+        "",
+      ].join("\n"),
+    );
+    const checkedOff = renderTask(
+      SPACE,
+      task({ ...earlier, lifecycle: "completed", completedAt: DAY }),
+      "UTC",
+    ).content;
+    // Checked off, with or without new words: what is on record is the finished task's outcome.
+    expect(checkedOff).toContain("\n## Outcome\n");
+    expect(checkedOff).toContain("\n## Learnings\n");
+    expect(checkedOff).not.toContain("Earlier");
+    // Dropped with an outcome and no separate reason (an agent finishing a task as dropped): the
+    // outcome is this task's, and nothing is headed "Why it was dropped".
+    const finishedDropped = renderTask(
+      SPACE,
+      task({ ...earlier, lifecycle: "archived" }),
+      "UTC",
+    ).content;
+    expect(finishedDropped).toContain("\n## Outcome\n\nShipped in 2.3.\n");
+    expect(finishedDropped).not.toContain("Earlier");
+    expect(finishedDropped).not.toContain("Why it was dropped");
+    const dropped = renderTask(
+      SPACE,
+      task({ ...earlier, lifecycle: "archived", dropped: "The clinic changed vendors." }),
+      "UTC",
+    ).content;
+    expect(dropped.slice(dropped.indexOf("## "), dropped.indexOf("## Record"))).toBe(
+      [
+        "## Why it was dropped",
+        "",
+        "The clinic changed vendors.",
+        "",
+        "## Outcome",
+        "",
+        "Shipped in 2.3.",
+        "",
+        "## Learnings",
+        "",
+        "- Store UTC plus the zone ID.",
+        "",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("the folder is named with its machine: one per machine, a list when there are more", () => {
+    const { content } = renderTask(
+      SPACE,
+      task({
+        folders: [
+          { machine: "mira-desktop", path: "~/work/portal" },
+          { machine: "mira-laptop", path: "C:\\work\\portal" },
+        ],
+      }),
+      "UTC",
+    );
+    expect(content).toContain(
+      '\nfolder: ["mira-desktop:~/work/portal", "mira-laptop:C:\\\\work\\\\portal"]\n',
+    );
   });
 
   test("the catalogue: a header with the watermark, then tasks by lifecycle and reference", () => {
@@ -301,6 +392,7 @@ describe("[A1.5.projection.render] what a task's file shows", () => {
         ],
         projects: [{ slug: "lumen-portal", title: "Lumen portal", area: "lumen" }],
       },
+      "UTC",
     );
     expect(text).toBe(
       [
@@ -427,10 +519,14 @@ describe("[A1.5.projection.escape] task text in the view is shown, never run: on
 
   test("index.md escapes the titles of tasks, areas and projects", () => {
     const { entry } = renderTask(SPACE, hostile, "UTC");
-    const text = indexText([entry], {
-      areas: [{ slug: "lumen", title: "<b>Lumen</b>" }],
-      projects: [{ slug: "lumen-portal", title: "[Portal](javascript:x)", area: "lumen" }],
-    });
+    const text = indexText(
+      [entry],
+      {
+        areas: [{ slug: "lumen", title: "<b>Lumen</b>" }],
+        projects: [{ slug: "lumen-portal", title: "[Portal](javascript:x)", area: "lumen" }],
+      },
+      "UTC",
+    );
     const lines = text.split("\n");
     const own = `[${entry.ref}](${entry.path})`;
     for (const line of lines.map((l) => unescaped(l.replace(own, "")))) {

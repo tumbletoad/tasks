@@ -562,6 +562,10 @@ const SQL = {
   outbox:
     "INSERT INTO outbox (topic, key, first_seq, seq) VALUES ('projection', $key, $seq, $seq) " +
     "ON CONFLICT (topic, key) DO UPDATE SET seq = excluded.seq",
+  /** The live tasks of the project a folder belongs to: none for a task's folder. */
+  folderTasks:
+    "SELECT t.id FROM folders f JOIN tasks t ON t.project_id = f.owner_id " +
+    "WHERE f.id = $id AND f.owner_kind = 'project' AND t.deleted_at IS NULL",
   lastSeq: "UPDATE space SET last_seq = $seq WHERE one = 1",
   last: inGroup("max(position)", ""),
   next: inGroup("min(position)", " AND position > $at"),
@@ -2608,8 +2612,9 @@ export class SpaceWriter {
         insertChanges(conn, seq, changes);
         // The search rows, in the same transaction as the state they index (A1 3.7, 3.12).
         if (this.#search) indexChanges(conn, seq, changes);
-        const tasks = new Set(changes.flatMap((c) => (c.taskId === null ? [] : [c.taskId])));
-        for (const id of tasks) conn.prepare(SQL.outbox).run({ key: id, seq });
+        for (const id of projectionTasks(conn, changes)) {
+          conn.prepare(SQL.outbox).run({ key: id, seq });
+        }
         // The projection renders tasks and their children. Launch and run records are not.
         if (changes.some((c) => c.entity !== "launches" && c.entity !== "runs")) {
           conn.prepare(SQL.outbox).run({ key: "*", seq });
@@ -2779,7 +2784,9 @@ export class SpaceWriter {
         // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
         // its children's, a restore brings them back, a field set back rewrites its document.
         if (this.#search) indexChanges(conn, seq, changes);
-        for (const task of applied.tasks) conn.prepare(SQL.outbox).run({ key: task, seq });
+        for (const task of new Set([...applied.tasks, ...projectionTasks(conn, changes)])) {
+          conn.prepare(SQL.outbox).run({ key: task, seq });
+        }
         if (applied.changes.length > 0) conn.prepare(SQL.outbox).run({ key: "*", seq });
         if (undo) conn.prepare(SQL.markUndone).run({ target: target.seq, seq });
         else conn.prepare(SQL.markRedone).run({ target: target.seq });
@@ -4545,6 +4552,26 @@ function wrapLearnings(
   if (count > WRITE_LIMITS.learnings && count > live.length) {
     problem("TOO_LARGE", "A task holds at most 20 learnings", staged.i, "learnings.add");
   }
+}
+
+/**
+ * The tasks whose readable files a commit's changes reach: each change's task, and each task of a
+ * project whose folder changed, since a task opens in its project's folder where it has none.
+ */
+function projectionTasks(
+  conn: Connection,
+  changes: readonly { entity: string; entityId: string; taskId: string | null }[],
+): Set<string> {
+  const tasks = new Set<string>();
+  for (const c of changes) {
+    if (c.taskId !== null) tasks.add(c.taskId);
+    else if (c.entity === "folders") {
+      for (const row of conn.prepare(SQL.folderTasks).all({ id: c.entityId })) {
+        tasks.add(String(row["id"]));
+      }
+    }
+  }
+  return tasks;
 }
 
 function withoutDerived(row: Row): Row {

@@ -49,7 +49,9 @@ async function copied() {
   });
   mkdirSync(join(old.absolute, "inner"), { recursive: true });
   mkdirSync(join(old.absolute, "other"), { recursive: true });
-  await markers.mark(project, old.stored);
+  // Marking gives up when the disk does not answer in time, as on a loaded machine, and takes its
+  // marker at the next look: asked again until the folder has it, since every test here copies it.
+  while (!(await markers.mark(project, old.stored)));
   cpSync(old.absolute, next.absolute, { recursive: true });
   rmSync(old.absolute, { recursive: true });
   const here = ["inner", "other"].map((name, k) => ({

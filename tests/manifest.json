@@ -5506,7 +5506,7 @@
     },
     {
       "id": "A1.5.projection.render",
-      "title": "A task's file: `<ref>-<slug>.md` under open/, completed/<year>/ or archived/<year>/ with an ASCII slug of at most 48 characters, front matter with generated first and A1's fixed keys that read back as strings, seq the task's last change, the sections in A1's order (Outcome and Learnings first, the rest under Record, for a completed task), the catalogue's header and line order, index.md's groups and README.md's text from the brand",
+      "title": "A task's file: `<ref>-<slug>.md` under open/, completed/<year>/ or archived/<year>/ with an ASCII slug of at most 48 characters, front matter with generated first and A1's fixed keys that read back as strings, seq the task's last change, what it waits on and the folder Open uses on each machine (its own, else its project's, followed when the project's changes), the sections in A1's order (why it was dropped, Outcome and Learnings first, the rest under Record, for a finished task), an outcome that is not this finish's said as earlier (after the context of a reopened task), the catalogue's header and line order, index.md's groups with a due time's local day, and README.md's text from the brand",
       "source": "A1 3.13, A3 3.9.8, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -5554,7 +5554,7 @@
     },
     {
       "id": "A1.5.projection.recovery",
-      "title": "The projection's trusted state lives in machine state: a record that could not be written fails its batch, keeps the journal and is written before the next batch, so a kill after it loses nothing; a record missing or unreadable reconciles from scratch, keeps files that hold what would be written and deletes nothing on its word; one of another incarnation in the same folder keeps its files, proved by their bytes, and queues every task; a journal that is there and does not read back (cut short, of another format) rebuilds every task, so a task its batch found gone leaves the catalogue, also after a short write and a full volume; a temporary file a kill left that a person typed into is kept; a batch's rescues are told from their folders, also when the batch failed or was killed, and again at the next batch and the next start while the receiver cannot save them, never again once saved; a retired file that could not be removed is a failure and is tried again, after a restart too, until it goes",
+      "title": "The projection's trusted state lives in machine state: a record that could not be written fails its batch, keeps the journal and is written before the next batch, so a kill after it loses nothing; a record missing or unreadable reconciles from scratch, keeps files that hold what would be written and deletes nothing on its word; one of another incarnation in the same folder keeps its files, proved by their bytes, and queues every task; one an earlier renderer made renders every task again at the first start, each file replaced in place as the projection's own and none moved aside; a journal that is there and does not read back (cut short, of another format) rebuilds every task, so a task its batch found gone leaves the catalogue, also after a short write and a full volume; a temporary file a kill left that a person typed into is kept; a batch's rescues are told from their folders, also when the batch failed or was killed, and again at the next batch and the next start while the receiver cannot save them, never again once saved; a retired file that could not be removed is a failure and is tried again, after a restart too, until it goes",
       "source": "A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -5578,7 +5578,7 @@
     },
     {
       "id": "A1.5.projection.model",
-      "title": "Random sequences of commits, a person's acts in the tree (edits in place and by an editor's save through a temporary file, some keeping the file's size, files at generated paths and elsewhere, deleted files, folders replaced by files or links, hard links to files outside, text where control files were, temporary-looking names, swapped rescue folders, during a batch too, and on Windows a file held open without sharing), kills at every act, and faults in the trusted state's writes (a short write, a full volume) and in saving a rescue notice, each followed by a restart: no byte a person put there is lost or changed in mode, nothing outside the tree and the new rescue folders changes, the watermark covers only tasks whose files are on disk, the projection never moves its own files aside, and at rest the tree is a fresh render and every rescue folder was told",
+      "title": "Random sequences of commits, a person's acts in the tree (edits in place and by an editor's save through a temporary file, some keeping the file's size, files at generated paths and elsewhere, deleted files, folders replaced by files or links, hard links to files outside, text where control files were, temporary-looking names, swapped rescue folders, during a batch too, and on Windows a file held open without sharing), kills at every act, and faults in the trusted state's writes (a short write, a full volume) and in saving a rescue notice, each followed by a restart: no byte a person put there is lost or changed in mode, nothing outside the tree and the new rescue folders changes, the watermark covers only tasks whose files are on disk, the projection never moves its own files aside, at rest the running projection has every catalogued file there (but for tasks waiting their pause), and after a restart the tree is a fresh render and every rescue folder was told",
       "source": "A1 3.13, A1 5, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -5586,7 +5586,7 @@
     },
     {
       "id": "A1.5.projection.reconcile",
-      "title": "Reconciliation file by file: a generated file deleted or edited while the projection runs is rendered again at the next start, after a batch that failed, and on ttasks view rebuild; a rebuild asked for while a failing batch runs stays a full one; a rebuild of an intact tree writes and removes nothing; a root file deleted is placed again; a file the record does not hold is left alone",
+      "title": "Reconciliation file by file: a generated file deleted or edited while the projection runs is rendered again at the next start, after a batch that failed, and on ttasks view rebuild; a rebuild asked for while a failing batch runs stays a full one; a rebuild of an intact tree writes and removes nothing; a root file deleted is placed again; a catalogued file taken from the folder comes back while the projection runs, at its next batch or within seconds while nothing changes, before any watermark covers it; a file the record does not hold is left alone",
       "source": "A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",

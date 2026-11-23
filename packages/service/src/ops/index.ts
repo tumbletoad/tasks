@@ -12,7 +12,7 @@ export {
   type UsableSpace,
 } from "./handlers.ts";
 export { principalOf, isUserClass, type Caller, type Principal } from "./caller.ts";
-export { dateIn, dueDate, localTimeZone } from "./dates.ts";
+export { dueDate, localTimeZone } from "./dates.ts";
 export { readAgentSessions, readSpace, type AgentSessionRow, type SpaceFacts } from "./read.ts";
 export {
   BOUND_BY,

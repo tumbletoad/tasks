@@ -6,14 +6,21 @@
 // audience other than `all` are never written"), live child rows, and the area and project slugs.
 // A task that is deleted, or that no row names any more (redaction, M3.14), reads as gone, and its
 // files go with it.
-import { decodeSpaceRow, type Connection, type Row } from "@ttasks/storage";
+import {
+  decideLaunchFolder,
+  decodeSpaceRow,
+  foldersOf,
+  type Connection,
+  type FolderView,
+  type Row,
+} from "@ttasks/storage";
 import {
   LIFECYCLES,
   type Groups,
   type Lifecycle,
   type LogInput,
+  type FolderInput,
   type NoteInput,
-  type PlaceInput,
   type SourceInput,
   type SpaceIdentity,
   type TaskInput,
@@ -38,8 +45,9 @@ const SQL = {
     "AND key IN (SELECT value FROM json_each($waiting))",
   tasks:
     "SELECT t.id, t.ref, t.title, t.summary, t.context, t.lifecycle, t.status, t.priority, " +
-    "t.effort, t.due_date, t.due_at, t.completed_at, t.created_at, t.outcome, t.deleted_at, " +
-    "t.version, t.touched, coalesce(a.slug, pa.slug) AS area, p.slug AS project FROM tasks t " +
+    "t.waiting_on, t.effort, t.due_date, t.due_at, t.completed_at, t.created_at, " +
+    "t.outcome, t.archived_reason, t.deleted_at, t.version, t.touched, t.project_id, " +
+    "coalesce(a.slug, pa.slug) AS area, p.slug AS project FROM tasks t " +
     "LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN areas a ON a.id = t.area_id " +
     `LEFT JOIN areas pa ON pa.id = p.area_id WHERE t.id IN ${IDS}`,
   notes:
@@ -58,10 +66,7 @@ const SQL = {
     "SELECT ts.task_id, s.kind, s.title, s.who, s.ref, s.url, s.at, s.source_key " +
     `FROM task_sources ts JOIN sources s ON s.id = ts.source_id WHERE ts.task_id IN ${IDS} ` +
     "AND ts.removed_at IS NULL AND s.deleted_at IS NULL ORDER BY ts.task_id, ts.position",
-  places:
-    "SELECT pl.owner_id AS task_id, m.name AS machine, pl.root_id, pl.rel_path FROM places pl " +
-    "JOIN machines m ON m.id = pl.machine_id WHERE pl.owner_kind = 'task' " +
-    `AND pl.owner_id IN ${IDS} AND pl.deleted_at IS NULL ORDER BY pl.owner_id, m.name, m.id`,
+  machines: "SELECT id, name FROM machines",
   labels:
     "SELECT tl.task_id, l.slug FROM task_labels tl JOIN labels l ON l.id = tl.label_id " +
     `WHERE tl.task_id IN ${IDS} AND tl.removed_at IS NULL AND l.deleted_at IS NULL ` +
@@ -112,6 +117,28 @@ const numOrNull = (value: unknown): number | null => (typeof value === "number" 
 
 function lifecycleOf(value: unknown): Lifecycle {
   return (LIFECYCLES as readonly unknown[]).includes(value) ? (value as Lifecycle) : "active";
+}
+
+/**
+ * Where the task opens on each machine that has its folder or its project's: the folder storage's
+ * launch rule picks there, the one Open uses. By machine name.
+ */
+function foldersOpened(
+  conn: Connection,
+  task: string,
+  project: string | null,
+  machines: ReadonlyMap<string, string>,
+): FolderInput[] {
+  const own = foldersOf(conn, "task", task);
+  const inherited = project === null ? [] : foldersOf(conn, "project", project);
+  const on = new Set<string>([...own, ...inherited].map((f: FolderView) => f.machine));
+  const opened: FolderInput[] = [];
+  for (const machine of on) {
+    const decided = decideLaunchFolder(own, inherited, machine, (id) => machines.get(id));
+    if (decided.kind !== "task" && decided.kind !== "project") continue;
+    opened.push({ machine: machines.get(machine) ?? machine, path: decided.folder.path });
+  }
+  return opened.sort((a, b) => (a.machine < b.machine ? -1 : a.machine > b.machine ? 1 : 0));
 }
 
 /** Rows grouped by their `task_id`. */
@@ -210,11 +237,12 @@ export function readBatch(
       at: numOrNull(row["at"]),
       key: strOrNull(row["source_key"]),
     }));
-    const places = byTask<PlaceInput>(conn.prepare(SQL.places).all(params), (row) => ({
-      machine: str(row["machine"]),
-      root: str(row["root_id"]),
-      path: str(row["rel_path"]),
-    }));
+    const machines = new Map(
+      conn
+        .prepare(SQL.machines)
+        .all()
+        .map((row) => [str(row["id"]), str(row["name"])]),
+    );
     const labels = byTask(conn.prepare(SQL.labels).all(params), (row) => str(row["slug"]));
     const learnings = byTask(conn.prepare(SQL.learnings).all(params), (row) => str(row["body"]));
     const tasks = new Map<string, TaskInput>();
@@ -230,6 +258,7 @@ export function readBatch(
         context: str(row["context"]),
         lifecycle: lifecycleOf(row["lifecycle"]),
         status: str(row["status"]),
+        waitingOn: strOrNull(row["waiting_on"]),
         priority: num(row["priority"]),
         effort: strOrNull(row["effort"]),
         due:
@@ -242,8 +271,9 @@ export function readBatch(
         createdAt: num(row["created_at"]),
         completedAt: numOrNull(row["completed_at"]),
         outcome: strOrNull(row["outcome"]),
+        dropped: strOrNull(row["archived_reason"]),
         labels: labels.get(id) ?? [],
-        places: places.get(id) ?? [],
+        folders: foldersOpened(conn, id, strOrNull(row["project_id"]), machines),
         notes: notes.get(id) ?? [],
         log: log.get(id) ?? [],
         sources: sources.get(id) ?? [],
