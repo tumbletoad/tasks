@@ -48,6 +48,10 @@ const files: Record<string, string> = {
     "better-sqlite3": "1.0.0",
     "tiny-pkg": "1.0.0",
   }),
+  "packages/contracts/src/monitor.ts": "export const m = 1;\n",
+  "packages/service/src/monitor/index.ts": imports("../../../contracts/src/monitor.ts"),
+  "packages/service/src/http/app.ts": imports("../monitor/index.ts"),
+  "packages/web/src/agents.ts": imports("../../contracts/src/monitor.ts"),
   "packages/service/src/compose.ts": imports(CORE, STORAGE, "../../bridge/src/ok.ts", "tiny-pkg"),
   "packages/bridge/src/ok.ts": imports("node:net", CONTRACTS, "./own.ts"),
   "packages/bridge/src/own.ts": "export const o = 1;\n",
@@ -87,6 +91,8 @@ const files: Record<string, string> = {
   "packages/runs/src/index.ts": imports("tiny-pkg"),
   "packages/cli/src/doctor-agents.ts": imports("node:child_process"),
   "packages/service/src/setup/run.ts": imports("node:child_process"),
+  "packages/service/src/mcp/tools.ts": imports("../monitor/index.ts"),
+  "packages/cli/src/agents.ts": imports("../../contracts/src/monitor.ts"),
 
   // Violations that stay strict in tests.
   "packages/launch/src/index.test.ts": imports(STORAGE),
@@ -107,6 +113,8 @@ const expected = [
   "core-only-contracts: packages/core/src/uses-storage.ts -> packages/storage/src/index.ts",
   "helpers-through-the-runner: packages/cli/src/doctor-agents.ts -> child_process",
   "helpers-through-the-runner: packages/service/src/setup/run.ts -> child_process",
+  "monitor-data-stays-with-the-page: packages/cli/src/agents.ts -> packages/contracts/src/monitor.ts",
+  "monitor-data-stays-with-the-page: packages/service/src/mcp/tools.ts -> packages/service/src/monitor/index.ts",
   // dependency-cruiser reports a cycle once, at its first edge.
   "no-circular: packages/service/src/a.ts -> packages/service/src/b.ts",
   "no-storage-from-launch-runs: packages/launch/src/index.test.ts -> packages/storage/src/index.ts",

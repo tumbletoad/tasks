@@ -19,6 +19,14 @@
 //   deaf         writes its hello, then reads no input and never ends by itself
 //   die          writes half an answer, then exits 1
 //   after_end    at its end writes one more answer and half a line before it exits
+//   settling     answers every request with the recording's first snapshot, which is settling
+//   no_agents    answers with snapshots that hold no agent
+//   hold         stays where it is, before its hello or before an answer, until the mode is
+//                another (--control), then goes on in that one: a test holds a state until it
+//                has checked it
+//
+// --control=<file> holds the mode instead: read when it starts and again for each request it
+// serves, so a test changes how a running fake answers. A file that cannot be read is no mode.
 //
 // --log=<file> gets a JSON line with its PID at the start, so a test can see that it is gone, and
 // one with each `get`'s ID and usage. Fixture data only. No fake outlives its test: it ends after --max-ms (default 120 s) whatever it does.
@@ -33,10 +41,34 @@ const options = new Map(
       return at === -1 ? [arg.slice(2), ""] : [arg.slice(2, at), arg.slice(at + 1)];
     }),
 );
-const mode = options.get("mode") ?? "";
+const control = options.get("control");
+/** The mode now: what --control's file says, else --mode. */
+function modeNow(): string {
+  if (control === undefined) return options.get("mode") ?? "";
+  try {
+    return readFileSync(control, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
 const log = options.get("log");
 if (log !== undefined) appendFileSync(log, `${JSON.stringify({ pid: process.pid })}\n`);
 setTimeout(() => process.exit(3), Number(options.get("max-ms") ?? "120000")).unref();
+
+/** `hold`: waits until the mode is another, and returns that one. */
+async function released(): Promise<string> {
+  for (let now = modeNow(); ; now = modeNow()) {
+    if (now !== "hold") return now;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+// Held before its hello it reads no request, and still ends with its input, as TTAM does.
+const endHeld = (): void => process.exit(0);
+process.stdin.once("end", endHeld);
+process.stdin.resume();
+const mode = await released();
+process.stdin.off("end", endHeld);
 
 if (process.argv.at(-1) !== "query" || mode === "no_query") {
   process.stderr.write("error: unrecognized subcommand\n");
@@ -70,7 +102,6 @@ for (const r of records) {
 }
 const usageOff = snapshots.some((s) => asked.get(s["id"]) === "live" && s["usage"] === "cached");
 
-const passMs = mode.startsWith("slow=") ? Number(mode.slice(5)) : 10;
 const write = (value: unknown): void => {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 };
@@ -83,12 +114,15 @@ let served = 0;
 let busyOnce = mode === "busy";
 let ended = false;
 
-function answer(id: number, usage: "cached" | "live"): Record<string, unknown> {
-  const recorded = snapshots[Math.min(served, snapshots.length - 1)] ?? {};
+function answer(id: number, usage: "cached" | "live", now = mode): Record<string, unknown> {
+  const recorded =
+    (now === "settling" ? snapshots[0] : snapshots[Math.min(served, snapshots.length - 1)]) ?? {};
   served += 1;
   const line: Record<string, unknown> = { ...recorded, id, usage: usageOff ? "cached" : usage };
-  if (mode === "bad_shape") {
+  if (now === "bad_shape") {
     line["snapshot"] = { ...(recorded["snapshot"] as object), agents: {} };
+  } else if (now === "no_agents") {
+    line["snapshot"] = { ...(recorded["snapshot"] as object), agents: [] };
   }
   return line;
 }
@@ -103,16 +137,23 @@ let waiting: Request | undefined;
 
 function serve(request: Request): void {
   serving = request;
+  void released().then((now) => {
+    if (!ended) pass(request, now);
+  });
+}
+
+function pass(request: Request, now: string): void {
+  const passMs = now.startsWith("slow=") ? Number(now.slice(5)) : 10;
   setTimeout(() => {
     if (ended) return;
-    const line = answer(request.id, request.usage);
-    if (mode === "garbage") process.stdout.write("this is not json\n");
-    else if (mode === "long") process.stdout.write(`"${"x".repeat(9 * 1024 * 1024)}"\n`);
-    else if (mode === "stall") {
+    const line = answer(request.id, request.usage, now);
+    if (now === "garbage") process.stdout.write("this is not json\n");
+    else if (now === "long") process.stdout.write(`"${"x".repeat(9 * 1024 * 1024)}"\n`);
+    else if (now === "stall") {
       half(line);
       deafen();
       return;
-    } else if (mode === "die") {
+    } else if (now === "die") {
       half(line);
       process.exit(1);
     } else write(line);

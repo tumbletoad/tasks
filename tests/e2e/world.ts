@@ -104,6 +104,11 @@ export interface World {
   terminal(): TerminalCall[];
   /** The folders the file manager was asked to show so far, as the service resolved them. */
   folders(): string[];
+  /**
+   * How the fake `ttam` answers from now on (a world with a monitor): one of its modes, `""` for
+   * the recording as it is, or `none` for no TTAM at all.
+   */
+  monitor(mode: string): void;
   /** The cases the next runs of the task `ref` play, in order (a world with runs). */
   codex(ref: string, cases: readonly FakeCodexCase[]): void;
   /**
@@ -166,6 +171,8 @@ export interface WorldOptions {
    * task in the background. `World.codex` picks the cases its runs play.
    */
   readonly runs?: boolean;
+  /** The test kit's fake `ttam` as the Agent Monitor, in the mode `World.monitor` sets. */
+  readonly monitor?: boolean;
 }
 
 /** The fake Codex's instance in a world with runs: the first that can run, Run's default. */
@@ -298,11 +305,18 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     writeFileSync(record, "");
     const shown = join(temp.root, "folders.txt");
     writeFileSync(shown, "");
+    const monitor = join(temp.root, "monitor.txt");
+    writeFileSync(monitor, "");
     /** One life of the service: its process, its page's origin and its two sessions. */
     const boot = async () => {
       const proc = services.start(home, {
         script: ENTRY,
-        env: { E2E_UI: ui, E2E_TERMINAL: record, E2E_FOLDERS: shown },
+        env: {
+          E2E_UI: ui,
+          E2E_TERMINAL: record,
+          E2E_FOLDERS: shown,
+          ...(options.monitor === true ? { E2E_MONITOR: monitor } : {}),
+        },
       });
       json = await waitReady(home, proc.pid);
       const endpoint = json.endpoint?.path;
@@ -409,6 +423,9 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         }
         const reply = await post(port, "/api/v1/machine/pref", { key, value }, { token });
         if (reply.status !== 200) throw new Error(`machine/pref answered ${String(reply.status)}`);
+      },
+      monitor: (mode) => {
+        atomicWrite(monitor, mode);
       },
       codex: (task, next) => {
         // Whole or not at all: the task's run reads its file while the test may write it.

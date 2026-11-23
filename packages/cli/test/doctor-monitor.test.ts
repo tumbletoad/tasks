@@ -25,12 +25,12 @@ describe("[A3.3.14.doctor.monitor] doctor's monitor row", () => {
     const row = (problem: object) => monitorCheck({ fits: false, problem });
     expect(row({ kind: "not_installed", reason: "script" })).toMatchObject({ status: "warn" });
     expect(row({ kind: "not_installed", reason: "no_query" }).detail).toContain("Update TTAM.");
-    expect(row({ kind: "does_not_fit", update: "ttasks", found: BUILD })).toEqual({
+    expect(row({ kind: "does_not_fit", monitor: "newer", found: BUILD })).toEqual({
       id: "monitor",
       status: "warn",
       detail: "TTAM 0.1.0 (0123456789ab) does not fit this TTasks. Update TTasks.",
     });
-    expect(row({ kind: "does_not_fit", update: "monitor", found: null }).detail).toBe(
+    expect(row({ kind: "does_not_fit", monitor: "other_shape", found: null }).detail).toBe(
       "TTAM does not fit this TTasks. Update TTAM.",
     );
     const failed = row({ kind: "failed", reason: "no_hello" });

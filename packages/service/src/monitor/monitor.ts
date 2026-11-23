@@ -72,12 +72,7 @@ export type MonitorCommand =
   | { readonly ok: false; readonly reason: "not_found" | "script" };
 
 export type MonitorAnswer =
-  | {
-      readonly ok: true;
-      readonly snapshot: MonitorSnapshot;
-      /** performance.now() when it arrived: an age in it is that old plus the time since. */
-      readonly receivedAt: number;
-    }
+  | { readonly ok: true; readonly snapshot: MonitorSnapshot }
   | { readonly ok: false; readonly problem: MonitorProblem };
 
 export interface MonitorStatus {
@@ -138,7 +133,7 @@ export function verdictOf(
   const newer =
     (typeof schema === "number" && schema > MONITOR_SCHEMA_VERSION) ||
     (typeof query === "number" && query > MONITOR_QUERY_VERSION);
-  return { kind: "does_not_fit", update: newer ? "ttasks" : "monitor", found: build };
+  return { kind: "does_not_fit", monitor: newer ? "newer" : "older", found: build };
 }
 
 /** Splits a child's output into lines; bytes after the last line end are no line. */
@@ -464,7 +459,7 @@ export class Monitor {
     try {
       snapshot = readSnapshot(line.line, MONITOR_SCHEMA_VERSION);
     } catch {
-      this.#setVerdict({ kind: "does_not_fit", update: "monitor", found: child.build });
+      this.#setVerdict({ kind: "does_not_fit", monitor: "other_shape", found: child.build });
       return;
     }
     for (const timer of sent.timers) clearTimeout(timer);
@@ -472,7 +467,7 @@ export class Monitor {
     this.#lastPassMs = snapshot.collectionMs;
     this.#slow = false;
     this.#failure = undefined;
-    const answer: MonitorAnswer = { ok: true, snapshot, receivedAt: performance.now() };
+    const answer: MonitorAnswer = { ok: true, snapshot };
     for (const waiter of sent.waiters) waiter(answer);
     this.#onChange();
     this.#pump();

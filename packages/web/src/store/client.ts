@@ -12,12 +12,19 @@
 //   refuses for the build) shows the reload bar, and the page never reloads by itself.
 // - `hello` and `installed` say when another version is installed than the service runs: the
 //   page says that a restart of the service switches to it.
+// - `watch`: while an Agents page is mounted, whether the tab is visible and its window focused,
+//   on every change and after every `hello`; the service asks the Agent Monitor at that pace and
+//   sends `agents`, which the tab keeps in memory until the page unmounts. From a lost connection
+//   or a service of another build until the next `agents`, the page shows it as not current. A
+//   page of another build tells nothing: the service may not know the message.
 //
 // Each tab has its own socket and subscription, to the space its route names. Two tabs on two
 // spaces never share one.
 import type { Api } from "../api.ts";
 import { SignedOut, StaleBuild } from "../api.ts";
 import type { PageRoute } from "../route.ts";
+import { AgentsFeed } from "./agents.ts";
+import { browserAttention, type Attention } from "./browser-attention.ts";
 import { browserFrames } from "./browser-frames.ts";
 import type { FrameClock } from "./frame.ts";
 import type { Overlay } from "./pending.ts";
@@ -40,6 +47,8 @@ export interface LiveOptions {
   readonly onMachine?: (preferences: readonly MachinePreference[]) => void;
   /** The frame clock (tests pass their own). */
   readonly frames?: FrameClock;
+  /** Whether the tab is visible and focused (tests pass their own). Read only while watched. */
+  readonly attention?: Attention;
 }
 
 export class Live {
@@ -53,6 +62,14 @@ export class Live {
   #greeting = false;
   /** The service's version, from its last `hello`. */
   #running: string | undefined;
+  /** The Agent Monitor's view, while an Agents page is mounted. */
+  readonly agents = new AgentsFeed();
+  /** How many Agents pages are mounted, and the attention they are told about. */
+  #watching = 0;
+  #attention: Attention | undefined;
+  #unattend: (() => void) | undefined;
+  /** The watch message the service has: sent again only when it changes. */
+  #told: string | undefined;
 
   constructor(options: LiveOptions) {
     this.#options = options;
@@ -112,8 +129,50 @@ export class Live {
     return this.#stopped;
   }
 
+  /** An Agents page mounted: the service is told, and asks the monitor while it is seen. */
+  watchAgents(): () => void {
+    this.#watching += 1;
+    if (this.#watching === 1) {
+      this.#attention ??= this.#options.attention ?? browserAttention();
+      this.#unattend = this.#attention.onChange(() => {
+        this.#tell();
+      });
+    }
+    this.#tell();
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      this.#watching -= 1;
+      if (this.#watching > 0) return;
+      this.#unattend?.();
+      this.#unattend = undefined;
+      this.agents.clear();
+      this.#tell();
+    };
+  }
+
+  /** Tells the service what changed of the tab's attention, or all of it after a `hello`. */
+  #tell(): void {
+    const attention = this.#attention;
+    const watching = this.#watching > 0 && attention !== undefined;
+    const message = JSON.stringify({
+      type: "watch",
+      agents: watching,
+      visible: watching && attention.visible(),
+      focused: watching && attention.focused(),
+    });
+    // A tab never told of one tells nothing until it watches. A stale page may speak to a service
+    // that does not know the message.
+    if (message === this.#told || (this.#told === undefined && !watching)) return;
+    if (this.#ws?.readyState !== 1 || this.getState().stale) return;
+    this.#told = message;
+    this.#ws.send(message);
+  }
+
   stop(): void {
     this.#stopped = true;
+    this.#unattend?.();
     clearTimeout(this.#retry);
     this.store.stop();
     this.#ws?.close(1000);
@@ -126,10 +185,17 @@ export class Live {
       return true;
     }
     if (error instanceof StaleBuild) {
-      this.store.set({ stale: true });
+      this.#stale();
       return true;
     }
     return false;
+  }
+
+  /** The service runs another build than this page: it shows the reload bar until a reload. */
+  #stale(): void {
+    this.store.set({ stale: true });
+    // It no longer watches, so nothing it shows of the monitor is current.
+    this.agents.cut();
   }
 
   #signedOut(): void {
@@ -176,11 +242,15 @@ export class Live {
       } else if (message.type === "installed") {
         this.store.setInstalled(message.version, this.#running);
       } else if (message.type === "machine") this.#options.onMachine?.(message.preferences);
-      else this.store.push(message);
+      else if (message.type === "agents") {
+        if (this.#watching > 0 && !this.getState().stale) this.agents.show(message.view);
+      } else this.store.push(message);
     };
     ws.onclose = (event: CloseEvent) => {
       if (this.#ws !== ws) return;
       this.#ws = undefined;
+      // Until the next connection sends a view, the monitor's is as it was.
+      this.agents.cut();
       if (event.code === CLOSE_SIGNED_OUT) this.#signedOut();
       else this.#again();
     };
@@ -198,8 +268,7 @@ export class Live {
   }
 
   #hello(build: string): void {
-    if (this.#options.build !== "" && build !== this.#options.build)
-      this.store.set({ stale: true });
+    if (this.#options.build !== "" && build !== this.#options.build) this.#stale();
     this.#attempt = 0;
     // What the old socket delivered applies first, so the cursor is the newest the tab has. A gap
     // found there needs no subscription of its own: this one goes without a cursor.
@@ -211,6 +280,9 @@ export class Live {
       this.#greeting = false;
     }
     this.#subscribe(cursor);
+    // A new connection knows nothing of this tab: an Agents page that is open says so again.
+    this.#told = undefined;
+    this.#tell();
     // A resumed subscription gets no snapshot, and nothing at all until a commit or the next
     // heartbeat: the rows the tab holds are current as of its cursor, so it is live again now.
     // A cursor the service cannot resume from gets a snapshot, a space that is gone an error.

@@ -35,7 +35,11 @@ export const TTAM_CONVERSATIONS = {
 export function fakeTtam(options: {
   readonly conversation?: keyof typeof TTAM_CONVERSATIONS;
   readonly mode?: string;
+  /** A file that holds the mode, read again for each request (ttam.ts). */
+  readonly control?: string;
   readonly log?: string;
+  /** How long it may live at most. Default 120 s. */
+  readonly maxMs?: number;
 }): { readonly file: string; readonly args: readonly string[] } {
   return {
     file: process.execPath,
@@ -43,6 +47,8 @@ export function fakeTtam(options: {
       FAKE_TTAM,
       `--conversation=${TTAM_CONVERSATIONS[options.conversation ?? "on"]}`,
       ...(options.mode === undefined ? [] : [`--mode=${options.mode}`]),
+      ...(options.control === undefined ? [] : [`--control=${options.control}`]),
+      ...(options.maxMs === undefined ? [] : [`--max-ms=${String(options.maxMs)}`]),
       ...(options.log === undefined ? [] : [`--log=${options.log}`]),
     ],
   };

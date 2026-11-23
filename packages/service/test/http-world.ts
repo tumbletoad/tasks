@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { WebSocket } from "ws";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import type { HttpStart } from "../src/http/index.ts";
-import { startService, type RunningService } from "../src/hub/service.ts";
+import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
 import type { LaunchOptions } from "../src/launch/index.ts";
 import { post } from "./http-client.ts";
 import { configOf, removeRuntimeDir, serviceEnv, tempRoot } from "./harness.ts";
@@ -30,7 +30,12 @@ export interface HttpWorld {
   close(): Promise<void>;
 }
 
-function start(home: string, http: HttpStart, launch?: LaunchOptions): Promise<RunningService> {
+function start(
+  home: string,
+  http: HttpStart,
+  launch?: LaunchOptions,
+  monitor?: StartOptions["monitor"],
+): Promise<RunningService> {
   return startService({
     env: serviceEnv(home),
     identity: () => ({ root: false, elevated: false, package: null }),
@@ -38,6 +43,7 @@ function start(home: string, http: HttpStart, launch?: LaunchOptions): Promise<R
     say: () => undefined,
     http: { ports: [0], persist: false, ...http },
     ...(launch === undefined ? {} : { launch }),
+    ...(monitor === undefined ? {} : { monitor }),
   });
 }
 
@@ -49,7 +55,12 @@ function start(home: string, http: HttpStart, launch?: LaunchOptions): Promise<R
 export async function httpWorld(
   label: string,
   http: HttpStart = {},
-  options: { space?: boolean; toml?: string; launch?: LaunchOptions } = {},
+  options: {
+    space?: boolean;
+    toml?: string;
+    launch?: LaunchOptions;
+    monitor?: StartOptions["monitor"];
+  } = {},
 ): Promise<HttpWorld> {
   const temp = tempRoot(label);
   const home = join(temp.root, "h");
@@ -57,7 +68,12 @@ export async function httpWorld(
     mkdirSync(configOf(home), { recursive: true, mode: 0o700 });
     writeFileSync(join(configOf(home), "machine.toml"), options.toml, { mode: 0o600 });
   }
-  let service: RunningService | undefined = await start(home, http, options.launch);
+  let service: RunningService | undefined = await start(
+    home,
+    http,
+    options.launch,
+    options.monitor,
+  );
   const sessions: RpcSession[] = [];
   const current = (): RunningService => {
     if (service === undefined) throw new Error("the service is stopped");
@@ -85,7 +101,7 @@ export async function httpWorld(
     },
     restart: async (again = {}) => {
       await stop();
-      service = await start(home, again, options.launch);
+      service = await start(home, again, options.launch, options.monitor);
       return service;
     },
     stop,

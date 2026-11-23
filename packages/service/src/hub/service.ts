@@ -124,7 +124,13 @@ import { homeRows } from "./home-rows.ts";
 import { namedBy } from "./named.ts";
 import { SeenCalls } from "./agent-homes.ts";
 import { agentAppVerbs, personEnv } from "./agent-apps.ts";
-import { findMonitor, Monitor, MONITOR_VARIABLE, type MonitorCommand } from "../monitor/index.ts";
+import {
+  findMonitor,
+  Monitor,
+  MONITOR_VARIABLE,
+  type MonitorCommand,
+  type MonitorTimes,
+} from "../monitor/index.ts";
 import { pageFolderVerbs } from "./page-folders.ts";
 import { pageSpaceVerbs } from "./page-spaces.ts";
 import { within } from "./wait.ts";
@@ -238,7 +244,11 @@ export interface StartOptions {
    */
   readonly agentApps?: { readonly env?: Env; readonly home?: string };
   /** The Agent Monitor to start, for tests. Default: `ttam` on the person's PATH. */
-  readonly monitor?: { readonly command: () => Promise<MonitorCommand> };
+  readonly monitor?: {
+    readonly command: () => Promise<MonitorCommand>;
+    /** Its deadlines, for tests that hold it in a state. Default: MONITOR_TIMES. */
+    readonly times?: Partial<MonitorTimes>;
+  };
 }
 
 export type StopReason = "signal" | "request";
@@ -754,12 +764,17 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         ),
       );
     const monitor = new Monitor({
+      ...(options.monitor?.times === undefined ? {} : { times: options.monitor.times }),
       command: async () => {
         const source = launching.service?.environment;
         return monitorIn(source === undefined ? env : await personEnv(source).catch(() => env));
       },
       log: (event, fields) => {
         log.log(event, fields);
+      },
+      // The page's part marks a picture whose next answer is overdue.
+      onChange: () => {
+        httpRunning?.app.agents?.changed();
       },
     });
     const hub = {
@@ -1113,6 +1128,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           make: (input) => pageFolders.make(input, "ui"),
           project: (input, space) => pageFolders.project(input, "ui", space),
         },
+        monitor,
         db: grantsDb.db,
         grants: grantsDb.grants,
         log: httpLog,

@@ -130,6 +130,23 @@ module.exports = {
       to: { path: REPO, pathNot: "^packages/(web|contracts|brand)/" },
     },
     {
+      name: "monitor-data-stays-with-the-page",
+      comment:
+        "What the Agent Monitor reports about every agent on this computer reaches only the " +
+        "service's monitor module, the page's connection and the hub that wires them, and the " +
+        "page: never an agent's tools, a space, the CLI or another package.",
+      severity: "error",
+      from: {
+        path: "^packages/",
+        pathNot: [
+          TEST_FILE,
+          "^packages/(web|contracts)/",
+          "^packages/service/src/(monitor|http|hub)/",
+        ],
+      },
+      to: { path: "^packages/(contracts/src/monitor\\.ts|service/src/monitor/)" },
+    },
+    {
       name: "testkit-only-from-tests",
       comment: "Nothing outside tests imports testkit (A7 3.2).",
       severity: "error",

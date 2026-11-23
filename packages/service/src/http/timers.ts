@@ -10,6 +10,8 @@ import type { ServerTimer } from "../local/index.ts";
  * - `ws_ping`: a WebSocket's ping and heartbeat; a peer that did not answer the last ping is closed.
  * - `feed_poll`: a space with subscribers is checked for new commits.
  * - `port_retry`: the persisted port is tried again while the listener is on a fallback port.
+ * - `monitor_ask`, `monitor_keep`: the Agent Monitor's pace (monitor/pace.ts): the next request,
+ *   and how long the newest snapshot is kept.
  */
 export const HTTP_TIMER_KINDS = [
   "idle",
@@ -17,6 +19,8 @@ export const HTTP_TIMER_KINDS = [
   "ws_ping",
   "feed_poll",
   "port_retry",
+  "monitor_ask",
+  "monitor_keep",
 ] as const;
 export type HttpTimerKind = (typeof HTTP_TIMER_KINDS)[number];
 

@@ -157,13 +157,90 @@ export type MonitorFailure = (typeof MONITOR_FAILURES)[number];
 
 /**
  * Why there is no snapshot. `not_installed`: no `ttam` on the PATH, only a script by that name
- * (TTasks runs no script), or a build without `ttam query`. `does_not_fit`: the side to update.
+ * (TTasks runs no script), or a build without `ttam query`. `does_not_fit`: TTAM's versions are
+ * newer or older than TTasks reads, or they are the ones it reads and its snapshot has another
+ * shape. Only a newer one asks for a newer TTasks.
  */
 export type MonitorProblem =
   | { readonly kind: "not_installed"; readonly reason: "not_found" | "script" | "no_query" }
   | {
       readonly kind: "does_not_fit";
-      readonly update: "ttasks" | "monitor";
+      readonly monitor: "newer" | "older" | "other_shape";
       readonly found: MonitorBuild | null;
     }
   | { readonly kind: "failed"; readonly reason: MonitorFailure };
+
+// What the Agents page gets: a picture TTasks shapes from the newest snapshot, sent on the page's
+// feed connection only to tabs that look at an Agents page. Ages are as at the capture, and the
+// picture's own `ageMs` is how old the capture was when the service sent it: an age on the page is
+// the two together plus the page's own time since it arrived.
+
+/** An agent inside a session, one level under it whatever its depth there. */
+export interface AgentsNested {
+  /** Stable while the same TTAM process sees it. */
+  readonly key: string;
+  readonly kind: MonitorRowKind;
+  readonly title: string;
+  readonly activity: MonitorActivity;
+  readonly ageMs: number | null;
+}
+
+/** One conversation's own agent, with the agents inside it. */
+export interface AgentsSession {
+  readonly key: string;
+  readonly app: MonitorProvider;
+  /** The agent app as TTAM names it: what the page shows for an `unknown` one. */
+  readonly appName: string;
+  /** Which account: the home's label. */
+  readonly account: string;
+  readonly title: string;
+  readonly folder: string | null;
+  readonly activity: MonitorActivity;
+  readonly ageMs: number | null;
+  /** Since its latest activity. */
+  readonly quietMs: number | null;
+  readonly nested: readonly AgentsNested[];
+}
+
+/** One account's plan usage. */
+export interface AgentsAccount {
+  readonly key: string;
+  readonly app: MonitorProvider;
+  readonly appName: string;
+  readonly account: string;
+  readonly plan: string | null;
+  readonly windows: readonly MonitorWindow[];
+  readonly readingAgeMs: number | null;
+  readonly refreshing: boolean;
+  readonly limited: boolean;
+  readonly failed: boolean;
+  readonly unavailable: boolean;
+}
+
+export interface AgentsPicture {
+  /** How old the capture was when the service sent this. */
+  readonly ageMs: number;
+  /** TTAM says it may be incomplete. */
+  readonly settling: boolean;
+  readonly sessions: readonly AgentsSession[];
+  readonly accounts: readonly AgentsAccount[];
+}
+
+/**
+ * The Agents page's part from the monitor. `picture` null: none yet, or the monitor is missing or
+ * does not fit. `trouble`: why the picture is not updating, null while it updates.
+ */
+export interface AgentsView {
+  readonly picture: AgentsPicture | null;
+  readonly trouble: { readonly kind: "slow" } | MonitorProblem | null;
+}
+
+/** What a tab tells the service about itself, on every change and after every reconnect. */
+export interface AgentsWatch {
+  /** An Agents page is mounted. */
+  readonly agents: boolean;
+  /** The tab is visible. */
+  readonly visible: boolean;
+  /** Its window has the focus. */
+  readonly focused: boolean;
+}

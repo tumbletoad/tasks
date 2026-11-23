@@ -3,8 +3,9 @@
 // the live rows; then "Recent", the tasks an agent or a routine changed while this tab followed
 // the space, the ones it finished included, newest first, one small heading per day. The rows are
 // ordinary rows, so a task expands to its thread, where its runs, Stop and the changes are.
-// "Routines" and the full history with Revert wait for the service's read of sessions and
-// routines.
+// Below them, every agent on this computer and the plan usage of each account, from the Agent
+// Monitor (Computer.tsx). "Routines" and the full history with Revert wait for the service's read
+// of sessions and routines.
 import { useCallback, useContext, useSyncExternalStore } from "react";
 import { changeLogOf } from "../app/changes.ts";
 import { recentOf } from "../app/views.ts";
@@ -14,6 +15,7 @@ import { useT } from "../i18n/intl.tsx";
 import { formatDay } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
 import type { TaskRow } from "../store/rows.ts";
+import { Computer } from "./Computer.tsx";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
 
 /** Agents' changes may touch any task: its rows fade in and are announced like Today's. */
@@ -159,16 +161,19 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
     [changes, clock, t],
   );
   return (
-    <TaskList
-      key="agents"
-      view="agents"
-      grouping="flat"
-      filter={ANY}
-      groups={groups}
-      clock={clock}
-      empty={t("view.empty.agents")}
-      expand={task}
-      onExpand={onExpand}
-    />
+    <div>
+      <TaskList
+        key="agents"
+        view="agents"
+        grouping="flat"
+        filter={ANY}
+        groups={groups}
+        clock={clock}
+        empty={t("view.empty.agents")}
+        expand={task}
+        onExpand={onExpand}
+      />
+      <Computer />
+    </div>
   );
 }

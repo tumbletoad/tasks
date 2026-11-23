@@ -4,13 +4,18 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
-import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { CLI_NAME, MONITOR_COMMAND, MONITOR_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import en from "../src/i18n/en.json" with { type: "json" };
 
 // As intl.tsx gives them to every message (the page's module is JSX, outside this project).
 const CATALOGUE: Readonly<Record<string, string>> = en;
 const SOURCE_LOCALE = "en";
-const BRAND_VALUES = { product: PRODUCT_NAME, cli: CLI_NAME };
+const BRAND_VALUES = {
+  product: PRODUCT_NAME,
+  cli: CLI_NAME,
+  monitor: MONITOR_NAME,
+  monitorCli: MONITOR_COMMAND,
+};
 
 /** Whether a message spells out the product's name, or the command where a message runs it. */
 const spellsName = (text: string): boolean =>
@@ -103,6 +108,10 @@ const SAMPLE = {
   ran: "2 min",
   hours: 1,
   minutes: 5,
+  app: "claude",
+  state: "working",
+  side: "older",
+  percent: 40,
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {
