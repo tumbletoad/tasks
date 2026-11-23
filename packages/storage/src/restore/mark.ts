@@ -5,9 +5,10 @@
 // Both first drop what the exact-schema rule leaves out and make the search index again
 // (prepareCopy).
 //
-// The mark is `space.transfer` = `{state: "restored_copy", at}`: every open of the copy is then
-// read-only with the reason `read_only_copy` until it is claimed (A6 3.5). It writes no commit: the
-// space row has no history (A1 3.4), and the copy's history stays the backup's.
+// The mark is `space.transfer` = `{state: "restored_copy", at, backup}`: every open of the copy is
+// then read-only with the reason `read_only_copy` until it is claimed (A6 3.5), and a person reads
+// when it was restored and from which backup file. It writes no commit: the space row has no history
+// (A1 3.4), and the copy's history stays the backup's.
 //
 // THE TRIAL CLAIM. A copy is of use only once it is claimed (`ttasks space claim`, or the restore in
 // place's own claim), and a claim writes more than the mark: a commit by the space's system actor,
@@ -78,21 +79,22 @@ function trialClaim(conn: Connection, now: number): void {
 
 /**
  * Marks the space on `conn`, a writer on a restored copy in its staging folder, as a read-only
- * copy, in one transaction: the copy prepared (prepareCopy), a claim run and taken back, then the
- * mark. Returns the marked row, which must hold the mark.
+ * copy restored from the file named `backup`, in one transaction: the copy prepared (prepareCopy),
+ * a claim run and taken back, then the mark. Returns the marked row, which must hold the mark.
  */
 export function markReadOnlyCopy(
   checked: CheckedDriver,
   conn: Connection,
   now: number,
   steps: readonly SchemaStep[],
+  backup: string,
 ): SpaceRow {
   return conn.transaction("immediate", () => {
     prepareCopy(checked, conn, steps);
     trialClaim(conn, now);
     conn
       .prepare("UPDATE space SET transfer = $transfer WHERE one = 1")
-      .run({ transfer: JSON.stringify({ state: READ_ONLY_COPY, at: now }) });
+      .run({ transfer: JSON.stringify({ state: READ_ONLY_COPY, at: now, backup }) });
     const space = decodeSpaceRow(conn.prepare("SELECT * FROM space WHERE one = 1").get());
     if (space.transfer?.["state"] !== READ_ONLY_COPY) {
       throw new StorageError("SPACE_INVALID", "The restored copy did not keep its read-only mark");
@@ -138,8 +140,9 @@ export function markCopy(
   options: { busyTimeoutMs?: number },
   invalid: (why: string) => StorageError,
   steps: readonly SchemaStep[],
+  backup: string,
 ): SpaceRow {
   return firstWrite(checked, db, options, invalid, (conn) =>
-    markReadOnlyCopy(checked, conn, now, steps),
+    markReadOnlyCopy(checked, conn, now, steps, backup),
   );
 }

@@ -35,7 +35,7 @@
 // worker's restoreInPlace (worker/client.ts) holds the live space's claim for the whole restore: a
 // writer of this process that has the space open refuses it, and none opens meanwhile.
 import { existsSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { misuse, StorageError } from "../errors.ts";
 import {
   FOLDER_MODE,
@@ -235,6 +235,7 @@ export async function restoreCopy(
     busy(options),
     invalid,
     seams.steps ?? SCHEMA_STEPS,
+    basename(file),
   );
   return { ...unpacked, space };
 }
