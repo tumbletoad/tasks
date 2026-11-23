@@ -54,13 +54,18 @@ test.describe("[A5.3.7.e2e.effort-scales] one size, ten sizes and the longest na
           const effort = facts.getByRole("radiogroup", { name: "Effort" });
           await expect(effort.getByRole("radio")).toHaveCount(sizes.length, { timeout: SLOW_MS });
           expect(await effort.getByRole("radio").allInnerTexts()).toEqual(sizes);
-          /** The sizes whose name does not fit its button. */
+          /**
+           * The sizes whose name does not fit its button. By more than a pixel: both sizes are
+           * whole numbers, and a wrapped name's height is not (four lines of 15.6 px).
+           */
           const cut = () =>
             effort
               .getByRole("radio")
               .evaluateAll((cells) =>
                 cells
-                  .filter((c) => c.scrollWidth > c.clientWidth || c.scrollHeight > c.clientHeight)
+                  .filter(
+                    (c) => c.scrollWidth > c.clientWidth + 1 || c.scrollHeight > c.clientHeight + 1,
+                  )
                   .map((c) => c.textContent),
               );
           expect(await cut()).toEqual([]);
