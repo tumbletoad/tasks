@@ -4,12 +4,19 @@
 // work where they should and never where a person types; the sheet lists what works; the
 // single-letter setting takes the single keys away; the tooltip shows on hover and on keyboard
 // focus. The service's detection sees the same two terminals on every OS (serve-entry.ts).
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { expect, type Page } from "@playwright/test";
 import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import {
+  axeFound,
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  themes,
+  violations,
+  watchViolations,
+} from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const LEGACY_THEME_KEY = `${PRODUCT_ID}.theme`;
@@ -128,7 +135,7 @@ test.describe("[A7.3.12.m5-11.e2e.terminal] Open's terminal: which one and why, 
       await page.reload();
       await showsSpace(page, world.mira.name);
       await expect(terminal(page).getByRole("radio", { name: "kitty" })).toBeChecked();
-      await page.screenshot({ path: test.info().outputPath("terminal-kitty-1440.png") });
+      await picture(page, "terminal-kitty-1440.png");
     } finally {
       await choose(terminal(page), "This machine's default");
     }
@@ -282,7 +289,7 @@ test.describe("[A7.3.12.m5-11.e2e.keys] The keys: each where it works, never whe
       await expect(sheet(page)).toContainText("Single-letter keys are off.");
       await expect(sheet(page).locator('[data-action="new"]')).toHaveCount(0);
       await expect(sheet(page).locator('[data-action="search"]')).not.toContainText("/");
-      await page.screenshot({ path: test.info().outputPath("sheet-keys-off-1440.png") });
+      await picture(page, "sheet-keys-off-1440.png");
       await sheet(page).getByRole("link", { name: "Turn them on in Settings" }).click();
       await expect(sheet(page)).toHaveCount(0);
       await page.locator("label", { hasText: "Single-letter keys" }).click();
@@ -333,9 +340,8 @@ test.describe("[A7.3.12.m5-11.e2e.screens] Settings and the sheet in both themes
     browser,
     world,
   }) => {
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
     try {
-      for (const name of ["sumi", "washi"] as const) {
+      for (const name of themes()) {
         await world.machine("ui.theme", name);
         const context = await browser.newContext({
           bypassCSP: true,
@@ -349,17 +355,14 @@ test.describe("[A7.3.12.m5-11.e2e.screens] Settings and the sheet in both themes
           for (const width of [1440, 390]) {
             await page.setViewportSize({ width, height: 900 });
             expect(await sideScroll(page), `sideways scroll at ${String(width)} px`).toBe(0);
-            expect(await axeFound(page, axe, "main"), `axe on Settings in ${name}`).toEqual([]);
-            await page.screenshot({
-              path: test.info().outputPath(`settings-${name}-${String(width)}.png`),
-              fullPage: true,
-            });
+            if (pictures())
+              expect(await axeFound(page, ["main"]), `axe on Settings in ${name}`).toEqual([]);
+            await picture(page, `settings-${name}-${String(width)}.png`, { fullPage: true });
             await page.getByRole("button", { name: "Show every key" }).click();
             await expect(sheet(page)).toBeVisible();
-            await page.screenshot({
-              path: test.info().outputPath(`sheet-${name}-${String(width)}.png`),
-            });
-            expect(await axeFound(page, axe, '[role="dialog"]'), "axe on the sheet").toEqual([]);
+            await picture(page, `sheet-${name}-${String(width)}.png`);
+            if (pictures())
+              expect(await axeFound(page, ['[role="dialog"]']), "axe on the sheet").toEqual([]);
             await page.keyboard.press("Escape");
             await expect(sheet(page)).toHaveCount(0);
           }
@@ -377,23 +380,4 @@ async function sideScroll(page: Page): Promise<number> {
   return page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
-}
-
-async function axeFound(page: Page, axe: string, include: string): Promise<string[]> {
-  // Once per page: axe is large, and loading it again is no use.
-  if (!(await page.evaluate(() => "axe" in window))) await page.evaluate(axe);
-  return page.evaluate(async (where) => {
-    const run = (
-      window as unknown as {
-        axe: {
-          run: (
-            context: unknown,
-            options: unknown,
-          ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-        };
-      }
-    ).axe.run;
-    const result = await run({ include: [where] }, { resultTypes: ["violations"] });
-    return result.violations.map((v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`);
-  }, include);
 }

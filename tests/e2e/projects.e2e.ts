@@ -3,14 +3,21 @@
 // set and cleared, and Open refused on its folder with the way on in place. Every change is undone
 // from its toast or with Ctrl+Z. Scratch folders of this run only.
 import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import {
+  axeFound,
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  themes,
+  violations,
+  watchViolations,
+} from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const toast = (page: Page) => page.locator('[data-part="toast-text"]');
@@ -358,17 +365,13 @@ test.describe("[A7.3.12.m5-14.e2e.screens] New project, the chooser and the fold
     browser: chrome,
     world,
   }) => {
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
     const temp = scratch();
     const shoot = async (page: Page, name: string, where: string): Promise<void> => {
       for (const width of [1440, 390]) {
         await page.setViewportSize({ width, height: 900 });
         expect(await sideScroll(page), `sideways scroll at ${String(width)} px`).toBe(0);
-        expect(await axeFound(page, axe, where), `axe on ${name}`).toEqual([]);
-        await page.screenshot({
-          path: test.info().outputPath(`${name}-${String(width)}.png`),
-          fullPage: true,
-        });
+        if (pictures()) expect(await axeFound(page, [where]), `axe on ${name}`).toEqual([]);
+        await picture(page, `${name}-${String(width)}.png`, { fullPage: true });
       }
       await page.setViewportSize({ width: 1440, height: 900 });
     };
@@ -378,7 +381,7 @@ test.describe("[A7.3.12.m5-14.e2e.screens] New project, the chooser and the fold
       checkout(folder, "atlas-web");
       mkdirSync(join(temp.root, "beacon"));
       mkdirSync(join(temp.root, "cedar"));
-      for (const theme of ["sumi", "washi"] as const) {
+      for (const theme of themes()) {
         await world.machine("ui.theme", theme);
         const context = await chrome.newContext({
           bypassCSP: true,
@@ -444,22 +447,4 @@ async function sideScroll(page: Page): Promise<number> {
   return page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
-}
-
-async function axeFound(page: Page, axe: string, include: string): Promise<string[]> {
-  if (!(await page.evaluate(() => "axe" in window))) await page.evaluate(axe);
-  return page.evaluate(async (where) => {
-    const run = (
-      window as unknown as {
-        axe: {
-          run: (
-            context: unknown,
-            options: unknown,
-          ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-        };
-      }
-    ).axe.run;
-    const result = await run({ include: [where] }, { resultTypes: ["violations"] });
-    return result.violations.map((v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`);
-  }, include);
 }

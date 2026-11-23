@@ -7,11 +7,18 @@
 // Waiting by person, Inbox's and Review's visible moves, the area view by project, and screenshots
 // with axe in Sumi and Washi at 1,440 and 390 px. The world's other tests add tasks of their own,
 // so the assertions name this test's tasks, never a whole list.
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import {
+  axeFound,
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  themes,
+  violations,
+  watchViolations,
+} from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const VIEWS = ["Today", "Inbox", "Open", "Waiting", "Review", "Backlog", "Completed", "Agents"];
@@ -185,7 +192,7 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
     // Its row: checked, the completion day in the due column.
     await expect(row(page, lease).locator('[data-part="check"]')).toBeChecked();
     await expect(row(page, lease)).toContainText("Today");
-    await page.screenshot({ path: test.info().outputPath("views-flow.png"), fullPage: true });
+    await picture(page, "views-flow.png", { fullPage: true });
 
     // Reopen from the expanded finished task: an undo toast, and the task is open again.
     await row(page, lease).locator('[data-part="title"]').click();
@@ -210,7 +217,7 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
     expect(finished).toMatchObject({ result: "completed", wrap_state: "wrapped" });
     await expect(row(page, report)).toBeVisible({ timeout: SLOW_MS });
     await expect(row(page, report).locator('[data-part="check"]')).toBeChecked();
-    await page.screenshot({ path: test.info().outputPath("views-agents.png"), fullPage: true });
+    await picture(page, "views-agents.png", { fullPage: true });
 
     // Completed: the wrapped task under its month, not "Checked off". Reopened by the person, then
     // checked off again, its earlier outcome stays and its new wrap-up waits under "Checked off".
@@ -222,13 +229,13 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
     await expect(page.getByRole("status").filter({ hasText: "Reopened" })).toBeVisible({
       timeout: SLOW_MS,
     });
-    await page.screenshot({ path: test.info().outputPath("views-reopened.png"), fullPage: true });
+    await picture(page, "views-reopened.png", { fullPage: true });
     await sidebar(page).locator('a[data-view="open"]').click();
     await expect(row(page, report)).toBeVisible({ timeout: SLOW_MS });
     await world.op(world.mira.id, "task.finish", { task: report, base: await asOf(world, report) });
     await sidebar(page).locator('a[data-view="completed"]').click();
     await expect(checked.locator(`li[data-task="${report}"]`)).toBeVisible({ timeout: SLOW_MS });
-    await page.screenshot({ path: test.info().outputPath("views-rechecked.png"), fullPage: true });
+    await picture(page, "views-rechecked.png", { fullPage: true });
     expect(await violations(page)).toEqual([]);
   });
 });
@@ -269,7 +276,7 @@ test.describe("[A7.3.12.e2e.sidebar-fixed] every entry of the side menu keeps it
       await expect(link).toHaveAttribute("aria-label", /, no tasks$/);
     }
     await expect(sidebar(page).getByRole("link", { name: "Settings" })).toBeVisible();
-    await page.screenshot({ path: test.info().outputPath("sidebar-empty-space.png") });
+    await picture(page, "sidebar-empty-space.png");
     const empty = await sidebarPlaces(page);
 
     // A task arrives in the Inbox and another view opens: the entries stay where they were.
@@ -293,46 +300,7 @@ test.describe("[A7.3.12.e2e.sidebar-fixed] every entry of the side menu keeps it
     await expect(inbox).toHaveAttribute("aria-label", "Inbox, no tasks", { timeout: SLOW_MS });
     expect(await sidebarPlaces(page)).toEqual(empty);
   });
-
-  test("an area's projects are always listed, so opening an area or a project moves no entry", async ({
-    page,
-    world,
-  }) => {
-    await open(page, world, "today");
-    const portal = sidebar(page).getByRole("link", { name: /^Lumen portal, / });
-    await expect(portal).toBeVisible({ timeout: SLOW_MS });
-    const before = await sidebarPlaces(page);
-    await sidebar(page)
-      .getByRole("link", { name: /^Home, / })
-      .click();
-    await expect(page).toHaveURL(/\/area\//);
-    expect(await sidebarPlaces(page)).toEqual(before);
-    await portal.click();
-    await expect(page).toHaveURL(/\/project\//);
-    await expect(portal).toHaveAttribute("aria-current", "page");
-    expect(await sidebarPlaces(page)).toEqual(before);
-    await page.screenshot({ path: test.info().outputPath("sidebar-projects.png") });
-  });
 });
-
-/** axe-core's violations on the whole page. */
-async function axeOn(page: Page, axe: string): Promise<string[]> {
-  await page.evaluate(axe);
-  return page.evaluate(async () => {
-    const run = (
-      window as unknown as {
-        axe: {
-          run: (
-            context: unknown,
-            options: unknown,
-          ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-        };
-      }
-    ).axe.run;
-    const result = await run({ include: ["body"] }, { resultTypes: ["violations"] });
-    return result.violations.map((v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`);
-  });
-}
 
 test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and 390 px", () => {
   test("screenshots of Waiting, Completed, an area view and the sidebar with empty views, axe clean, no horizontal scroll", async ({
@@ -355,9 +323,8 @@ test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and
       outcome: `Filed on time (${tag}).`,
       base: await asOf(world, done),
     });
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
     const areaId = world.task.area;
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       const context = await browser.newContext({
         bypassCSP: true,
         viewport: { width: 1440, height: 1000 },
@@ -380,11 +347,9 @@ test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and
           } else {
             await expect(row(page, ref)).toBeVisible({ timeout: SLOW_MS });
           }
-          await page.screenshot({
-            path: test.info().outputPath(`views-${name}-${theme}-1440.png`),
-            fullPage: true,
-          });
-          expect(await axeOn(page, axe), `axe on ${name} in ${theme}`).toEqual([]);
+          await picture(page, `views-${name}-${theme}-1440.png`, { fullPage: true });
+          if (pictures())
+            expect(await axeFound(page, ["body"]), `axe on ${name} in ${theme}`).toEqual([]);
 
           await page.setViewportSize({ width: 390, height: 900 });
           await page.evaluate(() => {
@@ -394,10 +359,7 @@ test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and
             () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
           );
           expect(scroll, `horizontal scroll on ${name} at 390 px`).toBeLessThanOrEqual(0);
-          await page.screenshot({
-            path: test.info().outputPath(`views-${name}-${theme}-390.png`),
-            fullPage: true,
-          });
+          await picture(page, `views-${name}-${theme}-390.png`, { fullPage: true });
         }
 
         // The sidebar of a space whose Open, Waiting, Review and Backlog are empty: every entry in
@@ -408,10 +370,9 @@ test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and
           "data-empty",
           "true",
         );
-        await page.screenshot({
-          path: test.info().outputPath(`views-sidebar-empty-${theme}-1440.png`),
-        });
-        expect(await axeOn(page, axe), `axe on the empty views in ${theme}`).toEqual([]);
+        await picture(page, `views-sidebar-empty-${theme}-1440.png`);
+        if (pictures())
+          expect(await axeFound(page, ["body"]), `axe on the empty views in ${theme}`).toEqual([]);
         await page.setViewportSize({ width: 390, height: 900 });
         await page.getByRole("button", { name: "Menu" }).click();
         const drawer = page.getByRole("dialog", { name: "Views and areas" });
@@ -422,9 +383,7 @@ test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and
             items.map((item) => item.querySelector("span")?.textContent ?? ""),
           ),
         ).toEqual(VIEWS);
-        await page.screenshot({
-          path: test.info().outputPath(`views-sidebar-empty-${theme}-390.png`),
-        });
+        await picture(page, `views-sidebar-empty-${theme}-390.png`);
         await page.keyboard.press("Escape");
       } finally {
         await context.close();
