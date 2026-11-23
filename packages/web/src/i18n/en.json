@@ -585,6 +585,11 @@
   "area.label": "Area and project",
   "area.search": "Find an area or project",
   "area.empty": "No area or project matches",
+  "area.new": "New area “{name}”",
+  "area.archived": "archived",
+  "area.added": "Area {name} added",
+  "area.notAdded": "The area was not added. Try again.",
+  "area.addedNotMoved": "Area {name} added, and the task stayed where it was. {why}",
 
   "ask.tip": "Ask an agent to change this",
   "ask.summary": "Change the summary: ",

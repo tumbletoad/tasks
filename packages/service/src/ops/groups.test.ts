@@ -76,6 +76,88 @@ describe("[A3.3.4.add.names] names, typos and similar titles", () => {
     expect(editDistance("a", "abcdef", 2)).toBe(3);
   });
 
+  test("a task filed by name lands where it did before lists came in pages", () => {
+    // Areas as [title, slug], the name an agent files under, and the answer: the area's ID, a new
+    // area, or a refusal with the close names. Each answer is what the resolver of the release
+    // before gave for the same input.
+    const home: [string, string][] = [["Home", "home"]];
+    const resumes: [string, string][] = [
+      ["Resume", "resume"],
+      ["Résumé", "resume-2"],
+    ];
+    const work: [string, string][] = [["Client work", "client-work"]];
+    const cafe: [string, string][] = [["Café", "cafe"]];
+    const typo = (...suggestions: string[]) => ({ code: "invalid_input", suggestions });
+    const table: [[string, string][], string, unknown][] = [
+      [home, "Hoem", "new"],
+      [home, "Hmoe", "new"],
+      [home, "HOME", "a_1"],
+      [resumes, "resume", "a_1"],
+      [resumes, "résumé", "a_2"],
+      [resumes, "Resume", "a_1"],
+      [resumes, "Résumé", "a_2"],
+      [resumes, "RÉSUMÉ", "a_2"],
+      [[["Résumé", "resume"]], "Resume", "a_1"],
+      [[["Resume", "resume"]], "Résumé", typo("Resume")],
+      [[["Dev", "dev"]], "Dew", typo("Dev")],
+      [[["2025", "2025"]], "2026", typo("2025")],
+      [[["Q1", "q1"]], "Q2", "new"],
+      [work, "Client   work", "a_1"],
+      [work, "  client WORK ", "a_1"],
+      [work, "Client wrok", typo("Client work")],
+      [cafe, "Cafe", "a_1"],
+      [cafe, "CAFÉ", "a_1"],
+      [[["Projects", "projects"]], "Projcts", typo("Projects")],
+      [[["Projects", "projects"]], "Porjects", typo("Projects")],
+      [[["QA", "qa"]], "UX", "new"],
+    ];
+    for (const [areas, name, expected] of table) {
+      const groups: GroupNames = {
+        areas: areas.map(([title, slug], k) => ({
+          id: `a_${String(k + 1)}`,
+          slug,
+          title,
+          area: null,
+        })),
+        projects: [],
+        aliases: [],
+      };
+      let answer: unknown;
+      try {
+        answer = resolveGroup(groups, "area", name, "p") ?? "new";
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error;
+        answer = { code: error.code, suggestions: error.data["suggestions"] };
+      }
+      expect(answer, `${name} beside ${areas.map(([title]) => title).join(", ")}`).toEqual(
+        expected,
+      );
+    }
+  });
+
+  test("of several groups a name matches, the one named exactly wins, then a live one", () => {
+    const pair: GroupNames = {
+      areas: [
+        { id: "a_1", slug: "one", title: "One", area: null, archived: true },
+        { id: "a_2", slug: "one-2", title: "ONE", area: null },
+        { id: "a_3", slug: "two", title: "Two", area: null, archived: true },
+        { id: "a_4", slug: "two-2", title: "Two", area: null },
+        { id: "a_5", slug: "three", title: "Three", area: null },
+        { id: "a_6", slug: "three-2", title: "Three", area: null },
+      ],
+      projects: [],
+      aliases: [],
+    };
+    expect(resolveGroup(pair, "area", "One", "p")).toBe("a_1");
+    expect(resolveGroup(pair, "area", "ONE", "p")).toBe("a_2");
+    expect(resolveGroup(pair, "area", "Two", "p")).toBe("a_4");
+    // Two live groups of one name are still ambiguous: each is named by its ID.
+    expect(failure(() => resolveGroup(pair, "area", "Three", "p"))).toMatchObject({
+      code: "ambiguous",
+      data: { suggestions: ["a_5", "a_6"] },
+    });
+  });
+
   test("similar titles: close trigrams, but other numbers are never close", () => {
     expect(similarTitles("Fix appointment timezones", "Fix appointment time zones")).toBe(true);
     expect(similarTitles("Call Jonas about the invoice", "call jonas about invoice")).toBe(true);
