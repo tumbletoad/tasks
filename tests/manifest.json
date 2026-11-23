@@ -5428,21 +5428,21 @@
     },
     {
       "id": "A5.agents.pace",
-      "title": "The service asks the Agent Monitor at the pace of the most attentive tab, on a clock the test moves: looked at with live usage after four passes (1 s after a settling answer, at most three times), visible only every 30 s with cached usage, nothing for a hidden tab or one without the page, still looked at for five minutes after the focus went, a closed tab forgotten and a new one given the newest at once with its age on the steady clock, the newest dropped 30 s after the last tab left, two tabs at the faster pace and none sent to a tab without the page, a launch asking at once and several while an answer is out making one request, and a missing monitor looked for again only when a page opens or gets the focus back",
+      "title": "The service asks the Agent Monitor at the pace of the most attentive tab, on a clock the test moves: looked at with live usage after four passes (1 s after a settling answer, at most three times), visible only every 30 s with cached usage, nothing for a hidden tab or one without the page, still looked at for five minutes after the focus went and the end of them read on the steady clock when a request is made, so one due late asks for cached usage, a closed tab forgotten and a new one given the newest at once with its age on the steady clock, the newest dropped 30 s after the last tab left and an answer that comes later not kept, a sign-in that ends with the last tab dropping the answer on its way, the slow flag cleared only with the next answer or failure, a view queued for a tab that stops watching never sent, two tabs at the faster pace and none sent to a tab without the page, a launch asking at once and several while an answer is out making one request, and a missing monitor looked for again only when a page opens or gets the focus back",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A5.agents.web-watch",
-      "title": "The tab tells the service on its feed whether an Agents page is mounted, the tab visible and its window focused: on each change only and again after every hello, nothing before the page mounts, the view kept only while it is mounted and dropped with the listeners when it unmounts, and a view of another shape is no view",
+      "title": "The tab tells the service on its feed whether an Agents page is mounted, the tab visible and its window focused: on each change only and again after every hello, nothing before the page mounts, the view kept only while it is mounted and dropped with the listeners when it unmounts, the view not current from a lost connection until the next one sends its view and for good once the service runs another build (which the page then neither tells nor takes a view from), and a view of another shape is no view",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A5.agents.web-page",
-      "title": "The Agents page in a DOM: TTasks' own rows first, then the monitor's every state in words (nothing before it says anything; not installed, a script or too old as one quiet line; does not fit naming the side to update; looking, settling and no agents; failed with run ttam doctor and not updating with the picture's age), sessions with what needs you first, then what works, then the rest as they started and unknown never idle, a session's app, account, folder, age and agents inside, plan usage per account with each limit, a limit reached, a reading from an earlier period, none yet, none for the sign-in, a check running or failed, and the picture dropped when the page unmounts",
+      "title": "The Agents page in a DOM: TTasks' own rows first, then the monitor's every state in words (nothing before it says anything; not installed, a script or too old as one quiet line; does not fit naming the side to update and older or newer only for a version that differs; looking, settling and no agents; failed with run ttam doctor and not updating; a picture that is not current muting both parts with its age and no check said to run now), sessions with what needs you first, then what works, then the rest as they started and unknown never idle, a session's app, account, folder, age and agents inside, plan usage per account with each limit, a limit reached, a reading from an earlier period, none yet, none for the sign-in, a check running or failed, and the picture dropped when the page unmounts",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5456,7 +5456,7 @@
     },
     {
       "id": "A5.agents.e2e.screens",
-      "title": "In Chromium and Firefox, against the fake ttam: the Agents page looking, settling, with agents and plan usage, with none running, not updating, failed, not installed and with either side to update, each in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll, no control in the monitor's parts, and nothing of the monitor in the browser's storage or in an address the page asked for (Washi, axe and the screenshots in Chromium only)",
+      "title": "In Chromium and Firefox, against the fake ttam held in each state until it is checked: the Agents page looking, settling, with agents and plan usage, with none running, with its service gone (both parts muted with their age), not updating and failed (both parts muted), not installed and with either side to update, each in Sumi and Washi at 1,440 and 390 px (the service gone in one theme), axe clean, no sideways scroll, no control in the monitor.s parts, a focused row of TTasks. own keeping its focus and place while the monitor.s parts change, and nothing of the monitor in the browser's storage or in an address the page asked for (Washi, axe and the screenshots in Chromium only)",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

@@ -69,6 +69,9 @@ const code = await runServe({
     ? {}
     : {
         monitor: {
+          // A fake the test holds stays held: no deadline fails it, and an answer held is soon
+          // overdue (4 passes of the recording's half a second).
+          times: { helloMs: 3_600_000, answerMs: 3_600_000, slowMs: 1_000, retryMs: [1_000] },
           command: () => {
             if (readFileSync(monitor, "utf8").trim() === "none") {
               return Promise.resolve({ ok: false as const, reason: "not_found" as const });

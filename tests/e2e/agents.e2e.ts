@@ -2,7 +2,9 @@
 // service process: without TTAM the page is as it was plus one quiet line; with the test kit's
 // fake `ttam`, steered through the world, every state of the monitor in words, at 1,440 and
 // 390 px and in both themes, axe clean, with nothing to reach by pointer only and nothing of the
-// monitor in the browser's storage or in a URL. Fixture data only.
+// monitor in the browser's storage or in a URL. The fake holds each passing state (before its
+// hello, or before an answer) until the test has checked it: no state waits on a real answer's
+// time. Fixture data only.
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { axeFound, picture, pictures, showsSpace, signIn, themes } from "./page.ts";
@@ -19,9 +21,11 @@ const PRIVATE = [
 ];
 
 const status = (page: Page) => page.locator('[data-part="monitor-status"]');
+const usageStatus = (page: Page) => page.locator('[data-part="usage-status"]');
 const note = (page: Page) => page.locator('[data-part="monitor-note"]');
 const sessions = (page: Page) => page.locator('[data-part="session"]');
 const computer = (page: Page) => page.locator('[data-part="computer"]');
+const usage = (page: Page) => page.locator('[data-part="usage"]');
 
 async function openAgents(page: Page, world: World): Promise<void> {
   await signIn(page, world, `/s/${world.mira.id}/agents`);
@@ -38,22 +42,37 @@ async function parts(page: Page): Promise<string[]> {
   return found;
 }
 
-/** The state in every theme of this browser, at 1,440 and 390 px: pictures, axe and no sideways scroll. */
+/** The state in this theme at 1,440 and 390 px: pictures, axe and no sideways scroll. */
+async function widths(page: Page, name: string, theme: string): Promise<void> {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await picture(page, `agents-${name}-${theme}-1440.png`, { fullPage: true });
+  if (pictures()) expect(await axeFound(page, await parts(page)), `axe in ${theme}`).toEqual([]);
+  await page.setViewportSize({ width: 390, height: 900 });
+  const scroll = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
+  await picture(page, `agents-${name}-${theme}-390.png`, { fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+}
+
+/** The state in every theme of this browser, at both widths. */
 async function shots(page: Page, world: World, name: string): Promise<void> {
   for (const theme of themes()) {
     await world.machine("ui.theme", theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme, { timeout: SLOW_MS });
-    await page.setViewportSize({ width: 1440, height: 1000 });
-    await picture(page, `agents-${name}-${theme}-1440.png`, { fullPage: true });
-    if (pictures()) expect(await axeFound(page, await parts(page)), `axe in ${theme}`).toEqual([]);
-    await page.setViewportSize({ width: 390, height: 900 });
-    const scroll = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    );
-    expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
-    await picture(page, `agents-${name}-${theme}-390.png`, { fullPage: true });
+    await widths(page, name, theme);
   }
-  await page.setViewportSize({ width: 1440, height: 1000 });
+}
+
+/** Both of the monitor's parts show a picture that is not current, with its age. */
+async function notCurrent(page: Page): Promise<void> {
+  await expect(computer(page)).toHaveAttribute("data-stale", "true", { timeout: SLOW_MS });
+  await expect(usage(page)).toHaveAttribute("data-stale", "true");
+  await expect(status(page)).toContainText("Not updating: this is what TTAM saw");
+  await expect(usageStatus(page)).toContainText("Not updating: this is what TTAM saw");
+  // Nothing in either part speaks of now.
+  await expect(usage(page)).not.toContainText("Checking now");
 }
 
 test.describe("[A5.agents.e2e.none] without TTAM the Agents page is as it was, plus one quiet line", () => {
@@ -72,12 +91,12 @@ test.describe("[A5.agents.e2e.none] without TTAM the Agents page is as it was, p
 });
 
 test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents page, in both themes and at both widths", () => {
-  test("looking, settling, agents and plan usage, none running, not updating, failed, not installed and either side to update", async ({
+  test("looking, settling, agents and plan usage, none running, a lost service, not updating, failed, not installed and either side to update", async ({
     browser,
     monitored: world,
   }) => {
-    // Nine states, two themes, two widths, and the waits a stalled monitor takes: slow, never stuck.
-    test.setTimeout(900_000);
+    // Ten states, two themes, two widths, and a restart of the service.
+    test.setTimeout(600_000);
     const context = await browser.newContext({
       bypassCSP: true,
       viewport: { width: 1440, height: 1000 },
@@ -90,8 +109,8 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
         urls.push(request.url());
       });
 
-      // Looking: TTAM answers its first request slowly.
-      world.monitor("slow=20000");
+      // Looking: TTAM is held before its hello.
+      world.monitor("hold");
       await openAgents(page, world);
       await expect(status(page)).toHaveText("Looking for agents on this computer.", {
         timeout: SLOW_MS,
@@ -120,22 +139,54 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
       ).toHaveCount(0);
       await shots(page, world, "sessions");
 
+      // A row of TTasks' own keeps its focus and its place while the monitor's parts change.
+      await world.agentLog(world.mira.id, world.task.id, "Checked the fixtures");
+      const row = page.locator(`main li[data-task="${world.task.ref}"]`);
+      await expect(row).toBeVisible({ timeout: SLOW_MS });
+      const title = row.locator('[data-part="title"]');
+      await title.focus();
+      const place = (await row.boundingBox())?.y;
+      expect(place).toBeDefined();
+      world.monitor("no_agents");
+      await expect(status(page)).toHaveText("No agent is running on this computer.", {
+        timeout: SLOW_MS,
+      });
+      await expect(title).toBeFocused();
+      expect((await row.boundingBox())?.y).toBe(place);
+      world.monitor("");
+      await expect(sessions(page)).toHaveCount(5, { timeout: SLOW_MS });
+      await expect(title).toBeFocused();
+      expect((await row.boundingBox())?.y).toBe(place);
       world.monitor("no_agents");
       await expect(status(page)).toHaveText("No agent is running on this computer.", {
         timeout: SLOW_MS,
       });
       await shots(page, world, "empty");
 
-      // Not updating: an answer is overdue, and the last picture stays with its age.
+      // The service goes away (an update, a restart): what the page shows is as it was.
       world.monitor("");
       await expect(sessions(page)).toHaveCount(5, { timeout: SLOW_MS });
-      world.monitor("slow=40000");
+      await world.restart(async () => {
+        await notCurrent(page);
+        await expect(
+          page.getByText("TTasks's service is not running. Trying again."),
+        ).toBeVisible();
+        const theme = (await page.locator("html").getAttribute("data-theme")) ?? "sumi";
+        await widths(page, "offline", theme);
+      });
+      await openAgents(page, world);
+      await expect(sessions(page)).toHaveCount(5, { timeout: SLOW_MS });
+
+      // Not updating: an answer is held, and is soon overdue.
+      world.monitor("hold");
       await expect(status(page)).toContainText("TTAM has not answered for a while.", {
         timeout: SLOW_MS,
       });
+      await notCurrent(page);
       await shots(page, world, "not-updating");
       world.monitor("");
       await expect(status(page)).toHaveText("", { timeout: SLOW_MS });
+      await expect(computer(page)).not.toHaveAttribute("data-stale");
 
       // Failed: the child ends mid-answer, again each time it is started.
       world.monitor("die");
@@ -143,6 +194,7 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
         "TTAM stopped answering. If this lasts, run ttam doctor.",
         { timeout: SLOW_MS },
       );
+      await notCurrent(page);
       await expect(sessions(page)).toHaveCount(5);
       await shots(page, world, "failed");
 
@@ -158,11 +210,15 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
       // Does not fit, either way: opening the page looks again.
       world.monitor("version=9,1");
       await openAgents(page, world);
-      await expect(note(page)).toContainText("Update TTasks", { timeout: SLOW_MS });
+      await expect(note(page)).toContainText("newer than TTasks can read. Update TTasks", {
+        timeout: SLOW_MS,
+      });
       await shots(page, world, "newer");
       world.monitor("version=3,1");
       await openAgents(page, world);
-      await expect(note(page)).toContainText("Update TTAM", { timeout: SLOW_MS });
+      await expect(note(page)).toContainText("older than TTasks can read. Update TTAM", {
+        timeout: SLOW_MS,
+      });
       await shots(page, world, "older");
 
       // Nothing of the monitor in the browser's storage, or in any address the page asked for.
