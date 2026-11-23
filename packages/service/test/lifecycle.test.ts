@@ -275,6 +275,8 @@ describe("[A2.3.3.hub.exit-codes] exit codes and refusals as a process", () => {
 
       // Another program's listener there keeps every new connection.
       const other = createServer((socket) => {
+        // The start's own look hangs up at once: its answer goes nowhere.
+        socket.on("error", () => undefined);
         socket.end("other");
       });
       await new Promise<void>((resolve) => {

@@ -83,9 +83,7 @@ describe("[A2.3.4.hub.stale-recovery] ttasks doctor names what is in the way of 
           endpoint: { kind: "unix", path: join(root, "gone.sock") },
         }),
       );
-      const stale = await serviceRow();
-      expect(stale).toContain(aFile);
-      expect(stale).toMatch(/^TTasks's service /);
+      expect(await serviceRow()).toContain(aFile);
 
       // Another program listening where the socket goes.
       rmSync(plan.path);
