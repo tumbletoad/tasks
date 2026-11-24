@@ -201,7 +201,7 @@ export interface WorldOptions {
 }
 
 /** The T3 Code instance of a world with T3. */
-export const T3_INSTANCE = { key: "t3", label: "T3 Code · test", glyph: "T3" } as const;
+export const T3_INSTANCE = { key: "t3", label: "T3 Code", glyph: "T3" } as const;
 
 /** The fake Codex's instance in a world with runs: the first that can run, Run's default. */
 export const CODEX_INSTANCE = { key: "codex-fake", label: "Codex · test", glyph: "Cx" } as const;

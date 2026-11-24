@@ -25,7 +25,7 @@ const CLI_BIN = fileURLToPath(new URL("../../packages/cli/src/bin.ts", import.me
 /** The one instance the page offers: the fake agent, as machine.toml's `[[instance]]` has it. */
 export const FAKE_INSTANCE = {
   key: "fake-agent",
-  label: "Fake agent · test",
+  label: "Claude Code",
   glyph: "Cc",
   ring: 1,
   route: "terminal",

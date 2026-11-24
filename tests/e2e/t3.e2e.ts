@@ -30,9 +30,17 @@ function parts(page: Page, ref: string) {
   const row = page.locator(`main li[data-task="${ref}"]`);
   return {
     composer: row.locator('[data-part="composer"]'),
-    open: row
-      .getByRole("toolbar", { name: "Act on this task" })
-      .getByRole("button", { name: `Open in ${T3_INSTANCE.label}` }),
+    /** Open in T3 Code from the menu beside Open, which holds every agent, the button's too. */
+    open: async () => {
+      await row
+        .getByRole("toolbar", { name: "Act on this task" })
+        .getByRole("button", { name: "Open with another agent" })
+        .click();
+      await page
+        .getByRole("menu", { name: "Open with another agent" })
+        .getByRole("menuitemradio", { name: `Open in ${T3_INSTANCE.label}` })
+        .click();
+    },
     opened: row.locator('[data-entry="session"][data-state="opened"]'),
   };
 }
@@ -67,7 +75,7 @@ test.describe("[A4.3.4.1.t3.e2e] Open in T3 Code from the page", () => {
 
     // T3 Code is not running: Start comes first, and starts it through its link.
     await fake.stop();
-    await p.open.click();
+    await p.open();
     const stopped = page.getByRole("status").filter({ hasText: "T3 Code is not running." });
     await expect(stopped).toBeVisible({ timeout: SLOW_MS });
     await pictures(page, "t3-not-running");
@@ -80,7 +88,7 @@ test.describe("[A4.3.4.1.t3.e2e] Open in T3 Code from the page", () => {
 
     // Not paired: Pair opens T3 Code's approval page, where the person approves, here choosing
     // read only.
-    await p.open.click();
+    await p.open();
     const unpaired = page.getByRole("status").filter({ hasText: "Pair TTasks with T3 Code" });
     await expect(unpaired).toBeVisible({ timeout: SLOW_MS });
     await pictures(page, "t3-not-paired");
@@ -95,7 +103,7 @@ test.describe("[A4.3.4.1.t3.e2e] Open in T3 Code from the page", () => {
 
     // A read-only pairing: one press, no thread, the reason and Pair again.
     const portal = fake.addProject(here(world.portal), "portal");
-    await p.open.click();
+    await p.open();
     const narrow = page
       .getByRole("status")
       .filter({ hasText: "The pairing with T3 Code does not allow this" });
@@ -109,7 +117,7 @@ test.describe("[A4.3.4.1.t3.e2e] Open in T3 Code from the page", () => {
     // Open at the project's root, with words of the person's: one thread, the brief in its
     // composer, and the words only in the launch's request.
     await p.composer.fill("Fixture words: read the handoff notes first.");
-    await p.open.click();
+    await p.open();
     await expect(p.opened).toHaveCount(1, { timeout: SLOW_MS });
     await expect(p.opened).toContainText(`Opened in ${T3_INSTANCE.label}`);
     const thread = [...fake.threads.values()].find((t) => t.title.startsWith(`${ref} `));
@@ -135,7 +143,7 @@ test.describe("[A4.3.4.1.t3.e2e] Open in T3 Code from the page", () => {
     );
     await openTask(page, world, inside);
     const q = parts(page, inside);
-    await q.open.click();
+    await q.open();
     await expect(q.opened).toHaveCount(1, { timeout: SLOW_MS });
     const own = [...fake.projects.values()].find((project) =>
       here(project.workspaceRoot).endsWith("appointments"),
