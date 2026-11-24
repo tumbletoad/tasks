@@ -201,6 +201,16 @@ export interface Instance {
   };
 }
 
+/** Whether an instance is for `space`: its `spaces` name none, or name it by ID or by name. */
+export function servesSpace(
+  instance: Pick<Instance, "spaces">,
+  space: { readonly id: string; readonly name?: string | undefined },
+): boolean {
+  if (instance.spaces.length === 0) return true;
+  const name = space.name?.toLowerCase();
+  return instance.spaces.some((s) => s === space.id || s.toLowerCase() === name);
+}
+
 const T3_KEYS = ["t3_environment", "t3_provider_instance", "t3_model"] as const;
 
 /**

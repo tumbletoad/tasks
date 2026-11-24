@@ -7,6 +7,7 @@ import {
   checkArgvTemplate,
   checkUrlTemplate,
   inTestedRange,
+  SETTINGS,
   targetDef,
   versionIn,
 } from "../src/catalogue.ts";
@@ -26,6 +27,11 @@ describe("[A4.3.2.catalogue.invariants] the built-in target catalogue", () => {
         // A sent prompt in argv always follows `--`, so a brief is never read as an option.
         if (route.kind === "terminal" && route.prompt === "sent") {
           expect(route.argv?.slice(-2)).toEqual(["--", "{brief}"]);
+        }
+        // Open sends a prompt only with everything the instance sets: a terminal or link route
+        // that sends one carries it all, so a route that leaves something out never sends.
+        if ((route.kind === "terminal" || route.kind === "link") && route.prompt === "sent") {
+          expect(route.carries, target.id).toEqual(SETTINGS);
         }
       }
       if (target.testedVersions !== "")

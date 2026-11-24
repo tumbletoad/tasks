@@ -7,11 +7,13 @@
 //      whole: what a profile exports (nvm's PATH, a tool's home) is what the agent needs.
 //    - `service`: the service's own environment, when no user base could be read. Only the names
 //      of an allow-list are picked from it, so the service's other variables never reach the agent.
-// 2. The home variables (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`) are removed (A4 3.8), so only an
-//    instance's own `env` selects a home.
-// 3. The instance's `env` applies.
-// 4. A4 3.8's scrub, after merging (SCRUB_NAMES, SCRUB_PREFIXES, every `TTASKS_*` among them), then
-//    A4's additions: `TTASKS_TICKET` for the bridge's role, `TTASKS_TASK` and `TTASKS_SPACE` as hints.
+// 2. Taken out of the base: the home variables (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, A4 3.8), so
+//    only an instance's own `env` selects a home; A4 3.8's scrub (SCRUB_NAMES, SCRUB_PREFIXES),
+//    which leaves the variables that say which account an app uses (accountVariable); and those
+//    too for an instance with a home of its own (`ownHome`), whose account is the one signed in there.
+// 3. The instance's `env` applies: what the person set for it wins.
+// 4. Every `TTASKS_*`, the product's own, after merging, then A4's additions: `TTASKS_TICKET` for
+//    the bridge's role, `TTASKS_TASK` and `TTASKS_SPACE` as hints.
 // 5. Linux and macOS: PATH gets the executable's own folder in front (nvm keeps `node` beside it).
 //
 // Windows names are case-insensitive: a later layer replaces an earlier name whatever its case, and
@@ -21,7 +23,7 @@
 // set empty (6.): the agent gets the base's value or none, never the shim's.
 import { posix } from "node:path";
 import { ENV_PREFIX, envVar } from "@ttasks/brand";
-import { HOME_VARIABLES } from "../catalogue.ts";
+import { accountVariable, HOME_VARIABLES, type BuiltInTargetId } from "../catalogue.ts";
 import { AGENT_ENV_NAME, isBoundedText, REPLY_BOUNDS } from "./wire.ts";
 
 /** The base's share of the names: half, less room for libuv's names and A4's additions. */
@@ -180,6 +182,8 @@ export interface EnvironmentInput {
   readonly baseKind?: BaseKind;
   /** The instance's `env` (machine.toml `[[instance]]`). */
   readonly instance: Readonly<Record<string, string>>;
+  /** The app whose home the instance has of its own: its account variables are not inherited. */
+  readonly ownHome?: BuiltInTargetId;
   /** A4's additions, by the names of ADDED. */
   readonly additions: Readonly<Record<string, string>>;
   /** The agent's absolute executable: its folder goes in front of PATH (Linux and macOS). */
@@ -210,15 +214,22 @@ export function agentEnvironment(input: EnvironmentInput): Record<string, string
     const listed = whole || allowed.has(key(name)) || prefixes.some((p) => name.startsWith(p));
     if (listed) set(name, value);
   }
-  // 2. The home variables, whatever the list says (A4 3.8).
+  // 2. Out of the base: the home variables whatever the list says, the scrub, and a home of its
+  // own's account variables.
   const homes = new Set(HOME_VARIABLES.map(key));
-  drop((name) => homes.has(key(name)));
+  const { platform, ownHome } = input;
+  drop(
+    (name) =>
+      homes.has(key(name)) ||
+      (ownHome !== undefined && accountVariable(name, platform, ownHome)) ||
+      (scrubbed(name, platform) && !accountVariable(name, platform)),
+  );
   // 3. The instance's own.
   for (const [name, value] of Object.entries(input.instance)) {
     if (!value.includes("\0") && isEnvName(name)) set(name, value);
   }
-  // 4. A4 3.8's scrub after merging, every TTASKS_* with it, then A4's additions.
-  drop((name) => scrubbed(name, input.platform));
+  // 4. The product's own after merging, then A4's additions.
+  drop((name) => key(name).startsWith(ENV_PREFIX));
   for (const [name, value] of Object.entries(input.additions)) {
     if (value !== "" && !value.includes("\0")) set(name, value);
   }

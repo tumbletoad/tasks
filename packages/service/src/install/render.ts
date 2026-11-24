@@ -408,13 +408,7 @@ export function unitNotOurs(text: string): NotOurs | undefined {
   if (unusualText(text, { bom: true })) return "unusual_text";
   const lines = unitLines(text);
   const directives = unitDirectives(text);
-  let starts: string[] = [];
-  for (const d of directives) {
-    if (d.section !== "Service" || d.key !== "ExecStart") continue;
-    // An empty assignment resets the list (systemd.service(5)).
-    starts = d.value === "" ? [] : [...starts, d.value];
-  }
-  const words = starts.length === 1 && plainExec(starts[0] ?? "") ? execWords(starts[0] ?? "") : [];
+  const words = startWords(directives);
   const program = words[0] ?? "";
   if (
     words.length !== 2 ||
@@ -442,6 +436,21 @@ export function unitNotOurs(text: string): NotOurs | undefined {
 }
 
 export const isOwnUnit = (text: string): boolean => unitNotOurs(text) === undefined;
+
+/** The words of a unit's one plain ExecStart, as systemd reads them; none for anything else. */
+function startWords(directives: readonly { section: string; key: string; value: string }[]) {
+  let starts: string[] = [];
+  for (const d of directives) {
+    if (d.section !== "Service" || d.key !== "ExecStart") continue;
+    // An empty assignment resets the list (systemd.service(5)).
+    starts = d.value === "" ? [] : [...starts, d.value];
+  }
+  return starts.length === 1 && plainExec(starts[0] ?? "") ? execWords(starts[0] ?? "") : [];
+}
+
+/** The program a unit starts: its one plain ExecStart's first word. */
+export const unitProgram = (text: string): string | undefined =>
+  startWords(unitDirectives(text))[0];
 
 // ---------------------------------------------------------------------------------------------
 // Windows: the HKCU Run value (A2 3.3.2)
@@ -476,13 +485,16 @@ export function renderRunValue(name: string, program: string): RunValue {
  */
 export function runDataNotOurs(data: string): NotOurs | undefined {
   if (unusualText(data)) return "unusual_text";
-  const match = /^"([^"]+)"$/.exec(data);
-  return match?.[1] !== undefined &&
-    win32.isAbsolute(match[1]) &&
-    win32.basename(match[1]).toLowerCase() === `${PRODUCT_ID}w.exe`
+  const program = runDataProgram(data);
+  return program !== undefined &&
+    win32.isAbsolute(program) &&
+    win32.basename(program).toLowerCase() === `${PRODUCT_ID}w.exe`
     ? undefined
     : "not_ours";
 }
+
+/** The program a Run value starts: the one quoted path it holds. */
+export const runDataProgram = (data: string): string | undefined => /^"([^"]+)"$/.exec(data)?.[1];
 
 /** Whether a Run value's data starts a TTasks supervisor: one quoted path to `ttasksw.exe`. */
 export const isOwnRunData = (data: string): boolean => runDataNotOurs(data) === undefined;
@@ -729,6 +741,15 @@ export function plistNotOurs(text: string, label: string): NotOurs | undefined {
 
 export const isOwnPlist = (text: string, label: string): boolean =>
   plistNotOurs(text, label) === undefined;
+
+/** The program a plist starts: the one string in its ProgramArguments. */
+export function plistProgram(text: string): string | undefined {
+  const root = readPlist(text);
+  if (root?.kind !== "dict") return undefined;
+  const args = root.entries.find(([key]) => key === "ProgramArguments")?.[1];
+  const first = args?.kind === "array" && args.items.length === 1 ? args.items[0] : undefined;
+  return first?.kind === "text" ? first.text : undefined;
+}
 
 /**
  * `bin/ttasks-launchd` (A2 3.3.4): runs `ttasks serve` as its child and turns the exit codes into

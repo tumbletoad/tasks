@@ -2,6 +2,7 @@
 // the page only as the fixed words a launch records. Fixture rows only.
 import { describe, expect, test } from "vitest";
 import { RUN_LIMITS, type RunRecord } from "@ttasks/contracts/runs";
+import { leftOutEvidence } from "../launch/open.ts";
 import { WORK_ON_IT } from "../runs/agent.ts";
 import { receiptOf, UiLaunches, uiRun, type UiRunPort } from "./launches.ts";
 
@@ -41,6 +42,15 @@ describe("[A5.3.9.service.session] a Confirmed launch's session: running only wh
     expect(receiptOf(elsewhere)).not.toHaveProperty("session");
     // Only a Confirmed launch has a session to show: a dispatched one is still opening.
     expect(receiptOf(row({ claim: "c1" }), runs)).not.toHaveProperty("session");
+  });
+});
+
+describe("[A4.5.routes.chosen] the page's receipt names what its click left out", () => {
+  test("the codes the launch recorded at the click, and nothing it does not know", () => {
+    const left = leftOutEvidence(["read-only", "home"]);
+    expect(receiptOf(row({ left_out: left }))).toMatchObject({ left_out: ["read-only", "home"] });
+    expect(receiptOf(row({}))).not.toHaveProperty("left_out");
+    expect(receiptOf(row({ left_out: "elsewhere" }))).not.toHaveProperty("left_out");
   });
 });
 
@@ -211,10 +221,12 @@ describe("[M6.page.run-view] the page's view of a run", () => {
     ).rejects.toThrow("longer");
     expect(queued).toEqual([]);
     // The page offers Run for the instances the service says can run.
-    expect(launches.instances().map((i) => [i.key, i.runs])).toEqual([
-      ["codex-work", true],
-      ["claude", undefined],
-    ]);
+    expect(launches.instances("sp_3q7k9d2xw8f4r6t1c5v0b2n8a7").map((i) => [i.key, i.runs])).toEqual(
+      [
+        ["codex-work", true],
+        ["claude", undefined],
+      ],
+    );
     // Blank words are no words: the run works on the task.
     await launches.run(space, { task, request_id: id, text: "  \n" });
     await launches.run(space, { task, request_id: id, text: "Check the export" });

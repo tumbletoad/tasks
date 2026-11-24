@@ -157,6 +157,20 @@ const HOME = new RegExp(
  * go to a public pull request, so they hide this machine: what the page marks `data-machine` (its
  * folders, drives and files, and machine names), and any text naming the home folder.
  */
+/** Stops the page's clock, installed before, where it is now: its timers wait for `resume`. */
+export async function stopClock(page: Page): Promise<void> {
+  for (;;) {
+    const now = await page.evaluate(() => Date.now());
+    try {
+      await page.clock.pauseAt(now + 1);
+      return;
+    } catch (error) {
+      // The clock moved on between the read and the pause: read it again.
+      if (!String(error).includes("past")) throw error;
+    }
+  }
+}
+
 export async function picture(
   target: Page | Locator,
   name: string,

@@ -150,9 +150,17 @@ type Step =
    * The sequences a redo passes over: a human removes, restores and edits one task, undoes the
    * three, and an agent adds a note; or makes an area and a project in it, undoes both, and an
    * agent takes the area's slug; or links a task to a new source and another task to it, undoes
-   * both, and an agent takes the key. Then the human redoes.
+   * both, and an agent takes the key. Then the human redoes. Or (`held`) a human removes and
+   * restores a task, an agent adds a note, and the human's partial undo of the restore leaves it,
+   * a redo brings nothing back, and an undo tries again.
    */
-  | { kind: "story"; who: number; story: "trash" | "groups" | "links"; task: number; slot: number };
+  | {
+      kind: "story";
+      who: number;
+      story: "trash" | "groups" | "links" | "held";
+      task: number;
+      slot: number;
+    };
 
 const VALUES: Readonly<Record<Patchable, readonly string[]>> = {
   summary: ["", "Next: compare totals", "Waiting on Tomas"],
@@ -247,7 +255,12 @@ const step: fc.Arbitrary<Step> = fc.oneof(
     arbitrary: fc.record({
       kind: fc.constant("story" as const),
       who: human,
-      story: fc.constantFrom("trash" as const, "groups" as const, "links" as const),
+      story: fc.constantFrom(
+        "trash" as const,
+        "groups" as const,
+        "links" as const,
+        "held" as const,
+      ),
       task,
       slot,
     }),
@@ -285,6 +298,16 @@ function expand(s: Step): Step[] {
         ...undo(3),
         { kind: "note", actor: 1, task: s.task },
         ...redo,
+      ];
+    }
+    if (s.story === "held") {
+      return [
+        { kind: "remove", actor: s.who, task: s.task },
+        { kind: "restore", actor: s.who, task: s.task },
+        { kind: "note", actor: 1, task: s.task },
+        { kind: "undo", who: s.who, partial: true },
+        { kind: "redo", who: s.who },
+        { kind: "undo", who: s.who, partial: false },
       ];
     }
     if (s.story === "groups") {
@@ -581,6 +604,22 @@ class Model {
     return last;
   }
 
+  /**
+   * When `commit` last wrote `row`'s field: by the newest redo of it that wrote that field again,
+   * else by its own seq. A redo writes again only what its undo took back.
+   */
+  rowApplied(commit: ModelCommit, row: ModelChange): number {
+    const field = row.create === true ? TOMBSTONE[row.entity] : row.field;
+    let last = commit.seq;
+    for (const c of this.commits.values()) {
+      if (c.kind !== "redo" || c.redoOf !== commit.seq) continue;
+      if (c.rows.some((r) => r.entity === row.entity && r.id === row.id && r.field === field)) {
+        last = Math.max(last, c.seq);
+      }
+    }
+    return last;
+  }
+
   undoTarget(owner: number): ModelCommit | undefined {
     let newest: ModelCommit | undefined;
     for (const c of this.commits.values()) {
@@ -628,7 +667,13 @@ class Model {
    */
   failing(
     rows: readonly ModelChange[],
-    options: { partial: boolean; creating: number; since: number; principal: number },
+    options: {
+      partial: boolean;
+      creating: number;
+      /** When the step last wrote a row: others' changes after it are newer work. */
+      since: (row: ModelChange) => number;
+      principal: number;
+    },
   ): { failed: Set<ModelChange>; named: Named[] } {
     const failed = new Set<ModelChange>();
     const named: Named[] = [];
@@ -665,7 +710,7 @@ class Model {
           ((r.entity === "areas" || r.entity === "projects") &&
             this.slugTaken(r.entity, row.key ?? "", r.id));
         if (taken) failed.add(r);
-      } else if (this.newer(r, options.since, options.principal)) {
+      } else if (this.newer(r, options.since(r), options.principal)) {
         failed.add(r);
       }
     }
@@ -706,7 +751,7 @@ class Model {
   broken(
     rows: readonly ModelChange[],
     skip: ReadonlySet<ModelChange>,
-    options: { redo: boolean; since: number; named?: Named[] },
+    options: { redo: false } | { redo: true; since: number; named?: Named[] },
   ): Set<ModelChange> {
     const cells = this.#after(rows, skip);
     const live = (entity: Entity, id: number) =>
@@ -1267,14 +1312,14 @@ const property = (seen: Seen) =>
           const options = {
             partial: s.partial,
             creating: target.seq,
-            since: model.lastApplied(target),
+            since: (row: ModelChange) => model.rowApplied(target, row),
             principal: s.who,
           };
           const guard = model.failing(target.rows, { ...options, partial: false });
           const creates = target.rows.some((r) => r.create === true);
           if (guard.named.some((k) => k.endsWith("|runs"))) count(seen, "create kept by a run");
           let skip = s.partial ? model.failing(target.rows, options).failed : guard.failed;
-          let broken = model.broken(target.rows, skip, { redo: false, since: options.since });
+          let broken = model.broken(target.rows, skip, { redo: false });
           if (!s.partial && (guard.failed.size > 0 || broken.size > 0)) {
             expect(result.status).toBe("conflict");
             expect(result.error?.code).toBe("UNDO_CONFLICT");
@@ -1284,6 +1329,16 @@ const property = (seen: Seen) =>
             count(seen, creates ? "create kept" : "undo conflict");
             if (target.rows.some((r) => r.field === "deleted" && r.before === "")) {
               count(seen, "undo of a restore kept by newer work");
+            }
+            // Kept by work from before the step's newest redo, which did not bring that row back.
+            if (
+              [...guard.failed].some(
+                (r) =>
+                  r.field === TOMBSTONE[r.entity] &&
+                  model.rowApplied(target, r) < model.lastApplied(target),
+              )
+            ) {
+              count(seen, "undo kept past a redo that left the row");
             }
             // R2: a field set back to the value the human wrote is still another's write.
             if (
@@ -1298,7 +1353,7 @@ const property = (seen: Seen) =>
           // A partial undo leaves out what breaks a rule across rows, and checks again.
           while (broken.size > 0) {
             skip = new Set([...skip, ...broken]);
-            broken = model.broken(target.rows, skip, { redo: false, since: options.since });
+            broken = model.broken(target.rows, skip, { redo: false });
           }
           expect(result.status, JSON.stringify(result.error)).toBe("applied");
           if (plain(target.rows)) {
@@ -1352,7 +1407,7 @@ const property = (seen: Seen) =>
             const options = {
               partial: false,
               creating: target.seq,
-              since: undone.seq,
+              since: () => undone.seq,
               principal: s.who,
             };
             const guard = model.failing(undone.rows, options);
@@ -1438,6 +1493,7 @@ describe("[A1.5.history.property] undo and redo against a reference model", () =
       "redo conflict",
       "redo past a step",
       "redo of a removal kept by newer work",
+      "undo kept past a redo that left the row",
       "redo kept from a row or key",
       "redo ended",
       "NOTHING_TO_UNDO",

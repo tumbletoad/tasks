@@ -7,6 +7,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { CLI_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
 import { Refused, type Api, type Busy, type Instance, type Opened, type Run } from "../api.ts";
 import { ToastContext } from "../app/frame.ts";
@@ -110,6 +111,7 @@ const opened = (call: number, text: Opened["text"]): Opened => ({
   copy: undefined,
   text,
   note: "n1",
+  leftOut: [],
 });
 /** How often the page read the runs. */
 let reads: number;
@@ -289,6 +291,26 @@ const runKeys = (repeat: boolean) => {
 };
 
 describe("[M6.page.run-once] one press is one run, and a Run without an answer is not started twice", () => {
+  test("an instance that can only run here (no terminal opens it) offers its Run and no Open", async () => {
+    const runOnly: Instance = {
+      key: CODEX.key,
+      label: CODEX.label,
+      glyph: CODEX.glyph,
+      ring: CODEX.ring,
+      runs: true,
+    };
+    act(() => {
+      const at = snapshot();
+      live.store.push({ ...at, cursor: { ...at.cursor, seq: 11 }, instances: [runOnly] });
+      live.store.flush();
+    });
+    await settle();
+    expect(runButton()).not.toBeNull();
+    expect(
+      container.querySelector(`li[data-key="${TASK.id}"] button[data-part="open"]`),
+    ).toBeNull();
+  });
+
   test("until the service answers again, the same words carry the same request ID", async () => {
     expect(runButton()).not.toBeNull();
     down = true;
@@ -606,6 +628,52 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
       "Copied",
       "Codex already had this task open or opening. What you typed is saved on the task as a note.",
     ]);
+  });
+
+  test("an Open that could not carry what its instance sets says what it left out, before anything is sent", async () => {
+    openAnswer = (call) =>
+      Promise.resolve({ ...opened(call, "request"), leftOut: ["read-only", "home"] });
+    await open();
+    openAnswer = (call) => Promise.resolve({ ...opened(call, "request"), leftOut: ["arguments"] });
+    type("And the receipts");
+    await open();
+    expect(toasts).toEqual([
+      `Opened in Codex without your read-only setting and the account you chose for it, which this way of opening cannot carry. A terminal can, where one is set up: see ${CLI_NAME} doctor.`,
+      `Opened in Codex without your extra arguments, which this way of opening cannot carry. A terminal can, where one is set up: see ${CLI_NAME} doctor.`,
+    ]);
+  });
+
+  test("an Open its instance cannot do here says why and what would, and starts nothing", async () => {
+    for (const reason of ["no_terminal", "own_home", "not_for_space"]) {
+      openAnswer = () =>
+        Promise.reject(new Refused(400, "invalid_input", undefined, { field: "instance", reason }));
+      await open();
+    }
+    expect(toasts).toEqual([
+      `No terminal can open Codex here. Nothing was started. ${CLI_NAME} doctor says why.`,
+      `Only a terminal opens Codex with the account you chose for it, and none can start here. Nothing was started. ${CLI_NAME} doctor says why.`,
+      "Codex is set up for other spaces only. Nothing was started.",
+    ]);
+  });
+
+  test("what an Open left out is said beside the clipboard's outcome, also when the browser did not allow copying", async () => {
+    const leftOut = (call: Parameters<typeof opened>[0]) =>
+      Promise.resolve({ ...opened(call, "request"), copy: "brief", leftOut: ["read-only"] });
+    const without = `Opened in Codex without your read-only setting, which this way of opening cannot carry. A terminal can, where one is set up: see ${CLI_NAME} doctor.`;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new Error("denied")) },
+    });
+    openAnswer = leftOut;
+    await open();
+    expect(toasts).toEqual([`The browser did not allow copying. ${without}`]);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.resolve() },
+    });
+    type("And the receipts");
+    await open();
+    expect(toasts.slice(1)).toEqual(["Copied", without]);
   });
 });
 

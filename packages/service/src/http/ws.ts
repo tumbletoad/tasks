@@ -97,8 +97,11 @@ export interface FeedOptions {
    * at every tick, so an open feed ends when its token does.
    */
   readonly live: (grant: string) => boolean;
-  /** The instances a snapshot names for the page's launch tiles (A5 3.15 step 1). Default none. */
-  readonly instances?: () => readonly UiInstance[];
+  /**
+   * The instances a snapshot of a space names for the page's launch tiles (A5 3.15 step 1).
+   * Default none.
+   */
+  readonly instances?: (space: string) => readonly UiInstance[];
   /** This machine's settings of the page, which every tab follows (hub/machine-settings.ts). */
   readonly machine?: () => readonly PreferenceRead[];
   /**
@@ -515,7 +518,8 @@ class FeedSocket {
     space: ServedSpace,
     reason?: "epoch" | "cursor_ahead" | "copy",
   ): Promise<void> {
-    const instances: readonly UiInstance[] = this.#hub.options.instances?.() ?? [];
+    const instances: readonly UiInstance[] =
+      space.id === undefined ? [] : (this.#hub.options.instances?.(space.id) ?? []);
     const facts = factsOf(space, this.#hub.options.host);
     this.#facts = JSON.stringify(facts);
     return this.#send({

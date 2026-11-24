@@ -61,7 +61,9 @@ export const spaceRoute = createRoute({
   path: "/s/$space",
   component: function SpaceLayout() {
     const { space } = spaceRoute.useParams();
-    if (!SPACE_ID.test(space)) return <Navigate to="/" replace />;
+    // A link to a space the page cannot have says so and lets the person choose: landing on the
+    // default would put their next edit in another list without a word.
+    if (!SPACE_ID.test(space)) return <Landing unknown />;
     return (
       <SpaceSession key={space} space={space}>
         <Shell space={space} />
