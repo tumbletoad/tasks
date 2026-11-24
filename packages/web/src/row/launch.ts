@@ -126,6 +126,23 @@ export function homeRefusal(error: unknown): { readonly works?: string } | undef
   return typeof space === "string" ? { works: space } : {};
 }
 
+/**
+ * The service's refusal of an Open whose instance cannot open here: it is set up for other spaces,
+ * or no terminal can open it, or none with the account set for it. Undefined for any other answer.
+ */
+export function instanceRefusal(
+  error: unknown,
+): "not_for_space" | "no_terminal" | "own_home" | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const data = (error as Error & { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return undefined;
+  const { field, reason } = data as Record<string, unknown>;
+  if (field !== "instance") return undefined;
+  return reason === "not_for_space" || reason === "no_terminal" || reason === "own_home"
+    ? reason
+    : undefined;
+}
+
 /** The reasons a folder's marker gives: the person may open the task there anyway. */
 export const MARKER_REASONS: ReadonlySet<string> = new Set(["marker_missing", "marker_other"]);
 
@@ -166,6 +183,10 @@ export function markerWords(refused: FolderRefusal): {
   };
 }
 
+/** The instances Open opens here, in the space's order: one without a route only runs. */
+export const openers = (instances: readonly Instance[]): Instance[] =>
+  instances.filter((i) => i.route !== undefined);
+
 /**
  * The tile of a task: the effective instance (A4: the area's default, then the space's; the page
  * gets the pinned instances in order and takes the first), its state from what busies it here,
@@ -177,7 +198,7 @@ export function launchOf(
   block?: LaunchBlock,
 ): LaunchModel {
   if (block?.kind === "none") return { state: "none" };
-  const instance = instances[0];
+  const instance = openers(instances)[0];
   if (instance === undefined) return { state: "copy_only" };
   if (block?.kind === "unavailable")
     return { state: "unavailable", instance, reason: block.reason };

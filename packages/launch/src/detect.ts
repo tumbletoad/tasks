@@ -13,12 +13,15 @@
 // golden file per OS) and against the real one through nodeDetectHost().
 import { readdirSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
+import { ENV_PREFIX } from "@ttasks/brand";
 import {
   inTestedRange,
   isBuiltInTarget,
+  SETTINGS,
   targetDef,
   versionIn,
   type BuiltInTargetId,
+  type Setting,
   type TargetDef,
 } from "./catalogue.ts";
 import { helperOutput } from "./helpers.ts";
@@ -177,6 +180,57 @@ export function instanceHome(
   const fold = (s: string): string =>
     platform === "win32" || platform === "darwin" ? p.resolve(s).toLowerCase() : p.resolve(s);
   return { path: given, isDefault: fallback !== undefined && fold(given) === fold(fallback) };
+}
+
+/**
+ * What an instance sets beyond its app's own settings (SETTINGS): what a route must carry for its
+ * agent to work as the person set it up. One rule for every route, the link's default home
+ * included. A `TTASKS_*` variable is not one: the agent never gets it (shim/environment.ts). A
+ * home is one also for an app that has no home variable: nothing can select it.
+ */
+export function settingsOf(
+  instance: Pick<Instance, "target" | "env" | "configHome" | "openPermission" | "extraArgs">,
+  userHome: string | undefined,
+  platform: NodeJS.Platform,
+): Setting[] {
+  const home = instanceHome(instance, userHome, platform);
+  const fold = platform === "win32";
+  const given = (name: string): boolean =>
+    !(fold ? name.toUpperCase() : name).startsWith(ENV_PREFIX);
+  const set: Readonly<Record<Setting, boolean>> = {
+    permission: instance.openPermission !== "inherit",
+    arguments: instance.extraArgs.length > 0,
+    environment: Object.keys(instance.env).some(given),
+    home: home === undefined ? instance.configHome !== undefined : !home.isDefault,
+  };
+  return SETTINGS.filter((setting) => set[setting]);
+}
+
+/**
+ * What an agent TTasks starts itself (in a terminal, or a run) gets on top of the person's own
+ * environment. `env`: the instance's `env`, and for a home of its own that `env` does not name,
+ * the app's home variable set to it, so the program uses the home TTasks records. `ownHome`: the
+ * app whose account variables (accountVariable) the person's environment does not give it, since
+ * a home of its own works with the account signed in there; its `env` may still set them. The
+ * default home gets both as the person's setup has them.
+ */
+export function agentSetup(
+  instance: Pick<Instance, "target" | "env" | "configHome">,
+  userHome: string | undefined,
+  platform: NodeJS.Platform,
+): { readonly env: Readonly<Record<string, string>>; readonly ownHome?: BuiltInTargetId } {
+  const home = instanceHome(instance, userHome, platform);
+  const target = isBuiltInTarget(instance.target) ? instance.target : undefined;
+  const variable = target === undefined ? undefined : targetDef(target).detect.homes?.env;
+  if (target === undefined || variable === undefined || home === undefined || home.isDefault) {
+    return { env: instance.env };
+  }
+  const named = envValue(instance.env, variable, platform) !== undefined;
+  return {
+    env:
+      named || home.path === undefined ? instance.env : { ...instance.env, [variable]: home.path },
+    ownHome: target,
+  };
 }
 
 /** Folders on the PATH, in order, absolute ones only. */

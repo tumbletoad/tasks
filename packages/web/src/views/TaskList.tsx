@@ -24,7 +24,7 @@ import { starChange, statusChange, triageChange } from "../edit/change.ts";
 import { useEditState, useEdits } from "../edit/useEdits.ts";
 import { askFor, savedWords } from "../task/composer.ts";
 import { areaSlots, groupTasks, type Group, type GroupTasks } from "../groups.ts";
-import { useT } from "../i18n/intl.tsx";
+import { useList, useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
 import { itemsOf, type RowItem } from "../list/items.ts";
 import { List, type Place } from "../list/List.tsx";
@@ -32,6 +32,7 @@ import {
   busyByTask,
   folderRefusal,
   homeRefusal,
+  instanceRefusal,
   MARKER_REASONS,
   markerWords,
   type BusyOf,
@@ -55,6 +56,12 @@ const styles = classes(css, ["line", "announce"]);
 
 const NO_RECEIPTS: readonly Receipt[] = [];
 const NO_RUNS: readonly Run[] = [];
+/** What the page says of an Open its instance cannot do here (instanceRefusal). */
+const REFUSED_WORDS = {
+  not_for_space: "row.openNotForSpace",
+  no_terminal: "row.openNoTerminal",
+  own_home: "row.openOwnHome",
+} as const;
 /** How long a row an agent added keeps its accent (A5 3.20: 1.2 s). */
 const FRESH_MS = 1_200;
 /** Agents' changes are announced once the burst has been quiet this long (A5 3.15 item 10). */
@@ -163,6 +170,7 @@ export function TaskList({
   beneath,
 }: TaskListProps) {
   const t = useT();
+  const list = useList();
   const say = useToast();
   const { api, live } = useContext(Session);
   const state = useLive();
@@ -762,16 +770,20 @@ export function TaskList({
     });
   }, []);
 
-  /** Puts a brief on the clipboard, in the person's click (A4 3.4.6). True once it is there. */
+  /**
+   * Puts a brief on the clipboard, in the person's click (A4 3.4.6). True once it is there. `then`
+   * is said after the copy's outcome, in the same toast when the copy failed, so neither hides it.
+   */
   const toClipboard = useCallback(
-    (text: string, pack = false): Promise<boolean> =>
+    (text: string, pack = false, then?: string): Promise<boolean> =>
       navigator.clipboard.writeText(text).then(
         () => {
           say(t(pack ? "row.packCopied" : "row.copied"));
+          if (then !== undefined) say(then);
           return true;
         },
         () => {
-          say(t("row.copyFailed"));
+          say(then === undefined ? t("row.copyFailed") : `${t("row.copyFailed")} ${then}`);
           return false;
         },
       ),
@@ -837,10 +849,26 @@ export function TaskList({
               if (text !== undefined && space !== undefined && opened.note !== undefined) {
                 savedWords(space, task.id, draft ?? text);
               }
-              // The app takes the brief by paste: without it on the clipboard nothing opens.
-              if (copy !== undefined && !(await toClipboard(copy))) return undefined;
+              // What this way of opening could not carry is said before the person sends anything.
               // A second click while the first was opening got that launch: its words are a note.
-              if (opened.text === "note") say(t("row.openedEarlier", { label: instance.label }));
+              const said = [
+                ...(opened.leftOut.length > 0
+                  ? [
+                      t("row.openedWithout", {
+                        label: instance.label,
+                        what: list(opened.leftOut.map((code) => t("row.leftOut", { what: code }))),
+                      }),
+                    ]
+                  : []),
+                ...(opened.text === "note"
+                  ? [t("row.openedEarlier", { label: instance.label })]
+                  : []),
+              ];
+              const then = said.length === 0 ? undefined : said.join(" ");
+              // The app takes the brief by paste: it opens without it when the copy failed.
+              if (copy !== undefined)
+                return (await toClipboard(copy, false, then)) ? receipt : undefined;
+              if (then !== undefined) say(then);
               return receipt;
             })
             .catch((error: unknown) => {
@@ -867,6 +895,16 @@ export function TaskList({
                   t("row.openOtherSpace", {
                     label: instance.label,
                     space: home.works ?? t("apps.otherSpace"),
+                  }),
+                );
+                return undefined;
+              }
+              const cannot = instanceRefusal(error);
+              if (cannot !== undefined) {
+                refuse(task.id, undefined);
+                say(
+                  t(REFUSED_WORDS[cannot], {
+                    label: instance.label,
                   }),
                 );
                 return undefined;
@@ -1084,6 +1122,7 @@ export function TaskList({
     loadBusy,
     loadRuns,
     t,
+    list,
     toClipboard,
   ]);
 

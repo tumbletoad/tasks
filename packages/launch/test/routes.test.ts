@@ -180,13 +180,18 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
     ]);
   });
 
-  test("Codex's assisted open: the same command line without a prompt, so nothing is sent", () => {
+  test("the assisted open of Codex and Claude Code: the same command line without a prompt, so nothing is sent", () => {
     for (const os of ["linux", "win32"] as const) {
-      const assisted = cliArgv(OS[os].codex, "clipboard", { ...values, toolEnv: [] });
-      const primary = cliArgv(OS[os].codex, "sent", { ...values, brief: BRIEF, toolEnv: [] });
-      expect(assisted.argv).toEqual(primary.argv.slice(0, -2));
-      expect(assisted.argv).not.toContain("--");
-      expect(assisted.folderArgs).toEqual(primary.folderArgs);
+      for (const [target, given] of [
+        ["codex", { toolEnv: [] }],
+        ["claude", { session: SESSION, toolEnv: [] }],
+      ] as const) {
+        const assisted = cliArgv(OS[os][target], "clipboard", { ...values, ...given });
+        const primary = cliArgv(OS[os][target], "sent", { ...values, ...given, brief: BRIEF });
+        expect(assisted.argv, `${os} ${target}`).toEqual(primary.argv.slice(0, -2));
+        expect(assisted.argv).not.toContain("--");
+        expect(assisted.folderArgs).toEqual(primary.folderArgs);
+      }
     }
   });
 

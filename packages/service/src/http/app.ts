@@ -318,7 +318,7 @@ export class HttpApp {
       build: options.build,
       now: options.now,
       live: (grant) => this.#live(options.grants.get(grant)) !== undefined,
-      instances: () => this.launches.instances(),
+      instances: (space) => this.launches.instances(space),
       ...(options.machine === undefined
         ? {}
         : { machine: () => options.machine?.preferences() ?? [] }),

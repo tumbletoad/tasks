@@ -61,6 +61,7 @@ const CLEANUP: Readonly<Record<string, MessageId>> = {
 const NOT_STARTED: ReadonlySet<string> = new Set([
   "task_closed",
   "instance_gone",
+  "not_for_space",
   "folder_gone",
   "spawn_failed",
   "start_timed_out",
@@ -285,6 +286,7 @@ const REFUSALS: ReadonlySet<string> = new Set([
   "task_not_found",
   "task_closed",
   "instance",
+  "not_for_space",
   "other_machine",
   "folder_missing",
   "marker_missing",

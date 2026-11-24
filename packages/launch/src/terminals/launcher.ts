@@ -201,15 +201,7 @@ export class TerminalLauncher {
     const chain = terminalChoice(settings, host).chain;
     const run = this.#o.systemdRun;
     const build = (entry: ChainEntry, ticket: string, attempt: number) => {
-      const command = terminalCommand({
-        app: entry.app,
-        program: entry.program,
-        shim: [...product, "shim", ticket],
-        platform: this.#o.platform,
-        window: settings.window,
-        ...(settings.custom === undefined ? {} : { custom: settings.custom }),
-        ...(entry.linkKind === undefined ? {} : { linkKind: entry.linkKind }),
-      });
+      const command = this.#command(settings, entry, [...product, "shim", ticket]);
       if ("refused" in command) return command;
       const program = command.argv[0] ?? "";
       const argv =
@@ -219,15 +211,10 @@ export class TerminalLauncher {
       const built: BuiltCommand = { ...command, argv, program };
       return built;
     };
-    const ready = async (program: string): Promise<boolean> =>
-      (this.#o.platform === "win32" || posix.isAbsolute(program)) &&
-      (this.#o.executable === undefined
-        ? host.executable(program)
-        : await this.#o.executable(program));
     const result = await acceptTerminal({
       chain,
       build,
-      ready,
+      ready: (program) => this.#found(host, program),
       spawn: this.#spawn,
       tickets: input.tickets,
       cwd: input.folder,
@@ -247,5 +234,42 @@ export class TerminalLauncher {
       scoped,
       ...(used === undefined ? {} : { terminal: { app: used.app, source: used.source } }),
     };
+  }
+
+  /**
+   * Whether a launch now would find a terminal to start: one of the chain whose command builds
+   * and whose program is here, as start tries them. Where none is, Open takes another route.
+   */
+  async startable(session: Readonly<Record<string, string>>): Promise<boolean> {
+    const product = this.#o.shimCommand;
+    if (!this.ready() || product === undefined || product.length === 0) return false;
+    const host = await this.#o.host(session, false);
+    const settings = this.#settings;
+    for (const entry of terminalChoice(settings, host).chain) {
+      const command = this.#command(settings, entry, [...product, "shim", "ticket"]);
+      if (!("refused" in command) && (await this.#found(host, command.argv[0] ?? ""))) return true;
+    }
+    return false;
+  }
+
+  #command(settings: TerminalSettings, entry: ChainEntry, shim: readonly string[]) {
+    return terminalCommand({
+      app: entry.app,
+      program: entry.program,
+      shim,
+      platform: this.#o.platform,
+      window: settings.window,
+      ...(settings.custom === undefined ? {} : { custom: settings.custom }),
+      ...(entry.linkKind === undefined ? {} : { linkKind: entry.linkKind }),
+    });
+  }
+
+  async #found(host: TerminalHost, program: string): Promise<boolean> {
+    return (
+      (this.#o.platform === "win32" || posix.isAbsolute(program)) &&
+      (this.#o.executable === undefined
+        ? host.executable(program)
+        : await this.#o.executable(program))
+    );
   }
 }

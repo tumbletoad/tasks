@@ -338,7 +338,14 @@ export function stageFile(path: string, text: string | Uint8Array, mode = 0o600)
         throw error;
       }
       // The file is in place; its temporary name only goes. One a scanner holds for longer stays
-      // behind, a second name for the same bytes.
+      // behind, a second name for the same bytes. It is opened and closed first: on Windows a
+      // name removed straight after the link left the file refusing every replace for up to a
+      // minute, once in 200 new files, and after an open never.
+      try {
+        closeSync(openSync(temp, "r"));
+      } catch {
+        // The removal below says what is wrong with it.
+      }
       for (let attempt = 1; ; attempt += 1) {
         try {
           rmSync(temp, { force: true });

@@ -1389,6 +1389,22 @@
                 "maxLength": 64,
                 "type": "string"
               },
+              "left_out": {
+                "description": "What this way of opening could not carry: a permission by name, args, env, home",
+                "items": {
+                  "enum": [
+                    "full-access",
+                    "auto-edit",
+                    "read-only",
+                    "arguments",
+                    "environment",
+                    "home"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              },
               "reason": {
                 "description": "Why it failed or is unknown: a fixed code",
                 "maxLength": 40,

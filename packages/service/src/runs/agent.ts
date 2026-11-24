@@ -8,8 +8,9 @@
 import { createHash } from "node:crypto";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { findEntry, cliFaces } from "@ttasks/contracts";
-import type { RunAdapterId, RunPermission, RunRecord } from "@ttasks/contracts/runs";
+import type { RunPermission, RunRecord } from "@ttasks/contracts/runs";
 import {
+  agentSetup,
   ADDED,
   agentEnvironment,
   instanceHome,
@@ -17,6 +18,7 @@ import {
   resolveProgram,
   sanitiseComposer,
   sanitiseTitle,
+  servesSpace,
   type AgentBase,
   type Instance,
 } from "@ttasks/launch";
@@ -33,6 +35,7 @@ import {
 import type { RunFolderFound } from "../launch/index.ts";
 import type { ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, readReplied, type TaskFolder } from "../ops/read.ts";
+import { runAdapter, runsWith } from "./drivers.ts";
 import { homeDigest, physicalHome } from "../setup/agents.ts";
 
 /** What building a run needs of the service. */
@@ -55,19 +58,6 @@ export interface RunAgents {
   /** TTasks's own command, program first: the bridge runs as `<it> mcp …`. */
   command(): readonly string[] | undefined;
 }
-
-/** The targets a run can drive, and the adapter, which names the driver, each gets. */
-const DRIVERS: Readonly<Record<string, RunAdapterId>> = {
-  "codex-cli": "codex",
-  "claude-cli": "claude-print",
-};
-
-/** Whether an instance can run tasks in the background. */
-export const runsWith = (instance: Instance): boolean =>
-  instance.enabled && Object.hasOwn(DRIVERS, instance.target) && instance.exec !== undefined;
-
-/** The adapter a run of `instance` records: which program's protocol its driver speaks. */
-export const runAdapter = (instance: Instance): RunAdapterId => DRIVERS[instance.target] ?? "codex";
 
 /** The permission a run of `instance` gets: full access unless the instance names a narrower one. */
 export function runPermission(instance: Instance): RunPermission {
@@ -203,6 +193,8 @@ export async function buildRun(
   const reader = served.reader;
   const space = served.id;
   if (run.task === null || reader === undefined || space === undefined) return "spawn_failed";
+  // Checked again at the start: the instance's spaces may have changed since it was queued.
+  if (!servesSpace(instance, { id: space, name: served.name })) return "not_for_space";
   const task = await readLaunchTask(reader, run.task, machine);
   if (!task.active) return "task_closed";
   const folder = await runFolder(agents, space, task.folder);
@@ -210,11 +202,13 @@ export async function buildRun(
   const command = agents.command();
   if (command === undefined || command.length === 0) return "spawn_failed";
   const base = await agents.base();
+  const setup = agentSetup(instance, agents.home, agents.platform);
   const env = agentEnvironment({
     platform: agents.platform,
     base: base?.env ?? {},
     baseKind: base?.kind ?? "service",
-    instance: instance.env,
+    instance: setup.env,
+    ...(setup.ownHome === undefined ? {} : { ownHome: setup.ownHome }),
     additions: { [ADDED.ticket]: ticket, [ADDED.task]: task.ref, [ADDED.space]: space },
     executable: instance.exec,
   });

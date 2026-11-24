@@ -52,10 +52,11 @@ export type RunEnd =
   | { readonly kind: "not_confirmed" };
 
 /**
- * Why a queued run can no longer start: its task was finished or deleted, its instance or its
- * folder is gone, or no agent could be made for it.
+ * Why a queued run can no longer start: its task was finished or deleted, its instance is gone or
+ * no longer for its space, its folder is gone, or no agent could be made for it.
  */
-export type StartRefusal = "task_closed" | "instance_gone" | "folder_gone" | "spawn_failed";
+export type StartRefusal =
+  "task_closed" | "instance_gone" | "not_for_space" | "folder_gone" | "spawn_failed";
 
 export interface RunMachineOptions {
   store: RunStore;

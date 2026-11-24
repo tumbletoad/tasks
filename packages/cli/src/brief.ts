@@ -9,6 +9,7 @@ import { copyText, type CopyResult } from "@ttasks/launch/clipboard";
 import type { Globals, VerbSpec } from "./args.ts";
 import type { ConnectOptions } from "./connect.ts";
 import type { Io } from "./io.ts";
+import { leftOutLine } from "./output.ts";
 import { runVerb } from "./verbs.ts";
 
 /** The OS's clipboard, or a test's in its place. */
@@ -73,8 +74,9 @@ export async function briefCommand(
       if (globals.json) io.stdout(printed);
       else {
         const launch = (result["launch"] ?? {}) as { reference?: unknown };
+        const left = leftOutLine(launch);
         io.stdout(
-          `${pack ? "Context pack" : "Brief"} copied to the clipboard (launch ${String(launch.reference)}).\n`,
+          `${pack ? "Context pack" : "Brief"} copied to the clipboard (launch ${String(launch.reference)}).\n${left === undefined ? "" : `${left}\n`}`,
         );
       }
       return;
