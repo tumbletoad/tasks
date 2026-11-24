@@ -824,7 +824,7 @@ export function TaskList({
       open: (
         task: TaskRow,
         instance: Instance,
-        { text, request, another = false }: OpenWith = {},
+        { text, draft, request, another = false }: OpenWith = {},
       ) => {
         const key = `open\n${task.id}\n${instance.key}`;
         const name = openName(live.spaceId ?? "", task.id, instance.key);
@@ -847,7 +847,7 @@ export function TaskList({
               loadBusy();
               const space = live.spaceId;
               if (text !== undefined && space !== undefined && opened.note !== undefined) {
-                savedWords(space, task.id, text);
+                savedWords(space, task.id, draft ?? text);
               }
               // What this way of opening could not carry is said before the person sends anything.
               // A second click while the first was opening got that launch: its words are a note.

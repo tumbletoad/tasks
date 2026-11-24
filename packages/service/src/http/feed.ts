@@ -26,13 +26,12 @@
 //   the project's tasks the batch holds, so the row the client holds never shows a source, a
 //   folder, a run state or a question the space no longer has.
 import type { PreferenceRead } from "@ttasks/contracts";
-import type { Row, WorkerConnection } from "@ttasks/storage";
+import { RUN_WAITS, WAITS, type Row, type WorkerConnection } from "@ttasks/storage";
 import { hasFolderTable } from "../ops/read.ts";
 import {
   compact,
   taskColumns,
   taskRows,
-  WAITS,
   type CompactRow,
   type FeedHere,
 } from "../ops/task-rows.ts";
@@ -185,8 +184,13 @@ const agentChangedRows = (folders: boolean) =>
 /** The rows of the finished and dropped tasks a question waits on (task-rows.ts's `WAITS`). */
 const askingRows = (folders: boolean) =>
   `SELECT ${taskColumns(folders)} FROM tasks t WHERE t.lifecycle <> 'active' AND ` +
-  "t.deleted_at IS NULL AND t.id IN (SELECT task_id FROM log_entries WHERE kind = 'question' " +
-  `AND deleted_at IS NULL) AND EXISTS (SELECT 1 FROM log_entries q WHERE ${WAITS})`;
+  "t.deleted_at IS NULL AND ((t.id IN (SELECT task_id FROM log_entries WHERE kind = 'question' " +
+  `AND deleted_at IS NULL) AND EXISTS (SELECT 1 FROM log_entries q WHERE ${WAITS}))` +
+  (folders
+    ? " OR (t.id IN (SELECT task_id FROM runs WHERE state = 'failed' AND reason = 'needs_input') " +
+      `AND EXISTS (SELECT 1 FROM runs r WHERE ${RUN_WAITS}))`
+    : "") +
+  ")";
 
 const IN_BATCH = "seq > $after AND seq <= $upto";
 const COMMITS =

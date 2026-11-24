@@ -468,8 +468,9 @@ export const CompactTaskRow = z.strictObject({
   questions: z
     .array(
       z.strictObject({
-        ref: z.string().describe("The log entry, such as l3"),
+        ref: z.string().describe("The log entry, such as l3, or the run that ended with it"),
         by: z.string().describe("The agent that asked"),
+        instance: z.string().describe("The instance of the run that asked").optional(),
         text: z.string().max(300).describe("Its first 300 characters"),
         at: Millis.describe("When it was asked"),
       }),

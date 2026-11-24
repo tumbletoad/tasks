@@ -18,6 +18,7 @@ import {
   isId,
   RECEIPT_SQL,
   removalSeqSql,
+  runAsked,
   UNDO_TARGET_SQL,
   storedPreference,
   type FolderView,
@@ -665,37 +666,47 @@ export async function readTaskLinks(reader: WorkerConnection, ref: string): Prom
 }
 
 /**
- * The question `ordinal` of the task, if it is one: when it arrived, whether a later question
- * arrived in the same millisecond, and the task's `reviewed_at`.
+ * The question `$question` of the task (a log entry `l3`, or a run that ended asking), if it is
+ * one: when it arrived, whether a later question arrived in the same millisecond, and the task's
+ * `reviewed_at`. Without the runs table (an older space served read-only) only logged ones.
  */
-const QUESTION_ARRIVAL: Statement = {
-  sql:
-    "SELECT k.at AS at, t.reviewed_at AS reviewed, EXISTS (SELECT 1 FROM log_entries l JOIN " +
-    "commits c ON c.seq = l.created_seq WHERE l.task_id = q.task_id AND l.kind = 'question' AND " +
-    "l.created_seq > q.created_seq AND c.at = k.at) AS tied FROM log_entries q JOIN commits k " +
-    `ON k.seq = q.created_seq JOIN tasks t ON t.id = q.task_id WHERE q.task_id = ${MATCH} AND ` +
-    "q.ordinal = $ordinal AND q.kind = 'question' AND q.deleted_at IS NULL",
-  mode: "get",
+const questionArrival = (runs: boolean): Statement => {
+  const asked =
+    "SELECT l.task_id AS task, 'l' || l.ordinal AS ref, l.created_seq AS seq FROM log_entries l " +
+    "WHERE l.kind = 'question' AND l.deleted_at IS NULL" +
+    (runs
+      ? ` UNION ALL SELECT r.task_id, r.id, ${runAsked("r")} FROM runs r WHERE r.state = 'failed' ` +
+        "AND r.reason = 'needs_input' AND r.task_id IS NOT NULL"
+      : "");
+  return {
+    sql:
+      `WITH asked AS (${asked}) SELECT k.at AS at, t.reviewed_at AS reviewed, EXISTS (SELECT 1 ` +
+      "FROM asked l JOIN commits c ON c.seq = l.seq WHERE l.task = q.task AND l.seq > q.seq AND " +
+      "c.at = k.at) AS tied FROM asked q JOIN commits k ON k.seq = q.seq JOIN tasks t ON t.id = " +
+      `q.task WHERE q.task = ${MATCH} AND q.ref = $question`,
+    mode: "get",
+  };
 };
 
 /**
- * The task's `reviewed_at` once the person dismissed its question `ordinal` and those before it:
- * that question's arrival (task-rows.ts's `WAITS`), a millisecond before it when a later question
+ * The task's `reviewed_at` once the person dismissed its question `question` and those before it:
+ * that question's arrival (storage's `WAITS`), a millisecond before it when a later question
  * arrived in the same millisecond, so the one the person did not see still waits. Never earlier
- * than the mark the task has. `mark` is undefined when the entry is no question of the task;
- * `asOf` is the read's.
+ * than the mark the task has. A log reference names its entry by number, l01 as l1; a run by its
+ * exact ID. `mark` is undefined when it is no question of the task; `asOf` is the read's.
  */
 export async function readReviewedMark(
   reader: WorkerConnection,
   ref: string,
-  ordinal: number,
+  question: string,
 ): Promise<{ readonly mark: number | undefined; readonly asOf: string }> {
   const { id, ref: number, alias } = taskKey(ref);
-  const [space, found] = await snapshot(reader, [SPACE, QUESTION_ARRIVAL], {
+  const runs = await hasFolderTable(reader);
+  const [space, found] = await snapshot(reader, [SPACE, questionArrival(runs)], {
     id,
     ref: number,
     alias,
-    ordinal,
+    question: /^l[0-9]+$/u.test(question) ? `l${String(Number(question.slice(1)))}` : question,
   });
   const { asOf } = spaceFacts(space);
   if (found === undefined || found === null) return { mark: undefined, asOf };
@@ -1655,6 +1666,27 @@ export async function hasFolderTable(reader: WorkerConnection): Promise<boolean>
   if (Number((found as Row | null)?.["n"] ?? 0) === 0) return false;
   folderReaders.add(reader);
   return true;
+}
+
+/**
+ * The questions the run `run` replies to, in the order it was queued with them, each as the agent
+ * asked it: those that waited when it was queued (storage's `REPLIED_SQL`), also once answered.
+ */
+export async function readReplied(reader: WorkerConnection, run: string): Promise<string[]> {
+  const [rows] = await snapshot(
+    reader,
+    [
+      {
+        sql:
+          "SELECT COALESCE(json_extract(r.result, '$.text'), '') AS text FROM runs x, " +
+          "json_each(x.spec, '$.replies') j JOIN runs r ON r.id = j.value WHERE x.id = $run " +
+          "ORDER BY j.key",
+        mode: "all",
+      },
+    ],
+    { run },
+  );
+  return (rows as Row[]).map((row) => String(row["text"]));
 }
 
 /**

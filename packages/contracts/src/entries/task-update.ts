@@ -59,9 +59,9 @@ export const TaskUpdateInput = z.strictObject({
         .optional(),
       reviewed: z
         .string()
-        .max(10)
-        .regex(/^l[0-9]{1,9}$/u)
-        .describe("Newest agent question the user read, such as l4: it and earlier ones are done")
+        .max(29)
+        .regex(/^(?:l[0-9]{1,9}|ru_[0-7][0-9a-hjkmnp-tv-z]{25})$/u)
+        .describe("Newest agent question the user read, l4 or a run ID: it and earlier are done")
         .optional(),
     })
     .describe("Fields to change")
