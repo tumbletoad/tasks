@@ -398,13 +398,10 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
         instances: [claudeInstance("claude-main", { CLAUDE_CONFIG_DIR: folder })],
       };
       const view = byHome(await survey(named), "claude-code", ".claude");
-      expect(view.home).toMatchObject({
-        files: [defaultFile, join(folder, ".claude.json")],
-        instance: "claude",
-      });
-      // Its entry is in the file it wrote; the instance's file has none yet.
+      // Its entry is in the file it wrote; the instance's file is not there yet, so not one of its.
+      expect(view.home).toMatchObject({ files: [defaultFile], instance: "claude" });
       expect(view.state).toBe("registered");
-      expect(view.files.map((f) => f.state)).toEqual(["own", "absent"]);
+      expect(view.files.map((f) => f.state)).toEqual(["own"]);
       expect(await removeHome(named, view, ROWS)).toMatchObject({ result: "removed" });
       expect(readFileSync(defaultFile, "utf8")).toBe("{}");
       expect(readRecords(w.state)).toEqual([]);

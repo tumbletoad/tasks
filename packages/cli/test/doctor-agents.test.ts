@@ -18,6 +18,7 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -221,7 +222,7 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
       ).toEqual(["claude", "codex", "codex-t3x"]);
 
       // T3 names Claude Code's default folder by its path: its Claude reads `.claude.json` inside
-      // that folder, a file of that home without the entry yet. Doctor says so, names an instance
+      // that folder, which Claude Code makes. Doctor says it is not there yet, names an instance
       // turned off and the entries it passed over, and checks the rest.
       writeFileSync(
         settings,
@@ -239,19 +240,27 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
       );
       const explicit = row(await doctor(), "t3.homes");
       expect(explicit).toMatchObject({ status: "warn" });
-      expect(explicit?.detail).toContain("claudeAgent (Claude Code) runs in a home without");
+      expect(explicit?.detail).toContain("has not made the settings file");
+      expect(explicit?.detail).toContain("claudeAgent (Claude Code) reads yet");
       expect(explicit?.detail).toContain("Turned off in T3 Code, so not checked: claude_off.");
       expect(explicit?.detail).toContain("a kind of agent this build does not know: future.");
       expect(explicit?.detail).toContain("(a key that is not a plain name) was passed over");
       expect(explicit?.detail).not.toContain(user);
       expect(explicit?.detail).not.toContain("\u001b");
-      // One apply writes the entry into that file too, and the instance reads it.
+      // Claude Code made it: a file of that home without the entry, which one apply writes.
+      const inside = join(user, ".claude", ".claude.json");
+      writeFileSync(inside, "{}\n");
+      expect(row(await doctor(), "t3.homes")?.detail).toContain(
+        "claudeAgent (Claude Code) runs in a home without",
+      );
       await applyAll(["--app", "t3"]);
       expect(row(await doctor(), "t3.homes")?.detail).not.toContain("claudeAgent");
 
       // Remove: every entry and row back, every file as it was (T3's file only by this test).
       const removed = await run(["setup", "agents", "--remove", "--json"]);
       expect(removed.code, removed.stdout).toBe(0);
+      expect(readFileSync(inside, "utf8")).toBe("{}\n");
+      rmSync(inside);
       writeFileSync(settings, t3Before);
       expect(read()).toEqual(before);
       // The file the command made there, emptied by its remove, is gone again.

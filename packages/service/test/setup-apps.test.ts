@@ -501,7 +501,8 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       }
 
       // T3 names Claude Code's default folder by its path: its Claude then reads `.claude.json`
-      // inside that folder, which is a file of that home from then on, and the home is read by T3.
+      // inside that folder, which is a file of that home once Claude Code has made it, and the
+      // home is read by T3.
       mkdirSync(join(w.home, ".claude"));
       const explicitT3 = join(w.root, "t3-explicit", "userdata");
       mkdirSync(explicitT3, { recursive: true, mode: 0o700 });
@@ -517,7 +518,13 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       const explicit = await inputOf(w, { T3CODE_HOME: join(w.root, "t3-explicit") });
       const t3Read = byFolder(await survey(explicit), "claude-code", ".claude").home;
       expect(t3Read.hosts).toEqual(["t3"]);
-      expect(t3Read.files).toContain(join(w.home, ".claude", ".claude.json"));
+      const inside = join(w.home, ".claude", ".claude.json");
+      expect(t3Read.files).not.toContain(inside);
+      writeFileSync(inside, "{}");
+      expect(byFolder(await survey(explicit), "claude-code", ".claude").home.files).toContain(
+        inside,
+      );
+      rmSync(inside);
       expect(t3HomesOf(explicit)).toEqual([
         {
           app: "claude-code",

@@ -1430,7 +1430,7 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
   );
 
   test(
-    "T3 Code starts Claude Code with its home set to the folder: that file gets the entry too, though it is not there yet",
+    "a program that will read the folder's own file is no reason to make it: setup writes it once it is there",
     async () => {
       const w = await world();
       const { folder, plain, explicit } = filesOf(w);
@@ -1450,7 +1450,86 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
       expect(await applyDefault(w)).toMatchObject({ result: "applied", access: "on" });
       const instance = (await defaultView(w)).home.instance;
       expect(entryIn(claude, plain)).toEqual(expectedEntry(w, claude, instance));
+      expect(existsSync(explicit)).toBe(false);
+      // Claude Code made its file: the row says it has no entry, and one apply writes it.
+      seed(explicit, '{"numStartups": 1}\n');
+      const live = { ...w.input, rows: w.rows.live };
+      const lacking = await defaultView(w, live);
+      expect(toolsOf(live, lacking, SPACE)).toEqual({
+        status: "on",
+        why: "file_lacks",
+        file: explicit,
+        on: "add",
+        off: true,
+      });
+      expect(await applyDefault(w, live)).toMatchObject({ result: "unchanged", access: "on" });
       expect(entryIn(claude, explicit)).toEqual(expectedEntry(w, claude, instance));
+    },
+    SLOW,
+  );
+
+  test(
+    "a file setup made and the person then replaced with their own is theirs: the record names each file once, and turning off leaves theirs",
+    async () => {
+      const w = await world();
+      const { plain, explicit } = filesOf(w);
+      seed(plain, null);
+      seed(explicit, '{"theme":"dark"}');
+      expect(await applyDefault(w)).toMatchObject({ result: "applied", access: "on" });
+      // Their own file in place of the one setup made, with an empty servers table of their own.
+      const theirs = '{\n  "mcpServers": {}\n}\n';
+      seed(plain, theirs);
+      const live = { ...w.input, rows: w.rows.live };
+      expect(toolsOf(live, await defaultView(w, live), SPACE)).toMatchObject({
+        why: "file_lacks",
+        file: plain,
+        on: "add",
+      });
+      expect(await applyDefault(w, live)).toMatchObject({ result: "unchanged", access: "on" });
+      const [record] = readRecords(w.input.stateDir);
+      const named = [record?.file, ...(record?.more ?? []).map((m) => m.file)];
+      expect(named.sort()).toEqual([plain, explicit].sort());
+      expect(await removeHome(live, await defaultView(w, live), w.rows)).toMatchObject({
+        result: "removed",
+        access: "off",
+      });
+      expect(readFileSync(plain, "utf8")).toBe(theirs);
+      expect(readFileSync(explicit, "utf8")).toBe('{"theme":"dark"}');
+    },
+    SLOW,
+  );
+
+  test(
+    "the folder's own file, which a program will read, made by the person after setup ran: turning off leaves it",
+    async () => {
+      const w = await world();
+      const { folder, plain, explicit } = filesOf(w);
+      seed(plain, "{}\n");
+      const t3 = join(w.home, ".t3", "userdata");
+      mkdirSync(t3, { recursive: true, mode: 0o700 });
+      writeFileSync(
+        join(t3, "settings.json"),
+        JSON.stringify({
+          providerInstances: {
+            claudeAgent: { driver: "claudeAgent", config: { homePath: folder } },
+          },
+        }),
+        { mode: 0o600 },
+      );
+      expect(await applyDefault(w)).toMatchObject({ result: "applied", access: "on" });
+      const theirs = '{\n  "mcpServers": {}\n}\n';
+      seed(explicit, theirs);
+      const live = { ...w.input, rows: w.rows.live };
+      expect(await applyDefault(w, live)).toMatchObject({ result: "unchanged", access: "on" });
+      const [record] = readRecords(w.input.stateDir);
+      const named = [record?.file, ...(record?.more ?? []).map((m) => m.file)];
+      expect(named.sort()).toEqual([plain, explicit].sort());
+      expect(await removeHome(live, await defaultView(w, live), w.rows)).toMatchObject({
+        result: "removed",
+        access: "off",
+      });
+      expect(readFileSync(explicit, "utf8")).toBe(theirs);
+      expect(readFileSync(plain, "utf8")).toBe("{}\n");
     },
     SLOW,
   );

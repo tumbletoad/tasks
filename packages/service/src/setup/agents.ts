@@ -459,35 +459,20 @@ const claudeDefault = (input: Pick<SetupInput, "platform" | "userHome">): string
   pathOf(input.platform).join(input.userHome, ".claude");
 
 /**
- * The settings files of a home: every file a program reads the home's entry from, the one place
- * that says which. Claude Code reads its default folder's entry from `~/.claude.json` when it is
- * started plainly, and from `~/.claude/.claude.json` when it is started with its home set to that
- * folder (as T3 Code may start it): each of the two is a file of the home while it is there or a
- * reader TTasks knows of reads it (`readers`: machine.toml's instance of the folder, T3's provider
- * instances, each by whether it starts Claude Code with no variable). With neither, the file a
- * plain start reads. One that is a link to the other is that file. Every other home has one file.
- * `isDefault` orders them: the file a plain start reads first, unless the home's own instance
- * names the folder by its variable.
+ * The settings files of a home, the one place that says which. The first is the app's file for
+ * the home (`isDefault`: Claude Code's default folder started with no variable reads
+ * `~/.claude.json`), which setup creates when it is not there. Claude Code's default folder has a
+ * second one, read when Claude Code is started with its home set to that folder (as T3 Code may
+ * start it): it is a file of the home only while it is there, since the reader makes it and may
+ * prefer an older file of its own until then. One that is a link to the other is that file.
  */
-function homeFiles(
-  input: SetupInput,
-  app: AgentApp,
-  home: string,
-  isDefault: boolean,
-  readers: readonly boolean[],
-): string[] {
+function homeFiles(input: SetupInput, app: AgentApp, home: string, isDefault: boolean): string[] {
   const { platform, userHome } = input;
-  const own = settingsFile(platform, userHome, app, home, false);
-  if (app !== "claude-code" || !samePath(platform, home, claudeDefault(input))) return [own];
-  const plain = settingsFile(platform, userHome, app, home, true);
-  const read = (file: string, byPlain: boolean) => fileThere(file) || readers.includes(byPlain);
-  let files = [plain, own].filter((file, i) => read(file, i === 0));
-  if (files.length === 2) {
-    if (linksTo(platform, own, plain)) files = [plain];
-    else if (linksTo(platform, plain, own)) files = [own];
-  }
-  if (files.length === 0) return [plain];
-  return isDefault ? files : files.reverse();
+  const first = settingsFile(platform, userHome, app, home, isDefault);
+  if (app !== "claude-code" || !samePath(platform, home, claudeDefault(input))) return [first];
+  const other = settingsFile(platform, userHome, app, home, !isDefault);
+  if (!fileThere(other) || linksTo(platform, other, first)) return [first];
+  return linksTo(platform, first, other) ? [other] : [first, other];
 }
 
 /** Whether `link` is a link whose target is `file`. */
@@ -562,27 +547,14 @@ function hostsOf(
   return hosts;
 }
 
-/**
- * A home's files and their judgement, as discovery and a record's home both make them: machine.toml's
- * enabled instance of the folder and T3's provider instances there are the readers it knows of.
- */
+/** A home's files and which of them are managed, as discovery and a record's home both make them. */
 async function filesOfHome(
   input: SetupInput,
-  found: Discovered,
   app: AgentApp,
   home: string,
   isDefault: boolean,
 ): Promise<{ files: string[]; managed: string[] }> {
-  const { platform, userHome } = input;
-  const readers = [
-    ...input.instances
-      .filter((i) => i.enabled && i.target === APPS[app].target && app !== "claude-desktop")
-      .map((i) => homeOf(i, app, userHome, platform))
-      .filter((h) => samePath(platform, h.path, home))
-      .map((h) => h.isDefault),
-    ...found.t3.filter((t) => readsHome(platform, t, app, home)).map((t) => t.isDefault),
-  ];
-  const files = homeFiles(input, app, home, isDefault, readers);
+  const files = homeFiles(input, app, home, isDefault);
   const managed: string[] = [];
   for (const file of files) if (await managedFile(input, file, home)) managed.push(file);
   return { files, managed };
@@ -649,7 +621,7 @@ export async function agentHomes(
     homes.push({
       app,
       home,
-      ...(await filesOfHome(input, found, app, home, isDefault)),
+      ...(await filesOfHome(input, app, home, isDefault)),
       variable: rule?.env ?? "",
       instance: owner?.id ?? id,
       ...(owner === undefined ? { proposed: true } : {}),
@@ -1045,7 +1017,7 @@ async function homeOfRecord(
   return {
     app: record.app,
     home: record.home,
-    ...(await filesOfHome(input, found, record.app, record.home, record.is_default)),
+    ...(await filesOfHome(input, record.app, record.home, record.is_default)),
     variable: targetDef(APPS[record.app].target).detect.homes?.env ?? "",
     instance: record.instance,
     account: record.account,
@@ -1079,7 +1051,7 @@ async function rowHomes(
     listed.push({
       app,
       home: row.home,
-      ...(await filesOfHome(input, found, app, row.home, true)),
+      ...(await filesOfHome(input, app, row.home, true)),
       variable: targetDef(APPS[app].target).detect.homes?.env ?? "",
       instance: row.instance,
       account: "",
@@ -1742,7 +1714,7 @@ interface Spliced {
 /**
  * The entry spliced into one of the home's files as it is now. A file that changed since the plan
  * (its `bound`) is left alone; Claude Code's is bound by its servers' table, as its sessions save
- * their own state into it.
+ * their own state into it. Only the home's first file is made when it is not there.
  */
 function splice(home: AgentHome, view: FileView, entry: Change["entry"]): Spliced | NotWritten {
   const { format, servers } = APPS[home.app];
@@ -1753,6 +1725,7 @@ function splice(home: AgentHome, view: FileView, entry: Change["entry"]): Splice
   });
   const now = readHomeFile(home, view.file);
   if (now.kind === "refused" || entryOf(now) !== undefined) return failed("changed_meanwhile");
+  if (now.kind === "missing" && view.file !== home.files[0]) return failed("changed_meanwhile");
   if (boundOf(home.app, now) !== view.bound) return failed("changed_meanwhile");
   const text = now.kind === "read" ? now.text : format === "json" ? EMPTY_JSON : "";
   const edited = addOwnEntry(format, servers, text, entry);
@@ -1810,16 +1783,17 @@ async function writeEntries(
       if (!("whole" in s)) return s;
       spliced.push(s);
     }
-    const [first, ...rest] = spliced;
+    const [first] = spliced;
     if (first === undefined) return { result: "failed", reason: "changed_meanwhile" };
-    const files = spliced.map((s) => ({ file: s.file, made: s.made }));
-    const record: HomeRecord =
+    const record = naming(
+      input,
+      home,
       kept === undefined
         ? {
             app: home.app,
             home: home.home,
             file: first.file,
-            is_default: isDefaultFile(input, home, first.file),
+            is_default: isDefaultFile(input, home, home.files[0] ?? first.file),
             instance: home.instance,
             account: home.account,
             space,
@@ -1827,7 +1801,6 @@ async function writeEntries(
             entry: change.entry,
             also: [],
             made: first.made,
-            ...(rest.length === 0 ? {} : { more: files.slice(1) }),
             grant: null,
             at: new Date().toISOString(),
           }
@@ -1837,8 +1810,9 @@ async function writeEntries(
             also: isDeepStrictEqual(kept.entry, change.entry)
               ? kept.also
               : [...kept.also, change.entry],
-            more: [...(kept.more ?? []), ...files],
-          };
+          },
+      spliced,
+    );
     try {
       putRecord(input.stateDir, input.platform, record);
     } catch (error) {
@@ -1873,6 +1847,57 @@ async function writeEntries(
       return { result: "failed", reason: wrote, file: at };
     }
   }
+}
+
+/**
+ * `record` naming each of `files` with what the latest write made there, in place of what it said
+ * of that path before: each path once, in the home's order, so the only one setup can have made
+ * (the home's first) is the record's `file`.
+ */
+function naming(
+  input: SetupInput,
+  home: AgentHome,
+  record: HomeRecord,
+  files: readonly { readonly file: string; readonly made: Made }[],
+): HomeRecord {
+  const same = (a: string, b: string) => samePath(input.platform, a, b);
+  const place = (file: string) => {
+    const at = home.files.findIndex((f) => same(f, file));
+    return at === -1 ? home.files.length : at;
+  };
+  const all = [
+    ...recordFiles(record).filter((r) => !files.some((f) => same(f.file, r.file))),
+    ...files.map(({ file, made }) => ({ file, made })),
+  ].sort((a, b) => place(a.file) - place(b.file));
+  const [first, ...rest] = all;
+  if (first === undefined) return record;
+  const named: HomeRecord = {
+    app: record.app,
+    home: record.home,
+    file: first.file,
+    is_default: record.is_default,
+    instance: record.instance,
+    account: record.account,
+    space: record.space,
+    state: record.state,
+    entry: record.entry,
+    also: record.also,
+    made: first.made,
+    grant: record.grant,
+    at: record.at,
+  };
+  if (rest.length === 0) return named;
+  return {
+    ...named,
+    more: rest.map(({ file, made }) => ({
+      file,
+      made: {
+        parent: made.parent,
+        spacing: made.spacing,
+        ...(made.ended === undefined ? {} : { ended: made.ended }),
+      },
+    })),
+  };
 }
 
 /** Whether `file` is the app's default home's, read with no variable (a record's `is_default`). */

@@ -1,9 +1,10 @@
 // Setup's record of what it did in each agent home (A3 3.13.1): `<state>/setup/agents.json`,
 // 0600 in a 0700 folder, replaced atomically. Per home: the app, the home and each file setup wrote
-// its entry into, the instance, account and space the entry names, the entry TTasks writes there,
-// what each write made beside it (the file, the servers' table, the bytes around the entry), and
-// the agent-home grant. A home's first file is kept where an earlier build reads it (`file`,
-// `made`), so a rollback finds the home and takes the entry out of that file.
+// its entry into, once, the instance, account and space the entry names, the entry TTasks writes
+// there, what the latest write into each file made beside it (the file, the servers' table, the
+// bytes around the entry), and the agent-home grant. A home's first file is kept where an earlier
+// build reads it (`file`, `made`), so a rollback finds the home and takes the entry out of that
+// file; it is the only one setup can have made.
 //
 // No copy of a file and no other key's value: these files hold other servers' secrets, and A3 3.13.1
 // step 5 forbids whole-file backups. What the record holds is TTasks's own entry as it intended to
@@ -67,9 +68,10 @@ export interface HomeRecord {
   readonly made: Made;
   /**
    * The home's other files setup wrote the same entry into, each with what its write made there
-   * (Claude Code's default folder has two). Absent in a record of one file, an earlier build's too.
+   * (Claude Code's default folder has two). Setup writes such a file only while it is there, so it
+   * never made one. Absent in a record of one file, an earlier build's too.
    */
-  readonly more?: readonly { readonly file: string; readonly made: Made }[];
+  readonly more?: readonly { readonly file: string; readonly made: Omit<Made, "file"> }[];
   /** The agent-home row in the service's grants table (A2 3.2.5), when the service made one. */
   readonly grant: string | null;
   readonly at: string;
@@ -80,7 +82,7 @@ export const recordFiles = (
   record: HomeRecord,
 ): readonly { readonly file: string; readonly made: Made }[] => [
   { file: record.file, made: record.made },
-  ...(record.more ?? []),
+  ...(record.more ?? []).map((m) => ({ file: m.file, made: { ...m.made, file: false } })),
 ];
 
 /** Setup's record cannot be read: nothing is changed until it can. */
@@ -131,12 +133,14 @@ function isHome(r: Record<string, unknown>): boolean {
   );
 }
 
-const isMade = (made: unknown): made is Made =>
+const isBeside = (made: unknown): made is Omit<Made, "file"> =>
   isObject(made) &&
-  typeof made["file"] === "boolean" &&
   typeof made["parent"] === "boolean" &&
   (made["spacing"] === null || text(made["spacing"])) &&
   (made["ended"] === undefined || text(made["ended"]));
+
+const isMade = (made: unknown): made is Made =>
+  isBeside(made) && typeof (made as Record<string, unknown>)["file"] === "boolean";
 
 function isRecord(value: unknown): value is HomeRecord {
   if (!isObject(value) || !isHome(value)) return false;
@@ -150,7 +154,7 @@ function isRecord(value: unknown): value is HomeRecord {
     isMade(value["made"]) &&
     (more === undefined ||
       (Array.isArray(more) &&
-        more.every((m) => isObject(m) && text(m["file"]) && isMade(m["made"]))))
+        more.every((m) => isObject(m) && text(m["file"]) && isBeside(m["made"]))))
   );
 }
 

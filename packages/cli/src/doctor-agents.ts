@@ -748,13 +748,16 @@ function t3Check(input: SetupInput, views: readonly HomeView[]): Check {
     );
   }
   // The file the provider instance's agent reads: for Claude Code's default folder, the one inside
-  // it when T3 sets the folder as its home, else the user's `~/.claude.json`.
+  // it when T3 sets the folder as its home, else the user's `~/.claude.json`. Setup writes into a
+  // further file of a home only once its app has made it.
+  const readBy = (t3: (typeof homes)[number]) =>
+    settingsFile(input.platform, input.userHome, t3.app, t3.home, t3.isDefault);
   const gaps = homes.filter((t3) => {
     const view = views.find((v) => readsHome(input.platform, t3, v.home.app, v.home.home));
-    const file = settingsFile(input.platform, input.userHome, t3.app, t3.home, t3.isDefault);
-    const read = view?.files.find((f) => samePath(input.platform, f.file, file));
+    const read = view?.files.find((f) => samePath(input.platform, f.file, readBy(t3)));
     return read === undefined || !(read.state === "own" || read.state === "edited");
   });
+  const unmade = gaps.filter((t3) => t3.app === "claude-code" && !existsSync(readBy(t3)));
   if (gaps.length === 0 && unclear.length === 0 && settings.file !== "refused") {
     return {
       id: "t3.homes",
@@ -782,9 +785,16 @@ function t3Check(input: SetupInput, views: readonly HomeView[]): Check {
     );
   }
   parts.push(...notes);
-  if (gaps.length > 0) {
+  const several = (list: readonly unknown[]) => (list.length === 1 ? "" : "s");
+  if (unmade.length > 0) {
     parts.push(
-      `T3 Code's provider instance${gaps.length === 1 ? "" : "s"} ${gaps.map(label).join(", ")} ${gaps.length === 1 ? "runs" : "run"} in a home without ${PRODUCT_NAME}'s entry. Run: ${CLI_NAME} setup agents --app t3`,
+      `Claude Code has not made the settings file that T3 Code's provider instance${several(unmade)} ${unmade.map(label).join(", ")} ${unmade.length === 1 ? "reads" : "read"} yet, so it has no ${PRODUCT_NAME} entry: once T3 Code has started Claude Code there, run ${CLI_NAME} setup agents --app t3.`,
+    );
+  }
+  const lacking = gaps.filter((g) => !unmade.includes(g));
+  if (lacking.length > 0) {
+    parts.push(
+      `T3 Code's provider instance${several(lacking)} ${lacking.map(label).join(", ")} ${lacking.length === 1 ? "runs" : "run"} in a home without ${PRODUCT_NAME}'s entry. Run: ${CLI_NAME} setup agents --app t3`,
     );
   }
   return { id: "t3.homes", status: "warn", detail: parts.join(" ") };

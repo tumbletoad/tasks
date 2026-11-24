@@ -395,9 +395,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   is offered, whatever else is missing.
 - Claude Code reads its default folder's settings from `~/.claude.json`, and from
   `~/.claude/.claude.json` when another program starts it with that folder as its home. Setup puts
-  its entry in each of the two that is there or that an app you set up reads, and takes it out of
-  each. While the tools start from one of them, they show as on, and the row names the other file
-  when it lacks the entry or holds another; turning on writes it there.
+  its entry into the second only once Claude Code has made it, never creating it, and takes the
+  entry out of each. While the tools start from one of them, they show as on, and the row names the
+  other file when it lacks the entry or holds another; turning on writes it there.
 - Applying writes what you were shown: when a settings file, `machine.toml` or an app's access
   changed since, nothing is written and you see how it stands now.
 - An update is checked before it runs. A failed update returns to the version before it.
