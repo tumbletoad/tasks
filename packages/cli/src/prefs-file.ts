@@ -48,12 +48,13 @@ function takeMoves(args: string[]): Move[] {
 }
 
 /**
- * `--dry-run`'s answer: the write decided its request whole and wrote nothing (WriteRequest.dry_run),
- * so it says what the write would. What it cannot know is what changes before the write.
+ * The answer as printed, or a dry run's: the write decided its request whole and wrote nothing
+ * (WriteRequest.dry_run), so it says what the write would. What it cannot know is what changes
+ * before the write. `sent` is the request's own input, so the words follow what it asked.
  */
-function preview(io: Io, globals: Globals) {
+function present(io: Io, globals: Globals, sent: () => Record<string, unknown> | undefined) {
   return (result: Record<string, unknown>, printed: string): Promise<void> => {
-    if (globals.json) {
+    if (globals.json || sent()?.["dry_run"] !== true) {
       io.stdout(printed);
       return Promise.resolve();
     }
@@ -81,8 +82,10 @@ export async function prefsVerb(
   const end = args.indexOf("--");
   const head = end === -1 ? [...args] : args.slice(0, end);
   const moves = takeMoves(head);
-  const present = head.includes("--dry-run") ? preview(io, globals) : undefined;
+  let sent: Record<string, unknown> | undefined;
+  const shown = present(io, globals, () => sent);
   const withMoves = (input: Record<string, unknown>): void => {
+    sent = input;
     const item = (input["set"] as Record<string, unknown>[] | undefined)?.[0];
     if (moves.length === 0) return;
     if (input["action"] !== "set" || item === undefined) {
@@ -93,7 +96,7 @@ export async function prefsVerb(
   const at = head.findIndex((a) => a === "--file" || a.startsWith("--file="));
   if (at === -1) {
     const rest = [...head, ...(end === -1 ? [] : args.slice(end))];
-    return runVerb(io, globals, verb, rest, options, present, { input: withMoves });
+    return runVerb(io, globals, verb, rest, options, shown, { input: withMoves });
   }
   const given = head[at] ?? "";
   const path = given.startsWith("--file=") ? given.slice("--file=".length) : head[at + 1];
@@ -112,7 +115,7 @@ export async function prefsVerb(
     throw new UsageError("--file is not JSON");
   }
   const rest = [...head, ...(end === -1 ? [] : args.slice(end))];
-  return runVerb(io, globals, verb, rest, options, present, {
+  return runVerb(io, globals, verb, rest, options, shown, {
     input: (input) => {
       const items = Array.isArray(input["set"]) ? (input["set"] as unknown[]) : [];
       const item = items[0];

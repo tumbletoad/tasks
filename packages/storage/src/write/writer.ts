@@ -1299,11 +1299,27 @@ export class SpaceWriter {
     }
     const fingerprint = requestFingerprint(request);
     if (request.dry_run === true) {
-      // Decided whole, its receipt included, then rolled back by the throw: nothing stays.
+      // Decided whole, its receipt included, then rolled back by the throw: nothing stays. Its
+      // answer says the space as it is, so a later change makes it stale, as it does a read.
       let decided: WriteResult | undefined;
       try {
         conn.transaction("immediate", () => {
-          decided = this.#decide(conn, request, fingerprint);
+          const asOf = readAsOf(conn);
+          const versions = request.ops.map((op) => {
+            const row =
+              op.kind === "pref.set"
+                ? conn.prepare(SQL.preferenceRow).get({ id: op.key })
+                : undefined;
+            return row === undefined ? 0 : new RowReader("preferences", row).int("version", "seq");
+          });
+          const would = this.#decide(conn, request, fingerprint);
+          decided = {
+            ...would,
+            as_of: formatAsOf(asOf),
+            ...asOf,
+            results: would.results.map((r) => ({ ...r, version: versions[r.i] ?? 0 })),
+          };
+          delete decided.commit;
           throw DRY_RUN;
         });
       } catch (error) {

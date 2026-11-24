@@ -2476,6 +2476,10 @@ export function checkRequest(value: unknown): CheckedRequest {
   if (prefs > 0 && prefs < request.ops.length) {
     f.fail("VALIDATION_FAILED", "A preference request holds pref.set operations only", "ops");
   }
+  // Its answer gives each row's version as it is (writer.ts), which a preference's key names.
+  if (request.dry_run === true && prefs === 0) {
+    f.fail("VALIDATION_FAILED", "A dry run decides preferences only", "dry_run");
+  }
   // Of the preferences, Undo inverts only the effort levels, whose change moves tasks with it: a
   // change of another never joins the undo stack. Setting the earlier value again changes it back.
   const [first] = request.ops;

@@ -253,4 +253,39 @@ describe("[A1.3.16.prefs.effort-dry-run] a dry run of a change of levels is the 
     );
     expect([late.status, late.error?.code]).toEqual(["conflict", "VERSION_CONFLICT"]);
   });
+
+  test("it says the space as it is: a later change makes its position stale, as it does a read's", () => {
+    tasks("M");
+    const read = fx.base();
+    const version = fx.reader
+      .prepare("SELECT version FROM preferences WHERE key = $key")
+      .get({ key: SCALE })?.["version"];
+    const dry = fx.writer.submit(
+      fx.request(fx.human, [setLevels(["S", "L"], [{ from: "M", to: "L" }])], {
+        base: read,
+        dry_run: true,
+      }),
+    );
+    expectStatus(dry, "applied");
+    expect([dry.as_of, dry.seq, dry.commit, dry.results[0]?.version]).toEqual([
+      read,
+      fx.writer.asOf().seq,
+      undefined,
+      version,
+    ]);
+    expectStatus(change(["L", "M", "S"]), "applied");
+    const after = fx.writer.submit(
+      fx.request(fx.human, [setLevels(["S", "M", "L"])], { base: dry.as_of }),
+    );
+    expect([after.status, after.error?.code]).toEqual(["conflict", "VERSION_CONFLICT"]);
+  });
+
+  test("it decides preferences only", () => {
+    const dry = fx.writer.submit(
+      fx.request(fx.human, [{ kind: "task.create", id: newId("t"), title: "Fixture task" }], {
+        dry_run: true,
+      }),
+    );
+    expect([dry.status, dry.error?.field]).toEqual(["rejected", "dry_run"]);
+  });
 });
