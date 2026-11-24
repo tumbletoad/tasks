@@ -13,10 +13,13 @@
 // hover; Remove takes the note back, and the card's removed line puts it back. Grouped field
 // changes and their Revert join with M5.09.
 import { useLayoutEffect, useRef, useState } from "react";
+import { localDate } from "@ttasks/contracts/day";
 import type { Instance, Receipt, Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
+import { formatInstant, type Clock } from "../row/dates.ts";
+import { useClock } from "../row/useClock.ts";
 import type { DetailLog, DetailNote } from "./detail.ts";
 import css from "./Expanded.module.css";
 import { Markdown } from "./markdown.tsx";
@@ -165,16 +168,11 @@ interface Item {
   readonly run?: Run;
 }
 
-const clock = new Intl.DateTimeFormat(undefined, {
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
-const day = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
-
-function when(ms: number, today: string): string {
-  const date = new Date(ms);
-  return date.toDateString() === today ? clock.format(date) : day.format(date);
+/** "14:02" today, "12 Nov" another day. */
+function when(ms: number, clock: Clock): string {
+  return localDate(ms, clock.timeZone) === clock.today
+    ? formatInstant(ms, clock, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+    : formatInstant(ms, clock, { day: "numeric", month: "short" });
 }
 
 export interface ThreadProps {
@@ -356,7 +354,7 @@ export function Thread({
     ? 0
     : Math.max(0, Math.min(items.length - SHOWN_ENTRIES, held < 0 ? Infinity : held));
   const shown = items.slice(hidden);
-  const today = new Date().toDateString();
+  const clock = useClock(false);
   const first = shown[0]?.key;
   /** Earlier entries go above the one shown first: it is kept where the person sees it. */
   const keepPlace = () => {
@@ -451,7 +449,7 @@ export function Thread({
                 {item.mode === undefined ? null : <span>{item.mode}</span>}
                 {Number.isFinite(item.at) && item.at > 0 ? (
                   <time className={styles.when} dateTime={new Date(item.at).toISOString()}>
-                    {when(item.at, today)}
+                    {when(item.at, clock)}
                   </time>
                 ) : null}
               </div>

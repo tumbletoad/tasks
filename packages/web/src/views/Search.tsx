@@ -9,6 +9,7 @@ import { classes } from "../app/css.ts";
 import { useTitle } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
+import { pageDay, useClock } from "../row/useClock.ts";
 import { useLive, usePagedQuery } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
 import {
@@ -114,8 +115,11 @@ function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
   // Read once per mount: a new search is a new key.
   const [def] = useState(() => ({ kind: "search" as const, fields: searchFields(q) }));
   const [sources] = useState(() => {
+    // A search counts `today` in the page's zone, as the views do; its next pages keep that zone.
     const search = (input: Parameters<typeof api.client.task.search>[0]) =>
-      api.client.task.search(input);
+      api.client.task.search(
+        input.cursor === undefined ? { ...input, time_zone: pageDay().timeZone } : input,
+      );
     const rowOf = (row: SearchRow, found: Found, read: number) => {
       const { areas, projects } = live.getState();
       return rowOfFound(row, found, areas, projects, read);
@@ -156,7 +160,31 @@ function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
     [open.query, done.query],
   );
 
+  // What a search finds can depend on the day (due:today, a star, created:-7d, the ranking's
+  // stars): on the page's next day it is read again, where the reader is. The answer shown is the
+  // new day's only once a read of it succeeded: one that failed is read again when the feed is
+  // back, as the service answers again.
+  const { today, timeZone } = useClock(false);
+  const day = `${today} ${timeZone}`;
+  const answered = useRef(day);
+  const asked = useRef(day);
   const ready = open.state.phase === "ready" && done.state.phase === "ready";
+  useEffect(() => {
+    if (ready) answered.current = asked.current;
+  }, [ready, open.state, done.state]);
+  useEffect(() => {
+    const catchUp = () => {
+      if (answered.current === day) return;
+      const reading = [open.query, done.query].some((q) => q.getState().phase === "loading");
+      if (asked.current === day && reading) return;
+      asked.current = day;
+      void open.query.refresh();
+      void done.query.refresh();
+    };
+    catchUp();
+    return live.onBack(catchUp);
+  }, [day, live, open.query, done.query]);
+
   const changed = open.state.changed || done.state.changed;
   const refresh = () => {
     void open.query.refresh();

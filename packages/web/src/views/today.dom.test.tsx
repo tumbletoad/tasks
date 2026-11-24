@@ -406,6 +406,39 @@ describe("[A5.3.4.web.today-page] Today's date, numbers and sections in a DOM", 
     expect(container.querySelector('[data-part="date"]')?.textContent).toBe("Friday 13 November");
     expect(sections()[1]).toEqual(["This week", ["Sign the lease", "Pay the deposit"]]);
   });
+
+  test("a task an agent completes says when on the page's clock, in its zone", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"], now: NOW });
+    const here = new Intl.DateTimeFormat().resolvedOptions();
+    const away = here.timeZone === "Asia/Tokyo" ? "America/Lima" : "Asia/Tokyo";
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      ...here,
+      timeZone: away,
+    });
+    await mount(<TodayPage onExpand={() => undefined} />);
+    apply(snapshot(TASKS));
+    const crash = TASKS[1] as TaskRow;
+    apply(agentUpdate([{ ...crash, lifecycle: "completed", version: 2 }], ["lifecycle"]));
+    await settle();
+    const time = new Intl.DateTimeFormat("en", { timeStyle: "short", timeZone: away }).format(NOW);
+    expect(
+      container.querySelector(`li[data-task="${crash.ref}"] [data-tip]`)?.getAttribute("data-tip"),
+    ).toBe(`Completed by Codex · ${time}`);
+  });
+
+  test("a tab that wakes on a later day and was never hidden moves on to it at the next minute", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"], now: NOW });
+    await mount(<TodayPage onExpand={() => undefined} />);
+    apply(snapshot([...TASKS, task(6, { title: "Pay the deposit", due_date: "2026-11-19" })]));
+    expect(container.querySelector('[data-part="date"]')?.textContent).toBe("Thursday 12 November");
+    // The machine slept past midnight with the tab in front: no timer saw the night go by.
+    vi.setSystemTime(NOW + 86_400_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(61_000);
+    });
+    expect(container.querySelector('[data-part="date"]')?.textContent).toBe("Friday 13 November");
+    expect(sections()[1]).toEqual(["This week", ["Sign the lease", "Pay the deposit"]]);
+  });
   test("an agent's update leaves the expanded task where it is until it is collapsed", async () => {
     const onExpand = vi.fn<(task: TaskRow | undefined) => void>();
     await mount(<TodayPage onExpand={onExpand} />);

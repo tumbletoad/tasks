@@ -30,8 +30,9 @@ const fragment = readFragment(location.hash);
 const path = pagePath(location.pathname);
 const target = fragment.to ?? (path === undefined ? "/" : `${path}${location.search}`);
 // The fragment goes before anything else runs: the code is in no later URL, request or history.
+// The entry keeps its state: a search's words live there (route.ts).
 if (location.hash !== "" || target !== `${location.pathname}${location.search}`) {
-  history.replaceState(null, "", target);
+  history.replaceState(history.state, "", target);
 }
 
 const container = document.getElementById("root");

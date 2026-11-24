@@ -38,6 +38,7 @@ import { liveGroups } from "../groups.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { tabKept } from "../kept.ts";
 import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
+import { searchQueryOf } from "../route.ts";
 import { formatDay } from "../row/dates.ts";
 import { CopyIcon } from "../row/icons.tsx";
 import { sayMsg } from "../row/say.ts";
@@ -196,10 +197,10 @@ export function TopBar({
   /** The key that searches, shown in the field: `/`, or Ctrl K while single keys are off. */
   const hint = keysOf("search", singleKeys)[0];
   const searching = location.pathname === `/s/${space}/search`;
-  const urlQuery = searching && typeof location.search.q === "string" ? location.search.q : "";
+  const routeQuery = searching ? searchQueryOf(location) : "";
 
   const [text, setText] = useState(() => readTop(space)?.text ?? "");
-  const [query, setQuery] = useState(urlQuery);
+  const [query, setQuery] = useState(routeQuery);
   /** The keys of shortcuts the person kept as text, for as long as the draft lasts. */
   const [kept, setKept] = useState<ReadonlySet<string>>(() => readTop(space)?.kept ?? new Set());
   const [caret, setCaret] = useState(0);
@@ -209,8 +210,8 @@ export function TopBar({
   const wrapper = useRef<HTMLDivElement>(null);
   /** Where the caret goes after the next render (a suggestion was taken). */
   const placeCaret = useRef<number | undefined>(undefined);
-  /** The query this bar last wrote into the URL: the URL changing to it is no news. */
-  const written = useRef(urlQuery);
+  /** The query this bar last wrote into the route: the route changing to it is no news. */
+  const written = useRef(routeQuery);
   /** The route the person was on before searching, to go back to. */
   const back = useRef<string | undefined>(undefined);
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -234,14 +235,14 @@ export function TopBar({
     if (text.trim() === "") setKept((known) => (known.size === 0 ? known : new Set()));
   }, [space, text, kept]);
 
-  // Back, Forward, a reload or a link changed the URL's query: the field follows it. Leaving the
+  // Back, Forward, a reload or a link changed the route's query: the field follows it. Leaving the
   // search route by any way ends the search.
   useEffect(() => {
-    if (urlQuery === written.current) return;
-    written.current = urlQuery;
+    if (routeQuery === written.current) return;
+    written.current = routeQuery;
     clearTimeout(pending.current);
-    setQuery(urlQuery);
-  }, [urlQuery]);
+    setQuery(routeQuery);
+  }, [routeQuery]);
   useEffect(() => {
     if (!searching) {
       clearTimeout(pending.current);
@@ -265,7 +266,10 @@ export function TopBar({
     setCaret(at);
   });
 
-  /** Writes the search into the URL, replacing the entry: typing is not a history of its own. */
+  /**
+   * Writes the search into the tab's history entry (route.ts), replacing it: typing is not a
+   * history of its own.
+   */
   const writeQuery = (q: string) => {
     clearTimeout(pending.current);
     if (written.current === q) return;
@@ -273,7 +277,7 @@ export function TopBar({
     void navigate({
       to: "/s/$space/search",
       params: { space },
-      search: q === "" ? {} : { q },
+      state: q === "" ? {} : { q },
       replace: true,
     });
   };
@@ -285,7 +289,7 @@ export function TopBar({
     void navigate({
       to: "/s/$space/search",
       params: { space },
-      search: initial === "" ? {} : { q: initial },
+      state: initial === "" ? {} : { q: initial },
     });
     field.current?.focus();
   };
