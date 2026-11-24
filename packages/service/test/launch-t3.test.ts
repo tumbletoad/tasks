@@ -51,7 +51,14 @@ async function rig(): Promise<Rig> {
     chmodSync(join(bin.root, "gio"), 0o755);
   }
   const lab = await ShimLab.create("t3-open", {
-    toml: () => instanceToml({ id: "t3", target: "t3", label: "T3 Code · test" }),
+    toml: () =>
+      instanceToml({ id: "t3", target: "t3", label: "T3 Code · test" }) +
+      instanceToml({
+        id: "t3-no-model",
+        target: "t3",
+        label: "T3 Code · no model",
+        t3_provider_instance: "codex",
+      }),
     launch: {
       terminals: { spawn: spawner, systemdRun: SYSTEMD_RUN, openerMs: 200 },
     },
@@ -91,9 +98,9 @@ const call = (r: Rig, op: string, input: Record<string, unknown>) =>
 const open = async (r: Rig, input: Record<string, unknown>): Promise<Opened> =>
   (await call(r, "launch.open", { instance: "t3", request_id: rid(), ...input })) as Opened;
 
-async function refusal(r: Rig, task: string): Promise<unknown> {
+async function refusal(r: Rig, task: string, instance = "t3"): Promise<unknown> {
   try {
-    await open(r, { task });
+    await open(r, { task, instance });
   } catch (error) {
     return errorOf(error);
   }
@@ -147,6 +154,12 @@ describe("[A4.3.4.1.t3.open] Open in T3 Code through the service, against a fake
       expect(await refusal(r, task.ref)).toMatchObject({ data: { t3: "not_running" } });
       await r.fake.restart();
       await pair(r);
+      // A provider instance without its model: refused before T3 is asked anything.
+      expect(await refusal(r, task.ref, "t3-no-model")).toMatchObject({
+        data: { t3: "model_required" },
+      });
+      expect(r.fake.projects.size).toBe(0);
+      expect(r.fake.threads.size).toBe(0);
 
       const lumen = r.fake.addProject(join(r.lab.work, "lumen"), "lumen");
       const words = "Fixture request: read the draft before anything else.";

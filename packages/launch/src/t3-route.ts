@@ -366,11 +366,6 @@ export class T3Route {
     const t3 = input.instance.t3;
     const provider = t3?.providerInstance;
     const model = t3?.model ?? "";
-    // T3 takes a model with a provider instance (its schema requires `model`). Without one the
-    // account could silently be the project's default: refused before anything is sent.
-    if (provider !== undefined && model === "") {
-      return { kind: "unavailable", reason: "model_required" };
-    }
     const runtimeMode = T3_RUNTIME_MODES[input.instance.openPermission];
     const plan: T3Plan = {
       projectId: input.projectId,
