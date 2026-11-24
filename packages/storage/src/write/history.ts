@@ -23,7 +23,8 @@
 //   redo clears it under that guard.
 // - Setting a tombstone back (a redo of a removal, the undo of a restore) puts a row out of sight
 //   again, a step the person decided before anything done to the row since. Another's change to
-//   the row after the step was last applied (its commit, or a redo of it since), and for a task to
+//   the row after the step last wrote it (its commit, or a redo of it since that wrote the row
+//   again: one after a partial undo writes only what that undo took back), and for a task to
 //   anything on it (a field, a note, a log entry, a link, a run, a folder), keeps it in sight, as a
 //   conflict that names the newest such change. The principal's own steps (its undoable writes,
 //   undos and redos) do not count: the person made them.
@@ -404,9 +405,8 @@ const RUNS_OF_TASK =
   " OR (c.entity = 'runs' AND c.entity_id IN (SELECT id FROM runs WHERE task_id = $task))";
 
 /**
- * The commit that last applied the rows of commit `seq` (an SQL expression): its newest redo, else
- * the commit itself. Others' changes after it are newer work, and a script's change after it is
- * one the person may not mean to keep behind an undo.
+ * When the person last applied commit `seq` (an SQL expression): its newest redo, else the commit
+ * itself. A script's change after it is one the person may not mean to keep behind an undo.
  */
 export const appliedSql = (seq: string): string =>
   `(SELECT coalesce(max(r.seq), ${seq}) FROM commits r WHERE r.seq > ${seq} AND r.redo_of = ${seq})`;
@@ -436,7 +436,11 @@ const SQL = {
   ownSteps:
     "SELECT seq FROM commits WHERE seq IN (SELECT value FROM json_each($seqs)) " +
     "AND principal_id = $principal AND (undo_status IS NOT NULL OR kind IN ('undo', 'redo'))",
-  lastApplied: `SELECT ${appliedSql("$seq")} AS seq`,
+  /** The rows the redos of step `$seq` wrote again, each with the newest redo that wrote it. */
+  redone:
+    "SELECT c.entity AS entity, c.entity_id AS id, c.field AS field, max(c.seq) AS seq " +
+    "FROM commits r JOIN changes c ON c.seq = r.seq WHERE r.seq > $seq AND r.redo_of = $seq " +
+    "GROUP BY c.entity, c.entity_id, c.field",
   author:
     "SELECT k.at AS at, k.author_id AS actor, a.kind AS kind, a.label AS label, " +
     "k.origin AS origin FROM commits k JOIN actors a ON a.id = k.author_id WHERE k.seq = $seq",
@@ -598,12 +602,23 @@ export function redoSteps(conn: Connection, principal: Id<"ac">): StackCommit[] 
     });
 }
 
-/** The commit that last applied a `done` commit's rows (appliedSql). */
-export function lastApplied(conn: Connection, seq: number): number {
-  return new RowReader("commits", conn.prepare(SQL.lastApplied).get({ seq }) ?? {}).int(
-    "seq",
-    "seq",
-  );
+/**
+ * When `done` step `seq` last applied each row it wrote (PlanOptions.applied): the newest redo of
+ * it that wrote the row again, else the step's own commit. A redo writes again only what its undo
+ * took back, so a row that a partial undo left keeps the application before.
+ */
+export function appliedRows(conn: Connection, seq: number): (change: StoredChange) => number {
+  const redone = new Map<string, number>();
+  for (const row of conn.prepare(SQL.redone).all({ seq })) {
+    const r = new RowReader("changes", row);
+    redone.set(`${r.text("entity")}|${r.text("id")}|${r.text("field")}`, r.int("seq", "seq"));
+  }
+  return (change) => {
+    // A create's undo tombstones its row, and a redo of that clears the tombstone.
+    const field =
+      change.field ?? (isInvertible(change.entity) ? TABLES[change.entity].tombstone : "");
+    return redone.get(`${change.entity}|${change.entityId}|${field}`) ?? seq;
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -621,6 +636,8 @@ export interface Restore {
   prov: number;
   /** The row it inverts. */
   change: StoredChange;
+  /** PlanOptions.applied of that row. */
+  applied: number;
 }
 
 /** A row the creating commits made, tombstoned. */
@@ -632,6 +649,7 @@ export interface Tombstone {
   /** The table's tombstone field. */
   field: string;
   change: StoredChange;
+  applied: number;
 }
 
 export type Inversion = Restore | Tombstone;
@@ -641,7 +659,7 @@ export interface InversionPlan {
   inversions: Inversion[];
   /** Each field whose guard fails, and each live child row that blocks a create's inversion. */
   conflicts: FieldConflict[];
-  /** PlanOptions.applied: what the rules across rows count from too (applyInversions). */
+  /** The earliest PlanOptions.applied of the rows: who changed them since is named from it. */
   applied: number;
 }
 
@@ -657,10 +675,11 @@ export interface PlanOptions {
   /** Whose undo or redo it is: its own steps since are no newer work (the header). */
   principal: Id<"ac">;
   /**
-   * The commit that last applied the rows inverted: their own, or a redo of them since. Others'
-   * changes after it are newer work (the header).
+   * The commit that last applied the row a change inverts: the change's own, or a redo since that
+   * wrote the row again (appliedRows). Others' changes after it are newer work (the header), and a
+   * rule across rows that the row meets broken counts from it (applyInversions).
    */
-  applied: number;
+  applied: (change: StoredChange) => number;
 }
 
 const parsed = (json: string): unknown => {
@@ -731,7 +750,7 @@ export function planInversions(
   const plan: InversionPlan = {
     inversions: [],
     conflicts: [],
-    applied: options.applied,
+    applied: changes.reduce((first, change) => Math.min(first, options.applied(change)), Infinity),
   };
   const refOf = refsOf(conn, options.refPrefix);
   const rows = new Map<string, RowState>();
@@ -799,6 +818,7 @@ export function planInversions(
     const id = change.entityId;
     const row = read(entity, id);
     const table = TABLES[entity];
+    const applied = options.applied(change);
 
     if (change.action === "set") {
       const field = change.field ?? "";
@@ -833,7 +853,7 @@ export function planInversions(
         continue;
       }
       if (field === table.tombstone && !isLive(parsed(restore))) {
-        const newer = newerWork(conn, entity, id, options.applied, options.principal);
+        const newer = newerWork(conn, entity, id, applied, options.principal);
         for (const work of newer) blocked(conflict(work.where, work.version));
         if (newer.length > 0) continue;
       }
@@ -846,6 +866,7 @@ export function planInversions(
         value: restore,
         prov: change.beforeProv ?? 0,
         change,
+        applied,
       });
       continue;
     }
@@ -906,6 +927,7 @@ export function planInversions(
       task: change.taskId,
       field: table.tombstone,
       change,
+      applied,
     });
   }
   if (options.partial) keepTogether(plan, read);
@@ -1346,7 +1368,6 @@ export function applyInversions(
     restoresOf(inversions).size > 0 ||
     inversions.some(inGroupRules);
   if (!checked(plan.inversions)) return writeInversions(conn, plan.inversions, options);
-  const since = plan.applied;
   const refOf = refsOf(conn, options.refPrefix);
   for (;;) {
     conn.exec("SAVEPOINT restores");
@@ -1356,8 +1377,8 @@ export function applyInversions(
     brokenKeys(conn, restores, broken);
     tooManyLearnings(conn, restores, broken);
     sharedFolders(conn, plan.inversions, broken);
-    groupRules(conn, plan.inversions, broken, { seq: options.seq, since });
-    if (options.owners) ownersLive(conn, plan.inversions, broken, since);
+    groupRules(conn, plan.inversions, broken, options.seq);
+    if (options.owners) ownersLive(conn, plan.inversions, broken);
     if (broken.undone.size === 0) {
       conn.exec("RELEASE restores");
       return applied;
@@ -1558,15 +1579,16 @@ export function brokenIn(
  * deleted project. The other side is named, with who wrote it: for a task, who put it into the
  * project.
  *
- * A break whose every side the plan set back (`seq`) or is older than the step's latest
- * application (`since`) is as it was before it: the plan brings back what a person had, also a
- * break that an earlier version let in. Only a side written since by another makes it the plan's.
+ * A break whose every side the plan set back (`seq`) or is older than the plan's sides of it were
+ * last applied (Inversion.applied) is as it was before it: the plan brings back what a person had,
+ * also a break that an earlier version let in. Only a side written since by another makes it the
+ * plan's.
  */
 function groupRules(
   conn: Connection,
   inversions: readonly Inversion[],
   broken: Broken,
-  { seq, since }: { seq: number; since: number },
+  seq: number,
 ): void {
   const mine = new Map<string, Inversion[]>();
   for (const i of inversions) {
@@ -1613,7 +1635,10 @@ function groupRules(
       .flatMap((row) => of("folders", String(row["id"]), "deleted"));
     return [...own, ...theirs];
   };
-  const asBefore = ([entity, id, field]: readonly [InvertibleEntity, string, string]): boolean => {
+  const asBefore = (
+    [entity, id, field]: readonly [InvertibleEntity, string, string],
+    since: number,
+  ): boolean => {
     const row = readRow(conn, entity, id);
     if (row === undefined) throw misuse("A row the plan read has gone");
     const version = versionOf(row, field);
@@ -1631,7 +1656,11 @@ function groupRules(
           ...(child.entity === "tasks" ? ([["tasks", child.id, "grouping"]] as const) : []),
         ] as const);
   for (const found of breaks) {
-    if (sides(found).every(asBefore)) continue;
+    const rows = sides(found);
+    const since = Math.min(
+      ...rows.flatMap(([entity, id, field]) => of(entity, id, field).map((i) => i.applied)),
+    );
+    if (rows.every((side) => asBefore(side, since))) continue;
     const { rule, project, child } = found;
     const task = child.entity === "tasks" ? (child.id as Id<"t">) : null;
     const side = projectSide(project, rule === "held" ? "deleted" : "grouping");
@@ -1680,18 +1709,14 @@ function ownersOf(entity: InvertibleEntity, raw: Row): { entity: InvertibleEntit
  * A redo writes nothing out of sight (applyInversions). It never brings back a row whose owner is
  * not there: a note of a task that is not there, a link to a source in the Trash, a project of an
  * area that is not there. And it never writes a row, or under an owner, that went out of sight
- * after the step was undone (`since`): a step before it passed over, or another's removal, took it
- * away. A row out of sight before that stays as the step and its undo wrote it: a project's move
- * also sets the area of its tasks in the Trash. Each row the plan writes is checked on the state
- * the plan made, unless the plan takes the row away itself; one that fails keeps the plan's writes
- * of it undone, and the row or its owner is named by its tombstone, with who took it away.
+ * after the step was undone (Inversion.applied): a step before it passed over, or another's
+ * removal, took it away. A row out of sight before that stays as the step and its undo wrote it: a
+ * project's move also sets the area of its tasks in the Trash. Each row the plan writes is checked
+ * on the state the plan made, unless the plan takes the row away itself; one that fails keeps the
+ * plan's writes of it undone, and the row or its owner is named by its tombstone, with who took it
+ * away.
  */
-function ownersLive(
-  conn: Connection,
-  inversions: readonly Inversion[],
-  broken: Broken,
-  since: number,
-): void {
+function ownersLive(conn: Connection, inversions: readonly Inversion[], broken: Broken): void {
   const rows = new Map<string, Inversion[]>();
   for (const i of inversions) {
     const key = `${i.entity}|${i.id}`;
@@ -1707,6 +1732,7 @@ function ownersLive(
     const writes = list.filter((i) => i.field === tombstone);
     if (writes.some((i) => i.kind === "tombstone" || !isLive(parsed(i.value)))) continue;
     const back = writes.length > 0;
+    const since = Math.min(...list.map((i) => i.applied));
     const row = readRow(conn, entity, id);
     if (row === undefined) throw misuse("A row the plan wrote has gone");
     /** Out of sight now: for good when a row comes back under it, else when taken away since. */
