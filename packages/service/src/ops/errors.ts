@@ -298,7 +298,8 @@ function heldWrapUp(result: WriteResult, op: number | undefined): boolean {
 
 /**
  * A conflict or a refusal the writer decided, as its body (A3 3.5). `hints` replaces a code's hint
- * where one entry's remedy differs: a redo's UNDO_CONFLICT has no partial form. `wrapUp` is the
+ * where one entry's remedy differs: a redo's UNDO_CONFLICT has no partial form, and `conflict` is
+ * the hint of a change made since the base to something other than a task. `wrapUp` is the
  * index of complete_task's `once` wrap-up operation, the only one the writer holds whatever the
  * base. `face` is where the caller reads the hint: a command names commands, a tool tools. `own`
  * turns the request's operation index into the caller's own, undefined for one it did not ask for.
@@ -359,7 +360,10 @@ export function resultFailure(
   }));
   return new AppError({
     ...base,
-    hint: hint ?? "Read the task again, then send the change with a new request ID.",
+    hint:
+      hint ??
+      hints["conflict"] ??
+      "Read the task again, then send the change with a new request ID.",
     data: {
       ...base.data,
       ...(wrapped ? { reason: ALREADY_WRAPPED } : {}),

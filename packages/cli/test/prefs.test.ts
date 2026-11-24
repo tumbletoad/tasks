@@ -1,7 +1,7 @@
 // `ttasks prefs` as a person reads it: a key this build does not act on yet is still the person's
 // to read, though an agent is not shown it. The CLI in this process against a service in this
 // process; fixture text and temporary folders only.
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { EFFORT_NAME_MAX, EFFORT_SCALE_MAX, EXIT_CODES } from "@ttasks/contracts";
@@ -144,10 +144,35 @@ describe("[A3.3.4.prefs.set] ttasks prefs set", () => {
     const got = await tasks(["prefs", "get", "tasks.effort_scale"]);
     expect(got.stdout).toContain("\n  S: about 1 hour. A reply after some reading\n");
     expect(got.stdout).toContain("\n  Two weeks: about 2 weeks. A project of its own\n");
-    // The same file again: its base is older than the change it made, so it is refused.
+    // A newer line for S, from a fresh read.
+    const fresh = JSON.parse(
+      (await tasks(["prefs", "get", "tasks.effort_scale", "--json"])).stdout,
+    ) as typeof out;
+    const freshSmall = fresh.prefs[0]?.value.find((level) => level.key === "S");
+    if (freshSmall === undefined) throw new Error("no level");
+    freshSmall.about = "The newest line for S";
+    const newer = join(w.root, "newer.json");
+    writeFileSync(newer, JSON.stringify(fresh));
+    expect((await tasks(["prefs", "set", "tasks.effort_scale", "--file", newer])).code).toBe(0);
+    // The older file again: its base is older than the newer line, so it is refused, saying how
+    // to go on; and so is the same file with its as_of lost in an edit.
+    const before = readFileSync(file, "utf8");
     const again = await tasks(["prefs", "set", "tasks.effort_scale", "--file", file]);
     expect(again.code).not.toBe(0);
     expect(again.stderr).toMatch(/^error conflict/u);
+    expect(again.stderr).toContain("read it again, make your change to what it holds now");
+    expect(again.stderr).not.toContain("Read the task again");
+    for (const as_of of [undefined, null, "1.1"]) {
+      const lost = join(w.root, "lost.json");
+      writeFileSync(lost, JSON.stringify({ ...out, as_of }));
+      const ran = await tasks(["prefs", "set", "tasks.effort_scale", "--file", lost]);
+      expect(ran.code).toBe(EXIT_CODES.usage);
+      expect(ran.stderr).toContain("without its as_of");
+    }
+    expect(readFileSync(file, "utf8")).toBe(before);
+    expect((await tasks(["prefs", "get", "tasks.effort_scale"])).stdout).toContain(
+      "\n  S: about 1 hour. The newest line for S\n",
+    );
     // The value alone, as a person writes it by hand, needs no base.
     const bare = join(w.root, "bare.json");
     writeFileSync(bare, JSON.stringify([...row.value, { key: "Later" }]));

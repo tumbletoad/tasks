@@ -4294,7 +4294,13 @@ async function prefsSet(call: Call): Promise<unknown> {
     result = await submit(
       call,
       changes.map(({ p, value }): Operation => ({ kind: "pref.set", key: p.key, value })),
-      { undoable: false },
+      {
+        undoable: false,
+        hints: {
+          conflict:
+            "It changed since you read it: read it again, make your change to what it holds now, and set it again.",
+        },
+      },
     );
   } catch (error) {
     throw (await keysInUse(reader, changes)) ?? error;

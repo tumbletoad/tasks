@@ -1,8 +1,11 @@
 // `ttasks prefs set <key> --file <file>`: a value too rich for one argument, such as the effort
 // levels with their times and lines, from a file. The file is what `ttasks prefs get <key> --json`
 // printed, edited, or the value alone. The output's `as_of` goes with it as the base, so a change
-// made since that read is refused rather than overwritten.
+// made since that read is refused rather than overwritten; such a file without it is refused, as an
+// edit that lost it would otherwise put back what the file held over a newer change. The value
+// alone has no base on purpose: its person sets exactly that, whatever the space holds now.
 import { isAbsolute, join } from "node:path";
+import { patterns } from "@ttasks/contracts";
 import { UsageError, type Globals, type VerbSpec } from "./args.ts";
 import type { ConnectOptions } from "./connect.ts";
 import type { Io } from "./io.ts";
@@ -20,7 +23,12 @@ function valueOf(json: unknown, key: string): { value: unknown; base?: string } 
     throw new UsageError("--file holds no value of that key");
   }
   const base = json["as_of"];
-  return { value: row["value"], ...(typeof base === "string" ? { base } : {}) };
+  if (typeof base !== "string" || !patterns.asOf.test(base)) {
+    throw new UsageError(
+      "--file holds a prefs answer without its as_of: read the key again with --json and make your change there",
+    );
+  }
+  return { value: row["value"], base };
 }
 
 /** `ttasks prefs` with `--file <file>` taken out and read first. */
