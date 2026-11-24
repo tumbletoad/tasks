@@ -355,9 +355,10 @@ test.describe("[A7.3.9.m2-10.e2e.copy] Copy puts the pointer brief on the clipbo
       .toBe(1);
     const brief = await page.evaluate(() => (window as unknown as { copied: string[] }).copied[0]);
     const lines = (brief ?? "").split("\n");
-    expect(lines[0]).toMatch(
-      new RegExp(`^${PRODUCT_NAME} task ${world.spare.ref} \\(launch L[0-9A-Z]{5}\\)\\.$`, "u"),
-    );
+    expect(
+      lines[0]?.startsWith(`${PRODUCT_NAME} task ${world.spare.ref} "${world.spare.title}" `),
+    ).toBe(true);
+    expect(lines[0]).toMatch(/ \(launch L[0-9A-Z]{5}\)\.$/u);
     expect(lines[4]).toMatch(/^Folder: /u);
     expect(lines).toHaveLength(6);
     // Its launch shows in the expanded row as copied.

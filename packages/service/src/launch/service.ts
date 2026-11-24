@@ -834,6 +834,7 @@ export class LaunchService {
         const text = brief(reference);
         const built = cliArgv(chosen, choice.prompt ?? "sent", {
           task: task.ref,
+          title,
           reference,
           toolEnv,
           ...(session === undefined ? {} : { session }),
@@ -1353,6 +1354,9 @@ ${instance}`;
       renderBrief({
         kind: choice.kind,
         task: task.ref,
+        // A brief that travels in a URL keeps the title out: a link route's, and T3's, whose
+        // thread link carries the brief as its prompt (the thread's own name has the title).
+        ...(choice.route === "link" || choice.route === "t3-mcp" ? {} : { title: task.title }),
         space,
         reference,
         composer: request.composer,

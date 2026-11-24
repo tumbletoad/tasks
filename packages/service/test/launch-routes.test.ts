@@ -28,6 +28,7 @@ import {
   FixedEnvironment,
   presetSession,
   renderBrief,
+  sanitiseTitle,
   settingsOf,
   REQUEST_LINE,
   STEP_DEADLINE_MS,
@@ -278,12 +279,13 @@ async function addTask(
   title: string,
   folder?: string,
   project?: string,
-): Promise<{ id: string; ref: string; folder?: string }> {
+): Promise<{ id: string; ref: string; title: string; folder?: string }> {
   const added = (await write(r, "task.add", {
     tasks: [{ title, ...(project === undefined ? {} : { area: "Client work", project }) }],
   })) as { tasks: { id: string; ref: string }[] };
-  const task = added.tasks[0];
-  if (task === undefined) throw new Error("no task");
+  const made = added.tasks[0];
+  if (made === undefined) throw new Error("no task");
+  const task = { ...made, title };
   if (folder === undefined) return task;
   mkdirSync(join(r.lab.work, folder), { recursive: true });
   const set = (await write(r, "folder.manage", {
@@ -359,7 +361,7 @@ const hex16 = (text: string): string =>
 function briefFor(
   kind: "sent" | "prefilled" | "pointer",
   space: string,
-  task: { ref: string },
+  task: { ref: string; title?: string },
   reference: string,
   options: {
     composer?: string;
@@ -370,6 +372,7 @@ function briefFor(
   const brief = renderBrief({
     kind,
     task: task.ref,
+    title: task.title,
     space,
     reference,
     budget: options.budget ?? 8000,
@@ -419,7 +422,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         "--session-id",
         session,
         "-n",
-        task.ref,
+        `${task.ref} ${sanitiseTitle(HOSTILE_TITLE)}`,
         "--permission-mode",
         "bypassPermissions",
         "--",
@@ -428,15 +431,12 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(report.argv).toEqual(golden);
       expect(report.utf8).toEqual(golden.map(hex8));
       expect(report.utf16).toEqual(golden.map(hex16));
-      // A pointer: the two references, no title, and the person's words saved for the agent.
+      // The two references and the title, and the person's words saved for the agent.
       expect(brief.split("\n")[0]).toBe(
-        `${PRODUCT_NAME} task ${task.ref} (launch ${launch.reference}).`,
+        `${PRODUCT_NAME} task ${task.ref} "${sanitiseTitle(HOSTILE_TITLE)}" (launch ${launch.reference}).`,
       );
       expect(brief.split("\n").slice(4)).toEqual([REQUEST_LINE]);
-      for (const arg of report.argv) {
-        expect(arg).not.toContain("quotes");
-        expect(arg).not.toContain("Look at");
-      }
+      for (const arg of report.argv) expect(arg).not.toContain("Look at");
       // It started in the resolved folder, by identity.
       const id = statSync(folder, { bigint: true });
       expect(report.cwdId).toBe(`${id.dev.toString()}:${id.ino.toString()}`);
@@ -555,7 +555,10 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect([...query.keys()]).toEqual(["cwd", "q"]);
       expect(query.get("cwd")).toBe(folder);
       expect(query.get("q")).toBe(
-        briefFor("prefilled", r.lab.spaceId, task, result.launch.reference, { budget: 1000 }),
+        // A link carries no title: it would stand in the URL.
+        briefFor("prefilled", r.lab.spaceId, { ref: task.ref }, result.launch.reference, {
+          budget: 1000,
+        }),
       );
       expect(url).toMatch(/^[A-Za-z0-9:/?&=%._~-]+$/u);
       // The link only asked the app: a click after it, from this tab or another, opens it again.
@@ -703,7 +706,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(again.result.launch.id).toBe(first.result.launch.id);
       expect(again.result.launch.state).toBe("dispatched");
       expect(again.result.copy?.split("\n")[0]).toBe(
-        `${PRODUCT_NAME} task ${task.ref} (launch ${first.result.launch.reference}).`,
+        `${PRODUCT_NAME} task ${task.ref} "Fix appointment time zones today" (launch ${first.result.launch.reference}).`,
       );
       // The request ID names one click: another task under it is refused, and nothing is made.
       let refused: unknown;
@@ -748,7 +751,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(retry.intent.id).toBe(first.intent.id);
       expect(retry.intent.state).toBe("dispatched");
       expect(retry.copy?.split("\n")[0]).toBe(
-        `${PRODUCT_NAME} task ${task.ref} (launch ${first.intent.reference}).`,
+        `${PRODUCT_NAME} task ${task.ref} "Fix appointment time zones today" (launch ${first.intent.reference}).`,
       );
     },
   );

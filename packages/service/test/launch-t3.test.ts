@@ -170,6 +170,8 @@ describe("[A4.3.4.1.t3.open] Open in T3 Code through the service, against a fake
       expect(prompt).toContain(task.ref);
       // The words are the launch's request, a note on the task, never in the link.
       expect(prompt).not.toContain("Fixture request");
+      // Nor is the title: the thread's name carries it, the link does not.
+      expect(prompt).not.toContain("Fixture T3 task");
       const page = (await call(r, "task.get", {
         task: task.ref,
         sections: ["instructions", "notes"],
