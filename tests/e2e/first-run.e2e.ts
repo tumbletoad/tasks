@@ -447,6 +447,62 @@ test.describe("[A7.3.12.m5-12.e2e.screens] The first start and the agent apps in
   });
 });
 
+test.describe("[A7.3.12.m5-12.e2e.two-files] Claude Code's two settings files: the row names both, says which one lacks the entry, and one Apply writes it there", () => {
+  test("a file Claude Code made later shows without the entry while the tools stay on, and Add writes it @one-browser", async ({
+    page,
+    fresh,
+  }) => {
+    const inside = /~[\\/]\.claude[\\/]\.claude\.json/u;
+    await fresh.forgetSpaces();
+    await firstStart(page, fresh);
+    await nameField(page).fill("Kiln");
+    await page.getByRole("button", { name: "Make the space" }).click();
+    await expect(appsHeading(page)).toBeVisible({ timeout: SLOW_MS });
+    await page.getByRole("button", { name: "Apply" }).click();
+    await showsSpace(page, "Kiln");
+    expect(fresh.claudeEntry()).toBeDefined();
+    try {
+      // Claude Code started with its home set to the folder (as T3 Code may) makes its own file.
+      fresh.insideClaude('{\n  "numStartups": 1\n}\n');
+      await page.goto(`${fresh.origin}/s/${spaceOf(page)}/settings`);
+      await expect(appsHeading(page)).toBeVisible();
+      const claude = page.locator('[data-app="claude-code"]');
+      await expect(claude.locator('[data-part="files"]')).toContainText(inside);
+      await expect(toggle(page, toolsFor("Claude Code"))).toBeChecked();
+      await expect(claude).toContainText(`No ${PRODUCT_NAME} entry here yet`);
+      const add = claude.locator('[data-part="add-file"]');
+      await expect(add).toContainText(inside);
+      expect(fresh.insideClaudeEntry()).toBeUndefined();
+      await widths(page, "two-files-lacking");
+      expect(await violations(page)).toEqual([]);
+
+      await add.click();
+      await expect(changes(page)).toContainText(`Claude Code gets the ${PRODUCT_NAME} tools, in`);
+      await expect(changes(page)).toContainText(inside);
+      await widths(page, "two-files-chosen");
+      await page.getByRole("button", { name: "Apply" }).click();
+      await expect(page.getByRole("status")).toContainText("Done");
+      expect(fresh.insideClaudeEntry()).toBeDefined();
+      await expect(claude).not.toContainText(`No ${PRODUCT_NAME} entry here yet`);
+      await expect(add).toHaveCount(0);
+      await widths(page, "two-files-done");
+
+      // Off takes the entry out of both files.
+      for (const app of ["Claude Code", "Codex"]) {
+        await flip(page, toolsFor(app), false);
+        await flip(page, openIn(app), false);
+      }
+      await page.getByRole("button", { name: "Apply" }).click();
+      await expect(page.getByRole("status")).toContainText("Done");
+      expect(fresh.claudeEntry()).toBeUndefined();
+      expect(fresh.insideClaudeEntry()).toBeUndefined();
+    } finally {
+      fresh.insideClaude(null);
+    }
+    await fresh.forgetSpaces();
+  });
+});
+
 async function sideScroll(page: Page): Promise<number> {
   return page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

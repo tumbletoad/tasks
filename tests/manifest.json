@@ -5009,6 +5009,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.12.m5-12.e2e.two-files",
+      "title": "In Chromium, Claude Code's default folder with a settings file Claude Code made later: the row names both files, stays on and says the new one has no entry, Add writes it there with one Apply, and turning off takes the entry out of both",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-12.page-gate",
       "title": "The page's agent apps refuse an agent's connection, a script, the bridge and a shim before they read anything",
       "owner": "M5",
