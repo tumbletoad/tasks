@@ -216,6 +216,19 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     expect(deleted(a)).toBe(false);
   });
 
+  test("Undo of a restore after someone added to the task stays a conflict after a partial Undo and its Redo, which brought nothing back", () => {
+    const a = task("Renew the passport");
+    remove(a);
+    applied(restore(a));
+    applied(send("codex", [{ kind: "note.add", task: a, body: "Booked for Tuesday" }]));
+    applied(fx.writer.submit(fx.request(fx.human, [{ kind: "undo", partial: true }])));
+    applied(history("redo"));
+    const late = history("undo");
+    expectStatus(late, "conflict");
+    expect(late.conflicts).toEqual([expect.objectContaining({ entity: "notes", task: a })]);
+    expect(deleted(a)).toBe(false);
+  });
+
   test("the person's own steps since do not hold back Redo or Undo of a removal", () => {
     // Redo: a title edit undone and redone after the removal's undo.
     const a = task("Renew the passport");

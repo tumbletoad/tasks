@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { pagePath, readFragment } from "./route.ts";
+import { NO_SUCH_SPACE, pagePath, readFragment } from "./route.ts";
 
 const SPACE = "sp_0123456789abcdefghjkmnpqrs";
 const CODE = "A".repeat(42) + "_";
@@ -20,10 +20,19 @@ describe("[A5.3.3.web.route] the tab's space comes from its route", () => {
     expect(pagePath("/task/M-14")).toBe("/?task=M-14");
   });
 
+  test.each(["Mira", "Shared List", "Team.1", "Café", "a/b", "sp_X", SPACE.toUpperCase(), "%20"])(
+    "a link with %s where the space goes reaches the page as a space it does not have",
+    (space) => {
+      expect(pagePath(`/s/${space}/task/M-14`)).toBe(NO_SUCH_SPACE);
+      expect(pagePath(`/s/${encodeURIComponent(space)}`)).toBe(NO_SUCH_SPACE);
+      expect(readFragment(`#to=${encodeURIComponent(`/s/${space}/task/M-14`)}`)).toEqual({
+        to: NO_SUCH_SPACE,
+      });
+    },
+  );
+
   test.each([
     "/s/",
-    "/s/Mira",
-    `/s/${SPACE.toUpperCase()}`,
     `/s/${SPACE}/area/ar_1/project/pj_2/more`,
     `/s/${SPACE}/task/<script>`,
     `/s/${SPACE}/task/a b`,

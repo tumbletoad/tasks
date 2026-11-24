@@ -74,9 +74,9 @@ import {
 } from "./folders.ts";
 import {
   applyInversions,
+  appliedRows,
   brokenIn,
   groupBreaks,
-  lastApplied,
   newerWorkOf,
   type Held,
   planInversions,
@@ -2717,8 +2717,9 @@ export class SpaceWriter {
         partial,
         op: 0,
         principal,
-        // A redo applies the step's undo again; an undo takes back the step as its last redo made it.
-        applied: undo ? lastApplied(conn, target.seq) : inverted,
+        // A redo applies the step's undo again; an undo takes back each row as the step, or a redo
+        // of it, last wrote it.
+        applied: undo ? appliedRows(conn, target.seq) : () => inverted,
       });
       const pass = (): void => {
         passed.push(target.id);

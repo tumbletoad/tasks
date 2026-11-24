@@ -15,6 +15,9 @@ export {
 } from "./entries.ts";
 export {
   applyPlan,
+  autostartAnswer,
+  autostartLine,
+  autostartStatus,
   CREATED_FILE,
   explorerInSession,
   installedVersion,
@@ -31,6 +34,7 @@ export {
   userManager,
   type Applied,
   type Autostart,
+  type AutostartAnswer,
   type EntryGuard,
   type EntryInfo,
   type EntryKind,
