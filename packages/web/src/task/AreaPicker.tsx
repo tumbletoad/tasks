@@ -154,9 +154,11 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
         (result) => {
           const made = "receipt" in result ? undefined : result.group;
           if (made?.kind !== "area") return;
-          edits.edit(task, groupingChange({ id: made.id, title: made.name }, undefined), {
+          // An answer that could not read the name back names none: the one typed.
+          const name = made.name ?? title;
+          edits.edit(task, groupingChange({ id: made.id, title: name }, undefined), {
             base: seen,
-            refused: (why) => ({ id: "area.addedNotMoved", values: { name: made.name, why } }),
+            refused: (why) => ({ id: "area.addedNotMoved", values: { name, why } }),
           });
         },
         (failed: unknown) => {

@@ -382,6 +382,17 @@ function draftLine(task: Result, space: string, its = "its"): string {
   return `Found ${String(task["ref"])}${lifecycle} in ${space} by ${its} source key${logged}`;
 }
 
+/**
+ * The sources of a new task that were linked without their key, because another active task holds
+ * it: which task, so the person knows where captures of the item go.
+ */
+function heldLines(task: Result): string[] {
+  return ((task["held"] as Result[] | undefined) ?? []).map(
+    (held) =>
+      `  Its source ${String(Number(held["source"]) + 1)} is linked without its key: ${str(held["held_by"])} holds the key, and captures of it go there.`,
+  );
+}
+
 /** A change's operation kind as a verb on its task, for the undo's note on a script's change. */
 const SCRIPT_VERBS: Readonly<Record<string, string>> = {
   "task.create": "added",
@@ -490,7 +501,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
   switch (entry) {
     case "task.add":
       for (const task of (result["tasks"] as Result[] | undefined) ?? []) {
-        lines.push(`${draftLine(task, space)}${replay(result)}`);
+        lines.push(`${draftLine(task, space)}${replay(result)}`, ...heldLines(task));
       }
       break;
     case "task.update": {
@@ -500,6 +511,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
           ? `No change to ${String(result["task"])} in ${space}${replay(result)}`
           : `Updated ${String(result["task"])} in ${space}: ${fields.join(", ")}${replay(result)}`,
       );
+      lines.push(...insideLines(result));
       break;
     }
     case "entry.add":
@@ -528,7 +540,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
           : `${dropped ? "Dropped" : "Completed"} ${String(result["task"])} in ${space}${replay(result)}`,
       );
       for (const f of (result["follow_ups"] as Result[] | undefined) ?? []) {
-        lines.push(draftLine(f, space, "a follow-up's"));
+        lines.push(draftLine(f, space, "a follow-up's"), ...heldLines(f));
       }
       break;
     }
@@ -739,7 +751,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       lines.push(
         result["found"] === true
           ? `${String(result["status"])} at ${String(result["decided_at"])}, as of ${String(result["as_of"])}`
-          : "No receipt for that request ID in this writer scope.",
+          : "No receipt for that request ID in this writer scope: nothing was written under it, and the request can be sent again.",
       );
       break;
     case "task.search":
@@ -752,7 +764,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       if (typeof result["result"] === "string" && group !== undefined) {
         const done = GROUP_DONE[str(result["result"])] ?? str(result["result"]);
         const folder = typeof group["folder"] === "string" ? `: ${group["folder"]}` : "";
-        lines.push(`${done} ${str(group["kind"])} ${str(group["name"])}${folder}`);
+        lines.push(`${done} ${str(group["kind"])} ${str(group["name"] ?? group["id"])}${folder}`);
         lines.push(...insideLines(result));
       }
       // A project a line, with the repository in its folder and the folder on this machine. A

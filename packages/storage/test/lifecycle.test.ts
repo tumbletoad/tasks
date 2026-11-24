@@ -143,6 +143,45 @@ describe("[A1.5.write.lifecycle] complete, reopen, archive, wrap-up, delete and 
     expect(one("SELECT affected FROM commits WHERE seq = $seq", { seq: result.seq })).toBe(1);
   });
 
+  test("an entry's request learns how it left the task, also when it changed nothing; an A1 request's result is as before", () => {
+    // A registry entry builds its answer from these facts; its request carries an intent.
+    const entry = (ops: Operation[]): WriteResult =>
+      fx.writer.submit(
+        fx.request(fx.human, ops, {
+          base: fx.base(),
+          intent: { entry: "fixture.entry", input: { ops: ops.length } },
+        }),
+      );
+    const id = create();
+    expectStatus(submit([{ kind: "task.archive", task: id }]), "applied");
+    // A finish of an archived task leaves it archived, and says so: never completed.
+    const finish = entry([{ kind: "task.complete", task: id, if_active: true }]);
+    expect(finish.results[0]).toMatchObject({ status: "unchanged", lifecycle: "archived" });
+    const reopened = entry([{ kind: "task.reopen", task: id }]);
+    expect(reopened.results[0]).toMatchObject({
+      status: "updated",
+      lifecycle: "active",
+      status_key: String(task(id)["status"]),
+    });
+    const done = entry([{ kind: "task.complete", task: id }]);
+    expect(done.results[0]).toMatchObject({
+      lifecycle: "completed",
+      wrap_state: task(id)["wrap_state"],
+    });
+    // A patch and a move name the fields they changed, a move by its area and project.
+    const other = create();
+    const changed = entry([
+      { kind: "task.patch", task: other, set: { title: "Fix the export", summary: "Next: test" } },
+      { kind: "task.move", task: other, area: fx.areas.home },
+    ]);
+    expect(changed.results.map((r) => r.fields)).toEqual([["summary"], ["area"]]);
+    // Without an intent the result holds none of them.
+    const plain = submit([{ kind: "task.patch", task: other, set: { summary: "Next: ship" } }]);
+    expect(plain.results[0]).not.toHaveProperty("fields");
+    const archived = submit([{ kind: "task.archive", task: other }]);
+    expect(archived.results[0]).not.toHaveProperty("lifecycle");
+  });
+
   test("wrap-up: outcome, learnings and the mark on a completed or archived task, never an active one", () => {
     const id = create({ planned_for: "2026-11-20", focus: "2026-11-12" });
     expect(submit([{ kind: "task.wrap_up", task: id, outcome: "Too early." }]).error).toMatchObject(

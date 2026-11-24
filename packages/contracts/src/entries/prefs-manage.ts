@@ -110,21 +110,31 @@ const PrefRow = z.strictObject({
 
 export const PrefsManageResult = z.strictObject({
   action: z.enum(PREFS_ACTIONS).describe("The action"),
-  as_of: AsOf,
-  prefs: z.array(PrefRow).describe("The keys asked for, sorted"),
+  as_of: AsOf.describe(
+    "A list's read, or this write's position: your next base. Names may be newer",
+  ),
+  prefs: z
+    .array(PrefRow)
+    .describe("The keys asked for, sorted; absent on a set when they could not be read")
+    .optional(),
   result: z.enum(["updated", "no_change", "proposed"]).describe("What a change did").optional(),
   changed: z
     .array(
       z.strictObject({
         key: z.string().describe("The key"),
         from: PrefValueOutput.describe("Its value before"),
-        to: PrefValueOutput.describe("Its value now"),
+        to: PrefValueOutput.describe("The value it set"),
       }),
     )
     .describe("The keys a change changed")
     .optional(),
   proposal: ProposalId.optional(),
   replayed: Replayed.optional(),
+});
+
+/** What a describe or a get returns: the keys are always there. */
+export const PrefsReadResult = PrefsManageResult.extend({
+  prefs: z.array(PrefRow).describe("The keys asked for, sorted"),
 });
 
 export const prefsManage = defineEntry({
@@ -156,7 +166,14 @@ export const prefsManage = defineEntry({
     },
   },
   budget: { typical: 600, max: 2000 },
-  errors: ["invalid_input", "forbidden", "conflict", "space_unavailable", "request_id_conflict"],
+  errors: [
+    "invalid_input",
+    "forbidden",
+    "conflict",
+    "space_unavailable",
+    "request_id_conflict",
+    "applied_earlier",
+  ],
   examples: [
     {
       title: "The statuses, with their default",

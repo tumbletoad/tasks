@@ -449,8 +449,6 @@ async function run(initial: DefaultSpace, events: readonly Event[]): Promise<str
   const kept = new Map<string, { readonly text: string; readonly task: string }>();
   /** Every change the spaces must hold: `<space>|<text>|<task>`, once for each commit. */
   const changes: string[] = [];
-  /** A receipt of a request the writer refused: no change, and the same answer at a retry. */
-  const REJECTED = "rejected";
   const keyOf = (space: string, scope: string, id: string): string => `${space}|${scope}|${id}`;
 
   /** What a write of `request` through `through` must come to now, and its writer scope. */
@@ -491,9 +489,7 @@ async function run(initial: DefaultSpace, events: readonly Event[]): Promise<str
     const before = kept.get(keyOf(space, scope, request.id));
     if (before !== undefined) {
       if (before.text !== request.text) return { kind: "refused", code: "request_id_conflict" };
-      return before.task === REJECTED
-        ? { kind: "rejected", space, scope }
-        : { kind: "replayed", task: before.task };
+      return { kind: "replayed", task: before.task };
     }
     const here = space === s2.spaceId ? task === task2.id : tasks.some((t) => t.id === task);
     if (!here) return { kind: "rejected", space, scope };
@@ -554,13 +550,9 @@ async function run(initial: DefaultSpace, events: readonly Event[]): Promise<str
       changes.push(`${expected.space}|${request.text}|${expected.task}`);
       if (expected.space === s2.spaceId) reach("a change in the second space");
     }
-    if (expected.kind === "rejected") {
-      kept.set(keyOf(expected.space, expected.scope, request.id), {
-        text: request.text,
-        task: REJECTED,
-      });
-      reach("a task of another space");
-    }
+    // A request the writer refused wrote nothing and keeps no receipt: sent again, it is decided
+    // again.
+    if (expected.kind === "rejected") reach("a task of another space");
     if (expected.kind === "replayed") reach("a replay");
   };
 

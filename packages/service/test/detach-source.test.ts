@@ -279,7 +279,7 @@ describe("[A3.source.detach] detaching a source and putting it back, through rea
     );
   });
 
-  test("a retried refusal names the holder when it was decided; the agent's text says it holds the key", async () => {
+  test("a refusal sent again is decided again and names the holder now; the agent's text says it holds the key", async () => {
     const { ref } = await add({ title: "Fixture retried", sources: [ticket("fix:DT-12")] });
     await update({ task: ref, remove_sources: ["fix:DT-12"] });
     const holder = await add({ title: "Fixture first holder", sources: [ticket("fix:DT-12")] });
@@ -299,9 +299,10 @@ describe("[A3.source.detach] detaching a source and putting it back, through rea
     // The holder lets the key go, and another task captures it.
     await update({ task: holder.ref, remove_sources: ["fix:DT-12"] });
     const next = await add({ title: "Fixture next holder", sources: [ticket("fix:DT-12")] });
+    // The refused request wrote nothing: sent again, it is decided on the space as it is now.
     const again = await refusal("task.update", input, AGENT);
     expect(again.message).toBe(
-      `fix:DT-12 was on ${holder.ref} when this was decided. Nothing was put back.`,
+      `fix:DT-12 is on ${next.ref} now: captures go there. Nothing was put back.`,
     );
     expect((await sources(ref))[0]?.captures_to).toEqual([next.ref]);
   });

@@ -20,6 +20,10 @@
       "class": "not_found",
       "exit": 3
     },
+    "applied_earlier": {
+      "class": "conflict",
+      "exit": 4
+    },
     "conflict": {
       "class": "conflict",
       "exit": 4

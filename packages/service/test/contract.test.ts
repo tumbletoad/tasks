@@ -36,6 +36,7 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, over HTTP as the UI", a
   const transport: ContractTransport = {
     portal: w.portal,
     folder: (task) => w.folder(task),
+    aside: (entry, input, by) => w.aside(entry, input, by),
     launch: async (task) => (await w.launch(task)).reference,
     call: async (entry, input) => {
       if (!httpRoutes.some((route) => route.entry === entry)) {
@@ -98,6 +99,7 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, over ttasks-local/1", a
   const transport: ContractTransport = {
     portal: w.portal,
     folder: (task) => w.folder(task),
+    aside: (entry, input, by) => w.aside(entry, input, by),
     launch: async (task) => (await w.launch(task)).reference,
     call: async (entry, input, actor) => {
       try {

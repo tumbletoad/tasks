@@ -286,15 +286,58 @@ export interface OpResult {
     area?: string;
     project?: string;
   };
-  /** A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). */
+  /**
+   * A folder set that moved its owner's folder on this machine: the folders that were inside the
+   * old one when it wrote, those it took along (`carry`) and those it left where they are. A
+   * receipt keeps the first INSIDE_KEPT of each list, with the counts.
+   */
+  inside?: {
+    moved: number;
+    along: InsideFolder[];
+    stayed: number;
+    left: InsideFolder[];
+  };
+  /**
+   * A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). The
+   * lifecycle of `task.complete`, `task.archive` and `task.reopen` is the task's after the request.
+   */
   matched_by?: "source_key";
   lifecycle?: TaskLifecycle;
+  /** `task.reopen`: the task's status after the request. */
+  status_key?: string;
+  /** `task.complete` and `task.archive`: the task's wrap-up state after the request, if it has one. */
+  wrap_state?: "pending" | "wrapped";
+  /** `task.wrap_up`: how many learnings it recorded. */
+  learnings?: number;
+  /**
+   * `task.patch`, `task.context_append` and `task.move`: the task's logical fields it changed, a
+   * move's as `area` and `project`.
+   */
+  fields?: string[];
+  /** An undo or a redo: the references of the first 50 tasks its commit changed, and their count. */
+  tasks?: string[];
+  task_count?: number;
   /**
    * A `task.create` whose keys several active tasks hold: their references, lowest first. The
    * result's task is the first of them, so the result keeps one shape; the caller picks one.
    */
   ambiguous?: string[];
 }
+
+/**
+ * A folder inside one a request moved (OpResult.inside): whose it is, a task with its reference,
+ * where it was and where it is now, which is the same place for one left.
+ */
+export interface InsideFolder {
+  kind: "project" | "task";
+  owner: string;
+  ref?: string;
+  from: string;
+  to: string;
+}
+
+/** How many of the folders a move took along, and of those it left, a receipt keeps. */
+export const INSIDE_KEPT = 20;
 
 /** A task's lifecycle (A1 3.11). */
 export type TaskLifecycle = "active" | "completed" | "archived";
@@ -333,6 +376,8 @@ export interface WriteResult {
   /** Why, for `rejected` and `conflict`. */
   error?: WriteProblem;
   warnings: string[];
+  /** The request's `answer`: from the receipt on a replay. */
+  answer?: Record<string, unknown>;
   /** A retry with the same intent got the stored result of the first decision (A1 3.8). */
   replayed?: true;
 }
@@ -1082,7 +1127,7 @@ export interface WriteRequest {
   /**
    * Every task the request changes must be active: A3 3.4.6's `update_task` changes an active
    * task. A completed or archived one refuses the request with TASK_NOT_ACTIVE, decided in the
-   * request's transaction, so it has a receipt and a retry answers the same.
+   * request's transaction.
    */
   active?: boolean;
   /** The caller's intent. Without one, the intent is the operations themselves. */
@@ -1095,6 +1140,17 @@ export interface WriteRequest {
    * operation) of at most 500 characters, without controls; never task text.
    */
   warnings?: string[];
+  /**
+   * What the caller decided before the writer and builds its answer from with the writer's
+   * result, such as the group a create found or where each operation came from in its input. The
+   * result carries it and the receipt keeps it, so a replay is answered from the same record. JSON,
+   * never task text; not part of the intent's fingerprint.
+   */
+  answer?: Record<string, unknown>;
+  /**
+   * The operations. A registry entry's request may hold none: the caller found that it changes
+   * nothing, and the request is decided `unchanged` so that its receipt keeps its answer.
+   */
   ops: Operation[];
 }
 
@@ -2302,7 +2358,7 @@ export function checkRequest(value: unknown): CheckedRequest {
   if (!isId(spaceId, "sp")) return fail("VALIDATION_FAILED", "Expected a space ID", "space_id");
   const actor = checkCredential(f.raw("actor"));
   const ops: unknown = f.raw("ops");
-  if (!Array.isArray(ops) || ops.length === 0) {
+  if (!Array.isArray(ops) || (ops.length === 0 && !f.has("intent"))) {
     return fail("VALIDATION_FAILED", "A request has at least one operation", "ops");
   }
   const list = ops as unknown[];
@@ -2327,6 +2383,18 @@ export function checkRequest(value: unknown): CheckedRequest {
   }
   if (f.has("active")) request.active = f.boolean("active");
   if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
+  if (f.has("answer")) {
+    const answer = f.raw("answer");
+    if (
+      !isJsonData(answer) ||
+      typeof answer !== "object" ||
+      answer === null ||
+      Array.isArray(answer)
+    ) {
+      f.fail("VALIDATION_FAILED", "Expected an object of plain JSON data", "answer");
+    }
+    request.answer = answer as Record<string, unknown>;
+  }
   if (request.ops.some(isExecutionOp)) checkExecutionRequest(f, request);
   if (request.ops.some(isHistoryOperation)) checkHistoryRequest(f, request);
   // A1 3.16: the writer reads the space's preferences (statuses, efforts, dedupe's window) once,

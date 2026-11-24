@@ -16,15 +16,15 @@
 //
 // The token names where the next page starts, in the order of SECTION_ORDER:
 //   `<s>`            the start of section s,
-//   `<s><k>`         after item k of section s (a note or log ordinal, a source or history row
-//                    counted from 1, or a learning's rank),
+//   `<s><k>`         after item k of section s (a note or log ordinal, a source row counted
+//                    from 1, a history commit's seq, or a learning's rank),
 //   `<s><k>.<o>`     item k of section s from code point o,
 //   `c.<o>`, `o.<o>` the context or the outcome's text from code point o,
 //   `o0`             after the outcome's text, before the task's first learning,
 // where s is i (instructions), c (context), n (notes), l (log), s (sources), o (outcome) or h
-// (history). Notes and log entries are named by their ordinal, and learnings by their rank among
-// all the task's learnings, removed ones included, so a page read later still starts where the
-// last one ended, whatever was added since. The outcome section is its text (item 0) followed by
+// (history). Notes and log entries are named by their ordinal, history by its commit, and
+// learnings by their rank among all the task's learnings, removed ones included, so a page read
+// later still starts where the last one ended, whatever was added since. The outcome section is its text (item 0) followed by
 // the learnings, each whole: a learning is at most 1 KiB, so a fresh page always holds it.
 import { invalid } from "./errors.ts";
 
@@ -135,7 +135,7 @@ export interface Slice {
 /** One item of a section as the page builder sees it. */
 export interface PageItem<T> {
   readonly value: T;
-  /** Its key in a token: an ordinal, or a row counted from 1. */
+  /** Its key in a token: an ordinal, a commit's seq, or a row counted from 1. */
   readonly key: number;
   /** Its text, when a part of it may go on a page; else the item is whole or not at all. */
   readonly text?: string;

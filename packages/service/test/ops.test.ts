@@ -316,7 +316,7 @@ describe("[A2.3.6.ops.request-path] op/call and op/list", () => {
     });
   });
 
-  test("update changes an active task only: wrong_tool, decided and receipted (A3 3.4.6)", async () => {
+  test("update changes an active task only: wrong_tool, decided again when sent again (A3 3.4.6)", async () => {
     const s = await session("cli-script");
     const added = TaskAddResult.parse(
       await call(s, "task.add", { tasks: [{ title: "Fixture finished task" }], request_id: rid() }),
@@ -359,20 +359,26 @@ describe("[A2.3.6.ops.request-path] op/call and op/list", () => {
     const unchanged = TaskGetResult.parse(await call(s, "task.get", { task: ref }));
     expect(unchanged.as_of).toBe(done.as_of);
 
-    // The writer decided it, so it has a receipt: after a reopen the same request answers the same.
-    await call(s, "task.reopen", {
-      task: ref,
-      reason: "Fixture reason.",
-      base: done.as_of,
-      request_id: rid(),
-    });
-    expect(errorOf(await call(s, "task.update", update).catch((e: unknown) => e))).toMatchObject({
-      code: "wrong_tool",
-      data: { cause: "TASK_NOT_ACTIVE", replayed: true },
+    // The refusal wrote nothing and keeps no receipt: after a reopen the same request is decided
+    // again, and applies.
+    expect(
+      ReceiptGetResult.parse(await call(s, "receipt.get", { request: update.request_id })),
+    ).toEqual({ found: false });
+    const reopened = TaskReopenResult.parse(
+      await call(s, "task.reopen", {
+        task: ref,
+        reason: "Fixture reason.",
+        base: done.as_of,
+        request_id: rid(),
+      }),
+    );
+    expect(await call(s, "task.update", { ...update, base: reopened.as_of })).toMatchObject({
+      result: "updated",
+      fields: ["summary"],
     });
     expect(
       ReceiptGetResult.parse(await call(s, "receipt.get", { request: update.request_id })),
-    ).toMatchObject({ found: true, status: "rejected", error: { cause: "TASK_NOT_ACTIVE" } });
+    ).toMatchObject({ found: true, status: "applied" });
   });
 
   test("a source that exists keeps its metadata, and the reply names what differs", async () => {
@@ -587,10 +593,10 @@ describe("[A3.3.4.add.upsert] task.add upserts by source key (A3 3.4.5, A1 3.6)"
     const both = await add([
       { title: "Fixture which", sources: [ticket(2), ticket(3)], log: "Fixture: which one?" },
     ]);
+    // It names no task, so no title either.
     expect(both.tasks).toEqual([
       {
         result: "exists",
-        title: "Fixture which",
         lifecycle: "active",
         matched_by: "source_key",
         ambiguous: [ref, otherRef],
