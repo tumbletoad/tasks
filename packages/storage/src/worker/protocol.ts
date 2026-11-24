@@ -67,8 +67,8 @@ export interface OpenedSpaceInfo {
   /** The migration the writer's open ran before it attached the write path (A1 3.17). */
   migration?: MigrationReport;
   /**
-   * The writer found the search index damaged and made it again (`remade`), or could not
-   * (`damaged`). Absent when it was sound.
+   * The writer made the search index again from the tasks, damaged or filled by an earlier build
+   * (`remade`), or could not (`damaged`). Absent when it was sound and current.
    */
   searchIndex?: "remade" | "damaged";
   /** A claim's result. The worker closed the connection after the claim. */

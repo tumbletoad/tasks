@@ -1,4 +1,4 @@
-// What setup runs and how it keeps one change at a time: the app's own command, and the lock.
+// The apps' own commands doctor runs (their `mcp get`), and the lock that keeps one setup at a time.
 import { join } from "node:path";
 import { startHelper, type Env } from "@ttasks/launch";
 import { ensurePrivateDir } from "../hub/files.ts";
@@ -7,7 +7,7 @@ import { SETUP_LOCK, SetupStateUnsafe, setupDir } from "./state.ts";
 
 export { LockBusy } from "../hub/lock.ts";
 
-/** How long one of the app's own commands (`mcp add`, `mcp remove`) may run. */
+/** How long one of the app's own commands (`mcp get`) may run. */
 export const COMMAND_MS = 60_000;
 
 /**

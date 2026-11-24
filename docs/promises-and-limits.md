@@ -270,14 +270,23 @@ the behaviour it describes, and keep each one to a sentence or two.
   folders, other agents. An instance's `run_permission` narrows that.
 - A run starts in the space you named, with `--space` or `TTASKS_SPACE`, else in the default
   space, and `--wait` keeps following it there when the default changes. An answer longer than
-  TTasks keeps is kept as its start, and showing it says so.
+  TTasks keeps is kept as its start, and showing it says so. A message of the agent is read whole
+  up to 64 MiB, a text in it longer than 8 MiB as its start; a longer message, or a long one
+  TTasks cannot read, ends the run at once as failed, with what the agent had said.
 - Your request reaches the agent over its own connection, never on a command line. A run's
   answer, or the agent's question when it needs you, is kept in the run's record, and so is what
   the agent had written of its answer when Stop, a restart or its own end cut it short. A question
   from a helper the agent started does not reach you: that helper hears that no one answered.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
-  ends what TTasks could find of it: a process the agent detached from it may live on.
+  ends what TTasks could find of it: the run is called ended once the agent itself is gone, and a
+  process the agent started that TTasks could not find may live on. On Linux and macOS such a
+  run's process group is signalled once more the moment the agent's exit is seen; if the group
+  had emptied by then, its number could in that instant belong to another program. After a
+  restart of TTasks nothing of such a run can be found: it is called ended without being
+  confirmed.
+- A run that could not be confirmed stopped keeps its place until it is: the next run of its task
+  waits for it, and Stop tries again.
 - What a run's agent changes through TTasks's own tools is recorded as that run's.
 - A Claude Code run gets TTasks's tools in a file in the run's folder. The file holds the run's
   ticket, which opens your space only while the run runs.
@@ -289,7 +298,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A run is done when its work is: work the agent left running in the background holds it until
   the agent reported on it, and a server it left running holds it until you stop it.
 - No time limit ends a run unless you set one (`max_minutes`, `max_quiet_minutes` under `[runs]`
-  in `machine.toml`). A working run shows how long it has said nothing and what it said last, so
+  in `machine.toml`). A run a limit ended is recorded so, also when TTasks restarts while it
+  ends. A working run shows how long it has said nothing and what it said last, so
   you can use a server it keeps running, or stop it.
 - A run's folder on this machine keeps the agent's raw output and its answer, which are task
   text. It is removed after 14 days or past the newest 200 runs, once the answer is in the run's
@@ -332,7 +342,13 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 - TTasks installs for your account without administrator rights.
 - Agent setup shows what it will change, changes only its own entry, and removes only what it
-  wrote.
+  wrote. What it gives you to add or take out by hand is the file and the entry, never a command,
+  which would act on whatever account the shell you paste it into selects.
+- An agent app gets TTasks's tools only once its entry is in place, and only from the change you
+  asked for: a setup that did not finish is finished later only by taking the access away. Turning
+  them off takes the access away first, also when you changed the entry or its file cannot be read
+  or written, and says what stays in the file; when TTasks's service does not confirm it, nothing
+  changes and you are told the tools are still on.
 - An update is checked before it runs. A failed update returns to the version before it.
 - An update does not end a background run unasked. It waits up to 15 minutes for running runs,
   then asks whether to stop them or give the update up; without anyone to ask, it gives up.
@@ -410,6 +426,15 @@ the behaviour it describes, and keep each one to a sentence or two.
   changes.
 - An editor that had the configuration file open while TTasks recorded a space, and saves it
   afterwards, writes its own list of spaces back, and the next start follows that list.
+- Agent setup reads an agent app's settings file again just before it replaces it, and leaves a
+  file that changed alone; a save another program makes in the instant between that read and the
+  replacement is lost. For that read and the replacement setup holds Claude Code's own lock, for
+  milliseconds: a Claude Code session that saves then waits, but Claude Code's start-up stops
+  waiting after about 1.5 seconds, and for it only that last read protects the file.
+- A file TTasks creates (its own `machine.toml`, an agent app's settings file) never replaces one
+  that another program made meanwhile, except on a drive without hard links (FAT, exFAT, some
+  network shares): there a file that appears in the instant before TTasks puts its own in place is
+  replaced.
 - On a machine that several people sign in to, another person could serve a page at TTasks's
   address while TTasks is stopped.
 - Words you typed and did not send for a task in the Trash, or for one the space does not have now,

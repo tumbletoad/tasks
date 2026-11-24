@@ -18,14 +18,11 @@
 // changes another app's approval settings (A3 3.13.1), so the part is only ever shown as a change
 // to make by hand: it writes nothing.
 //
-// The one command printed here (Claude Code's `mcp add`) is a line for PowerShell on Windows and a
-// POSIX shell elsewhere, quoted by launch's shell-line.ts, the rule for every line setup and doctor
-// print for a person to paste (A3 3.13.7). An install path no quoting keeps literal, or one that
-// makes the line too long to paste, gets no line:
-// PrintRefused.
+// Every app gets its entry and the file it goes in, never a command: a pasted command runs in
+// whatever shell and account it is pasted into, which can select another home than the one named.
 import { posix, win32 } from "node:path";
 import { CLI_NAME, envVar, MCP_SERVER_KEY } from "@ttasks/brand";
-import { envValue, pasteShell, shellLine, type Env } from "@ttasks/launch";
+import { envValue, type Env } from "@ttasks/launch";
 import { keyText, valueText } from "../config/edit.ts";
 import { CODEX_STARTUP_TIMEOUT_SEC } from "./agents.ts";
 import { claudeDesktopFolders, DESKTOP_FILE } from "./hosts.ts";
@@ -69,24 +66,12 @@ export interface Snippet {
   readonly app: PrintApp;
   /** Where the snippet goes: one file, or the candidates when the app has several. */
   readonly files: readonly string[];
-  /** `json`, `toml`, or `command` for an app whose own command adds the entry. */
-  readonly format: "json" | "toml" | "command";
+  readonly format: "json" | "toml";
   readonly text: string;
-  /** A command's shell, which the line is quoted for (A3 3.13.7): "PowerShell", "a POSIX shell…". */
-  readonly runIn?: string;
 }
 
-/**
- * The install's path holds a character no quoting keeps literal in the shell the line is for, or
- * makes the line longer than a line to paste can be (launch's MAX_LINE_BYTES).
- */
-export class PrintRefused extends Error {
-  readonly runIn: string;
-  constructor(runIn: string) {
-    super("no line to paste keeps the install's path as it is");
-    this.runIn = runIn;
-  }
-}
+/** The apps whose home a person selects for print (`--home`): their file is in that folder. */
+export const PRINT_HOMES = ["claude-code", "codex"] as const;
 
 const pathOf = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
 
@@ -109,38 +94,37 @@ const appData = (input: PrintInput): string => {
 
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
-/** The snippet a person adds by hand for `app` in `space` (an `sp_` ID), with its file. */
-export function snippetFor(input: PrintInput, app: PrintApp, space: string): Snippet {
+/**
+ * The snippet a person adds by hand for `app` in `space` (an `sp_` ID), with its file. `home` is
+ * the Claude Code or Codex home it is for, a folder a variable selects: without it, the app's
+ * default home (Claude Code's `~/.claude.json`, Codex's `~/.codex`).
+ */
+export function snippetFor(
+  input: PrintInput,
+  app: PrintApp,
+  space: string,
+  home?: string,
+): Snippet {
   const p = pathOf(input.platform);
   const argv = [input.tasks, "mcp", "--space", space, "--app", app];
   const [command = "", ...args] = argv;
   const plain = { command, args };
   switch (app) {
-    case "claude-code": {
-      const runIn = pasteShell(input.platform);
-      const line = shellLine(input.platform, [
-        "claude",
-        "mcp",
-        "add",
-        "--scope",
-        "user",
-        MCP_SERVER_KEY,
-        "--",
-        ...argv,
-      ]);
-      if (line === undefined) throw new PrintRefused(runIn);
+    case "claude-code":
       return {
         app,
-        files: [p.join(input.userHome, ".claude.json")],
-        format: "command",
-        text: `${line}\n`,
-        runIn,
+        files: [
+          home === undefined
+            ? p.join(input.userHome, ".claude.json")
+            : p.join(p.resolve(home), ".claude.json"),
+        ],
+        format: "json",
+        text: json({ mcpServers: { [MCP_SERVER_KEY]: plain } }),
       };
-    }
     case "codex":
       return {
         app,
-        files: [p.join(input.userHome, ".codex", "config.toml")],
+        files: [p.join(p.resolve(home ?? p.join(input.userHome, ".codex")), "config.toml")],
         format: "toml",
         text: [
           `[mcp_servers.${keyText(MCP_SERVER_KEY)}]`,
@@ -246,7 +230,7 @@ export function approveToolsHint(
   if (app === "codex") {
     return {
       file: p.join(home, "config.toml"),
-      text: `add default_tools_approval_mode = "approve" under [mcp_servers.${keyText(MCP_SERVER_KEY)}]; ${CLI_NAME} setup agents --remove then leaves that entry for you to take out`,
+      text: `add default_tools_approval_mode = "approve" under [mcp_servers.${keyText(MCP_SERVER_KEY)}]; ${CLI_NAME} setup agents --remove then turns its tools off and leaves that entry for you to take out`,
     };
   }
   return undefined;

@@ -289,6 +289,41 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
         false,
       );
       expect(desktop.stdout).toContain(join(desktopFolder, "claude_desktop_config.json"));
+      // Claude Code and Codex: the entry and the selected home's own file, never a command, which
+      // would run in whatever shell and account it is pasted into.
+      const claude = await run(
+        ["setup", "agents", "print", "--app", "claude-code", "--home", join(user, ".claude-work")],
+        agents(),
+        false,
+      );
+      expect(claude.code, claude.stderr).toBe(0);
+      expect(claude.stdout).toContain(`add this in ${join(user, ".claude-work", ".claude.json")}`);
+      expect(claude.stdout).not.toContain("mcp add");
+      const entry = { command: tasks, args: ["mcp", "--space", space, "--app", "claude-code"] };
+      expect(
+        JSON.parse(
+          claude.stdout.slice(claude.stdout.indexOf("{"), claude.stdout.lastIndexOf("}") + 1),
+        ),
+      ).toEqual({
+        mcpServers: { [MCP_SERVER_KEY]: entry },
+      });
+      const codex = await run(
+        ["setup", "agents", "print", "--app", "codex", "--json"],
+        agents(),
+        false,
+      );
+      expect((JSON.parse(codex.stdout) as { files: string[] }).files).toEqual([
+        join(user, ".codex", "config.toml"),
+      ]);
+      expect(
+        (
+          await run(
+            ["setup", "agents", "print", "--app", "cursor", "--home", user],
+            agents(),
+            false,
+          )
+        ).code,
+      ).toBe(2);
 
       const approve = await run(["setup", "agents", "--parts", "approve-tools"], agents(), false);
       expect(approve.code).toBe(0);
