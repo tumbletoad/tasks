@@ -6,20 +6,30 @@ import type { Api } from "../api.ts";
 
 export type PartName = "open" | "tools";
 
-export interface Part {
+/** What one action on a switch changes: its files, their lines, and the token Apply sends. */
+export interface Changes {
+  /** The file that changes, the home shown as `~`: the first, when several do. */
+  readonly file: string;
+  /** Every file that changes: the one, or several. */
+  readonly files: readonly string[];
+  /** Exactly what changes: the lines written or taken out, `# <file>` before each further file's. */
+  readonly detail: readonly string[];
+  readonly plan: string;
+}
+
+export interface Part extends Changes {
   readonly on: boolean;
   /** What turning it over does; null when the page cannot. */
   readonly change: "add" | "remove" | null;
   readonly why: string | undefined;
-  /** The file that changes, the home shown as `~`. */
-  readonly file: string;
-  /** Exactly what changes in `file`: the lines written or taken out. */
-  readonly detail: readonly string[];
-  readonly plan: string;
+  /** The file the reason is about, when the home has several. */
+  readonly whyFile: string | undefined;
   /** tools: the space its entry names. */
   readonly space: { readonly id: string; readonly name: string | null } | undefined;
   /** tools that show off while their access may be live: turning them off all the same. */
-  readonly off: { readonly detail: readonly string[]; readonly plan: string } | undefined;
+  readonly off: Changes | undefined;
+  /** tools that show on while one of the home's files has no entry: writing it there. */
+  readonly add: Changes | undefined;
 }
 
 export interface AppRow {
@@ -27,6 +37,8 @@ export interface AppRow {
   readonly app: string;
   readonly label: string;
   readonly home: string | null;
+  /** The home's settings files, when it has several. */
+  readonly files: readonly string[];
   readonly also: readonly string[];
   /** Found by its folder's name alone: the first start leaves its switches off. */
   readonly byName: boolean;
@@ -50,6 +62,8 @@ export interface Outcome {
   readonly field: string | undefined;
   /** Tools turned off: the access is off, and the entry stayed in its file (`reason` says why). */
   readonly kept: boolean;
+  /** The file an entry stayed in, shown as `~`, when the service names it. */
+  readonly file: string | undefined;
   /** Tools, failed: the service did not confirm that the access is off, so the entry stayed too. */
   readonly unconfirmed: boolean;
 }
@@ -69,26 +83,37 @@ const text = (v: unknown, max = 4096): string | undefined =>
 const lines = (value: unknown): string[] =>
   Array.isArray(value) ? value.flatMap((line) => text(line) ?? []).slice(0, 200) : [];
 
+/** An action's files and lines, or undefined when it has another shape. */
+function changesOf(value: unknown): Changes | undefined {
+  if (!isRecord(value) || typeof value["plan"] !== "string") return undefined;
+  const file = text(value["file"]) ?? "";
+  const files = lines(value["files"]);
+  return {
+    file,
+    files: files.length === 0 ? [file] : files,
+    detail: lines(value["detail"]),
+    plan: value["plan"],
+  };
+}
+
 function partOf(value: unknown): Part | undefined {
   if (!isRecord(value)) return undefined;
-  const { on, change, why, file, detail, plan, space, off } = value;
-  if (typeof on !== "boolean" || typeof plan !== "string") return undefined;
+  const { on, change, why, whyFile, space, off, add } = value;
+  const changes = changesOf(value);
+  if (typeof on !== "boolean" || changes === undefined) return undefined;
   const named =
     isRecord(space) && typeof space["id"] === "string"
       ? { id: space["id"], name: text(space["name"], 200) ?? null }
       : undefined;
   return {
+    ...changes,
     on,
     change: change === "add" || change === "remove" ? change : null,
     why: typeof why === "string" && WORD.test(why) ? why : undefined,
-    file: text(file) ?? "",
-    detail: lines(detail),
-    plan,
+    whyFile: text(whyFile),
     space: named,
-    off:
-      isRecord(off) && typeof off["plan"] === "string"
-        ? { detail: lines(off["detail"]), plan: off["plan"] }
-        : undefined,
+    off: changesOf(off),
+    add: changesOf(add),
   };
 }
 
@@ -109,6 +134,7 @@ export function viewOf(value: unknown): AppsView {
         app,
         label,
         home: text(row["home"]) ?? null,
+        files: lines(row["files"]),
         also: Array.isArray(row["also"])
           ? row["also"].filter((h): h is string => h === "codex-app" || h === "t3")
           : [],
@@ -138,6 +164,7 @@ export function appliedOf(value: unknown): Applied {
               field:
                 typeof o["field"] === "string" && WORD.test(o["field"]) ? o["field"] : undefined,
               kept: o["kept"] === true,
+              file: text(o["file"]),
               unconfirmed: o["unconfirmed"] === true,
             },
           ]
@@ -158,13 +185,14 @@ export type Action = "add" | "remove";
  */
 export type Choices = ReadonlyMap<string, Action>;
 
-/** What an action on a part changes, when the part offers it: its lines and its token. */
-function offered(
-  found: Part,
-  action: Action,
-): { readonly detail: readonly string[]; readonly plan: string } | undefined {
+/**
+ * What an action on a part changes, when the part offers it: turning it over, turning off one that
+ * shows off, or writing the entry into a file that has none beside one that shows on.
+ */
+function offered(found: Part, action: Action): Changes | undefined {
   if (found.change === action) return found;
-  return action === "remove" && !found.on ? found.off : undefined;
+  if (action === "remove") return found.on ? undefined : found.off;
+  return found.on ? found.add : undefined;
 }
 
 /**
@@ -197,6 +225,10 @@ export function shownOn(choices: Choices, row: AppRow | undefined, part: PartNam
 /** Whether the person chose to turn off a switch that shows off (its access may still be live). */
 export const offChosen = (choices: Choices, row: AppRow, part: PartName): boolean =>
   row[part]?.on === false && choices.get(switchKey(row.key, part)) === "remove";
+
+/** Whether the person chose to write the entry into a file that has none, beside a switch that shows on. */
+export const addChosen = (choices: Choices, row: AppRow, part: PartName): boolean =>
+  row[part]?.on === true && choices.get(switchKey(row.key, part)) === "add";
 
 /**
  * A switch turned over by the person: back to how it stands is no choice at all. Claude Desktop's
@@ -238,6 +270,20 @@ export function chooseOff(
   return choices;
 }
 
+/** Writing the entry into a file that has none, beside a switch that shows on, or taking that back. */
+export function chooseAdd(
+  before: Choices,
+  row: AppRow,
+  part: PartName,
+  add: boolean,
+): Map<string, Action> {
+  const choices = new Map(before);
+  const key = switchKey(row.key, part);
+  if (add) choices.set(key, "add");
+  else choices.delete(key);
+  return choices;
+}
+
 /**
  * The person's choices carried over to a newer view (one that came back because something changed
  * since): each keeps while the newer view still offers it, and every other switch stands as the
@@ -264,9 +310,8 @@ export interface Pending {
   readonly part: PartName;
   readonly found: Part;
   readonly on: boolean;
-  /** Exactly what changes in the part's file, and the token Apply sends. */
-  readonly detail: readonly string[];
-  readonly plan: string;
+  /** The files that change, the lines written or taken out, and the token Apply sends. */
+  readonly what: Changes;
 }
 
 /** The choices the view offers: what Apply sends. */
@@ -284,8 +329,7 @@ export function pendingOf(view: AppsView, choices: Choices): Pending[] {
         part,
         found,
         on: action === "add",
-        detail: what.detail,
-        plan: what.plan,
+        what,
       });
     }
   }
@@ -304,7 +348,7 @@ export async function applyApps(
   return appliedOf(
     await api.applyAgentApps(
       space,
-      pending.map((p) => ({ key: p.row.key, part: p.part, on: p.on, plan: p.plan })),
+      pending.map((p) => ({ key: p.row.key, part: p.part, on: p.on, plan: p.what.plan })),
     ),
   );
 }

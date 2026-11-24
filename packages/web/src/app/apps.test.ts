@@ -3,9 +3,11 @@
 // back newer keeps the person's choices that can still be made.
 import { describe, expect, test } from "vitest";
 import {
+  addChosen,
   appliedOf,
   carryChoices,
   choose,
+  chooseAdd,
   chooseOff,
   offChosen,
   initialChoices,
@@ -93,7 +95,7 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
       ],
     });
     const carried = carryChoices(newer, choices);
-    expect(pendingOf(newer, carried).map((p) => [p.row.key, p.part, p.on, p.plan])).toEqual([
+    expect(pendingOf(newer, carried).map((p) => [p.row.key, p.part, p.on, p.what.plan])).toEqual([
       ["claude", "open", true, "0123456789abcdef"],
       ["codex", "tools", false, "fedcba9876543210"],
     ]);
@@ -185,7 +187,7 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
     const off = chooseOff(initialChoices(broken, false), row, "tools", true);
     expect(offChosen(off, row, "tools")).toBe(true);
     expect(shownOn(off, row, "tools")).toBe(false);
-    expect(pendingOf(broken, off).map((p) => [p.part, p.on, p.plan])).toEqual([
+    expect(pendingOf(broken, off).map((p) => [p.part, p.on, p.what.plan])).toEqual([
       ["tools", false, "aaaaaaaaaaaaaaaa"],
     ]);
     // A newer view that still offers it keeps it; taking it back leaves nothing to send.
@@ -193,7 +195,7 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
     expect(pendingOf(broken, chooseOff(off, row, "tools", false))).toEqual([]);
     // Turning the switch on instead mends it.
     const on = choose(broken, off, row, "tools", true);
-    expect(pendingOf(broken, on).map((p) => [p.part, p.on, p.plan])).toEqual([
+    expect(pendingOf(broken, on).map((p) => [p.part, p.on, p.what.plan])).toEqual([
       ["tools", true, "0123456789abcdef"],
     ]);
     // A switch that shows off with no access left offers no turning off.
@@ -219,5 +221,49 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
     });
     expect(applied.applied && applied.outcomes.map((o) => o.result)).toEqual(["failed", "done"]);
     expect(appliedOf({ applied: false, view: VIEW }).applied).toBe(false);
+  });
+});
+
+describe("[A7.3.12.m5-12.web-apps] A home with two settings files in the page", () => {
+  test("its files are named; a switch on while one file lacks the entry offers writing it there, and Apply sends that", () => {
+    const view = viewOf({
+      space: "sp_one",
+      rows: [
+        {
+          key: "claude",
+          app: "claude-code",
+          label: "Claude Code",
+          home: "~/.claude",
+          files: ["~/.claude.json", "~/.claude/.claude.json"],
+          also: ["t3"],
+          tools: {
+            ...part(true, "remove"),
+            why: "file_lacks",
+            whyFile: "~/.claude/.claude.json",
+            add: {
+              file: "~/.claude/.claude.json",
+              detail: ['+ mcpServers.ttasks.command = "ttasks"'],
+              plan: "fedcba9876543210",
+            },
+          },
+        },
+      ],
+    });
+    const [row] = view.rows;
+    if (row === undefined) throw new Error("no row");
+    expect(row.files).toEqual(["~/.claude.json", "~/.claude/.claude.json"]);
+    expect(row.tools?.whyFile).toBe("~/.claude/.claude.json");
+    const chosen = chooseAdd(new Map(), row, "tools", true);
+    expect(addChosen(chosen, row, "tools")).toBe(true);
+    expect(shownOn(chosen, row, "tools")).toBe(true);
+    expect(pendingOf(view, chosen).map((p) => [p.on, p.what.plan, p.what.files])).toEqual([
+      [true, "fedcba9876543210", ["~/.claude/.claude.json"]],
+    ]);
+    expect(pendingOf(view, chooseAdd(chosen, row, "tools", false))).toEqual([]);
+    // Turning the switch off is still the switch's own change.
+    const off = choose(view, new Map(), row, "tools", false);
+    expect(pendingOf(view, off).map((p) => [p.on, p.what.plan])).toEqual([
+      [false, "0123456789abcdef"],
+    ]);
   });
 });

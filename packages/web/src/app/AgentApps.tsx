@@ -6,11 +6,13 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import { Button, Heading, SwitchButton, SwitchField } from "react-aria-components";
 import { Refused, SignedOut } from "../api.ts";
-import { useT, type Translate } from "../i18n/intl.tsx";
+import { useList, useT, type Translate } from "../i18n/intl.tsx";
 import {
+  addChosen,
   applyApps,
   carryChoices,
   choose,
+  chooseAdd,
   chooseOff,
   initialChoices,
   offChosen,
@@ -98,6 +100,7 @@ export function AgentApps({
   readonly headingClass?: string;
 }) {
   const t = useT();
+  const list = useList();
   const api = useMachineApi();
   const auth = useAuth();
   const detailId = useId();
@@ -186,7 +189,13 @@ export function AgentApps({
           const kept = done.flatMap((o): Kept[] => {
             const p = pendingOf(o);
             return o.kept && p !== undefined
-              ? [{ label: p.row.label, file: p.found.file, edited: o.reason === "edited" }]
+              ? [
+                  {
+                    label: p.row.label,
+                    file: o.file ?? p.found.file,
+                    edited: o.reason === "edited",
+                  },
+                ]
               : [];
           });
           // A failed one may have changed machine.toml too: the tiles follow either way.
@@ -268,6 +277,11 @@ export function AgentApps({
                   </span>
                 )}
               </div>
+              {row.files.length > 1 ? (
+                <p className={styles.why} data-part="files">
+                  {t("apps.files", { label: row.label, files: list(row.files) })}
+                </p>
+              ) : null}
               {row.byName ? (
                 <p className={styles.why} data-part="by-name">
                   {t("apps.byName", { label: row.label })}
@@ -290,6 +304,7 @@ export function AgentApps({
                     found={found}
                     on={shownOn(choices, row, part)}
                     offChosen={offChosen(choices, row, part)}
+                    addChosen={addChosen(choices, row, part)}
                     busy={busy}
                     onChange={(on) => {
                       turn(row, part, on);
@@ -298,6 +313,11 @@ export function AgentApps({
                       setSaid(undefined);
                       setChoices((before) => chooseOff(before, row, part, off));
                     }}
+                    onAdd={(add) => {
+                      setSaid(undefined);
+                      setChoices((before) => chooseAdd(before, row, part, add));
+                    }}
+                    list={list}
                   />
                 );
               })}
@@ -310,7 +330,7 @@ export function AgentApps({
           <Heading level={headingLevel + 1}>{t("apps.changes")}</Heading>
           <ul>
             {pending.map((p) => (
-              <li key={switchKey(p.row.key, p.part)}>{changeText(t, p)}</li>
+              <li key={switchKey(p.row.key, p.part)}>{changeText(t, list, p)}</li>
             ))}
           </ul>
           <div>
@@ -327,7 +347,7 @@ export function AgentApps({
           </div>
           {details ? (
             <pre id={detailId} className={styles.detail} dir="ltr">
-              {pending.map((p) => [`# ${p.found.file}`, ...p.detail, ""].join("\n")).join("\n")}
+              {pending.map((p) => [`# ${p.what.file}`, ...p.what.detail, ""].join("\n")).join("\n")}
             </pre>
           ) : null}
         </div>
@@ -362,9 +382,12 @@ function Switch({
   found,
   on,
   offChosen,
+  addChosen,
   busy,
   onChange,
   onOff,
+  onAdd,
+  list,
 }: {
   readonly t: Translate;
   readonly row: AppRow;
@@ -373,9 +396,13 @@ function Switch({
   readonly on: boolean;
   /** The person chose to turn off its access while the switch shows off. */
   readonly offChosen: boolean;
+  /** The person chose to write the entry into a file that has none while the switch shows on. */
+  readonly addChosen: boolean;
   readonly busy: boolean;
   readonly onChange: (on: boolean) => void;
   readonly onOff: (off: boolean) => void;
+  readonly onAdd: (add: boolean) => void;
+  readonly list: (items: readonly string[]) => string;
 }) {
   const whyId = useId();
   const why = found.why;
@@ -398,14 +425,7 @@ function Switch({
       </SwitchField>
       {why === undefined ? null : (
         <p id={whyId} className={styles.why}>
-          {t("apps.why", {
-            why,
-            on: found.on ? "yes" : "no",
-            fix: found.change === "add" ? "yes" : "no",
-            off: found.off === undefined ? "no" : "yes",
-            file: found.file,
-            space: found.space?.name ?? t("apps.otherSpace"),
-          })}
+          {whyText(t, found, why)}
         </p>
       )}
       {found.off === undefined ? null : (
@@ -420,17 +440,42 @@ function Switch({
           {t(offChosen ? "apps.keepAccess" : "apps.turnOff", { label: row.label })}
         </Button>
       )}
+      {found.add === undefined ? null : (
+        <Button
+          className={styles.quiet}
+          isDisabled={busy}
+          data-part="add-file"
+          onPress={() => {
+            onAdd(!addChosen);
+          }}
+        >
+          {t(addChosen ? "apps.keepFile" : "apps.addFile", { file: list(found.add.files) })}
+        </Button>
+      )}
     </>
   );
 }
 
-/** A switch turned over, in plain words, with the file it changes. */
-function changeText(t: Translate, p: Pending): string {
+/** Why a switch cannot be turned over here, or what to know: in which file, when the home has several. */
+function whyText(t: Translate, found: Part, why: string): string {
+  const said = t("apps.why", {
+    why,
+    on: found.on ? "yes" : "no",
+    fix: found.change === "add" || found.add !== undefined ? "yes" : "no",
+    off: found.off === undefined ? "no" : "yes",
+    file: found.whyFile ?? found.file,
+    space: found.space?.name ?? t("apps.otherSpace"),
+  });
+  return found.whyFile === undefined ? said : t("apps.whyIn", { file: found.whyFile, why: said });
+}
+
+/** A switch turned over, in plain words, with the files it changes. */
+function changeText(t: Translate, list: (items: readonly string[]) => string, p: Pending): string {
   return t("apps.change", {
     part: p.part,
     on: p.on ? "yes" : "no",
     label: p.row.label,
-    file: p.found.file,
+    file: list(p.what.files),
   });
 }
 

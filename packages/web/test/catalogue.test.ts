@@ -60,6 +60,7 @@ const SAMPLE = {
   domain: "mail.example",
   machine: "mira-desktop",
   folder: "~/work/portal",
+  files: "~/.claude.json and ~/.claude/.claude.json",
   by: "Codex",
   what: "Codex prepared the changelog",
   why: "needs_recovery",
