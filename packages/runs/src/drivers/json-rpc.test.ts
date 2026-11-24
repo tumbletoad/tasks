@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { LineRpc, NO_ANSWER, RPC_ERRORS, RpcClosed, RpcError } from "./json-rpc.ts";
 
 /** One side of a connection, and what it wrote, line by line. */
-function side(options: { version?: boolean; lineCap?: number } = {}) {
+function side(options: { version?: boolean; lineCap?: number; longLineCap?: number } = {}) {
   const input = new PassThrough();
   const output = new PassThrough();
   const written: Record<string, unknown>[] = [];
@@ -112,7 +112,7 @@ describe("[A4.3.11.json-rpc.lines] JSON-RPC over lines, with requests in both di
     expect(asked).toEqual([9]);
   });
 
-  test("lines split anywhere, with CRLF, are read whole; an over-long line, a line that is not JSON and an object that is no message are skipped", async () => {
+  test("lines split anywhere, with CRLF, are read whole, a line over the cap too, its long strings cut to the cap; a line that is not JSON and an object that is no message are skipped", async () => {
     const { rpc, input, say } = side({ lineCap: 64 });
     const heard: unknown[] = [];
     rpc.onNotification((method, params) => heard.push([method, params]));
@@ -126,9 +126,69 @@ describe("[A4.3.11.json-rpc.lines] JSON-RPC over lines, with requests in both di
     await tick();
     expect(heard).toEqual([
       ["a", { n: 1 }],
+      ["long", "x".repeat(64)],
       ["b", undefined],
     ]);
-    expect(rpc.skipped).toBe(4);
+    expect(rpc.skipped).toBe(3);
+  });
+
+  test("a line longer than a line read whole is read as the platform reads every line, however it is split: numbers of any length, any depth, a key said twice, escapes; only each string longer than a line read whole is cut, to its start on a whole character", async () => {
+    const { rpc, input, written, say } = side({ lineCap: 256 });
+    const heard: [string, unknown][] = [];
+    rpc.onNotification((method, params) => heard.push([method, params]));
+    const asked: unknown[] = [];
+    rpc.onRequest((_method, params) => {
+      asked.push(params);
+      return { decision: "decline" };
+    });
+    let lost = 0;
+    rpc.onLost(() => (lost += 1));
+    const answer = rpc.request("thread/read", {});
+    // Past the bound by a pair written as an escape, and by a character of two bytes.
+    const paired = `${"y".repeat(255)}\\ud83d\\ude00`;
+    const wide = `x${"é".repeat(128)}`;
+    const key = "k".repeat(300);
+    const line = `{"method":"item/completed","params":{"threadId":"t1","item":{"type":"commandExecution","id":"exec-1","n":${"1".repeat(65)},"deep":${"[".repeat(80)}${"]".repeat(80)},"csv":"\\"a\\",\\"b \\"\\"c\\"\\"\\"","whole":"${"z".repeat(256)}","${key}":1,"aggregatedOutput":"${paired}"},"threadId":"t2"}}\n`;
+    for (const byte of Buffer.from(line)) input.write(Buffer.from([byte]));
+    say({ id: 9, method: "item/fileChange/requestApproval", params: { diff: wide, why: "edit" } });
+    say({ id: 1, result: { thread: { id: "t1", text: "y".repeat(257) } } });
+    await tick();
+
+    const parsed = JSON.parse(line) as { params: { item: Record<string, unknown> } };
+    expect(heard).toEqual([
+      [
+        "item/completed",
+        { ...parsed.params, item: { ...parsed.params.item, aggregatedOutput: "y".repeat(255) } },
+      ],
+    ]);
+    expect((heard[0]?.[1] as { threadId: string }).threadId).toBe("t2");
+    expect(asked).toEqual([{ diff: wide.slice(0, -1), why: "edit" }]);
+    expect(written.find((message) => message["id"] === 9)).toEqual({
+      id: 9,
+      result: { decision: "decline" },
+    });
+    expect(await answer).toEqual({ thread: { id: "t1", text: "y".repeat(256) } });
+    expect([lost, rpc.skipped]).toEqual([0, 0]);
+  });
+
+  test("a line past the longest line read is lost the moment it passes it, and so is a line longer than a line read whole that is not JSON: nothing of either reaches a handler; a short line that is not JSON, and an unfinished one at the end, are skipped", async () => {
+    const { rpc, input } = side({ lineCap: 64, longLineCap: 512 });
+    const heard: string[] = [];
+    rpc.onNotification((method) => heard.push(method));
+    let lost = 0;
+    rpc.onLost(() => (lost += 1));
+    input.write(`{"method":"far","params":"${"x".repeat(600)}`);
+    await tick();
+    expect(lost).toBe(1);
+    input.write(`"}\n`);
+    input.write(`${"not json ".repeat(20)}\n`);
+    input.write("not json\n");
+    input.write(`{"method":"near","params":"${"x".repeat(400)}"}\n`);
+    input.write(`{"method":"unfinished","params":"${"x".repeat(100)}`);
+    input.end();
+    await rpc.ended;
+    expect(heard).toEqual(["near"]);
+    expect([lost, rpc.skipped]).toEqual([2, 4]);
   });
 
   test("the version field is written when the protocol wants it", () => {

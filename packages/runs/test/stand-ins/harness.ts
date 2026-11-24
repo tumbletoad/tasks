@@ -2,7 +2,7 @@
 // force as a crash would. On Linux it runs as the main process of a transient user unit with
 // Delegate=yes, as the real service runs in its unit; on Windows it is a plain child of the test.
 //
-//   node harness.ts [<ttasks-run.exe> | ungrouped]
+//   node harness.ts [<ttasks-run.exe> | ungrouped [<taskkill.exe>]]
 //
 // It reads one JSON request per line on stdin and answers each on stdout, in order:
 //   {"op":"hello"}                                  -> {"pid":<n>}
@@ -39,9 +39,10 @@ interface Output {
 }
 
 const helper = process.argv[2];
+const taskkill = process.argv[3];
 const make = (): Containers =>
   helper === "ungrouped"
-    ? new UngroupedContainers()
+    ? new UngroupedContainers(taskkill === undefined ? {} : { taskkill })
     : containers(helper === undefined ? {} : { runHelper: helper });
 let box = make();
 const exits = new Map<string, Promise<AgentExit>>();

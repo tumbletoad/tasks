@@ -14,6 +14,8 @@
 // - The work is settled when the thread's turn completed, no command it started is still running
 //   and no agent it started still works: what goes on in the background ends later, and the run
 //   waits for it.
+// - A message that cannot be read (streams/json-lines.ts) ends the work at once as failed, with
+//   what the agent said: nothing tells whom it was for, or what it ended.
 // - The answer is the message the protocol marks as the final answer, never just the last text.
 //   Messages are kept by item, per turn, and the run's answer is its last turn's: the message the
 //   turn's summary names, else the turn's last answer, whole or as far as it streamed. A message
@@ -536,6 +538,17 @@ export function codexDriver(session: CodexSession): OpenDriver {
       }
     });
 
+    /**
+     * A message that could not be read: the work ends now, failed, with what the agent said so
+     * far, since nothing tells whom the message was for or what it ended.
+     */
+    const unreadable = (): void => {
+      finish(
+        "agent_error",
+        `Codex sent a message too long for ${PRODUCT_NAME} to read, so it could not tell when the work ended.`,
+      );
+    };
+
     rpc.onNotification((method, raw) => {
       // Settled work is saved as it is: what the server says while it closes changes none of it.
       if (done) return;
@@ -696,6 +709,7 @@ export function codexDriver(session: CodexSession): OpenDriver {
           return;
       }
     });
+    rpc.onLost(unreadable);
 
     /** Why the thread works outside the run's folder, or null when it works in it. */
     const outside = async (cwd: string | undefined): Promise<string | null> => {
