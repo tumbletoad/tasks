@@ -13,7 +13,6 @@ import {
   LogLeftOut,
   Mode,
   ProposalId,
-  Compared,
   Replayed,
   RequestId,
   SeveralMatch,
@@ -54,7 +53,6 @@ export const TaskAddResult = z.strictObject({
   warnings: Warnings,
   proposal: ProposalId.optional(),
   replayed: Replayed.optional(),
-  compared: Compared.optional(),
 });
 
 export const taskAdd = defineEntry({
@@ -83,7 +81,7 @@ export const taskAdd = defineEntry({
   },
   // A3 3.2.5: 25 drafts' lines at their longest fit whole, with the counts.
   budget: { typical: 80, max: 2000 },
-  errors: ["invalid_input", "too_large", "forbidden", "request_id_conflict"],
+  errors: ["invalid_input", "too_large", "forbidden", "request_id_conflict", "applied_earlier"],
   examples: [
     {
       title: "A follow-up found during work, and a ticket that already has a task",

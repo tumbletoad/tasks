@@ -6,10 +6,12 @@
 import { mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import { AppError, findEntry, parseInput, type ErrorBody } from "@ttasks/contracts";
-import { newId, type Id, type WriteRequest, type WriteResult } from "@ttasks/storage";
+import { newId, type Id, type Receipt, type WriteRequest, type WriteResult } from "@ttasks/storage";
 import { toolCaller } from "../src/mcp/index.ts";
-import { renderResult } from "../src/mcp/render.ts";
+import { renderError } from "../src/mcp/render.ts";
+import { appliedEarlier } from "../src/ops/errors.ts";
 import { opCall, principalOf, type Binding, type Caller, type OpsHost } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
@@ -818,164 +820,353 @@ describe("[A3.answers.as-of] a write's answer is dated by its own commit, first 
   });
 });
 
-describe("[A3.answers.retry-first] a request decided before is answered from its receipt before today's rules read it", () => {
-  /** The agent's shell as the writer knows it: its actor and its writer scope. */
-  async function script() {
+describe("[A3.answers.earlier-version] a request another version applied is answered as applied before, and nothing more", () => {
+  /** The writer, and `caller`'s actor as the writer knows it in its writer scope. */
+  async function writerAs(caller: Caller) {
     const writer = w.service.ops.spaces().find((s) => s.id === w.space)?.writer;
     if (writer === undefined) throw new Error("the world's space has no writer");
-    const principal = principalOf("cli-script", w.service.ops.machine.id);
-    const actor = {
+    const principal = principalOf(caller.class, w.service.ops.machine.id);
+    const actor: WriteRequest["actor"] = {
       scope_id: principal.scope,
-      principal_id: await writer.actor("agent", principal.label),
-      actor_kind: "agent" as const,
+      principal_id: await writer.actor(principal.actorKind, principal.label),
+      actor_kind: principal.actorKind,
       machine_id: w.service.ops.machine.id as Id<"m">,
-      origin: "cli" as const,
+      origin: principal.origin,
     };
     return { writer, actor };
   }
 
   /**
-   * A one-task import as the build before this one decided it: the request it sent to the writer,
-   * with no record of this build, its intent the input as that build parsed it.
+   * A request as an earlier version of TTasks decided it: the intent and the operations it sent the
+   * writer, with no record of this version. `record` is what a later version's record keeps.
    */
-  async function earlierImport(
-    input: Json,
-    title: string,
-    source?: Record<string, unknown>,
-  ): Promise<Id<"t">> {
-    const { writer, actor } = await script();
-    const task = newId("t");
-    const first = await writer.submit({
+  async function decidedBefore(
+    caller: Caller,
+    request: { entry: string; input: Json; ops: WriteRequest["ops"]; record?: Json },
+  ): Promise<string> {
+    const { writer, actor } = await writerAs(caller);
+    const id = rid();
+    const history = request.ops.some((op) => op.kind === "undo" || op.kind === "redo");
+    const result = await writer.submit({
       space_id: w.space,
-      request_id: String(input["request_id"]),
+      request_id: id,
       actor,
-      intent: { entry: "task.add", input },
+      ...(history ? {} : { base: await asOf() }),
+      // A person's change joins the undo stack as the service sends it, but a preference set.
+      ...(actor.actor_kind === "human" && !history && request.entry !== "prefs.manage"
+        ? { undoable: true }
+        : {}),
+      intent: { entry: request.entry, input: { ...request.input, request_id: id } },
+      ...(request.record === undefined ? {} : { answer: request.record }),
+      ops: request.ops,
+    });
+    expect(result.status, request.entry).toBe("applied");
+    return id;
+  }
+
+  /**
+   * `id` sent again as each of `bodies`, while every read but the receipt's fails: the error each
+   * got. Nothing is written: the space's position does not move.
+   */
+  async function sentAgain(
+    caller: Caller,
+    id: string,
+    bodies: readonly { op: string; input: Json }[],
+  ): Promise<ErrorBody[]> {
+    const before = await asOf();
+    const host = held({ failing: () => true });
+    const answers: ErrorBody[] = [];
+    for (const { op, input } of bodies) {
+      const error = await opCall(host, caller, { op, input: { ...input, request_id: id } }).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      if (!(error instanceof AppError)) throw new Error(`${op} was not answered as applied before`);
+      answers.push(error.toBody());
+    }
+    expect(await asOf()).toBe(before);
+    return answers;
+  }
+
+  async function added(title: string): Promise<{ id: Id<"t">; ref: string }> {
+    const answer = await call("task.add", { tasks: [{ title }], request_id: rid() });
+    const made = (answer["tasks"] as { id: Id<"t">; ref: string }[])[0];
+    if (made === undefined) throw new Error("no task was added");
+    return made;
+  }
+
+  test("every write's request an earlier version applied, sent again to its own tool or another, with a body that parses or not, gets one answer with the receipt's rows", async () => {
+    const task = await added("Earlier version's task");
+    const finished = await added("Earlier version's finished task");
+    await call("task.finish", { task: finished.ref, base: await asOf(), request_id: rid() }, USER);
+    const trashed = await added("Earlier version's trashed task");
+    await call("entry.add", {
+      task: task.ref,
+      kind: "note",
+      text: "Fixture note",
+      request_id: rid(),
+    });
+    const area = newId("a");
+    const project = newId("p");
+    const cases: {
+      caller: Caller;
+      entry: string;
+      input: Json;
+      ops: WriteRequest["ops"];
+      before?: () => Promise<unknown>;
+    }[] = [
+      {
+        caller: AGENT,
+        entry: "task.add",
+        input: { tasks: [{ title: "Added earlier" }] },
+        ops: [{ kind: "task.create", id: newId("t"), title: "Added earlier", inbox: true }],
+      },
+      {
+        caller: AGENT,
+        entry: "task.update",
+        input: { task: task.ref, set: { summary: "Set earlier" } },
+        ops: [{ kind: "task.patch", task: task.id, set: { summary: "Set earlier" } }],
+      },
+      {
+        caller: AGENT,
+        entry: "entry.add",
+        input: { task: task.ref, text: "Logged earlier" },
+        ops: [{ kind: "log.add", task: task.id, body: "Logged earlier" }],
+      },
+      {
+        caller: USER,
+        entry: "note.remove",
+        input: { task: task.ref, remove: "n1" },
+        ops: [{ kind: "note.delete", task: task.id, ordinal: 1 }],
+      },
+      {
+        caller: AGENT,
+        entry: "task.reopen",
+        input: { task: finished.ref, reason: "Reopened earlier" },
+        ops: [{ kind: "task.reopen", task: finished.id, reason: "Reopened earlier" }],
+      },
+      {
+        caller: AGENT,
+        entry: "task.finish",
+        input: { task: finished.ref, outcome: "Finished earlier." },
+        ops: [{ kind: "task.complete", task: finished.id, outcome: "Finished earlier." }],
+      },
+      {
+        caller: USER,
+        entry: "task.delete",
+        input: { tasks: [trashed.ref] },
+        ops: [{ kind: "task.delete", task: trashed.id }],
+      },
+      {
+        caller: USER,
+        entry: "history.undo",
+        input: {},
+        ops: [{ kind: "undo" }],
+        before: async () =>
+          call(
+            "task.update",
+            { task: task.ref, set: { summary: "To undo" }, base: await asOf(), request_id: rid() },
+            USER,
+          ),
+      },
+      { caller: USER, entry: "history.redo", input: {}, ops: [{ kind: "redo" }] },
+      {
+        caller: USER,
+        entry: "group.manage",
+        input: { action: "create", path: "Area made earlier" },
+        ops: [{ kind: "area.create", id: area, title: "Area made earlier" }],
+      },
+      {
+        caller: USER,
+        entry: "folder.manage",
+        input: {
+          action: "add_project",
+          project: "Project made earlier",
+          folder: folder("earlier"),
+        },
+        ops: [
+          { kind: "project.create", id: project, title: "Project made earlier" },
+          { kind: "project.folder_set", project, path: folder("earlier") },
+        ],
+      },
+      {
+        caller: USER,
+        entry: "prefs.manage",
+        input: { action: "set", set: [{ key: "tasks.dedupe_window_days", value: 6 }] },
+        ops: [{ kind: "pref.set", key: "tasks.dedupe_window_days", value: 6 }],
+      },
+    ];
+    for (const c of cases) {
+      await c.before?.();
+      const id = await decidedBefore(c.caller, c);
+      const other = c.entry === "task.reopen" ? "task.update" : "task.reopen";
+      const bodies: { op: string; input: Json; parses: boolean }[] = [
+        { op: c.entry, input: { ...c.input, base: await asOf() }, parses: true },
+        { op: c.entry, input: { ...c.input, retired: "Fixture" }, parses: false },
+        {
+          op: other,
+          input:
+            other === "task.reopen"
+              ? { task: task.ref, reason: "Fixture reason", base: await asOf() }
+              : { task: task.ref, set: { summary: "Fixture summary" }, base: await asOf() },
+          parses: true,
+        },
+        { op: other, input: { retired: "Fixture" }, parses: false },
+      ];
+      const audience = principalOf(c.caller.class, w.service.ops.machine.id).audience;
+      for (const body of bodies) {
+        const entry = findEntry(body.op);
+        if (entry === undefined) throw new Error(`${body.op} is no entry`);
+        // An undo or a redo takes no base: its body without one is the one that parses.
+        const input = Object.hasOwn(entry.input.shape, "base")
+          ? body.input
+          : Object.fromEntries(Object.entries(body.input).filter(([k]) => k !== "base"));
+        body.input = input;
+        const parsed = parseInput(entry, audience, { ...input, request_id: id }).success;
+        expect(parsed, `${c.entry} as ${body.op}`).toBe(body.parses);
+      }
+      const answers = await sentAgain(c.caller, id, bodies);
+      const receipt = await call("receipt.get", { request: id }, c.caller);
+      expect(receipt, c.entry).toMatchObject({ found: true, request: id, status: "applied" });
+      for (const answer of answers) {
+        expect(answer, c.entry).toEqual({
+          code: "applied_earlier",
+          message: expect.stringMatching(
+            new RegExp(
+              `^Another version of ${PRODUCT_NAME} applied this request before \\(.+\\): nothing was written now\\.$`,
+              "u",
+            ),
+          ) as string,
+          hint: "Do not send it again under a new request ID. Read the task for how it is now.",
+          data: { request: id, receipt },
+        });
+      }
+      const refs = (receipt["results"] as Json[]).flatMap((r) =>
+        typeof r["ref"] === "string" ? [r["ref"]] : [],
+      );
+      for (const ref of refs) expect(answers[0]?.message, c.entry).toContain(ref);
+    }
+  });
+
+  test("an update an earlier version applied, sent again while every read but its receipt fails, is answered as applied before with its task", async () => {
+    const task = await added("Updated earlier, reads failing");
+    const id = await decidedBefore(AGENT, {
+      entry: "task.update",
+      input: { task: task.ref, set: { summary: "Set earlier" }, clear: ["place"] },
+      ops: [{ kind: "task.patch", task: task.id, set: { summary: "Set earlier" } }],
+    });
+    const [answer] = await sentAgain(AGENT, id, [
+      {
+        op: "task.update",
+        input: { task: task.ref, set: { summary: "Set earlier" }, clear: ["place"] },
+      },
+    ]);
+    expect(answer).toMatchObject({
+      code: "applied_earlier",
+      message: `Another version of ${PRODUCT_NAME} applied this request before (${task.ref}): nothing was written now.`,
+      data: { request: id, receipt: { results: [{ status: "updated", ref: task.ref }] } },
+    });
+  });
+
+  test("an update an earlier version applied that cleared a retired field's value says which task it changed and nothing about fields", async () => {
+    const task = await added("Placed earlier");
+    await decidedBefore(AGENT, {
+      entry: "task.update",
+      input: { task: task.ref, place: "Fixture place" },
+      ops: [{ kind: "place.set", task: task.id, root: "work", path: "placed" }],
+    });
+    const input = { task: task.ref, set: { summary: "Set earlier" }, clear: ["place"] };
+    const id = await decidedBefore(AGENT, {
+      entry: "task.update",
+      input,
       ops: [
-        { kind: "task.create", id: task, title, inbox: true },
-        ...(source === undefined
-          ? []
-          : [{ kind: "source.add" as const, task, source: source as never }]),
+        { kind: "task.patch", task: task.id, set: { summary: "Set earlier" } },
+        { kind: "place.clear", task: task.id },
       ],
     });
-    expect(first.status).toBe("applied");
-    return task;
-  }
-
-  test("an import an earlier build accepted with a date this build refuses, sent again, is answered and adds nothing", async () => {
-    for (const at of ["Mon, 2 Mar 2026", "2026-02-30"]) {
-      const input = {
-        tasks: [{ title: `Dated ${at}`, sources: [{ kind: "email", title: "Fixture mail", at }] }],
-        request_id: rid(),
-      };
-      const entry = findEntry("task.add");
-      if (entry === undefined) throw new Error("task.add is no entry");
-      const parsed = parseInput(entry, "agent", input);
-      if (!parsed.success) throw new Error("the earlier input does not parse");
-      const task = await earlierImport(parsed.data, `Dated ${at}`, {
-        kind: "email",
-        title: "Fixture mail",
-        at: Date.parse(at),
-      });
-      const before = await asOf();
-      const retry = await call("task.add", input);
-      expect(retry).toMatchObject({ replayed: true, tasks: [{ result: "created", id: task }] });
-      expect(retry["compared"]).toBeUndefined();
-      expect(await call("task.add", input)).toEqual(retry);
-      expect(await asOf()).toBe(before);
-      // The same date under a new request ID is a new request: this build's rule refuses it.
-      expect(await refusal("task.add", { ...input, request_id: rid() })).toMatchObject({
-        code: "invalid_input",
-        data: { issues: [{ path: "tasks.0.sources.0.at" }] },
-      });
-    }
+    const [answer] = await sentAgain(AGENT, id, [{ op: "task.update", input }]);
+    expect(answer?.code).toBe("applied_earlier");
+    expect(Object.keys(answer?.data ?? {}).sort()).toEqual(["receipt", "request"]);
+    expect(answer?.data?.["receipt"]).toEqual(await call("receipt.get", { request: id }));
+    expect(JSON.stringify(answer)).not.toMatch(/"fields"|summary|place/u);
   });
 
-  test("an import an earlier build accepted with a field this build retired, sent again, says what it made and that it could not compare the request", async () => {
-    // The earlier build took a place for the task; this build's contract has no such field.
-    const input = {
-      tasks: [{ title: "Placed earlier", place: "Fixture place" }],
-      request_id: rid(),
-    };
-    const task = await earlierImport(input, "Placed earlier");
-    const before = await asOf();
-    const retry = await call("task.add", input);
-    expect(retry).toMatchObject({
-      replayed: true,
-      compared: false,
-      tasks: [{ result: "created", id: task, title: "Placed earlier" }],
+  test("an organize request an earlier version applied that only made an area, sent to folder.manage with a body that cannot be compared, names that area and clears nothing", async () => {
+    const area = newId("a");
+    const id = await decidedBefore(USER, {
+      entry: "group.manage",
+      input: { action: "create", path: "Only an area" },
+      ops: [{ kind: "area.create", id: area, title: "Only an area" }],
     });
-    expect(renderResult("task.add", retry)).toContain("(replayed, not compared:");
-    expect(await asOf()).toBe(before);
-    // The same body under a new request ID is a new request, which this build refuses.
-    expect(await refusal("task.add", { ...input, request_id: rid() })).toMatchObject({
-      code: "invalid_input",
+    const [answer] = await sentAgain(USER, id, [
+      {
+        op: "folder.manage",
+        input: { action: "clear", project: "Only an area", retired: "Fixture" },
+      },
+    ]);
+    expect(answer).toMatchObject({
+      code: "applied_earlier",
+      message: `Another version of ${PRODUCT_NAME} applied this request before (${area}): nothing was written now.`,
+      data: { request: id, receipt: { results: [{ status: "created", id: area }] } },
     });
-    // Under its own ID to another tool, it is another request, whatever this build makes of it.
-    for (const op of ["task.reopen", "task.update", "task.finish"]) {
-      expect(await refusal(op, input), op).toMatchObject({ code: "request_id_conflict" });
-    }
-    expect(await asOf()).toBe(before);
+    expect(JSON.stringify(answer)).not.toMatch(/clear/u);
   });
 
-  /** A task, and an update of it as the build before this one decided it, with no record. */
-  async function earlierUpdate(input: (task: string, base: string) => Json): Promise<Json> {
-    const added = await call("task.add", {
-      tasks: [{ title: "Updated earlier" }],
-      request_id: rid(),
-    });
-    const made = (added["tasks"] as { id: Id<"t">; ref: string }[])[0];
-    if (made === undefined) throw new Error("no task was added");
-    const sent = input(made.ref, await asOf());
-    const { writer, actor } = await script();
-    const first = await writer.submit({
-      space_id: w.space,
-      request_id: String(sent["request_id"]),
-      actor,
-      base: String(sent["base"]),
-      intent: { entry: "task.update", input: sent },
-      ops: [{ kind: "task.patch", task: made.id, set: { summary: "Set earlier" } }],
-    });
-    expect(first.status).toBe("applied");
-    return sent;
-  }
-
-  test("an update an earlier build made with a field this build retired, sent again, names the fields its commit changed", async () => {
-    const input = await earlierUpdate((task, base) => ({
-      task,
-      set: { summary: "Set earlier" },
-      clear: ["place"],
-      base,
-      request_id: rid(),
-    }));
-    expect(await call("task.update", input)).toMatchObject({
-      result: "updated",
-      task: input["task"],
-      fields: ["summary"],
-      replayed: true,
-      compared: false,
+  test("a receipt whose stored result this version cannot read still says the request was applied before, with its request ID", () => {
+    const receipt = {
+      scope_id: "script:fixture",
+      request_id: "fixture-answers-unread",
+      fingerprint: "0".repeat(64),
+      status: "applied",
+      seq: 7,
+      epoch: 1,
+      incarnation: newId("ai"),
+      at: 0,
+      result: {
+        status: "applied",
+        as_of: "1.7.x",
+        results: "not a list",
+        conflicts: [],
+        warnings: [],
+      },
+    } as unknown as Receipt;
+    expect(appliedEarlier(receipt).toBody()).toEqual({
+      code: "applied_earlier",
+      message: `Another version of ${PRODUCT_NAME} applied this request before: nothing was written now.`,
+      hint: "Do not send it again under a new request ID. Read the task for how it is now.",
+      data: { request: "fixture-answers-unread" },
     });
   });
 
-  test("an update an earlier build made, sent again while history cannot be read, leaves out its fields and every face says so", async () => {
-    const entry = findEntry("task.update");
-    if (entry === undefined) throw new Error("task.update is no entry");
-    let input: Json = {};
-    await earlierUpdate((task, base) => {
-      input = { task, set: { summary: "Set earlier" }, base, request_id: rid() };
-      const parsed = parseInput(entry, "agent", input);
-      if (!parsed.success) throw new Error("the earlier input does not parse");
-      return parsed.data;
+  test("a request a later version applied, whose record holds what this version reads and more, is answered as applied before too", async () => {
+    const entry = findEntry("task.add");
+    if (entry === undefined) throw new Error("task.add is no entry");
+    const input = { tasks: [{ title: "Added by a later version" }] };
+    const parsed = parseInput(entry, "agent", { ...input, request_id: "fixture-answers-parse" });
+    if (!parsed.success) throw new Error("the later input does not parse");
+    const task = newId("t");
+    // The intent as this version parses it: without the version check, its fingerprint matches.
+    const id = await decidedBefore(AGENT, {
+      entry: "task.add",
+      input: parsed.data,
+      ops: [{ kind: "task.create", id: task, title: "Added by a later version", inbox: true }],
+      record: { version: 2, entry: "task.add", paths: ["tasks.0"], made: [], later: { kept: 1 } },
     });
-    const host = held({ failing: () => true });
-    const retry = (await opCall(host, AGENT, { op: "task.update", input })) as Json;
-    expect(retry).toMatchObject({ result: "updated", task: input["task"], replayed: true });
-    expect(retry["fields"]).toBeUndefined();
-    expect(entry.output.safeParse(retry).success).toBe(true);
-    expect(renderResult("task.update", retry)).toMatch(/^updated M-[0-9]+: fields not read · /u);
-    // Healthy again, the commit's history names what it changed.
-    expect(await call("task.update", input)).toMatchObject({ fields: ["summary"] });
+    const [answer] = await sentAgain(AGENT, id, [{ op: "task.add", input }]);
+    expect(answer).toMatchObject({
+      code: "applied_earlier",
+      data: { request: id, receipt: { results: [{ status: "created", id: task }] } },
+    });
+    // The agent's text says it in two sentences, with the task's reference.
+    const ref = String(((answer?.data?.["receipt"] as Json)["results"] as Json[])[0]?.["ref"]);
+    if (answer === undefined) throw new Error("no answer");
+    expect(renderError(answer)).toBe(
+      `error applied_earlier: Another version of ${PRODUCT_NAME} applied this request before (${ref}): nothing was written now. Do not send it again under a new request ID. Read the task for how it is now.`,
+    );
   });
+});
 
+describe("[A3.answers.retry-first] a request ID this version used holds it for that tool and that body", () => {
   test("a request ID used for one tool is another request for any other tool, whatever its body", async () => {
     const input = { tasks: [{ title: "Its tool's own" }], request_id: rid() };
     await call("task.add", input);

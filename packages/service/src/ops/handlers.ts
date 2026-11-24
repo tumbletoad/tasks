@@ -5,7 +5,8 @@
 //
 //   entry → exposure (the class may call it) → principal (audience, actor, writer scope)
 //   → the space, and for a write its request's receipt: a request the writer accepted is a retry,
-//     answered from that receipt (A3 3.4.1), marked `replayed`, before any rule reads its input
+//     answered from that receipt (A3 3.4.1), marked `replayed`, before any rule reads its input;
+//     a receipt another version of TTasks wrote is answered as applied earlier, and nothing more
 //   → the caller's input parsed with the contract (SafeText, defaults, the audience's limits)
 //   → reads through the space's reader, writes expanded into A1 operations and sent to the space's
 //     writer with the scope and the intent
@@ -39,7 +40,6 @@ import {
   receiptResult,
   registry,
   shapeText,
-  TaskUpdateInput,
   type AnyEntry,
   type PreferenceRead,
   type PreferenceSpec,
@@ -131,6 +131,7 @@ import {
   byOf,
   invalid,
   readOnly,
+  appliedEarlier,
   requestIdReused,
   resultFailure,
   schemaFailure,
@@ -145,9 +146,6 @@ import { SearchCursors } from "../search/cursors.ts";
 import { runSearch, type SearchInput } from "../search/search.ts";
 import { editDistance, fold, resolveGroup } from "./groups.ts";
 import {
-  readCommit,
-  readCommitOps,
-  readCommitTasks,
   readBind,
   readGroupNames,
   readGroups,
@@ -179,8 +177,6 @@ import {
   sourceOf,
   taskRow,
   text,
-  type CommitFacts,
-  type CommitOp,
   type HereIds,
   type TaskFolder,
   type TaskRead,
@@ -427,8 +423,9 @@ function checkActionFields(entry: AnyEntry, input: Record<string, unknown>): voi
 
 /**
  * `opCall` as `principal`. A write whose request ID has the receipt of an accepted request in the
- * caller's scope is a retry: it is answered from that receipt before any rule of this build reads
- * its input, so neither a write since nor a rule a later build tightened turns it into an error.
+ * caller's scope is a retry: the same input as sent is answered from that receipt before any rule
+ * reads it, so a write since never turns it into an error. A receipt another version of TTasks
+ * wrote is answered as applied earlier, whatever the input and the tool.
  */
 async function callWith(
   host: OpsHost,
@@ -476,38 +473,29 @@ async function callWith(
   if (receipt === undefined || !isAccepted(receipt.status)) {
     return decideCall(host, caller, entry, principal, picked, input);
   }
-  const view: View = { host, caller, principal, entry, space };
   const record = receipt.result.answer;
-  // A receipt names the entry its request was for: under its ID, another entry's is refused.
-  const madeFor = record?.["entry"];
-  if (madeFor !== undefined && madeFor !== entry.name) throw requestIdReused(receipt.at);
-  const sent = record?.["sent"];
-  if (sent === intentPrint(space.id, entry.name, input)) {
-    return checked(host, entry, await retried(view, receipt.result));
+  if (!isRecord(record) || record["version"] !== RECORD_VERSION) throw appliedEarlier(receipt);
+  // Under its ID, another entry's request is refused.
+  if (record["entry"] !== entry.name) throw requestIdReused(receipt.at);
+  const view: View = { host, caller, principal, entry, space };
+  if (record["sent"] === intentPrint(space.id, entry.name, input)) {
+    return checked(host, entry, await answerOf(view, receipt.result));
   }
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = checkedInput(entry, principal, input);
-  } catch (error) {
-    if (sent !== undefined || !(error instanceof AppError)) throw error;
-    // An earlier build's receipt names no entry and keeps no fingerprint of the input as sent,
-    // and this body does not pass this build's rules. Its commit shows whose request it was: this
-    // entry's is said, uncompared, and another's holds the ID. One that committed nothing wrote
-    // nothing, and its body is judged as any other.
-    const ops = receipt.seq === null ? [] : await commitOps(view, receipt.seq);
-    if (ops.length === 0) throw error;
-    if (!madeBy(ops).includes(entry.name)) throw requestIdReused(receipt.at);
-    const options = { compared: false, earlier: { ops } } as const;
-    return checked(host, entry, await retried(view, receipt.result, options));
-  }
+  const parsed = checkedInput(entry, principal, input);
   if (intentPrint(space.id, entry.name, parsed) === receipt.fingerprint) {
-    // An earlier build's receipt keeps no record of what its handler decided: its input says.
-    const options = sent === undefined ? { earlier: { input: parsed } } : {};
-    return checked(host, entry, await retried(view, receipt.result, options));
+    return checked(host, entry, await answerOf(view, receipt.result));
   }
   // Another request under this ID: the writer refuses it (REQUEST_ID_REUSED).
   return decideCall(host, caller, entry, principal, picked, input);
 }
+
+/**
+ * The version of what a receipt records of its request for the answer (`submit`'s `answer`). A
+ * receipt without this version was written by another version of TTasks, whose record this one
+ * cannot read: it is answered by appliedEarlier alone. Raise it with any change to what the record
+ * or the writer's result holds for an answer.
+ */
+const RECORD_VERSION = 1;
 
 /** The input after the entry's rules: hidden fields, later steps, the contract, action fields. */
 function checkedInput(
@@ -563,7 +551,7 @@ async function decideCall(
     const own = committed.get(call);
     const stored = own ?? (error instanceof AppError ? await acceptedReceipt(call) : undefined);
     if (stored === undefined) throw error;
-    result = await retried(call, stored);
+    result = await answerOf(call, stored);
   }
   return checked(host, entry, result);
 }
@@ -586,22 +574,6 @@ function checked(host: OpsHost, entry: AnyEntry, result: unknown): unknown {
   });
 }
 
-/**
- * A write's answer from what it stored (ANSWERS), for a retry or a call that failed after its
- * commit. `compared: false` marks a retry this build could not compare with its request.
- * `earlier` stands in for the record of a receipt an earlier build wrote, which keeps none.
- */
-async function retried(
-  view: View,
-  stored: WriteResult,
-  options: { readonly compared?: false; readonly earlier?: Earlier } = {},
-): Promise<unknown> {
-  const answer = ANSWERS[view.entry.name];
-  if (answer === undefined) throw opUnknown();
-  const built = await answer(view, stored, options.earlier);
-  return options.compared === false ? { ...built, compared: false } : built;
-}
-
 /** The accepted result of each call whose request committed: its answer is built from it. */
 const committed = new WeakMap<Call, WriteResult>();
 
@@ -622,70 +594,6 @@ async function acceptedReceipt(call: Call): Promise<WriteResult | undefined> {
 }
 
 const isAccepted = (status: string): boolean => status === "applied" || status === "unchanged";
-
-/** The operations commit `seq` ran, read for a receipt of an earlier build. */
-async function commitOps(view: View, seq: number): Promise<CommitOp[]> {
-  try {
-    return await readCommitOps(readerOf(view.space), seq);
-  } catch (error) {
-    throw storageFailure(error);
-  }
-}
-
-/**
- * Whose request a commit of an earlier build was, by the kinds of operation it ran, first row
- * first: the entries that run one of a row's kinds. Two share a row where one commit could be
- * either's with the same effect. Receipts of this build name their entry, so earlier builds'
- * kinds are all this needs to know.
- */
-const MADE_BY: readonly (readonly [readonly string[], readonly string[]])[] = [
-  [["undo"], ["history.undo"]],
-  [["redo"], ["history.redo"]],
-  [["task.complete", "task.archive", "task.wrap_up"], ["task.finish"]],
-  [["task.create"], ["task.add"]],
-  [["task.reopen"], ["task.reopen"]],
-  [["task.delete", "task.restore"], ["task.delete"]],
-  [["note.delete", "note.restore"], ["note.remove"]],
-  [["log.add", "note.add"], ["entry.add"]],
-  [["pref.set"], ["prefs.manage"]],
-  [
-    [
-      "task.patch",
-      "task.context_append",
-      "task.move",
-      "source.add",
-      "source.unlink",
-      "source.relink",
-      "place.set",
-      "place.clear",
-    ],
-    ["task.update"],
-  ],
-  [
-    ["task.folder_set", "task.folder_clear"],
-    ["task.update", "folder.manage"],
-  ],
-  [
-    [
-      "area.patch",
-      "area.move",
-      "area.archive",
-      "area.unarchive",
-      "project.patch",
-      "project.move",
-      "project.archive",
-      "project.unarchive",
-    ],
-    ["group.manage"],
-  ],
-  [
-    ["area.create", "project.create", "project.folder_set", "project.folder_clear"],
-    ["group.manage", "folder.manage"],
-  ],
-];
-
-const madeBy = (ops: readonly CommitOp[]): readonly string[] =>
-  MADE_BY.find(([kinds]) => ops.some((op) => kinds.includes(op.op)))?.[1] ?? [];
 
 /**
  * The receipt of a call's request ID in its writer scope, read in the writer's queue so that it
@@ -1104,7 +1012,12 @@ async function submit(
       ...(options.warnings === undefined || options.warnings.length === 0
         ? {}
         : { warnings: [...options.warnings] }),
-      answer: { ...options.answer, sent: call.sent, entry: call.entry.name },
+      answer: {
+        ...options.answer,
+        sent: call.sent,
+        entry: call.entry.name,
+        version: RECORD_VERSION,
+      },
       intent: { entry: call.entry.name, input: intentInput(input) },
       ops,
     };
@@ -1416,36 +1329,6 @@ const refOf = (op: OpResult): string => {
     throw new AppError({ code: "internal", message: "A result is missing." });
   return op.ref;
 };
-
-/**
- * The fields of `named`, in their order, that the commit changed (A3 3.4.6: "Setting a field to
- * its current value is no change"): a task field by its change row, `area` and `project` by their
- * column of the grouping, `folder` and `sources` by a row of theirs under the task.
- */
-function changedFields(named: readonly string[], facts: CommitFacts): string[] {
-  const rows = (entity: string) => facts.changes.filter((c) => c.entity === entity);
-  const grouping = rows("tasks").find((c) => c.field === "grouping");
-  const column = (value: unknown, name: string): unknown =>
-    isRecord(value) ? (value[name] ?? null) : null;
-  const moved = (name: string): boolean =>
-    grouping !== undefined && column(grouping.before, name) !== column(grouping.after, name);
-  return named.filter((field) => {
-    switch (field) {
-      case "area":
-        return moved("area_id");
-      case "project":
-        return moved("project_id");
-      case "folder":
-        return rows("folders").length > 0;
-      case "sources":
-        return rows("task_sources").length > 0;
-      case "reviewed":
-        return rows("tasks").some((c) => c.field === "reviewed_at");
-      default:
-        return rows("tasks").some((c) => c.field === field);
-    }
-  });
-}
 
 /** At most this many candidate rows in an error (A3 3.5). */
 const CANDIDATES = 3;
@@ -2158,21 +2041,9 @@ function madeWarning(areas: readonly string[], projects: readonly string[]): str
   const more = paths.length - MADE_SHOWN;
   const at = `${paths.slice(0, MADE_SHOWN).join(", ")}${more > 0 ? ` and ${String(more)} more` : ""}`;
   return [
-    `${MADE}${what.join(" and ")} for names that matched none (a project, none in its area): ${at}.`,
+    `Made ${what.join(" and ")} for names that matched none (a project, none in its area): ${at}.`,
   ];
 }
-
-/** How the groups line starts, so an answer can put it first. */
-const MADE = "Made ";
-
-/**
- * The warnings with the groups line first: a cut takes from the end, and the line says what no
- * other warning does. A receipt of an earlier build holds it among its warnings, found by its start.
- */
-const madeFirst = (warnings: readonly string[]): string[] => [
-  ...warnings.filter((w) => w.startsWith(MADE)),
-  ...warnings.filter((w) => !w.startsWith(MADE)),
-];
 
 /**
  * A result as the call's own operations see it: the results of the groups it created by name are
@@ -2339,20 +2210,7 @@ type Handler = (call: Call) => Promise<unknown>;
  * is then refused if anything it has not seen changed since. Names and lists come from one read of
  * the space as it is when the answer is made (`now`), and may be newer than that.
  */
-type Answer = (
-  view: View,
-  stored: WriteResult,
-  earlier: Earlier | undefined,
-) => Promise<Record<string, unknown>>;
-
-/**
- * What stands in for the record of a receipt an earlier build wrote, which keeps none: the input
- * of a retry this build could compare with it, or else the operations its commit ran.
- */
-interface Earlier {
-  readonly input?: Readonly<Record<string, unknown>>;
-  readonly ops?: readonly CommitOp[];
-}
+type Answer = (view: View, stored: WriteResult) => Promise<Record<string, unknown>>;
 
 /** A read of the space as it is now, for an answer's names and lists: undefined when it fails. */
 async function now<T>(
@@ -2380,37 +2238,18 @@ interface Draft {
 
 /**
  * The drafts at `prefix` (`tasks` or `follow_ups`), by the input path of each operation that the
- * record keeps (`paths`). A receipt of an earlier build keeps none: there a draft starts at a
- * task.create that made a task or matched one, its log is the one result that names an entry, and
- * its sources follow in their order.
+ * record keeps (`paths`).
  */
 function draftsOf(result: WriteResult, prefix: string): Draft[] {
   const drafts: { at: string; first: number; log?: number; sources: Map<number, string> }[] = [];
-  const paths = result.answer?.["paths"];
-  if (Array.isArray(paths)) {
-    const whole = new RegExp(`^${prefix}\\.[0-9]+$`, "u");
-    paths.forEach((path: unknown, i) => {
-      if (typeof path !== "string") return;
-      if (whole.test(path)) drafts.push({ at: path, first: i, sources: new Map() });
-      const draft = drafts.at(-1);
-      if (draft === undefined) return;
-      if (path === `${draft.at}.log`) draft.log = i;
-      else if (path.startsWith(`${draft.at}.sources.`)) draft.sources.set(i, path);
-    });
-    return drafts;
-  }
-  for (const op of result.results) {
-    if (isId(op.id, "t") && (op.status === "created" || op.matched_by !== undefined)) {
-      drafts.push({ at: `${prefix}.${String(drafts.length)}`, first: op.i, sources: new Map() });
-      continue;
-    }
+  const whole = new RegExp(`^${prefix}\\.[0-9]+$`, "u");
+  strings(result.answer?.["paths"]).forEach((path, i) => {
+    if (whole.test(path)) drafts.push({ at: path, first: i, sources: new Map() });
     const draft = drafts.at(-1);
-    if (draft === undefined) continue;
-    if (op.entry !== undefined) draft.log = op.i;
-    else if (isId(op.id, "s")) {
-      draft.sources.set(op.i, `${draft.at}.sources.${String(draft.sources.size)}`);
-    }
-  }
+    if (draft === undefined) return;
+    if (path === `${draft.at}.log`) draft.log = i;
+    else if (path.startsWith(`${draft.at}.sources.`)) draft.sources.set(i, path);
+  });
   return drafts;
 }
 
@@ -2470,13 +2309,13 @@ function draftWarnings(
   groupsAt: number,
 ): string[] {
   const matched = drafts.filter((_, k) => rows[k]?.["result"] === "exists").map((d) => d.at);
-  return madeFirst([
+  return [
     ...madeOf(stored, groupsAt),
     ...sourceWarnings(result, sourcesOf(drafts)),
     ...result.warnings.filter(
       (w) => !matched.some((at) => w.startsWith(`${at}:`) || w.startsWith(`${at}.`)),
     ),
-  ]);
+  ];
 }
 
 const addAnswer: Answer = async (view, stored) => {
@@ -2491,34 +2330,16 @@ const addAnswer: Answer = async (view, stored) => {
   };
 };
 
-/** Every field an update can name, in its contract's order. */
-const UPDATE_FIELDS = [
-  ...Object.keys(TaskUpdateInput.shape.set.unwrap().shape),
-  "context",
-  "sources",
-];
-
 /**
  * The fields of `named`, in their order, that the request's operations changed: a task field by
  * the writer's result for it (OpResult.fields), `folder` and `sources` by an operation of theirs
- * that changed something. A receipt of an earlier build holds neither: its commit's history says
- * which fields it changed, whatever a retry names, and nothing is said when that read fails.
+ * that changed something.
  */
-async function changedOf(
-  view: View,
-  result: WriteResult,
-  named: readonly string[],
-): Promise<string[] | undefined> {
-  const paths = result.answer?.["paths"];
-  if (!Array.isArray(paths)) {
-    const first = opAt(result, 0);
-    const facts = await now(view, (r) => readCommit(r, first.task ?? first.id, result.seq));
-    return facts === undefined ? undefined : changedFields(UPDATE_FIELDS, facts);
-  }
+function changedOf(result: WriteResult, paths: readonly string[], named: readonly string[]) {
   const changed = new Set<string>();
   for (const op of result.results) {
     if (op.status === "unchanged" || op.status === "existing") continue;
-    const path = String(paths[op.i] ?? "");
+    const path = paths[op.i] ?? "";
     for (const field of op.fields ?? []) changed.add(field === "reviewed_at" ? "reviewed" : field);
     if (/^(?:add_sources|remove_sources|put_back_sources)/u.test(path)) changed.add("sources");
     if (path === "set.folder" || path === "clear") changed.add("folder");
@@ -2526,86 +2347,50 @@ async function changedOf(
   return named.filter((field) => changed.has(field));
 }
 
-const updateAnswer: Answer = async (view, stored, earlier) => {
+const updateAnswer: Answer = async (view, stored) => {
   const result = ownResults(stored);
   const updated = result.status === "applied";
   const record = stored.answer ?? {};
-  const fields = updated ? await changedOf(view, result, strings(record["fields"])) : [];
-  const paths = Array.isArray(record["paths"]) ? (record["paths"] as unknown[]) : [];
-  const context = earlier?.input?.["context"];
-  const appended = Array.isArray(record["paths"])
-    ? result.results.some((op) => paths[op.i] === "context" && op.status === "updated")
-    : earlier?.ops !== undefined
-      ? earlier.ops.some((op) => op.op === "task.context_append")
-      : isRecord(context) && context["mode"] === "append";
+  const paths = strings(record["paths"]);
+  const fields = updated ? changedOf(result, paths, strings(record["fields"])) : [];
+  const appended = result.results.some(
+    (op) => paths[op.i] === "context" && op.status === "updated",
+  );
   const names = namesProjects(result) ? await now(view, readGroups) : undefined;
   const sources = new Map(
-    paths.flatMap((path, i) =>
-      typeof path === "string" && path.startsWith("add_sources.") ? [[i, path] as const] : [],
-    ),
+    paths.flatMap((path, i) => (path.startsWith("add_sources.") ? [[i, path] as const] : [])),
   );
   return {
     result: updated ? "updated" : "no_change",
     task: refOf(opAt(result, 0)),
-    ...(fields === undefined ? {} : { fields }),
-    ...(updated && fields?.includes("context") === true
+    fields,
+    ...(updated && fields.includes("context")
       ? { context: appended ? ("appended" as const) : ("replaced" as const) }
       : {}),
     as_of: result.as_of,
     ...movedOf(result, names === undefined ? undefined : projectNames(names.projects)),
-    warnings: madeFirst([
-      ...madeOf(stored, 0),
-      ...sourceWarnings(result, sources),
-      ...result.warnings,
-    ]),
+    warnings: [...madeOf(stored, 0), ...sourceWarnings(result, sources), ...result.warnings],
     ...replayed(stored),
   };
 };
 
-const entryAnswer: Answer = (_view, stored, earlier) => {
+const entryAnswer: Answer = (_view, stored) => {
   const done = opAt(stored, 0);
-  const op = earlier?.ops?.[0];
-  const kind =
-    stored.answer?.["kind"] ??
-    earlier?.input?.["kind"] ??
-    (done.entry?.startsWith("n") === true
-      ? "note"
-      : op?.op === "log.add"
-        ? (op.input["log_kind"] ?? "progress")
-        : undefined);
   return Promise.resolve({
     result: "logged",
     task: refOf(done),
     entry: done.entry,
-    ...(kind === undefined ? {} : { kind }),
+    kind: stored.answer?.["kind"],
     as_of: stored.as_of,
     ...replayed(stored),
   });
 };
 
-const noteAnswer: Answer = (_view, stored, earlier) => {
+const noteAnswer: Answer = (_view, stored) => {
   const done = opAt(stored, 0);
-  const action =
-    stored.answer?.["action"] ??
-    (earlier?.input !== undefined
-      ? typeof earlier.input["remove"] === "string"
-        ? "remove"
-        : "put_back"
-      : earlier?.ops?.[0] === undefined
-        ? undefined
-        : earlier.ops[0].op === "note.delete"
-          ? "remove"
-          : "put_back");
-  const word =
-    done.status !== "updated"
-      ? "no_change"
-      : action === "remove"
-        ? "removed"
-        : action === undefined
-          ? undefined
-          : "put_back";
+  const removed = stored.answer?.["action"] === "remove";
   return Promise.resolve({
-    ...(word === undefined ? {} : { result: word }),
+    result: done.status !== "updated" ? "no_change" : removed ? "removed" : "put_back",
     task: refOf(done),
     note: done.entry,
     as_of: stored.as_of,
@@ -2621,27 +2406,14 @@ const finishAnswer: Answer = async (view, stored) => {
   const done = opAt(result, 0);
   const wrap = own > 1 ? opAt(result, 1) : undefined;
   const changed = result.results.slice(0, own).some((op) => op.status !== "unchanged");
-  // A receipt of an earlier build holds none of the task's state: its commit's history does.
-  const facts =
-    done.lifecycle === undefined
-      ? await now(view, (r) => readCommit(r, done.task ?? done.id, result.seq))
-      : undefined;
-  const lifecycle = done.lifecycle ?? facts?.lifecycle;
-  const wrapState = done.lifecycle === undefined ? facts?.wrapState : done.wrap_state;
-  const learnings =
-    result.status !== "applied"
-      ? 0
-      : done.lifecycle !== undefined
-        ? (wrap?.learnings ?? 0)
-        : facts?.changes.filter((c) => c.entity === "learnings" && c.field === null).length;
   const rows = await draftRows(view, result, drafts);
   const warnings = draftWarnings(stored, result, drafts, rows, own);
   return {
     result: changed ? "completed" : "no_change",
     task: refOf(done),
-    ...(lifecycle === undefined ? {} : { lifecycle }),
-    ...(wrapState === undefined ? {} : { wrap_state: wrapState }),
-    ...(learnings === undefined ? {} : { learnings }),
+    lifecycle: done.lifecycle,
+    ...(done.wrap_state === undefined ? {} : { wrap_state: done.wrap_state }),
+    learnings: result.status === "applied" ? (wrap?.learnings ?? 0) : 0,
     // A follow-up upserts by its source keys as task.add's drafts do (A3 3.4.5, 3.4.8).
     follow_ups: rows.map((row) => ({
       result: row["result"],
@@ -2659,20 +2431,16 @@ const finishAnswer: Answer = async (view, stored) => {
   };
 };
 
-const reopenAnswer: Answer = async (view, stored) => {
+const reopenAnswer: Answer = (_view, stored) => {
   const done = opAt(stored, 0);
-  // A receipt of an earlier build holds no status: its commit's history does.
-  const status =
-    done.status_key ??
-    (await now(view, (r) => readCommit(r, done.task ?? done.id, stored.seq)))?.status;
-  return {
+  return Promise.resolve({
     result: stored.status === "applied" ? "reopened" : "no_change",
     task: refOf(done),
-    lifecycle: done.lifecycle ?? "active",
-    ...(status === undefined ? {} : { status }),
+    lifecycle: done.lifecycle,
+    status: done.status_key,
     as_of: stored.as_of,
     ...replayed(stored),
-  };
+  });
 };
 
 const deleteAnswer: Answer = (_view, stored) => {
@@ -2716,17 +2484,12 @@ const deleteAnswer: Answer = (_view, stored) => {
 
 /**
  * An undo's or a redo's answer: the change it moved, the tasks its commit changed (the writer's
- * result; a receipt of an earlier build reads them from history, and leaves them out when that
- * read fails), and what a partial undo left as others set it.
+ * result), and what a partial undo left as others set it.
  */
 const historyAnswer: Answer = async (view, stored) => {
   const undo = view.entry.name === "history.undo";
   const word = !undo ? "redone" : stored.conflicts.length > 0 ? "partial" : "undone";
   const done = opAt(stored, 0);
-  const tasks =
-    done.tasks !== undefined
-      ? { refs: done.tasks, count: done.task_count ?? done.tasks.length }
-      : await now(view, (r) => readCommitTasks(r, stored.seq));
   // A3 3.7.4: a script of the same person (`cli-script` on this machine) writes as `script`, whose
   // changes are on no undo stack. When one changed the space after the change undone, the answer
   // names it, so the person knows this undo did not take it back. That is history between the two
@@ -2743,7 +2506,8 @@ const historyAnswer: Answer = async (view, stored) => {
   return {
     result: word,
     commit: done.id,
-    ...(tasks === undefined ? {} : { tasks: tasks.refs, task_count: tasks.count }),
+    tasks: done.tasks,
+    task_count: done.task_count,
     ...(stored.passed === undefined ? {} : { passed_over: stored.passed }),
     ...(stored.newer === undefined ? {} : newerWorkJson(stored.newer)),
     ...(word === "partial"
@@ -2800,20 +2564,13 @@ function groupNow(
 /**
  * What organize's write did, from its record (`groupWrite`): the action, the word for what the
  * call decided (`exists`) or for a write that applied (`done`), the group by kind, ID and folder.
- * Its name and area, and the list, are read now, in one snapshot. A receipt of an earlier build
- * names the group by the result its last operation has, and its action by its input or commit.
+ * Its name and area, and the list, are read now, in one snapshot.
  */
-const groupAnswer: Answer = async (view, stored, earlier) => {
+const groupAnswer: Answer = async (view, stored) => {
   const record = stored.answer ?? {};
-  const action = textOf(
-    record["action"] ?? earlier?.input?.["action"] ?? groupAction(earlier?.ops ?? []),
-  );
+  const action = textOf(record["action"]);
   const changed = stored.status === "applied";
-  const last = stored.results.at(-1)?.id ?? "";
-  const written = (record["group"] ?? {
-    kind: isId(last, "a") ? "area" : "project",
-    id: isId(last, "a") || isId(last, "p") ? last : "",
-  }) as { kind: "area" | "project"; id: string; folder?: string };
+  const written = record["group"] as { kind: "area" | "project"; id: string; folder?: string };
   const read = await now(view, (reader) => readGroupsHere(view, reader));
   const answer = {
     action,
@@ -2835,13 +2592,11 @@ const groupAnswer: Answer = async (view, stored, earlier) => {
 /**
  * What folder.manage's write did, from its record: the action, the owner by kind and ID, the
  * folder it set, or the project that has it already (`exists`). A project's name and area are
- * read now. A receipt of an earlier build names the owner by its results, and the rest by its
- * input or its commit.
+ * read now.
  */
-const folderAnswer: Answer = async (view, stored, earlier) => {
+const folderAnswer: Answer = async (view, stored) => {
   const record = stored.answer ?? {};
-  const shown = earlier?.ops === undefined ? undefined : folderOps(earlier.ops);
-  const action = textOf(record["action"] ?? earlier?.input?.["action"] ?? shown?.action);
+  const action = textOf(record["action"]);
   const changed = stored.status === "applied";
   const read = await now(view, readGroups);
   const dated = { as_of: stored.as_of };
@@ -2856,7 +2611,7 @@ const folderAnswer: Answer = async (view, stored, earlier) => {
       ...replayed(stored),
     };
   }
-  const folder = record["folder"] ?? earlierFolder(view, earlier?.input) ?? shown?.folder;
+  const folder = record["folder"];
   if (action === "add_project") {
     const project = stored.results.find((r) => isId(r.id, "p"))?.id ?? "";
     return {
@@ -2869,13 +2624,9 @@ const folderAnswer: Answer = async (view, stored, earlier) => {
     };
   }
   const done = stored.results[0];
-  const owner = record["owner"] as { kind: "project" | "task"; id: string } | undefined;
-  const task = shown?.task ?? earlier?.input?.["task"] !== undefined;
-  const kind = owner?.kind ?? (task ? "task" : "project");
-  const id =
-    kind === "task"
-      ? (done?.task ?? "")
-      : (owner?.id ?? (isId(done?.id ?? "", "p") ? String(done?.id) : ""));
+  const { kind, id: named } = record["owner"] as { kind: "project" | "task"; id: string };
+  // The record names a task as the call gave it; its ID is in the writer's result.
+  const id = kind === "task" ? (done?.task ?? "") : named;
   return {
     action,
     result: changed ? (action === "set" ? "set" : "cleared") : "no_change",
@@ -2895,56 +2646,13 @@ const folderAnswer: Answer = async (view, stored, earlier) => {
 const pickName = ({ name }: { name?: string }): { name?: string } =>
   name === undefined ? {} : { name };
 
-/** What an earlier build's folder.manage commit did, by its operations. */
-function folderOps(ops: readonly CommitOp[]): { action: string; task: boolean; folder?: string } {
-  const set = ops.find((op) => op.op.endsWith(".folder_set"));
-  const path = set?.input["path"];
-  return {
-    action: ops.some((op) => op.op === "project.create")
-      ? "add_project"
-      : set === undefined
-        ? "clear"
-        : "set",
-    task: ops.some((op) => op.op.startsWith("task.")),
-    ...(typeof path === "string" ? { folder: path } : {}),
-  };
-}
-
-/**
- * An earlier build's organize action, by the operations its commit ran: the first of these that
- * one of them is. A move may create its area, and a create may set the new project's folder.
- */
-const GROUP_OPS: readonly (readonly [string, string])[] = [
-  [".move", "move"],
-  [".patch", "rename"],
-  [".unarchive", "unarchive"],
-  [".archive", "archive"],
-  [".create", "create"],
-  [".folder_set", "set_folder"],
-  [".folder_clear", "clear_folder"],
-];
-
-const groupAction = (ops: readonly CommitOp[]): string | undefined =>
-  GROUP_OPS.find(([kind]) => ops.some((op) => op.op.endsWith(kind)))?.[1];
-
-/** The folder an earlier build's request named, as stored: its receipt keeps no record. */
-function earlierFolder(
-  view: View,
-  input: Readonly<Record<string, unknown>> | undefined,
-): string | undefined {
-  const given = input?.["folder"];
-  if (typeof given !== "string" || view.host.home === undefined) return undefined;
-  const form = storedForm(given, view.host.home, view.host.platform ?? process.platform);
-  return typeof form === "string" ? undefined : form.stored;
-}
-
 /**
  * What a preference set did, from its record: each key from the value it had to the one it set,
  * where the writer changed it. The keys as they are now are read when the answer is made.
  */
 const prefsAnswer: Answer = async (view, stored) => {
-  const sets = stored.answer?.["changed"] as { key: string }[] | undefined;
-  const keys = new Set(sets?.map((s) => s.key) ?? stored.results.map((r) => r.id));
+  const sets = (stored.answer?.["changed"] ?? []) as { key: string }[];
+  const keys = new Set(sets.map((s) => s.key));
   const read = await now(view, readSpacePreferences);
   const asked = TOOL_PREFERENCES.filter((p) => keys.has(p.key));
   return {
@@ -2956,9 +2664,7 @@ const prefsAnswer: Answer = async (view, stored) => {
           prefs: asked.map((p) => prefRow(p, "get", read.reads.get(p.key), view.principal)),
         }),
     result: stored.status === "applied" ? "updated" : "no_change",
-    ...(sets === undefined
-      ? {}
-      : { changed: sets.filter((_, k) => stored.results[k]?.status !== "unchanged") }),
+    changed: sets.filter((_, k) => stored.results[k]?.status !== "unchanged"),
     ...replayed(stored),
   };
 };
@@ -3004,11 +2710,14 @@ function updatePath(op: Operation, source: string | undefined): string {
   }
 }
 
-/** A write's answer: the entry's own (ANSWERS), from the result the writer gave the call. */
-function answerOf(call: Call, stored: WriteResult): Promise<Record<string, unknown>> {
-  const answer = ANSWERS[call.entry.name];
+/**
+ * A write's answer: the entry's own (ANSWERS), from what the write stored, for its first answer,
+ * a retry, or a call that failed after its commit.
+ */
+function answerOf(view: View, stored: WriteResult): Promise<Record<string, unknown>> {
+  const answer = ANSWERS[view.entry.name];
   if (answer === undefined) throw opUnknown();
-  return answer(call, stored, undefined);
+  return answer(view, stored);
 }
 
 const HANDLERS: Readonly<Record<string, Handler>> = {

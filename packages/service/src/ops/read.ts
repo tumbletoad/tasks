@@ -826,26 +826,6 @@ const TITLES: Statement = {
   mode: "all",
 };
 
-const COMMIT_OPS: Statement = { sql: "SELECT ops FROM commits WHERE seq = $seq", mode: "get" };
-
-/** One operation a commit ran, as `commits.ops` holds it: its kind and its input. */
-export interface CommitOp {
-  readonly op: string;
-  readonly input: Readonly<Record<string, unknown>>;
-}
-
-/** The operations commit `seq` ran, in their order: none when there is no such commit. */
-export async function readCommitOps(reader: WorkerConnection, seq: number): Promise<CommitOp[]> {
-  const [row] = await snapshot(reader, [COMMIT_OPS], { seq });
-  const ops = isPlain(row) ? json(row["ops"]) : undefined;
-  if (!Array.isArray(ops)) return [];
-  return ops.flatMap((op: unknown) =>
-    isPlain(op) && typeof op["op"] === "string"
-      ? [{ op: op["op"], input: isPlain(op["input"]) ? op["input"] : {} }]
-      : [],
-  );
-}
-
 /** The titles of the tasks `ids` names, by ID. */
 export async function readTitles(
   reader: WorkerConnection,
@@ -1425,85 +1405,7 @@ export async function readStatus(
 }
 
 // ---------------------------------------------------------------------------------------------
-// What a write's commit did, for its result
-
-/** One change row of a commit: the entity, the logical field (null for a created row), values. */
-export interface CommitChange {
-  readonly entity: string;
-  readonly field: string | null;
-  readonly before: unknown;
-  readonly after: unknown;
-}
-
-export interface CommitFacts {
-  /** The change rows the commit wrote for the task and the rows under it. */
-  readonly changes: readonly CommitChange[];
-  /** The task's status as of the commit. */
-  readonly status: string | undefined;
-  /** The task's lifecycle and wrap-up state as of the commit (A1 3.11). */
-  readonly lifecycle: string | undefined;
-  readonly wrapState: string | undefined;
-}
-
-const COMMIT_CHANGES: Statement = {
-  sql: "SELECT entity, field, before, after FROM changes WHERE seq = $seq AND task_id = $task",
-  mode: "all",
-};
-/**
- * A field's column as of $seq: from the first later change of the field its `before`, else the
- * column now. `wrap_state` may be null, so the later change is found first, not coalesced.
- */
-const columnAt = (field: string, path: string, column: string): string =>
-  `(SELECT CASE WHEN c.before IS NULL THEN t.${column} ELSE json_extract(c.before, '${path}') END ` +
-  "FROM tasks t LEFT JOIN (SELECT before FROM changes WHERE entity = 'tasks' " +
-  `AND entity_id = $task AND field = '${field}' AND seq > $seq ORDER BY seq, n LIMIT 1) c ` +
-  "WHERE t.id = $task)";
-/** The status, lifecycle and wrap-up state as of $seq. */
-const STATE_AT: Statement = {
-  sql:
-    `SELECT ${columnAt("status", "$", "status")} AS status, ` +
-    `${columnAt("lifecycle", "$.lifecycle", "lifecycle")} AS lifecycle, ` +
-    `${columnAt("wrap", "$.wrap_state", "wrap_state")} AS wrap_state`,
-  mode: "get",
-};
-
-const json = (value: unknown): unknown => {
-  if (typeof value !== "string") return null;
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return null;
-  }
-};
-
-/**
- * What commit `seq` did to `task`, read from history in one snapshot. A write's result names its
- * commit, and history never changes, so the first answer and every replay of the request read
- * the same facts, whatever happened since (A3 3.4.1). A result value that the writer's result does
- * not carry is read here, never from the task's current state.
- */
-export async function readCommit(
-  reader: WorkerConnection,
-  task: string,
-  seq: number,
-): Promise<CommitFacts> {
-  const [changes, state] = await snapshot(reader, [COMMIT_CHANGES, STATE_AT], { task, seq });
-  const at = (name: string): string | undefined => {
-    const value = (state as Row | null)?.[name];
-    return typeof value === "string" ? value : undefined;
-  };
-  return {
-    changes: (changes as Row[]).map((row) => ({
-      entity: text(row["entity"]),
-      field: typeof row["field"] === "string" ? row["field"] : null,
-      before: json(row["before"]),
-      after: json(row["after"]),
-    })),
-    status: at("status"),
-    lifecycle: at("lifecycle"),
-    wrapState: at("wrap_state"),
-  };
-}
+// What a commit changed
 
 /** A1 3.4: a task's references come from its row; the first 50 a commit changed, in its order. */
 const COMMIT_TASKS: Statement = {
@@ -1519,11 +1421,10 @@ const COMMIT_TASK_COUNT: Statement = {
 };
 
 /**
- * The tasks commit `seq` changed (an undo's or a redo's), from history in one snapshot: the
- * references of the first 50 in the order it changed them, and how many there are. History never
- * changes, so a replay of the request answers the same.
+ * The tasks commit `seq` changed, from history in one snapshot: the references of the first 50 in
+ * the order it changed them, and how many there are.
  */
-export async function readCommitTasks(
+async function readCommitTasks(
   reader: WorkerConnection,
   seq: number,
 ): Promise<{ refs: string[]; count: number }> {

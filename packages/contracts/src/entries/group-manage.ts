@@ -15,7 +15,6 @@ import {
   Mode,
   ProjectArea,
   ProposalId,
-  Compared,
   Replayed,
   RequestId,
 } from "../schemas.ts";
@@ -159,7 +158,6 @@ export const GroupManageResult = z.strictObject({
   ...InsideFolders,
   proposal: ProposalId.optional(),
   replayed: Replayed.optional(),
-  compared: Compared.optional(),
 });
 
 /** What a list returns: the page is always there. */
@@ -236,6 +234,7 @@ export const groupManage = defineEntry({
     "forbidden",
     "space_unavailable",
     "request_id_conflict",
+    "applied_earlier",
   ],
   examples: [
     {

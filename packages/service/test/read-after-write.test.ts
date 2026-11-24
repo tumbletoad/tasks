@@ -1,6 +1,6 @@
 // A write that has applied is answered as applied, whatever a read for its answer does. The reads
-// fail through stand-ins for read.ts's readCommit and readCommitTasks. A service in this process,
-// fixture text and temporary folders only.
+// an answer makes after the write fail through stand-ins for read.ts's readTitles, readGroups and
+// readScriptChange. A service in this process, fixture text and temporary folders only.
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import {
   findEntry,
@@ -17,16 +17,17 @@ const gate = vi.hoisted(() => ({ fail: false }));
 
 vi.mock("../src/ops/read.ts", async (importOriginal) => {
   const real = await importOriginal<typeof import("../src/ops/read.ts")>();
+  const gated =
+    <A extends unknown[], R>(read: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
+      if (gate.fail) throw new Error("Fixture: the space closed before the answer was read");
+      return read(...args);
+    };
   return {
     ...real,
-    readCommit: async (...args: Parameters<typeof real.readCommit>) => {
-      if (gate.fail) throw new Error("Fixture: the space closed before the answer was read");
-      return real.readCommit(...args);
-    },
-    readCommitTasks: async (...args: Parameters<typeof real.readCommitTasks>) => {
-      if (gate.fail) throw new Error("Fixture: the space closed before the answer was read");
-      return real.readCommitTasks(...args);
-    },
+    readTitles: gated(real.readTitles),
+    readGroups: gated(real.readGroups),
+    readScriptChange: gated(real.readScriptChange),
   };
 });
 

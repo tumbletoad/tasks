@@ -3,7 +3,7 @@
 // (later.ts). The keys and their value schemas are contracts' declarations (preferences.ts).
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { AsOf, Base, Mode, ProposalId, Compared, Replayed, RequestId } from "../schemas.ts";
+import { AsOf, Base, Mode, ProposalId, Replayed, RequestId } from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 
 /** The longest string and the longest list a value the tool shows has. */
@@ -100,7 +100,6 @@ export const PrefsManageResult = z.strictObject({
     .optional(),
   proposal: ProposalId.optional(),
   replayed: Replayed.optional(),
-  compared: Compared.optional(),
 });
 
 /** What a describe or a get returns: the keys are always there. */
@@ -137,7 +136,14 @@ export const prefsManage = defineEntry({
     },
   },
   budget: { typical: 600, max: 2000 },
-  errors: ["invalid_input", "forbidden", "conflict", "space_unavailable", "request_id_conflict"],
+  errors: [
+    "invalid_input",
+    "forbidden",
+    "conflict",
+    "space_unavailable",
+    "request_id_conflict",
+    "applied_earlier",
+  ],
   examples: [
     {
       title: "The statuses, with their default",

@@ -17,7 +17,6 @@ import {
   Mode,
   PastInput,
   ProposalId,
-  Compared,
   Replayed,
   RequestId,
   SeveralMatch,
@@ -60,15 +59,9 @@ export const TaskFinishResult = z.strictObject({
     .enum(["completed", "no_change", "review", "proposed"])
     .describe("completed, or already so"),
   task: TaskRef,
-  // A retry of an earlier build's finish whose history could not be read leaves these out.
-  lifecycle: Lifecycle.optional(),
+  lifecycle: Lifecycle,
   wrap_state: WrapState.optional(),
-  learnings: z
-    .int()
-    .min(0)
-    .max(USER_LIMITS.learnings)
-    .describe("Learnings recorded; absent when a retry could not read them")
-    .optional(),
+  learnings: z.int().min(0).max(USER_LIMITS.learnings).describe("Learnings recorded"),
   follow_ups: z
     .array(
       z.strictObject({
@@ -87,7 +80,6 @@ export const TaskFinishResult = z.strictObject({
   proposal: ProposalId.optional(),
   as_of: WriteAsOf,
   replayed: Replayed.optional(),
-  compared: Compared.optional(),
 });
 
 export const taskFinish = defineEntry({
@@ -140,7 +132,15 @@ export const taskFinish = defineEntry({
     },
   },
   budget: { typical: 100, max: 1500 },
-  errors: ["invalid_input", "not_found", "unbound", "conflict", "forbidden", "request_id_conflict"],
+  errors: [
+    "invalid_input",
+    "not_found",
+    "unbound",
+    "conflict",
+    "forbidden",
+    "request_id_conflict",
+    "applied_earlier",
+  ],
   examples: [
     {
       title: "Complete M-14 with a learning and a follow-up",

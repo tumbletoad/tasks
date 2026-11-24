@@ -284,10 +284,6 @@ export const WrapState = z.enum(["pending", "wrapped"]).describe("Wrap-up state"
 export const Replayed = z
   .boolean()
   .describe("True on a retry: what the write did, with names and lists as of now");
-/** A retry this build could not compare with the request it repeats (an earlier build's). */
-export const Compared = z
-  .literal(false)
-  .describe("A retry whose request this build could not compare: what that request did");
 /** A project's area now: a project in an archived area is out of sight with it. */
 export const ProjectArea = z
   .strictObject({

@@ -7,7 +7,6 @@ import { defineEntry } from "../define.ts";
 import {
   WriteAsOf,
   Base,
-  Compared,
   Replayed,
   RequestId,
   TaskRef,
@@ -38,7 +37,6 @@ export const NoteRemoveResult = z.strictObject({
   note: z.string().regex(patterns.entryRef).describe("The note, such as n3"),
   as_of: WriteAsOf,
   replayed: Replayed.optional(),
-  compared: Compared.optional(),
 });
 
 export const noteRemove = defineEntry({
@@ -58,7 +56,14 @@ export const noteRemove = defineEntry({
     // never remove the task.
     cli: { verb: "note", positional: ["task"], when: ["remove", "put_back"] },
   },
-  errors: ["invalid_input", "not_found", "conflict", "forbidden", "request_id_conflict"],
+  errors: [
+    "invalid_input",
+    "not_found",
+    "conflict",
+    "forbidden",
+    "request_id_conflict",
+    "applied_earlier",
+  ],
   examples: [
     {
       title: "Take back note n2 on M-14",

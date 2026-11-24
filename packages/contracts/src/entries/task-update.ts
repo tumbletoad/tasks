@@ -14,7 +14,6 @@ import {
   Mode,
   Priority,
   ProposalId,
-  Compared,
   Replayed,
   RequestId,
   SOURCE_AGENT_MAX,
@@ -99,17 +98,13 @@ export const TaskUpdateResult = z.strictObject({
     .enum(["updated", "no_change", "review", "proposed"])
     .describe("updated, or nothing changed"),
   task: TaskRef,
-  fields: z
-    .array(z.string())
-    .describe("The fields the call changed; absent when a retry could not read them")
-    .optional(),
+  fields: z.array(z.string()).describe("The fields the call changed"),
   context: z.enum(["appended", "replaced"]).describe("How it changed the context").optional(),
   as_of: WriteAsOf,
   proposal: ProposalId.optional(),
   ...InsideFolders,
   warnings: Warnings,
   replayed: Replayed.optional(),
-  compared: Compared.optional(),
 });
 
 export const taskUpdate = defineEntry({
@@ -173,6 +168,7 @@ export const taskUpdate = defineEntry({
     "forbidden",
     "wrong_tool",
     "request_id_conflict",
+    "applied_earlier",
     "ambiguous",
   ],
   examples: [

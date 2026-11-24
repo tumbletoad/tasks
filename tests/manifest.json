@@ -2691,8 +2691,15 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.answers.earlier-version",
+      "title": "A request another version of TTasks applied is answered as applied before, with what its receipt holds and nothing more: each of the twelve writes made by an earlier version, sent again to its own tool or another with a body that parses or not while every read but the receipt fails, gets one applied_earlier answer naming its rows as receipt.get shows them and writes nothing; an update with a retired field names its task, one that cleared a retired place says nothing of fields, an area creation sent to folder.manage names the area and clears nothing, a receipt of a later version is answered the same, in the agent's text too, and a receipt whose result cannot be read still says applied before with its request ID",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.answers.retry-first",
-      "title": "A request decided before is answered from its receipt before this build's rules read its input: an import an earlier build accepted with a mail header's date or February 30 is answered and adds nothing, an import with a field this build retired says the task it made and that the request could not be compared, in the agent's text too, and under its ID to another tool is request_id_conflict; an earlier build's update with a retired field names the fields its commit changed, and while history cannot be read leaves them out and the tool's text says it could not read them; a new request with either is refused, another body under a used request ID is request_id_conflict, and a request ID this build used for one tool is request_id_conflict for any other, whatever its body",
+      "title": "A request ID this version used holds it for that tool and that body: under it, another tool is request_id_conflict whatever its body, and another body to the same tool is request_id_conflict",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2706,7 +2713,7 @@
     },
     {
       "id": "A3.answers.absent",
-      "title": "A write's answer renders without any field it may leave out: every write's example answer with those fields left out still matches its contract and renders in the agent's text and the command line's without a gap, an update whose changed fields could not be read says so and never that none changed, and a retry this build could not compare says so",
+      "title": "A write's answer renders without any field it may leave out: every write's example answer with those fields left out still matches its contract and renders in the agent's text and the command line's without a gap; a request ID with no receipt may be sent again, and one another version applied is printed in one line that says not to send it again, exit 4",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]

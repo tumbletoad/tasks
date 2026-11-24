@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { CLI_NAME } from "@ttasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import {
   ERROR_CODES,
   EXIT_CODES,
@@ -58,6 +58,7 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
       forbidden: 5,
       not_permitted: 5,
       request_id_conflict: 4,
+      applied_earlier: 4,
       too_large: 2,
       cursor_expired: 3,
       space_unavailable: 8,
@@ -861,23 +862,20 @@ describe("[A3.answers.absent] a write's answer prints without any field it may l
     }
   });
 
-  test("a retry that could not read what its change did says so, never that it did nothing", () => {
-    const updated = { result: "updated", task: "M-14", as_of: "1.1047.5n0w8k3q", warnings: [] };
-    expect(render("task.update", updated, "Mira")).toBe(
-      "Updated M-14 in Mira (which fields could not be read)\n",
-    );
-    expect(render("task.update", { ...updated, replayed: true, compared: false }, "Mira")).toBe(
-      "Updated M-14 in Mira (which fields could not be read) (replayed, not compared: an earlier version saved it, and this one cannot compare the command with it)\n",
-    );
-    const finished = {
-      result: "completed",
-      task: "M-14",
-      follow_ups: [],
-      as_of: "1.1047.5n0w8k3q",
-    };
-    expect(render("task.finish", finished, "Mira")).toBe("Finished M-14 in Mira\n");
+  test("a request ID with no receipt may be sent again, and one another version applied may not", () => {
     expect(render("receipt.get", { found: false }, "Mira")).toBe(
       "No receipt for that request ID in this writer scope: nothing was written under it, and the request can be sent again.\n",
     );
+    const io = recorder();
+    const code = printError(io, false, {
+      code: "applied_earlier",
+      message: `Another version of ${PRODUCT_NAME} applied this request before (M-14): nothing was written now.`,
+      hint: "Do not send it again under a new request ID. Read the task for how it is now.",
+      data: { request: "fixture-request-000001", receipt: { found: true, results: [] } },
+    });
+    expect(io.err).toBe(
+      `error applied_earlier: Another version of ${PRODUCT_NAME} applied this request before (M-14): nothing was written now. Do not send it again under a new request ID. Read the task for how it is now.\n`,
+    );
+    expect(code).toBe(EXIT_CODES.conflict);
   });
 });

@@ -15,7 +15,8 @@
         "not_found",
         "too_large",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -104,11 +105,6 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
-          "compared": {
-            "const": false,
-            "description": "A retry whose request this build could not compare: what that request did",
-            "type": "boolean"
-          },
           "entry": {
             "description": "Its ordinal: l3 for a log entry, n2 for a note",
             "pattern": "^[nl][1-9][0-9]{0,5}$",
@@ -170,7 +166,8 @@
         "forbidden",
         "space_unavailable",
         "read_only",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -249,11 +246,6 @@
             "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
-          },
-          "compared": {
-            "const": false,
-            "description": "A retry whose request this build could not compare: what that request did",
-            "type": "boolean"
           },
           "folder": {
             "description": "The folder here as stored, the home as ~; absent once cleared",
@@ -457,7 +449,8 @@
         "conflict",
         "forbidden",
         "space_unavailable",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -669,11 +662,6 @@
             "description": "A list's read, or this write's position: your next base. Names may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
-          },
-          "compared": {
-            "const": false,
-            "description": "A retry whose request this build could not compare: what that request did",
-            "type": "boolean"
           },
           "cursor": {
             "description": "Pass it for the next page",
@@ -947,7 +935,8 @@
         "not_found",
         "conflict",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -986,11 +975,6 @@
             "description": "The change undone or redone",
             "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
-          },
-          "compared": {
-            "const": false,
-            "description": "A retry whose request this build could not compare: what that request did",
-            "type": "boolean"
           },
           "newer_work": {
             "description": "Who changed which task since, one entry per task and author",
@@ -1041,13 +1025,13 @@
             "type": "string"
           },
           "task_count": {
-            "description": "How many tasks it changed; absent when they could not be read",
+            "description": "How many tasks it changed",
             "maximum": 9999999999,
             "minimum": 0,
             "type": "integer"
           },
           "tasks": {
-            "description": "The tasks it changed, the first 50; absent when they could not be read",
+            "description": "The tasks it changed, the first 50",
             "items": {
               "description": "Task reference",
               "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
@@ -1060,6 +1044,8 @@
         "required": [
           "result",
           "commit",
+          "tasks",
+          "task_count",
           "as_of"
         ],
         "type": "object"
@@ -1079,7 +1065,8 @@
         "not_found",
         "conflict",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -1126,11 +1113,6 @@
             "description": "The change undone or redone",
             "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
-          },
-          "compared": {
-            "const": false,
-            "description": "A retry whose request this build could not compare: what that request did",
-            "type": "boolean"
           },
           "newer_work": {
             "description": "Who changed which task since, one entry per task and author",
@@ -1200,13 +1182,13 @@
             "type": "object"
           },
           "task_count": {
-            "description": "How many tasks it changed; absent when they could not be read",
+            "description": "How many tasks it changed",
             "maximum": 9999999999,
             "minimum": 0,
             "type": "integer"
           },
           "tasks": {
-            "description": "The tasks it changed, the first 50; absent when they could not be read",
+            "description": "The tasks it changed, the first 50",
             "items": {
               "description": "Task reference",
               "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
@@ -1265,6 +1247,8 @@
         "required": [
           "result",
           "commit",
+          "tasks",
+          "task_count",
           "as_of"
         ],
         "type": "object"
@@ -1506,7 +1490,8 @@
         "not_found",
         "conflict",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -1561,11 +1546,6 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
-          "compared": {
-            "const": false,
-            "description": "A retry whose request this build could not compare: what that request did",
-            "type": "boolean"
-          },
           "note": {
             "description": "The note, such as n3",
             "pattern": "^[nl][1-9][0-9]{0,5}$",
@@ -1615,7 +1595,8 @@
         "forbidden",
         "conflict",
         "space_unavailable",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -1803,11 +1784,6 @@
               "type": "object"
             },
             "type": "array"
-          },
-          "compared": {
-            "const": false,
-            "description": "A retry whose request this build could not compare: what that request did",
-            "type": "boolean"
           },
           "prefs": {
             "description": "The keys asked for, sorted; absent on a set when they could not be read",
@@ -3121,7 +3097,8 @@
         "invalid_input",
         "too_large",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -3325,11 +3302,6 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
-          "compared": {
-            "const": false,
-            "description": "A retry whose request this build could not compare: what that request did",
-            "type": "boolean"
-          },
           "proposal": {
             "description": "Proposal ID",
             "pattern": "^pr_[0-9a-hjkmnp-tv-z]{26}$",
@@ -3466,7 +3438,8 @@
         "not_found",
         "conflict",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -3540,11 +3513,6 @@
             "description": "The change, which Undo names",
             "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
-          },
-          "compared": {
-            "const": false,
-            "description": "A retry whose request this build could not compare: what that request did",
-            "type": "boolean"
           },
           "later": {
             "description": "Tasks of the change in the Trash from a later change, which restores them",
@@ -3691,7 +3659,8 @@
         "unbound",
         "conflict",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -3935,11 +3904,6 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
-          "compared": {
-            "const": false,
-            "description": "A retry whose request this build could not compare: what that request did",
-            "type": "boolean"
-          },
           "follow_ups": {
             "description": "One row per follow-up draft",
             "items": {
@@ -4025,7 +3989,7 @@
             "type": "array"
           },
           "learnings": {
-            "description": "Learnings recorded; absent when a retry could not read them",
+            "description": "Learnings recorded",
             "maximum": 20,
             "minimum": 0,
             "type": "integer"
@@ -4082,6 +4046,8 @@
         "required": [
           "result",
           "task",
+          "lifecycle",
+          "learnings",
           "follow_ups",
           "as_of"
         ],
@@ -6395,7 +6361,8 @@
         "unbound",
         "conflict",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -6450,11 +6417,6 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
-          "compared": {
-            "const": false,
-            "description": "A retry whose request this build could not compare: what that request did",
-            "type": "boolean"
-          },
           "lifecycle": {
             "description": "Lifecycle",
             "enum": [
@@ -6483,7 +6445,7 @@
             "type": "string"
           },
           "status": {
-            "description": "Status key; absent when a retry could not read it",
+            "description": "Status key",
             "type": "string"
           },
           "task": {
@@ -6496,6 +6458,7 @@
           "result",
           "task",
           "lifecycle",
+          "status",
           "as_of"
         ],
         "type": "object"
@@ -7331,6 +7294,7 @@
         "forbidden",
         "wrong_tool",
         "request_id_conflict",
+        "applied_earlier",
         "ambiguous"
       ],
       "input": {
@@ -7586,11 +7550,6 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
-          "compared": {
-            "const": false,
-            "description": "A retry whose request this build could not compare: what that request did",
-            "type": "boolean"
-          },
           "context": {
             "description": "How it changed the context",
             "enum": [
@@ -7600,7 +7559,7 @@
             "type": "string"
           },
           "fields": {
-            "description": "The fields the call changed; absent when a retry could not read them",
+            "description": "The fields the call changed",
             "items": {
               "type": "string"
             },
@@ -7737,6 +7696,7 @@
         "required": [
           "result",
           "task",
+          "fields",
           "as_of",
           "warnings"
         ],

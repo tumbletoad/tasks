@@ -14,7 +14,6 @@ import {
   idPattern,
   InsideFolders,
   ProjectArea,
-  Compared,
   Replayed,
   RequestId,
   TaskRef,
@@ -65,7 +64,6 @@ export const FolderManageResult = z.strictObject({
   ...InsideFolders,
   as_of: WriteAsOf,
   replayed: Replayed.optional(),
-  compared: Compared.optional(),
 });
 
 export const folderManage = defineEntry({
@@ -96,6 +94,7 @@ export const folderManage = defineEntry({
     "space_unavailable",
     "read_only",
     "request_id_conflict",
+    "applied_earlier",
   ],
   examples: [
     {

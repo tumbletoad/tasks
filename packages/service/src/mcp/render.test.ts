@@ -775,17 +775,4 @@ describe("[A3.answers.absent] a write's answer renders without any field it may 
       });
     }
   });
-
-  test("a retry that could not read what its update changed says so, and one not compared says that", () => {
-    const answer = { result: "updated", task: "M-14", as_of: "1.1047.5n0w8k3q", warnings: [] };
-    expect(renderResult("task.update", answer)).toBe(
-      "updated M-14: fields not read · as_of 1.1047.5n0w8k3q",
-    );
-    expect(renderResult("task.update", { ...answer, replayed: true, compared: false })).toMatch(
-      / \(replayed, not compared: an earlier version saved it, and this one cannot compare your request with it\)$/u,
-    );
-    expect(
-      renderResult("task.finish", { ...example("task.finish", 0), learnings: undefined }),
-    ).not.toContain("undefined");
-  });
 });

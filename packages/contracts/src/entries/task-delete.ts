@@ -9,7 +9,6 @@ import { safeText } from "../safe-text.ts";
 import {
   WriteAsOf,
   Base,
-  Compared,
   Replayed,
   RequestId,
   SourceId,
@@ -86,7 +85,6 @@ export const TaskDeleteResult = z.strictObject({
   commit: CommitId.describe("The change, which Undo names").optional(),
   as_of: WriteAsOf,
   replayed: Replayed.optional(),
-  compared: Compared.optional(),
 });
 
 export const taskDelete = defineEntry({
@@ -107,7 +105,14 @@ export const taskDelete = defineEntry({
       { verb: "restore", positional: ["tasks"], fixed: { restore: true } },
     ],
   },
-  errors: ["invalid_input", "not_found", "conflict", "forbidden", "request_id_conflict"],
+  errors: [
+    "invalid_input",
+    "not_found",
+    "conflict",
+    "forbidden",
+    "request_id_conflict",
+    "applied_earlier",
+  ],
   examples: [
     {
       title: "Move two duplicates to the Trash",

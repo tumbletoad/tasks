@@ -8,7 +8,6 @@ import {
   WriteAsOf,
   ENTRY_KINDS_IN,
   PastInput,
-  Compared,
   Replayed,
   RequestId,
   TaskRef,
@@ -54,7 +53,6 @@ export const EntryAddResult = z.strictObject({
   kind: z.enum(ENTRY_KINDS_IN).describe("Entry kind"),
   as_of: WriteAsOf,
   replayed: Replayed.optional(),
-  compared: Compared.optional(),
 });
 
 export const entryAdd = defineEntry({
@@ -93,6 +91,7 @@ export const entryAdd = defineEntry({
     "too_large",
     "forbidden",
     "request_id_conflict",
+    "applied_earlier",
   ],
   examples: [
     {

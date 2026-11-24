@@ -9,7 +9,6 @@ import {
   Lifecycle,
   Mode,
   ProposalId,
-  Compared,
   Replayed,
   RequestId,
   TaskRef,
@@ -29,11 +28,10 @@ export const TaskReopenResult = z.strictObject({
   result: z.enum(["reopened", "no_change", "proposed"]).describe("reopened, or already active"),
   task: TaskRef,
   lifecycle: Lifecycle,
-  status: z.string().describe("Status key; absent when a retry could not read it").optional(),
+  status: z.string().describe("Status key"),
   proposal: ProposalId.optional(),
   as_of: WriteAsOf,
   replayed: Replayed.optional(),
-  compared: Compared.optional(),
 });
 
 export const taskReopen = defineEntry({
@@ -61,7 +59,15 @@ export const taskReopen = defineEntry({
     },
   },
   budget: { typical: 40, max: 150 },
-  errors: ["invalid_input", "not_found", "unbound", "conflict", "forbidden", "request_id_conflict"],
+  errors: [
+    "invalid_input",
+    "not_found",
+    "unbound",
+    "conflict",
+    "forbidden",
+    "request_id_conflict",
+    "applied_earlier",
+  ],
   examples: [
     {
       title: "Reopen M-3 when its bug comes back",

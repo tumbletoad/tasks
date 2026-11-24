@@ -124,12 +124,7 @@ export function printUsage(io: Io, json: boolean, message: string): number {
 
 type Result = Record<string, unknown>;
 
-const replay = (r: Result) =>
-  r["replayed"] !== true
-    ? ""
-    : r["compared"] === false
-      ? " (replayed, not compared: an earlier version saved it, and this one cannot compare the command with it)"
-      : " (replayed)";
+const replay = (r: Result) => (r["replayed"] === true ? " (replayed)" : "");
 
 /**
  * A finished task's state as a person says it: completed, or dropped for an archived one.
@@ -484,14 +479,11 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       }
       break;
     case "task.update": {
-      // A retry that could not read which fields its change changed says so, never that none did.
-      const fields = result["fields"] as string[] | undefined;
-      const which =
-        fields === undefined ? " (which fields could not be read)" : `: ${fields.join(", ")}`;
+      const fields = (result["fields"] as string[] | undefined) ?? [];
       lines.push(
         result["result"] === "no_change"
           ? `No change to ${String(result["task"])} in ${space}${replay(result)}`
-          : `Updated ${String(result["task"])} in ${space}${which}${replay(result)}`,
+          : `Updated ${String(result["task"])} in ${space}: ${fields.join(", ")}${replay(result)}`,
       );
       lines.push(...insideLines(result));
       break;
@@ -515,12 +507,11 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       break;
     }
     case "task.finish": {
-      // A retry that could not read the task's lifecycle says only that it is finished.
-      const state = finished(result["lifecycle"]) ?? "finished";
+      const dropped = result["lifecycle"] === "archived";
       lines.push(
         result["result"] === "no_change"
-          ? `${String(result["task"])} is already ${state} in ${space}${replay(result)}`
-          : `${state.charAt(0).toUpperCase()}${state.slice(1)} ${String(result["task"])} in ${space}${replay(result)}`,
+          ? `${String(result["task"])} is already ${dropped ? "dropped" : "completed"} in ${space}${replay(result)}`
+          : `${dropped ? "Dropped" : "Completed"} ${String(result["task"])} in ${space}${replay(result)}`,
       );
       for (const f of (result["follow_ups"] as Result[] | undefined) ?? []) {
         lines.push(draftLine(f, space, "a follow-up's"), ...heldLines(f));
