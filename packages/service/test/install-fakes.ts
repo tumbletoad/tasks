@@ -457,6 +457,7 @@ function dataFolders(data: string) {
     workdirs: join(state, "workdirs"),
     spaces: join(data, "spaces"),
     skills: join(data, "skills"),
+    backups: `${data}-backups`,
   };
 }
 

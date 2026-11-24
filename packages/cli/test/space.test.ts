@@ -155,7 +155,8 @@ describe("[A2.3.10.cli.space] ttasks space through the service", () => {
       );
     expect(told).toMatch(heading("This copy's", ownName));
     expect(told).toMatch(heading("Another copy's", name));
-    expect(told.indexOf("This copy's")).toBe(0);
+    // Under the folder they are in, this copy's first.
+    expect(told.startsWith(`In ${listing.folder}:\nThis copy's`)).toBe(true);
 
     // Into a new folder while the space is open: a read-only copy, made but not opened beside the
     // space it is a copy of, and the answer says how to look inside it.
@@ -384,15 +385,17 @@ describe("[A2.3.10.cli.space-export] ttasks space export writes a bundle that re
     ]);
     expect(added.code, added.stdout + added.stderr).toBe(0);
     const names: string[] = [];
+    let dir = "";
     for (let i = 0; i < 2; i += 1) {
       const backup = await user(["space", "backup", folder, "--json"]);
       expect(backup.code, backup.stdout + backup.stderr).toBe(0);
-      names.push((parsed(backup.stdout)["backup"] as { name: string }).name);
+      const made = parsed(backup.stdout)["backup"] as { name: string; folder: string };
+      names.push(made.name);
+      dir = made.folder;
       // Two backups, two names: a backup's name has the millisecond it began.
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     // The newer backup no longer verifies, though its size is right.
-    const dir = join(folder, "backups");
     const newer = join(dir, `${names[1] ?? ""}.db.gz`);
     const bytes = readFileSync(newer);
     bytes[bytes.length - 5] = (bytes[bytes.length - 5] ?? 0) ^ 1;
@@ -466,7 +469,7 @@ const BACKUP_WAY = [
   "To move the space, restore a backup into a new local folder and claim the copy:",
   `  ${CLI_NAME} space backup <folder>`,
   `  ${CLI_NAME} space close <folder>`,
-  `  ${CLI_NAME} space restore <folder>/backups/<name>.db.gz --to <new folder>`,
+  `  ${CLI_NAME} space restore <name> <folder> --to <new folder>`,
   `  ${CLI_NAME} space claim <new folder>`,
   "<name> is the name the backup prints. <new folder> must not exist yet.",
   "The old folder stays where it is, closed, and keeps all its files.",
@@ -490,20 +493,15 @@ describe("[A1.5.sync.way-out] a space read-only for its synced or network folder
     // The printed commands, with this space's folder and a new one.
     const backup = await user(["space", "backup", folder]);
     expect(backup.code, backup.stdout + backup.stderr).toBe(0);
-    const name = /^Backed up to (\S+) /u.exec(backup.stdout)?.[1] ?? "";
+    const [, name = "", backups = ""] =
+      /^Backed up to (\S+) \(seq \d+\) in (.+)$/mu.exec(backup.stdout) ?? [];
     expect(name).not.toBe("");
     const closed = await user(["space", "close", folder]);
     expect(closed.code, closed.stdout + closed.stderr).toBe(0);
     // A copy restored into the synced folder is one to look inside, and offers no claim, which the
     // service would refuse there: the folder's own ways out are named.
     const inSync = join(synced, "notes-copy");
-    const looked = await user([
-      "space",
-      "restore",
-      `${folder}/backups/${name}.db.gz`,
-      "--to",
-      inSync,
-    ]);
+    const looked = await user(["space", "restore", name, folder, "--to", inSync]);
     expect(looked.code, looked.stdout + looked.stderr).toBe(0);
     expect(looked.stdout).toContain(", to look inside.\n");
     expect(looked.stdout).not.toContain("space claim <folder>");
@@ -512,13 +510,7 @@ describe("[A1.5.sync.way-out] a space read-only for its synced or network folder
     expect(unclaimed.code).not.toBe(0);
     expect((await user(["space", "close", inSync])).code).toBe(0);
     const copy = join(world.root, "s", "notes");
-    const restored = await user([
-      "space",
-      "restore",
-      `${folder}/backups/${name}.db.gz`,
-      "--to",
-      copy,
-    ]);
+    const restored = await user(["space", "restore", name, folder, "--to", copy]);
     expect(restored.code, restored.stdout + restored.stderr).toBe(0);
     const claimed = await user(["space", "claim", copy]);
     expect(claimed.code, claimed.stdout + claimed.stderr).toBe(0);
@@ -529,7 +521,7 @@ describe("[A1.5.sync.way-out] a space read-only for its synced or network folder
     expect(listed.find((s) => s.folder === copy)).toMatchObject({ name: "Notes", state: "open" });
     expect(listed.find((s) => s.folder === folder)).toMatchObject({ state: "closed" });
     expect(existsSync(join(folder, "space.db"))).toBe(true);
-    expect(existsSync(join(folder, "backups", `${name}.db.gz`))).toBe(true);
+    expect(existsSync(join(backups, `${name}.db.gz`))).toBe(true);
   }, 240_000);
 
   test("on a network file system only the backup way; no other state names one", () => {
@@ -677,8 +669,8 @@ describe("[A2.3.10.cli.space-words] what ttasks space says, and the ways it name
     expect((await user(["space", "create", "Other", "--path", folder])).code).toBe(0);
     const made = await user(["space", "backup", folder, "--json"]);
     expect(made.code, made.stdout + made.stderr).toBe(0);
-    const name = (parsed(made.stdout)["backup"] as { name: string }).name;
-    const file = join(folder, "backups", `${name}.db.gz`);
+    const { name, folder: dir } = parsed(made.stdout)["backup"] as { name: string; folder: string };
+    const file = join(dir, `${name}.db.gz`);
     const copy = join(world.root, "s", "other-as-mira");
     // Named by its argument or by --space: the same statement, the same refusal.
     for (const named of [["Mira"], ["--space", "Mira"]]) {

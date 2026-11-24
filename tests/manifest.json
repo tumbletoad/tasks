@@ -687,6 +687,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.backup.outside-home",
+      "title": "A space's backups go to a folder per space beside the TTasks home, never inside it; backups made before in the space's own folder stay there untouched, listed with their folder, and restore by name and as latest, also before the first backup beside the home",
+      "source": "A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.backup.folder-away",
       "title": "Through the service, a backups folder set for the space that is not there is said as not there, with its path, by the backup list, restore latest, a backup now and the upkeep, and no backup makes a folder in its place: an upgrade goes on behind a backup in the space's own backups folder, which the space list names and a restore by name finds; restore latest from a folder with no backup of the space says there is none",
       "source": "A1 3.18",

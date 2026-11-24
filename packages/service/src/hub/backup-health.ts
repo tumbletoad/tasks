@@ -13,7 +13,7 @@ import type { MaintenanceReport } from "./maintenance.ts";
  * - `unverified`: the newest backup was made but does not pass a trial restore.
  * - `unchecked`: the newest backup's trial restore could not run, for want of free space beside it
  *   (BUNDLE_LIMIT_EXCEEDED) or for another reason that is not the backup's. Nothing is known of it.
- * - `away`: the backups folder this machine set for the space is not there.
+ * - `away`: the space's backups folder is not there (a drive away, or one that cannot be made).
  */
 export type BackupTroubleWhy = "disk_full" | "failed" | "unverified" | "unchecked" | "away";
 
@@ -140,7 +140,7 @@ export function troubleView(health: BackupHealth): BackupTroubleView | undefined
       trouble.code === NO_ROOM
         ? `The newest backup could not be trial restored: the disk of its backups folder lacks the free space for the trial, with 1 GB to spare${code}. It is kept, and no backup was removed. Free some space: the next daily backup checks it again.`
         : `The newest backup could not be trial restored${code}. It is kept, and no backup was removed. Check the disk of its backups folder: the next daily backup checks it again.`,
-    away: `The backups folder set for this space is not there, so no daily backup was made. If it is on a drive that is not connected, connect it; otherwise create the folder. ${CLI_NAME} space backups <folder> names it.`,
+    away: `The backups folder for this space is not there, so no daily backup was made. If it is on a drive that is not connected, connect it; otherwise create the folder. ${CLI_NAME} space backups <folder> names it.`,
   }[trouble.why];
   const good =
     lastGood === undefined ? "" : ` The newest backup known to restore is from ${local(lastGood)}.`;

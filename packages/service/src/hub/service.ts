@@ -932,6 +932,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       spaces: {
         machine,
         settingsDir: layout.state,
+        backups: layout.backups,
         defaultSpace: () => defaults.get(),
         clearDefault: (id: string) => defaults.clear(id),
         // What the space verbs do is recorded in machine.toml's [[spaces]] (space-records.ts).
@@ -1135,6 +1136,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       instance,
       stateDir: canonical,
       settingsDir: layout.state,
+      backups: layout.backups,
       log,
       // The maintenance worker's work (A1 3.9): the backups, and each open space's projection.
       ...(options.maintenance === false

@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
-import { backupsFolder, createSpace, newId, type Id } from "@ttasks/storage";
+import { createSpace, newId, type Id } from "@ttasks/storage";
 import { checkedDriver } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { startService, type RunningService } from "../src/hub/service.ts";
@@ -275,16 +275,18 @@ describe("[A1.5.sync.read-only] the service serves a synced or network space rea
         [onNet, NETWORK],
       ] as const) {
         // A backup is a file of its own, which A1 3.2 lets go to a synced folder.
-        const { name } = (await call(s, "space/backup", { space: folder }))["backup"] as {
+        const made = (await call(s, "space/backup", { space: folder }))["backup"] as {
           name: string;
+          folder: string;
         };
+        const { name } = made;
         const before = digest(folder);
         const body = await rejected(call(s, "space/restore", { backup: name, space: folder }));
         expect(body, folder).toMatchObject({ code: "read_only", message: words });
         expect(digest(folder), folder).toBe(before);
         expect(readdirSync(dirname(folder)), folder).toEqual([basename(folder)]);
         // Into a new local folder, the restore goes ahead.
-        const file = join(backupsFolder(folder), `${name}.db.gz`);
+        const file = join(made.folder, `${name}.db.gz`);
         const to = join(world.root, "Restored", basename(folder));
         mkdirSync(dirname(to), { recursive: true });
         expect(await call(s, "space/restore", { backup: file, to }), folder).toMatchObject({

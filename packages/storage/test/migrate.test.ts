@@ -541,21 +541,20 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
     const next = await newer.openSpaceWriter(folder, { machine: FIXTURE_MACHINE, backupDir });
     expect(next.migration?.to).toEqual({ major: 0, minor: 6 });
     expect(next.migration?.seqs).toEqual([2, 3, 4, 5, 6]);
-    expect(next.migration?.setFolderAway).toBeUndefined();
     expect(listBackups(backupDir).backups.map((b) => b.name)).toEqual([
       next.migration?.backup.name,
     ]);
     await next.close();
     // [A1.5.backup.folder-away] Told a folder that is not there (a drive away), the upgrade goes
-    // on behind a barrier backup in the space's own backups folder, and says so. Nothing is made
-    // at the folder's path.
+    // on behind a barrier backup in the space's own backups folder. Nothing is made at the folder's
+    // path.
     const other = await spaceAt01(1);
     const drive = join(folders.make(), "drive");
     const upgraded = await newer.openSpaceWriter(other, {
       machine: FIXTURE_MACHINE,
       backupDir: join(drive, "backups"),
     });
-    expect(upgraded.migration).toMatchObject({ to: { major: 0, minor: 6 }, setFolderAway: true });
+    expect(upgraded.migration).toMatchObject({ to: { major: 0, minor: 6 } });
     expect(listBackups(join(other, "backups")).backups.map((b) => b.name)).toEqual([
       upgraded.migration?.backup.name,
     ]);

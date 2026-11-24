@@ -120,6 +120,8 @@ export interface SpaceRow {
   backup?: { why?: string; message?: string };
   /** A restored copy not claimed: when it was restored, and from which backup file. */
   restored?: { at: string; backup?: string };
+  /** Where the space's backups are written. */
+  backups_folder?: string;
 }
 
 /** Options of a space command: `--name value` or `--flag`. Values are never shown in errors. */
@@ -173,8 +175,7 @@ const CHECK_FAILED_WAY = [
  * runs them: confirm a synced folder is excluded from sync, or restore a backup into a new local
  * folder and claim the copy, which leaves the old folder where it is. A database that failed its
  * check gets its two actions instead, and never a new backup of it: restore the newest backup
- * that verifies into a new folder, or rescue the rows that can still be read. The backup's file is
- * in the space's own backups folder: machine-local `backup.dir` is written by no command yet.
+ * that verifies into a new folder, or rescue the rows that can still be read.
  */
 export function wayOut(row: Pick<SpaceRow, "state" | "reason"> & Partial<SpaceRow>): string[] {
   if (row.state !== "read_only") return [];
@@ -185,7 +186,7 @@ export function wayOut(row: Pick<SpaceRow, "state" | "reason"> & Partial<SpaceRo
     "To move the space, restore a backup into a new local folder and claim the copy:",
     `  ${CLI_NAME} space backup <folder>`,
     `  ${CLI_NAME} space close <folder>`,
-    `  ${CLI_NAME} space restore <folder>/backups/<name>.db.gz --to <new folder>`,
+    `  ${CLI_NAME} space restore <name> <folder> --to <new folder>`,
     `  ${CLI_NAME} space claim <new folder>`,
     "<name> is the name the backup prints. <new folder> must not exist yet.",
     "The old folder stays where it is, closed, and keeps all its files.",
@@ -227,6 +228,7 @@ function printSpace(io: Io, row: SpaceRow, verb: string, isDefault = false): voi
   if (row.message !== undefined) io.stdout(`  ${row.message}\n`);
   if (row.migrated !== undefined) io.stdout(`  ${migratedLine(row.migrated)}\n`);
   if (row.backup?.message !== undefined) io.stdout(`  ${row.backup.message}\n`);
+  if (row.backups_folder !== undefined) io.stdout(`  Backups: ${row.backups_folder}\n`);
   for (const line of wayOut(row)) io.stdout(`  ${line}\n`);
 }
 
@@ -449,7 +451,9 @@ export async function spaceCommand(
         out(result, () => {
           if (sub === "backup") {
             const backup = result["backup"] as Record<string, unknown>;
-            io.stdout(`Backed up to ${String(backup["name"])} (seq ${String(backup["seq"])})\n`);
+            io.stdout(
+              `Backed up to ${String(backup["name"])} (seq ${String(backup["seq"])})${typeof backup["folder"] === "string" ? ` in ${backup["folder"]}` : ""}\n`,
+            );
           } else if (sub === "recover" && result["recovered"] === false) {
             const row = result["space"] as SpaceRow;
             io.stdout(`${row.name ?? row.folder ?? "The space"} needs no recovery.\n`);
@@ -482,26 +486,36 @@ export async function spaceCommand(
         if (o.positional.length > 1) throw new UsageError("ttasks space backups takes one <space>");
         const result = await call("space/backups", { space: await which(o.positional[0]) });
         out(result, () => {
-          const backups = result["backups"] as Record<string, unknown>[];
+          const all = result["backups"] as Record<string, unknown>[];
           const histories = (result["histories"] ?? []) as History[];
-          if (backups.length === 0) io.stdout("No backups.\n");
+          const folder = result["folder"];
+          if (all.length === 0) {
+            io.stdout(typeof folder === "string" ? `No backups in ${folder}.\n` : "No backups.\n");
+          }
           const line = (b: Record<string, unknown>): void => {
             io.stdout(
               `${str(b["name"])}  ${str(b["state"])}${b["size"] === undefined ? "" : `  ${str(b["size"])} bytes`}\n`,
             );
           };
-          // One copy's backups need no heading; several copies' are told apart by when each was
-          // last written to and how far it goes.
-          if (histories.length > 1) {
-            for (const h of histories) {
-              io.stdout(`${historyLine(h)}:\n`);
-              for (const b of backups) if (b["history"] === h.incarnation) line(b);
+          // Each folder that holds some: the backups folder, then the space's own, where backups
+          // went before. One copy's backups need no heading; several copies' are told apart by
+          // when each was last written to and how far it goes.
+          for (const where of new Set(all.map((b) => b["folder"]))) {
+            const backups = all.filter((b) => b["folder"] === where);
+            if (typeof where === "string") io.stdout(`In ${where}:\n`);
+            if (histories.length > 1) {
+              for (const h of histories) {
+                const of = backups.filter((b) => b["history"] === h.incarnation);
+                if (of.length === 0) continue;
+                io.stdout(`${historyLine(h)}:\n`);
+                for (const b of of) line(b);
+              }
+              const loose = backups.filter((b) => b["history"] === undefined);
+              if (loose.length > 0) io.stdout("Whose sidecar does not read, of no known copy:\n");
+              for (const b of loose) line(b);
+            } else {
+              for (const b of backups) line(b);
             }
-            const loose = backups.filter((b) => b["history"] === undefined);
-            if (loose.length > 0) io.stdout("Whose sidecar does not read, of no known copy:\n");
-            for (const b of loose) line(b);
-          } else {
-            for (const b of backups) line(b);
           }
           for (const name of result["leftovers"] as string[]) io.stdout(`leftover ${name}\n`);
         });

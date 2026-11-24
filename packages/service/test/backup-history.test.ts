@@ -10,7 +10,7 @@ import { join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import { RUN_LIMITS } from "@ttasks/contracts/runs";
 import { SpaceExecutionStore } from "@ttasks/launch";
-import { backupsFolder, newId } from "@ttasks/storage";
+import { newId } from "@ttasks/storage";
 import type { Containers } from "@ttasks/runs";
 import { afterEach, describe, expect, test } from "vitest";
 import { COPY_HEADER, SPACE_HEADER } from "../src/http/app.ts";
@@ -203,7 +203,7 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
       });
       const lastRequest = `backup-history-${String(n).padStart(6, "0")}`;
       const backup = (await user.call("space/backup", { space: mira.folder }, CALL)) as {
-        backup: { name: string };
+        backup: { name: string; folder: string };
       };
 
       const held = () =>
@@ -399,8 +399,8 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
       await user.call("space/claim", { space: copyFolder }, CALL);
       await ended(copyFolder);
 
-      // A restore of the same backup in place does the same. Its file is in the original's folder.
-      const file = join(backupsFolder(mira.folder), `${backup.backup.name}.db.gz`);
+      // A restore of the same backup in place does the same, by its file.
+      const file = join(backup.backup.folder, `${backup.backup.name}.db.gz`);
       await user.call("space/restore", { backup: file, space: copyFolder }, CALL);
       await ended(copyFolder);
 

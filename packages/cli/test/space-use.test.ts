@@ -52,7 +52,6 @@ describe("[A2.3.10.cli.space-use] ttasks space use: the machine's default space"
     const name = (parsed(backup.stdout)["backup"] as { name: string }).name;
     const backups = await user(["space", "backups", "--json"]);
     expect(backups.code, backups.stdout + backups.stderr).toBe(0);
-    expect(parsed(backups.stdout)["folder"]).toContain(join("s", "life"));
     expect(parsed(backups.stdout)["backups"]).toContainEqual(expect.objectContaining({ name }));
     const recover = await user(["recover"]);
     expect(recover.code, recover.stdout + recover.stderr).toBe(0);

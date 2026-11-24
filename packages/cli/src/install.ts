@@ -181,6 +181,7 @@ export async function installCommand(
       `Installed ${PRODUCT_NAME} ${finished.version} (${finished.build}) in ${finished.root}, install ID ${finished.installId}.`,
       `Its command: ${finished.command}`,
       `To have its service start by itself: ${finished.command} service install`,
+      `Its data is in ${target.layout.data}. Backups of its spaces go to ${target.layout.backups}, outside it.`,
       "",
     ].join("\n"),
   );

@@ -1,8 +1,8 @@
 // What this machine keeps about each space, outside every space folder (A1 3.1 "Machine-local
 // state"): `<state>/spaces/<space_id>.json`. These entries matter to the service now:
 //
-// - `backup.dir`: the machine-local backup folder (A1 3.18). The service only reads it: a later
-//   step that owns the space's settings writes it. Default: the space's own `backups/`.
+// - `backup.dir`: the machine-local backup folder (A1 3.18). The service only reads it: no command
+//   writes it. Default: `<backups>/<space ID>`, beside the TTasks home (backupsFolderOf).
 // - `projection_rescues`: each batch of the projection that moved entries a person made or edited
 //   aside (A1 3.13 rule 3): when, how many, and the stem of its rescue folders relative to the
 //   space's folder (`exchange/rescued/<stem>`, each rescue in `<stem>-<n>`: a time stamp, never a
@@ -28,8 +28,8 @@
 //   MAX_FAILED_MIGRATIONS of the current build are kept. An entry that does not read back whole is
 //   no entry: the open then tries again, behind a new barrier backup, which is the safe direction.
 // - `last_migration`: the newest migration that succeeded here: its revisions, when, and its
-//   barrier backup's name. The space list and doctor show it, so a person who misses something
-//   after an update knows what changed and which backup is from just before.
+//   barrier backup's name and folder. The space list and doctor show it, so a person who misses
+//   something after an update knows what changed and which backup is from just before.
 //
 // Beside this file, in the same folder, the projection keeps its trusted state for each folder
 // that holds the space (`<space_id>.<folder key>.projection.json` and
@@ -41,7 +41,14 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { isId, type Id, type MigrationAttempt } from "@ttasks/storage";
+import {
+  isId,
+  makeDurableFolder,
+  NODE_IO,
+  type FileIo,
+  type Id,
+  type MigrationAttempt,
+} from "@ttasks/storage";
 import { atomicWrite, makeDir } from "./files.ts";
 
 export const SPACES_FOLDER = "spaces";
@@ -110,11 +117,43 @@ export interface LastMigration {
   readonly to: string;
   readonly at: string;
   readonly backup?: string;
-  /**
-   * The folder that backup is in, when it is not the one set for the space: that one was not there
-   * at the upgrade (a drive away), so it went to the space's own backups folder.
-   */
+  /** The folder that backup went to. A record written before folders were recorded has none. */
   readonly backup_folder?: string;
+}
+
+/**
+ * Where a space's backups are written on this machine: `backup.dir` when this machine set one
+ * (`set`: a person's choice, maybe on a drive that is away, so never made here and never cleaned),
+ * else `<backups>/<space ID>` beside the TTasks home (paths.ts), which this service alone writes.
+ * The space's own `backups/` (storage's backupsFolder), where backups went before, is only read.
+ */
+export function backupsFolderOf(
+  settings: SpaceSettings,
+  backups: string,
+  spaceId: Id<"sp">,
+): { readonly dir: string; readonly set: boolean } {
+  return settings.backupDir === undefined
+    ? { dir: join(backups, spaceId), set: false }
+    : { dir: settings.backupDir, set: true };
+}
+
+/**
+ * The folder a backup is about to be written to. The default is made here with each new folder's
+ * entry synced in its parent, so a power loss cannot keep an upgrade and lose the folder of the
+ * backup from before it. When that fails: undefined, and the backups folder is not there. Only an
+ * upgrade then goes on, behind a backup in the space's own `backups/` (storage's migrate runner).
+ */
+export function readyBackupsFolder(
+  folder: { readonly dir: string; readonly set: boolean },
+  io: FileIo = NODE_IO,
+): string | undefined {
+  if (folder.set) return folder.dir;
+  try {
+    makeDurableFolder(folder.dir, io);
+    return folder.dir;
+  } catch {
+    return undefined;
+  }
 }
 
 const fileOf = (state: string, spaceId: Id<"sp">): string =>
@@ -258,8 +297,7 @@ function lastMigrationOf(value: unknown): LastMigration | undefined {
 
 /**
  * Records a migration that succeeded on this machine: from and to (user_version values), its
- * barrier backup's name, and its folder when that is not the one set for the space. Other fields
- * are kept.
+ * barrier backup's name and folder. Other fields are kept.
  */
 export function recordMigration(
   state: string,

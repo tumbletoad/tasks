@@ -33,6 +33,7 @@ import { workerWithSteps } from "../../storage/test/worker-helpers.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
 import { readSpaceSettings } from "../src/hub/space-settings.ts";
 import {
+  backupsOf,
   READY_MS,
   readLog,
   registerSpaces,
@@ -143,7 +144,7 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
       }),
     ]);
     expect(events(home, "space.open")).toEqual([expect.objectContaining({ migrated: true })]);
-    const barrier = listBackups(backupsFolder(ok.folder)).backups;
+    const barrier = listBackups(backupsOf(home, ok.space.spaceId)).backups;
     expect(barrier.map((b) => [b.sidecar?.kind, b.state])).toEqual([["pre-migrate", "ok"]]);
     await migrating.stop();
 
@@ -155,7 +156,7 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
       maintenance: false,
     });
     const [view] = failing.spaces();
-    const backup = listBackups(backupsFolder(bad.folder)).backups[0];
+    const backup = listBackups(backupsOf(home, bad.space.spaceId)).backups[0];
     expect(backup?.sidecar).toMatchObject({ kind: "pre-migrate", user_version: 1 });
     expect(view).toEqual({
       entry: 0,
@@ -259,7 +260,7 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     expect(readdirSync(spaces).sort()).toEqual(["work", `work.replaced-${stamp}`]);
   }, 120_000);
 
-  test("an open space's upkeep: old leftovers in its own backups folder go, the daily backup is taken, retention runs; a machine-local backup.dir is used and never cleaned", async () => {
+  test("an open space's upkeep: old leftovers in its backups folder go, the daily backup is taken there, retention runs; the space's own backups/ and a machine-local backup.dir are never cleaned", async () => {
     const machine = newId("m");
     const { root, home, spaces } = setUp("keep", machine);
     const own = await fixtureSpace(join(spaces, "own"), machine);
@@ -272,8 +273,10 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
       utimesSync(path, hoursAgo(age), hoursAgo(age));
       return path;
     };
-    const oldOwn = leftover(backupsFolder(own.folder), "0123456789abcdef", 2);
-    const freshOwn = leftover(backupsFolder(own.folder), "fedcba9876543210", 0);
+    const oldOwn = leftover(backupsOf(home, own.space.spaceId), "0123456789abcdef", 2);
+    const freshOwn = leftover(backupsOf(home, own.space.spaceId), "fedcba9876543210", 0);
+    // Where backups went before: only read now.
+    const oldBefore = leftover(backupsFolder(own.folder), "0123456789abcdee", 2);
     // The second space keeps its backups in a machine-local folder, shared or not: never cleaned.
     const shared = join(root, "shared-backups");
     const oldShared = leftover(shared, "00112233445566aa", 2);
@@ -299,10 +302,12 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     expect(maintained.find((e) => e["entry"] === 1)).toMatchObject({ leftovers: 0 });
     expect(existsSync(oldOwn)).toBe(false);
     expect(existsSync(freshOwn)).toBe(true);
+    expect(existsSync(oldBefore)).toBe(true);
     expect(existsSync(oldShared)).toBe(true);
     const daily = (dir: string) =>
       listBackups(dir).backups.filter((b) => b.sidecar?.kind === "daily" && b.state === "ok");
-    expect(daily(backupsFolder(own.folder))).toHaveLength(1);
+    expect(daily(backupsOf(home, own.space.spaceId))).toHaveLength(1);
+    expect(daily(backupsFolder(own.folder))).toHaveLength(0);
     expect(daily(shared).map((b) => b.sidecar?.space_id)).toEqual([elsewhere.space.spaceId]);
     expect(existsSync(backupsFolder(elsewhere.folder))).toBe(false);
   }, 120_000);
