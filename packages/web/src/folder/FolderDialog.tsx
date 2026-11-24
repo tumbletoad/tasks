@@ -1,12 +1,12 @@
 // A folder chosen for a project or a task, over the page: the chooser, what the folder is (its
-// name and repository, or the project that has it), and Use this folder. A refusal is said in the
+// name and repository, and the projects that have it too), and Use this folder. A refusal is said in the
 // dialog in the service's words, and the person's text stays to correct.
 import { useContext, useId, useState, type SyntheticEvent } from "react";
 import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { classes } from "../app/css.ts";
 import setup from "../app/Setup.module.css";
 import { Session } from "../context.ts";
-import { useT } from "../i18n/intl.tsx";
+import { useList, useT } from "../i18n/intl.tsx";
 import { chosenFolder } from "./chooser.ts";
 import { FolderField, type FolderLook } from "./FolderField.tsx";
 
@@ -51,8 +51,8 @@ function changedSince(error: unknown): { asOf?: string; now?: string } | undefin
 }
 
 /**
- * What the folder in the field is: its name and repository, or the project that has it, unless
- * that is the project the folder is chosen for (`owner`).
+ * What the folder in the field is: its name and repository, and the other projects that have it,
+ * but the one the folder is chosen for (`owner`).
  */
 export function FolderFacts({
   look,
@@ -64,16 +64,23 @@ export function FolderFacts({
   readonly owner?: string | undefined;
 }) {
   const t = useT();
+  const list = useList();
   const exact = look?.text === text ? look.exact : undefined;
   if (exact === undefined) return null;
+  const others = (exact.projects ?? []).filter((p) => p.id !== owner).map((p) => p.name);
   return (
-    <p className={sheet.note} data-part="folder-facts" data-machine="">
-      {exact.project === undefined || exact.project.id === owner
-        ? exact.repo === undefined
+    <>
+      <p className={sheet.note} data-part="folder-facts" data-machine="">
+        {exact.repo === undefined
           ? t("folder.is", { name: exact.name ?? exact.folder })
-          : t("folder.isRepo", { name: exact.name ?? exact.folder, repo: exact.repo })
-        : t("folder.taken", { project: exact.project.name })}
-    </p>
+          : t("folder.isRepo", { name: exact.name ?? exact.folder, repo: exact.repo })}
+      </p>
+      {others.length === 0 ? null : (
+        <p className={sheet.note} data-part="folder-also">
+          {t("folder.also", { projects: list(others) })}
+        </p>
+      )}
+    </>
   );
 }
 

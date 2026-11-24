@@ -1,5 +1,5 @@
-// Projects and folders in the page: New project from a folder, a folder that is a project's
-// already, a project's folder changed with the folders inside it following, a task's own folder
+// Projects and folders in the page: New project from a folder, a folder that is another project's
+// too, a project's folder changed with the folders inside it following, a task's own folder
 // set and cleared, and Open refused on its folder with the way on in place. Every change is undone
 // from its toast or with Ctrl+Z. Scratch folders of this run only.
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -137,7 +137,7 @@ test.describe("[A7.3.12.m5-14.e2e.add-project] New project from a folder, and it
     }
   });
 
-  test("a folder that is a project's already opens that project, and a project can have no folder @one-browser", async ({
+  test("a folder that is a project's already: the same name opens that project, and a project can have no folder @one-browser", async ({
     page,
     world,
   }) => {
@@ -146,14 +146,14 @@ test.describe("[A7.3.12.m5-14.e2e.add-project] New project from a folder, and it
     await newProject(page).click();
     const dialog = page.getByRole("dialog", { name: "New project" });
     await folderField(dialog).fill(world.portal);
-    await expect(dialog.locator('[data-part="folder-facts"]')).toContainText(
-      "This folder is the project Lumen portal's.",
+    await expect(dialog.locator('[data-part="folder-also"]')).toHaveText(
+      "Also the folder of Lumen portal.",
     );
-    // Adding it anyway opens the project that has it, and says so.
+    // The project's own name in its own area is that project: it opens, and the toast says so.
+    await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Lumen portal");
+    await dialog.getByLabel("Area").selectOption({ label: "Lumen" });
     await dialog.getByRole("button", { name: "Add project" }).click();
-    await expect(toast(page)).toHaveText(
-      "This folder is the project Lumen portal's already: here it is.",
-    );
+    await expect(toast(page)).toHaveText("Lumen portal has this folder already: here it is.");
     await expect(page.locator('[data-part="project-folder"]')).toContainText(world.portal);
     await expect(page.getByRole("link", { name: "Lumen portal" })).toHaveAttribute(
       "aria-current",
@@ -501,3 +501,50 @@ async function sideScroll(page: Page): Promise<number> {
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
 }
+
+test.describe("[A7.3.12.e2e.folder-shared] A folder that is another project's is shared, and the page says whose it also is", () => {
+  test("New project on the portal's folder: the dialog says it is also Lumen portal's, the project is added on it, and its Change says so too; at 1,440 and 390 px @one-browser", async ({
+    page,
+    world,
+  }) => {
+    const browser = test.info().project.name;
+    const project = `Portal bugs ${browser}`;
+    const also = "Also the folder of Lumen portal.";
+    const shoot = async (name: string): Promise<void> => {
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await sideScroll(page), `sideways scroll at ${String(width)} px`).toBe(0);
+        if (pictures()) expect(await axeFound(page, ['[role="dialog"]'])).toEqual([]);
+        await picture(page, `${name}-${String(width)}.png`, { fullPage: true });
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
+    };
+    await signedIn(page, world, `/s/${world.mira.id}/today`);
+    await newProject(page).click();
+    const dialog = page.getByRole("dialog", { name: "New project" });
+    await folderField(dialog).fill(world.portal);
+    await expect(dialog.locator('[data-part="folder-also"]')).toHaveText(also);
+    await dialog.getByRole("textbox", { name: "Name", exact: true }).fill(project);
+    await shoot("folder-shared-new");
+    await dialog.getByRole("button", { name: "Add project" }).click();
+    await expect(page).toHaveURL(/\/project\/p_/u, { timeout: SLOW_MS });
+    await expect(toast(page)).toHaveText(`Project ${project} added`);
+    const line = page.locator('[data-part="project-folder"]');
+    await expect(line).toHaveAttribute("data-state", "here");
+    await expect(page.getByRole("link", { name: project })).toHaveAttribute("aria-current", "page");
+
+    // Its own folder dialog names the other project, and not itself.
+    await line.getByRole("button", { name: "Change" }).click();
+    const chooser = page.getByRole("dialog", { name: `Folder for ${project}` });
+    await expect(chooser.locator('[data-part="folder-also"]')).toHaveText(also);
+    await shoot("folder-shared-change");
+    await page.keyboard.press("Escape");
+
+    // Ctrl+Z takes the project back; the portal keeps its folder.
+    await page.locator("body").press("Control+z");
+    await expect(page.getByRole("link", { name: project })).toHaveCount(0, { timeout: SLOW_MS });
+    await page.getByRole("link", { name: "Lumen portal" }).click();
+    await expect(line).toHaveAttribute("data-state", "here");
+    expect(await violations(page)).toEqual([]);
+  });
+});
