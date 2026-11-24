@@ -107,6 +107,8 @@ interface ModelCommit {
   kind: "write" | "undo" | "redo" | "run";
   /** A run's task. */
   runTask?: number;
+  /** A run's create: the person queued it. */
+  launch?: true;
   rows: ModelChange[];
   /**
    * For a stack commit, when it was last applied, recorded as the model acts: its own seq, then
@@ -524,6 +526,7 @@ class Model {
     if (create) this.runs.set(task, (this.runs.get(task) ?? 0) + 1);
     const commit = this.#stack(this.lastSeq + 1, null, [], 0, "run");
     commit.runTask = task;
+    if (create) commit.launch = true;
     return commit;
   }
 
@@ -726,17 +729,22 @@ class Model {
   }
 
   /**
+   * Whether `c` is the principal's own: every commit of theirs, the runs they queue included, but
+   * not a run's progress, which is the run's whichever credential wrote it.
+   */
+  own(c: ModelCommit, principal: number): boolean {
+    return c.by === principal && !(c.kind === "run" && c.launch !== true);
+  }
+
+  /**
    * Who changed `task`, or anything of it, after `since`, by the names an answer gives them: a
    * person as "user", an agent by its label, a run's progress as the run's. The principal's own
-   * steps are no one's newer work.
+   * changes are no one's newer work.
    */
   authors(task: number, since: number, principal: number): string[] {
     const names = new Set<string>();
     for (const c of this.commits.values()) {
-      if (c.seq <= since) continue;
-      if (c.by === principal && (c.owner !== null || c.kind === "undo" || c.kind === "redo")) {
-        continue;
-      }
+      if (c.seq <= since || this.own(c, principal)) continue;
       if (c.runTask === task) names.add("run");
       else if (c.rows.some((r) => r.task === task)) names.add(NAMES[c.by] ?? "");
     }
@@ -746,10 +754,7 @@ class Model {
   /** Another's change to `row` (and for a task, to anything of it) after `since` (history.ts). */
   newer(change: ModelChange, since: number, principal: number): boolean {
     for (const c of this.commits.values()) {
-      if (c.seq <= since) continue;
-      if (c.by === principal && (c.owner !== null || c.kind === "undo" || c.kind === "redo")) {
-        continue;
-      }
+      if (c.seq <= since || this.own(c, principal)) continue;
       if (change.entity === "tasks" && c.runTask === change.id) return true;
       const touched = c.rows.some((r) =>
         change.entity === "tasks"
@@ -1213,8 +1218,16 @@ const property = (seen: Seen) =>
         const cut = new Map<number, number>();
         for (const { row, since } of held)
           cut.set(row.id, Math.min(cut.get(row.id) ?? since, since));
+        // A run that keeps a task's create is named as the run, also one the person queued.
+        const kept = new Set(
+          held.filter(({ row }) => row.create === true && (model.runs.get(row.id) ?? 0) > 0),
+        );
         const expected = [...cut]
-          .map(([t, at]): [number, string[]] => [t, model.authors(t, at, principal)])
+          .map(([t, at]): [number, string[]] => {
+            const names = new Set(model.authors(t, at, principal));
+            if ([...kept].some(({ row }) => row.id === t)) names.add("run");
+            return [t, [...names].sort()];
+          })
           .filter(([, names]) => names.length > 0);
         const named = new Map<number, Set<string>>();
         for (const w of result.newer?.work ?? []) {

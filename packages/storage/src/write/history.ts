@@ -28,8 +28,9 @@
 //   it (its commit, or a redo of it since that wrote the row again: one after a partial undo
 //   writes only what that undo took back), and for a task to anything on it (a field, a note, a
 //   log entry, a link, a run, a folder), keeps it in sight, as a conflict that names the newest
-//   such change; a task kept open keeps its wrap-up too. The principal's own steps (its undoable
-//   writes, undos and redos) do not count: the person made them.
+//   such change; a task kept open keeps its wrap-up too. The principal's own changes (its writes,
+//   undos and redos, and the runs it queues) do not count: the person made them. A run's progress
+//   is the run's, whichever credential wrote it.
 // - Clearing a tombstone (a redo of a create's undo, or the undo of a delete) brings a row back. A
 //   source whose key, or a place whose owner and machine, another live row holds now stays
 //   tombstoned, and that row is the conflict: the unique indexes allow one live row each.
@@ -350,13 +351,15 @@ function liveChildren(conn: Connection, changes: readonly StoredChange[]): Map<s
 
 const COMMIT_COLUMNS = "seq, id, undo_status, undone_by";
 
-/** Changes after `$since` of row `$entity` `$id`, and of everything of task `$task`, by others. */
+/**
+ * Changes after `$since` of row `$entity` `$id`, and of everything of task `$task`, by others: not
+ * the principal's own (the header), but a run's progress, which its queueing is not.
+ */
 function newerWhere(runs: string): string {
   return (
     "WHERE c.seq > $since " +
     `AND (c.task_id = $task OR (c.entity = $entity AND c.entity_id = $id)${runs}) ` +
-    "AND NOT (k.principal_id = $principal AND (k.undo_status IS NOT NULL " +
-    "OR k.kind IN ('undo', 'redo')))"
+    "AND NOT (k.principal_id = $principal AND NOT (c.entity = 'runs' AND c.action = 'set'))"
   );
 }
 
@@ -414,10 +417,11 @@ const SQL = {
   undone:
     `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
     "AND undo_status = 'undone' ORDER BY seq",
-  /** Of the commits in `$seqs`, the principal's own steps: undoable writes, undos and redos. */
+  /** Of the commits in `$seqs`, the principal's own: all but a run's, which names the run. */
   ownSteps:
-    "SELECT seq FROM commits WHERE seq IN (SELECT value FROM json_each($seqs)) " +
-    "AND principal_id = $principal AND (undo_status IS NOT NULL OR kind IN ('undo', 'redo'))",
+    "SELECT k.seq AS seq FROM commits k WHERE k.seq IN (SELECT value FROM json_each($seqs)) " +
+    "AND k.principal_id = $principal " +
+    "AND NOT EXISTS (SELECT 1 FROM changes c WHERE c.seq = k.seq AND c.entity = 'runs')",
   /** The rows the redos of step `$seq` wrote again, each with the newest redo that wrote it. */
   redone:
     "SELECT c.entity AS entity, c.entity_id AS id, c.field AS field, max(c.seq) AS seq " +
@@ -1015,9 +1019,9 @@ export type Held = Pick<InversionPlan, "conflicts" | "since" | "applied">;
  * conflict holds back (the earliest of them, for a task several conflicts name), with the time of
  * that author's newest change there; a row of no task (an area, a project, a source) by its own
  * changes. The conflicts' own authors are named too: a key another row took counts. The
- * principal's own steps (its undoable writes, undos and redos) are no one's newer work: they hold
- * a redo back only after an earlier step of the person's was passed over, and that step's
- * conflicts say why. A run's own progress is the run's, whichever credential wrote it.
+ * principal's own changes are no one's newer work: they hold a redo back only after an earlier
+ * step of the person's was passed over, and that step's conflicts say why. A run is the run's,
+ * whichever credential wrote it: one that keeps a task is named as a run.
  */
 export function newerWorkOf(
   conn: Connection,

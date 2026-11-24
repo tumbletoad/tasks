@@ -272,18 +272,47 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
     expect(undo().conflicts).toEqual([expect.objectContaining({ entity: "runs", id: queued })]);
   });
 
-  test("a run on a task since its removal was undone keeps Redo from putting it back in the Trash", () => {
-    const id = create();
-    applied(write([{ kind: "task.delete", task: id }]));
+  test("a run the person queued is their own: it keeps no Undo or Redo from closing the task or putting it in the Trash", () => {
+    // Checked off, reopened, a run queued, and the reopen undone: done again, the run still queued.
+    const done = create();
+    applied(write([{ kind: "task.complete", task: done }]));
+    applied(write([{ kind: "task.reopen", task: done }]));
+    const queued = String(startRun(done).results[0]?.id);
+    const undone = applied(undo());
+    expect(undone.newer).toBeUndefined();
+    expect(task(done)["lifecycle"]).toBe("completed");
+    expect(runRow(queued)).toMatchObject({ task_id: done, state: "queued" });
+
+    // Archived, the archive undone, a run queued, and the archive redone.
+    const archived = create();
+    applied(write([{ kind: "task.archive", task: archived }]));
     applied(undo());
-    // The person's run, though written with the person's credential, is no step on their stack.
+    startRun(archived);
+    applied(redo());
+    expect(task(archived)["lifecycle"]).toBe("archived");
+
+    // In the Trash the same way, as when the person deletes a task with a run queued.
+    const trashed = create();
+    applied(write([{ kind: "task.delete", task: trashed }]));
+    applied(undo());
+    startRun(trashed);
+    applied(redo());
+    expect(task(trashed)["deleted_at"]).not.toBeNull();
+  });
+
+  test("a run's own progress since is newer work: the Undo that would close its task again is refused, naming the run", () => {
+    const id = create();
+    applied(write([{ kind: "task.complete", task: id }]));
+    applied(write([{ kind: "task.reopen", task: id }]));
     const run = String(startRun(id).results[0]?.id);
-    const late = redo();
+    const started = move(run, "queued", "starting");
+    const late = undo();
     expectStatus(late, "conflict");
     expect(late.conflicts).toEqual([
-      expect.objectContaining({ entity: "runs", id: run, task: id, field: "state" }),
+      expect.objectContaining({ entity: "runs", id: run, field: "state", version: started.seq }),
     ]);
-    expect(task(id)["deleted_at"]).toBeNull();
+    expect(late.newer?.work).toEqual([expect.objectContaining({ task: id, run: true })]);
+    expect(task(id)["lifecycle"]).toBe("active");
   });
 
   test("a run created and advanced since is named by its advance: who, when, and its state now", () => {
