@@ -40,6 +40,7 @@ import type {
   WriteResult,
 } from "../src/write/request.ts";
 import { checkedDriver, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
+import { ruled } from "./space-rules.ts";
 import { checkHistory, expectStatus, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("undo-dedupe");
@@ -564,6 +565,28 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
     expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([t2.id]);
     applied(redo("partner"));
     expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([t1.id, t2.id].sort());
+  });
+
+  test("Undo of a check-off beside new work that took the ticket meanwhile does what a reopen does: both hold it open, and the next capture names both", () => {
+    const a = draft(["jira:FIX-1"]);
+    applied(send("human", a.ops));
+    lifecycle("task.complete", a.id, "human");
+    // New work asked for as new while A is finished: B holds the ticket.
+    const b = draft(["jira:FIX-1"], { dedupe: "new" });
+    applied(send("codex", b.ops));
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([b.id]);
+    applied(undo());
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([a.id, b.id].sort());
+    const undone = probe(["jira:FIX-1"]);
+    // A reopen of A from the same state leaves the same two.
+    lifecycle("task.complete", a.id, "human");
+    lifecycle("task.reopen", a.id, "human");
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([a.id, b.id].sort());
+    const reopened = probe(["jira:FIX-1"]);
+    const both = [ref(a.id), ref(b.id)].sort();
+    for (const found of [undone, reopened]) {
+      expect(found.results[0]).toMatchObject({ status: "existing", ambiguous: both });
+    }
   });
 
   test("a partial inversion leaves out the restores of a broken key and applies the rest", async () => {
@@ -1460,9 +1483,11 @@ const property = (seen: Record<string, number>) =>
       const lastSeq = (): number =>
         Number(conn.prepare("SELECT last_seq FROM space").get()?.["last_seq"]);
       const sent: { request: WriteRequest; result: WriteResult }[] = [];
+      // Every write is checked against the rules on the space it leaves.
+      const write = ruled(conn, (request) => space.writer.submit(request));
       const submit = (request: WriteRequest): WriteResult => {
         // A constraint error or any other storage failure throws here and fails the run.
-        const result = space.writer.submit(request);
+        const result = write(request);
         sent.push({ request, result });
         return result;
       };
@@ -1521,7 +1546,7 @@ const property = (seen: Record<string, number>) =>
           const earlier = sent[s.pick % Math.max(sent.length, 1)];
           if (earlier === undefined) continue;
           // The stored answer, whatever undo, redo and dedupe did since (A1 3.8).
-          expect(space.writer.submit(earlier.request)).toEqual(replayOf(earlier.result));
+          expect(write(earlier.request)).toEqual(replayOf(earlier.result));
           expect(lastSeq()).toBe(seqBefore);
           count("replayed");
           continue;

@@ -97,19 +97,49 @@ function startRun(taskId: Id<"t">, place: Id<"pl"> | null = null): WriteResult {
   );
 }
 
-const move = (run: string, expect: RunState, next: RunState, more: Row = {}): WriteResult =>
+/**
+ * A move of a run as the execution store writes every one of them, this build's and those before
+ * it: with the person's credential, naming no run. `by` is another person's credential.
+ */
+const move = (
+  run: string,
+  expect: RunState,
+  next: RunState,
+  more: Row = {},
+  by: Credential = ui,
+): WriteResult =>
   applied(
-    submitRun([
-      {
-        kind: "run.transition",
-        run: run as Id<"ru">,
-        expect,
-        expect_version: Number(runRow(run)["version"]),
-        next,
-        ...more,
-      },
-    ]),
+    fx.writer.submit(
+      fx.request(by, [
+        {
+          kind: "run.transition",
+          run: run as Id<"ru">,
+          expect,
+          expect_version: Number(runRow(run)["version"]),
+          next,
+          ...more,
+        },
+      ]),
+    ),
   );
+
+/** The person's Stop: a queued run is cancelled at once, a working one is cancelling. */
+const stop = (run: string, from: RunState = "queued", by: Credential = ui): WriteResult =>
+  move(run, from, from === "queued" ? "cancelled" : "cancelling", {}, by);
+
+/** A second person of the space. */
+async function partner(): Promise<Credential> {
+  const id = newId("ac");
+  await raw((conn) => {
+    conn
+      .prepare(
+        "INSERT INTO actors (id, kind, label, instance_id, routine_id, created_at) " +
+          "VALUES ($id, 'human', 'Fixture partner', NULL, NULL, 0)",
+      )
+      .run({ id });
+  });
+  return { ...ui, principal_id: id, scope_id: "ui:partner" };
+}
 
 const RESULT = {
   ok: true,
@@ -268,22 +298,122 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
     // A run cancelled in the queue holds the person's request too.
     const other = create();
     const queued = String(startRun(other).results[0]?.id);
-    move(queued, "queued", "cancelled");
+    stop(queued);
     expect(undo().conflicts).toEqual([expect.objectContaining({ entity: "runs", id: queued })]);
   });
 
-  test("a run on a task since its removal was undone keeps Redo from putting it back in the Trash", () => {
+  test("a run the person queued and stopped is theirs: it keeps no Undo or Redo from closing the task", () => {
+    // Checked off, reopened, a run queued and stopped while queued, and the reopen undone.
+    const done = create();
+    applied(write([{ kind: "task.complete", task: done }]));
+    applied(write([{ kind: "task.reopen", task: done }]));
+    stop(String(startRun(done).results[0]?.id));
+    expect(applied(undo()).newer).toBeUndefined();
+    expect(task(done)["lifecycle"]).toBe("completed");
+
+    // Archived, the archive undone, a run queued and stopped, and the archive redone.
+    const archived = create();
+    applied(write([{ kind: "task.archive", task: archived }]));
+    applied(undo());
+    stop(String(startRun(archived).results[0]?.id));
+    applied(redo());
+    expect(task(archived)["lifecycle"]).toBe("archived");
+  });
+
+  test("what a run did is the run's, as every history holds it: the Redo that would put its task in the Trash after the run answered is refused, naming the run", () => {
     const id = create();
     applied(write([{ kind: "task.delete", task: id }]));
     applied(undo());
-    // The person's run, though written with the person's credential, is no step on their stack.
     const run = String(startRun(id).results[0]?.id);
+    move(run, "queued", "starting");
+    move(run, "starting", "running");
+    const answered = move(run, "running", "succeeded", { result: RESULT });
     const late = redo();
     expectStatus(late, "conflict");
     expect(late.conflicts).toEqual([
-      expect.objectContaining({ entity: "runs", id: run, task: id, field: "state" }),
+      expect.objectContaining({ entity: "runs", id: run, version: answered.seq }),
     ]);
+    expect(late.newer?.work).toEqual([expect.objectContaining({ task: id, run: true })]);
     expect(task(id)["deleted_at"]).toBeNull();
+  });
+
+  test("the person's Stop of a working run is theirs; the run's settlement after it is the run's", () => {
+    const id = create();
+    const run = String(startRun(id).results[0]?.id);
+    move(run, "queued", "starting");
+    move(run, "starting", "running");
+    applied(write([{ kind: "task.complete", task: id }]));
+    applied(write([{ kind: "task.reopen", task: id }]));
+    stop(run, "running");
+    expect(applied(undo()).newer).toBeUndefined();
+    expect(task(id)["lifecycle"]).toBe("completed");
+    applied(redo());
+    move(run, "cancelling", "cancelled");
+    const late = undo();
+    expectStatus(late, "conflict");
+    expect(late.newer?.work).toEqual([expect.objectContaining({ task: id, run: true })]);
+    expect(task(id)["lifecycle"]).toBe("active");
+  });
+
+  test("another person's Stop of a run keeps the Undo from closing the task, naming that person", async () => {
+    const other = await partner();
+    const id = create();
+    applied(write([{ kind: "task.complete", task: id }]));
+    applied(write([{ kind: "task.reopen", task: id }]));
+    stop(String(startRun(id).results[0]?.id), "queued", other);
+    const late = undo();
+    expectStatus(late, "conflict");
+    expect(late.newer?.work).toEqual([
+      expect.objectContaining({
+        task: id,
+        run: false,
+        by: expect.objectContaining({ actor: other.principal_id }) as unknown,
+      }),
+    ]);
+    expect(task(id)["lifecycle"]).toBe("active");
+  });
+
+  test("a run the person queued is their own: it keeps no Undo or Redo from closing the task or putting it in the Trash", () => {
+    // Checked off, reopened, a run queued, and the reopen undone: done again, the run still queued.
+    const done = create();
+    applied(write([{ kind: "task.complete", task: done }]));
+    applied(write([{ kind: "task.reopen", task: done }]));
+    const queued = String(startRun(done).results[0]?.id);
+    const undone = applied(undo());
+    expect(undone.newer).toBeUndefined();
+    expect(task(done)["lifecycle"]).toBe("completed");
+    expect(runRow(queued)).toMatchObject({ task_id: done, state: "queued" });
+
+    // Archived, the archive undone, a run queued, and the archive redone.
+    const archived = create();
+    applied(write([{ kind: "task.archive", task: archived }]));
+    applied(undo());
+    startRun(archived);
+    applied(redo());
+    expect(task(archived)["lifecycle"]).toBe("archived");
+
+    // In the Trash the same way, as when the person deletes a task with a run queued.
+    const trashed = create();
+    applied(write([{ kind: "task.delete", task: trashed }]));
+    applied(undo());
+    startRun(trashed);
+    applied(redo());
+    expect(task(trashed)["deleted_at"]).not.toBeNull();
+  });
+
+  test("a run's own progress since is newer work: the Undo that would close its task again is refused, naming the run", () => {
+    const id = create();
+    applied(write([{ kind: "task.complete", task: id }]));
+    applied(write([{ kind: "task.reopen", task: id }]));
+    const run = String(startRun(id).results[0]?.id);
+    const started = move(run, "queued", "starting");
+    const late = undo();
+    expectStatus(late, "conflict");
+    expect(late.conflicts).toEqual([
+      expect.objectContaining({ entity: "runs", id: run, field: "state", version: started.seq }),
+    ]);
+    expect(late.newer?.work).toEqual([expect.objectContaining({ task: id, run: true })]);
+    expect(task(id)["lifecycle"]).toBe("active");
   });
 
   test("a run created and advanced since is named by its advance: who, when, and its state now", () => {
@@ -379,7 +509,7 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
       expect(changesAt(seq).filter((c) => c["entity"] === "runs")).toEqual([]);
     }
     // The detached run still settles.
-    move(run, "queued", "cancelled");
+    stop(run);
     expect(runRow(run)).toMatchObject({ task_id: null, place_id: null, state: "cancelled" });
   });
 

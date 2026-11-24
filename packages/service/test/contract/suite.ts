@@ -795,6 +795,21 @@ async function meanwhile(t: ContractTransport, answer: Value): Promise<() => Pro
     );
   }
 
+  // An answer that names nothing editable (a task finished or in the Trash): another task of the
+  // world changes instead, so the retry still meets a space that moved on.
+  for (let k = 1; back.length === 0 && k <= WORLD_TASKS; k += 1) {
+    const ref = `M-${String(k)}`;
+    if (strings.includes(ref)) continue;
+    const read = await t.aside("task.get", { task: ref }).catch(() => undefined);
+    const task = read?.["task"] as Value | undefined;
+    if (task?.["lifecycle"] !== "active" || typeof task["title"] !== "string") continue;
+    const title = task["title"];
+    await change("task.update", { task: ref, set: { title: `${title} meanwhile` } }, () => ({
+      task: ref,
+      set: { title },
+    }));
+  }
+
   return async () => {
     for (const undo of back.reverse()) await undo();
   };
@@ -1131,6 +1146,7 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
           if (transport.carries?.(entry.name) === false) continue;
           for (const [i, example] of entry.examples.entries()) {
             const key = `${entry.name} ${String(i)}`;
+            await BEFORE[key]?.(transport, () => world.asOf());
             const actor: Actor = example.actor ?? "agent";
             const input = { ...(example.input as Value) };
             // An example's base is "the as_of of a read just before": the world's own.
@@ -1177,7 +1193,11 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             // is.
             if (receipted(entry.name, input)) {
               const value = result as Value;
+              const status = async (): Promise<unknown> =>
+                (await transport.aside("space.status", {}))["as_of"];
+              const before = await status();
               const takeBack = await meanwhile(transport, value);
+              expect.soft(await status(), `${key}: a change in between`).not.toBe(before);
               const again = (await transport.call(entry.name, input, actor)) as Value;
               const now =
                 NOW[entry.name]?.(again) === undefined
@@ -1228,10 +1248,34 @@ const TITLES: Readonly<Record<number, string>> = {
 let counter = 0;
 const rid = (): string => `contract-world-${String((counter += 1)).padStart(8, "0")}`;
 
+/**
+ * The user's own change an undo or a redo example takes back or brings back, made right before it.
+ * The in-between change of an earlier example (meanwhile) is another's newer work on its task, which
+ * rightly holds back an Undo or Redo that would close that task again, so these examples do not
+ * depend on what the examples before them left.
+ */
+const BEFORE: Readonly<
+  Record<string, (t: ContractTransport, base: () => Promise<string>) => Promise<void>>
+> = {
+  // M-15, checked off by the user just now.
+  "history.undo 0": async (t, base) => {
+    await t.call("task.reopen", { task: "M-15", base: await base(), request_id: rid() }, "user");
+    await t.call("task.finish", { task: "M-15", base: await base(), request_id: rid() }, "user");
+  },
+  // M-15's check-off by the user, undone just now.
+  "history.redo 0": async (t, base) => {
+    await t.call("task.finish", { task: "M-15", base: await base(), request_id: rid() }, "user");
+    await t.call("history.undo", { request_id: rid() }, "user");
+  },
+};
+
+/** The tasks the world starts with, M-1 to M-15. */
+const WORLD_TASKS = 15;
+
 async function buildWorld(t: ContractTransport): Promise<{ asOf(): Promise<string> }> {
   const asOf = async (): Promise<string> =>
     ((await t.call("space.status", {}, "agent")) as { as_of: string }).as_of;
-  const tasks = Array.from({ length: 15 }, (_, i) => ({
+  const tasks = Array.from({ length: WORLD_TASKS }, (_, i) => ({
     title: TITLES[i + 1] ?? `Fixture task ${String(i + 1)}`,
   }));
   await t.call("task.add", { tasks, request_id: rid() }, "user");

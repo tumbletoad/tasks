@@ -566,6 +566,15 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
       expect(refused.error).toMatchObject({ code: "DELETED", op: 1 });
     }
     expect(live()).toEqual({});
+    // One with a folder already: the delete takes it, and the new one is refused the same way.
+    const project = newProject("Gone with its folder", "~/work/old");
+    const refused = submit([
+      { kind: "project.delete", project },
+      { kind: "project.folder_set", project, path: "~/work/late" },
+    ]);
+    expectStatus(refused, "rejected");
+    expect(refused.error).toMatchObject({ code: "DELETED", op: 1 });
+    expect(live()).toEqual({ [`project:${project}`]: "~/work/old" });
   });
 
   test("a task restored after its project was deleted lands in the project's area; with the project restored first it stays in it", () => {

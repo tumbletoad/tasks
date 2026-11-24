@@ -21,8 +21,13 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Undo and redo never replace someone else's work that came in between, also when that work set a
   value and set it back. Redo passes over a change of yours it cannot bring back and redoes the
   next one. The change it passed over stays, and a later Redo tries it again.
+- Working alone, you can undo everything you did, one step at a time, and redo it all, and the
+  order of your lists comes back with it. Your own changes never hold back your Undo or Redo, a run
+  you queued or stopped and a session you opened included; what a run did since, from its start
+  on, is the run's work.
 - Your undo history survives a restart and is shared by your windows and the command line.
-- Checking off a task completes it at once and can be undone.
+- Checking off a task completes it at once and can be undone. Neither Undo nor Redo checks a task
+  off or archives it again when someone else added to it or changed it since.
 - Wrapping up a task keeps its context, notes, activity and sources. Reopening keeps the earlier
   outcome and what was learned.
 - Moving a task to the Trash deletes nothing: its notes, log, sources and history stay, nothing
@@ -444,6 +449,11 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Undo and Restore do not unsend a mail, reverse a commit or undo anything done outside TTasks.
 - Undo steps back through your own changes. A change by an agent or a script is not on it, and
   nothing from before the last upgrade that changed the data format can be undone.
+- Undo keeps a task you queued a run on: the run holds your request. Undo and Redo do not link a
+  ticket to a task again while another open task holds it, also when you linked both yourself.
+- After an Undo, a task can share its place in a list with one that arrived meanwhile. The two keep
+  a fixed order, and a task then placed before or after one of them through the tools can land
+  beside the pair instead of between them.
 - One copy of a space at a time holds for one TTasks service. Two services with homes of their own
   on one machine each keep their own list of spaces, and each can open a copy of the same space.
 - Two copies of one space that both take changes, such as a restored copy and its original used
