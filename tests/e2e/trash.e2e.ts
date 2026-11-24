@@ -708,6 +708,9 @@ test.describe("[A5.trash.e2e.agents] What an agent moved to the Trash", () => {
         await page.locator('nav [data-view="trash"]').click();
         await change.getByRole("button", { name: "Restore these" }).click();
         await expect(toast(page)).toHaveText("2 tasks are back", { timeout: SLOW_MS });
+        const open = page.locator('nav [data-view="open"]');
+        await open.click();
+        await expect(open).toHaveAttribute("aria-current", "page");
       }
     } finally {
       // The theme is the machine's, shared by the worker's other tests: back to the default.
@@ -716,7 +719,6 @@ test.describe("[A5.trash.e2e.agents] What an agent moved to the Trash", () => {
 
     // A removal that arrives while another tab shows the Trash is seen: this tab does not count
     // it, also after a reload. One made once no tab shows it is the only one counted.
-    await page.locator('nav [data-view="open"]').click();
     const other = await page.context().newPage();
     const late = await addTask(world, { title: `Agent late removal (${tag})`, area: "home" });
     const later = await addTask(world, { title: `Agent later removal (${tag})`, area: "home" });
