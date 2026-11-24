@@ -35,6 +35,7 @@ import {
 } from "../config/machine-toml.ts";
 import { configRefusal, unsafeConfigMessage } from "../config/messages.ts";
 import {
+  NewerServiceDb,
   openGrants,
   startHttp,
   type DurableGrants,
@@ -963,7 +964,15 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     const httpLog = (event: Parameters<typeof logHttp>[1]) => {
       logHttp(log, event);
     };
-    if (options.http !== undefined) grantsDb = await openGrants(layout.state, httpLog);
+    if (options.http !== undefined) {
+      try {
+        grantsDb = await openGrants(layout.state, httpLog);
+      } catch (error) {
+        if (!(error instanceof NewerServiceDb)) throw error;
+        log.log("service.refused", { reason: "newer_format" });
+        throw refuse(say, "newer_format", error.message);
+      }
+    }
 
     // The launch folders hold each launch's plan, the command a shim starts (A4 3.6.3): their root
     // is judged before anything is read from it or made in it (A2 3.2.2 rule 5). On Linux it is in

@@ -92,7 +92,7 @@ export {
   type UiBundle,
 } from "./page.ts";
 export { choosePort, PORT_RANGE, PORT_RETRY_MS, retryPort, type PortChoice } from "./port.ts";
-export { SERVICE_DB, ServiceDb, type PortObservation } from "./service-db.ts";
+export { NewerServiceDb, SERVICE_DB, ServiceDb, type PortObservation } from "./service-db.ts";
 export { blockedMessage, movedMessage } from "./messages.ts";
 export {
   openGrants,
