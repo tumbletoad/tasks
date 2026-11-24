@@ -142,6 +142,7 @@ import {
   type Due,
   type FieldConflict,
   type Given,
+  type InsideFolder,
   type HistoryOperation,
   type OpResult,
   type Operation,
@@ -419,6 +420,8 @@ interface StagedOp {
   later?: true;
   /** A folder operation: the request's machine and its OS, whose case rule compares paths. */
   folder?: { machine: Id<"m">; os: FolderOs };
+  /** A folder set that moved the folder: what it did to the folders inside (OpResult.inside). */
+  inside?: { along: InsideFolder[]; left: InsideFolder[] };
   /** `area.create` and `project.create`: the slug the new group takes. */
   slug?: string;
   /** `project.move`: the project's new area. */
@@ -3164,12 +3167,23 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
                   "version",
                   "seq",
                 );
+        const { inside } = staged;
         return {
           i,
           status,
           id: staged.target,
           ...(task === null ? {} : { task, ref: refOf(task) }),
           version,
+          ...(inside === undefined
+            ? {}
+            : {
+                inside: {
+                  moved: inside.along.length,
+                  along: inside.along,
+                  stayed: inside.left.length,
+                  left: inside.left,
+                },
+              }),
         };
       }
       case "task.wrap_up": {
@@ -4451,21 +4465,33 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
           conn.prepare(SQL.folderPath).run({ id: found.id, path: op.path });
           wrote(run, i, "folders", found.id, staged.task, ["path"]);
           // A moved folder takes the folders inside it that moved with it along, the rest of each
-          // path as it is: one change, one undo.
-          if (op.carry !== undefined && op.carry.length > 0) {
-            const carried = new Set(op.carry);
-            for (const inside of conn.prepare(FOLDER_SQL.liveOn).all({ machine })) {
-              const other = decodeFolder(inside);
-              if (other.id === found.id || !carried.has(other.ownerId)) continue;
-              const moved = carriedTo(other.path, found.path, op.path, os);
-              if (moved === undefined || moved === other.path) continue;
-              ensureStart(conn, run, "folders", other.id);
-              conn.prepare(SQL.folderPath).run({ id: other.id, path: moved });
-              const task = other.ownerKind === "task" ? (other.ownerId as Id<"t">) : null;
-              wrote(run, i, "folders", other.id, task, ["path"]);
-              if (other.ownerKind === "project") movedProjects.push({ id: other.ownerId, moved });
+          // path as it is: one change, one undo. The others inside it stay, and the answer says
+          // which did which as this transaction found them, whatever the caller expected.
+          const carried = new Set(op.carry ?? []);
+          const along: InsideFolder[] = [];
+          const left: InsideFolder[] = [];
+          for (const inside of conn.prepare(FOLDER_SQL.liveOn).all({ machine })) {
+            const other = decodeFolder(inside);
+            if (other.id === found.id) continue;
+            const moved = carriedTo(other.path, found.path, op.path, os);
+            if (moved === undefined || moved === other.path) continue;
+            const task = other.ownerKind === "task" ? (other.ownerId as Id<"t">) : null;
+            const label =
+              task === null
+                ? String(readRow(conn, "projects", other.ownerId)["title"])
+                : formatTaskRef(run.plan.refPrefix, readTask(conn, task).ref);
+            const named = { kind: other.ownerKind, owner: other.ownerId, label, from: other.path };
+            if (!carried.has(other.ownerId)) {
+              left.push({ ...named, to: other.path });
+              continue;
             }
+            ensureStart(conn, run, "folders", other.id);
+            conn.prepare(SQL.folderPath).run({ id: other.id, path: moved });
+            wrote(run, i, "folders", other.id, task, ["path"]);
+            along.push({ ...named, to: moved });
+            if (other.ownerKind === "project") movedProjects.push({ id: other.ownerId, moved });
           }
+          if (along.length > 0 || left.length > 0) staged.inside = { along, left };
         }
       }
       // Two live projects never share one folder on one machine, by the machine's case rule.

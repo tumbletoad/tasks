@@ -283,6 +283,17 @@ export interface OpResult {
     area?: string;
     project?: string;
   };
+  /**
+   * A folder set that moved its owner's folder on this machine: the folders that were inside the
+   * old one when it wrote, those it took along (`carry`) and those it left where they are. A
+   * receipt keeps the first INSIDE_KEPT of each list, with the counts.
+   */
+  inside?: {
+    moved: number;
+    along: InsideFolder[];
+    stayed: number;
+    left: InsideFolder[];
+  };
   /** A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). */
   matched_by?: "source_key";
   lifecycle?: TaskLifecycle;
@@ -292,6 +303,21 @@ export interface OpResult {
    */
   ambiguous?: string[];
 }
+
+/**
+ * A folder inside one a request moved (OpResult.inside): whose it is, by the task's reference or
+ * the project's name, where it was and where it is now, which is the same place for one left.
+ */
+export interface InsideFolder {
+  kind: "project" | "task";
+  owner: string;
+  label: string;
+  from: string;
+  to: string;
+}
+
+/** How many of the folders a move took along, and of those it left, a receipt keeps. */
+export const INSIDE_KEPT = 20;
 
 /** A task's lifecycle (A1 3.11). */
 export type TaskLifecycle = "active" | "completed" | "archived";

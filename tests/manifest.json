@@ -2676,6 +2676,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.answers.what-the-writer-did",
+      "title": "An answer says what the writer did, not what the service expected: a project's folder move whose child was given a folder elsewhere just before the write names no folder that moved along, first and on its retry, and the child keeps the folder it was given",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.answers.retry-first",
       "title": "A request answered before is answered again before this build's rules read its input: an import an earlier build accepted with a mail header's date or February 30 is replayed and adds nothing, while a new request with that date is refused at its field, and a request whose answer was kept is answered from it also when its input breaks a rule of this build",
       "owner": "M2",

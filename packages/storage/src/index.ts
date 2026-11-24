@@ -374,6 +374,7 @@ export {
   type TaskReopen,
   type TaskValues,
   type Given,
+  type InsideFolder,
   type WriteErrorCode,
   type WriteProblem,
   type WriteRequest,

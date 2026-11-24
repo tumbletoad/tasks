@@ -25,7 +25,13 @@ import { misuse } from "../errors.ts";
 import type { Id } from "../ids.ts";
 import { invalidValue, RowReader } from "../rows.ts";
 import { canonicalJson } from "./canonical.ts";
-import type { CheckedRequest, Given, WriteResult, WriteStatus } from "./request.ts";
+import {
+  INSIDE_KEPT,
+  type CheckedRequest,
+  type Given,
+  type WriteResult,
+  type WriteStatus,
+} from "./request.ts";
 
 /** A stored receipt. */
 export interface Receipt {
@@ -163,12 +169,25 @@ export function readReceipt(conn: Connection, lookup: ReceiptLookup): Receipt | 
 }
 
 /**
- * The result as a receipt stores it: without `replayed`, and conflicts without their values (the
- * value now, and an undo's value written and value to restore).
+ * The result as a receipt stores it: without `replayed`, conflicts without their values (the
+ * value now, and an undo's value written and value to restore), and of the folders a move took
+ * along or left, the first INSIDE_KEPT with their counts.
  */
 function storedResult(result: WriteResult): string {
   const decided: WriteResult = {
     ...result,
+    results: result.results.map((op) =>
+      op.inside === undefined
+        ? op
+        : {
+            ...op,
+            inside: {
+              ...op.inside,
+              along: op.inside.along.slice(0, INSIDE_KEPT),
+              left: op.inside.left.slice(0, INSIDE_KEPT),
+            },
+          },
+    ),
     conflicts: result.conflicts.map((conflict) => {
       const kept = { ...conflict };
       delete kept.value;

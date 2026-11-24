@@ -54,6 +54,7 @@ import {
   normaliseSourceKey,
   normaliseStored,
   type Given,
+  type InsideFolder,
   type Id,
   type Operation,
   type OpResult,
@@ -121,7 +122,7 @@ import {
   storedForm,
   type BindFacts,
   type Folder,
-  type Follower,
+  type Stayed,
   type Move,
 } from "./folders.ts";
 import {
@@ -1781,14 +1782,14 @@ async function clearedOf(
 
 /**
  * After a write applied (marker.ts): each folder it gave an owner takes that owner's marker, a
- * folder it cleared loses it, and the folders that moved along keep theirs, which moved with them.
- * A folder that takes no marker changes nothing here.
+ * folder it cleared loses it, and the folders the writer moved along keep theirs, which moved with
+ * them. A folder that takes no marker changes nothing here.
  */
 async function markersAfter(
   call: Call,
   ops: readonly Operation[],
   result: WriteResult,
-  extra: { readonly move?: Move; readonly cleared?: Cleared | undefined } = {},
+  extra: { readonly cleared?: Cleared | undefined } = {},
 ): Promise<void> {
   const markers = call.host.markers;
   const space = call.space.id;
@@ -1808,7 +1809,7 @@ async function markersAfter(
     const kind = op.kind === "project.folder_set" ? "project" : "task";
     await markers.mark({ space, kind, id }, op.path);
   }
-  for (const f of extra.move?.moved ?? []) {
+  for (const f of result.results.flatMap((op) => op.inside?.along ?? [])) {
     await markers.moved({ space, kind: f.kind, id: f.owner }, f.from, f.to);
   }
   const cleared = extra.cleared;
@@ -1821,37 +1822,36 @@ async function markersAfter(
 const FOLLOWERS_SHOWN = 20;
 
 /** The folders a move's answer names: where each is now. */
-const namedFolders = (list: readonly Follower[], at: "from" | "to") =>
+const namedFolders = (list: readonly InsideFolder[]) =>
   list.slice(0, FOLLOWERS_SHOWN).map((f) => ({
     kind: f.kind,
     ...(f.kind === "task" ? { ref: f.label } : { name: f.label }),
-    folder: f[at],
+    folder: f.to,
   }));
 
-/** A move's part of folder.manage's and organize's answer (Move). */
-function moveAnswer(move: Move): Record<string, unknown> {
-  return {
-    ...(move.moved.length === 0
-      ? {}
-      : { moved: move.moved.length, followed: namedFolders(move.moved, "to") }),
-    ...(move.stayed.length === 0
-      ? {}
-      : {
-          stayed: move.stayed.length,
-          stayed_because: move.because,
-          kept: namedFolders(move.stayed, "from"),
-        }),
-  };
-}
+/**
+ * Why the service leaves the folders inside the old one where they are, when it does: what it
+ * found on disk, which goes with the request (`submit`'s `answer`).
+ */
+const stayedOf = (move: Move): { stayed_because?: Stayed } =>
+  move.because === undefined ? {} : { stayed_because: move.because };
 
-/** A move's part of an answer as the writer's result keeps it (`moveAnswer`, `submit`). */
+/**
+ * A move's part of an answer (folder.manage, organize, update_task): what the writer did to the
+ * folders inside the old one (OpResult.inside), those it took along and those it left, with why
+ * the service left them. One the writer found there that the service had not looked at stays
+ * unchecked.
+ */
 function movedOf(result: WriteResult): Record<string, unknown> {
-  const said = result.answer ?? {};
-  return Object.fromEntries(
-    ["moved", "followed", "stayed", "stayed_because", "kept"].flatMap((field) =>
-      said[field] === undefined ? [] : [[field, said[field]]],
-    ),
-  );
+  const inside = result.results.find((op) => op.inside !== undefined)?.inside;
+  if (inside === undefined) return {};
+  const because = result.answer?.["stayed_because"] ?? "unchecked";
+  return {
+    ...(inside.moved === 0 ? {} : { moved: inside.moved, followed: namedFolders(inside.along) }),
+    ...(inside.stayed === 0
+      ? {}
+      : { stayed: inside.stayed, stayed_because: because, kept: namedFolders(inside.left) }),
+  };
 }
 
 /** What binding an owner's folder on this machine reads first (read.ts). */
@@ -2807,7 +2807,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         active: !anyLifecycle,
         ...(readBase === undefined || !dismissOnly ? {} : { base: readBase }),
         inserted: { at: 0, count: groups.length },
-        answer: { ...moveAnswer(move), made },
+        answer: { ...stayedOf(move), made },
         pathOf: (i, field) =>
           ops[i]?.kind === "task.patch" && field !== undefined && /^[a-z_]+$/u.test(field)
             ? `set.${field}`
@@ -2818,7 +2818,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     }
     const result = ownResults(submitted);
     const updated = result.status === "applied";
-    await markersAfter(call, ops, result, { move, cleared });
+    await markersAfter(call, ops, result, { cleared });
     const first = opAt(result, 0);
     const named = [...new Set(fields)];
     const facts = updated ? await commitOf(call, first, result.seq) : undefined;
@@ -3670,8 +3670,8 @@ async function folderWrite(
         ? { kind: "project.folder_clear", project: owner.id }
         : { kind: "task.folder_clear", task: owner.id };
   const cleared = action === "clear" && !replay ? await clearedOf(call, owner) : undefined;
-  const result = await submit(call, [op], { answer: moveAnswer(move) });
-  await markersAfter(call, [op], result, { move, cleared });
+  const result = await submit(call, [op], { answer: stayedOf(move) });
+  await markersAfter(call, [op], result, { cleared });
   const done = result.results[0];
   const changed = result.status === "applied";
   if (owner.kind === "project" && owner.id === REPLAY_GROUP) {
@@ -3983,8 +3983,8 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   }
   // A group that exists already changes nothing, and its answer is kept all the same: a retry
   // after an undo removed the group says so again, and brings nothing back.
-  const result = await submit(call, ops, { answer: { done, group, ...moveAnswer(move) } });
-  await markersAfter(call, ops, result, { move, cleared });
+  const result = await submit(call, ops, { answer: { done, group, ...stayedOf(move) } });
+  await markersAfter(call, ops, result, { cleared });
   let read: GroupsHere;
   try {
     read = await readGroupsHere(call, readerOf(call.space));

@@ -7,9 +7,15 @@ import { mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, findEntry, parseInput, type ErrorBody } from "@ttasks/contracts";
-import { intentFingerprint, newId, type Id } from "@ttasks/storage";
+import {
+  intentFingerprint,
+  newId,
+  type Id,
+  type WriteRequest,
+  type WriteResult,
+} from "@ttasks/storage";
 import { toolCaller } from "../src/mcp/index.ts";
-import { opCall, principalOf, type Binding, type Caller } from "../src/ops/index.ts";
+import { opCall, principalOf, type Binding, type Caller, type OpsHost } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
 type Json = Record<string, unknown>;
@@ -328,6 +334,96 @@ describe("[A3.answers.replay-meanwhile] a retry gets the first answer, whatever 
       request_id: rid(),
     });
     expect(await call("history.undo", undo, USER)).toEqual({ ...first, replayed: true });
+  });
+});
+
+describe("[A3.answers.what-the-writer-did] an answer says what the writer did, not what the service expected", () => {
+  /**
+   * The world's service, whose writer runs `meanwhile` once just before it takes the first request
+   * of `entry`: another call's write in the instant between the service's decision and the write.
+   */
+  function holding(entry: string, meanwhile: () => Promise<void>): OpsHost {
+    const ops = w.service.ops;
+    let ran = false;
+    return {
+      ...ops,
+      spaces: () =>
+        ops.spaces().map((space) => {
+          const writer = space.writer;
+          if (writer === undefined) return space;
+          const submit = async (request: WriteRequest): Promise<WriteResult> => {
+            if (!ran && request.intent?.entry === entry) {
+              ran = true;
+              await meanwhile();
+            }
+            return writer.submit(request);
+          };
+          const held = new Proxy(writer, {
+            get(target, key) {
+              if (key === "submit") return submit;
+              const value: unknown = Reflect.get(target, key, target);
+              return typeof value === "function"
+                ? (value as (...args: unknown[]) => unknown).bind(target)
+                : value;
+            },
+          });
+          return { ...space, writer: held };
+        }),
+    };
+  }
+
+  test("a folder move whose child was moved elsewhere just before the write names it nowhere, first and on its retry", async () => {
+    const old = folder("parent-before");
+    const made = await call(
+      "folder.manage",
+      { action: "add_project", project: "Parent", folder: old, request_id: rid() },
+      USER,
+    );
+    const owner = made["owner"] as { id: string };
+    const markers = w.service.ops.markers;
+    // A marker that a loaded disk did not take in time is taken at the next look.
+    while (
+      markers !== undefined &&
+      !(await markers.mark(
+        { space: w.space, kind: "project", id: owner.id },
+        String(made["folder"]),
+      ))
+    );
+    const added = await call(
+      "task.add",
+      {
+        tasks: [{ title: "The child", folder: folder("parent-before", "child") }],
+        request_id: rid(),
+      },
+      USER,
+    );
+    const child = (added["tasks"] as Json[])[0]?.["ref"] as string;
+    renameSync(old, join(w.root, "work", "answers", "parent-after"));
+    const set = {
+      action: "set",
+      project: owner.id,
+      folder: join(w.root, "work", "answers", "parent-after"),
+      base: await asOf(),
+      request_id: rid(),
+    };
+    // The service decides to carry the child along; before the writer takes the request, an
+    // agent's update_task gives the child a folder of its own elsewhere.
+    const elsewhere = folder("child-elsewhere");
+    const host = holding("folder.manage", async () => {
+      await call("task.update", {
+        task: child,
+        set: { folder: elsewhere },
+        base: await asOf(),
+        request_id: rid(),
+      });
+    });
+    const first = (await opCall(host, USER, { op: "folder.manage", input: set })) as Json;
+    expect(first).toMatchObject({ result: "set" });
+    expect(first["moved"]).toBeUndefined();
+    expect(first["followed"]).toBeUndefined();
+    const read = await call("task.get", { task: child }, USER);
+    expect((read["task"] as { folder: { path: string } }).folder.path).toMatch(/child-elsewhere$/u);
+    expect(await call("folder.manage", set, USER)).toEqual({ ...first, replayed: true });
   });
 });
 
