@@ -5087,7 +5087,7 @@
     },
     {
       "id": "A2.3.12.6.update.spaces",
-      "title": "An update or a rollback that restarts the service notes how each space the service serves is before the switch, waits up to its stated bound for each to open or fail to, and names each space that is less usable than before, in the service's own words, with the rollback and the backup from just before a migration, and exits 8; one that did not settle in time is named too; spaces as before get one summary line",
+      "title": "Every update, a retry, a rollback and a repair too, ends by asking the service of the current version, up to its stated bound, how each space opened, and names each that is not usable now in the service's own words, with the backup the service names for a failed migration and the rollback, and exits 8; the note taken right before the switch only leaves out a space that was so already; a space with two folders is judged by the one that serves it; a service that stops answering leaves the spaces not checked; the others get one summary line",
       "source": "A2 3.12.6",
       "owner": "M6",
       "kind": "ci",
@@ -5095,7 +5095,7 @@
     },
     {
       "id": "A2.3.12.6.update.restart-consent",
-      "title": "An update restarts the service only on the decision taken at the switch: a service that started after the first look is asked about, and declined, or with nobody to ask, the update stops before the switch with nothing changed; agreed, its runs are held and waited for before the restart",
+      "title": "An update restarts the service only on the person's decision, asked once and before anything is held or stopped: declined, or with nobody to ask, the update stops with nothing changed and no version folder left; a service that comes and goes is never restarted without that agreement; agreed, its runs are held and waited for before the restart; a repair restarts a running service only on that agreement, and a running service restarts itself after a repair only when the journal records it",
       "source": "A2 3.12.6",
       "owner": "M6",
       "kind": "ci",

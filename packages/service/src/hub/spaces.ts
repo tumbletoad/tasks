@@ -225,6 +225,11 @@ export interface SpaceView {
    */
   readonly message?: string;
   /**
+   * The barrier backup of the migration that left the space read-only by failing, which `message`
+   * names too: for a program that reads status. None for a migration stopped by the open's bound.
+   */
+  readonly migration_backup?: string;
+  /**
    * The newest migration this machine ran on the space, with the backup from just before it, and
    * whether that backup is still in the space's backups folder: in described(), for people.
    */
@@ -489,6 +494,8 @@ class Hosted {
    * message (A1 3.17). Never the log.
    */
   message: string | undefined;
+  /** The barrier backup of the failed migration that left it read-only, which `message` names. */
+  migrationBackup: string | undefined;
   readonly index: number;
   readonly folder: string;
   /**
@@ -543,6 +550,7 @@ class Hosted {
     this.closing = undefined;
     this.check = undefined;
     this.message = undefined;
+    this.migrationBackup = undefined;
     this.restored = undefined;
     this.copy = undefined;
     this.incarnation = undefined;
@@ -586,6 +594,7 @@ class Hosted {
       ...(this.code === undefined ? {} : { code: this.code }),
       ...(this.holder === undefined ? {} : { holder: this.holder }),
       ...(message === undefined ? {} : { message }),
+      ...(this.migrationBackup === undefined ? {} : { migration_backup: this.migrationBackup }),
       ...(backup === undefined ? {} : { backup }),
       ...(this.restored === undefined ? {} : { restored: this.restored }),
       ...(check === undefined || check.verdict === "local"
@@ -1596,6 +1605,7 @@ export class SpaceManager {
       if (await this.#stopped(space)) return true;
       await this.#learnSpace(space);
       space.message = notTriedMessage(failure);
+      space.migrationBackup = failure.backup;
       this.#readOnly(space, "migration_failed", failure.code, {
         ms: Math.round(performance.now() - t0),
         tried: false,
@@ -1705,6 +1715,7 @@ export class SpaceManager {
         // once recorded, how it is tried again.
         if (readOnly === "migration_failed" && error instanceof StorageError) {
           space.message = recorded ? failedMessage(error.message) : error.message;
+          space.migrationBackup = error.attempt?.backup;
         }
         this.#readOnly(
           space,

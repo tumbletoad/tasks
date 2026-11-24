@@ -192,7 +192,10 @@ export class FakeControl implements ServiceControl {
    * stays. Without it, a restarted service names `spaces`.
    */
   spacesAfter: SpaceNote[][] | undefined;
+  /** When set, a restarted service stops answering after it answered this many times. */
+  answersAfterRestart: number | undefined;
   #settling: SpaceNote[][] = [];
+  #answers: number | undefined;
   readonly #root: string;
   readonly #os: NodeJS.Platform;
 
@@ -204,6 +207,10 @@ export class FakeControl implements ServiceControl {
 
   running(): Promise<RunningService | undefined> {
     if (this.version === undefined) return Promise.resolve(undefined);
+    if (this.#answers !== undefined) {
+      if (this.#answers <= 0) return Promise.resolve(undefined);
+      this.#answers -= 1;
+    }
     const next = this.#settling.length > 1 ? this.#settling.shift() : this.#settling[0];
     if (next !== undefined) this.spaces = next;
     return Promise.resolve({ version: this.version, manager: "manual", spaces: this.spaces });
@@ -217,6 +224,7 @@ export class FakeControl implements ServiceControl {
     }
     this.version = this.failRestarts ? undefined : currentVersion(this.#root, this.#os);
     this.#settling = [...(this.spacesAfter ?? [])];
+    this.#answers = this.answersAfterRestart;
     return Promise.resolve();
   }
 

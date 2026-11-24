@@ -6,13 +6,15 @@
 //
 // It runs only through the install's own command, which runs the version current names: an
 // installed version vouches for its successor, never another one. An agent's shell may not run it,
-// as it may not stop the service: the update restarts it. A service that runs when it starts, or
-// at the switch, is restarted only once the person agreed: it asks once in a terminal; `--yes`
-// answers for a script, and without a terminal and without `--yes` nothing is changed (exit 2).
-// The restart ends background runs: the update waits for them, then asks whether to stop them;
-// `--stop-runs` answers for a script, and without a terminal and without it the update is given
-// up with nothing changed (exit 2). After a restart it says, for each space, whether it is as
-// usable as before, and exits 8 when one is not or did not open in time.
+// as it may not stop the service: the update restarts it. A service that runs is restarted only
+// once the person agreed, asked once in a terminal, before anything is held or stopped: when it
+// starts, or when a service runs later where the update or a repair would restart it. `--yes`
+// answers for a script; without a terminal and without `--yes` an update changes nothing (exit 2)
+// and a repair leaves the service running for its next start. The restart ends background runs:
+// the update waits for them, then asks whether to stop them; `--stop-runs` answers for a script,
+// and without a terminal and without it the update is given up with nothing changed (exit 2).
+// Every update ends by naming each space that is not usable now, in the service's own words, and
+// exits 8 when it named one, one did not open in time, or the service could not be asked.
 import { resolve } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { EXIT_CODES } from "@ttasks/contracts";
@@ -20,11 +22,10 @@ import { hostFacts } from "@ttasks/service/paths";
 import type { SpaceNote, SpacesReport, UpdateResult } from "@ttasks/service/version-update";
 import type { Globals } from "./args.ts";
 import type { Io } from "./io.ts";
-import { migratedLine, migratedSince } from "./migrations.ts";
 import { printUsage } from "./output.ts";
 
 export const UPDATE_USAGE =
-  "ttasks update --from <archive> [--yes] [--stop-runs], ttasks update --rollback [--yes] [--stop-runs] or ttasks update --repair [--stop-runs]";
+  "ttasks update --from <archive> [--yes] [--stop-runs], ttasks update --rollback [--yes] [--stop-runs] or ttasks update --repair [--yes] [--stop-runs]";
 
 interface Answers {
   readonly yes: boolean;
@@ -98,7 +99,7 @@ export async function updateCommand(
   const control = update.osServiceControl(ctx, io.env);
   const ask = io.tty.stdin && io.tty.stdout ? install.processIO().ask : undefined;
   // The person's answer about the restart, asked at most once: here when the service runs now, or
-  // at the switch when one started meanwhile (the updater asks through agreeRestart).
+  // when the updater needs it later for a service that started meanwhile (agreeRestart).
   let agreed: boolean | undefined = parsed.yes ? true : undefined;
   if (parsed.verb !== "repair" && agreed === undefined && (await control.running()) !== undefined) {
     if (ask === undefined) {
@@ -117,7 +118,7 @@ export async function updateCommand(
       ask === undefined
         ? false
         : await ask(
-            "The service started while the update ran. The update restarts it: sessions keep running and reconnect; background runs are waited for first. Restart now? [y/N] ",
+            "The service is running, and the update restarts it: sessions keep running and reconnect; background runs are waited for first. Restart now? [y/N] ",
           );
     return agreed;
   };
@@ -146,7 +147,6 @@ export async function updateCommand(
     runs: { decide },
     agreeRestart,
   };
-  const began = Date.now();
   let result: UpdateResult;
   try {
     result =
@@ -159,22 +159,26 @@ export async function updateCommand(
     if (error instanceof update.UpdateError) return fail(error.message, error.exitCode);
     throw error;
   }
-  // A restarted service opens the spaces again and migrates those at an older schema: whether each
-  // is as usable as before, what a migration did and the backup from just before it, so a person
-  // who misses something knows where to go back to.
-  const spaces =
-    result.outcome === "updated" && result.spaces !== undefined
-      ? spaceLines(result.spaces, result, began)
-      : undefined;
-  const code = spaces?.worse === true ? EXIT_CODES.space : 0;
+  // Whatever the update did, the service that runs the current version says how each space is
+  // now: one that is not usable is named in its words, so a person knows before they need it.
+  const report = result.spaces;
+  const spaces = report === undefined ? undefined : spaceLines(report);
+  const code = spaces?.flagged === true ? EXIT_CODES.space : 0;
   if (globals.json) {
-    io.stdout(`${JSON.stringify({ ok: code === 0, ...summary(result) })}\n`);
+    io.stdout(
+      `${JSON.stringify({
+        ok: code === 0,
+        ...summary(result),
+        ...(report === undefined || spaces === undefined
+          ? {}
+          : { spaces: spacesJson(report, spaces.commands) }),
+      })}\n`,
+    );
     return code;
   }
   switch (result.outcome) {
     case "updated":
       io.stdout(`${PRODUCT_NAME} ${result.to} is current (was ${result.from}).\n`);
-      for (const line of spaces?.lines ?? []) io.stdout(`${line}\n`);
       break;
     case "current":
       break;
@@ -186,6 +190,7 @@ export async function updateCommand(
       );
       break;
   }
+  for (const line of spaces?.lines ?? []) io.stdout(`${line}\n`);
   return code;
 }
 
@@ -208,82 +213,101 @@ const duration = (ms: number): string =>
     : `${String(Math.round(ms / 1000))} seconds`;
 
 /**
- * The end of an update that restarted the service: a line for each space that is less usable than
- * before, in the service's own words, with the migration and its backup when the new version ran
- * one, and the rollback; one for each that did not open in time; the migrations of the others;
- * and one line for the spaces as before. `worse` when a space is not as usable as before, or
- * could not be seen to be.
+ * The end of every update: a line for each space that is not usable now, in the service's own
+ * words, which name the backup of a failed migration; one for each that had not opened within the
+ * bound; one line for the others; and the rollback when a space is not usable. A space the note
+ * from before the switch did not hold may have been so already, except one whose migration failed,
+ * which the running version tried. When the service stopped answering: what it said last, and
+ * where to look again. `flagged` when anything was named; `commands`, the ones the lines name.
  */
-export function spaceLines(
-  report: SpacesReport,
-  update: { readonly from: string },
-  sinceMs: number,
-): { readonly lines: string[]; readonly worse: boolean } {
+export function spaceLines(report: SpacesReport): {
+  readonly lines: string[];
+  readonly flagged: boolean;
+  readonly commands: string[];
+} {
   const lines: string[] = [];
-  let same = 0;
-  let worse = 0;
+  const commands: string[] = [];
+  const name = (command: string): string => {
+    if (!commands.includes(command)) commands.push(command);
+    return command;
+  };
+  if (!report.checked) {
+    const said = report.spaces.map((space) => `${space.name} ${stateWords(space.now)}`);
+    lines.push(
+      [
+        "The service stopped answering while the update waited for the spaces, so they could not be checked.",
+        ...(said.length > 0 ? [`What it said last: ${said.join("; ")}.`] : []),
+        `To look again: ${name(`${CLI_NAME} doctor`)} and ${name(`${CLI_NAME} space list`)}`,
+      ].join(" "),
+    );
+    return { lines, flagged: true, commands };
+  }
+  let fine = 0;
+  let notUsable = 0;
   for (const space of report.spaces) {
-    const migrated = space.after?.migrated;
-    const migration =
-      migrated !== undefined && migratedSince(migrated, sinceMs)
-        ? migratedLine(migrated)
-        : undefined;
-    if (space.verdict === "as_before") {
-      same += 1;
-      if (migration !== undefined) lines.push(`${space.name}: ${migration}`);
-    } else if (space.verdict === "worse") {
-      worse += 1;
-      const why = [space.after?.message, migration].filter((part) => part !== undefined);
-      lines.push(
-        [
-          `${space.name} was ${stateWords(space.before)} before the update and is ${stateWords(space.after)} now.`,
-          ...why,
-        ].join(" "),
-      );
+    const now = space.now;
+    if (space.verdict === "usable" || space.verdict === "as_before") {
+      fine += 1;
+    } else if (space.verdict === "not_usable") {
+      notUsable += 1;
+      const head =
+        space.before !== undefined
+          ? `${space.name} was ${stateWords(space.before)} before the update and is ${stateWords(now)} now.`
+          : report.noted || now?.reason === "migration_failed"
+            ? `${space.name} is ${stateWords(now)} now.`
+            : `${space.name} is ${stateWords(now)} now, as it may have been before this update.`;
+      lines.push(now?.message === undefined ? head : `${head} ${now.message}`);
     } else {
       lines.push(
-        `${space.name} had not finished opening ${duration(report.boundMs)} after the restart, perhaps behind a migration. ${CLI_NAME} space list shows how it opened.`,
+        `${space.name} had not finished opening within ${duration(report.boundMs)}, perhaps behind a migration. ${name(`${CLI_NAME} space list`)} shows how it opened.`,
       );
     }
   }
-  const others = same < report.spaces.length;
-  if (same > 0) {
+  const others = fine < report.spaces.length;
+  if (fine > 0) {
+    const how = report.noted ? "as usable as before" : "usable";
     lines.push(
-      same === 1
-        ? `The ${others ? "other " : ""}space is as usable as before.`
-        : `The ${others ? "other " : ""}${String(same)} spaces are as usable as before.`,
+      fine === 1
+        ? `The ${others ? "other " : ""}space is ${how}.`
+        : `The ${others ? "other " : ""}${String(fine)} spaces are ${how}.`,
     );
   }
-  if (worse > 0) lines.push(`To go back to ${update.from}: ${CLI_NAME} update --rollback`);
-  return { lines, worse: others };
+  if (notUsable > 0 && report.wayBack !== undefined) {
+    lines.push(`To go back to ${report.wayBack}: ${name(`${CLI_NAME} update --rollback`)}`);
+  }
+  return { lines, flagged: others, commands };
+}
+
+/** A space's entry in `--json`: its state, and the service's reason, words and backup. */
+const noteJson = (note: SpaceNote) => ({
+  state: note.state,
+  ...(note.reason === undefined ? {} : { reason: note.reason }),
+  ...(note.message === undefined ? {} : { message: note.message }),
+  ...(note.migration_backup === undefined ? {} : { backup: note.migration_backup }),
+});
+
+/** The spaces in `--json`: the same facts as the lines, and the commands they name. */
+export function spacesJson(report: SpacesReport, commands: readonly string[]) {
+  return {
+    checked: report.checked,
+    noted: report.noted,
+    bound_ms: report.boundMs,
+    ...(report.wayBack === undefined ? {} : { way_back: report.wayBack }),
+    commands,
+    spaces: report.spaces.map((space) => ({
+      id: space.id,
+      name: space.name,
+      verdict: space.verdict,
+      now: space.now === undefined ? null : noteJson(space.now),
+      before: space.before === undefined ? null : noteJson(space.before),
+    })),
+  };
 }
 
 function summary(result: UpdateResult) {
   switch (result.outcome) {
     case "updated":
-      return {
-        outcome: result.outcome,
-        from: result.from,
-        to: result.to,
-        ...(result.spaces === undefined
-          ? {}
-          : {
-              spaces: result.spaces.spaces.map((space) => ({
-                id: space.id,
-                name: space.name,
-                verdict: space.verdict,
-                before: { state: space.before.state, reason: space.before.reason },
-                after:
-                  space.after === undefined
-                    ? null
-                    : {
-                        state: space.after.state,
-                        reason: space.after.reason,
-                        message: space.after.message,
-                      },
-              })),
-            }),
-      };
+      return { outcome: result.outcome, from: result.from, to: result.to };
     case "current":
       return { outcome: result.outcome, version: result.version };
     case "repaired":

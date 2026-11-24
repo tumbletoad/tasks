@@ -228,7 +228,7 @@ describe("[A2.3.12.6.update.installed] ttasks update through the installed stabl
 
 describe("[A2.3.12.6.update.spaces] an update reads how the real service's spaces came through its restart", () => {
   test(
-    "a space the restarted service opens again for changes is as usable as before",
+    "a space the restarted service opens again for changes is usable",
     async () => {
       const w = install();
       const spaceDir = join(w.work, "spaces", "report");
@@ -254,7 +254,7 @@ describe("[A2.3.12.6.update.spaces] an update reads how the real service's space
           archive: w.archiveOf(w.other(from)),
           selfTest: "pass",
         });
-        expect(run.lines.at(-1)).toEqual({ done: "updated", spaces: [["Report", "as_before"]] });
+        expect(run.lines.at(-1)).toEqual({ done: "updated", spaces: [["Report", "usable"]] });
       } finally {
         await w.stopService();
         if (kept === undefined) rmSync(config, { force: true });

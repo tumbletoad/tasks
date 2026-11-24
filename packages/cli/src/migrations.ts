@@ -1,7 +1,7 @@
 // What a migration did to a space, in the words a person reads after an update: from which schema
 // to which, when, and the backup taken just before it. The service records the newest migration of
-// each space (space-settings.ts `last_migration`); `ttasks space list` shows it, doctor shows the
-// ones of the service's current run, and `ttasks update` the ones its restart ran (update.ts).
+// each space (space-settings.ts `last_migration`); `ttasks space list` shows it, and doctor shows
+// the ones of the service's current run.
 import { CLI_NAME } from "@ttasks/brand";
 
 export interface Migrated {

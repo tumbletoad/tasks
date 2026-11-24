@@ -394,11 +394,13 @@ the behaviour it describes, and keep each one to a sentence or two.
 - An install or an update that was cut off is finished or undone by the next one, or by the
   service. However often it is run again, `ttasks update --rollback` still goes back to the
   version that was current before it.
-- An update that restarts the service waits up to 2 minutes for each of its spaces to open. It
-  names each space that is less usable than before, says why and how to go back, and then exits 8.
-  It does not roll back by itself.
-- An update restarts the service only once you agreed: one that started while the update ran is
-  asked about, and without anyone to ask the update stops before it changes anything.
+- Every update ends by asking the service, for up to 2 minutes, how each space opened. It names
+  each space that is not usable now in the service's own words, which name the backup of a failed
+  migration, says how to go back, and then exits 8. When the service stops answering, it says the
+  spaces could not be checked. It does not roll back by itself.
+- An update restarts the service only once you agreed, asked before anything is stopped; without
+  anyone to ask it stops before it changes anything. A repair you did not agree to restart leaves
+  the service running, and the new version takes effect at its next start.
 - An update does not end a background run unasked. It waits up to 15 minutes for running runs,
   then asks whether to stop them or give the update up; without anyone to ask, it gives up.
 - An install over a running TTasks never restarts it unasked: it says that the old version still

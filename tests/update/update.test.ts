@@ -43,6 +43,7 @@ import {
   type UpdateOptions,
   type SpaceNote,
   type UpdatePoint,
+  type UpdateResult,
 } from "../../packages/service/src/version/update.ts";
 import { SUMS_FILE } from "../../scripts/build/signing.ts";
 import { craft, resign, type Crafted } from "./craft.ts";
@@ -336,10 +337,8 @@ describe("[A2.3.12.6.update.switch] the switch: self-test first, the journal bef
     );
     expect(failed.message).toMatch(/failed its self-test/);
     expect(currentOf(failing.root, os)).toBe("0.1.0");
-    // The verified version folder stays (a version folder is never removed); nothing else changed.
-    expect(installTree(failing.root).filter((p) => !p.startsWith("versions/0.3.0"))).toEqual(
-      before,
-    );
+    // The version folder the update put in place goes with it: nothing changed.
+    expect(installTree(failing.root)).toEqual(before);
     expect(failing.control.calls).toEqual([]);
 
     const down = await world("down");
@@ -499,7 +498,7 @@ describe("[A2.3.12.6.update.runs] an update holds new runs back, waits for the r
     expect(given.message).toMatch(/given up while 2 runs still run\. Nothing was changed\./);
     expect(asked).toEqual([2]);
     expect(currentOf(w.root, os)).toBe("0.1.0");
-    expect(installTree(w.root).filter((p) => !p.startsWith("versions/0.2.0"))).toEqual(before);
+    expect(installTree(w.root)).toEqual(before);
     expect(w.control.calls).toEqual(["hold", "release"]);
 
     w.control.calls.length = 0;
@@ -1038,7 +1037,30 @@ describe("[A2.3.12.6.update.lock] a second update waits for the first and then f
   });
 });
 
-describe("[A2.3.12.6.update.restart-consent] the service is restarted only on the decision taken at the switch", () => {
+/** The journal of an update from 0.1.0 to 0.2.0 cut off after its switch, launchers and all. */
+function cutJournal(root: string, service: boolean): Journal {
+  return {
+    format: 1,
+    kind: "update",
+    from: "0.1.0",
+    to: "0.2.0",
+    phase: "switched",
+    pid: 1,
+    started_at: new Date(0).toISOString(),
+    staging: null,
+    service,
+    tested: true,
+    launchers: windows
+      ? [`${PRODUCT_ID}.exe`, `${PRODUCT_ID}w.exe`].map((name) => ({
+          name,
+          old: sha(join(root, "versions", "0.1.0", "bin", name)),
+          new: sha(join(root, "versions", "0.2.0", "bin", name)),
+        }))
+      : [],
+  };
+}
+
+describe("[A2.3.12.6.update.restart-consent] the service is restarted only on the person's decision, taken before anything is stopped and kept", () => {
   /** A self-test during which another terminal starts the service, which was stopped. */
   const startedMeanwhile =
     (w: Awaited<ReturnType<typeof world>>) =>
@@ -1047,8 +1069,9 @@ describe("[A2.3.12.6.update.restart-consent] the service is restarted only on th
       return w.selfTest(folder);
     };
 
-  test("a service that started after the first look is asked about; declined, the update stops before the switch and restarts nothing", async () => {
+  test("a service that started after the first look is asked about at the switch; declined, the update stops before it, restarts nothing and leaves no version folder", async () => {
     const w = await world("consent-no", false);
+    const before = installTree(w.root);
     const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
     let asked = 0;
     const stopped = await refusal(
@@ -1067,7 +1090,64 @@ describe("[A2.3.12.6.update.restart-consent] the service is restarted only on th
     expect(w.control.calls).toEqual([]);
     expect(w.control.version).toBe("0.1.0");
     expect(currentOf(w.root, os)).toBe("0.1.0");
-    expect(existsSync(join(w.state, UPDATE_JOURNAL))).toBe(false);
+    expect(installTree(w.root)).toEqual(before);
+  });
+
+  test("a service that appears before the runs are held is asked about first: declined, no run is held or stopped and nothing changes", async () => {
+    const w = await world("consent-first", false);
+    const runs = new FakeRuns([
+      { space_name: "Work", task: "Fixture sort the boxes", state: "running" },
+    ]);
+    w.control.runs = runs;
+    const before = installTree(w.root);
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    let asked = 0;
+    const stopped = await refusal(
+      updateFromArchive(release.archive, {
+        ...w.options,
+        seams: {
+          update: (point) => {
+            if (point === "locked") w.control.version = "0.1.0";
+          },
+        },
+        runs: { waitMs: 30, decide: () => Promise.resolve("stop") },
+        agreeRestart: () => {
+          asked += 1;
+          return Promise.resolve(false);
+        },
+      }),
+    );
+    expect(asked).toBe(1);
+    expect(stopped.exitCode).toBe(2);
+    expect(stopped.message).toMatch(/Nothing was changed/);
+    expect(w.control.calls).toEqual([]);
+    expect(runs.blocking).toHaveLength(1);
+    expect(installTree(w.root)).toEqual(before);
+  });
+
+  test("a service that comes, goes and comes again before the switch is restarted only on the answer given while it ran", async () => {
+    const w = await world("consent-flicker", false);
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    let asked = 0;
+    const stopped = await refusal(
+      updateFromArchive(release.archive, {
+        ...w.options,
+        seams: {
+          update: (point) => {
+            if (point === "locked" || point === "staged") w.control.version = "0.1.0";
+            if (point === "unpacked") w.control.version = undefined;
+          },
+        },
+        agreeRestart: () => {
+          asked += 1;
+          return Promise.resolve(false);
+        },
+      }),
+    );
+    expect(asked).toBe(1);
+    expect(stopped.exitCode).toBe(2);
+    expect(w.control.calls).toEqual([]);
+    expect(currentOf(w.root, os)).toBe("0.1.0");
   });
 
   test("agreed at the switch, its runs are held and waited for, then it is restarted on the new version", async () => {
@@ -1116,97 +1196,229 @@ describe("[A2.3.12.6.update.restart-consent] the service is restarted only on th
     expect(quiet.control.calls).toEqual([]);
     expect(currentOf(quiet.root, os)).toBe("0.2.0");
   });
+
+  test("a service that started after the decision runs on, and the update says which version it runs", async () => {
+    const started = (w: Awaited<ReturnType<typeof world>>, version: string) => ({
+      ...w.options,
+      seams: {
+        update: (point: UpdatePoint) => {
+          if (point === "recorded") w.control.version = version;
+        },
+      },
+    });
+    const onNew = await world("late-new", false);
+    const r2 = fixtureRelease(join(onNew.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    await updateFromArchive(r2.archive, started(onNew, "0.2.0"));
+    expect(onNew.control.calls).toEqual([]);
+    expect(onNew.said.filter((line) => /still runs|restart it/.test(line))).toEqual([]);
+
+    const onOld = await world("late-old", false);
+    const r2b = fixtureRelease(join(onOld.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    await updateFromArchive(r2b.archive, started(onOld, "0.1.0"));
+    expect(onOld.control.calls).toEqual([]);
+    expect(onOld.said).toContain(
+      `The service started during the update and still runs 0.1.0. To run 0.2.0, restart it: ${PRODUCT_ID} service restart`,
+    );
+  });
+
+  test("a repair restarts a service that runs only on the person's agreement, given now or in the update that was cut off", async () => {
+    const w = await world("consent-repair");
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    await updateFromArchive(release.archive, w.options);
+    await rollbackUpdate(w.options);
+    let asked = 0;
+    const answer = (yes: boolean) => () => {
+      asked += 1;
+      return Promise.resolve(yes);
+    };
+    const cutOff = (service: boolean) => {
+      writeCurrent(w.root, currentFor("0.2.0", os), os);
+      writeJournal(w.state, cutJournal(w.root, service));
+      w.control.version = "0.1.0";
+      w.control.calls.length = 0;
+      asked = 0;
+    };
+    // An install cut off after its switch (its journal never restarts): declined, it runs on.
+    cutOff(false);
+    const left = await repairUpdate({ ...w.options, agreeRestart: answer(false) });
+    expect(left).toMatchObject({ outcome: "repaired", current: "0.2.0" });
+    expect(asked).toBe(1);
+    expect(w.control.calls).toEqual([]);
+    expect(w.control.version).toBe("0.1.0");
+    expect(w.said).toContain(
+      `The service was not restarted and runs 0.1.0: 0.2.0 takes effect at its next start (${PRODUCT_ID} service restart).`,
+    );
+    expect(existsSync(join(w.state, UPDATE_JOURNAL))).toBe(false);
+    // Agreed now: restarted.
+    await rollbackUpdate(w.options);
+    cutOff(false);
+    await repairUpdate({ ...w.options, agreeRestart: answer(true) });
+    expect(asked).toBe(1);
+    expect(w.control.version).toBe("0.2.0");
+    // Agreed in the update that was cut off: restarted without a question.
+    await rollbackUpdate(w.options);
+    cutOff(true);
+    await repairUpdate({ ...w.options, agreeRestart: answer(false) });
+    expect(asked).toBe(0);
+    expect(w.control.version).toBe("0.2.0");
+  });
 });
 
-describe("[A2.3.12.6.update.spaces] an update ends by saying, for every space, whether it is as usable as before", () => {
-  const open = (id: string, name: string): SpaceNote => ({
+describe("[A2.3.12.6.update.spaces] every update ends by naming each space that is not usable now, in the service's own words", () => {
+  const open = (id: string, name: string, entry = 0): SpaceNote => ({
+    entry,
     registered: id,
     id,
     name,
     state: "open",
   });
   const FAILED =
-    "The update of this space from schema 3 to 4 failed (BACKUP_FAILED): nothing in it changed. The backup taken before it: fixture-barrier.sqlite.";
+    "Migration to 0.6 failed (STORAGE_SQL). Your data is unchanged. The space stays at 0.5. Backup: pre-migrate-fixture-b. It is tried again after an update, or now with: ttasks space open <folder> --retry-migration";
+  const failed = (id: string, name: string, entry = 0): SpaceNote => ({
+    ...open(id, name, entry),
+    state: "read_only",
+    reason: "migration_failed",
+    message: FAILED,
+    migration_backup: "pre-migrate-fixture-b",
+  });
   const OPEN_FAILED = "The space could not be opened. Try again with: ttasks space open <folder>.";
+  const MISSING =
+    "There is no space in this folder now. If its drive is not connected, connect it, then run: ttasks space open <folder>.";
+  const missing = (id: string, entry: number): SpaceNote => ({
+    entry,
+    registered: id,
+    state: "unavailable",
+    reason: "missing",
+    message: MISSING,
+  });
+  const verdicts = (result: UpdateResult) =>
+    result.spaces?.spaces.map((s) => [s.name, s.verdict, s.now?.state]);
 
-  test("a writable space that is read-only after a failed migration and one that did not open are named in the service's words; spaces as before are counted", async () => {
+  test("each space is judged by what the restarted service says of it: a failed migration and a folder that did not open are named in its words, the others are as before", async () => {
     const w = await world("spaces-worse");
     const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    const copy: SpaceNote = {
+      entry: 3,
+      registered: "sp_copy",
+      id: "sp_copy",
+      name: "Copy",
+      state: "read_only",
+      reason: "read_only_copy",
+    };
+    const shut: SpaceNote = { entry: 4, registered: "sp_shut", state: "closed" };
     w.control.spaces = [
       open("sp_work", "Work"),
-      open("sp_home", "Home"),
-      open("sp_notes", "Notes"),
-      {
-        registered: "sp_copy",
-        id: "sp_copy",
-        name: "Copy",
-        state: "read_only",
-        reason: "read_only_copy",
-      },
-      { registered: "sp_shut", state: "closed" },
+      open("sp_home", "Home", 1),
+      open("sp_notes", "Notes", 2),
+      copy,
+      shut,
     ];
     const settled: SpaceNote[] = [
+      failed("sp_work", "Work"),
       {
-        registered: "sp_work",
-        id: "sp_work",
-        name: "Work",
-        state: "read_only",
-        reason: "migration_failed",
-        message: FAILED,
+        entry: 1,
+        registered: "sp_home",
+        state: "unavailable",
+        reason: "open_failed",
+        message: OPEN_FAILED,
       },
-      { registered: "sp_home", state: "unavailable", reason: "open_failed", message: OPEN_FAILED },
-      open("sp_notes", "Notes"),
-      {
-        registered: "sp_copy",
-        id: "sp_copy",
-        name: "Copy",
-        state: "read_only",
-        reason: "read_only_copy",
-      },
-      { registered: "sp_shut", state: "closed" },
+      open("sp_notes", "Notes", 2),
+      copy,
+      shut,
     ];
     // The restarted service names no space at first, then each one opening, then how they opened.
     w.control.spacesAfter = [[], settled.map((space) => ({ ...space, state: "opening" })), settled];
     const result = await updateFromArchive(release.archive, w.options);
     expect(result).toMatchObject({ outcome: "updated", from: "0.1.0", to: "0.2.0" });
-    if (result.outcome !== "updated") throw new Error("not updated");
-    expect(
-      result.spaces?.spaces.map((s) => ({
-        name: s.name,
-        verdict: s.verdict,
-        before: s.before.state,
-        after: s.after?.state,
-        message: s.after?.message,
-      })),
-    ).toEqual([
-      { name: "Work", verdict: "worse", before: "open", after: "read_only", message: FAILED },
-      {
-        name: "Home",
-        verdict: "worse",
-        before: "open",
-        after: "unavailable",
-        message: OPEN_FAILED,
-      },
-      { name: "Notes", verdict: "as_before", before: "open", after: "open", message: undefined },
-      {
-        name: "Copy",
-        verdict: "as_before",
-        before: "read_only",
-        after: "read_only",
-        message: undefined,
-      },
+    expect(result.spaces).toMatchObject({ noted: true, checked: true, wayBack: "0.1.0" });
+    expect(verdicts(result)).toEqual([
+      ["Work", "not_usable", "read_only"],
+      ["Home", "not_usable", "unavailable"],
+      ["Notes", "usable", "open"],
+      ["Copy", "usable", "read_only"],
     ]);
+    const [work, home] = result.spaces?.spaces ?? [];
+    expect(work?.now).toMatchObject({ message: FAILED, migration_backup: "pre-migrate-fixture-b" });
+    expect(work?.before?.state).toBe("open");
+    expect(home?.now?.message).toBe(OPEN_FAILED);
+  });
+
+  test("the note is taken after the person's decision: a space opened while the question stood is judged by it too", async () => {
+    const w = await world("spaces-late-note");
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    w.control.spaces = [open("sp_work", "Work")];
+    w.control.spacesAfter = [[open("sp_work", "Work"), missing("sp_home", 1)]];
+    const result = await updateFromArchive(release.archive, {
+      ...w.options,
+      agreeRestart: () => {
+        w.control.spaces = [open("sp_work", "Work"), open("sp_home", "Home", 1)];
+        return Promise.resolve(true);
+      },
+    });
+    expect(verdicts(result)).toEqual([
+      ["Work", "usable", "open"],
+      ["Home", "not_usable", "unavailable"],
+    ]);
+    expect(result.spaces?.spaces[1]?.before?.state).toBe("open");
+  });
+
+  test("a space that was so already, for the same reason, is left out; a space with two folders is judged by the one that served it, never by a closed copy", async () => {
+    const w = await world("spaces-copies");
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    const closedCopy: SpaceNote = { entry: 0, registered: "sp_work", state: "closed" };
+    w.control.spaces = [closedCopy, open("sp_work", "Work", 1), missing("sp_away", 2)];
+    w.control.spacesAfter = [[closedCopy, missing("sp_work", 1), missing("sp_away", 2)]];
+    const result = await updateFromArchive(release.archive, w.options);
+    expect(verdicts(result)).toEqual([
+      ["Work", "not_usable", "unavailable"],
+      ["sp_away", "as_before", "unavailable"],
+    ]);
+    expect(result.spaces?.spaces[0]?.now?.message).toBe(MISSING);
+  });
+
+  test("a service that stops answering while the update waits for its spaces leaves them not checked, with what it said last", async () => {
+    const w = await world("spaces-gone");
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    w.control.spaces = [open("sp_work", "Work"), open("sp_big", "Big", 1)];
+    w.control.spacesAfter = [
+      [open("sp_work", "Work"), { entry: 1, registered: "sp_big", state: "opening" }],
+    ];
+    w.control.answersAfterRestart = 1;
+    const result = await updateFromArchive(release.archive, { ...w.options, settleWaitMs: 1_500 });
+    expect(result.spaces?.checked).toBe(false);
+    expect(verdicts(result)).toEqual([
+      ["Work", "usable", "open"],
+      ["Big", "unsettled", "opening"],
+    ]);
+  });
+
+  test("a retry of an update cut off after its restart, and a repair, name the space its migration left read-only", async () => {
+    const w = await world("spaces-retry");
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    await updateFromArchive(release.archive, w.options);
+    await rollbackUpdate(w.options);
+    // Cut off right after current changed, with the person's agreement; the old service runs.
+    writeCurrent(w.root, currentFor("0.2.0", os), os);
+    writeJournal(w.state, cutJournal(w.root, true));
+    w.control.version = "0.1.0";
+    w.control.spacesAfter = [[failed("sp_work", "Work")]];
+    const again = await updateFromArchive(release.archive, w.options);
+    expect(again).toMatchObject({ outcome: "current", version: "0.2.0" });
+    expect(again.spaces).toMatchObject({ noted: false, checked: true, wayBack: "0.1.0" });
+    expect(verdicts(again)).toEqual([["Work", "not_usable", "read_only"]]);
+    expect(again.spaces?.spaces[0]?.now?.migration_backup).toBe("pre-migrate-fixture-b");
+    const repaired = await repairUpdate(w.options);
+    expect(verdicts(repaired)).toEqual([["Work", "not_usable", "read_only"]]);
   });
 
   test("a space still opening when the bound runs out is named as not settled; with no space, nothing is said about spaces", async () => {
     const w = await world("spaces-slow");
     const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
     w.control.spaces = [open("sp_big", "Big")];
-    w.control.spacesAfter = [[{ registered: "sp_big", state: "opening" }]];
+    w.control.spacesAfter = [[{ entry: 0, registered: "sp_big", state: "opening" }]];
     const result = await updateFromArchive(release.archive, { ...w.options, settleWaitMs: 1_500 });
-    if (result.outcome !== "updated") throw new Error("not updated");
     expect(result.spaces?.boundMs).toBe(1_500);
-    expect(result.spaces?.spaces.map((s) => [s.name, s.verdict])).toEqual([["Big", "unsettled"]]);
+    expect(verdicts(result)).toEqual([["Big", "unsettled", "opening"]]);
 
     const none = await world("spaces-none");
     const r2 = fixtureRelease(join(none.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
