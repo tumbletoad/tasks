@@ -299,6 +299,23 @@ const GROUP_CASES: readonly (readonly Step[])[] = [
     { kind: "undo", partial: false },
     { kind: "redo" },
   ],
+  // One request that restores the empty project P2 and files a new project titled P2: the new one
+  // takes a slug of its own (seed 1123905362, paths "215:1:6:7:2:5:5:5:6:6:6:6:6:6:6:6:5:5:5:5:5:5"
+  // and "1366:0:2:2:0:0:0:0:0:0:0:0:0:0:0:0").
+  [
+    { kind: "delete", who: "human", p: 2 },
+    {
+      kind: "batch",
+      who: "human",
+      m: 0,
+      steps: [
+        { kind: "restore", who: "human", p: 0 },
+        { kind: "file", who: "human" },
+      ],
+    },
+    { kind: "undo", partial: false },
+    { kind: "redo" },
+  ],
   // One request that deletes an empty project and sets its folder: refused, the project named.
   [
     { kind: "project_set", who: "human", m: 0, p: 2, path: 0, carry: [] },

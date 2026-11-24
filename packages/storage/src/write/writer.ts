@@ -2526,6 +2526,8 @@ export class SpaceWriter {
           const touches = groupTouches("projects", id, ["deleted"]);
           // The folders its delete removed: tombstoned by the commit that tombstoned the project.
           const start = must(starts.get(rowKey("projects", id)), "A staged group has a start");
+          // Its slug is live again from here: a project the request makes after it takes another.
+          draftSlugs.projects.add(String(start.raw["slug"]));
           const gone = provenanceOf(start, "deleted");
           for (const row of conn
             .prepare(FOLDER_SQL.allOfOwner)

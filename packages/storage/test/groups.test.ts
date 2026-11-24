@@ -301,6 +301,27 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     ).toEqual({ area_id: null, project_id: project });
   });
 
+  test("one request that restores a project and makes another of the same name gives the new one a slug of its own", () => {
+    const beds = created(submit([{ kind: "project.create", title: "Beds" }]));
+    expectStatus(submit([{ kind: "project.delete", project: beds }]), "applied");
+    const both = submit([
+      { kind: "project.restore", project: beds },
+      { kind: "project.create", title: "Beds" },
+    ]);
+    const made = created(both, 1);
+    expect(row("projects", beds)).toMatchObject({ slug: "beds", deleted_at: null });
+    expect(row("projects", made)).toMatchObject({ slug: "beds-2", deleted_at: null });
+    // A slug the request asks for is refused while the restored project holds it.
+    expectStatus(submit([{ kind: "project.delete", project: made }]), "applied");
+    expectStatus(submit([{ kind: "project.delete", project: beds }]), "applied");
+    const asked = submit([
+      { kind: "project.restore", project: beds },
+      { kind: "project.create", title: "Beds", slug: "beds" },
+    ]);
+    expectStatus(asked, "rejected");
+    expect(asked.error).toMatchObject({ code: "VALIDATION_FAILED", field: "slug" });
+  });
+
   test("Redo of a project's delete after someone renamed it is a conflict naming the rename, and the project stays", () => {
     const spare = created(submit([{ kind: "project.create", title: "Spare" }]));
     expectStatus(submit([{ kind: "project.delete", project: spare }]), "applied");
