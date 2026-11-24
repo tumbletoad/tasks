@@ -292,7 +292,7 @@ const invalid = (message: string, field?: string): AppError =>
 
 const LAST_SQL =
   "SELECT (SELECT instance_id FROM launches WHERE machine_id = $machine AND route <> 'clipboard' " +
-  "ORDER BY created_at DESC, id DESC LIMIT 1) AS open, (SELECT instance_id FROM runs " +
+  "AND state <> 'failed' ORDER BY created_at DESC, id DESC LIMIT 1) AS open, (SELECT instance_id FROM runs " +
   "WHERE machine_id = $machine ORDER BY queued_at DESC, id DESC LIMIT 1) AS run";
 
 /** The instance a space's last Open here used, and its last Run's, by key. */

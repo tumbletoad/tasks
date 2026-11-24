@@ -19,12 +19,13 @@
 // - A task's compact row (ops/task-rows.ts) also carries what its row shows of its children
 //   (A5 3.6): its first three sources with their own text and URL (`sources`), how many more it
 //   has (`sources_more`), where it opens on this machine (`place`), from its own folder or its
-//   project's, whether its newest background run works or needs the person (`run`), and the
-//   questions agents asked that wait for the person (`questions`). A commit that changes a
-//   source, a link, a folder, a note, a log entry or a run of a task therefore carries the task's
-//   row too, as an entity of its own, and one that changes a project's folder carries the rows of
-//   the project's tasks the batch holds, so the row the client holds never shows a source, a
-//   folder, a run state or a question the space no longer has.
+//   project's, whether its newest background run works or needs the person (`run`), the agents
+//   it was last opened in and ran with (`last`), and the questions agents asked that wait for the
+//   person (`questions`). A commit that changes a source, a link, a folder, a note, a log entry, a
+//   run or a launch of a task therefore carries the task's row too, as an entity of its own, and
+//   one that changes a project's folder carries the rows of the project's tasks the batch holds,
+//   so the row the client holds never shows a source, a folder, a run state or a question the
+//   space no longer has.
 import type { PreferenceRead } from "@ttasks/contracts";
 import { RUN_WAITS, WAITS, type Row, type WorkerConnection } from "@ttasks/storage";
 import { hasFolderTable } from "../ops/read.ts";
@@ -227,13 +228,17 @@ const taskRowsSql = (folders: boolean) =>
   (folders
     ? " OR t.project_id IN (SELECT owner_id FROM folders WHERE owner_kind = 'project' AND id IN " +
       `(${touched("folders")})) OR t.id IN (SELECT task_id FROM runs WHERE id IN ` +
-      `(${touched("runs")}))`
+      `(${touched("runs")})) OR t.id IN (SELECT task_id FROM launches WHERE id IN ` +
+      `(${touched("launches")}))`
     : "");
 /**
- * The tasks of the launches the batch touched. A launch's changes name no task (it is no child of
- * its task), but a tab that shows the task's tile follows it by the task.
+ * The tasks of the launches a commit after `$after` changed. A launch's changes name no task (it is
+ * no child of its task), but its task's row shows the agent it was last opened in, and a tab that
+ * shows the task's tile follows it by the task.
  */
-const LAUNCH_TASKS = `SELECT id, task_id FROM launches WHERE id IN (${touched("launches")})`;
+const LAUNCH_TASKS =
+  "SELECT id, task_id FROM launches WHERE task_id IS NOT NULL AND id IN " +
+  "(SELECT entity_id FROM changes WHERE seq > $after AND entity = 'launches')";
 const AREA_ROWS = `SELECT ${AREA_COLUMNS} FROM areas a WHERE a.id IN (${touched("areas")})`;
 const PROJECT_ROWS = `SELECT ${PROJECT_COLUMNS} FROM projects p WHERE p.id IN (${touched("projects")})`;
 
@@ -363,7 +368,7 @@ export async function readBatch(
     { sql: taskRowsSql(folders), mode: "all", params },
     { sql: AREA_ROWS, mode: "all", params },
     { sql: PROJECT_ROWS, mode: "all", params },
-    { sql: LAUNCH_TASKS, mode: "all", params },
+    { sql: LAUNCH_TASKS, mode: "all", params: { after } },
     { sql: LATER, mode: "all", params: { upto: params.upto } },
     ...(folders
       ? [
@@ -420,11 +425,13 @@ export async function readBatch(
   const runTask = new Map(
     ((runs ?? []) as Row[]).map((r) => [String(r["id"]), String(r["task_id"])]),
   );
-  /** The task whose row a change shows on: its own, or a run's. */
+  /** The task whose row a change shows on: its own, or a run's or a launch's. */
   const taskOf = (change: Row): string | undefined => {
     const task = change["task_id"];
     if (typeof task === "string") return task;
-    return change["entity"] === "runs" ? runTask.get(String(change["entity_id"])) : undefined;
+    const id = String(change["entity_id"]);
+    if (change["entity"] === "runs") return runTask.get(id);
+    return change["entity"] === "launches" ? launchTask.get(id) : undefined;
   };
   const withheld = new Set<string>();
   const withhold = (change: Row) => {
@@ -454,7 +461,7 @@ export async function readBatch(
       entities = new Map();
       bySeq.set(seq, entities);
     }
-    const task = table === "launches" ? launchTask.get(id) : taskOf(change);
+    const task = taskOf(change);
     let found = entities.get(key);
     if (found === undefined) {
       const changed: string[] = [];
@@ -473,12 +480,13 @@ export async function readBatch(
     }
     const field = change["field"];
     if (typeof field === "string" && !found.changed.includes(field)) found.changed.push(field);
-    // A source, link, folder or run of a task, and a folder of its project, change what the task's
-    // row shows: the event carries the task's row too, after the child, as a change that names no
-    // field of the task.
+    // A source, link, folder, run or launch of a task, and a folder of its project, change what
+    // the task's row shows: the event carries the task's row too, after the child, as a change
+    // that names no field of the task.
     const owners =
       task !== undefined
-        ? (ROW_CHILDREN as readonly string[]).includes(table) || table === "runs"
+        ? (ROW_CHILDREN as readonly string[]).includes(table) ||
+          ((table === "runs" || table === "launches") && folders)
           ? [`tasks:${task}`]
           : []
         : table === "folders"

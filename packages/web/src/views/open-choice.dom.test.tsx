@@ -1,35 +1,47 @@
 // @vitest-environment happy-dom
 //
-// Which agent an expanded task's Open and Run use, with the real live store and the page's own
-// actions, rendered by React into a DOM (happy-dom) against a fake service: one button names its
-// agent (the task's last, else the space's last, else the first), and a menu beside it holds every
-// agent, grouped by app, from the keyboard too.
+// Which agent a task's Open and Run use, with the real live store and the page's own actions,
+// rendered by React into a DOM (happy-dom) against a fake service: one button names its agent (the
+// task's last, else the space's last, else the first), the row's tile opens the same one, and a menu
+// beside each button holds every agent, grouped by app, from the keyboard too. The fake service
+// sends a task's row again after an Open or a run it took, as the service's feed does.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { Api, Busy, Instance, LastUsed, Receipt, Run } from "../api.ts";
+import {
+  Refused,
+  type Api,
+  type Busy,
+  type Instance,
+  type LastUsed,
+  type Receipt,
+  type Run,
+} from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
-const TASK: TaskRow = {
-  id: "t_00001",
-  ref: "M-1",
-  title: "Task 1",
+const CURSOR = { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq" };
+const taskOf = (n: number): TaskRow => ({
+  id: `t_0000${String(n)}`,
+  ref: `M-${String(n)}`,
+  title: `Task ${String(n)}`,
   status: "open",
   inbox: false,
   lifecycle: "active",
   area_id: "a_1",
-  position: "p00001",
+  position: `p0000${String(n)}`,
   created_at: Date.UTC(2026, 10, 1),
   version: 1,
-};
+});
+const TASK = taskOf(1);
+const OTHER = taskOf(2);
 
 const agent = (key: string, app: string, label: string, ring: number): Instance => ({
   key,
@@ -58,6 +70,11 @@ let ran: string[];
 let busyNow: Busy[];
 let lastNow: LastUsed;
 let receiptsNow: Receipt[];
+/** The tasks' rows as the fake service holds them. */
+let rows: Map<string, TaskRow>;
+let seq: number;
+/** Why the fake service refuses an Open in an instance, by its key: T3 Code's code. */
+let refusing: Map<string, string>;
 
 const receipt = (instance: string): Receipt => ({
   id: `la_${instance}`,
@@ -90,6 +107,9 @@ beforeEach(() => {
   busyNow = [];
   lastNow = {};
   receiptsNow = [];
+  rows = new Map([TASK, OTHER].map((task) => [task.id, task]));
+  seq = 10;
+  refusing = new Map();
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {
@@ -139,13 +159,25 @@ beforeEach(() => {
     busy: () => Promise.resolve({ busy: busyNow, last: lastNow }),
     receipts: () => Promise.resolve(receiptsNow),
     runs: () => Promise.resolve([]),
-    openLaunch: (_task: string, instance: string) => {
+    openLaunch: (task: string, instance: string) => {
       opened.push(instance);
+      const why = refusing.get(instance);
+      if (why !== undefined) {
+        return Promise.reject(
+          new Refused(409, "invalid_input", undefined, {
+            field: "instance",
+            reason: "t3",
+            t3: why,
+          }),
+        );
+      }
       receiptsNow = [...receiptsNow, receipt(instance)];
-      return Promise.resolve({ receipt: receipt(instance), copy: undefined });
+      used(task, { open: instance });
+      return Promise.resolve({ receipt: receipt(instance), copy: undefined, leftOut: [] });
     },
-    startRun: (_task: string, instance: string) => {
+    startRun: (task: string, instance: string) => {
       ran.push(instance);
+      used(task, { run: instance });
       return Promise.resolve(runOf(instance));
     },
   } as unknown as Api;
@@ -185,30 +217,73 @@ const settle = () =>
     for (let i = 0; i < 10; i += 1) await Promise.resolve();
   });
 
-/** The space as the service serves it, with these agents, and the task expanded. */
-async function showWith(instances: readonly Instance[]) {
+/** The service took an Open or a run of `task`: the feed sends its row again with the agent. */
+function used(task: string, last: LastUsed) {
+  const before = rows.get(task);
+  if (before === undefined) return;
+  const row = { ...before, last: { ...before.last, ...last } };
+  rows.set(task, row);
+  lastNow = { ...lastNow, ...last };
+  seq += 1;
+  const message: BatchMessage = {
+    type: "batch",
+    space_id: SPACE.id,
+    ...CURSOR,
+    from: seq - 1,
+    through: seq,
+    events: [
+      {
+        seq,
+        request_id: `r${String(seq)}`,
+        actor: { kind: "person", label: "" },
+        kind: "launch.create",
+        entities: [{ type: "task", id: task, row: { ...row }, changed: [], created: false }],
+      },
+    ],
+  };
+  queueMicrotask(() => {
+    live.store.push(message);
+    live.store.flush();
+  });
+}
+
+/** The space as the service serves it, with these agents, its tasks collapsed. */
+function serve(instances: readonly Instance[]) {
   act(() => {
     live.store.push({
       type: "snapshot",
       space: SPACE,
-      cursor: { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 },
-      tasks: [TASK],
+      cursor: { ...CURSOR, seq },
+      tasks: [...rows.values()],
       areas: [{ id: "a_1", title: "Lumen", position: "a" }],
       projects: [],
       instances: [...instances],
     } satisfies SnapshotMessage);
     live.store.flush();
   });
+}
+
+const rowOf = (task: TaskRow) => container.querySelector<HTMLElement>(`[data-task="${task.ref}"]`);
+
+/** `task` expanded, the other one collapsed. */
+async function expand(task: TaskRow) {
   await settle();
-  if (part("open") !== null) return;
+  if (rowOf(task)?.querySelector('[data-part="strip"]') != null) return;
   act(() => {
-    container.querySelector<HTMLElement>('[data-part="title"]')?.click();
+    rowOf(task)?.querySelector<HTMLElement>('[data-part="title"]')?.click();
   });
   await settle();
 }
 
+/** The space as the service serves it, with these agents, and the task expanded. */
+async function showWith(instances: readonly Instance[]) {
+  serve(instances);
+  await expand(TASK);
+}
+
 const part = (name: string) =>
   container.querySelector<HTMLButtonElement>(`[data-part="strip"] [data-part="${name}"]`);
+const tileOf = (task: TaskRow) => rowOf(task)?.querySelector<HTMLElement>('[data-part="tile"]');
 /** What the Open button says it opens in. */
 const openSays = () => part("open")?.querySelector("span > span:not([data-off])")?.textContent;
 const items = () => [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
@@ -251,13 +326,70 @@ describe("[M6.page.open-choice] Open and Run each name one agent, with every oth
 
   test("the task's own last Open is its button, whatever the space used last", async () => {
     lastNow = { open: "codex-personal" };
-    receiptsNow = [receipt("codex"), receipt("claude-test")];
+    rows.set(TASK.id, { ...TASK, last: { open: "claude-test" } });
     await showWith(FIVE);
     expect(openSays()).toBe("Open in Claude Code · test");
     // The row's tile opens in the same one.
-    expect(container.querySelector('[data-part="tile"]')?.getAttribute("data-instance")).toBe(
-      "claude-test",
-    );
+    expect(tileOf(TASK)?.getAttribute("data-instance")).toBe("claude-test");
+  });
+
+  test("a collapsed row's tile opens in the agent its task last used, from the row alone", async () => {
+    // Task 1 last opened in the work account, task 2 in the personal one, then a reload.
+    rows.set(TASK.id, { ...TASK, last: { open: "claude-work" } });
+    rows.set(OTHER.id, { ...OTHER, last: { open: "codex-personal" } });
+    lastNow = { open: "codex-personal" };
+    serve(FIVE);
+    await settle();
+    expect(rowOf(TASK)?.querySelector('[data-part="strip"]')).toBeNull();
+    expect(tileOf(TASK)?.getAttribute("data-instance")).toBe("claude-work");
+    click(tileOf(TASK));
+    await settle();
+    expect(opened).toEqual(["claude-work"]);
+  });
+
+  test("Run uses the agent its own task last ran with, after that run ended and another task ran with another", async () => {
+    serve(FIVE);
+    await expand(TASK);
+    click(part("run-other"));
+    await settle();
+    click(items().find((i) => i.textContent.includes("Claude Code · work")));
+    await settle();
+    expect(ran).toEqual(["claude-work"]);
+
+    await expand(OTHER);
+    click(part("run-other"));
+    await settle();
+    click(items().find((i) => i.textContent.includes("Codex · personal")));
+    await settle();
+    expect(ran).toEqual(["claude-work", "codex-personal"]);
+
+    // Both runs ended (no row shows a run): Run names the agent task 1 last ran with.
+    await expand(TASK);
+    expect(part("run")?.textContent).toContain("Run with Claude Code · work");
+  });
+
+  test("a pick the service refused is not the button's: its menu item says why, and picking it tries again", async () => {
+    refusing.set("codex-personal", "not_running");
+    await showWith(FIVE);
+    click(part("open-other"));
+    await settle();
+    click(items()[4]);
+    await settle();
+    expect(opened).toEqual(["codex-personal"]);
+    expect(openSays()).toBe("Open in Claude Code · default");
+
+    click(part("open-other"));
+    await settle();
+    expect(items()[4]?.textContent).toContain("T3 Code is not running");
+    expect(items()[4]?.getAttribute("aria-disabled")).not.toBe("true");
+    refusing.clear();
+    click(items()[4]);
+    await settle();
+    expect(opened).toEqual(["codex-personal", "codex-personal"]);
+    expect(openSays()).toBe("Open in Codex · personal");
+    click(part("open-other"));
+    await settle();
+    expect(items()[4]?.textContent).not.toContain("not running");
   });
 
   test("a pick in the menu opens with it, and it is then the button's; Run's menu is the same", async () => {

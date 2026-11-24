@@ -790,6 +790,7 @@
   "composer.noAgent": "No agent is set up here. Copy the brief instead.",
   "composer.left": "{left, plural, =0 {Full: a note or request holds {max, number} characters} one {# character left} other {# characters left}}",
   "composer.opening": "{label} is opening",
+  "composer.refused": "{why, select, not_running {T3 Code is not running} not_paired {Not paired with {product}} reconnect {Not paired with {product}} pairing_denied {Paired without Full access} model_required {Has no model set} model_unavailable {Its model is not offered} not_for_space {Set up for other spaces} no_terminal {No terminal can open it here} own_home {No terminal can open it here} other {Did not open the last time}}",
   "composer.openAnother": "Open another in {label}",
   "composer.anotherTip": "{label} is running on this task. This starts a second session.",
   "composer.run": "Run with {label}",

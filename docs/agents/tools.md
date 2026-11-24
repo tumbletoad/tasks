@@ -2110,6 +2110,9 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].run.id` | string | yes | The run's ID |
 | `rows[].run.state` | "working" \| "needs_you" \| "recorded" | yes | It works, ended asking the person, or was open when this copy's backup was made |
 | `rows[].run.instance` | string | yes | The run's agent instance |
+| `rows[].last` | object | no | The agent instances it was last opened in and last ran with |
+| `rows[].last.open` | string | no | The instance of its newest Open that was not refused |
+| `rows[].last.run` | string | no | The instance of its newest run |
 | `rows[].questions` | object[], max 10 items | no | Questions agents asked that wait for the person, newest first |
 | `rows[].questions[].ref` | string | yes | The log entry, such as l3, or the run that ended with it |
 | `rows[].questions[].by` | string | yes | The agent that asked |
@@ -3044,6 +3047,9 @@ What is in the Trash, newest change first, a page at a time.
 | `rows[].run.id` | string | yes | The run's ID |
 | `rows[].run.state` | "working" \| "needs_you" \| "recorded" | yes | It works, ended asking the person, or was open when this copy's backup was made |
 | `rows[].run.instance` | string | yes | The run's agent instance |
+| `rows[].last` | object | no | The agent instances it was last opened in and last ran with |
+| `rows[].last.open` | string | no | The instance of its newest Open that was not refused |
+| `rows[].last.run` | string | no | The instance of its newest run |
 | `rows[].questions` | object[], max 10 items | no | Questions agents asked that wait for the person, newest first |
 | `rows[].questions[].ref` | string | yes | The log entry, such as l3, or the run that ended with it |
 | `rows[].questions[].by` | string | yes | The agent that asked |

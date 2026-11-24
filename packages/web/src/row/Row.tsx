@@ -32,7 +32,7 @@ import { agentMarker } from "../task/runs.ts";
 import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
 import { readOnly, type RowActions } from "./actions.ts";
-import { lastOpened, tileClick, type BusyOf, type FolderRefusal } from "./launch.ts";
+import { tileClick, type BusyOf, type Cannot, type FolderRefusal } from "./launch.ts";
 import { formatInstant } from "./dates.ts";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
@@ -95,6 +95,7 @@ const styles = classes(css, [
 ]);
 
 const NO_LAST: LastUsed = {};
+const NO_CANNOT: Cannot = new Map();
 
 export interface RowProps {
   readonly task: TaskRow;
@@ -104,6 +105,8 @@ export interface RowProps {
   readonly instances: readonly Instance[];
   /** The instances the space last opened a task in and ran one with here. */
   readonly last?: LastUsed;
+  /** Why an instance refused its last Open here, by key: its code, until one goes through. */
+  readonly cannot?: Cannot;
   /** The task's launch receipts, oldest first, once the tab follows the task: its history. */
   readonly receipts: readonly Receipt[];
   /** What busies each agent app with the task on this machine. */
@@ -529,6 +532,7 @@ function RowView({
   project,
   instances,
   last = NO_LAST,
+  cannot = NO_CANNOT,
   receipts,
   busy,
   runs,
@@ -568,7 +572,7 @@ function RowView({
       ...(area === undefined ? {} : { area: { title: area.title, slot: slot ?? 1 } }),
       ...(project === undefined ? {} : { project: { title: project.title } }),
       instances,
-      used: [lastOpened(receipts), last.open],
+      last,
       ...(busy === undefined ? {} : { busy }),
       sources: sourceFacts(t, task.sources),
       ...(task.sources_more === undefined ? {} : { sourcesMore: task.sources_more }),
@@ -847,6 +851,7 @@ function RowView({
             hidden={unresolved !== undefined}
             instances={instances}
             last={last}
+            cannot={cannot}
             actions={actions}
             refused={refused}
           />

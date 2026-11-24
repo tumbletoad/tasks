@@ -8,7 +8,7 @@
 // Anatomy, inline start to end: marker, check, title (+ status chip) and summary (+ area dot and
 // project on views that mix areas), then fixed columns: due, age, priority, effort, sources,
 // folder, star, launch. Every column keeps its width when it is empty, so columns line up on every row.
-import type { Instance } from "../api.ts";
+import type { Instance, LastUsed } from "../api.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { TaskRow } from "../store/rows.ts";
 import type { EffortLevel } from "@ttasks/contracts/preferences";
@@ -161,8 +161,8 @@ export interface RowInput {
   readonly project?: { readonly title: string };
   /** The instances for the space, in Settings' order. */
   readonly instances: readonly Instance[];
-  /** The instances the task, then the space, last opened in: the tile uses the first it has. */
-  readonly used?: readonly (string | undefined)[];
+  /** The instances the space last opened a task in and ran one with here. */
+  readonly last?: LastUsed;
   /** What busies each agent app with the task on this machine; none: every one is ready. */
   readonly busy?: BusyOf;
   readonly sources?: readonly SourceFact[];
@@ -599,10 +599,11 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
 
   // A task in the Trash opens in no agent: Restore comes first.
   const launch = launchOf(
+    task,
     row.instances,
+    row.last ?? {},
     row.busy,
     task.deleted_at === undefined ? row.launchBlock : { kind: "none" },
-    row.used,
   );
   const label = launch.instance?.label ?? "";
   const tip = msg(LAUNCH_TIP[launch.state] ?? "row.tile.ready", {

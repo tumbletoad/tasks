@@ -11,7 +11,8 @@
 //
 // Open and Run each are one button that names its agent, with a menu beside it of every agent that
 // can do it, grouped by app: the agent the task last used for it, else the one the space last used
-// here, else the first in Settings' order. One picked in the menu does it, and is then the button's.
+// here, else the first in Settings' order. One picked in the menu does it, and once the service took
+// it, it is the button's.
 // Run starts an agent that works on the task in the background, without a window, with the text
 // as its request (without text it works on the task). Its words clear once the service queued the
 // run, which holds them; a refusal keeps them. A finished task runs nothing: Reopen stands where
@@ -30,7 +31,7 @@ import {
   Popover,
   Toolbar,
 } from "react-aria-components";
-import { requestId, type Instance } from "../api.ts";
+import { requestId, type Instance, type LastUsed } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useMachine } from "../app/machine.ts";
@@ -45,7 +46,7 @@ import { CopyIcon, RunIcon } from "../row/icons.tsx";
 import { sayMsg } from "../row/say.ts";
 import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { runners } from "./runs.ts";
-import { byApp, chosen, openers, tileState, type BusyOf } from "../row/launch.ts";
+import { agentFor, byApp, openers, tileState, type BusyOf, type Cannot } from "../row/launch.ts";
 import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 import { typingIn } from "../kept.ts";
 import {
@@ -99,16 +100,17 @@ export interface ComposerProps {
   /** What busies each agent app with the task on this machine. */
   readonly busy: BusyOf | undefined;
   readonly instances: readonly Instance[];
-  /** The instances the task, then the space, last opened in: Open uses the first it has. */
-  readonly opened: readonly (string | undefined)[];
-  /** The instances the task, then the space, last ran with: Run uses the first it has. */
-  readonly ran: readonly (string | undefined)[];
+  /** The instances the space last opened a task in and ran one with here. */
+  readonly last: LastUsed;
+  /** Why an instance refused its last Open here, by key. */
+  readonly cannot: Cannot;
   readonly actions: RowActions;
 }
 
 /**
  * The menu beside Open or Run: every agent that can do it, grouped by app in Settings' order, the
- * button's own checked. A pick does it with that agent; one that is held says why and is off.
+ * button's own checked. A pick does it with that agent; one that is held says why and is off, and
+ * one that refused its last try says why and tries again, where the answer offers Start or Pair.
  */
 function AgentMenu({
   part,
@@ -118,6 +120,7 @@ function AgentMenu({
   current,
   name,
   held,
+  refused,
   pick,
 }: {
   readonly part: "open-other" | "run-other";
@@ -130,6 +133,8 @@ function AgentMenu({
   readonly name: (instance: Instance) => string;
   /** Why an agent cannot do it now; none: every one can. */
   readonly held?: (instance: Instance) => string | undefined;
+  /** Why an agent refused its last try here; it can be picked again. */
+  readonly refused?: (instance: Instance) => string | undefined;
   readonly pick: (instance: Instance) => void;
 }) {
   if (list.length < 2) return null;
@@ -157,7 +162,7 @@ function AgentMenu({
           {byApp(list).map((group) => (
             <MenuSection key={group.app} id={group.app} aria-label={group.app}>
               {group.instances.map((instance) => {
-                const why = held?.(instance);
+                const why = held?.(instance) ?? refused?.(instance);
                 return (
                   <MenuItem
                     key={instance.key}
@@ -292,7 +297,7 @@ export function KeptDraft({ task }: { readonly task: TaskRow }) {
   );
 }
 
-export function Composer({ task, busy, instances, opened, ran, actions }: ComposerProps) {
+export function Composer({ task, busy, instances, last, cannot, actions }: ComposerProps) {
   const t = useT();
   const say = useToast();
   const edits = useEdits();
@@ -316,8 +321,6 @@ export function Composer({ task, busy, instances, opened, ran, actions }: Compos
   /** A Run on its way from here: the words it carries, until the service answered. */
   const starting = useRef<string | undefined>(undefined);
   const [runningFrom, setRunningFrom] = useState(false);
-  /** The agents picked here for Open and Run: each is then its button's at once. */
-  const [picked, setPicked] = useState<{ open?: string; run?: string }>({});
 
   const write = (next: string) => {
     setText(next);
@@ -521,20 +524,26 @@ export function Composer({ task, busy, instances, opened, ran, actions }: Compos
   const openKeys = keysOf("open-first", singleKeys);
   const runKeys = keysOf("run-first", singleKeys);
   const opens = openers(instances);
-  const first = chosen(opens, picked.open, ...opened);
+  const first = agentFor(opens, "open", task, last);
   const runs = runners(instances);
-  const runner = chosen(runs, picked.run, ...ran);
+  const runner = agentFor(runs, "run", task, last);
   const finished = task.lifecycle !== "active";
   /** Run's key on a finished task: Reopen, the step before any run. */
   const runOrReopen = (instance: Instance) => {
     if (finished) edits.reopen(task);
     else run(instance);
   };
+  /** Why `instance` refused its last Open here, as its button and its menu item say it. */
+  const refusedWhy = (instance: Instance): string | undefined => {
+    const why = cannot.get(instance.key);
+    return why === undefined ? undefined : t("composer.refused", { why });
+  };
   /** What Open does with `instance`, as its button and its menu item say it. */
   const openName = (instance: Instance) =>
     t(another(instance) ? "composer.openAnother" : "row.openIn", { label: instance.label });
   const openTip = (instance: Instance) =>
     held(instance) ??
+    refusedWhy(instance) ??
     t(
       another(instance)
         ? "composer.anotherTip"
@@ -667,10 +676,8 @@ export function Composer({ task, busy, instances, opened, ran, actions }: Compos
               current={first}
               name={openName}
               held={held}
-              pick={(instance) => {
-                setPicked((before) => ({ ...before, open: instance.key }));
-                open(instance);
-              }}
+              refused={refusedWhy}
+              pick={open}
             />
           </span>
         )}
@@ -728,10 +735,7 @@ export function Composer({ task, busy, instances, opened, ran, actions }: Compos
               list={runs}
               current={runner}
               name={(instance) => t("composer.run", { label: instance.label })}
-              pick={(instance) => {
-                setPicked((before) => ({ ...before, run: instance.key }));
-                run(instance);
-              }}
+              pick={run}
             />
           </span>
         )}

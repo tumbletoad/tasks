@@ -34,7 +34,7 @@ import { FolderDialog, refusalText } from "../folder/FolderDialog.tsx";
 import folderCss from "../folder/Folder.module.css";
 import { useFolderWrites, type FolderWrites } from "../folder/writes.ts";
 import type { MessageId } from "../i18n/intl.tsx";
-import { lastOpened, type BusyOf, type FolderRefusal } from "../row/launch.ts";
+import type { BusyOf, Cannot, FolderRefusal } from "../row/launch.ts";
 import type { AskField, RowActions } from "../row/actions.ts";
 import {
   BulbIcon,
@@ -96,6 +96,8 @@ export interface ExpandedProps {
   readonly instances: readonly Instance[];
   /** The instances the space last opened a task in and ran one with here. */
   readonly last: LastUsed;
+  /** Why an instance refused its last Open here, by key. */
+  readonly cannot: Cannot;
   readonly actions: RowActions;
   /** The last Open of this task, refused on its folder; none once an Open went through. */
   readonly refused?: FolderRefusal | undefined;
@@ -683,6 +685,7 @@ export function Expanded({
   hidden = false,
   instances,
   last,
+  cannot,
   actions,
   refused,
 }: ExpandedProps) {
@@ -736,8 +739,8 @@ export function Expanded({
               task={task}
               busy={busy}
               instances={instances}
-              opened={[lastOpened(receipts), last.open]}
-              ran={[task.run?.instance, last.run]}
+              last={last}
+              cannot={cannot}
               actions={actions}
             />
           )}

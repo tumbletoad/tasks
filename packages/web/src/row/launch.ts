@@ -1,6 +1,7 @@
 // The launch tile (A5 3.6, 3.9): which state it shows for the effective instance, and what a click
 // on it does. Pure, so every state is a unit test.
-import type { Busy, Instance, Receipt } from "../api.ts";
+import type { Busy, Instance, LastUsed } from "../api.ts";
+import type { TaskRow } from "../store/rows.ts";
 
 /**
  * What busies each agent app with one task on this machine, by instance key, as the service says
@@ -198,17 +199,25 @@ export const openers = (instances: readonly Instance[]): Instance[] =>
   instances.filter((i) => i.route !== undefined);
 
 /**
- * The instance Open or Run uses without a choice: the first of `used` the list holds (the one the
- * task last used, then the one the space last used here), else the list's first.
+ * The instance Open (`open`) or Run (`run`) uses for a task without a choice, of those in `list`
+ * that can: the one the task last used for it, else the one the space last used for it here, else
+ * the first in Settings' order. Both come from the launches and runs the service took, so a pick it
+ * refused never becomes the default, and a launch from another tab counts as one from this one.
  */
-export const chosen = (
+export const agentFor = (
   list: readonly Instance[],
-  ...used: readonly (string | undefined)[]
-): Instance | undefined => used.flatMap((key) => list.filter((i) => i.key === key))[0] ?? list[0];
+  kind: keyof LastUsed,
+  task: TaskRow,
+  space: LastUsed,
+): Instance | undefined =>
+  [task.last?.[kind], space[kind]].flatMap((key) => list.filter((i) => i.key === key))[0] ??
+  list[0];
 
-/** The instance a task was last opened in, from its receipts (oldest first); Copy is none. */
-export const lastOpened = (receipts: readonly Receipt[]): string | undefined =>
-  receipts.findLast((r) => r.route !== "clipboard")?.instance;
+/**
+ * Why an instance refused the last Open the page asked of it, by its key: the service's code, such
+ * as T3 Code's `not_running`, until an Open in it goes through.
+ */
+export type Cannot = ReadonlyMap<string, string>;
 
 /** The list in groups of one app each, in the order each app first comes, each in list order. */
 export function byApp(list: readonly Instance[]): { app: string; instances: Instance[] }[] {
@@ -219,17 +228,18 @@ export function byApp(list: readonly Instance[]): { app: string; instances: Inst
 }
 
 /**
- * The tile of a task: the instance Open uses (`chosen` from `used`), its state from what busies it
- * here, unless the place or the area blocks it.
+ * The tile of a task: the instance its Open uses (`agentFor`), its state from what busies it here,
+ * unless the place or the area blocks it.
  */
 export function launchOf(
+  task: TaskRow,
   instances: readonly Instance[],
+  space: LastUsed,
   busy: BusyOf | undefined,
   block?: LaunchBlock,
-  used: readonly (string | undefined)[] = [],
 ): LaunchModel {
   if (block?.kind === "none") return { state: "none" };
-  const instance = chosen(openers(instances), ...used);
+  const instance = agentFor(openers(instances), "open", task, space);
   if (instance === undefined) return { state: "copy_only" };
   if (block?.kind === "unavailable")
     return { state: "unavailable", instance, reason: block.reason };
