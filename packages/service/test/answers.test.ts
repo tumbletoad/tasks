@@ -76,6 +76,49 @@ async function groupNames(): Promise<string[]> {
   ];
 }
 
+/** The writer, and `caller`'s actor as the writer knows it in its writer scope. */
+async function writerAs(caller: Caller) {
+  const writer = w.service.ops.spaces().find((s) => s.id === w.space)?.writer;
+  if (writer === undefined) throw new Error("the world's space has no writer");
+  const principal = principalOf(caller.class, w.service.ops.machine.id);
+  const actor: WriteRequest["actor"] = {
+    scope_id: principal.scope,
+    principal_id: await writer.actor(principal.actorKind, principal.label),
+    actor_kind: principal.actorKind,
+    machine_id: w.service.ops.machine.id as Id<"m">,
+    origin: principal.origin,
+  };
+  return { writer, actor };
+}
+
+/**
+ * A request as another build decided it: the intent and the operations it sent the writer, and
+ * the record it kept for the answer, if any.
+ */
+async function decidedBefore(
+  caller: Caller,
+  request: { entry: string; input: Json; ops: WriteRequest["ops"]; record?: Json },
+): Promise<string> {
+  const { writer, actor } = await writerAs(caller);
+  const id = rid();
+  const history = request.ops.some((op) => op.kind === "undo" || op.kind === "redo");
+  const result = await writer.submit({
+    space_id: w.space,
+    request_id: id,
+    actor,
+    ...(history ? {} : { base: await asOf() }),
+    // A person's change joins the undo stack as the service sends it, but a preference set.
+    ...(actor.actor_kind === "human" && !history && request.entry !== "prefs.manage"
+      ? { undoable: true }
+      : {}),
+    intent: { entry: request.entry, input: { ...request.input, request_id: id } },
+    ...(request.record === undefined ? {} : { answer: request.record }),
+    ops: request.ops,
+  });
+  expect(result.status, request.entry).toBe("applied");
+  return id;
+}
+
 describe("[A3.answers.replay] a retry gets what the write did", () => {
   test("a create of a group that exists, sent again after Undo removed the group, still changes nothing", async () => {
     const made = await call(
@@ -343,6 +386,40 @@ describe("[A3.answers.replay-meanwhile] a retry repeats what the write did, and 
       as_of: first["as_of"],
       replayed: true,
     });
+  });
+
+  test("a level change recorded by a build that recorded levels as names, sent again, says that change and the levels now", async () => {
+    const key = "tasks.effort_scale";
+    const get = async () =>
+      ((await call("prefs.manage", { action: "get", keys: [key] }, USER))["prefs"] as Json[])[0];
+    const held = (await get())?.["value"] as Json[];
+    const turned = [...held].reverse();
+    const names = (levels: Json[]) => levels.map((level) => String(level["key"]));
+    const entry = findEntry("prefs.manage");
+    if (entry === undefined) throw new Error("prefs.manage is no entry");
+    const input = { action: "set", set: [{ key, value: names(turned) }], base: await asOf() };
+    const parsed = parseInput(entry, "agent", { ...input, request_id: "fixture-answers-parse" });
+    if (!parsed.success) throw new Error("the set does not parse");
+    // That build kept this build's record version, with a level list as its names.
+    const changed = [{ key, from: names(held), to: names(turned) }];
+    const id = await decidedBefore(USER, {
+      entry: "prefs.manage",
+      input: parsed.data,
+      ops: [{ kind: "pref.set", key, value: turned as never }],
+      record: { version: 1, entry: "prefs.manage", changed },
+    });
+    expect(await call("prefs.manage", { ...input, request_id: id }, USER)).toMatchObject({
+      result: "updated",
+      changed,
+      prefs: [{ key, value: turned, is_default: false }],
+      replayed: true,
+    });
+    await call(
+      "prefs.manage",
+      { action: "set", set: [{ key, reset: true }], base: await asOf(), request_id: rid() },
+      USER,
+    );
+    expect(await get()).toMatchObject({ value: held });
   });
 
   test("an undo, sent again after a script changed its task, says what it said", async () => {
@@ -821,49 +898,6 @@ describe("[A3.answers.as-of] a write's answer is dated by its own commit, first 
 });
 
 describe("[A3.answers.earlier-version] a request another version applied is answered as applied before, and nothing more", () => {
-  /** The writer, and `caller`'s actor as the writer knows it in its writer scope. */
-  async function writerAs(caller: Caller) {
-    const writer = w.service.ops.spaces().find((s) => s.id === w.space)?.writer;
-    if (writer === undefined) throw new Error("the world's space has no writer");
-    const principal = principalOf(caller.class, w.service.ops.machine.id);
-    const actor: WriteRequest["actor"] = {
-      scope_id: principal.scope,
-      principal_id: await writer.actor(principal.actorKind, principal.label),
-      actor_kind: principal.actorKind,
-      machine_id: w.service.ops.machine.id as Id<"m">,
-      origin: principal.origin,
-    };
-    return { writer, actor };
-  }
-
-  /**
-   * A request as an earlier version of TTasks decided it: the intent and the operations it sent the
-   * writer, with no record of this version. `record` is what a later version's record keeps.
-   */
-  async function decidedBefore(
-    caller: Caller,
-    request: { entry: string; input: Json; ops: WriteRequest["ops"]; record?: Json },
-  ): Promise<string> {
-    const { writer, actor } = await writerAs(caller);
-    const id = rid();
-    const history = request.ops.some((op) => op.kind === "undo" || op.kind === "redo");
-    const result = await writer.submit({
-      space_id: w.space,
-      request_id: id,
-      actor,
-      ...(history ? {} : { base: await asOf() }),
-      // A person's change joins the undo stack as the service sends it, but a preference set.
-      ...(actor.actor_kind === "human" && !history && request.entry !== "prefs.manage"
-        ? { undoable: true }
-        : {}),
-      intent: { entry: request.entry, input: { ...request.input, request_id: id } },
-      ...(request.record === undefined ? {} : { answer: request.record }),
-      ops: request.ops,
-    });
-    expect(result.status, request.entry).toBe("applied");
-    return id;
-  }
-
   /**
    * `id` sent again as each of `bodies`, while every read but the receipt's fails: the error each
    * got. Nothing is written: the space's position does not move.

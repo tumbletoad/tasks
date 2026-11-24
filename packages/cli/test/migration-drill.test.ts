@@ -250,10 +250,13 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
     const upgraded = await factsOf(folder);
     expect(upgraded.userVersion).toBe(5);
     expect(upgraded.lastSeq).toBeGreaterThan(fixture.lastSeq);
+    // The open stores the effort levels, which the 0.1 space never set: one request of the space's
+    // own, with its preference row, its change and its receipt.
+    const stored: Readonly<Record<string, number>> = { preferences: 1, changes: 1, receipts: 1 };
     for (const [table, n] of Object.entries(fixture.counts)) {
       // The outbox is the projection's queue: the open space's projection empties it at its pace.
       if (table !== "commits" && table !== "outbox") {
-        expect(upgraded.counts[table], table).toBe(n);
+        expect(upgraded.counts[table], table).toBe(n + (stored[table] ?? 0));
       }
     }
     for (const table of [

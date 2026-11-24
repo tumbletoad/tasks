@@ -616,6 +616,16 @@ a + .muted,
   font-size: 0.8125rem;
 }
 
+/* A level's name is short and wraps like a status's. One an earlier build let be longer is cut:
+   its tip says it whole, with its time and what belongs on it. */
+.segButton[data-long] > span,
+.level[data-long] {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .segButton[data-hovered] {
   color: var(--k-text);
 }

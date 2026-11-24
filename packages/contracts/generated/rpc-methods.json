@@ -1669,8 +1669,58 @@
                     },
                     {
                       "items": {
-                        "maxLength": 64,
-                        "type": "string"
+                        "anyOf": [
+                          {
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "about": {
+                                "description": "One line on what belongs on it, in the user's words",
+                                "maxLength": 280,
+                                "type": "string"
+                              },
+                              "key": {
+                                "description": "The level's name, at most 10 characters; a longer one the space holds stays",
+                                "maxLength": 20,
+                                "type": "string"
+                              },
+                              "time": {
+                                "additionalProperties": false,
+                                "description": "A typical amount of the user's own time on it",
+                                "properties": {
+                                  "amount": {
+                                    "description": "How many units",
+                                    "maximum": 999,
+                                    "minimum": 1,
+                                    "type": "integer"
+                                  },
+                                  "unit": {
+                                    "description": "The unit",
+                                    "enum": [
+                                      "minutes",
+                                      "hours",
+                                      "days",
+                                      "weeks"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "amount",
+                                  "unit"
+                                ],
+                                "type": "object"
+                              }
+                            },
+                            "required": [
+                              "key"
+                            ],
+                            "type": "object"
+                          }
+                        ]
                       },
                       "maxItems": 20,
                       "type": "array"
@@ -1741,6 +1791,55 @@
                       "type": "array"
                     },
                     {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "about": {
+                            "description": "One line on what belongs on it, in the user's words",
+                            "maxLength": 280,
+                            "type": "string"
+                          },
+                          "key": {
+                            "description": "The level's name, at most 10 characters; a longer one the space holds stays",
+                            "maxLength": 20,
+                            "type": "string"
+                          },
+                          "time": {
+                            "additionalProperties": false,
+                            "description": "A typical amount of the user's own time on it",
+                            "properties": {
+                              "amount": {
+                                "description": "How many units",
+                                "maximum": 999,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "unit": {
+                                "description": "The unit",
+                                "enum": [
+                                  "minutes",
+                                  "hours",
+                                  "days",
+                                  "weeks"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "amount",
+                              "unit"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "key"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    {
                       "type": "null"
                     }
                   ],
@@ -1766,6 +1865,55 @@
                     {
                       "items": {
                         "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "about": {
+                            "description": "One line on what belongs on it, in the user's words",
+                            "maxLength": 280,
+                            "type": "string"
+                          },
+                          "key": {
+                            "description": "The level's name, at most 10 characters; a longer one the space holds stays",
+                            "maxLength": 20,
+                            "type": "string"
+                          },
+                          "time": {
+                            "additionalProperties": false,
+                            "description": "A typical amount of the user's own time on it",
+                            "properties": {
+                              "amount": {
+                                "description": "How many units",
+                                "maximum": 999,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "unit": {
+                                "description": "The unit",
+                                "enum": [
+                                  "minutes",
+                                  "hours",
+                                  "days",
+                                  "weeks"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "amount",
+                              "unit"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "key"
+                        ],
+                        "type": "object"
                       },
                       "type": "array"
                     },
@@ -1810,6 +1958,55 @@
                       "type": "array"
                     },
                     {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "about": {
+                            "description": "One line on what belongs on it, in the user's words",
+                            "maxLength": 280,
+                            "type": "string"
+                          },
+                          "key": {
+                            "description": "The level's name, at most 10 characters; a longer one the space holds stays",
+                            "maxLength": 20,
+                            "type": "string"
+                          },
+                          "time": {
+                            "additionalProperties": false,
+                            "description": "A typical amount of the user's own time on it",
+                            "properties": {
+                              "amount": {
+                                "description": "How many units",
+                                "maximum": 999,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "unit": {
+                                "description": "The unit",
+                                "enum": [
+                                  "minutes",
+                                  "hours",
+                                  "days",
+                                  "weeks"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "amount",
+                              "unit"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "key"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    {
                       "type": "null"
                     }
                   ],
@@ -1836,6 +2033,55 @@
                     {
                       "items": {
                         "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "about": {
+                            "description": "One line on what belongs on it, in the user's words",
+                            "maxLength": 280,
+                            "type": "string"
+                          },
+                          "key": {
+                            "description": "The level's name, at most 10 characters; a longer one the space holds stays",
+                            "maxLength": 20,
+                            "type": "string"
+                          },
+                          "time": {
+                            "additionalProperties": false,
+                            "description": "A typical amount of the user's own time on it",
+                            "properties": {
+                              "amount": {
+                                "description": "How many units",
+                                "maximum": 999,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "unit": {
+                                "description": "The unit",
+                                "enum": [
+                                  "minutes",
+                                  "hours",
+                                  "days",
+                                  "weeks"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "amount",
+                              "unit"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "key"
+                        ],
+                        "type": "object"
                       },
                       "type": "array"
                     },
@@ -1882,6 +2128,55 @@
                     {
                       "items": {
                         "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "about": {
+                            "description": "One line on what belongs on it, in the user's words",
+                            "maxLength": 280,
+                            "type": "string"
+                          },
+                          "key": {
+                            "description": "The level's name, at most 10 characters; a longer one the space holds stays",
+                            "maxLength": 20,
+                            "type": "string"
+                          },
+                          "time": {
+                            "additionalProperties": false,
+                            "description": "A typical amount of the user's own time on it",
+                            "properties": {
+                              "amount": {
+                                "description": "How many units",
+                                "maximum": 999,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "unit": {
+                                "description": "The unit",
+                                "enum": [
+                                  "minutes",
+                                  "hours",
+                                  "days",
+                                  "weeks"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "amount",
+                              "unit"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "key"
+                        ],
+                        "type": "object"
                       },
                       "type": "array"
                     },

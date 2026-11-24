@@ -134,6 +134,11 @@ const SAMPLE = {
   rest: 2,
   tasks: "LUM-212 and LUM-214",
   home: "~/.codex",
+  timed: "yes",
+  described: "yes",
+  about: "One long sitting",
+  amount: 4,
+  unit: "hours",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

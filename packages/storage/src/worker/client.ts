@@ -893,6 +893,14 @@ export class SpaceWriterHandle {
   }
 
   /**
+   * Stores the default of each preference a space always holds where it has none, as the space's
+   * own act (`SpaceWriter.storeDefaults`). Whether it wrote. Waits in the writer's queue.
+   */
+  storeDefaults(): Promise<boolean> {
+    return this.#queued(() => this.#worker.call("storeDefaults", { handle: this.handle }));
+  }
+
+  /**
    * The actor a connection writes as (A3 3.7.4): the space's human, or the agent actor with this
    * label, which the writer adds on its first act (`actor.register`). Waits in the writer's queue.
    */

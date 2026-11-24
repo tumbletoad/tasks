@@ -12,7 +12,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registry, resultTokens } from "@ttasks/contracts";
+import {
+  EFFORT_ABOUT_MAX,
+  EFFORT_LEVELS,
+  EFFORT_SCALE_MAX,
+  registry,
+  resultTokens,
+  type EffortLevel,
+} from "@ttasks/contracts";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { DESCRIPTION_CHARS, parseSkill } from "./format.ts";
 import { TTASKS_PARTS } from "./ttasks-part.ts";
@@ -31,7 +38,7 @@ import {
 } from "./index.ts";
 
 const REPO_SKILLS = join(import.meta.dirname, "..", "..", "..", "..", "skills");
-const SCALE = { sizes: [{ key: "S" }, { key: "M" }, { key: "L" }] };
+const SCALE = { sizes: EFFORT_LEVELS };
 /** What one shipped skill may cost an agent who reads it, in estimated tokens. */
 const SHIPPED_TOKENS = 1_500;
 
@@ -117,7 +124,11 @@ describe("[A3.3.6.mcp.skills] sizing-effort in a space", () => {
     if (skill === undefined) throw new Error("no sizing-effort");
     return skill;
   };
-  const served = (keys: readonly string[], body = sizing().body, edited = false) =>
+  const servedLevels = (
+    sizes: readonly EffortLevel[],
+    body = sizing().body,
+    edited = false,
+  ): string =>
     servedText(
       {
         name: "sizing-effort",
@@ -127,9 +138,21 @@ describe("[A3.3.6.mcp.skills] sizing-effort in a space", () => {
         path: undefined,
         problem: undefined,
       },
-      { sizes: keys.map((key) => ({ key })) },
+      { sizes },
     ) ?? "";
+  const served = (keys: readonly string[], body = sizing().body, edited = false) =>
+    servedLevels(
+      keys.map((key) => ({ key })),
+      body,
+      edited,
+    );
   const headings = (text: string) => [...text.matchAll(/^## (.+)$/gmu)].map((m) => m[1]);
+  /** The lines that say one level each, in their order. */
+  const levelLines = (text: string) =>
+    text
+      .slice(0, text.indexOf(USER_LABEL))
+      .split("\n")
+      .filter((line) => line.startsWith("- "));
   /** The sizes the TTasks part names, in its order. */
   const named = (text: string, keys: readonly string[]) =>
     keys
@@ -150,24 +173,86 @@ describe("[A3.3.6.mcp.skills] sizing-effort in a space", () => {
     }
   });
 
-  test("the default's examples show only sizes the space has, and a size with none is said", () => {
-    expect(headings(sizing().body)).toEqual(["XS", "S", "M", "L", "XL"]);
-    expect(headings(served(["XS", "S", "M", "L", "XL"]))).toEqual(["XS", "S", "M", "L", "XL"]);
-    const three = served(["S", "M", "L"]);
-    expect(headings(three)).toEqual(["S", "M", "L"]);
-    expect(three).not.toMatch(/No example below shows/u);
-    const other = served(["small", "big"]);
-    expect(headings(other)).toEqual([]);
-    expect(other).toMatch(/No example below shows a size of this space: .*ask the user/u);
-    const more = served(["XS", "S", "M", "L", "XL", "XXL"]);
-    expect(more).toMatch(/No example below shows XXL: .*ask the user/u);
+  test("[A3.3.6.mcp.skills.levels] the levels part says each level's time and line, from the space's list as it is", () => {
+    expect(levelLines(servedLevels(EFFORT_LEVELS))).toEqual([
+      "- XS, about 10 minutes: A quick reply, a payment or a booking, with everything at hand.",
+      "- S, about 1 hour: A reply that needs some reading first; a small, clear fix; checking an agent's short change.",
+      "- M, about 4 hours: One long focused sitting: a summary of a few sources; a meeting prepared with its papers.",
+      "- L, about 2 days: Work over several sittings: a first draft of a report; a design for a feature; a tax return.",
+      "- XL, about 1 week: A week or more: too big to plan as one piece, a signal to split it.",
+    ]);
+    // A level says what it has: a time, a line, either or neither; a line keeps its own stop.
+    const mixed = servedLevels([
+      { key: "Quick", time: { amount: 15, unit: "minutes" } },
+      { key: "Day", about: "A whole day away from the desk!" },
+      { key: "Odd" },
+    ]);
+    expect(levelLines(mixed)).toEqual([
+      "- Quick, about 15 minutes",
+      "- Day: A whole day away from the desk!",
+      "- Odd",
+    ]);
+    expect(mixed).toContain("Match the work to the closest description.");
+    expect(mixed).toContain("The times are reference points");
+    const timed = servedLevels([{ key: "A", time: { amount: 2, unit: "hours" } }, { key: "B" }]);
+    expect(timed).not.toContain("closest description");
+    expect(timed).not.toContain("own examples");
+    // Names only: one line of names, as a space that never said more.
+    const names = served(["small", "big"]);
+    expect(levelLines(names)).toEqual([]);
+    expect(names).toContain("This space's sizes, smallest first: small, big.");
+    // Every list, bare or with times and lines, one level or ten: send a listed name as written,
+    // and these lines win over a copy that names or describes a size otherwise.
+    const ten = Array.from({ length: EFFORT_SCALE_MAX }, (_, i) => ({ key: `L${String(i)}` }));
+    for (const text of [
+      names,
+      served(["Q"]),
+      mixed,
+      timed,
+      servedLevels(EFFORT_LEVELS),
+      servedLevels(ten),
+    ]) {
+      expect(text).toContain(
+        "Send one size's name exactly as written here, never a time. Where the text below gives a size another name, time or meaning, these lines win.",
+      );
+    }
   });
 
-  test("the user's copy is served as written, whatever its headings", () => {
+  test("[A3.3.6.mcp.skills.levels] ten levels with the longest lines in any script are served whole, beside a copy near its limit", () => {
+    const line = "Ünïcödé 説明 ".repeat(40).slice(0, EFFORT_ABOUT_MAX).trimEnd();
+    const ten = Array.from({ length: EFFORT_SCALE_MAX }, (_, i) => ({
+      key: `L${String(i)}`,
+      time: { amount: i + 1, unit: "days" as const },
+      about: line,
+    }));
+    const copy = `# Their sizing\n\n${"Their rule. ".repeat(1_300)}`;
+    expect(new TextEncoder().encode(copy).byteLength).toBeLessThanOrEqual(SKILL_BYTES);
+    const text = servedLevels(ten, copy, true);
+    expect(levelLines(text)).toEqual(
+      ten.map(
+        (level) =>
+          `- ${level.key}, about ${String(level.time.amount)} ${level.time.amount === 1 ? "day" : "days"}: ${line}.`,
+      ),
+    );
+    expect(text.endsWith(copy)).toBe(true);
+  });
+
+  test("the default's text holds no section per size: the levels part says them", () => {
+    expect(headings(sizing().body)).toEqual([]);
+    for (const keys of [
+      ["XS", "S", "M", "L", "XL"],
+      ["small", "big"],
+    ]) {
+      expect(served(keys)).toContain(sizing().body);
+    }
+  });
+
+  test("the user's copy is served as written, whatever its headings, below the levels part", () => {
     const copy = "## S\n\nTheir own S.\n\n## Huge\n\nTheir own huge.";
-    const text = served(["S", "M"], copy, true);
-    expect(text).toContain(copy);
-    expect(text).not.toMatch(/No example below shows/u);
+    const text = servedLevels(EFFORT_LEVELS, copy, true);
+    expect(text.endsWith(copy)).toBe(true);
+    expect(levelLines(text)).toHaveLength(EFFORT_LEVELS.length);
+    expect(text.indexOf("these lines win")).toBeLessThan(text.indexOf(copy));
   });
 });
 

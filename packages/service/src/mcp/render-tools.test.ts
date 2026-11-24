@@ -105,7 +105,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
     ]);
     const set = split(renderResult("prefs.manage", example("prefs.manage", 1)));
     expect(set.outside).toEqual(["updated · 1 key"]);
-    expect(set.inside[0]).toBe('tasks.effort_scale: ["S","M","L"] -> ["XS","S","M","L","XL"]');
+    expect(set.inside[0]).toBe('tasks.effort_scale: ["XS","S","M","L","XL"] -> ["S","M","L"]');
 
     expect(renderResult("run.report", example("run.report", 0))).toBe(
       `reported on run ru_8kq2m6t0w4z8c2f6j0n4r8v2z6 · 2 sources · as_of ${NEXT}`,

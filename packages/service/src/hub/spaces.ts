@@ -1399,6 +1399,19 @@ export class SpaceManager {
       return;
     }
     try {
+      // A new space, or one an earlier build left without them, holds the default effort levels
+      // from now on, so every build that opens it reads the same levels.
+      await writer.storeDefaults();
+    } catch (error) {
+      // This build reads a missing list as the defaults: the space opens without the stored copy.
+      const code = codeOf(error);
+      log.log("space.defaults_not_stored", {
+        entry: space.index,
+        space: writer.spaceId,
+        ...(code === undefined ? {} : { code }),
+      });
+    }
+    try {
       await this.#options.settle?.({ id: writer.spaceId, writer, reader: space.reader });
     } catch (error) {
       await this.#refused(space, error, undefined);
