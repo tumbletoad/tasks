@@ -487,6 +487,36 @@ describe("[A2.3.12.6.update.way-back] an install cut off and run again keeps the
     expect(record(root).seen_working).toEqual(["0.1.0"]);
     expect(record(root).previous).toBe("0.1.0");
   });
+
+  test("a version that can note it was seen working and never did is passed over; one from before that note is the way back", async () => {
+    // A is from before the note: it served, but cannot say so.
+    const { root, folder } = install();
+    fromBeforeTheNote(folder);
+    await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+    // A's own switch to B: A is the way back, and nothing is noted as seen.
+    const b = addVersion(root, "0.2.0", "launcher two");
+    await finishInstall({ versionFolder: b, facts: facts(root) });
+    expect(record(root).previous).toBe("0.1.0");
+    expect(record(root).seen_working).toBeUndefined();
+    // B's service exits at every start, so B never notes itself. C is installed over it.
+    const c = addVersion(root, "0.3.0", "launcher three");
+    await finishInstall({ versionFolder: c, facts: facts(root) });
+    expect(record(root).previous).toBe("0.1.0");
+
+    // C works and is noted; the person goes back to A, which serves again and cannot note it.
+    const state = join(root, "state");
+    await noteWorking({ root, state, platform: process.platform, version: "0.3.0" });
+    await rollbackUpdate({
+      facts: facts(root),
+      keys: [],
+      selfTest: () => Promise.resolve({ ok: true, failed: [] }),
+    });
+    expect(record(root).previous).toBe("0.3.0");
+    // D is installed over A: A, which the person used, is the way back.
+    const d = addVersion(root, "0.4.0", "launcher four");
+    await finishInstall({ versionFolder: d, facts: facts(root) });
+    expect(record(root).previous).toBe("0.1.0");
+  });
 });
 
 describe("[A2.3.12.6.update.repair] an install's journal is finished by the next install, and never undoes what an older version did since", () => {
@@ -512,3 +542,13 @@ describe("[A2.3.12.6.update.repair] an install's journal is finished by the next
     ]);
   });
 });
+
+/** The manifest of `folder` as a build from before `notes_seen_working` writes it. */
+function fromBeforeTheNote(folder: string): void {
+  const file = join(folder, "manifest.json");
+  const text = readFileSync(file, "utf8");
+  const before = text.replace('  "notes_seen_working": true,\n', "");
+  expect(before).not.toBe(text);
+  rmSync(file);
+  writeFileSync(file, before);
+}

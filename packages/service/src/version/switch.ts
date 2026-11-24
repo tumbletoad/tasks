@@ -34,7 +34,7 @@ import { basename, dirname, join } from "node:path";
 import { PRODUCT_ID } from "@ttasks/brand";
 import { atomicWrite, createFile, makeDir, removeStaleTemps } from "../hub/files.ts";
 import { canonicalStatePath, HOME_MARKER, installId } from "../hub/paths.ts";
-import { isVersionName, MANIFEST_FILE, sha256File } from "./folder.ts";
+import { isVersionName, MANIFEST_FILE, readVersionManifest, sha256File } from "./folder.ts";
 import type { LauncherChange } from "./journal.ts";
 
 /** The file in a TTASKS_HOME install's root: one constant, the layout's (hub/paths.ts). */
@@ -636,14 +636,15 @@ export interface InstallRecord {
   readonly created: readonly string[];
   /**
    * `ttasks update --rollback`'s target: the version `current` named before the last switch, when
-   * a service of it was seen working; otherwise the target before that switch is kept, so a
-   * version that never ran (an install cut off, then installed over) is never the way back.
+   * it is known to have worked; otherwise the target before that switch is kept, so a version that
+   * never ran (an install cut off, then installed over; a service that exits at every start) is
+   * never the way back.
    */
   readonly previous?: string;
   /**
    * The versions a service of this install was seen ready on: recorded by the service at its
-   * start, and by an install or update that found it running or brought it back. Absent in an
-   * install no build of this kind has recorded in: then every version counts as seen.
+   * start, and by an install or update that found it running or brought it back. A version whose
+   * build does not record it (its manifest has no `notes_seen_working`) counts as seen.
    */
   readonly seen_working?: readonly string[];
   readonly last_update?: LastUpdate;
@@ -694,19 +695,29 @@ export interface RecordChange {
 }
 
 /**
- * The way back after a switch from `from` to `to`: `from` once a service of it was seen working,
- * or when the install records nothing seen yet; otherwise the way back it had, while that is
+ * The way back after a switch from `from` to `to`: `from` when a service of it was seen working,
+ * or when its build does not note that (a version from before the note, which the person was
+ * using). Otherwise `from` never ran, and the way back stays the one it had, while that is
  * installed and is not `to`.
  */
 function wayBack(
   root: string,
   from: string,
   to: string,
-  seen: readonly string[] | undefined,
+  seen: readonly string[],
   had: string | undefined,
 ): string {
-  if (seen === undefined || seen.includes(from)) return from;
+  if (seen.includes(from) || !notesSeen(root, from)) return from;
   return had !== undefined && had !== to && isInstalled(root, had) ? had : from;
+}
+
+/** Whether the build of `version`, by its own manifest, notes when it is seen working. */
+function notesSeen(root: string, version: string): boolean {
+  try {
+    return readVersionManifest(join(root, VERSIONS, version)).notes_seen_working === true;
+  } catch {
+    return false;
+  }
 }
 
 /** Writes install.json (atomic replace, 0600) with `change` applied to what it held. */
@@ -730,7 +741,7 @@ export function writeInstallRecord(
   const previous =
     change.switched === undefined
       ? had
-      : wayBack(root, change.switched.from, change.switched.to, seen, had);
+      : wayBack(root, change.switched.from, change.switched.to, seen ?? [], had);
   const lastUpdate = change.lastUpdate ?? lastUpdateOf(before?.["last_update"]);
   const record: InstallRecord = {
     format: INSTALL_FORMAT,

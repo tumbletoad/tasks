@@ -397,7 +397,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - An install or an update that was cut off is finished or undone by the next one, or by the
   service. However often it is run again, and whatever is installed over it, `ttasks update
   --rollback` still goes back to the version that was current before it, passing over any
-  version the service never ran.
+  version the service never ran. A version from before this rule cannot say whether it ran, and
+  counts as one that did.
 - Every update ends by asking the service, for up to 2 minutes, how each space opened. It names
   each space that is not usable now in the service's own words, which name the backup of a failed
   migration, says how to go back, and then exits 8. When the service stops answering, it says the
