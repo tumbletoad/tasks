@@ -532,63 +532,237 @@ describe("[A3.3.13.setup.tools-table] One answer for each home's tools: what the
   );
 });
 
-/** Claude Code's default folder with both of its files: plain Claude Code's, and the one inside. */
-interface FilesRow {
-  /** What the file inside the folder holds, beside setup's own entry in the plain one. */
-  readonly inside: "own" | "none" | "edited" | "unreadable" | "edited_gone";
-  readonly access: "live" | "off";
-  readonly seen: Seen;
-  /** The page, where it differs: it says a file it cannot read as one reason. */
-  readonly page?: Seen;
-  /** The reason is about the file inside the folder. */
-  readonly about: boolean;
-}
+/**
+ * What one of the two settings files of Claude Code's default folder holds: setup's entry that
+ * runs (`ours`), setup's entry naming where TTasks was installed before (`moved`), setup's entry
+ * changed by hand (`edited`), a file that cannot be parsed (`broken`), or no entry (`none`).
+ */
+type Kind = "ours" | "moved" | "edited" | "broken" | "none";
+
+/**
+ * One row: the plain file's kind, the one inside the folder's, and what the row says for access
+ * live, off and unconfirmed. Each answer is its status, its reasons as `why@file` (file 1 is the
+ * plain one, 2 the one inside; a reason of the home's has none) in the order the row gives them,
+ * whether turning on is offered, and whether turning off is.
+ */
+type FilesRow = readonly [Kind, Kind, live: Said, off: Said, unconfirmed: Said];
+type Said = readonly [status: Seen["status"], reasons: string, on: boolean, off: boolean];
 
 const FILES_TABLE: readonly FilesRow[] = [
-  { inside: "own", access: "live", seen: s("on", undefined, false, true), about: false },
-  // A reader that started using the folder later: on, and turning on writes its file.
-  { inside: "none", access: "live", seen: s("on", "file_lacks", true, true), about: true },
-  { inside: "edited", access: "live", seen: s("on", "edited", false, true), about: true },
-  {
-    inside: "unreadable",
-    access: "live",
-    seen: s("on", "invalid_file", false, true),
-    page: s("on", "file_unreadable", false, true),
-    about: true,
-  },
-  { inside: "edited_gone", access: "live", seen: s("on", "edited_gone", false, true), about: true },
-  { inside: "none", access: "off", seen: s("off", "access_off", true, false), about: false },
+  [
+    "ours",
+    "ours",
+    ["on", "", false, true],
+    ["off", "access_off", true, false],
+    ["unknown", "", false, true],
+  ],
+  [
+    "ours",
+    "moved",
+    ["on", "moved@2", true, true],
+    ["off", "access_off moved@2", true, false],
+    ["unknown", "moved@2", false, true],
+  ],
+  [
+    "ours",
+    "edited",
+    ["on", "edited@2", false, true],
+    ["off", "access_off edited@2", true, false],
+    ["unknown", "edited@2", false, true],
+  ],
+  [
+    "ours",
+    "broken",
+    ["on", "invalid_file@2", false, true],
+    ["off", "access_off invalid_file@2", true, false],
+    ["unknown", "invalid_file@2", false, true],
+  ],
+  [
+    "ours",
+    "none",
+    ["on", "file_lacks@2", true, true],
+    ["off", "access_off file_lacks@2", true, false],
+    ["unknown", "file_lacks@2", false, true],
+  ],
+  [
+    "moved",
+    "ours",
+    ["on", "moved@1", true, true],
+    ["off", "access_off moved@1", true, false],
+    ["unknown", "moved@1", false, true],
+  ],
+  [
+    "moved",
+    "moved",
+    ["off", "moved@1 moved@2", true, true],
+    ["off", "moved@1 moved@2", true, false],
+    ["off", "moved@1 moved@2", false, true],
+  ],
+  [
+    "moved",
+    "edited",
+    ["on", "moved@1 edited@2", true, true],
+    ["off", "access_off moved@1 edited@2", true, false],
+    ["unknown", "moved@1 edited@2", false, true],
+  ],
+  [
+    "moved",
+    "broken",
+    ["off", "moved@1 invalid_file@2", true, true],
+    ["off", "moved@1 invalid_file@2", true, false],
+    ["off", "moved@1 invalid_file@2", false, true],
+  ],
+  [
+    "moved",
+    "none",
+    ["off", "moved@1 file_lacks@2", true, true],
+    ["off", "moved@1 file_lacks@2", true, false],
+    ["off", "moved@1 file_lacks@2", false, true],
+  ],
+  [
+    "edited",
+    "ours",
+    ["on", "edited@1", false, true],
+    ["off", "access_off edited@1", true, false],
+    ["unknown", "edited@1", false, true],
+  ],
+  [
+    "edited",
+    "moved",
+    ["on", "edited@1 moved@2", true, true],
+    ["off", "access_off edited@1 moved@2", true, false],
+    ["unknown", "edited@1 moved@2", false, true],
+  ],
+  [
+    "edited",
+    "edited",
+    ["on", "edited@1 edited@2", false, true],
+    ["off", "edited@1 edited@2", false, false],
+    ["unknown", "edited@1 edited@2", false, true],
+  ],
+  [
+    "edited",
+    "broken",
+    ["on", "edited@1 invalid_file@2", false, true],
+    ["off", "edited@1 invalid_file@2", false, false],
+    ["unknown", "edited@1 invalid_file@2", false, true],
+  ],
+  [
+    "edited",
+    "none",
+    ["on", "edited@1 file_lacks@2", true, true],
+    ["off", "access_off edited@1 file_lacks@2", true, false],
+    ["unknown", "edited@1 file_lacks@2", false, true],
+  ],
+  [
+    "broken",
+    "ours",
+    ["on", "invalid_file@1", false, true],
+    ["off", "access_off invalid_file@1", true, false],
+    ["unknown", "invalid_file@1", false, true],
+  ],
+  [
+    "broken",
+    "moved",
+    ["off", "invalid_file@1 moved@2", true, true],
+    ["off", "invalid_file@1 moved@2", true, false],
+    ["off", "invalid_file@1 moved@2", false, true],
+  ],
+  [
+    "broken",
+    "edited",
+    ["on", "invalid_file@1 edited@2", false, true],
+    ["off", "invalid_file@1 edited@2", false, false],
+    ["unknown", "invalid_file@1 edited@2", false, true],
+  ],
+  [
+    "broken",
+    "broken",
+    ["off", "invalid_file@1 invalid_file@2", false, true],
+    ["off", "invalid_file@1 invalid_file@2", false, false],
+    ["off", "invalid_file@1 invalid_file@2", false, true],
+  ],
+  [
+    "broken",
+    "none",
+    ["off", "missing invalid_file@1", true, true],
+    ["off", "missing invalid_file@1", true, false],
+    ["off", "missing invalid_file@1", false, true],
+  ],
+  [
+    "none",
+    "ours",
+    ["on", "file_lacks@1", true, true],
+    ["off", "access_off file_lacks@1", true, false],
+    ["unknown", "file_lacks@1", false, true],
+  ],
+  [
+    "none",
+    "moved",
+    ["off", "file_lacks@1 moved@2", true, true],
+    ["off", "file_lacks@1 moved@2", true, false],
+    ["off", "file_lacks@1 moved@2", false, true],
+  ],
+  [
+    "none",
+    "edited",
+    ["on", "file_lacks@1 edited@2", true, true],
+    ["off", "access_off file_lacks@1 edited@2", true, false],
+    ["unknown", "file_lacks@1 edited@2", false, true],
+  ],
+  [
+    "none",
+    "broken",
+    ["off", "missing invalid_file@2", true, true],
+    ["off", "missing invalid_file@2", true, false],
+    ["off", "missing invalid_file@2", false, true],
+  ],
+  [
+    "none",
+    "none",
+    ["off", "missing", true, true],
+    ["off", "missing", true, false],
+    ["off", "missing", false, true],
+  ],
 ];
 
-describe("[A3.3.13.setup.tools-table-files] One answer for a home with two settings files: what the page and the command line say and offer, which file it is about, and that what is offered is done", () => {
-  const inside = () => join(user, ".claude", ".claude.json");
-  const plain = () => join(user, ".claude.json");
+describe("[A3.3.13.setup.tools-table-files] One answer for a home with two settings files, from both: what the page and the command line say and offer for each pair of what the files hold, for access live, off and unconfirmed, and that what is offered is done", () => {
+  const files = () => [join(user, ".claude.json"), join(user, ".claude", ".claude.json")] as const;
+  /** A TTasks home with no service: the command line there cannot confirm any access. */
+  const alone = () => join(root, "alone");
 
-  /** Setup's entry in both files, then the file inside the folder as the row says. */
-  async function putFiles(row: FilesRow): Promise<void> {
+  /** Setup's entry in both files, then each file as `kinds` say, then the access. */
+  async function putFiles(kinds: readonly [Kind, Kind], access: "live" | "off"): Promise<void> {
     await reset();
-    rmSync(inside(), { force: true });
-    writeFileSync(plain(), "{}\n");
-    // A file only one program reads yet: the one inside comes later, without the entry.
-    if (row.inside !== "none") writeFileSync(inside(), '{"theme": "dark"}\n');
+    writeFileSync(files()[0], "{}\n");
+    writeFileSync(files()[1], '{"theme": "dark"}\n');
     const shown = (await page(spaces.here))["claude-code"];
     const applied = await call<Applied>("/api/v1/machine/apps_apply", {
       space: spaces.here,
       changes: [{ key: shown.key, part: "tools", on: true, plan: shown.tools?.plan }],
     });
     expect(applied.outcomes.map((o) => o.result)).toEqual(["done"]);
-    if (row.inside === "none") writeFileSync(inside(), '{"theme": "dark"}\n');
-    const text = readFileSync(inside(), "utf8");
-    const doc = () => JSON.parse(text) as { mcpServers: Record<string, Record<string, unknown>> };
-    if (row.inside === "edited" || row.inside === "edited_gone") {
-      const edited = doc();
-      const entry = edited.mcpServers[MCP_SERVER_KEY] as Record<string, unknown>;
-      if (row.inside === "edited") entry["cwd"] = root;
-      else entry["command"] = nowhere();
-      writeFileSync(inside(), JSON.stringify(edited, null, 2));
-    }
-    if (row.inside === "unreadable") writeFileSync(inside(), text.replace(/\}\s*$/u, ",}\n"));
-    if (row.access === "off") {
+    const record = JSON.parse(readFileSync(recordFile(), "utf8")) as {
+      homes: { app: string; entry: Record<string, unknown>; also: unknown[] }[];
+    };
+    const claude = record.homes.find((h) => h.app === "claude-code");
+    if (claude === undefined) throw new Error("no Claude Code record");
+    kinds.forEach((kind, i) => {
+      const file = files()[i] as string;
+      const doc = JSON.parse(readFileSync(file, "utf8")) as {
+        mcpServers: Record<string, Record<string, unknown>>;
+      };
+      const entry = doc.mcpServers[MCP_SERVER_KEY] as Record<string, unknown>;
+      if (kind === "moved") {
+        // Setup's own entry, as an earlier install wrote it: the record knows it as its own.
+        entry["command"] = old();
+        claude.also.push({ ...claude.entry, command: old() });
+      } else if (kind === "edited") entry["cwd"] = root;
+      else if (kind === "none") Reflect.deleteProperty(doc.mcpServers, MCP_SERVER_KEY);
+      writeFileSync(file, `${JSON.stringify(doc, null, 2)}${kind === "broken" ? ",\n" : "\n"}`);
+    });
+    writeFileSync(recordFile(), JSON.stringify(record));
+    if (access === "off") {
       await asPerson(async (person) => {
         await person("setup/home_revoke", { app: "claude-code", home: HOME["claude-code"]() });
       });
@@ -597,90 +771,145 @@ describe("[A3.3.13.setup.tools-table-files] One answer for a home with two setti
 
   interface FilesPart extends Part {
     readonly whyFile?: string;
+    readonly more?: readonly { readonly why: string; readonly file: string }[];
     readonly add?: { readonly plan: string };
   }
 
-  test.each(FILES_TABLE.map((row) => [`${row.inside} inside, access ${row.access}`, row] as const))(
-    "%s",
-    async (_name, row) => {
-      await putFiles(row);
-      const view = await call<{ rows: (PageRow & { files?: string[] })[] }>(
-        "/api/v1/machine/apps",
-        { space: spaces.here },
-      );
-      const claude = view.rows.find((r) => r.app === "claude-code" && r.home !== null);
-      if (claude === undefined) throw new Error("no Claude Code row");
-      const tools = claude.tools as FilesPart;
-      // The row names both files; the reason, the one it is about.
-      expect(claude.files?.length, "files").toBe(2);
-      expect(
-        s(
-          tools.on ? "on" : "off",
-          tools.why,
-          tools.change === "add" || tools.add !== undefined,
-          tools.change === "remove" || tools.off !== undefined,
-        ),
-      ).toEqual(row.page ?? row.seen);
-      expect(
-        tools.whyFile !== undefined && sameFolder(tools.whyFile, inside()),
-        "page's file",
-      ).toBe(row.about);
-      const ran = await runMain(["setup", "agents", "--status", "--json"], {
-        home,
-        tty: false,
-        main: { agents: { env, home: user, systemApplications: join(user, "Apps") } },
-      });
-      const said = (
-        JSON.parse(ran.stdout) as {
-          homes: {
-            app: string;
-            home: string;
-            files?: { file: string }[];
-            tools: { status: string; why?: string; file?: string; on?: string; off: boolean };
-          }[];
-        }
-      ).homes.find(
-        (h) =>
-          h.app === "claude-code" && h.home.toLowerCase() === HOME["claude-code"]().toLowerCase(),
-      );
-      expect(said?.files?.length, "command line's files").toBe(2);
-      expect(
-        said === undefined
-          ? undefined
-          : s(
-              said.tools.status as Seen["status"],
-              said.tools.why,
-              said.tools.on !== undefined,
-              said.tools.off,
-            ),
-      ).toEqual(row.seen);
-      expect(
-        said?.tools.file?.toLowerCase() === inside().toLowerCase(),
-        "command line's file",
-      ).toBe(row.about);
+  /** A file as a row's reasons name it: 1 or 2, or none for the home's. */
+  const which = (file: string | undefined): string => {
+    if (file === undefined) return "";
+    const path = file.startsWith("~") ? join(user, file.slice(1)) : file;
+    const at = files().findIndex((f) => f.toLowerCase() === path.toLowerCase());
+    return at === -1 ? `@${file}` : `@${String(at + 1)}`;
+  };
+  const reasons = (
+    why: string | undefined,
+    file: string | undefined,
+    more: readonly { readonly why: string; readonly file: string }[] = [],
+  ): string =>
+    [
+      ...(why === undefined ? [] : [`${why}${which(file)}`]),
+      ...more.map((m) => `${m.why}${which(m.file)}`),
+    ].join(" ");
+  /** The page says a file it cannot read as one reason. */
+  const onPage = (said: string) => said.replaceAll("invalid_file", "file_unreadable");
 
-      // Each action offered is carried out from here, and none is refused.
-      for (const on of [true, false]) {
-        if (on ? !row.seen.on : !row.seen.off) continue;
-        await putFiles(row);
-        const before = (await page(spaces.here))["claude-code"].tools as FilesPart;
-        const plan = on ? (before.change === "add" ? before.plan : before.add?.plan) : before.plan;
-        const applied = await call<Applied>("/api/v1/machine/apps_apply", {
-          space: spaces.here,
-          changes: [{ key: (await page(spaces.here))["claude-code"].key, part: "tools", on, plan }],
-        });
-        expect(applied.applied, `turned ${on ? "on" : "off"}`).toBe(true);
-        expect(applied.outcomes.map((o) => o.result)).toEqual(["done"]);
-        const after = (await page(spaces.here))["claude-code"].tools as FilesPart;
-        expect(after.on, `turned ${on ? "on" : "off"}`).toBe(on);
-        if (on) expect(after.why, "nothing left to say").toBeUndefined();
-        // Off takes setup's own entry out of the plain file; the person's file stays as it is.
-        if (!on) {
-          const doc = JSON.parse(readFileSync(plain(), "utf8")) as { mcpServers?: object };
-          expect(doc.mcpServers, "plain file").toBeUndefined();
+  async function cliSays(home: string): Promise<Said> {
+    const ran = await runMain(["setup", "agents", "--status", "--json"], {
+      home,
+      tty: false,
+      main: { agents: { env, home: user, systemApplications: join(user, "Apps") } },
+    });
+    expect(ran.code, ran.stderr).toBe(0);
+    const found = (
+      JSON.parse(ran.stdout) as {
+        homes: {
+          app: string;
+          home: string;
+          tools: {
+            status: Seen["status"];
+            why?: string;
+            file?: string;
+            more?: { why: string; file: string }[];
+            on?: string;
+            off: boolean;
+          };
+        }[];
+      }
+    ).homes.find(
+      (h) =>
+        h.app === "claude-code" && h.home.toLowerCase() === HOME["claude-code"]().toLowerCase(),
+    );
+    if (found === undefined) throw new Error("no Claude Code home");
+    const { tools } = found;
+    return [
+      tools.status,
+      reasons(tools.why, tools.file, tools.more),
+      tools.on !== undefined,
+      tools.off,
+    ];
+  }
+
+  async function pageSays(): Promise<{ said: Said; part: FilesPart; key: string }> {
+    const row = (await page(spaces.here))["claude-code"];
+    const part = row.tools as FilesPart;
+    return {
+      said: [
+        part.on ? "on" : "off",
+        reasons(part.why, part.whyFile, part.more),
+        part.change === "add" || part.add !== undefined,
+        part.change === "remove" || part.off !== undefined,
+      ],
+      part,
+      key: row.key,
+    };
+  }
+
+  test.each(FILES_TABLE.map((row) => [`${row[0]} and ${row[1]}`, row] as const))(
+    "%s",
+    async (_name, [first, second, live, off, unconfirmed]) => {
+      for (const [access, expected] of [
+        ["live", live],
+        ["off", off],
+      ] as const) {
+        await putFiles([first, second], access);
+        const shown = await pageSays();
+        expect(shown.said, `page, access ${access}`).toEqual([
+          expected[0],
+          onPage(expected[1]),
+          expected[2],
+          expected[3],
+        ]);
+        expect(await cliSays(home), `command line, access ${access}`).toEqual(expected);
+        if (access === "live") {
+          // The command line where no service answers, TTasks installed there too: the same
+          // files and record, the access unconfirmed.
+          mkdirSync(join(stateOf(alone()), "setup"), { recursive: true });
+          mkdirSync(join(alone(), "bin"), { recursive: true });
+          writeFileSync(join(alone(), "bin", tasksName), "");
+          writeFileSync(join(stateOf(alone()), "setup", "agents.json"), readFileSync(recordFile()));
+          expect(await cliSays(alone()), "command line, access unconfirmed").toEqual(unconfirmed);
+          rmSync(alone(), { recursive: true, force: true });
+        }
+
+        // Each action offered is carried out from here, and none is refused.
+        for (const on of [true, false]) {
+          if (on ? !expected[2] : !expected[3]) continue;
+          await putFiles([first, second], access);
+          const before = await pageSays();
+          const part = before.part;
+          const plan = on
+            ? part.change === "add"
+              ? part.plan
+              : part.add?.plan
+            : part.change === "remove"
+              ? part.plan
+              : part.off?.plan;
+          const applied = await call<Applied>("/api/v1/machine/apps_apply", {
+            space: spaces.here,
+            changes: [{ key: before.key, part: "tools", on, plan }],
+          });
+          const what = `${first} and ${second}, access ${access}, turned ${on ? "on" : "off"}`;
+          expect(applied.applied, what).toBe(true);
+          expect(
+            applied.outcomes.map((o) => o.result),
+            what,
+          ).toEqual(["done"]);
+          const after = await pageSays();
+          // On is on with nothing more to turn on; off is off with nothing left to turn off.
+          expect([after.said[0], after.said[on ? 2 : 3]], what).toEqual([on ? "on" : "off", false]);
+          if (!on) {
+            // Setup's own entries come out; the person's file and one it cannot read stay.
+            for (const [i, kind] of [first, second].entries()) {
+              const text = readFileSync(files()[i] as string, "utf8");
+              if (kind === "edited" || kind === "broken")
+                expect(text, what).toContain(MCP_SERVER_KEY);
+              else expect(text, what).not.toContain(MCP_SERVER_KEY);
+            }
+          }
         }
       }
-      rmSync(inside(), { force: true });
+      rmSync(files()[1], { force: true });
     },
     SLOW,
   );

@@ -24,12 +24,20 @@ export interface Part extends Changes {
   readonly why: string | undefined;
   /** The file the reason is about, when the home has several. */
   readonly whyFile: string | undefined;
+  /** The reasons of the home's other files, each with its file. */
+  readonly more: readonly FileWhy[];
   /** tools: the space its entry names. */
   readonly space: { readonly id: string; readonly name: string | null } | undefined;
   /** tools that show off while their access may be live: turning them off all the same. */
   readonly off: Changes | undefined;
-  /** tools that show on while one of the home's files has no entry: writing it there. */
+  /** tools that show on while a file's reader gets none: writing the entry there. */
   readonly add: Changes | undefined;
+}
+
+/** A reason about one file of a home, the file shown as `~`. */
+export interface FileWhy {
+  readonly why: string;
+  readonly file: string;
 }
 
 export interface AppRow {
@@ -62,8 +70,11 @@ export interface Outcome {
   readonly field: string | undefined;
   /** Tools turned off: the access is off, and the entry stayed in its file (`reason` says why). */
   readonly kept: boolean;
-  /** The file an entry stayed in, shown as `~`, when the service names it. */
-  readonly file: string | undefined;
+  /**
+   * Tools: each file left otherwise than asked, with why: turned off, each that still holds an
+   * entry; turned on, each that got none.
+   */
+  readonly files: readonly FileWhy[];
   /** Tools, failed: the service did not confirm that the access is off, so the entry stayed too. */
   readonly unconfirmed: boolean;
 }
@@ -83,6 +94,21 @@ const text = (v: unknown, max = 4096): string | undefined =>
 const lines = (value: unknown): string[] =>
   Array.isArray(value) ? value.flatMap((line) => text(line) ?? []).slice(0, 200) : [];
 
+/** Reasons about files, each with a word for why and the file; others are passed over. */
+const fileWhys = (value: unknown, key: "why" | "reason"): FileWhy[] =>
+  Array.isArray(value)
+    ? value
+        .flatMap((v): FileWhy[] => {
+          if (!isRecord(v)) return [];
+          const why = v[key];
+          const file = text(v["file"]);
+          return typeof why === "string" && WORD.test(why) && file !== undefined
+            ? [{ why, file }]
+            : [];
+        })
+        .slice(0, 20)
+    : [];
+
 /** An action's files and lines, or undefined when it has another shape. */
 function changesOf(value: unknown): Changes | undefined {
   if (!isRecord(value) || typeof value["plan"] !== "string") return undefined;
@@ -98,7 +124,7 @@ function changesOf(value: unknown): Changes | undefined {
 
 function partOf(value: unknown): Part | undefined {
   if (!isRecord(value)) return undefined;
-  const { on, change, why, whyFile, space, off, add } = value;
+  const { on, change, why, whyFile, more, space, off, add } = value;
   const changes = changesOf(value);
   if (typeof on !== "boolean" || changes === undefined) return undefined;
   const named =
@@ -111,6 +137,7 @@ function partOf(value: unknown): Part | undefined {
     change: change === "add" || change === "remove" ? change : null,
     why: typeof why === "string" && WORD.test(why) ? why : undefined,
     whyFile: text(whyFile),
+    more: fileWhys(more, "why"),
     space: named,
     off: changesOf(off),
     add: changesOf(add),
@@ -164,7 +191,7 @@ export function appliedOf(value: unknown): Applied {
               field:
                 typeof o["field"] === "string" && WORD.test(o["field"]) ? o["field"] : undefined,
               kept: o["kept"] === true,
-              file: text(o["file"]),
+              files: fileWhys(o["files"], "reason"),
               unconfirmed: o["unconfirmed"] === true,
             },
           ]

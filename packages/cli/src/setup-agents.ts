@@ -301,7 +301,7 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
 };
 
 /**
- * The home's access after the action, said apart from its file: an entry that stayed is named
+ * The home's access after the action, said apart from its files: each entry that stayed is named
  * with its file, so the person knows what is left there and that it no longer works.
  */
 function accessText(outcome: Outcome): string | undefined {
@@ -310,11 +310,21 @@ function accessText(outcome: Outcome): string | undefined {
   if (outcome.access === "unknown") {
     return `Access could not be confirmed off: run ${CLI_NAME} setup agents --remove again while ${PRODUCT_NAME}'s service runs.`;
   }
-  const file = outcome.file ?? outcome.home.files[0] ?? outcome.home.home;
-  if (outcome.kept === "edited") return `Access is off. Your edited entry is still in ${file}.`;
-  if (outcome.kept === "own") return `Access is off. The entry is still in ${file}.`;
-  return "Access is off.";
+  const kept = (outcome.files ?? []).map((f) =>
+    f.kept === "edited"
+      ? ` Your edited entry is still in ${f.file}.`
+      : f.kept === "own"
+        ? ` The entry is still in ${f.file}.`
+        : "",
+  );
+  return `Access is off.${kept.join("")}`;
 }
+
+/** What a removal left of the person's or TTasks's own in a home's files: the stronger, own. */
+const keptOf = (outcome: Outcome): "own" | "edited" | undefined => {
+  const kept = (outcome.files ?? []).map((f) => f.kept);
+  return kept.includes("own") ? "own" : kept.includes("edited") ? "edited" : undefined;
+};
 
 /**
  * Why a home was left, for people, and in which of its files when it has several. An entry of
@@ -360,20 +370,21 @@ function toolsLine(view: HomeView, answer: ToolsAnswer, live: boolean | undefine
           ? reasonText(why, view.home, answer.file)
           : `${STATE_TEXT[view.state]}: ${reasonText(why, view.home, answer.file)}`;
   const access = live === true ? "" : " and gives it its access again";
-  if (answer.on === "grant") return `${said}: apply gives it its access again`;
-  if (answer.on === "add" && view.state === "registered") {
-    return why === "file_lacks"
-      ? `${said}: apply writes it there${access}`
-      : `${said}: apply writes the entry into each file that has none, and gives it its access again`;
+  const others = (answer.more ?? []).map((m) => `; ${reasonText(m.why, view.home, m.file)}`);
+  const all = `${said}${others.join("")}`;
+  if (answer.on === "grant") return `${all}: apply gives it its access again`;
+  if (answer.on === "add" && view.home.files.length > 1 && view.record !== undefined) {
+    return `${all}: apply writes the entry it has into each file that lacks it${access}`;
   }
   if (answer.on === "repair") {
-    return `${said}: apply writes it again with the command installed now${access}`;
+    const each = view.home.files.length > 1 ? ", into each of its files" : "";
+    return `${all}: apply writes it again with the command installed now${each}${access}`;
   }
   if (answer.status === "off" && answer.off) {
     const still = live === true ? "its access is still on, and " : "";
-    return `${said}: ${still}${CLI_NAME} setup agents --remove turns its access off`;
+    return `${all}: ${still}${CLI_NAME} setup agents --remove turns its access off`;
   }
-  return said;
+  return all;
 }
 
 const FILE_TEXT: Readonly<Record<FileView["state"], string>> = {
@@ -437,8 +448,9 @@ const outcomeJson = (outcome: Outcome) => ({
   result: outcome.result,
   ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
   ...(outcome.access === undefined ? {} : { access: outcome.access }),
-  ...(outcome.kept === undefined ? {} : { kept: outcome.kept }),
-  ...(outcome.file === undefined || outcome.home.files.length < 2 ? {} : { file: outcome.file }),
+  ...(keptOf(outcome) === undefined ? {} : { kept: keptOf(outcome) }),
+  // A home with several settings files: each one left otherwise than asked, and why.
+  ...(outcome.files === undefined || outcome.home.files.length < 2 ? {} : { files: outcome.files }),
   ...(outcome.notes === undefined ? {} : { notes: outcome.notes }),
 });
 
@@ -964,7 +976,9 @@ async function preview(
                     change: {
                       entry: change.entry,
                       diff: change.writes[0]?.diff ?? [],
-                      ...(change.writes.length < 2 ? {} : { files: change.writes }),
+                      ...(view.files.length < 2 ? {} : { files: change.writes }),
+                      // Each file of the home that gets no entry that runs, and why.
+                      ...(change.left.length === 0 ? {} : { left: change.left }),
                       access: "on",
                     },
                   }
@@ -993,7 +1007,12 @@ async function preview(
     n += 1;
     io.stdout(`${String(n)}. ${title(view)}\n`);
     for (const f of view.files) {
-      const hash = f.sha256 === null ? "not there yet" : `sha256 ${f.sha256}`;
+      const hash =
+        f.state === "refused"
+          ? `left alone: ${REASON[f.refusal ?? "unreadable"]}`
+          : f.sha256 === null
+            ? "not there yet"
+            : `sha256 ${f.sha256}`;
       io.stdout(`   ${f.file} (${hash})\n`);
     }
     const answer = answerOf(view, change);
@@ -1001,11 +1020,15 @@ async function preview(
       (r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home),
     );
     const each = typeof change === "object" ? change.writes : [];
-    /** The lines each file gains, under its name when there are several. */
+    const several = view.files.length > 1;
+    /** The lines each file gains, under its name in a home of several; then each file left, and why. */
     const writes = () => {
       for (const w of each) {
-        if (each.length > 1) io.stdout(`     ${w.file}:\n`);
-        for (const line of w.diff) io.stdout(`     ${each.length > 1 ? "  " : ""}${line}\n`);
+        if (several) io.stdout(`     ${w.file}:\n`);
+        for (const line of w.diff) io.stdout(`     ${several ? "  " : ""}${line}\n`);
+      }
+      for (const l of typeof change === "object" ? change.left : []) {
+        io.stdout(`   Nothing is written ${reasonText(l.why, view.home, l.file)}.\n`);
       }
     };
     if (answer.on === "add" && view.state !== "registered" && each.length > 0) {
@@ -1287,9 +1310,11 @@ function report(
   notes: readonly string[] = [],
   blocks: readonly BlockOutcome[] = [],
 ): number {
+  // Done as asked: no home failed or left, and none with a file left otherwise than asked.
   const complete =
-    outcomes.every((o) => o.result !== "failed" && o.result !== "left") &&
-    blocks.every((b) => b.result !== "failed" && b.result !== "left");
+    outcomes.every(
+      (o) => o.result !== "failed" && o.result !== "left" && (o.files ?? []).length === 0,
+    ) && blocks.every((b) => b.result !== "failed" && b.result !== "left");
   if (globals.json) {
     io.stdout(
       `${JSON.stringify({
@@ -1328,11 +1353,14 @@ function report(
       failed: "failed",
     } as const;
     for (const outcome of outcomes) {
+      // A home of several files says each file's reason on a line of its own.
+      const each = outcome.home.files.length > 1 ? (outcome.files ?? []) : [];
       const reason =
-        outcome.reason === undefined || outcome.result === "removed"
+        outcome.reason === undefined || outcome.result === "removed" || each.length > 0
           ? ""
           : `: ${reasonText(outcome.reason, outcome.home)}`;
       io.stdout(`${title(outcome)}\n  ${verb[outcome.result]}${reason}\n`);
+      for (const f of each) io.stdout(`  ${reasonText(f.reason, outcome.home, f.file)}\n`);
       for (const note of outcome.notes ?? []) io.stdout(`  ${NOTE[note] ?? note}\n`);
       const access = accessText(outcome);
       if (access !== undefined) io.stdout(`  ${access}\n`);

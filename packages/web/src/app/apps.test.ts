@@ -266,4 +266,53 @@ describe("[A7.3.12.m5-12.web-apps] A home with two settings files in the page", 
       [false, "0123456789abcdef"],
     ]);
   });
+
+  test("each other file's reason is read with its file, and an outcome names every file it left", () => {
+    const view = viewOf({
+      space: "sp_one",
+      rows: [
+        {
+          key: "claude",
+          app: "claude-code",
+          label: "Claude Code",
+          home: "~/.claude",
+          files: ["~/.claude.json", "~/.claude/.claude.json"],
+          also: [],
+          tools: {
+            ...part(true, "remove"),
+            why: "edited",
+            whyFile: "~/.claude.json",
+            more: [
+              { why: "file_unreadable", file: "~/.claude/.claude.json" },
+              { why: "Not A Word" },
+            ],
+          },
+        },
+      ],
+    });
+    expect(view.rows[0]?.tools?.more).toEqual([
+      { why: "file_unreadable", file: "~/.claude/.claude.json" },
+    ]);
+    const applied = appliedOf({
+      applied: true,
+      view: VIEW,
+      outcomes: [
+        {
+          key: "claude",
+          part: "tools",
+          result: "done",
+          reason: "edited",
+          kept: true,
+          files: [
+            { file: "~/.claude.json", reason: "edited" },
+            { file: "~/.claude/.claude.json", reason: "edited" },
+          ],
+        },
+      ],
+    });
+    expect(applied.applied && applied.outcomes[0]?.files).toEqual([
+      { why: "edited", file: "~/.claude.json" },
+      { why: "edited", file: "~/.claude/.claude.json" },
+    ]);
+  });
 });

@@ -23,6 +23,7 @@ import {
   type Action,
   type AppRow,
   type AppsView,
+  type FileWhy,
   type Outcome,
   type Part,
   type PartName,
@@ -74,10 +75,27 @@ interface Failed {
   readonly unconfirmed: boolean;
 }
 
+/** A switch turned on whose tools did not go into one of its home's files, and why. */
+interface Lacking {
+  readonly label: string;
+  readonly file: string;
+  readonly why: string;
+}
+
 /** What the last Apply came to, for the lines under the list. */
 type Said =
-  | { readonly kind: "done"; readonly desktop: boolean; readonly kept: readonly Kept[] }
-  | { readonly kind: "partly"; readonly failed: readonly Failed[]; readonly kept: readonly Kept[] }
+  | {
+      readonly kind: "done";
+      readonly desktop: boolean;
+      readonly kept: readonly Kept[];
+      readonly lacking: readonly Lacking[];
+    }
+  | {
+      readonly kind: "partly";
+      readonly failed: readonly Failed[];
+      readonly kept: readonly Kept[];
+      readonly lacking: readonly Lacking[];
+    }
   | { readonly kind: "stale" | "failed" | "unknown" | "busy" };
 
 export function AgentApps({
@@ -186,17 +204,22 @@ export function AgentApps({
           const done = answer.outcomes.filter((o) => o.result === "done");
           const pendingOf = (o: Outcome) =>
             pending.find((p) => p.row.key === o.key && p.part === o.part);
+          // Every file whose entry stayed, and every file a switch turned on did not reach.
           const kept = done.flatMap((o): Kept[] => {
             const p = pendingOf(o);
-            return o.kept && p !== undefined
-              ? [
-                  {
-                    label: p.row.label,
-                    file: o.file ?? p.found.file,
-                    edited: o.reason === "edited",
-                  },
-                ]
-              : [];
+            if (!o.kept || p === undefined) return [];
+            const files = o.files.length > 0 ? o.files : [{ file: p.found.file, why: o.reason }];
+            return files.map((f) => ({
+              label: p.row.label,
+              file: f.file,
+              edited: f.why === "edited",
+            }));
+          });
+          const lacking = done.flatMap((o): Lacking[] => {
+            const p = pendingOf(o);
+            return o.kept || p === undefined
+              ? []
+              : o.files.map((f) => ({ label: p.row.label, file: f.file, why: f.why }));
           });
           // A failed one may have changed machine.toml too: the tiles follow either way.
           if (answer.outcomes.some((o) => o.part === "open")) onOpenChanged?.();
@@ -217,7 +240,7 @@ export function AgentApps({
                     },
                   ];
             });
-            setSaid({ kind: "partly", failed: rows, kept });
+            setSaid({ kind: "partly", failed: rows, kept, lacking });
             return;
           }
           const desktop = done.some(
@@ -225,7 +248,7 @@ export function AgentApps({
               o.part === "tools" &&
               pending.some((p) => p.row.key === o.key && p.row.app === "claude-desktop"),
           );
-          setSaid({ kind: "done", desktop, kept });
+          setSaid({ kind: "done", desktop, kept, lacking });
           if (firstStart) onDone?.();
         },
         (error: unknown) => {
@@ -406,13 +429,15 @@ function Switch({
 }) {
   const whyId = useId();
   const why = found.why;
+  // The reason, then each other file's: what the switch is described by.
+  const described = [whyId, ...found.more.map((_m, i) => `${whyId}-${String(i)}`)].join(" ");
   return (
     <>
       <SwitchField
         isSelected={on}
         isDisabled={busy || found.change === null}
         onChange={onChange}
-        {...(why === undefined ? {} : { "aria-describedby": whyId })}
+        {...(why === undefined ? {} : { "aria-describedby": described })}
       >
         <SwitchButton className={switches.switch}>
           <span className={switches.track} aria-hidden="true">
@@ -428,6 +453,11 @@ function Switch({
           {whyText(t, found, why)}
         </p>
       )}
+      {found.more.map((m, i) => (
+        <p key={m.file} id={`${whyId}-${String(i)}`} className={styles.why} data-part="file-why">
+          {t("apps.whyIn", { file: m.file, why: fileWhyText(t, found, m) })}
+        </p>
+      ))}
       {found.off === undefined ? null : (
         <Button
           className={styles.quiet}
@@ -469,6 +499,18 @@ function whyText(t: Translate, found: Part, why: string): string {
   return found.whyFile === undefined ? said : t("apps.whyIn", { file: found.whyFile, why: said });
 }
 
+/** What another file of a switch's home says: a file without the entry is the one Add writes. */
+function fileWhyText(t: Translate, found: Part, m: FileWhy): string {
+  return t("apps.why", {
+    why: m.why,
+    on: found.on ? "yes" : "no",
+    fix: found.add !== undefined && m.why === "file_lacks" ? "yes" : "no",
+    off: "no",
+    file: m.file,
+    space: found.space?.name ?? t("apps.otherSpace"),
+  });
+}
+
 /** A switch turned over, in plain words, with the files it changes. */
 function changeText(t: Translate, list: (items: readonly string[]) => string, p: Pending): string {
   return t("apps.change", {
@@ -488,6 +530,32 @@ function KeptLines({ t, kept }: { readonly t: Translate; readonly kept: readonly
   ));
 }
 
+/** Each file a switch turned on did not reach: which, and why, in the row's words. */
+function LackingLines({
+  t,
+  lacking,
+}: {
+  readonly t: Translate;
+  readonly lacking: readonly Lacking[];
+}) {
+  return lacking.map((l) => (
+    <p key={l.label + l.file} className={styles.note} data-part="lacking">
+      {t("apps.lacking", {
+        label: l.label,
+        file: l.file,
+        why: t("apps.why", {
+          why: l.why,
+          on: "no",
+          fix: "no",
+          off: "no",
+          file: l.file,
+          space: t("apps.otherSpace"),
+        }),
+      })}
+    </p>
+  ));
+}
+
 function SaidLine({ t, said }: { readonly t: Translate; readonly said: Said }) {
   switch (said.kind) {
     case "done":
@@ -495,6 +563,7 @@ function SaidLine({ t, said }: { readonly t: Translate; readonly said: Said }) {
         <div role="status">
           <p className={styles.note}>{t(said.desktop ? "apps.doneDesktop" : "apps.done")}</p>
           <KeptLines t={t} kept={said.kept} />
+          <LackingLines t={t} lacking={said.lacking} />
         </div>
       );
     case "partly":
@@ -516,6 +585,7 @@ function SaidLine({ t, said }: { readonly t: Translate; readonly said: Said }) {
             ))}
           </ul>
           <KeptLines t={t} kept={said.kept} />
+          <LackingLines t={t} lacking={said.lacking} />
         </div>
       );
     default:

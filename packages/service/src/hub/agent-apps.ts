@@ -67,6 +67,7 @@ import {
   type HomeView,
   type ToolsAnswer,
   type Offer,
+  type Outcome,
   type PlanItem,
   type SetupInput,
 } from "../setup/index.ts";
@@ -119,6 +120,8 @@ export interface Part extends Changes {
   readonly why?: Why;
   /** The file `why` is about, when the home has several. */
   readonly whyFile?: string;
+  /** The reasons of the home's other files, each with its file shown as `~`. */
+  readonly more?: readonly { readonly why: Why; readonly file: string }[];
   /** tools: the space the entry names, when it names one. */
   readonly space?: { readonly id: string; readonly name: string | null };
   /**
@@ -126,7 +129,7 @@ export interface Part extends Changes {
    * turning them off all the same.
    */
   readonly off?: Changes;
-  /** tools that show on while one of the home's files has no entry: writing it there. */
+  /** tools that show on while a file's reader gets none: writing the entry there. */
   readonly add?: Changes;
 }
 
@@ -179,8 +182,11 @@ export interface AppsOutcome {
    * (`edited`: the person changed it, so it is theirs).
    */
   readonly kept?: true;
-  /** tools turned off with an entry kept: its file, shown as `~`. */
-  readonly file?: string;
+  /**
+   * tools: each file left otherwise than asked, shown as `~`, with why: turned off, every one that
+   * still holds an entry; turned on, every one without an entry of setup's that runs.
+   */
+  readonly files?: readonly { readonly file: string; readonly reason: string }[];
   /** tools, failed: the service did not confirm that the access is off, so the entry stayed too. */
   readonly unconfirmed?: true;
 }
@@ -470,6 +476,9 @@ const UNREADABLE = new Set<string>([
   "unsupported_layout",
 ]);
 
+/** A reason in the page's words. */
+const pageWhy = (why: string): string => (UNREADABLE.has(why) ? "file_unreadable" : why);
+
 /**
  * The tools switch of a home, from its one answer (toolsOf): it shows on exactly while the tools
  * start, turns on only as the answer offers, and turns off whenever the access may be live. A
@@ -486,9 +495,11 @@ function toolsPart(
   const plan = (word: string) => digest([word, planToken(space, [{ view, change, access }])]);
   const recorded = view.record?.space;
   const why =
-    answer.why !== undefined && UNREADABLE.has(answer.why)
-      ? "file_unreadable"
-      : (answer.why ?? (several === true && answer.on === "add" ? "several" : undefined));
+    answer.why !== undefined
+      ? pageWhy(answer.why)
+      : several === true && answer.on === "add"
+        ? "several"
+        : undefined;
   /** The files an action changes, each with its lines; the home's first file when none does. */
   const changes = (
     word: string,
@@ -505,10 +516,12 @@ function toolsPart(
       plan: plan(word),
     };
   };
+  const more = (answer.more ?? []).map((m) => ({ why: pageWhy(m.why), file: shown(m.file) }));
   const base = {
     on: answer.status === "on",
     ...(why === undefined ? {} : { why }),
     ...(answer.file === undefined ? {} : { whyFile: shown(answer.file) }),
+    ...(more.length === 0 ? {} : { more }),
     ...(recorded === undefined
       ? {}
       : { space: { id: recorded, name: host.spaceName(recorded) ?? null } }),
@@ -526,8 +539,8 @@ function toolsPart(
   );
   const none = (word: string) => ({ ...changes(word, []), detail: [] });
   if (base.on) {
-    // A file with no entry beside one that has it: writing it there, beside the switch.
-    const add = answer.on === "add" ? { add: adding } : {};
+    // A file whose reader gets no tools beside one whose reader does: writing it, beside the switch.
+    const add = answer.on === "add" || answer.on === "repair" ? { add: adding } : {};
     return answer.off
       ? { ...base, change: "remove", ...removing, ...add }
       : { ...base, change: null, ...none(why ?? "on"), ...add };
@@ -733,29 +746,34 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
         }
       }
     };
-    // Off is off once the access is taken back; an entry that stayed is said with it.
+    /** The files an outcome names, shown as `~`, each with its reason in the page's words. */
+    const filesOf = (outcome: Outcome) => {
+      const files = (outcome.files ?? []).map((f) => ({
+        file: shownPath(host.platform, host.userHome, f.file),
+        reason: pageWhy(f.reason),
+      }));
+      return files.length === 0 ? {} : { files };
+    };
+    // Off is off once the access is taken back; each entry that stayed is said with it.
     await each(false, async (item, c) => {
       const outcome = await removeHome(now.input, item.view, access);
       if (outcome.access !== "off") return "revoke_failed";
-      if (outcome.kept === undefined) return undefined;
+      if (!(outcome.files ?? []).some((f) => f.kept !== undefined)) return undefined;
       const reason = outcome.reason ?? outcome.result;
-      const file = outcome.file ?? outcome.home.files[0];
-      return {
-        key: c.key,
-        part: "tools",
-        result: "done",
-        reason,
-        kept: true,
-        ...(file === undefined ? {} : { file: shownPath(host.platform, host.userHome, file) }),
-      };
+      return { key: c.key, part: "tools", result: "done", reason, kept: true, ...filesOf(outcome) };
     });
-    // On is on once the home has its access: a new entry, or one in place whose access went.
+    // On is on once the home has its access and an entry: each file that got none is said with it.
     await each(true, async (item, c) => {
       const outcome = await applyHome(now.input, item.view, space, access, item.change);
-      if (outcome.access === "on") return undefined;
       const reason = outcome.reason ?? outcome.result;
-      if (outcome.access !== "unknown" || reason === "revoke_failed") return reason;
-      return { key: c.key, part: "tools", result: "failed", reason, unconfirmed: true };
+      const tools = { key: c.key, part: "tools" as const, reason, ...filesOf(outcome) };
+      if (outcome.result !== "failed" && outcome.result !== "left") {
+        return outcome.files === undefined ? undefined : { ...tools, result: "done" };
+      }
+      if (outcome.access !== "unknown" || reason === "revoke_failed") {
+        return { ...tools, result: "failed" };
+      }
+      return { ...tools, result: "failed", unconfirmed: true };
     });
     return { applied: true, outcomes, view: (await look(host, space)).view };
   });

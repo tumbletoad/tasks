@@ -533,7 +533,7 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
         result: "left",
         reason: "edited",
         access: "off",
-        kept: "edited",
+        files: [{ file, reason: "edited", kept: "edited" }],
       });
       expect(readFileSync(file, "utf8")).toBe(changed);
       expect(ROWS.live.filter((row) => row.home === edited.home.home)).toEqual([]);

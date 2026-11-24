@@ -414,7 +414,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             result: "left",
             reason: "edited",
             access: "off",
-            kept: "edited",
+            files: [{ file, reason: "edited", kept: "edited" }],
           });
           expect(readFileSync(file, "utf8")).toBe(changed);
           expect(accessOf(w, a, file)).toBe(false);
@@ -735,7 +735,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             result: "failed",
             reason: "unwritable",
             access: "off",
-            kept: "own",
+            files: [{ file, reason: "unwritable", kept: "own" }],
           });
         } finally {
           again();
@@ -937,7 +937,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             result: "failed",
             reason: "state_unwritable",
             access: "off",
-            kept: "own",
+            files: [{ file, reason: "state_unwritable", kept: "own" }],
           });
         } finally {
           restore();
@@ -1405,6 +1405,157 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
   );
 
   test.skipIf(root)(
+    "one of the two files cannot be written: the other gets the entry and the access, and the answer names the one that did not",
+    async () => {
+      const w = await world();
+      const { plain, explicit } = filesOf(w);
+      seed(plain, '{\n  "numStartups": 3\n}\n');
+      seed(explicit, '{"theme":"dark"}');
+      const restore = unwritable(explicit);
+      let outcome;
+      try {
+        outcome = await applyDefault(w, known(w));
+      } finally {
+        restore();
+      }
+      expect(outcome).toMatchObject({
+        result: "applied",
+        reason: "unwritable",
+        files: [{ file: explicit, reason: "unwritable" }],
+        access: "on",
+      });
+      const instance = (await defaultView(w)).home.instance;
+      expect(entryIn(claude, plain)).toEqual(expectedEntry(w, claude, instance));
+      expect(readFileSync(explicit, "utf8")).toBe('{"theme":"dark"}');
+      expect(readRecords(w.input.stateDir).map((r) => [r.file, r.more])).toEqual([
+        [plain, undefined],
+      ]);
+      // The row says so, and turning on writes it there once it can be written.
+      expect(toolsOf(known(w), await defaultView(w, known(w)), SPACE)).toEqual({
+        status: "on",
+        why: "file_lacks",
+        file: explicit,
+        on: "add",
+        off: true,
+      });
+    },
+    SLOW,
+  );
+
+  test(
+    "a second file setup cannot read is named before anything is written, and the answer says it got no entry; the other is set up",
+    async () => {
+      const w = await world();
+      const { plain, explicit } = filesOf(w);
+      seed(plain, "{}\n");
+      const broken = '{"theme": "dark",}\n';
+      seed(explicit, broken);
+      const view = await defaultView(w, known(w));
+      const [item] = planOf(known(w), [view], SPACE);
+      expect(item?.change).toMatchObject({
+        writes: [{ file: plain }],
+        left: [{ file: explicit, why: "invalid_file" }],
+      });
+      expect(await applyHome(known(w), view, SPACE, w.rows, item?.change)).toMatchObject({
+        result: "applied",
+        reason: "invalid_file",
+        files: [{ file: explicit, reason: "invalid_file" }],
+        access: "on",
+      });
+      expect(readFileSync(explicit, "utf8")).toBe(broken);
+      expect(readRecords(w.input.stateDir).map((r) => [r.file, r.more])).toEqual([
+        [plain, undefined],
+      ]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a repair whose other file setup cannot read mends the file it can in place and keeps the access",
+    async () => {
+      const w = await world();
+      const { plain, explicit } = filesOf(w);
+      seed(plain, "{}\n");
+      seed(explicit, '{"theme":"dark"}\n');
+      expect(await applyDefault(w)).toMatchObject({ result: "applied", access: "on" });
+      // TTasks installed elsewhere now: both entries run where it was before.
+      const moved: SetupInput = { ...known(w), tasks: installedTasks(join(w.dir, "again")) };
+      rmSync(w.input.tasks);
+      writeFileSync(explicit, readFileSync(explicit, "utf8").replace(/\}\s*$/u, ",}\n"));
+      const broken = readFileSync(explicit, "utf8");
+      const view = await defaultView(w, moved);
+      expect(toolsOf(moved, view, SPACE)).toMatchObject({
+        why: "moved",
+        file: plain,
+        on: "repair",
+      });
+      w.rows.asked.length = 0;
+      const [item] = planOf(moved, [view], SPACE);
+      expect(await applyHome(moved, view, SPACE, w.rows, item?.change)).toMatchObject({
+        result: "applied",
+        files: [{ file: explicit, reason: "invalid_file" }],
+        access: "on",
+      });
+      // Renewed, never taken away; the entry it can read runs the install that is there.
+      expect(w.rows.asked.map((a) => a.verb)).toEqual(["grant"]);
+      expect(w.rows.live).toHaveLength(1);
+      expect((entryIn(claude, plain) as { command: string }).command).toBe(moved.tasks);
+      expect(readFileSync(explicit, "utf8")).toBe(broken);
+    },
+    SLOW,
+  );
+
+  test(
+    "the file a home lacks gets the entry the home has, while its program is there, whatever is installed elsewhere now",
+    async () => {
+      const w = await world();
+      const { plain, explicit } = filesOf(w);
+      seed(plain, "{}\n");
+      expect(await applyDefault(w)).toMatchObject({ result: "applied", access: "on" });
+      const first = entryIn(claude, plain);
+      seed(explicit, '{"numStartups": 1}\n');
+      // Another install of TTasks, while the one the entry runs is still there.
+      const elsewhere: SetupInput = { ...known(w), tasks: installedTasks(join(w.dir, "other")) };
+      const lacking = await defaultView(w, elsewhere);
+      expect(toolsOf(elsewhere, lacking, SPACE)).toMatchObject({ why: "file_lacks", on: "add" });
+      const [item] = planOf(elsewhere, [lacking], SPACE);
+      expect(await applyHome(elsewhere, lacking, SPACE, w.rows, item?.change)).toMatchObject({
+        result: "applied",
+        access: "on",
+      });
+      expect(entryIn(claude, explicit)).toEqual(first);
+    },
+    SLOW,
+  );
+
+  test(
+    "turning off a home whose two entries were both changed by hand names both, and keeps both",
+    async () => {
+      const w = await world();
+      const { plain, explicit } = filesOf(w);
+      seed(plain, "{}\n");
+      seed(explicit, "{}\n");
+      expect(await applyDefault(w)).toMatchObject({ result: "applied", access: "on" });
+      for (const file of [plain, explicit]) {
+        const doc = JSON.parse(readFileSync(file, "utf8")) as {
+          mcpServers: Record<string, Record<string, unknown>>;
+        };
+        (doc.mcpServers[MCP_SERVER_KEY] as Record<string, unknown>)["cwd"] = w.dir;
+        writeFileSync(file, JSON.stringify(doc));
+      }
+      expect(await removeHome(known(w), await defaultView(w, known(w)), w.rows)).toMatchObject({
+        result: "left",
+        access: "off",
+        files: [
+          { file: plain, reason: "edited", kept: "edited" },
+          { file: explicit, reason: "edited", kept: "edited" },
+        ],
+      });
+    },
+    SLOW,
+  );
+
+  test.skipIf(root)(
     "an add that writes nothing says the access as it is: still on for a live grant whose record was lost, off when there is none, unknown when the service was not asked",
     async () => {
       const codex = ADAPTERS[1] as Adapter;
@@ -1435,34 +1586,6 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
         expect(w.rows.asked, String(live)).toEqual([]);
         expect(w.rows.live, String(live)).toHaveLength(live === true ? 1 : 0);
       }
-    },
-    SLOW,
-  );
-
-  test.skipIf(root)(
-    "one of the two files cannot be written: the other is given back as it was, and no access is given",
-    async () => {
-      const w = await world();
-      const { plain, explicit } = filesOf(w);
-      seed(plain, '{\n  "numStartups": 3\n}\n');
-      seed(explicit, '{"theme":"dark"}');
-      const before = [bytesOf(plain), bytesOf(explicit)];
-      const restore = unwritable(explicit);
-      let outcome;
-      try {
-        outcome = await applyDefault(w, known(w));
-      } finally {
-        restore();
-      }
-      expect(outcome).toMatchObject({
-        result: "failed",
-        reason: "unwritable",
-        file: explicit,
-        access: "off",
-      });
-      expect([bytesOf(plain), bytesOf(explicit)]).toEqual(before);
-      expect(w.rows.asked).toEqual([]);
-      expect(readRecords(w.input.stateDir)).toEqual([]);
     },
     SLOW,
   );
@@ -1500,7 +1623,7 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
         on: "add",
         off: true,
       });
-      expect(await applyDefault(w, live)).toMatchObject({ result: "unchanged", access: "on" });
+      expect(await applyDefault(w, live)).toMatchObject({ result: "applied", access: "on" });
       expect(entryIn(claude, explicit)).toEqual(expectedEntry(w, claude, instance));
     },
     SLOW,
@@ -1523,7 +1646,7 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
         file: plain,
         on: "add",
       });
-      expect(await applyDefault(w, live)).toMatchObject({ result: "unchanged", access: "on" });
+      expect(await applyDefault(w, live)).toMatchObject({ result: "applied", access: "on" });
       const [record] = readRecords(w.input.stateDir);
       const named = [record?.file, ...(record?.more ?? []).map((m) => m.file)];
       expect(named.sort()).toEqual([plain, explicit].sort());
@@ -1558,7 +1681,7 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
       const theirs = '{\n  "mcpServers": {}\n}\n';
       seed(explicit, theirs);
       const live = { ...w.input, rows: w.rows.live };
-      expect(await applyDefault(w, live)).toMatchObject({ result: "unchanged", access: "on" });
+      expect(await applyDefault(w, live)).toMatchObject({ result: "applied", access: "on" });
       const [record] = readRecords(w.input.stateDir);
       const named = [record?.file, ...(record?.more ?? []).map((m) => m.file)];
       expect(named.sort()).toEqual([plain, explicit].sort());
@@ -1670,16 +1793,20 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
       // From the space its record names, as the command line applies a registered home.
       const [item] = planOf(live(), [lacking], "");
       expect(await applyHome(live(), lacking, "", w.rows, item?.change), build).toMatchObject({
-        result: "unchanged",
+        result: "applied",
         access: "on",
       });
+      // The same entry as the file the earlier build wrote, in the shape that build wrote it.
       const instance = lacking.home.instance;
       const space = (
         fixture.record.homes.find((h) => h["instance"] === instance) as {
           space: string;
         }
       ).space;
-      expect(entryIn(claude, explicit), build).toEqual({
+      expect(entryIn(claude, explicit), build).toEqual(
+        entryIn(claude, join(w.home, ".claude.json")),
+      );
+      expect(entryIn(claude, explicit), build).toMatchObject({
         command: w.input.tasks,
         args: ["mcp", "--space", space, "--instance", instance, "--app", "claude-code"],
       });

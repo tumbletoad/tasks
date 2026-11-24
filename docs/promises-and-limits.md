@@ -396,8 +396,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Claude Code reads its default folder's settings from `~/.claude.json`, and from
   `~/.claude/.claude.json` when another program starts it with that folder as its home. Setup puts
   its entry into the second only once Claude Code has made it, never creating it, and takes the
-  entry out of each. While the tools start from one of them, they show as on, and the row names the
-  other file when it lacks the entry or holds another; turning on writes it there.
+  entry out of each. The tools show as on while their access is on and one of the two holds an
+  entry that runs; each file that does not is named with why. Turning them on puts the same entry
+  into every file it can, names any it could not, and mends an entry in place without taking the
+  access away.
 - Applying writes what you were shown: when a settings file, `machine.toml` or an app's access
   changed since, nothing is written and you see how it stands now.
 - An update is checked before it runs. A failed update returns to the version before it.
@@ -480,6 +482,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Rolled back to an earlier version, which knows one settings file per agent home, turning Claude
   Code's tools off takes the access away and the entry out of `~/.claude.json` only; the entry left
   in `~/.claude/.claude.json` reaches nothing while the access is off.
+- Claude Code started with `~/.claude` as its home may read an older settings file of its own there
+  (`.config.json`) in place of `.claude.json`. Setup does not write that file, so a program that
+  starts Claude Code that way may get no tools.
 - Agent setup reads an agent app's settings file again just before it replaces it, and leaves a
   file that changed alone; a save another program makes in the instant between that read and the
   replacement is lost. For that read and the replacement setup holds Claude Code's own lock, for

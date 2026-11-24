@@ -523,8 +523,9 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
         ).toEqual(["codex"]);
 
         const applied = await run([...planned.apply.slice(1), "--json"]);
-        // The other home cannot be turned on from here (its folder is gone), so not all is done.
-        expect(applied.code, applied.stdout + applied.stderr).toBe(10);
+        // Both homes it asked for are set up; the other home's grant, whose folder is gone, has
+        // nothing to set up and does not count against it.
+        expect(applied.code, applied.stdout + applied.stderr).toBe(0);
         expect(
           (
             JSON.parse(applied.stdout) as { homes: { instance: string; result: string }[] }
@@ -532,7 +533,7 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
         ).toEqual([
           ["claude", "applied"],
           ["codex-2", "applied"],
-          ["codex", "left"],
+          ["codex", "unchanged"],
         ]);
         expect((await rows()).map((r) => [r.app, r.instance]).sort()).toEqual([
           ["claude-code", "claude"],
@@ -618,7 +619,7 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
         expect(JSON.parse(applied.stdout)).toMatchObject({
           homes: [
             { app: "codex", result: "failed", reason: "instance_taken" },
-            { app: "codex", result: "left" },
+            { app: "codex", result: "unchanged" },
           ],
         });
         const text = await run(planned.apply.slice(1));
@@ -696,6 +697,56 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
       }
       // Readable again: the next remove takes the entries out.
       expect((await run(["setup", "agents", "--remove"])).code).toBe(0);
+      expect(read()).toEqual(before);
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.cli] A Claude Code folder with a second settings file setup cannot read", () => {
+  test(
+    "the preview names that file and why before anything is written; the apply sets up the other and its answer says that file got no entry",
+    async () => {
+      const before = read();
+      const inside = join(user, ".claude", ".claude.json");
+      const broken = '{"theme": "dark",}\n';
+      writeFileSync(inside, broken);
+      try {
+        const text = await run(
+          ["setup", "agents", "--app", "claude-code", "--space", space],
+          false,
+        );
+        expect(text.code, text.stderr).toBe(0);
+        expect(text.stdout).toContain(`${inside} (left alone: its file is not valid`);
+        expect(text.stdout).toContain(`Nothing is written in ${inside}, its file is not valid`);
+        const planned = JSON.parse(
+          (
+            await run(
+              ["setup", "agents", "--app", "claude-code", "--space", space, "--json"],
+              false,
+            )
+          ).stdout,
+        ) as { apply: string[]; homes: { change?: { left?: unknown } }[] };
+        expect(planned.homes[0]?.change?.left).toEqual([{ why: "invalid_file", file: inside }]);
+        const applied = await run([...planned.apply.slice(1), "--json"]);
+        // Not all that was asked: one of its files has no entry.
+        expect(applied.code, applied.stdout + applied.stderr).toBe(10);
+        expect(JSON.parse(applied.stdout)).toMatchObject({
+          homes: [
+            {
+              app: "claude-code",
+              result: "applied",
+              reason: "invalid_file",
+              access: "on",
+              files: [{ file: inside, reason: "invalid_file" }],
+            },
+          ],
+        });
+        expect(readFileSync(inside, "utf8")).toBe(broken);
+        expect((await run(["setup", "agents", "--remove"])).code).toBe(0);
+      } finally {
+        rmSync(inside, { force: true });
+      }
       expect(read()).toEqual(before);
     },
     SLOW,

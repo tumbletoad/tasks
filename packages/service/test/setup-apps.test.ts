@@ -277,7 +277,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         result: "left",
         reason: "edited",
         access: "off",
-        kept: "edited",
+        files: [{ file, reason: "edited", kept: "edited" }],
       });
       expect(readFileSync(file, "utf8")).toBe(edited);
       expect(readRecords(w.state)).toEqual([]);

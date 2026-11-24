@@ -41,7 +41,7 @@
 // Every path, variable and file read goes through the injected input, so tests run on scratch
 // homes.
 import { createHash } from "node:crypto";
-import { lstatSync, realpathSync, rmSync, statSync } from "node:fs";
+import { accessSync, constants, lstatSync, realpathSync, rmSync, statSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { posix, win32 } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -69,8 +69,10 @@ import { scanToml, ScanError } from "../config/scan.ts";
 import { BOM, MAX_CONFIG_BYTES, parseToml, readConfigFile } from "../config/toml.ts";
 import { stageFile, type StagedFile } from "../hub/files.ts";
 import {
+  fileWhy,
   toolsAnswer,
   type FileFacts,
+  type FileWhy,
   type FileState,
   type HomeState,
   type Refusal,
@@ -82,6 +84,7 @@ import {
   holdsNothing,
   intendedEntry,
   removeOwnEntry,
+  sameEntry,
   whoseEntry,
   type EntryFormat,
 } from "./entry.ts";
@@ -225,8 +228,13 @@ export interface HomeView {
 export interface Change {
   /** The entry setup writes, exactly: its keys and values. */
   readonly entry: Readonly<Record<string, EditValue>>;
-  /** Each file the entry goes into, with the lines it gains (JSON: its servers' table first when it is new). */
+  /**
+   * Each file the entry goes into, with the lines it gains (JSON: its servers' table first when it
+   * is new); setup's own entry it takes the place of shows as taken out first.
+   */
   readonly writes: readonly { readonly file: string; readonly diff: readonly string[] }[];
+  /** Each other file of the home that will not hold an entry of setup's that runs, with why. */
+  readonly left: readonly FileWhy[];
 }
 
 export type OutcomeReason =
@@ -261,6 +269,14 @@ export type OutcomeReason =
   /** The service did not say whether the home has its access, so none was given back. */
   | "access_unknown";
 
+/** A file of a home that an action left otherwise than it was asked to, and why. */
+export interface FileOutcome {
+  readonly file: string;
+  readonly reason: OutcomeReason;
+  /** A removal left an entry there: TTasks's own (`reason` says why), or one the person changed. */
+  readonly kept?: "own" | "edited";
+}
+
 /** What happened to one home. */
 export interface Outcome {
   readonly home: AgentHome;
@@ -272,10 +288,11 @@ export interface Outcome {
    * confirm, or was not there to ask. Absent when the action did not touch the home.
    */
   readonly access?: "on" | "off" | "unknown";
-  /** A removal that left an entry in the file: TTasks's own (`reason` says why), or one the person changed. */
-  readonly kept?: "own" | "edited";
-  /** The file `reason` or `kept` is about. */
-  readonly file?: string;
+  /**
+   * Each of its files left otherwise than asked: turned on, one without an entry of setup's that
+   * runs; turned off, every one that still holds an entry (`kept`). The first is `reason`'s.
+   */
+  readonly files?: readonly FileOutcome[];
   /** Facts the person should know: `undo_failed`, `entry_left`, `undone` (its entry was taken out again). */
   readonly notes?: readonly string[];
 }
@@ -1314,6 +1331,33 @@ export function accessOf(
 }
 
 /**
+ * The facts of each of a home's files (answer.ts `FileFacts`): its entry, the program it names, and
+ * whether a new entry can go in. `writable` is the plan's refusal of a new entry when the caller
+ * has one (several Claude Desktop files).
+ */
+function factsOf(input: SetupInput, view: HomeView, writable?: Refusal): FileFacts[] {
+  const { home } = view;
+  return view.files.map((f): FileFacts => {
+    const program = programOf(input, view, f);
+    return {
+      file: f.file,
+      state: f.state,
+      ...(f.refusal === undefined ? {} : { refusal: f.refusal }),
+      ...(program === undefined ? {} : { program }),
+      writable:
+        writable ??
+        (home.app === "claude-desktop" && f.sha256 === null
+          ? "not_set_up"
+          : // A file whose folder is not there (renamed, or gone) cannot take an entry.
+            input.isFolder(pathOf(input.platform).dirname(f.file))
+            ? true
+            : "unreadable"),
+      handMade: f.state === "foreign" && entryInstance(f.entry) === null,
+    };
+  });
+}
+
+/**
  * The one answer for a home's tools (answer.ts), from its facts read now: the access from
  * `input.rows` (unknown when the caller has none), each file's entry and the program it names,
  * and `space`, the one the person is in ("" for the one the record names). The space a home is set
@@ -1328,30 +1372,16 @@ export function toolsOf(
 ): ToolsAnswer {
   const { home, record } = view;
   const named = record?.space ?? rowOf(input, home)?.space;
+  const recorded =
+    record === undefined ? undefined : programNamed(input, record.entry["command"], true);
   return toolsAnswer({
     state: view.state,
     ...(view.refusal === undefined ? {} : { refusal: view.refusal }),
-    files: view.files.map((f): FileFacts => {
-      const program = programOf(input, view, f);
-      return {
-        file: f.file,
-        state: f.state,
-        ...(f.refusal === undefined ? {} : { refusal: f.refusal }),
-        ...(program === undefined ? {} : { program }),
-        writable:
-          writable ??
-          (home.app === "claude-desktop" && f.sha256 === null
-            ? "not_set_up"
-            : // A file whose folder is not there (renamed, or gone) cannot take an entry.
-              input.isFolder(pathOf(input.platform).dirname(f.file))
-              ? true
-              : "unreadable"),
-        handMade: f.state === "foreign" && entryInstance(f.entry) === null,
-      };
-    }),
+    files: factsOf(input, view, writable),
     access: accessOf(input, view),
     otherSpace: named !== undefined && space !== "" && named !== space,
     installed: isFile(input.tasks),
+    ...(recorded === undefined ? {} : { recorded }),
   });
 }
 
@@ -1367,6 +1397,15 @@ function programOf(
   file: FileView,
 ): "there" | "moved" | "gone" | undefined {
   const command = (file.entry as { command?: unknown } | undefined)?.command;
+  return programNamed(input, command, view.state === "registered" && file.state === "own");
+}
+
+/** Whether the program `command` names is there; `own`: setup's entry names it (programOf). */
+function programNamed(
+  input: SetupInput,
+  command: unknown,
+  own: boolean,
+): "there" | "moved" | "gone" | undefined {
   if (typeof command !== "string" || command === "") return undefined;
   const { platform } = input;
   if (!pathOf(platform).isAbsolute(command)) {
@@ -1374,11 +1413,7 @@ function programOf(
     return onPath(host, command) === undefined ? "gone" : "there";
   }
   if (isFile(command)) return "there";
-  return view.state === "registered" &&
-    file.state === "own" &&
-    !samePath(platform, command, input.tasks)
-    ? "moved"
-    : "gone";
+  return own && !samePath(platform, command, input.tasks) ? "moved" : "gone";
 }
 
 function isFile(path: string): boolean {
@@ -1390,15 +1425,16 @@ function isFile(path: string): boolean {
 }
 
 /**
- * The entry for `space` into each of `targets`, with the lines each file gains. Claude Desktop
- * makes its file in its developer settings: setup never creates it, so one that is not there
- * takes nothing. With no file to take it, the reason is the first file's: one setup cannot read,
- * or an entry that is not setup's.
+ * `entry` into each of `targets`, with the lines each file gains (setup's own entry it takes the
+ * place of first, as taken out), and each other file of the home that will not hold an entry of
+ * setup's that runs, with why, in the row's words. Claude Desktop makes its file in its developer
+ * settings: setup never creates it, so one that is not there takes nothing. With no file to take
+ * it, the reason is the first file's: one setup cannot read, or an entry that is not setup's.
  */
 function changeInto(
   input: SetupInput,
   view: HomeView,
-  space: string,
+  entry: Readonly<Record<string, EditValue>>,
   targets: readonly FileView[],
 ): Change | Refusal {
   const { home } = view;
@@ -1407,62 +1443,84 @@ function changeInto(
     if (targets.length > 0) return "not_set_up";
     return view.files.find((f) => f.state === "refused")?.refusal ?? "foreign_entry";
   }
-  const entry = intendedEntry(APPS[home.app].format, entryArgv(input.tasks, home, space));
+  const installed = isFile(input.tasks);
+  const left = factsOf(input, view).flatMap((x): FileWhy[] => {
+    if (writes.some((w) => w.file === x.file)) return [];
+    const why = fileWhy(x, installed);
+    return why === undefined ? [] : [{ why, file: x.file }];
+  });
   return {
     entry,
-    writes: writes.map((f) => ({ file: f.file, diff: diffOf(home.app, entry, f.parent) })),
+    writes: writes.map((f) => ({
+      file: f.file,
+      diff: [
+        ...(f.state === "own" ? entryLines(home.app, f.entry, "-") : []),
+        ...diffOf(home.app, entry, f.parent),
+      ],
+    })),
+    left,
   };
 }
 
 /**
- * What applying a home would write, or why it cannot: its entry, into each file that takes one
- * once what an earlier setup left is settled (no entry, or setup's own). Reads nothing more.
+ * What applying a home would write, or why it cannot: its entry for `space`, into each file that
+ * takes one once what an earlier setup left is settled (no entry, or setup's own). Reads nothing
+ * more.
  */
 export function planChange(input: SetupInput, view: HomeView, space: string): Change | Refusal {
+  const entry = intendedEntry(APPS[view.home.app].format, entryArgv(input.tasks, view.home, space));
   return changeInto(
     input,
     view,
-    space,
+    entry,
     view.files.filter((f) => f.state === "absent" || f.state === "gone" || f.state === "own"),
   );
 }
 
 /**
- * What repairs a registered home whose entries are gone or run a program that is gone, when the
- * answer offers it: its entry written again with the present command, in the space it named
- * (rewrite). An entry it replaces shows as taken out.
+ * What turning on a home setup set up writes, as its answer offers it from `space`: the entry its
+ * record names into each file that lacks it (add); or the entry with the command installed now,
+ * in the space its record names, into each file that lacks it and in place of setup's own where
+ * that differs, so every file of the home holds the same entry (repair). Undefined otherwise.
  */
-function repairOf(input: SetupInput, view: HomeView, space: string): Change | undefined {
-  const recorded = view.record?.space;
-  if (recorded === undefined || toolsOf(input, view, space).on !== "repair") return undefined;
-  const change = planChange(input, view, recorded);
-  if (typeof change === "string") return undefined;
-  return {
-    ...change,
-    writes: change.writes.map((w) => {
-      const found = view.files.find((f) => f.file === w.file);
-      return found?.state === "own"
-        ? { ...w, diff: [...entryLines(view.home.app, found.entry, "-"), ...w.diff] }
-        : w;
-    }),
-  };
-}
-
-/**
- * What completes a registered home one of whose files has no entry, when the answer offers it:
- * the entry its record names, into each file that has none (complete).
- */
-function completionOf(input: SetupInput, view: HomeView, space: string): Change | undefined {
-  const recorded = view.record?.space;
-  if (recorded === undefined || view.state !== "registered") return undefined;
-  if (toolsOf(input, view, space).on !== "add") return undefined;
+function refreshOf(input: SetupInput, view: HomeView, space: string): Change | undefined {
+  const { record, home } = view;
+  // A setup that did not finish is settled as a removal first: what turning on writes is planned then.
+  if (record === undefined || view.state === "interrupted") return undefined;
+  const on = toolsOf(input, view, space).on;
+  const lacks = (f: FileView) => f.state === "absent" || f.state === "gone";
+  if (on === "add") {
+    const entry = writableEntry(record.entry);
+    const change =
+      entry === undefined ? undefined : changeInto(input, view, entry, view.files.filter(lacks));
+    return typeof change === "object" ? change : undefined;
+  }
+  if (on !== "repair") return undefined;
+  const entry = intendedEntry(APPS[home.app].format, entryArgv(input.tasks, home, record.space));
+  const stale = (f: FileView) => f.state === "own" && !sameEntry(f.entry, entry);
   const change = changeInto(
     input,
     view,
-    recorded,
-    view.files.filter((f) => f.state === "absent" || f.state === "gone"),
+    entry,
+    view.files.filter((f) => lacks(f) || stale(f)),
   );
-  return typeof change === "string" ? undefined : change;
+  return typeof change === "object" ? change : undefined;
+}
+
+/** A recorded entry as setup writes it, when each of its values is one setup can write. */
+function writableEntry(
+  entry: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, EditValue>> | undefined {
+  const text = (v: unknown): v is string => typeof v === "string";
+  const ok = Object.values(entry).every(
+    (v) =>
+      text(v) ||
+      typeof v === "number" ||
+      typeof v === "boolean" ||
+      (Array.isArray(v) && v.every(text)) ||
+      (typeof v === "object" && v !== null && !Array.isArray(v) && Object.values(v).every(text)),
+  );
+  return ok ? (entry as Readonly<Record<string, EditValue>>) : undefined;
 }
 
 /** One selected home in a plan: as found, and the change apply would make there. */
@@ -1499,13 +1557,11 @@ export function planOf(input: SetupInput, views: readonly HomeView[], space: str
   return views.map((view) => ({
     view,
     change:
-      view.state === "registered"
-        ? (completionOf(input, view, space) ?? repairOf(input, view, space))
-        : view.state !== "not_registered"
-          ? repairOf(input, view, space)
-          : view.home.app === "claude-desktop" && desktops.length > 1
-            ? "ambiguous"
-            : planChange(input, view, space),
+      view.state === "not_registered"
+        ? view.home.app === "claude-desktop" && desktops.length > 1
+          ? "ambiguous"
+          : planChange(input, view, space)
+        : refreshOf(input, view, space),
     access: accessOf(input, view),
   }));
 }
@@ -1626,21 +1682,25 @@ function stillAsRead(home: AgentHome, file: string, before: Buffer | undefined):
   );
 }
 
+/** New bytes of one of the home's files, written and flushed beside it, to be put in its place. */
+interface Staged {
+  readonly file: string;
+  /** The bytes setup read there; undefined when there was no file. */
+  readonly before: Buffer | undefined;
+  readonly staged: StagedFile;
+}
+
 /**
- * Puts `whole` in place of the bytes `before` setup read in one of the home's files (undefined: no
- * file yet), with the file's own mode. The new file is written and flushed beside the old one
- * first; under the app's own lock the file is only compared once more and the new one renamed
- * over it, or, where there was no file, put in place only where nothing is (StagedFile.create). A
- * file the OS will not let setup write (read-only, held by another program, a full disk) is
- * `unwritable`.
+ * Writes `whole` and flushes it beside one of the home's files, with the file's own mode, or says
+ * why it cannot go there: too large, a folder setup may not write in, or (Windows, which refuses
+ * to replace one) a read-only file.
  */
-async function writeHomeFile(
-  input: SetupInput,
+function stageHomeFile(
   home: AgentHome,
   file: string,
   before: Buffer | undefined,
   whole: string,
-): Promise<Written> {
+): Staged | "too_large" | "changed_meanwhile" | "unwritable" {
   if (Buffer.byteLength(whole, "utf8") > APPS[home.app].maxBytes) return "too_large";
   let mode = 0o600;
   if (before !== undefined) {
@@ -1649,22 +1709,35 @@ async function writeHomeFile(
     } catch {
       return "changed_meanwhile";
     }
+    try {
+      if (process.platform === "win32") accessSync(file, constants.W_OK);
+    } catch {
+      return "unwritable";
+    }
   }
-  let staged: StagedFile;
   try {
-    staged = stageFile(file, whole, mode);
+    return { file, before, staged: stageFile(file, whole, mode) };
   } catch {
     return "unwritable";
   }
+}
+
+/**
+ * Puts staged bytes in place of the bytes setup read: under the app's own lock the file is only
+ * compared once more and the new one renamed over it, or, where there was no file, put in place
+ * only where nothing is (StagedFile.create). A file the OS will not let setup write (read-only,
+ * held by another program, a full disk) is `unwritable`. The staged file goes either way.
+ */
+async function placeHomeFile(input: SetupInput, home: AgentHome, s: Staged): Promise<Written> {
   try {
-    return await underAppLock(input, home, file, (): Written => {
-      if (before === undefined) {
-        return placeRefusal(file, home.home) === undefined && staged.create()
+    return await underAppLock(input, home, s.file, (): Written => {
+      if (s.before === undefined) {
+        return placeRefusal(s.file, home.home) === undefined && s.staged.create()
           ? "done"
           : "changed_meanwhile";
       }
-      staged.replace(() => {
-        if (!stillAsRead(home, file, before)) throw new ChangedMeanwhile();
+      s.staged.replace(() => {
+        if (!stillAsRead(home, s.file, s.before)) throw new ChangedMeanwhile();
       });
       return "done";
     });
@@ -1672,8 +1745,20 @@ async function writeHomeFile(
     return error instanceof ChangedMeanwhile ? "changed_meanwhile" : "unwritable";
   } finally {
     // Once in place it has no temporary name left; otherwise it goes.
-    staged.discard();
+    s.staged.discard();
   }
+}
+
+/** Puts `whole` in place of the bytes `before` setup read in one of the home's files. */
+async function writeHomeFile(
+  input: SetupInput,
+  home: AgentHome,
+  file: string,
+  before: Buffer | undefined,
+  whole: string,
+): Promise<Written> {
+  const staged = stageHomeFile(home, file, before, whole);
+  return typeof staged === "string" ? staged : placeHomeFile(input, home, staged);
 }
 
 /** Deletes a file setup created, when it is still exactly the bytes `before` setup read. */
@@ -1700,7 +1785,7 @@ const EMPTY_JSON = "{}\n";
 interface NotWritten {
   readonly result: "left" | "failed";
   readonly reason: OutcomeReason;
-  readonly file?: string;
+  readonly files?: readonly FileOutcome[];
 }
 
 /** One file's part of an entry being written: the file as read, and as it will be. */
@@ -1712,58 +1797,65 @@ interface Spliced {
 }
 
 /**
- * The entry spliced into one of the home's files as it is now. A file that changed since the plan
- * (its `bound`) is left alone; Claude Code's is bound by its servers' table, as its sessions save
- * their own state into it. Only the home's first file is made when it is not there.
+ * The entry spliced into one of the home's files as it is now: added where there is none, or in
+ * place of setup's own entry (`record`'s) in one edit. A file that changed since the plan (its
+ * `bound`) is left alone; Claude Code's is bound by its servers' table, as its sessions save their
+ * own state into it. Only the home's first file is made when it is not there.
  */
-function splice(home: AgentHome, view: FileView, entry: Change["entry"]): Spliced | NotWritten {
+function splice(
+  home: AgentHome,
+  view: FileView,
+  entry: Change["entry"],
+  record: HomeRecord | undefined,
+): Spliced | FileOutcome {
   const { format, servers } = APPS[home.app];
-  const failed = (reason: OutcomeReason): NotWritten => ({
-    result: "failed",
-    reason,
-    file: view.file,
-  });
+  const left = (reason: OutcomeReason): FileOutcome => ({ file: view.file, reason });
   const now = readHomeFile(home, view.file);
-  if (now.kind === "refused" || entryOf(now) !== undefined) return failed("changed_meanwhile");
-  if (now.kind === "missing" && view.file !== home.files[0]) return failed("changed_meanwhile");
-  if (boundOf(home.app, now) !== view.bound) return failed("changed_meanwhile");
-  const text = now.kind === "read" ? now.text : format === "json" ? EMPTY_JSON : "";
+  if (now.kind === "refused") return left("changed_meanwhile");
+  if (now.kind === "missing" && view.file !== home.files[0]) return left("changed_meanwhile");
+  if (boundOf(home.app, now) !== view.bound) return left("changed_meanwhile");
+  const recorded =
+    record === undefined
+      ? undefined
+      : recordFiles(record).find((f) => samePath(process.platform, f.file, view.file));
+  let text = now.kind === "read" ? now.text : format === "json" ? EMPTY_JSON : "";
+  const replaces = entryOf(now) !== undefined;
+  if (replaces) {
+    // Only setup's own entry is replaced, and only where the plan replaces it.
+    if (view.state !== "own" || recorded === undefined || record === undefined) {
+      return left("changed_meanwhile");
+    }
+    if (whoseIn(home, now, record) !== "own") return left("changed_meanwhile");
+    const out = removeOwnEntry(format, servers, text, recorded.made);
+    if (!out.ok) return left(out.reason === "invalid_file" ? "invalid_file" : "unsupported_layout");
+    text = out.text;
+  }
   const edited = addOwnEntry(format, servers, text, entry);
-  if (!edited.ok)
-    return failed(edited.reason === "invalid_file" ? "invalid_file" : "unsupported_layout");
+  if (!edited.ok) {
+    return left(edited.reason === "invalid_file" ? "invalid_file" : "unsupported_layout");
+  }
   return {
     file: view.file,
     before: now.kind === "read" ? now.bytes : undefined,
     whole: `${now.kind === "read" && now.bom ? BOM : ""}${edited.text}`,
-    made: { file: now.kind === "missing", ...edited.made },
+    // Setup made the file only when it makes it now, or made it with the entry this one replaces.
+    made: {
+      file: replaces ? (recorded?.made.file ?? false) : now.kind === "missing",
+      ...edited.made,
+    },
   };
 }
 
-/** Puts back files this run wrote, each while it is still exactly what was written: whether all were. */
-async function putBack(
-  input: SetupInput,
-  home: AgentHome,
-  written: readonly Spliced[],
-): Promise<boolean> {
-  let all = true;
-  for (const s of written) {
-    const now = Buffer.from(s.whole, "utf8");
-    const wrote =
-      s.before === undefined
-        ? await deleteHomeFile(input, home, s.file, now)
-        : await writeHomeFile(input, home, s.file, now, s.before.toString("utf8"));
-    if (wrote !== "done") all = false;
-  }
-  return all;
-}
-
 /**
- * Writes the home's record, then the entry into each file of `change` as it is now: the record and
- * the splices outside the app's lock, before any file changes. A new install's record says
- * `applying`; a registered home that gains a file (`kept`, its record) stays `applied`, since its
- * access already follows its entry. A file that cannot be written takes back the ones this run
- * wrote, and the record goes back as it was; Claude Code's file, which a running session saves
- * while setup works, is read and worked out again, a few times.
+ * Writes the entry into each file of `change` that can take it, and names each that cannot: the
+ * home's record first, naming every file about to change, then each file as it is now. Every file
+ * is read, spliced and written out beside itself before the first one is put in place, so one that
+ * cannot take the entry (changed since the plan, read-only, a layout setup cannot keep) is known
+ * and left as it is; one that fails as it is put in place is named too, and the others keep their
+ * entry. A new install's record says `applying`; a registered home's (`kept`) stays `applied`, since
+ * its access already follows its entry. With no file written, the record goes back as it was.
+ * Claude Code's file, which a running session saves while setup works, is read and worked out
+ * again, a few times.
  */
 async function writeEntries(
   input: SetupInput,
@@ -1771,88 +1863,120 @@ async function writeEntries(
   space: string,
   change: Change,
   kept?: HomeRecord,
-): Promise<HomeRecord | NotWritten> {
+): Promise<
+  | { readonly record: HomeRecord; readonly wrote: readonly string[]; readonly left: FileOutcome[] }
+  | NotWritten
+> {
   const { home } = view;
   const { locked } = APPS[home.app];
-  for (let attempt = 1; ; attempt += 1) {
-    const spliced: Spliced[] = [];
-    for (const w of change.writes) {
-      const found = view.files.find((f) => f.file === w.file);
-      if (found === undefined) return { result: "failed", reason: "changed_meanwhile" };
-      const s = splice(home, found, change.entry);
-      if (!("whole" in s)) return s;
-      spliced.push(s);
-    }
-    const [first] = spliced;
-    if (first === undefined) return { result: "failed", reason: "changed_meanwhile" };
-    const record = naming(
-      input,
-      home,
-      kept === undefined
-        ? {
-            app: home.app,
-            home: home.home,
-            file: first.file,
-            is_default: isDefaultFile(input, home, home.files[0] ?? first.file),
-            instance: home.instance,
-            account: home.account,
-            space,
-            state: "applying",
-            entry: change.entry,
-            also: [],
-            made: first.made,
-            grant: null,
-            at: new Date().toISOString(),
-          }
-        : {
-            ...kept,
-            // An earlier build's entry has another shape: the new one is setup's own too.
-            also: isDeepStrictEqual(kept.entry, change.entry)
-              ? kept.also
-              : [...kept.also, change.entry],
-          },
-      spliced,
-    );
+  const base: HomeRecord =
+    kept === undefined
+      ? {
+          app: home.app,
+          home: home.home,
+          file: home.files[0] ?? "",
+          is_default: isDefaultFile(input, home, home.files[0] ?? ""),
+          instance: home.instance,
+          account: home.account,
+          space,
+          state: "applying",
+          entry: change.entry,
+          also: [],
+          made: { file: false, parent: false, spacing: null },
+          grant: null,
+          at: new Date().toISOString(),
+        }
+      : {
+          ...kept,
+          entry: change.entry,
+          // The entry it held before is setup's own too, where it is still there.
+          also: [kept.entry, ...kept.also].filter(
+            (e, i, all) =>
+              !isDeepStrictEqual(e, change.entry) &&
+              all.findIndex((o) => isDeepStrictEqual(o, e)) === i,
+          ),
+        };
+  const recordOfFiles = (files: readonly Spliced[]): HomeRecord =>
+    naming(input, home, base, [
+      ...(kept === undefined ? [] : recordFiles(kept)).filter(
+        (r) => !files.some((s) => samePath(input.platform, s.file, r.file)),
+      ),
+      ...files.map((s) => ({ file: s.file, made: s.made })),
+    ]);
+  // The files this run could not write, then those the plan leaves.
+  const failed: FileOutcome[] = [];
+  const written: Spliced[] = [];
+  /** The record could not hold what it has to give back: a layout setup cannot keep. */
+  let full = false;
+  let pending = change.writes.flatMap((w) => view.files.filter((f) => f.file === w.file));
+  for (let attempt = 1; pending.length > 0; attempt += 1) {
+    const ready: { readonly s: Spliced; readonly staged: Staged }[] = [];
     try {
-      putRecord(input.stateDir, input.platform, record);
-    } catch (error) {
-      // What setup's reader could not read back (millions of line breaks inside an empty servers
-      // object, which the record keeps to give them back) is a layout setup cannot keep.
-      if (error instanceof SetupStateTooLarge)
-        return { result: "left", reason: "unsupported_layout" };
-      if (error instanceof SetupStateInvalid || error instanceof SetupStateUnsafe) throw error;
-      return { result: "failed", reason: "state_unwritable" };
-    }
-    const written: Spliced[] = [];
-    let wrote: Written = "done";
-    let at = first.file;
-    for (const s of spliced) {
-      wrote = await writeHomeFile(input, home, s.file, s.before, s.whole);
-      if (wrote !== "done") {
-        at = s.file;
+      for (const f of pending) {
+        const s = splice(home, f, change.entry, kept);
+        if (!("whole" in s)) {
+          failed.push(s);
+          continue;
+        }
+        const staged = stageHomeFile(home, s.file, s.before, s.whole);
+        if (typeof staged === "string") failed.push({ file: s.file, reason: staged });
+        else ready.push({ s, staged });
+      }
+      pending = [];
+      if (ready.length === 0) break;
+      try {
+        putRecord(
+          input.stateDir,
+          input.platform,
+          recordOfFiles([...written, ...ready.map((r) => r.s)]),
+        );
+      } catch (error) {
+        if (error instanceof SetupStateInvalid || error instanceof SetupStateUnsafe) throw error;
+        // What setup's reader could not read back (millions of line breaks inside an empty servers
+        // object, which the record keeps to give them back) is a layout setup cannot keep.
+        full = error instanceof SetupStateTooLarge;
+        const reason: OutcomeReason = full ? "unsupported_layout" : "state_unwritable";
+        failed.push(...ready.map((r) => ({ file: r.s.file, reason })));
         break;
       }
-      written.push(s);
+      for (const { s, staged } of ready) {
+        const wrote = await placeHomeFile(input, home, staged);
+        if (wrote === "done") written.push(s);
+        else if (wrote === "changed_meanwhile" && locked && attempt < TRIES) {
+          pending.push(...view.files.filter((f) => f.file === s.file));
+        } else failed.push({ file: s.file, reason: wrote });
+      }
+    } finally {
+      for (const r of ready) r.staged.staged.discard();
     }
-    if (wrote === "done") return record;
-    const back = await putBack(input, home, written);
+  }
+  const left = [...failed, ...change.left.map((l) => ({ file: l.file, reason: l.why }))];
+  if (written.length === 0) {
     try {
-      if (!back) putRecord(input.stateDir, input.platform, { ...record, state: "removing" });
-      else if (kept === undefined) forget(input, home);
+      if (kept === undefined) forget(input, home);
       else putRecord(input.stateDir, input.platform, kept);
     } catch {
       // Kept as it is: a record that did not finish is settled by the next run.
     }
-    if (!(back && wrote === "changed_meanwhile" && locked && attempt < TRIES)) {
-      return { result: "failed", reason: wrote, file: at };
-    }
+    return {
+      result: full ? "left" : "failed",
+      reason: left[0]?.reason ?? "changed_meanwhile",
+      ...(left.length === 0 ? {} : { files: left }),
+    };
   }
+  const record = recordOfFiles(written);
+  try {
+    putRecord(input.stateDir, input.platform, record);
+  } catch {
+    // The one written before names these files and the ones that failed: a removal passes over
+    // a file with no entry of setup's in it.
+  }
+  return { record, wrote: written.map((s) => s.file), left };
 }
 
 /**
- * `record` naming each of `files` with what the latest write made there, in place of what it said
- * of that path before: each path once, in the home's order, so the only one setup can have made
- * (the home's first) is the record's `file`.
+ * `record` naming exactly `files`, each with what the latest write made there: each path once, in
+ * the home's order, so the only one setup can have made (the home's first) is the record's `file`.
  */
 function naming(
   input: SetupInput,
@@ -1860,16 +1984,11 @@ function naming(
   record: HomeRecord,
   files: readonly { readonly file: string; readonly made: Made }[],
 ): HomeRecord {
-  const same = (a: string, b: string) => samePath(input.platform, a, b);
   const place = (file: string) => {
-    const at = home.files.findIndex((f) => same(f, file));
+    const at = home.files.findIndex((f) => samePath(input.platform, f, file));
     return at === -1 ? home.files.length : at;
   };
-  const all = [
-    ...recordFiles(record).filter((r) => !files.some((f) => same(f.file, r.file))),
-    ...files.map(({ file, made }) => ({ file, made })),
-  ].sort((a, b) => place(a.file) - place(b.file));
-  const [first, ...rest] = all;
+  const [first, ...rest] = [...files].sort((a, b) => place(a.file) - place(b.file));
   if (first === undefined) return record;
   const named: HomeRecord = {
     app: record.app,
@@ -1922,12 +2041,12 @@ const knownAccess = (input: SetupInput, view: HomeView): "on" | "off" | "unknown
 /**
  * Turns a home's tools on as its answer (toolsOf) offers it from `space`, and does nothing it does
  * not offer: a new entry into each of its files, then its access once the entries are in place
- * (giveAccess), the record written before the files (writeEntries); the entry into a registered
- * home's file that has none, then its access; a registered home's access again; or its entries
- * written again (rewrite). A registered home whose tools start gets its row renewed for the space
- * its entry names, only when the service said what its access is. `space` is empty when the apply
- * registers no new home. `planned` is the change the plan holds for it (planOf), when the caller
- * has one.
+ * (giveAccess), the record written before the files (writeEntries); the entry its record names
+ * into each file of a registered home that lacks it, or its entry written again with the command
+ * installed now into each file (repair), then its access again; or a registered home's access
+ * again. A registered home whose tools start gets its row renewed for the space its entry names,
+ * only when the service said what its access is. `space` is empty when the apply registers no new
+ * home. `planned` is the change the plan holds for it (planOf), when the caller has one.
  */
 export async function applyHome(
   input: SetupInput,
@@ -1938,35 +2057,46 @@ export async function applyHome(
 ): Promise<Outcome> {
   const { home, record } = view;
   const answer = toolsOf(input, view, space, typeof planned === "string" ? planned : undefined);
-  const left = (): Outcome => ({
-    home,
-    result: "left",
-    reason: answer.why ?? "not_registered",
-    ...(answer.file === undefined ? {} : { file: answer.file }),
-  });
+  const left = (): Outcome => {
+    // A home that only a live grant names (its folder gone, no record) has nothing to set up.
+    if (record === undefined && view.state === "not_registered" && !input.isFolder(home.home)) {
+      return { home, result: "unchanged" };
+    }
+    const reason: OutcomeReason = answer.why ?? "not_registered";
+    const files = [
+      ...(answer.file === undefined ? [] : [{ file: answer.file, reason }]),
+      ...(answer.more ?? []).map((m) => ({ file: m.file, reason: m.why })),
+    ];
+    return { home, result: "left", reason, ...(files.length === 0 ? {} : { files }) };
+  };
   switch (answer.on) {
-    case "repair":
-      return rewrite(input, view, access);
     case "grant":
       return record === undefined
         ? left()
-        : giveAccess(input, home, record, record.space, access, true, ownFiles(view));
+        : giveAccess(input, view, record, record.space, access, true, ownFiles(view));
+    case "repair":
     case "add": {
-      if (view.state === "registered" && record !== undefined) {
-        const change = typeof planned === "object" ? planned : completionOf(input, view, space);
+      if (record !== undefined && view.state !== "interrupted") {
+        const change = typeof planned === "object" ? planned : refreshOf(input, view, space);
         if (change === undefined) return left();
         const written = await writeEntries(input, view, record.space, change, record);
-        if (!("entry" in written)) return { home, ...written };
-        const expected = [...ownFiles(view), ...change.writes.map((w) => w.file)];
-        return giveAccess(input, home, written, record.space, access, true, expected);
+        if (!("record" in written)) return { home, ...written, access: knownAccess(input, view) };
+        // An entry a repair could not replace is still setup's own, as the record says.
+        const expected = [...new Set([...ownFiles(view), ...written.wrote])];
+        return giveAccess(input, view, written.record, record.space, access, true, expected, {
+          wrote: true,
+          left: written.left,
+        });
       }
       if (view.state !== "not_registered") return left();
       const change = typeof planned === "object" ? planned : planChange(input, view, space);
       if (typeof change === "string") return { home, result: "left", reason: change };
       const written = await writeEntries(input, view, space, change);
-      if (!("entry" in written)) return { home, ...written, access: knownAccess(input, view) };
-      const expected = change.writes.map((w) => w.file);
-      return giveAccess(input, home, written, space, access, false, expected);
+      if (!("record" in written)) return { home, ...written, access: knownAccess(input, view) };
+      return giveAccess(input, view, written.record, space, access, false, written.wrote, {
+        wrote: true,
+        left: written.left,
+      });
     }
     default:
       if (
@@ -1978,31 +2108,8 @@ export async function applyHome(
       }
       // A renewal gives back only an access the service said is there.
       if (input.rows === undefined) return { home, result: "left", reason: "access_unknown" };
-      return giveAccess(input, home, record, record.space, access, true, ownFiles(view));
+      return giveAccess(input, view, record, record.space, access, true, ownFiles(view));
   }
-}
-
-/**
- * Repairs a registered home whose entries are gone or run a program that is gone: the old entries
- * and the access go as a removal does, then the entry is written with the present command, in the
- * space it named, and gets its access as a new install does. A step that fails stops there, and
- * the home is as that step left it: off, or as it was.
- */
-async function rewrite(input: SetupInput, view: HomeView, access: Access): Promise<Outcome> {
-  const { home, record } = view;
-  if (record === undefined) return { home, result: "left", reason: "missing" };
-  const removed = await removeHome(input, view, access);
-  if (removed.result !== "removed") return { ...removed, result: "failed" };
-  const fresh = inspectHome(home, undefined);
-  if (fresh.state !== "not_registered") {
-    return { home, result: "failed", reason: "changed_meanwhile", access: "off" };
-  }
-  const change = planChange(input, fresh, record.space);
-  if (typeof change === "string") return { home, result: "failed", reason: change, access: "off" };
-  const written = await writeEntries(input, fresh, record.space, change);
-  if (!("entry" in written)) return { home, ...written, access: "off" };
-  const expected = change.writes.map((w) => w.file);
-  return giveAccess(input, home, written, record.space, access, false, expected);
 }
 
 /**
@@ -2011,17 +2118,23 @@ async function rewrite(input: SetupInput, view: HomeView, access: Access): Promi
  * asked for, the files are read once more after the service's answer, and the record says
  * `applied` with the row. Anything else takes it all back (undo). `registered`: the home was
  * registered before this apply, so it may have access already, and a row the service refuses
- * leaves that as it was.
+ * leaves that as it was, its entries in place. `wrote`: this apply wrote an entry; `left`: the
+ * files it could not write, which the outcome names.
  */
 async function giveAccess(
   input: SetupInput,
-  home: AgentHome,
+  view: HomeView,
   record: HomeRecord,
   space: string,
   access: Access,
   registered: boolean,
   expected: readonly string[],
+  {
+    wrote = false,
+    left = [],
+  }: { readonly wrote?: boolean; readonly left?: readonly FileOutcome[] } = {},
 ): Promise<Outcome> {
+  const { home } = view;
   // The entry as setup intended it, read back from its place: anything else there is not its own.
   const placed = entryNow(home, record, expected);
   if (placed.whose !== "own") {
@@ -2034,7 +2147,18 @@ async function giveAccess(
   try {
     grant = await access.grant(home, space);
   } catch (error) {
-    if (registered) return { home, result: "failed", reason: grantReason(error) };
+    if (registered) {
+      // A refused row takes nothing away: a live one stays, and an answer that was lost may have
+      // made one.
+      const known = knownAccess(input, view);
+      return {
+        home,
+        result: "failed",
+        reason: grantReason(error),
+        access: known === "on" ? "on" : "unknown",
+        ...(left.length === 0 ? {} : { files: left }),
+      };
+    }
     // A row the service made before its answer was lost is taken back too.
     return undo(input, home, record, access, grantReason(error));
   }
@@ -2051,7 +2175,13 @@ async function giveAccess(
       return undo(input, home, record, access, "state_unwritable");
     }
   }
-  return { home, result: registered ? "unchanged" : "applied", access: "on" };
+  const [first] = left;
+  return {
+    home,
+    result: wrote ? "applied" : "unchanged",
+    ...(first === undefined ? {} : { reason: first.reason, files: left }),
+    access: "on",
+  };
 }
 
 /**
@@ -2111,8 +2241,20 @@ async function undo(
     };
   }
   const out = await takeOut(input, home, removing);
-  const note = out.kept === "own" ? "undo_failed" : out.kept === "edited" ? "entry_left" : "undone";
-  return { home, result: "failed", reason, access: "off", notes: [note] };
+  const kept = out.files ?? [];
+  const note = kept.some((k) => k.kept === "own")
+    ? "undo_failed"
+    : kept.length > 0
+      ? "entry_left"
+      : "undone";
+  return {
+    home,
+    result: "failed",
+    reason,
+    access: "off",
+    ...(kept.length === 0 ? {} : { files: kept }),
+    notes: [note],
+  };
 }
 
 /**
@@ -2149,18 +2291,21 @@ export async function removeHome(
     try {
       putRecord(input.stateDir, input.platform, removing);
     } catch {
-      const left = recordFiles(record)
-        .map((f) => ({ file: f.file, whose: whoseIn(home, readHomeFile(home, f.file), record) }))
-        .sort((a, b) => (a.whose === "own" ? -1 : b.whose === "own" ? 1 : 0))
-        .find((f) => f.whose !== "absent");
+      // Every file that holds an entry stays as it is: TTasks's own first, then the person's.
+      const kept = recordFiles(record)
+        .flatMap((f): FileOutcome[] => {
+          const whose = whoseIn(home, readHomeFile(home, f.file), record);
+          return whose === "absent"
+            ? []
+            : [{ file: f.file, reason: "state_unwritable", kept: whose }];
+        })
+        .sort((a, b) => (a.kept === b.kept ? 0 : a.kept === "own" ? -1 : 1));
       return {
         home,
         result: "failed",
         reason: "state_unwritable",
         access: "off",
-        ...(left === undefined || left.whose === "absent"
-          ? {}
-          : { kept: left.whose, file: left.file }),
+        ...(kept.length === 0 ? {} : { files: kept }),
       };
     }
   }
@@ -2177,18 +2322,26 @@ async function takeOutOf(
   home: AgentHome,
   record: HomeRecord,
   { file, made }: { readonly file: string; readonly made: Made },
-): Promise<Pick<Outcome, "result" | "reason" | "kept" | "file">> {
+): Promise<{
+  readonly result: Outcome["result"];
+  readonly gone?: true;
+  readonly kept?: FileOutcome;
+}> {
   const { format, servers } = APPS[home.app];
+  const keeps = (result: Outcome["result"], reason: OutcomeReason, kept: "own" | "edited") => ({
+    result,
+    kept: { file, reason, kept },
+  });
   for (let attempt = 1; ; attempt += 1) {
     const read = readHomeFile(home, file);
-    if (read.kind === "refused") return { result: "left", reason: read.refusal, kept: "own", file };
+    if (read.kind === "refused") return keeps("left", read.refusal, "own");
     const whose = whoseIn(home, read, record);
-    if (whose === "absent" || read.kind !== "read") return { result: "removed", reason: "missing" };
-    if (whose === "edited") return { result: "left", reason: "edited", kept: "edited", file };
+    if (whose === "absent" || read.kind !== "read") return { result: "removed", gone: true };
+    if (whose === "edited") return keeps("left", "edited", "edited");
     const edited = removeOwnEntry(format, servers, read.text, made);
     if (!edited.ok) {
       const reason = edited.reason === "invalid_file" ? "invalid_file" : "unsupported_layout";
-      return { result: "failed", reason, kept: "own", file };
+      return keeps("failed", reason, "own");
     }
     const wrote =
       made.file && holdsNothing(format, edited.text)
@@ -2201,9 +2354,7 @@ async function takeOutOf(
             `${read.bom ? BOM : ""}${edited.text}`,
           );
     if (wrote === "done") return { result: "removed" };
-    if (wrote !== "changed_meanwhile" || attempt >= TRIES) {
-      return { result: "failed", reason: wrote, kept: "own", file };
-    }
+    if (wrote !== "changed_meanwhile" || attempt >= TRIES) return keeps("failed", wrote, "own");
   }
 }
 
@@ -2211,20 +2362,28 @@ async function takeOutOf(
  * The files' part of a removal, for each file the record names. A home whose folder is gone is
  * done. The record goes once nothing of TTasks's is left in any of them and its access is off;
  * while an entry of TTasks's could not be taken out the record stays, so the next setup tries
- * again. The outcome is the first file's that kept an entry of TTasks's, else the first's that
- * kept one the person changed.
+ * again. The outcome names every file that still holds an entry, TTasks's own first, and says the
+ * first one's result and why.
  */
 async function takeOut(input: SetupInput, home: AgentHome, record: HomeRecord): Promise<Outcome> {
   const each = [];
   for (const f of recordFiles(record)) each.push(await takeOutOf(input, home, record, f));
-  const own = each.find((o) => o.kept === "own");
-  if (own !== undefined) return { home, ...own };
-  forget(input, home);
-  const edited = each.find((o) => o.kept === "edited");
-  if (edited !== undefined) return { home, ...edited };
-  return each.every((o) => o.reason === "missing")
-    ? { home, result: "removed", reason: "missing" }
-    : { home, result: "removed" };
+  const kept = each
+    .flatMap((o) => (o.kept === undefined ? [] : [{ result: o.result, file: o.kept }]))
+    .sort((a, b) => (a.file.kept === b.file.kept ? 0 : a.file.kept === "own" ? -1 : 1));
+  if (!kept.some((k) => k.file.kept === "own")) forget(input, home);
+  const [first] = kept;
+  if (first === undefined) {
+    return each.every((o) => o.gone === true)
+      ? { home, result: "removed", reason: "missing" }
+      : { home, result: "removed" };
+  }
+  return {
+    home,
+    result: first.result,
+    reason: first.file.reason,
+    files: kept.map((k) => k.file),
+  };
 }
 
 /**
