@@ -458,11 +458,13 @@ async function callWith(
     return space;
   };
   const requestId = input["request_id"];
+  // A launch is the user's record of its own, which answers a repeated click itself.
   if (
     space === undefined ||
     entry.kind !== "write" ||
     typeof requestId !== "string" ||
-    readsOnly(entry, input)
+    readsOnly(entry, input) ||
+    entry.ops.some((op) => opSpec(op)?.r7 === true)
   ) {
     return decideCall(host, caller, entry, principal, picked, input, undefined);
   }
