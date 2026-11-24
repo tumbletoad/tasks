@@ -63,12 +63,11 @@ export interface AuthServer {
   readonly resource: string;
 }
 
-/** What T3 issued: the client registration and its tokens. Secrets: machine state only. */
+/** What T3 issued: the client registration and its token. Secrets: machine state only. */
 export interface Grant {
   readonly clientId: string;
   readonly clientSecret?: string;
   readonly accessToken: string;
-  readonly refreshToken?: string;
   /** When the access token expires (ms since 1970), when T3 said. */
   readonly expiresAt?: number;
 }
@@ -143,27 +142,22 @@ export async function discover(
   };
 }
 
-/** The tokens of a token endpoint's answer, checked. */
+/** The token of a token endpoint's answer, checked. */
 function tokensOf(
   answer: Record<string, unknown>,
   now: number,
-): Pick<Grant, "accessToken" | "refreshToken" | "expiresAt"> {
+): Pick<Grant, "accessToken" | "expiresAt"> {
   const access = answer["access_token"];
   const type = answer["token_type"];
-  const refresh = answer["refresh_token"];
   const expires = answer["expires_in"];
   if (typeof access !== "string" || !TOKEN.test(access)) throw new T3Error("unreadable");
   if (typeof type !== "string" || type.toLowerCase() !== "bearer") throw new T3Error("unreadable");
-  if (refresh !== undefined && (typeof refresh !== "string" || !TOKEN.test(refresh))) {
-    throw new T3Error("unreadable");
-  }
   const seconds =
     typeof expires === "number" && Number.isSafeInteger(expires) && expires > 0 && expires < 3e8
       ? expires
       : undefined;
   return {
     accessToken: access,
-    ...(typeof refresh === "string" ? { refreshToken: refresh } : {}),
     ...(seconds === undefined ? {} : { expiresAt: now + seconds * 1000 }),
   };
 }
@@ -189,7 +183,7 @@ async function postToken(
   );
   if (response.status === 400 || response.status === 401) {
     await response.body?.cancel().catch(() => undefined);
-    // invalid_grant and its kin: the code or the refresh token is not accepted.
+    // invalid_grant and its kin: the code is not accepted.
     throw new T3Error("unauthorized");
   }
   if (response.status !== 200) {
@@ -398,7 +392,7 @@ async function register(
       body: JSON.stringify({
         client_name: PRODUCT_NAME,
         redirect_uris: [redirect],
-        grant_types: ["authorization_code", "refresh_token"],
+        grant_types: ["authorization_code"],
         response_types: ["code"],
         token_endpoint_auth_method: "none",
       }),
@@ -417,39 +411,4 @@ async function register(
     throw new T3Error("unreadable");
   }
   return { clientId: id, ...(typeof secret === "string" ? { clientSecret: secret } : {}) };
-}
-
-/**
- * New tokens for a grant's refresh token, from the token endpoint discovered at `origin` now (T3
- * may have moved to another port). A refusal is `unauthorized`: the person pairs again.
- */
-export async function refreshGrant(
-  origin: string,
-  grant: Grant,
-  options: { fetch?: Fetch; now?: () => number; requestMs?: number } = {},
-): Promise<Grant> {
-  if (grant.refreshToken === undefined) throw new T3Error("unauthorized");
-  const fetchFn = options.fetch ?? globalThis.fetch;
-  const ms = options.requestMs ?? T3_REQUEST_MS;
-  const server = await discover(origin, fetchFn, ms);
-  const answer = await postToken(
-    fetchFn,
-    server.token,
-    {
-      grant_type: "refresh_token",
-      refresh_token: grant.refreshToken,
-      client_id: grant.clientId,
-      resource: server.resource,
-      ...(grant.clientSecret === undefined ? {} : { client_secret: grant.clientSecret }),
-    },
-    ms,
-  );
-  const tokens = tokensOf(answer, (options.now ?? Date.now)());
-  return {
-    clientId: grant.clientId,
-    ...(grant.clientSecret === undefined ? {} : { clientSecret: grant.clientSecret }),
-    // A server that does not rotate the refresh token keeps the one it had.
-    ...(tokens.refreshToken === undefined ? { refreshToken: grant.refreshToken } : {}),
-    ...tokens,
-  };
 }

@@ -63,15 +63,12 @@ export interface FoundCommand {
   readonly exec: readonly string[];
   /**
    * Why it cannot be run directly: a Windows `.cmd` shim with no npm entry beside it (A4 3.2:
-   * never through `cmd.exe`; T3's shim is read by its own route step), an npm entry without
+   * never through `cmd.exe`), an npm entry without
    * Node on the PATH, or a name that resolves to one of the user's wrappers (a wrapper is never
    * run by detection and selects its own home, so it is no raw command).
    */
   readonly unusable?: "cmd_shim" | "no_node" | "wrapper";
-  /**
-   * T3 on Windows: the `.cmd` shim found. Detection never runs or reads it; the T3 CLI route reads
-   * it when it uses it (t3-cli.ts), so it is what a T3 instance's `exec` names.
-   */
+  /** T3 on Windows: the `.cmd` shim found, which detection never runs or reads. */
   readonly shim?: string;
   readonly version?: string;
   /** Whether the version lies in the catalogue's tested range; absent when unknown. */
@@ -591,7 +588,7 @@ export async function detect(
   if (t3 !== undefined || t3Folder) {
     // T3's provider instances live in its settings, which TTasks reads only through T3's own
     // API once paired (A4 3.4.1, M2.09): the person picks one. On Windows the command is T3's
-    // `.cmd` shim, which the CLI route reads and never runs (t3-cli.ts).
+    // `.cmd` shim.
     const exec =
       t3 === undefined
         ? undefined

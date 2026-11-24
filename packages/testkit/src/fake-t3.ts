@@ -17,38 +17,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
-import { basename, join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
-
-export type { FakeT3CliRecord } from "./fakes/t3-cli.ts";
-
-/**
- * The fake `t3` command line (M6.10), run as `node <file>`: it needs a running FakeT3 (it reads the
- * origin from `$T3CODE_HOME/userdata/server-runtime.json`), which does its work at `/fake-cli`.
- */
-export const FAKE_T3_CLI = fileURLToPath(new URL("./fakes/t3-cli.ts", import.meta.url));
-
-/** The commands the fake CLI knows, by their first two words. */
-export type FakeT3CliCommand = "project list" | "project add" | "thread start";
-
-/** One run of the fake CLI as the fake server saw it. Fixture data only. */
-export interface FakeT3CliCall {
-  readonly argv: readonly string[];
-  readonly stdin: string | null;
-  /** `answered`: it did the work; `error`: T3 refused it; `fault`: a fault set by the test. */
-  readonly outcome: "answered" | "error" | "fault";
-}
-
-/** How the next run of a CLI command goes wrong (`cliNext`). */
-export interface FakeT3CliFault {
-  /** Do the work first, then answer as below (a CLI that fails after it acted). */
-  readonly run?: boolean;
-  readonly exit?: number;
-  readonly stdout?: string;
-  readonly stderr?: string;
-  /** Never answer: the CLI hangs until its time bound or until it is killed. */
-  readonly hang?: boolean;
-}
+import { join } from "node:path";
 
 export interface FakeT3Project {
   readonly id: string;
@@ -68,13 +37,8 @@ export interface FakeT3Thread {
   readonly clientRequestId: string | null;
   readonly modelSelection: unknown;
   readonly runtimeMode: unknown;
-  /**
-   * Whether a first message was sent, which starts an agent turn. The MCP route never sends one;
-   * the CLI route's `thread start` always does (A4 3.4.1).
-   */
+  /** Whether a first message was sent, which starts an agent turn. The route never sends one. */
   readonly message: boolean;
-  /** The CLI route's message, as `thread start` read it from stdin. Fixture text. */
-  readonly sent?: string;
 }
 
 /** One `tools/call` as the fake saw it. IDs and outcomes only. */
@@ -119,7 +83,6 @@ interface Code {
 
 interface Token {
   readonly namespace: string;
-  readonly kind: "access" | "refresh";
   readonly client: string;
   /** The access the person approved on T3's page (its runtime-mode ceiling). */
   readonly access: FakeT3Access;
@@ -197,13 +160,6 @@ export class FakeT3 {
   access: FakeT3Access = "full-access";
   /** Seconds an access token lives: T3's 30 days. Undefined for no `expires_in`. */
   expiresIn: number | undefined = 30 * 24 * 60 * 60;
-  /**
-   * Issue refresh tokens, which T3 does not: only for the tests of TTasks's refresh path, until it
-   * is removed with the command-line route.
-   */
-  refreshTokens = false;
-  /** Whether a refresh keeps the authorization's namespace. */
-  refreshKeepsNamespace = true;
   /** The models T3 offers, or undefined for any. A launch with another is `model_unavailable`. */
   models: readonly string[] | undefined = undefined;
   /** Answer MCP requests as an SSE stream instead of a JSON body. */
@@ -214,8 +170,6 @@ export class FakeT3 {
   readonly projects = new Map<string, FakeT3Project>();
   readonly threads = new Map<string, FakeT3Thread>();
   readonly calls: FakeT3Call[] = [];
-  /** Every run of the fake CLI that reached the server, in order. */
-  readonly cliCalls: FakeT3CliCall[] = [];
   readonly authorizes: FakeT3Authorize[] = [];
   readonly registrations: Client[] = [];
   /** Requests to `/mcp` without a valid token. */
@@ -232,8 +186,6 @@ export class FakeT3 {
   readonly #tokens = new Map<string, Token>();
   readonly #sessions = new Map<string, string>();
   readonly #faults: Fault[] = [];
-  readonly #cliFaults: { command: FakeT3CliCommand; fault: FakeT3CliFault }[] = [];
-  readonly #hooks: { tool: string; hook: () => void }[] = [];
   #server: Server | undefined;
   readonly #sockets = new Set<Socket>();
   #origin = "";
@@ -286,37 +238,9 @@ export class FakeT3 {
     this.#faults.push({ tool, when: "before", httpStatus: status });
   }
 
-  /**
-   * Runs `hook` just before the next call of `tool` is checked and done: time can pass there (a
-   * token running out between the start of a call and the request that carries it).
-   */
-  beforeNext(tool: string, hook: () => void): void {
-    this.#hooks.push({ tool, hook });
-  }
-
-  /** Makes the next run of the CLI's `command` go wrong as `fault` says. */
-  cliNext(command: FakeT3CliCommand, fault: FakeT3CliFault): void {
-    this.#cliFaults.push({ command, fault });
-  }
-
-  /** The CLI runs of one command. */
-  cliCallsOf(command: FakeT3CliCommand): FakeT3CliCall[] {
-    return this.cliCalls.filter((call) => call.argv.slice(0, 2).join(" ") === command);
-  }
-
   /** Revokes every token, as T3 does when its grant is removed: every request is then a 401. */
   revokeAll(): void {
     for (const token of this.#tokens.values()) token.revoked = true;
-  }
-
-  /**
-   * Lets every access token issued so far run out, as time past `expires_in` does: a request with
-   * one is a 401, and the refresh tokens still work.
-   */
-  expireAccessTokens(): void {
-    for (const token of this.#tokens.values()) {
-      if (token.kind === "access") token.revoked = true;
-    }
   }
 
   /** The tools/call log of one tool. */
@@ -420,9 +344,7 @@ export class FakeT3 {
           token_endpoint: `${this.#origin}/oauth/mcp/token`,
           registration_endpoint: `${this.#origin}/oauth/mcp/register`,
           response_types_supported: ["code"],
-          grant_types_supported: this.refreshTokens
-            ? ["authorization_code", "refresh_token"]
-            : ["authorization_code"],
+          grant_types_supported: ["authorization_code"],
           code_challenge_methods_supported: ["S256"],
           token_endpoint_auth_methods_supported: ["none"],
         });
@@ -443,9 +365,6 @@ export class FakeT3 {
         return;
       case "/mcp":
         await this.#mcp(req, body, res);
-        return;
-      case "/fake-cli":
-        json(200, this.#cli(body));
         return;
       default:
         res.writeHead(404);
@@ -477,9 +396,7 @@ export class FakeT3 {
       client_id: client.id,
       redirect_uris: client.redirectUris,
       token_endpoint_auth_method: "none",
-      grant_types: this.refreshTokens
-        ? ["authorization_code", "refresh_token"]
-        : ["authorization_code"],
+      grant_types: ["authorization_code"],
       response_types: ["code"],
     });
   }
@@ -533,14 +450,10 @@ export class FakeT3 {
     const form = new URLSearchParams(body);
     const issue = (namespace: string, client: string, level: FakeT3Access) => {
       const access = random("fake-at-");
-      const refresh = random("fake-rt-");
-      const held = { namespace, client, access: level, revoked: false };
-      this.#tokens.set(access, { ...held, kind: "access" });
-      if (this.refreshTokens) this.#tokens.set(refresh, { ...held, kind: "refresh" });
+      this.#tokens.set(access, { namespace, client, access: level, revoked: false });
       json(200, {
         access_token: access,
         token_type: "Bearer",
-        ...(this.refreshTokens ? { refresh_token: refresh } : {}),
         scope:
           level === "full-access"
             ? "orchestration:read orchestration:operate settings:write"
@@ -548,8 +461,6 @@ export class FakeT3 {
         ...(this.expiresIn === undefined ? {} : { expires_in: this.expiresIn }),
       });
     };
-    // T3's namespace of a new authorization: its MCP client session.
-    const session = () => `client:${randomUUID()}`;
     if (form.get("grant_type") === "authorization_code") {
       const code = this.#codes.get(form.get("code") ?? "");
       const verifier = form.get("code_verifier") ?? "";
@@ -564,33 +475,17 @@ export class FakeT3 {
         return;
       }
       code.used = true;
-      issue(session(), code.client, code.access);
-      return;
-    }
-    if (form.get("grant_type") === "refresh_token") {
-      const refresh = this.#tokens.get(form.get("refresh_token") ?? "");
-      if (refresh === undefined || refresh.revoked || refresh.kind !== "refresh") {
-        json(400, { error: "invalid_grant" });
-        return;
-      }
-      refresh.revoked = true;
-      issue(
-        this.refreshKeepsNamespace ? refresh.namespace : session(),
-        refresh.client,
-        refresh.access,
-      );
+      // T3's namespace of a new authorization: its MCP client session.
+      issue(`client:${randomUUID()}`, code.client, code.access);
       return;
     }
     json(400, { error: "unsupported_grant_type" });
   }
 
   async #mcp(req: IncomingMessage, body: string, res: ServerResponse): Promise<void> {
-    const called = toolOf(body);
-    const hookAt = this.#hooks.findIndex((h) => h.tool === called);
-    if (hookAt >= 0) this.#hooks.splice(hookAt, 1)[0]?.hook();
     const auth = req.headers.authorization ?? "";
     const token = auth.startsWith("Bearer ") ? this.#tokens.get(auth.slice(7)) : undefined;
-    if (token === undefined || token.revoked || token.kind !== "access") {
+    if (token === undefined || token.revoked) {
       this.unauthorized += 1;
       const tool = toolOf(body);
       if (tool !== undefined) {
@@ -822,140 +717,6 @@ export class FakeT3 {
       default:
         throw new Refusal("invalid_request", "Unknown tool");
     }
-  }
-
-  /**
-   * One run of the fake CLI (A4 3.4.1, as assumed until L06 runs: `project list --json`,
-   * `project add <path>`, `thread start <project|path> - --json --title <t> [--provider <p> --model
-   * <m>]`). Returns what the CLI prints and its exit code. A T3 error is exit 1 with its message on
-   * stderr.
-   */
-  #cli(body: string): { code: number; stdout: string; stderr: string; hang?: boolean } {
-    let input: { argv?: unknown; stdin?: unknown };
-    try {
-      input = JSON.parse(body) as typeof input;
-    } catch {
-      return { code: 2, stdout: "", stderr: "unreadable request\n" };
-    }
-    const argv = Array.isArray(input.argv)
-      ? input.argv.filter((a): a is string => typeof a === "string")
-      : [];
-    const stdin = typeof input.stdin === "string" ? input.stdin : null;
-    const command = argv.slice(0, 2).join(" ");
-    const faultAt = this.#cliFaults.findIndex((f) => f.command === command);
-    const fault = faultAt < 0 ? undefined : this.#cliFaults.splice(faultAt, 1)[0]?.fault;
-    let answer: { code: number; stdout: string; stderr: string; hang?: boolean };
-    let outcome: FakeT3CliCall["outcome"];
-    if (fault !== undefined && fault.run !== true) {
-      outcome = "fault";
-      answer = { code: 1, stdout: "", stderr: "" };
-    } else {
-      try {
-        answer = { code: 0, stdout: `${JSON.stringify(this.#cliWork(argv, stdin))}\n`, stderr: "" };
-        outcome = "answered";
-      } catch (error) {
-        answer = {
-          code: 1,
-          stdout: "",
-          stderr: `${error instanceof Error ? error.message : "error"}\n`,
-        };
-        outcome = "error";
-      }
-    }
-    this.cliCalls.push({ argv, stdin, outcome: fault === undefined ? outcome : "fault" });
-    if (fault === undefined) return answer;
-    return {
-      code: fault.exit ?? answer.code,
-      stdout: fault.stdout ?? answer.stdout,
-      stderr: fault.stderr ?? answer.stderr,
-      ...(fault.hang === true ? { hang: true } : {}),
-    };
-  }
-
-  #cliWork(argv: readonly string[], stdin: string | null): unknown {
-    const [noun, verb, ...rest] = argv;
-    if (noun === "project" && verb === "list") {
-      if (rest.join(" ") !== "--json") throw new Error("Usage: t3 project list --json");
-      return {
-        projects: [...this.projects.values()].map((p) => ({
-          id: p.id,
-          title: p.title,
-          workspaceRoot: p.workspaceRoot,
-          archivedAt: p.archivedAt,
-        })),
-      };
-    }
-    if (noun === "project" && verb === "add") {
-      const [root, ...more] = rest;
-      if (root === undefined || more.length > 0) throw new Error("Usage: t3 project add <path>");
-      return {
-        project: this.#tool(
-          "t3_project_create",
-          { workspaceRoot: root, title: basename(root) },
-          { namespace: "cli", access: "full-access" },
-        ),
-      };
-    }
-    if (noun === "thread" && verb === "start") {
-      const [target, message, ...options] = rest;
-      if (target === undefined || message !== "-") throw new Error("Usage: t3 thread start");
-      const flags = new Map<string, string>();
-      for (let i = 0; i < options.length; i += 1) {
-        const flag = options[i] ?? "";
-        if (flag === "--json") continue;
-        if (!["--title", "--provider", "--model"].includes(flag) || i + 1 >= options.length) {
-          throw new Error(`Unknown option ${flag}`);
-        }
-        flags.set(flag, options[i + 1] ?? "");
-        i += 1;
-      }
-      if (flags.has("--provider") !== flags.has("--model")) {
-        throw new Error("--provider and --model must be given together");
-      }
-      if (stdin === null || stdin === "") throw new Error("A message is required");
-      const project = this.#cliProject(target);
-      const id = random("thread-");
-      const provider = flags.get("--provider");
-      this.threads.set(id, {
-        id,
-        projectId: project.id,
-        title: flags.get("--title") ?? stdin.slice(0, 40),
-        worktreePath: null,
-        namespace: "cli",
-        clientRequestId: null,
-        modelSelection:
-          provider === undefined ? null : { instanceId: provider, model: flags.get("--model") },
-        runtimeMode: null,
-        message: true,
-        sent: stdin,
-      });
-      return { threadId: id, projectId: project.id, runId: random("run-") };
-    }
-    throw new Error("Unknown command");
-  }
-
-  /**
-   * `thread start`'s target as T3 reads it (A4 3.4.1): an exact project ID wins; otherwise a path
-   * resolves to the deepest active project that contains it, and the thread starts at that root.
-   */
-  #cliProject(target: string): FakeT3Project {
-    const exact = this.projects.get(target);
-    if (exact !== undefined && exact.archivedAt === null) return exact;
-    const key = realKey(target);
-    let found: FakeT3Project | undefined;
-    let depth = -1;
-    for (const project of this.projects.values()) {
-      if (project.archivedAt !== null) continue;
-      const root = realKey(project.workspaceRoot);
-      if (root === undefined || key === undefined) continue;
-      const inside = key === root || key.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
-      if (inside && root.length > depth) {
-        found = project;
-        depth = root.length;
-      }
-    }
-    if (found === undefined) throw new Error("No project matches");
-    return found;
   }
 
   #launch(args: Record<string, unknown>, token: Pick<Token, "namespace" | "access">): unknown {

@@ -89,13 +89,6 @@ async function prepare(path: string, name = path): Promise<{ prepared: T3Prepare
   return { prepared };
 }
 
-/** Pairs again with a fake that gives refresh tokens, as T3 does not: for the refresh path's tests. */
-async function pairWithRefresh(): Promise<void> {
-  fake.refreshTokens = true;
-  fake.expiresIn = 3600;
-  await pair();
-}
-
 let clicks = 0;
 
 /** Open: the Prepared step, the click, the plan, then the dispatch under the current grant. */
@@ -119,7 +112,7 @@ async function launch(
     },
     `t3-click-${String(clicks).padStart(8, "0")}`,
   );
-  const planned = await route.plan(intent.id, {
+  const planned = route.plan(intent.id, {
     projectId: prepared.projectId,
     strategy: prepared.strategy,
     title: "M-14 Fixture task",
@@ -223,7 +216,6 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
     async () => {
       fake.addProject(folder("lumen"));
       const pairing = readPairing(files);
-      expect(pairing?.refreshToken).toBeUndefined();
       expect((pairing?.expiresAt ?? 0) - now).toBe(30 * 24 * 60 * 60_000);
       now = (pairing?.expiresAt ?? now) + 1;
       const before = fake.calls.length;
@@ -292,28 +284,6 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   );
 
   test(
-    "a 401 for a token that ran out during the call keeps the pairing: the next call refreshes",
-    async () => {
-      await pairWithRefresh();
-      fake.addProject(folder("lumen"));
-      // The token is valid when the launch starts and runs out before its request reaches T3.
-      fake.beforeNext("t3_thread_launch", () => {
-        now = (readPairing(files)?.expiresAt ?? now) + 1;
-        fake.expireAccessTokens();
-      });
-      const { dispatched } = await launch(machine(), "lumen");
-      expect(dispatched?.state).toBe("failed");
-      expect(dispatched?.reason).toBe("refused");
-      expect(fake.threads.size).toBe(0);
-      expect((await route.availability()).state).toBe("ready");
-      const before = readPairing(files)?.grant;
-      expect((await prepare("lumen")).prepared.kind).toBe("bound");
-      expect(readPairing(files)?.grant).not.toBe(before);
-    },
-    SLOW,
-  );
-
-  test(
     "a lost reply, then the repeat, returns the same thread across a T3 restart on a new port",
     async () => {
       fake.addProject(folder("lumen"));
@@ -355,7 +325,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
         },
         "t3-recovery-click-0001",
       );
-      const planned = await route.plan(intent.id, {
+      const planned = route.plan(intent.id, {
         ...prepared,
         title: "M-14 Fixture task",
         instance: INSTANCE,
@@ -383,9 +353,8 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   );
 
   test(
-    "recovery after the token ran out sends nothing: the intent is Unknown and the pairing still refreshes",
+    "recovery after the token ran out sends nothing: the intent is Unknown and the pairing is Reconnect T3",
     async () => {
-      await pairWithRefresh();
       fake.addProject(folder("lumen"));
       fake.dropNext("t3_thread_launch", "after");
       const first = machine({
@@ -407,7 +376,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
         },
         "t3-expired-click-0001",
       );
-      const planned = await route.plan(intent.id, {
+      const planned = route.plan(intent.id, {
         ...prepared,
         title: "M-14 Fixture task",
         instance: INSTANCE,
@@ -421,12 +390,10 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
         { evidence: { grant: planned.grant } },
       );
       expect((await route.dispatch(dispatching)).kind).toBe("unknown");
-      // The service is down past the token's expiry. A refresh would start a new grant, so the
-      // repeat cannot be sent; an expired token is not sent either (its 401 would mark the
-      // pairing "Reconnect T3" although the refresh token still works).
+      // The service is down past the token's expiry: an expired token is not sent.
       const expiresAt = readPairing(files)?.expiresAt ?? now;
       now = expiresAt + 60_000;
-      fake.expireAccessTokens();
+      fake.revokeAll();
       route = newRoute();
       const refusedBefore = fake.unauthorized;
       const after = (await machine().recover()).find((r) => r.id === intent.id);
@@ -439,11 +406,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
           .filter((c) => c.clientRequestId === intent.id || c.outcome === "unauthorized")
           .map((c) => c.outcome),
       ).toEqual(["dropped_after"]);
-      expect((await route.availability()).state).toBe("ready");
-      // The next launch refreshes first, under a new grant.
-      const next = await prepare("lumen");
-      expect(next.prepared.kind).toBe("bound");
-      expect(readPairing(files)?.grant).not.toBe(planned.grant);
+      expect((await route.availability()).state).toBe("reconnect");
     },
     SLOW,
   );
@@ -461,7 +424,6 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
       expect(dispatched?.evidence.grant).not.toBe(readPairing(files)?.grant);
       expect(fake.threads.size).toBe(0);
       expect(fake.callsOf("t3_thread_launch").map((c) => c.outcome)).toEqual(["dropped_before"]);
-      expect(T3_TEXT.regranted("M-14 Fixture task")).toContain("re-paired with T3");
       expect(intent.id).toBe(dispatched?.id);
 
       // A re-pairing between the machine's read of the grant and the repeat: the route sends
@@ -516,7 +478,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
         },
         "t3-401-click-00001",
       );
-      const planned = await route.plan(intent.id, {
+      const planned = route.plan(intent.id, {
         ...prepared,
         title: "M-14 Fixture task",
         instance: INSTANCE,
@@ -602,7 +564,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
       if (resolution.status !== "ok") throw new Error("fixture");
       const { prepared } = await prepare("lumen");
       if (prepared.kind !== "bound") throw new Error("fixture");
-      const planned = await route.plan(randomId("la"), {
+      const planned = route.plan(randomId("la"), {
         ...prepared,
         title: "M-14 Fixture task",
         instance: {
@@ -635,9 +597,8 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   );
 
   test(
-    "answers as an SSE stream read the same, and a token refresh starts a new grant",
+    "answers as an SSE stream read the same",
     async () => {
-      await pairWithRefresh();
       fake.addProject(folder("lumen"));
       fake.sse = true;
       const first = await launch(machine(), "lumen");
@@ -652,22 +613,6 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
       expect(open.dispatched?.evidence.replayed_at).toBeUndefined();
       fake.sseKeepOpen = false;
       route = keep;
-      const before = readPairing(files);
-      // The access token runs out: the next launch refreshes it first, under a new grant ID.
-      now = (before?.expiresAt ?? now) + 1;
-      const second = await launch(machine(), "lumen");
-      const after = readPairing(files);
-      expect(after?.grant).not.toBe(before?.grant);
-      expect(after?.accessToken).not.toBe(before?.accessToken);
-      expect(second.dispatched?.evidence.grant).toBe(after?.grant);
-      expect(second.dispatched?.state).toBe("dispatched");
-      // A refresh T3 refuses: Reconnect T3.
-      fake.revokeAll();
-      now = (after?.expiresAt ?? now) + 1;
-      expect((await prepare("lumen")).prepared).toEqual({
-        kind: "unavailable",
-        reason: "reconnect",
-      });
     },
     SLOW,
   );

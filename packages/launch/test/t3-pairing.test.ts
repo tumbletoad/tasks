@@ -102,8 +102,6 @@ describe("[A4.3.4.1.t3.pairing] pairing with T3 by OAuth and PKCE", () => {
       expect(await fake.approveInBrowser(attempt.url)).toBe(200);
       const grant = await attempt.wait();
       expect(grant.accessToken).toMatch(/^fake-at-/u);
-      // T3 gives no refresh token: the pairing lasts as long as its token.
-      expect(grant.refreshToken).toBeUndefined();
       expect(grant.expiresAt).toBeTypeOf("number");
       expect(fake.tokenRequests).toBe(1);
       // The attempt is over: a second callback with the same state changes nothing.
