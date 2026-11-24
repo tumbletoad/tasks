@@ -159,8 +159,10 @@ export interface RowInput {
   /** The task's area: its title and colour slot. */
   readonly area?: { readonly title: string; readonly slot: number };
   readonly project?: { readonly title: string };
-  /** The instances pinned for the space, in order: the first is the effective one. */
+  /** The instances for the space, in Settings' order. */
   readonly instances: readonly Instance[];
+  /** The instances the task, then the space, last opened in: the tile uses the first it has. */
+  readonly used?: readonly (string | undefined)[];
   /** What busies each agent app with the task on this machine; none: every one is ready. */
   readonly busy?: BusyOf;
   readonly sources?: readonly SourceFact[];
@@ -600,6 +602,7 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
     row.instances,
     row.busy,
     task.deleted_at === undefined ? row.launchBlock : { kind: "none" },
+    row.used,
   );
   const label = launch.instance?.label ?? "";
   const tip = msg(LAUNCH_TIP[launch.state] ?? "row.tile.ready", {

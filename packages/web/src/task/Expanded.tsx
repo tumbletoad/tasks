@@ -24,7 +24,7 @@ import {
   type ReactNode,
 } from "react";
 import { Link } from "@tanstack/react-router";
-import type { Instance, Receipt, Run } from "../api.ts";
+import type { Instance, LastUsed, Receipt, Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useToast } from "../app/frame.ts";
@@ -34,7 +34,7 @@ import { FolderDialog, refusalText } from "../folder/FolderDialog.tsx";
 import folderCss from "../folder/Folder.module.css";
 import { useFolderWrites, type FolderWrites } from "../folder/writes.ts";
 import type { MessageId } from "../i18n/intl.tsx";
-import type { BusyOf, FolderRefusal } from "../row/launch.ts";
+import { lastOpened, type BusyOf, type FolderRefusal } from "../row/launch.ts";
 import type { AskField, RowActions } from "../row/actions.ts";
 import {
   BulbIcon,
@@ -94,6 +94,8 @@ export interface ExpandedProps {
   /** Not shown, and so offering nothing, while how the task is now is not known. */
   readonly hidden?: boolean;
   readonly instances: readonly Instance[];
+  /** The instances the space last opened a task in and ran one with here. */
+  readonly last: LastUsed;
   readonly actions: RowActions;
   /** The last Open of this task, refused on its folder; none once an Open went through. */
   readonly refused?: FolderRefusal | undefined;
@@ -680,6 +682,7 @@ export function Expanded({
   runsFailed = false,
   hidden = false,
   instances,
+  last,
   actions,
   refused,
 }: ExpandedProps) {
@@ -729,7 +732,14 @@ export function Expanded({
           {writes === undefined ? (
             <KeptDraft task={task} />
           ) : (
-            <Composer task={task} busy={busy} instances={instances} actions={actions} />
+            <Composer
+              task={task}
+              busy={busy}
+              instances={instances}
+              opened={[lastOpened(receipts), last.open]}
+              ran={[task.run?.instance, last.run]}
+              actions={actions}
+            />
           )}
         </div>
         {detail?.outcome === undefined ? null : (

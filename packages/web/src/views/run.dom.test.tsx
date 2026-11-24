@@ -36,6 +36,7 @@ const TASK: TaskRow = {
 };
 const CODEX: Instance = {
   key: "codex-work",
+  app: "Codex",
   label: "Codex",
   glyph: "Cx",
   ring: 1,
@@ -180,7 +181,7 @@ beforeEach(async () => {
           ),
       },
     },
-    busy: () => Promise.resolve(busyNow),
+    busy: () => Promise.resolve({ busy: busyNow, last: {} }),
     receipts: () => (down ? lost() : Promise.resolve([])),
     runs: () => {
       reads += 1;
@@ -295,6 +296,7 @@ describe("[M6.page.run-once] one press is one run, and a Run without an answer i
   test("an instance that can only run here (no terminal opens it) offers its Run and no Open", async () => {
     const runOnly: Instance = {
       key: CODEX.key,
+      app: CODEX.app,
       label: CODEX.label,
       glyph: CODEX.glyph,
       ring: CODEX.ring,

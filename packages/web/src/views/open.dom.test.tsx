@@ -7,7 +7,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { Refused, type Api, type Busy, type Instance, type Receipt } from "../api.ts";
+import { Refused, type Api, type Busy, type Instance, type LastUsed, type Receipt } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
@@ -32,6 +32,7 @@ const TASK: TaskRow = {
 };
 const CLAUDE: Instance = {
   key: "claude-work",
+  app: "Claude Code",
   label: "Claude Code",
   glyph: "Cc",
   ring: 1,
@@ -75,10 +76,13 @@ let openAnswer: (call: number) => Promise<{ receipt: Receipt; copy: undefined }>
 /** What a read of busy answers, read by read. */
 let busyAnswer: (read: number) => Promise<Busy[]>;
 let busyReads: number;
+/** The agents the space last used, as a read of busy says them. */
+let lastNow: LastUsed;
 
 beforeEach(() => {
   opened = [];
   busyReads = 0;
+  lastNow = {};
   openAnswer = (call) =>
     Promise.resolve({ receipt: receipt(`la_${String(call)}`), copy: undefined });
   busyAnswer = () => Promise.resolve([]);
@@ -134,7 +138,7 @@ beforeEach(() => {
     },
     busy: () => {
       busyReads += 1;
-      return busyAnswer(busyReads);
+      return busyAnswer(busyReads).then((busy) => ({ busy, last: lastNow }));
     },
     receipts: () => Promise.resolve([]),
     runs: () => Promise.resolve([]),

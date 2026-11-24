@@ -16,7 +16,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Refused, requestId, type Instance, type Receipt, type Run } from "../api.ts";
+import {
+  Refused,
+  requestId,
+  type Instance,
+  type LastUsed,
+  type Receipt,
+  type Run,
+} from "../api.ts";
 import { useToast, type ToastAction } from "../app/frame.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
@@ -193,6 +200,11 @@ export function TaskList({
   const [receipts, setReceipts] = useState<ReadonlyMap<string, readonly Receipt[]>>(new Map());
   /** What busies each task's agent apps on this machine, as the service last said. */
   const [busy, setBusy] = useState<ReadonlyMap<string, BusyOf>>(new Map());
+  /** The agents the space last opened a task in and ran one with here: Open's and Run's default. */
+  const [last, setLast] = useState<LastUsed>({});
+  const used = useCallback((next: LastUsed) => {
+    setLast((before) => (before.open === next.open && before.run === next.run ? before : next));
+  }, []);
   const busyReads = useRef(new Latest());
   /** A failed read of busy is tried again: the timer and how many tries failed in a row. */
   const busyRetry = useRef<{ timer?: ReturnType<typeof setTimeout>; failed: number }>({
@@ -362,9 +374,11 @@ export function TaskList({
       const newest = busyReads.current.begin("busy");
       api
         .busy()
-        .then((list) => {
+        .then((reply) => {
           retry.failed = 0;
-          if (newest()) setBusy((known) => busyByTask(list, known));
+          if (!newest()) return;
+          setBusy((known) => busyByTask(reply.busy, known));
+          used(reply.last);
         })
         .catch((error: unknown) => {
           if (live.failed(error) || !newest()) return;
@@ -376,7 +390,7 @@ export function TaskList({
         });
     };
     read();
-  }, [api, live]);
+  }, [api, live, used]);
 
   // Whenever the tab is live, on mount and again after it was offline, it reads what busies the
   // agent apps: a launch may have started or ended while it heard nothing.
@@ -1094,6 +1108,9 @@ export function TaskList({
             unansweredRuns.answered(name, id);
             refuse(task.id, undefined);
             showRun(task.id, run);
+            setLast((before) =>
+              before.run === instance.key ? before : { ...before, run: instance.key },
+            );
             // A press again answered with a run that already ended: that request was taken
             // before. The words stay, and the next press is a new run.
             if (again && run.ended_at !== null) {
@@ -1218,6 +1235,7 @@ export function TaskList({
       slot={item.slot}
       project={item.project}
       instances={state.instances}
+      last={last}
       receipts={receipts.get(item.key) ?? NO_RECEIPTS}
       busy={busy.get(item.key)}
       runs={withStops(runs.get(item.key) ?? NO_RUNS, stops)}

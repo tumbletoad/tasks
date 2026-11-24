@@ -585,6 +585,7 @@ function instancesOf(value: unknown): Instance[] {
     (i): i is Instance =>
       isRecord(i) &&
       isString(i["key"]) &&
+      isString(i["app"]) &&
       isString(i["label"]) &&
       isString(i["glyph"]) &&
       typeof i["ring"] === "number" &&

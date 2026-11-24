@@ -17,7 +17,7 @@ import {
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
-import type { Instance, Receipt, Run } from "../api.ts";
+import type { Instance, LastUsed, Receipt, Run } from "../api.ts";
 import { Session } from "../context.ts";
 import { titleChange } from "../edit/change.ts";
 import { whoOf, type Leaving } from "../edit/edits.ts";
@@ -32,7 +32,7 @@ import { agentMarker } from "../task/runs.ts";
 import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
 import { readOnly, type RowActions } from "./actions.ts";
-import { tileClick, type BusyOf, type FolderRefusal } from "./launch.ts";
+import { lastOpened, tileClick, type BusyOf, type FolderRefusal } from "./launch.ts";
 import { formatInstant } from "./dates.ts";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
@@ -94,12 +94,16 @@ const styles = classes(css, [
   "move",
 ]);
 
+const NO_LAST: LastUsed = {};
+
 export interface RowProps {
   readonly task: TaskRow;
   readonly area: AreaRow | undefined;
   readonly slot: number | undefined;
   readonly project: ProjectRow | undefined;
   readonly instances: readonly Instance[];
+  /** The instances the space last opened a task in and ran one with here. */
+  readonly last?: LastUsed;
   /** The task's launch receipts, oldest first, once the tab follows the task: its history. */
   readonly receipts: readonly Receipt[];
   /** What busies each agent app with the task on this machine. */
@@ -524,6 +528,7 @@ function RowView({
   slot,
   project,
   instances,
+  last = NO_LAST,
   receipts,
   busy,
   runs,
@@ -563,6 +568,7 @@ function RowView({
       ...(area === undefined ? {} : { area: { title: area.title, slot: slot ?? 1 } }),
       ...(project === undefined ? {} : { project: { title: project.title } }),
       instances,
+      used: [lastOpened(receipts), last.open],
       ...(busy === undefined ? {} : { busy }),
       sources: sourceFacts(t, task.sources),
       ...(task.sources_more === undefined ? {} : { sourcesMore: task.sources_more }),
@@ -834,6 +840,7 @@ function RowView({
             runsFailed={runsFailed}
             hidden={unresolved !== undefined}
             instances={instances}
+            last={last}
             actions={actions}
             refused={refused}
           />

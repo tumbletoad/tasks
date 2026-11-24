@@ -32,6 +32,9 @@ export function isReplaced(error: unknown): boolean {
 /** An instance the page draws a tile for (the service's UiInstance). */
 export interface Instance {
   readonly key: string;
+  /** The app's name, which menus group instances by: "Codex". */
+  readonly app: string;
+  /** Its name, the same everywhere: "Codex", or "Codex · work" beside another Codex. */
   readonly label: string;
   readonly glyph: string;
   readonly ring: number;
@@ -90,6 +93,12 @@ export interface Busy {
   readonly task: string;
   readonly instance: string;
   readonly state: "opening" | "running";
+}
+
+/** The instances a space last opened a task in and ran one with on this machine, by key. */
+export interface LastUsed {
+  readonly open?: string;
+  readonly run?: string;
 }
 
 /** A launch receipt (the service's UiReceipt): IDs, states, instants and codes only. */
@@ -540,10 +549,13 @@ export class Api {
     return reply.terminal;
   }
 
-  /** The agent apps busy with a task on this machine, for every task of the space. */
-  async busy(): Promise<Busy[]> {
-    const reply = await this.#result<{ busy: Busy[] }>("/api/v1/launch/busy", {});
-    return reply.busy;
+  /**
+   * The agent apps busy with a task on this machine, for every task of the space, and the ones the
+   * space last opened a task in and ran one with here.
+   */
+  async busy(): Promise<{ busy: Busy[]; last: LastUsed }> {
+    const reply = await this.#result<{ busy: Busy[]; last?: LastUsed }>("/api/v1/launch/busy", {});
+    return { busy: reply.busy, last: reply.last ?? {} };
   }
 
   /**
