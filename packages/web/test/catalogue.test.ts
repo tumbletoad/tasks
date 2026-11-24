@@ -143,7 +143,6 @@ const SAMPLE = {
   about: "One long sitting",
   amount: 4,
   unit: "hours",
-  space: "Lumen",
   finished: 2,
   trash: 1,
   from: "M",
