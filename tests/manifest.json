@@ -6199,6 +6199,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.run.reply-quoted",
+      "title": "A run's brief quotes each earlier question between lines of tildes longer than any run of tildes in its text, and puts the person's words after them all under their heading: for any questions and words, the headings and fences included, both can be read back from the brief, and two different ones never make the same brief",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.run.reply-kept",
       "title": "A reply answers the questions that waited when it was queued, oldest first, whatever changes before it starts: a retracted note put back, a Dismiss undone, an earlier queued reply cancelled, or a Dismiss of the questions it carries",
       "owner": "M6",

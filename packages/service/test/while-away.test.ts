@@ -472,13 +472,14 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
       );
     };
     const reply = queue(id, "The second one");
-    expect(await brief(reply)).toMatch(
-      /\n\nAn earlier run on this task stopped to ask the person:\n\nFixture which draft\?\n1\. The short one\n2\. The long one\n\nThe person's reply:\n\nThe second one$/u,
-    );
+    const built = await brief(reply);
+    expect(built).toContain(`\n~~~\n${QUESTION}\n~~~\n`);
+    expect(built.indexOf(QUESTION)).toBeLessThan(built.indexOf("The second one"));
+    expect(built.endsWith("\n\nThe second one")).toBe(true);
     // Built again, after a restart or once the question is answered, it is the same brief.
     move(reply, "starting");
     move(reply, "running");
-    expect(await brief(reply)).toContain(QUESTION);
+    expect(await brief(reply)).toBe(built);
     // A run queued before the question, or after the reply that ran, replies to nothing.
     expect(await readReplied(reader, before)).toEqual([]);
     expect(await readReplied(reader, queue(id))).toEqual([]);
