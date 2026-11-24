@@ -334,6 +334,22 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
     SLOW,
   );
 
+  test(
+    "a plan is bound to machine.toml as the preview read it: an edit since writes nothing",
+    async () => {
+      const planned = JSON.parse(
+        (await run(["setup", "instances", "--instance", "claude", "--json"], false)).stdout,
+      ) as Preview;
+      expect(planned.add.map((a) => a.id)).toEqual(["claude"]);
+      const edited = `${readFileSync(machineToml(), "utf8")}\n# the person's note\n`;
+      writeFileSync(machineToml(), edited);
+      const stale = await run((planned.apply ?? []).slice(1));
+      expect(stale.code, stale.stdout + stale.stderr).toBe(4);
+      expect(readFileSync(machineToml(), "utf8")).toBe(edited);
+    },
+    SLOW,
+  );
+
   test("a home's label comes from its app and account alone, within the bound the instance verb takes", () => {
     expect(instanceLabel("Codex")).toBe("Codex");
     expect(instanceLabel("Codex", "second")).toBe("Codex · second");

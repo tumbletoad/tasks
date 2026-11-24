@@ -40,7 +40,12 @@ import {
   type Detection,
   type Proposal,
 } from "@ttasks/launch";
-import { loadMachineConfig, prepareEdit } from "@ttasks/service/config";
+import {
+  configDigest,
+  loadMachineConfig,
+  machineDigest,
+  prepareEdit,
+} from "@ttasks/service/config";
 import { homeFolder, hostFacts, resolveLayout } from "@ttasks/service/paths";
 import {
   blockOf,
@@ -145,6 +150,8 @@ interface Survey {
   /** The instances machine.toml names now. */
   readonly configured: readonly { readonly id: string; readonly target: string }[];
   readonly platform: NodeJS.Platform;
+  /** machine.toml as the survey read it (configDigest), which the plan is bound to. */
+  readonly machine: string | undefined;
 }
 
 /** Setup agents' app for a detected target. */
@@ -168,6 +175,7 @@ async function surveyOf(
   const layout = resolveLayout(facts);
   const env = options.agents?.env ?? io.env;
   const userHome = options.agents?.home ?? homeFolder(facts);
+  const digest = machineDigest(layout.config);
   const machine = loadMachineConfig(layout.config, io.platform).config;
   const existing = asIfNone ? [] : machine.instances;
   // T3 instances are told apart by their provider instance below, not by detection's single "t3".
@@ -241,12 +249,16 @@ async function surveyOf(
     left,
     configured: machine.instances.map((i) => ({ id: i.id, target: i.target })),
     platform: io.platform,
+    machine: digest,
   };
 }
 
-/** The plan's token: the entries the preview showed, in order, key for key. */
-function planToken(offers: readonly Offer[]): string {
-  const doc = offers.map((o) => [...o.entry]);
+/**
+ * The plan's token: the entries the preview showed, in order, key for key, and machine.toml as it
+ * read it, so the apply writes into the file the preview was made from or into none.
+ */
+function planToken(offers: readonly Offer[], machine: string | undefined): string {
+  const doc = [offers.map((o) => [...o.entry]), machine ?? null];
   return createHash("sha256").update(JSON.stringify(doc)).digest("hex").slice(0, 16);
 }
 
@@ -274,7 +286,7 @@ export async function instancesCommand(
       return removed(io, globals, result);
     }
     const survey = await surveyOf(io, options, parsed.instance);
-    const plan = planToken(survey.offers);
+    const plan = planToken(survey.offers, survey.machine);
     if (parsed.mode === "preview") return preview(io, globals, survey, plan, parsed);
     if (plan !== parsed.plan) {
       // The same apply run again: the plan's entries are all there, exactly as it wrote them.
@@ -320,8 +332,9 @@ export async function instancesCommand(
 
 /**
  * The IDs of a plan that was applied already: proposed as if machine.toml named no instance, the
- * offers are the plan's, and each is in the file exactly as an apply writes it (the editor's
- * `remove` would take it out; nothing is written here). Undefined otherwise.
+ * offers are the plan's, each is in the file exactly as an apply writes it (the editor's `remove`
+ * would take it out; nothing is written here), and the file without them is the one the plan was
+ * made from. A file that holds nothing else may have been no file. Undefined otherwise.
  */
 async function alreadyApplied(
   io: Io,
@@ -329,12 +342,20 @@ async function alreadyApplied(
   parsed: Parsed,
 ): Promise<string[] | undefined> {
   const fresh = await surveyOf(io, options, parsed.instance, true);
-  if (fresh.offers.length === 0 || planToken(fresh.offers) !== parsed.plan) return undefined;
+  if (fresh.offers.length === 0) return undefined;
   const config = resolveLayout(hostFacts(io.env, io.platform)).config;
-  const written = fresh.offers.every(
-    (o) => prepareEdit(config, [{ op: "remove", array: "instance", entries: o.entry }]).ok,
+  const without = prepareEdit(
+    config,
+    fresh.offers.map((o) => ({ op: "remove" as const, array: "instance", entries: o.entry })),
   );
-  return written ? fresh.offers.map((o) => o.id) : undefined;
+  if (!without.ok) return undefined;
+  const before = [
+    configDigest(Buffer.from(without.edit.text, "utf8")),
+    ...(without.edit.text.replace(/^\u{FEFF}/u, "").trim() === "" ? [configDigest(undefined)] : []),
+  ];
+  return before.some((digest) => planToken(fresh.offers, digest) === parsed.plan)
+    ? fresh.offers.map((o) => o.id)
+    : undefined;
 }
 
 function preview(io: Io, globals: Globals, survey: Survey, plan: string, parsed: Parsed): number {
