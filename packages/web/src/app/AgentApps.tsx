@@ -11,8 +11,10 @@ import {
   applyApps,
   carryChoices,
   choose,
+  chooseMore,
   chooseOff,
   initialChoices,
+  moreChosen,
   offChosen,
   pendingOf,
   readApps,
@@ -56,8 +58,15 @@ const switches = classes(settingsCss, ["switch", "track", "thumb", "name"]);
 interface Kept {
   readonly label: string;
   readonly file: string;
-  /** The person changed the entry, so it is theirs. */
-  readonly edited: boolean;
+  /** The person changed the entry, so it is theirs; or setup has no record of it. */
+  readonly whose: "own" | "edited" | "unrecorded";
+}
+
+/** A settings file a turning on left without its entry, while the app has the tools. */
+interface LeftOut {
+  readonly label: string;
+  readonly file: string;
+  readonly why: string;
 }
 
 /** A switch that was not turned over: its row, its home, and why. */
@@ -74,8 +83,18 @@ interface Failed {
 
 /** What the last Apply came to, for the lines under the list. */
 type Said =
-  | { readonly kind: "done"; readonly desktop: boolean; readonly kept: readonly Kept[] }
-  | { readonly kind: "partly"; readonly failed: readonly Failed[]; readonly kept: readonly Kept[] }
+  | {
+      readonly kind: "done";
+      readonly desktop: boolean;
+      readonly kept: readonly Kept[];
+      readonly left: readonly LeftOut[];
+    }
+  | {
+      readonly kind: "partly";
+      readonly failed: readonly Failed[];
+      readonly kept: readonly Kept[];
+      readonly left: readonly LeftOut[];
+    }
   | { readonly kind: "stale" | "failed" | "unknown" | "busy" };
 
 export function AgentApps({
@@ -183,11 +202,22 @@ export function AgentApps({
           const done = answer.outcomes.filter((o) => o.result === "done");
           const pendingOf = (o: Outcome) =>
             pending.find((p) => p.row.key === o.key && p.part === o.part);
+          const whose = (why: string | undefined): Kept["whose"] =>
+            why === "edited" ? "edited" : why === "foreign_entry" ? "unrecorded" : "own";
           const kept = done.flatMap((o): Kept[] => {
             const p = pendingOf(o);
-            return o.kept && p !== undefined
-              ? [{ label: p.row.label, file: p.found.file, edited: o.reason === "edited" }]
-              : [];
+            if (!o.kept || p === undefined) return [];
+            if (o.files.length === 0) {
+              return [{ label: p.row.label, file: p.found.file, whose: whose(o.reason) }];
+            }
+            return o.files.map((f) => ({ label: p.row.label, file: f.file, whose: whose(f.why) }));
+          });
+          // Each file a turning on left without its entry, the app's other files having it.
+          const left = answer.outcomes.flatMap((o): LeftOut[] => {
+            const p = pendingOf(o);
+            return o.kept || p === undefined || !p.on
+              ? []
+              : o.files.map((f) => ({ label: p.row.label, file: f.file, why: f.why }));
           });
           // A failed one may have changed machine.toml too: the tiles follow either way.
           if (answer.outcomes.some((o) => o.part === "open")) onOpenChanged?.();
@@ -208,7 +238,7 @@ export function AgentApps({
                     },
                   ];
             });
-            setSaid({ kind: "partly", failed: rows, kept });
+            setSaid({ kind: "partly", failed: rows, kept, left });
             return;
           }
           const desktop = done.some(
@@ -216,8 +246,9 @@ export function AgentApps({
               o.part === "tools" &&
               pending.some((p) => p.row.key === o.key && p.row.app === "claude-desktop"),
           );
-          setSaid({ kind: "done", desktop, kept });
-          if (firstStart) onDone?.();
+          setSaid({ kind: "done", desktop, kept, left });
+          // A file left out is said before the space opens: Continue goes on from there.
+          if (firstStart && left.length === 0) onDone?.();
         },
         (error: unknown) => {
           if (signedOut(error)) return;
@@ -290,6 +321,7 @@ export function AgentApps({
                     found={found}
                     on={shownOn(choices, row, part)}
                     offChosen={offChosen(choices, row, part)}
+                    moreChosen={moreChosen(choices, row, part)}
                     busy={busy}
                     onChange={(on) => {
                       turn(row, part, on);
@@ -297,6 +329,10 @@ export function AgentApps({
                     onOff={(off) => {
                       setSaid(undefined);
                       setChoices((before) => chooseOff(before, row, part, off));
+                    }}
+                    onMore={(more) => {
+                      setSaid(undefined);
+                      setChoices((before) => chooseMore(before, row, part, more));
                     }}
                   />
                 );
@@ -362,9 +398,11 @@ function Switch({
   found,
   on,
   offChosen,
+  moreChosen,
   busy,
   onChange,
   onOff,
+  onMore,
 }: {
   readonly t: Translate;
   readonly row: AppRow;
@@ -373,9 +411,12 @@ function Switch({
   readonly on: boolean;
   /** The person chose to turn off its access while the switch shows off. */
   readonly offChosen: boolean;
+  /** The person chose to write the entry where it is still needed while the switch shows on. */
+  readonly moreChosen: boolean;
   readonly busy: boolean;
   readonly onChange: (on: boolean) => void;
   readonly onOff: (off: boolean) => void;
+  readonly onMore: (more: boolean) => void;
 }) {
   const whyId = useId();
   const why = found.why;
@@ -408,6 +449,11 @@ function Switch({
           })}
         </p>
       )}
+      {found.files.map((f) => (
+        <p key={f.file} className={styles.why} data-part="file">
+          {t("apps.fileWhy", { file: f.file, why: f.why ?? "none", on: f.on ?? "none" })}
+        </p>
+      ))}
       {found.off === undefined ? null : (
         <Button
           className={styles.quiet}
@@ -420,27 +466,70 @@ function Switch({
           {t(offChosen ? "apps.keepAccess" : "apps.turnOff", { label: row.label })}
         </Button>
       )}
+      {found.more === undefined || !found.on ? null : (
+        <Button
+          className={styles.quiet}
+          isDisabled={busy}
+          data-part="more"
+          onPress={() => {
+            onMore(!moreChosen);
+          }}
+        >
+          {t(moreChosen ? "apps.keepAsIs" : "apps.more", {
+            label: row.label,
+            several: found.files.length > 0 ? "yes" : "no",
+          })}
+        </Button>
+      )}
     </>
   );
 }
 
-/** A switch turned over, in plain words, with the file it changes. */
+/** A switch turned over, in plain words, with the files it changes. */
 function changeText(t: Translate, p: Pending): string {
+  // Several files: each is named before its lines (`# <file>`).
+  const named = p.detail.filter((l) => l.startsWith("# ")).map((l) => l.slice(2));
   return t("apps.change", {
     part: p.part,
     on: p.on ? "yes" : "no",
     label: p.row.label,
-    file: p.found.file,
+    file: named.length > 0 ? named.join(", ") : p.found.file,
   });
 }
 
-/** Each switch turned off whose entry stayed: the tools are off, and where the entry is. */
-function KeptLines({ t, kept }: { readonly t: Translate; readonly kept: readonly Kept[] }) {
-  return kept.map((k) => (
-    <p key={k.label + k.file} className={styles.note} data-part="kept">
-      {t(k.edited ? "apps.keptEdited" : "apps.kept", { label: k.label, file: k.file })}
-    </p>
-  ));
+const KEPT = {
+  own: "apps.kept",
+  edited: "apps.keptEdited",
+  unrecorded: "apps.keptUnrecorded",
+} as const;
+
+/**
+ * Each entry a turning off left in its file, and each file a turning on left without one: where it
+ * is, and why.
+ */
+function KeptLines({
+  t,
+  kept,
+  left,
+}: {
+  readonly t: Translate;
+  readonly kept: readonly Kept[];
+  readonly left: readonly LeftOut[];
+}) {
+  return (
+    <>
+      {kept.map((k) => (
+        <p key={k.label + k.file} className={styles.note} data-part="kept">
+          {t(KEPT[k.whose], { label: k.label, file: k.file })}
+        </p>
+      ))}
+      {left.map((l) => (
+        <p key={l.label + l.file} className={styles.note} data-part="left-out">
+          {t("apps.leftOut", { label: l.label, file: l.file, why: l.why })}
+        </p>
+      ))}
+    </>
+  );
 }
 
 function SaidLine({ t, said }: { readonly t: Translate; readonly said: Said }) {
@@ -449,7 +538,7 @@ function SaidLine({ t, said }: { readonly t: Translate; readonly said: Said }) {
       return (
         <div role="status">
           <p className={styles.note}>{t(said.desktop ? "apps.doneDesktop" : "apps.done")}</p>
-          <KeptLines t={t} kept={said.kept} />
+          <KeptLines t={t} kept={said.kept} left={said.left} />
         </div>
       );
     case "partly":
@@ -470,7 +559,7 @@ function SaidLine({ t, said }: { readonly t: Translate; readonly said: Said }) {
               </li>
             ))}
           </ul>
-          <KeptLines t={t} kept={said.kept} />
+          <KeptLines t={t} kept={said.kept} left={said.left} />
         </div>
       );
     default:

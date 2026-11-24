@@ -20,6 +20,17 @@ export interface Part {
   readonly space: { readonly id: string; readonly name: string | null } | undefined;
   /** tools that show off while their access may be live: turning them off all the same. */
   readonly off: { readonly detail: readonly string[]; readonly plan: string } | undefined;
+  /** tools that show on while a settings file still needs its entry: writing it there. */
+  readonly more: { readonly detail: readonly string[]; readonly plan: string } | undefined;
+  /** tools of a home with several settings files: each that needs something, and why. */
+  readonly files: readonly FileNeed[];
+}
+
+/** One settings file of a home: what it needs, as a fixed word, and what turning on does there. */
+export interface FileNeed {
+  readonly file: string;
+  readonly why: string | undefined;
+  readonly on: "add" | "grant" | "repair" | undefined;
 }
 
 export interface AppRow {
@@ -52,6 +63,8 @@ export interface Outcome {
   readonly kept: boolean;
   /** Tools, failed: the service did not confirm that the access is off, so the entry stayed too. */
   readonly unconfirmed: boolean;
+  /** Tools: each file left otherwise than asked, with why (no entry written, or one that stayed). */
+  readonly files: readonly { readonly file: string; readonly why: string }[];
 }
 
 export type Applied =
@@ -69,9 +82,34 @@ const text = (v: unknown, max = 4096): string | undefined =>
 const lines = (value: unknown): string[] =>
   Array.isArray(value) ? value.flatMap((line) => text(line) ?? []).slice(0, 200) : [];
 
+const word = (value: unknown): string | undefined =>
+  typeof value === "string" && WORD.test(value) ? value : undefined;
+
+/** Lines and a token, as `off` and `more` carry them. */
+const action = (value: unknown) =>
+  isRecord(value) && typeof value["plan"] === "string"
+    ? { detail: lines(value["detail"]), plan: value["plan"] }
+    : undefined;
+
+/** Files of a home with what each needs, a few at most. */
+const fileNeeds = (value: unknown): FileNeed[] =>
+  (Array.isArray(value) ? value : []).slice(0, 8).flatMap((f): FileNeed[] => {
+    if (!isRecord(f)) return [];
+    const file = text(f["file"]);
+    if (file === undefined) return [];
+    const on = f["on"];
+    return [
+      {
+        file,
+        why: word(f["why"]),
+        on: on === "add" || on === "grant" || on === "repair" ? on : undefined,
+      },
+    ];
+  });
+
 function partOf(value: unknown): Part | undefined {
   if (!isRecord(value)) return undefined;
-  const { on, change, why, file, detail, plan, space, off } = value;
+  const { on, change, why, file, detail, plan, space, off, more, files } = value;
   if (typeof on !== "boolean" || typeof plan !== "string") return undefined;
   const named =
     isRecord(space) && typeof space["id"] === "string"
@@ -85,10 +123,9 @@ function partOf(value: unknown): Part | undefined {
     detail: lines(detail),
     plan,
     space: named,
-    off:
-      isRecord(off) && typeof off["plan"] === "string"
-        ? { detail: lines(off["detail"]), plan: off["plan"] }
-        : undefined,
+    off: action(off),
+    more: action(more),
+    files: fileNeeds(files),
   };
 }
 
@@ -139,6 +176,9 @@ export function appliedOf(value: unknown): Applied {
                 typeof o["field"] === "string" && WORD.test(o["field"]) ? o["field"] : undefined,
               kept: o["kept"] === true,
               unconfirmed: o["unconfirmed"] === true,
+              files: fileNeeds(o["files"]).flatMap((f) =>
+                f.why === undefined ? [] : [{ file: f.file, why: f.why }],
+              ),
             },
           ]
         : [],
@@ -164,6 +204,7 @@ function offered(
   action: Action,
 ): { readonly detail: readonly string[]; readonly plan: string } | undefined {
   if (found.change === action) return found;
+  if (action === "add" && found.on) return found.more;
   return action === "remove" && !found.on ? found.off : undefined;
 }
 
@@ -197,6 +238,10 @@ export function shownOn(choices: Choices, row: AppRow | undefined, part: PartNam
 /** Whether the person chose to turn off a switch that shows off (its access may still be live). */
 export const offChosen = (choices: Choices, row: AppRow, part: PartName): boolean =>
   row[part]?.on === false && choices.get(switchKey(row.key, part)) === "remove";
+
+/** Whether the person chose to write the entry where a switch that shows on still needs it. */
+export const moreChosen = (choices: Choices, row: AppRow, part: PartName): boolean =>
+  row[part]?.on === true && choices.get(switchKey(row.key, part)) === "add";
 
 /**
  * A switch turned over by the person: back to how it stands is no choice at all. Claude Desktop's
@@ -234,6 +279,20 @@ export function chooseOff(
   const choices = new Map(before);
   const key = switchKey(row.key, part);
   if (off) choices.set(key, "remove");
+  else choices.delete(key);
+  return choices;
+}
+
+/** Writing the entry where a switch that shows on still needs it, or taking that choice back. */
+export function chooseMore(
+  before: Choices,
+  row: AppRow,
+  part: PartName,
+  more: boolean,
+): Map<string, Action> {
+  const choices = new Map(before);
+  const key = switchKey(row.key, part);
+  if (more) choices.set(key, "add");
   else choices.delete(key);
   return choices;
 }
