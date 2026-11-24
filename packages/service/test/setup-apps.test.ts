@@ -23,7 +23,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { MCP_SERVER_KEY } from "@ttasks/brand";
+import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
 import { detect, nodeDetectHost } from "@ttasks/launch";
 import { installFakeAgents, type FakeAgents } from "@ttasks/testkit/fake-agents";
 import {
@@ -35,6 +35,7 @@ import {
   planChange,
   planOf,
   readRecords,
+  registrationId,
   removeHome,
   runCommand,
   survey,
@@ -182,10 +183,16 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         "--app",
         "claude-desktop",
       ];
-      expect(change.entry).toEqual({ command: w.tasks, args: argv.slice(1) });
+      const entry = {
+        command: w.tasks,
+        args: argv.slice(1),
+        env: { [envVar("REGISTRATION")]: registrationId(process.platform, "claude-desktop", file) },
+      };
+      expect(change.entry).toEqual(entry);
       expect(change.diff).toEqual([
         `+ mcpServers.${MCP_SERVER_KEY}.command = ${JSON.stringify(w.tasks)}`,
         `+ mcpServers.${MCP_SERVER_KEY}.args = ${JSON.stringify(argv.slice(1))}`,
+        `+ mcpServers.${MCP_SERVER_KEY}.env = ${JSON.stringify(entry.env)}`,
       ]);
       expect(readFileSync(file)).toEqual(before);
 
@@ -197,7 +204,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         mcpServers: Record<string, unknown>;
         preferences: unknown;
       };
-      expect(doc.mcpServers[MCP_SERVER_KEY]).toEqual({ command: w.tasks, args: argv.slice(1) });
+      expect(doc.mcpServers[MCP_SERVER_KEY]).toEqual(entry);
       expect(doc.mcpServers["other"]).toEqual({
         command: "/opt/other",
         args: ["serve"],
@@ -211,7 +218,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       expect(record).toMatchObject({
         app: "claude-desktop",
         state: "applied",
-        entry: { command: w.tasks, args: argv.slice(1) },
+        entry,
         grant: ROWS.live.find((row) => row.home === view.home.home)?.grant,
       });
       expect(JSON.stringify(readRecords(w.state))).not.toContain(SENTINEL);

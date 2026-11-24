@@ -82,6 +82,7 @@ export async function grantHome(
       {
         app: agent.app,
         home: agent.home,
+        file: join(agent.home, "config.toml"),
         instance: row.instance,
         account: row.account ?? "",
         space: row.space,

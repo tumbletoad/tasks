@@ -12,7 +12,7 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import type { McpChannel } from "../local/index.ts";
 import type { Bridges } from "../binding/bridges.ts";
 import { opCall, type Binding, type Caller, type OpsHost } from "../ops/index.ts";
-import { bridgePrincipal, clientOf, instanceOf, spaceOf } from "./principal.ts";
+import { bridgePrincipal, clientOf, instanceOf, registrationOf, spaceOf } from "./principal.ts";
 import { renderError, renderResult, showsWhole } from "./render.ts";
 import { createServer, type ToolCall, type ToolResult } from "./server.ts";
 import { toolEntry, TOOLS } from "./tools.ts";
@@ -98,6 +98,7 @@ const INTERNAL = new AppError({
  */
 export function bridgeCaller(context: JsonObject, machine: string, binding: Binding): Caller {
   const cwd = context["cwd"];
+  const registration = registrationOf(context);
   return {
     class: "bridge",
     env: {},
@@ -105,6 +106,7 @@ export function bridgeCaller(context: JsonObject, machine: string, binding: Bind
     client: clientOf(context),
     // The agent home whose grant rows decide the spaces this connection may use when it is none.
     home: instanceOf(context),
+    ...(registration === undefined ? {} : { registration }),
     binding,
     ...(typeof cwd === "string" ? { folder: cwd } : {}),
   };

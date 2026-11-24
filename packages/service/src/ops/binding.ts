@@ -12,6 +12,8 @@ export type SessionHome =
       readonly home: string | undefined;
       /** A bridge's: the instance it bound with, its actor's for its life. A shell has none. */
       readonly instance?: string;
+      /** A bridge's: the registration its entry carries, when it carries one. */
+      readonly registration?: string;
     }
   | { readonly of: "run"; readonly run: string; readonly instance: string };
 

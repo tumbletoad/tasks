@@ -29,10 +29,12 @@ import {
   planOf,
   planToken,
   readRecords,
+  registrationId,
   removeHome,
   setupDir,
   SETUP_FILE,
   survey,
+  type AgentApp,
   type Change,
   type HomeView,
   type SetupInput,
@@ -219,11 +221,20 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
         app,
       ];
       expect(claude.home.file).toBe(join(w.home, ".claude.json"));
+      // The registration of the file, which the entry carries in its environment.
+      const env = (app: AgentApp, file: string) => ({
+        [envVar("REGISTRATION")]: registrationId(process.platform, app, file),
+      });
       const claudeChange = changeOf(input, claude);
-      expect(claudeChange.entry).toEqual({ command: w.tasks, args: argv("claude", "claude-code") });
+      expect(claudeChange.entry).toEqual({
+        command: w.tasks,
+        args: argv("claude", "claude-code"),
+        env: env("claude-code", claude.home.file),
+      });
       expect(claudeChange.diff).toEqual([
         `+ mcpServers.${MCP_SERVER_KEY}.command = ${JSON.stringify(w.tasks)}`,
         `+ mcpServers.${MCP_SERVER_KEY}.args = ${JSON.stringify(argv("claude", "claude-code"))}`,
+        `+ mcpServers.${MCP_SERVER_KEY}.env = ${JSON.stringify(env("claude-code", claude.home.file))}`,
       ]);
       expect(claude.sha256).toMatch(/^[0-9a-f]{64}$/u);
       const codex = byHome(views, "codex", ".codex");
@@ -231,6 +242,7 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
       expect(codexChange.entry).toEqual({
         command: w.tasks,
         args: argv("codex", "codex"),
+        env: env("codex", codexFile),
         env_vars: [envVar("TICKET")],
         startup_timeout_sec: 20,
       });
@@ -269,6 +281,7 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
           `[mcp_servers.${MCP_SERVER_KEY}]`,
           `command = ${valueText(w.tasks)}`,
           `args = ${valueText(argv("codex", "codex"))}`,
+          `env = ${valueText(env("codex", codexFile))}`,
           `env_vars = ["${envVar("TICKET")}"]`,
           "startup_timeout_sec = 20",
           "",

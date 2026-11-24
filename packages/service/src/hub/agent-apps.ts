@@ -45,6 +45,7 @@ import {
   distinctLabels,
   entryInstance,
   entryLines,
+  hasAccess,
   LockBusy,
   planChange,
   planOf,
@@ -63,12 +64,13 @@ import {
   wireOf,
   withSetupLock,
   type AgentApp,
-  type AgentHome,
   type Offer,
   type PlanItem,
+  type ServiceRow,
   type SetupInput,
 } from "../setup/index.ts";
 import { agentHomeVerbs, type AgentHomesHost } from "./agent-homes.ts";
+import { rowRegistration } from "./home-gate.ts";
 import { instanceVerbs, readInstancesRecord, type InstancesHost } from "./instances.ts";
 
 export interface AgentAppsHost {
@@ -255,11 +257,18 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     .grants()
     .list("agent_home")
     .filter((grant) => grant.revoked_at === null)
-    .map((grant) => ({
-      app: attr(grant, "app"),
-      home: attr(grant, "home"),
-      instance: attr(grant, "instance"),
-    }));
+    .map((grant): ServiceRow => {
+      const file = attr(grant, "file");
+      const registration = rowRegistration(grant.attrs);
+      return {
+        grant: grant.grant_id,
+        app: attr(grant, "app"),
+        home: attr(grant, "home"),
+        ...(file === "" ? {} : { file }),
+        instance: attr(grant, "instance"),
+        ...(registration === undefined ? {} : { registration }),
+      };
+    });
   const input: SetupInput = {
     platform,
     userHome,
@@ -275,8 +284,6 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   };
   const installed = isFolder(host.root) && isFile(host.tasks);
   const views = userHome === "" ? [] : await survey(input);
-  const live = (home: AgentHome) =>
-    rows.some((row) => row.app === home.app && samePath(platform, row.home, home.home));
   // Claude Desktop with several settings files (a Windows app installed twice over the years): the
   // engine changes none of them on its own, and here the person picks one with its switch.
   // A change that did not finish shows what turning it on writes once it is finished.
@@ -377,7 +384,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
       home: shown(home.home),
       also: home.hosts,
       ...(open === undefined ? {} : { open }),
-      tools: toolsPart(host, space, item, installed, live(home), shown),
+      tools: toolsPart(host, space, item, installed, hasAccess(platform, rows, view), shown),
     });
   }
 

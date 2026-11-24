@@ -38,6 +38,8 @@ export interface Caller {
    * instance its entry names, or `manual` for an entry without one.
    */
   readonly home?: string;
+  /** The registration that connection's entry carries, for the grant gate: none for an older entry. */
+  readonly registration?: string;
   /**
    * A bridge's binding, fixed at its bind. A shell's call is decided as it starts (`opCall`) and
    * carries none here.

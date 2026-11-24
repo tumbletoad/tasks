@@ -538,10 +538,11 @@ export async function agentsCommand(
           const settled = mcp ? await settleHomes(await rowsOf(), access) : [];
           // The preview again, under the lock: apply goes on only when it is the plan the
           // person saw (`--plan`), whatever changed in the homes, machine.toml or the spaces.
-          const all = (await survey(await rowsOf())).filter(selected);
+          const now = await rowsOf();
+          const all = (await survey(now)).filter(selected);
           const views = mcp ? all : [];
           const space = needsSpace(views) ? await spaceOf() : "";
-          const items = planOf(input, views, space);
+          const items = planOf(now, views, space);
           const planned = block ? await blockPlan(input, all, selected) : undefined;
           const token = planToken(
             space,
@@ -561,7 +562,7 @@ export async function agentsCommand(
           }
           const done: Outcome[] = [...settled];
           for (const item of items) {
-            done.push(await applyHome(input, item.view, space, access, item.change));
+            done.push(await applyHome(now, item.view, space, access, item.change));
           }
           return { outcomes: done, blocks: (planned ?? []).map((b) => applyBlock(input, b)) };
         });
@@ -664,20 +665,33 @@ type Call = (method: string, params: Record<string, unknown>) => Promise<Record<
  * input as it is: apply needs the service anyway, and checks the plan again under its lock.
  */
 async function withRows(input: SetupInput, call: Call): Promise<SetupInput> {
-  let listed: unknown;
+  let answer: Record<string, unknown>;
   try {
-    listed = (await call("setup/homes", {}))["homes"];
+    answer = await call("setup/homes", {});
   } catch {
     return input;
   }
+  const listed = answer["homes"];
   const rows = (Array.isArray(listed) ? (listed as unknown[]) : []).flatMap((row) => {
     if (typeof row !== "object" || row === null) return [];
-    const { app, home, instance } = row as Record<string, unknown>;
-    return typeof app === "string" && typeof home === "string" && typeof instance === "string"
-      ? [{ app, home, instance }]
+    const { grant, app, home, file, instance, registration } = row as Record<string, unknown>;
+    return typeof grant === "string" &&
+      typeof app === "string" &&
+      typeof home === "string" &&
+      typeof instance === "string"
+      ? [
+          {
+            grant,
+            app,
+            home,
+            ...(typeof file === "string" ? { file } : {}),
+            instance,
+            ...(typeof registration === "string" ? { registration } : {}),
+          },
+        ]
       : [];
   });
-  return { ...input, rows };
+  return { ...input, rows, registers: answer["registrations"] === true };
 }
 
 /** Whether `--app`, `--instance` and `--home` select a home. */

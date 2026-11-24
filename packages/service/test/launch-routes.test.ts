@@ -830,7 +830,14 @@ describe("[A3.3.7.grant.space] Open says at the click when its agent's home is r
       const register = (space: string) =>
         r.user.call(
           "setup/home_grant",
-          { app: "codex", home: r.codexHome, instance: "codex-home", account: "", space },
+          {
+            app: "codex",
+            home: r.codexHome,
+            file: join(r.codexHome, "config.toml"),
+            instance: "codex-home",
+            account: "",
+            space,
+          },
           { timeoutMs: 60_000 },
         );
       const spawns = opened.length;

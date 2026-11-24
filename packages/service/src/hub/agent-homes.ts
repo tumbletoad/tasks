@@ -1,18 +1,19 @@
 // `ttasks setup agents` (A3 3.13.1, A3 3.7.4, A2 3.2.5; M2.14): the agent-home rows of the
 // grants table, as rpc methods registered in the handler table (endpoint.ts), like `t3/*`.
 //
-//   setup/homes         the live agent-home rows                      (every CLI class)
-//   setup/home_grant    the row of one agent home, kept or made anew  (the user only)
-//   setup/home_revoke   revokes agent-home rows by ID, or a home's    (the user only)
-//   setup/seen          the instances whose MCP calls this start saw  (every CLI class)
+//   setup/homes         the live agent-home rows                     (every CLI class)
+//   setup/home_grant    one registration's row, kept or made anew    (the user only)
+//   setup/home_revoke   revokes rows by ID, or a registration's      (the user only)
+//   setup/seen          the instances whose MCP calls this start saw (every CLI class)
 //
-// A row is A3's registration grant: the instance, the app, the home's path, the account label, the
-// other apps that read the home (the Codex app, T3: A3 3.13.6 step 3, so attribution can say "via
-// T3") and the space the home's entry names (`--space`, `--instance`). It has no secret and no
-// expiry; setup asks for it once the home's entry is in place, and revokes it before it takes the
-// entry out. The CLI changes the home's file itself, in
-// the person's session with the person's environment (setup/agents.ts); the service keeps the row,
-// so the one holder of service.lock is the one writer of the grants table.
+// A row is A3's registration grant, for TTasks's entry in one settings file: the instance, the app,
+// the home's folder and the file, the registration's ID the entry carries, the account label, the
+// other apps that read the file (the Codex app, T3: A3 3.13.6 step 3, so attribution can say "via
+// T3") and the space the entry names (`--space`, `--instance`). It has no secret and no expiry;
+// setup asks for it once the entry is in place, and revokes it before it takes the entry out. The
+// CLI changes the file itself, in the person's session with the person's environment
+// (setup/agents.ts); the service keeps the row, so the one holder of service.lock is the one writer
+// of the grants table.
 //
 // `setup/seen` is what `ttasks doctor --live` asks after its headless call through an agent app
 // (A3 3.14): the time this start last carried out a tool call from each instance (the entry's
@@ -26,8 +27,9 @@ import { hasControl, INSTANCE_ID, MANUAL_INSTANCE } from "@ttasks/launch";
 import { isId } from "@ttasks/storage";
 import { isLive, type ConnectionClass, type Grant, type GrantStore } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
-import { HOSTS, samePath } from "../setup/agents.ts";
+import { HOSTS, REGISTRATION_ID, rowOfHome, samePath } from "../setup/agents.ts";
 import { AGENT_APPS, isAgentApp } from "../setup/state.ts";
+import { rowRegistration } from "./home-gate.ts";
 import type { Logger } from "./log.ts";
 
 export interface AgentHomesHost {
@@ -163,13 +165,20 @@ const hostsOf = (value: unknown): string[] =>
       ].sort()
     : [];
 
-/** A row as the CLI sees it. No secret: an agent-home row has none. */
+/**
+ * A row as the CLI sees it. No secret: an agent-home row has none. `file` and `registration` are
+ * absent on a row an earlier build made.
+ */
 function rowOf(grant: Grant) {
+  const file = attr(grant, "file");
+  const registration = rowRegistration(grant.attrs);
   return {
     grant: grant.grant_id,
     app: attr(grant, "app"),
     home: attr(grant, "home"),
+    ...(file === "" ? {} : { file }),
     instance: attr(grant, "instance"),
+    ...(registration === undefined ? {} : { registration }),
     account: attr(grant, "account"),
     hosts: hostsOf(grant.attrs["hosts"]),
     spaces: grant.spaces,
@@ -185,6 +194,36 @@ function text(params: JsonObject, key: string, max: number): string {
   return value;
 }
 
+/**
+ * The registration a verb names: its app, folder and settings file, the ID its entry carries
+ * (`registration`, absent for an earlier build's entry) and the row setup's record of it names
+ * (`grant`: an ID, null for none, absent when setup keeps no record of it), which find an earlier
+ * build's row (rowOfHome).
+ */
+function registrationParams(params: JsonObject) {
+  const app = params["app"];
+  if (!isAgentApp(app)) throw invalid("app", `Expected ${AGENT_APPS.join(", ")}`);
+  const registration = params["registration"];
+  if (
+    registration !== undefined &&
+    !(typeof registration === "string" && REGISTRATION_ID.test(registration))
+  ) {
+    throw invalid("registration", "Expected a registration ID");
+  }
+  const recorded = params["grant"];
+  if (
+    recorded !== undefined &&
+    recorded !== null &&
+    !(typeof recorded === "string" && GRANT_ID.test(recorded))
+  ) {
+    throw invalid("grant", "Expected a grant ID or null");
+  }
+  return {
+    home: { app, home: text(params, "home", 4096), file: text(params, "file", 4096) },
+    of: { registration, recorded },
+  };
+}
+
 export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Verb>> {
   const live = () =>
     host
@@ -195,8 +234,26 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
     await host.grants().flush?.();
   };
 
+  /** The live rows of the registration a verb names. */
+  const ofRegistration = (named: ReturnType<typeof registrationParams>) =>
+    live().filter((grant) => {
+      const file = attr(grant, "file");
+      return rowOfHome(
+        host.platform,
+        {
+          grant: grant.grant_id,
+          app: attr(grant, "app"),
+          home: attr(grant, "home"),
+          ...(file === "" ? {} : { file }),
+        },
+        named.home,
+        named.of,
+      );
+    });
+
   return {
-    "setup/homes": () => Promise.resolve({ homes: live().map(rowOf) }),
+    // `registrations`: this service keeps the registration an entry carries (SetupInput.registers).
+    "setup/homes": () => Promise.resolve({ homes: live().map(rowOf), registrations: true }),
 
     "setup/seen": (params) => {
       const given = params["folders"];
@@ -214,8 +271,9 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
 
     "setup/home_grant": async (params, cls) => {
       userOnly(cls);
-      const app = params["app"];
-      if (!isAgentApp(app)) throw invalid("app", `Expected ${AGENT_APPS.join(", ")}`);
+      const named = registrationParams(params);
+      const { app, home, file } = named.home;
+      const { registration } = named.of;
       const given = params["hosts"];
       if (
         given !== undefined &&
@@ -224,7 +282,6 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
         throw invalid("hosts", `Expected ${HOSTS.join(" or ")}`);
       }
       const hosts = hostsOf(given);
-      const home = text(params, "home", 4096);
       const instance = text(params, "instance", 40);
       if (!INSTANCE_ID.test(instance)) throw invalid("instance", "Expected an instance ID");
       // A3 3.7.4: `manual` is the hand-made entry's, which has no row (ops/grant.ts).
@@ -246,13 +303,12 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
           data: { reason: "not_served", retryable: false },
         });
       }
-      // One live row per home: the same answer keeps it, another one replaces it.
-      const ofHome = live().filter(
-        (grant) => attr(grant, "app") === app && samePath(host.platform, attr(grant, "home"), home),
-      );
-      // One home per instance: a connection shows only its instance, so the grant gate could not
-      // tell two homes of one instance apart (hub/home-gate.ts). The person frees the instance by
-      // removing the other home, or gives this one its own instance in machine.toml.
+      // One live row per registration: the same answer keeps it, another one replaces it. A row an
+      // earlier build made has no file, and is replaced by one that has.
+      const ofHome = ofRegistration(named);
+      // One registration per live instance: an actor name stands for one home at a time, and the
+      // gate finds a connection's row by it (hub/home-gate.ts). The person frees the instance by
+      // turning the other home off, or gives this one its own instance in machine.toml.
       // Named as such (`reason`), so setup can say which refusal it was (A3 3.7.8).
       if (live().some((grant) => !ofHome.includes(grant) && attr(grant, "instance") === instance)) {
         throw new AppError({
@@ -268,6 +324,8 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
       }
       const kept = ofHome.find(
         (grant) =>
+          samePath(host.platform, attr(grant, "file"), file) &&
+          rowRegistration(grant.attrs) === registration &&
           attr(grant, "instance") === instance &&
           attr(grant, "account") === account &&
           hostsOf(grant.attrs["hosts"]).join() === hosts.join() &&
@@ -283,7 +341,15 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
         kind: "agent_home",
         principal: "user",
         spaces: [space],
-        attrs: { app, home, instance, account, hosts },
+        attrs: {
+          app,
+          home,
+          file,
+          instance,
+          ...(registration === undefined ? {} : { registration }),
+          account,
+          hosts,
+        },
       });
       await flush();
       host.log.log("setup.home_granted", { app, replaced: ofHome.length > 0 });
@@ -294,16 +360,8 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
       userOnly(cls);
       let ids = params["grants"];
       if (ids === undefined) {
-        // A home's every live row, whatever its instance or space: turning a home off.
-        const app = params["app"];
-        if (!isAgentApp(app)) throw invalid("app", `Expected ${AGENT_APPS.join(", ")}`);
-        const home = text(params, "home", 4096);
-        ids = live()
-          .filter(
-            (grant) =>
-              attr(grant, "app") === app && samePath(host.platform, attr(grant, "home"), home),
-          )
-          .map((grant) => grant.grant_id);
+        // A registration's every live row, whatever its instance or space: turning a home off.
+        ids = ofRegistration(registrationParams(params)).map((grant) => grant.grant_id);
       }
       if (
         !Array.isArray(ids) ||

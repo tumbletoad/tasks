@@ -283,6 +283,7 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
         const row = {
           app: "codex",
           home: join(user, ".codex-x"),
+          file: join(user, ".codex-x", "config.toml"),
           instance: "codex-x",
           account: "x",
         };
@@ -425,7 +426,7 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
     try {
       const made = (await person.call(
         "setup/home_grant",
-        { app: "codex", home: of, instance, account: "", space },
+        { app: "codex", home: of, file: join(of, "config.toml"), instance, account: "", space },
         { timeoutMs: 30_000 },
       )) as { grant: { grant: string } };
       return async () => {

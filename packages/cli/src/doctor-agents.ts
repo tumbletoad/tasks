@@ -59,11 +59,15 @@ import {
   commandEnv,
   commandFor,
   entryInstance,
+  entryRegistration,
   manualRemoval,
   readBlockRecords,
   readRecords,
   readsHome,
   recordArgv,
+  recordEnv,
+  registrationOfRecord,
+  rowOfHome,
   recordedBlocks,
   samePath,
   SetupStateInvalid,
@@ -73,6 +77,7 @@ import {
   type HomeRecord,
   type T3Skip,
   type HomeView,
+  type ServiceRow,
   type SetupInput,
 } from "@ttasks/service/setup";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
@@ -117,11 +122,7 @@ function argAfter(argv: readonly string[], flag: string): string | undefined {
   return i === -1 ? undefined : argv[i + 1];
 }
 
-interface Row {
-  readonly grant: string;
-  readonly app: string;
-  readonly home: string;
-  readonly instance: string;
+interface Row extends ServiceRow {
   readonly spaces: readonly string[];
 }
 
@@ -295,9 +296,7 @@ export async function agentChecks(
       rows = undefined;
     }
     const rowOf = (view: HomeView) =>
-      rows?.find(
-        (r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home),
-      );
+      rows?.find((r) => rowOfHome(input.platform, r, view.home, registrationOfRecord(view.record)));
 
     for (const view of views) {
       checks.push(
@@ -502,12 +501,14 @@ async function mcpCheck(
   }
   if (
     row !== undefined &&
-    (row.spaces[0] !== argAfter(argv, "--space") || row.instance !== argAfter(argv, "--instance"))
+    (row.spaces[0] !== argAfter(argv, "--space") ||
+      row.instance !== argAfter(argv, "--instance") ||
+      row.registration !== entryRegistration(record.entry))
   ) {
     return {
       id,
       status: "fail",
-      detail: `${name(view)}: the entry's --space or --instance does not match its grant row. Run: ${fix}`,
+      detail: `${name(view)}: the entry's --space, --instance or registration does not match its grant row. Run: ${fix}`,
     };
   }
   return {
@@ -606,13 +607,10 @@ function grantsCheck(
 ): Check {
   if (rows === undefined) return { id: "grants", status: "skip", detail: "No service to ask." };
   const registered = views.filter((v) => v.record?.state === "applied");
-  const without = registered.filter(
-    (v) => !rows.some((r) => r.app === v.home.app && samePath(input.platform, r.home, v.home.home)),
-  );
-  const orphans = rows.filter(
-    (r) =>
-      !views.some((v) => v.home.app === r.app && samePath(input.platform, r.home, v.home.home)),
-  );
+  const ofView = (r: Row, v: HomeView) =>
+    rowOfHome(input.platform, r, v.home, registrationOfRecord(v.record));
+  const without = registered.filter((v) => !rows.some((r) => ofView(r, v)));
+  const orphans = rows.filter((r) => !views.some((v) => ofView(r, v)));
   if (without.length > 0) {
     return {
       id: "grants",
@@ -950,13 +948,15 @@ async function bridgeCheck(
 ): Promise<Check> {
   const id = `bridge.${view.home.instance}`;
   const argv = resolve(view.record === undefined ? [] : recordArgv(view.record));
+  // The agent app starts the entry with the environment the entry adds: its registration's ID.
+  const env = { ...io.env, ...(view.record === undefined ? {} : recordEnv(view.record)) };
   const failed = (why: string): Check => ({
     id,
     status: "fail",
     detail: `${name(view)}: the entry's command ${why}. Run: ${CLI_NAME} doctor again once the service runs; if it stays, run ${CLI_NAME} setup agents --remove, then ${CLI_NAME} setup agents`,
   });
   const legacy = async (): Promise<Check | number> => {
-    const bridge = probe(argv, io.env, io.cwd, probeMs);
+    const bridge = probe(argv, env, io.cwd, probeMs);
     // An answer missing because the deadline ended the probe is a probe out of time.
     const fail = (why: string) => failed(bridge.timedOut() ? "did not answer in time" : why);
     try {
@@ -992,7 +992,7 @@ async function bridgeCheck(
     }
   };
   const modern = async (): Promise<boolean> => {
-    const bridge = probe(argv, io.env, io.cwd, probeMs);
+    const bridge = probe(argv, env, io.cwd, probeMs);
     try {
       const discovered = await bridge.request("server/discover", MODERN_META);
       return isMessage(discovered?.["result"]);

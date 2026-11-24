@@ -55,9 +55,10 @@ describe("[A2.3.7.bridge.discovery] the bridge's names and folders are the produ
     expect(SERVICE_FILE).toBe(HUB_SERVICE_FILE);
     expect(KEY_FILE).toBe(HUB_KEY_FILE);
     expect(BRIDGE_BUILD).toEqual(BUILD);
-    // Every name the bridge copies is one of A3's markers or TTASKS_SPACE, under the product prefix.
+    // Every name the bridge copies is one of A3's markers, TTASKS_SPACE or the entry's registration,
+    // under the product prefix.
     for (const name of MCP_CONTEXT_ENV) {
-      expect([...AGENT_MARKERS, envVar("SPACE")]).toContain(name);
+      expect([...AGENT_MARKERS, envVar("SPACE"), envVar("REGISTRATION")]).toContain(name);
     }
   });
 

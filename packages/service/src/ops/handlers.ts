@@ -512,7 +512,7 @@ function spaceOfCall(host: OpsHost, caller: Caller, named: string | undefined): 
     const entry = (): EntryFacts => ({
       named: binding?.named === true,
       manual: caller.home === undefined || caller.home === MANUAL_INSTANCE,
-      mayUse: host.homes?.spaceOf(caller.home ?? ""),
+      mayUse: host.homes?.spaceOf(caller.home ?? "", caller.registration),
     });
     if (held === undefined) {
       const facts = entry();

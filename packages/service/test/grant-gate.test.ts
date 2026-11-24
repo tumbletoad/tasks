@@ -373,6 +373,61 @@ describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every conne
 
 describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every connection of its home", () => {
   test(
+    "access turned off for a home stays off when another home takes its instance: its open connection, a new one from its old entry, and a name-only entry are refused, and the other home is allowed",
+    { timeout: LONG },
+    async () => {
+      const instance = "home-reused";
+      const folder = (name: string) => join(w.home, "agent-homes", "reused", name);
+      const register = async (name: string, registration: string): Promise<string> => {
+        const answer = await asUser("setup/home_grant", {
+          app: "codex",
+          home: folder(name),
+          file: join(folder(name), "config.toml"),
+          instance,
+          account: "",
+          space: w.space,
+          registration,
+        });
+        return (answer["grant"] as { grant: string }).grant;
+      };
+      const A = `rg_${"a".repeat(26)}`;
+      const B = `rg_${"b".repeat(26)}`;
+      const from = (registration?: string) =>
+        connect({
+          instance,
+          space: w.space,
+          env: registration === undefined ? {} : { TTASKS_REGISTRATION: registration },
+        });
+
+      const rowA = await register("a", A);
+      const openA = await from(A);
+      expect(await openA.call("space.status")).toContain("Space: Mira (M)");
+      expect(await revokeHome(w.home, w.path, [rowA])).toBe(1);
+      expect(await refusedText(openA, "space.status")).toBe(GRANT_TEXT);
+
+      const rowB = await register("b", B);
+      const openB = await from(B);
+      const newA = await from(A);
+      const nameOnly = await from(undefined);
+      try {
+        expect(await openB.call("space.status")).toContain("Space: Mira (M)");
+        expect(await refusedText(openA, "space.status"), "A's open connection").toBe(GRANT_TEXT);
+        expect(await refusedText(newA, "space.status"), "A's old entry, connecting now").toBe(
+          GRANT_TEXT,
+        );
+        expect(await refusedText(nameOnly, "space.status"), "an entry naming no registration").toBe(
+          GRANT_TEXT,
+        );
+      } finally {
+        for (const agent of [openA, openB, newA, nameOnly]) await agent.close();
+        await revokeHome(w.home, w.path, [rowB]);
+      }
+    },
+  );
+});
+
+describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every connection of its home", () => {
+  test(
     "a launched agent's shell finds its own receipt while its home is registered; once the row is revoked the lookup is refused with rule grant before the space's reader is touched",
     { timeout: LONG },
     async () => {
@@ -621,8 +676,8 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
         ],
         defaultSpace: () => w.space,
       });
-      expect(gate.may(MANUAL_INSTANCE, life)).toBe(false);
-      expect(gate.may(MANUAL_INSTANCE, w.space)).toBe(true);
+      expect(gate.may(MANUAL_INSTANCE, undefined, life)).toBe(false);
+      expect(gate.may(MANUAL_INSTANCE, undefined, w.space)).toBe(true);
       // The configured default counts whether or not it is served now: the request path then says
       // `space_unavailable` or `ambiguous` for it, not that the entry is not registered.
       const away = `sp_${"4".repeat(26)}`;
@@ -631,15 +686,15 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
         spaces: () => [{ id: life, state: "open" }],
         defaultSpace: () => away,
       });
-      expect(unserved.may(MANUAL_INSTANCE, away)).toBe(true);
-      expect(unserved.may(MANUAL_INSTANCE, life)).toBe(false);
+      expect(unserved.may(MANUAL_INSTANCE, undefined, away)).toBe(true);
+      expect(unserved.may(MANUAL_INSTANCE, undefined, life)).toBe(false);
       // No default: the one space served, and with two none.
       const one = homeGate({
         grants: () => ({ list: () => [] }),
         spaces: () => [{ id: life, state: "open" }],
         defaultSpace: () => undefined,
       });
-      expect(one.may(MANUAL_INSTANCE, life)).toBe(true);
+      expect(one.may(MANUAL_INSTANCE, undefined, life)).toBe(true);
       const two = homeGate({
         grants: () => ({ list: () => [] }),
         spaces: () => [
@@ -648,7 +703,7 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
         ],
         defaultSpace: () => undefined,
       });
-      expect(two.may(MANUAL_INSTANCE, life)).toBe(false);
+      expect(two.may(MANUAL_INSTANCE, undefined, life)).toBe(false);
     },
   );
 
@@ -666,6 +721,7 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
               {
                 app,
                 home: join(w.home, "agent-homes", folder),
+                file: join(w.home, "agent-homes", folder, "config.toml"),
                 instance: "home-one",
                 account: "",
                 space: life,
@@ -718,11 +774,13 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
           spaces: () => [],
           defaultSpace: () => undefined,
         });
-      expect(gate([rowOf(1, life)]).may("shared", life)).toBe(true);
-      expect(gate([rowOf(1, life), rowOf(2, life)]).may("shared", life)).toBe(false);
-      expect(gate([rowOf(1, life), rowOf(2, w.space)]).may("shared", w.space)).toBe(false);
+      expect(gate([rowOf(1, life)]).may("shared", undefined, life)).toBe(true);
+      expect(gate([rowOf(1, life), rowOf(2, life)]).may("shared", undefined, life)).toBe(false);
+      expect(gate([rowOf(1, life), rowOf(2, w.space)]).may("shared", undefined, w.space)).toBe(
+        false,
+      );
       const revoked = { ...rowOf(2, w.space), revoked_at: new Date().toISOString() };
-      expect(gate([rowOf(1, life), revoked]).may("shared", life)).toBe(true);
+      expect(gate([rowOf(1, life), revoked]).may("shared", undefined, life)).toBe(true);
     },
   );
 });

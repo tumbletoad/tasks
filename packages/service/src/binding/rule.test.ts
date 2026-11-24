@@ -42,6 +42,7 @@ const run: Live = {
 const row = (instance: string, live = true, spaces = [S1]): HomeRow => ({
   grant: `gr_${instance}`,
   instance,
+  registration: undefined,
   spaces,
   live,
 });

@@ -22,13 +22,16 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
-import { detect, nodeDetectHost } from "@ttasks/launch";
+import { detect, nodeDetectHost, type Instance } from "@ttasks/launch";
 import { parseToml } from "../src/config/toml.ts";
 import { withAppLock } from "../src/setup/app-lock.ts";
 import {
   applyHome,
+  entryInstance,
+  registrationOfRecord,
   planOf,
   readRecords,
+  registrationId,
   removeHome,
   setupDir,
   SETUP_FILE,
@@ -175,6 +178,9 @@ async function remove(w: World, a: Adapter) {
 
 const recordPath = (w: World): string => join(setupDir(w.input.stateDir), SETUP_FILE);
 
+/** A grant or a revoke for a home setup keeps no record of. */
+const NO_RECORD = { registration: undefined, recorded: undefined } as const;
+
 /** Whether the selected home has access: a live row of the test's grants table. */
 const accessOf = (w: World, a: Adapter, file: string): boolean =>
   w.rows.live.some((row) => row.app === a.app && file.startsWith(row.home));
@@ -195,11 +201,15 @@ function entryIn(a: Adapter, file: string): unknown {
   return servers?.[MCP_SERVER_KEY];
 }
 
-/** What setup writes for an app: the command, the bridge's arguments, and Codex's two keys. */
+/**
+ * What setup writes for an app: the command, the bridge's arguments, the registration of the file,
+ * and Codex's two keys.
+ */
 function expectedEntry(w: World, a: Adapter, instance: string): Record<string, unknown> {
   const entry = {
     command: w.input.tasks,
     args: ["mcp", "--space", SPACE, "--instance", instance, "--app", a.app],
+    env: { [envVar("REGISTRATION")]: registrationId(process.platform, a.app, a.file(w)) },
   };
   return a.format === "toml"
     ? { ...entry, env_vars: [envVar("TICKET")], startup_timeout_sec: 20 }
@@ -369,7 +379,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         json: [
           [
             "an extra field",
-            (t) => t.replace(`"args": [`, `"env": {"PERSON": "1"},\n      "args": [`),
+            (t) => t.replace(`"args": [`, `"cwd": "/person/work",\n      "args": [`),
           ],
           ["a changed argument", (t) => t.replace('"--app"', '"--app-x"')],
         ],
@@ -436,7 +446,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
               save === "takes the entry out"
                 ? before
                 : a.format === "json"
-                  ? text.replace(`"args": [`, `"env": {"PERSON": "1"},\n      "args": [`)
+                  ? text.replace(`"args": [`, `"cwd": "/person/work",\n      "args": [`)
                   : `${text}tool_timeout_sec = 99\n`;
             writeFileSync(file, saved);
           });
@@ -480,7 +490,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             const text = readFileSync(file, "utf8");
             saved =
               a.format === "json"
-                ? text.replace(`"args": [`, `"env": {"PERSON": "1"},\n      "args": [`)
+                ? text.replace(`"args": [`, `"cwd": "/person/work",\n      "args": [`)
                 : `${text}tool_timeout_sec = 99\n`;
             writeFileSync(file, saved);
           };
@@ -494,7 +504,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             "applied",
           );
           // The "off until asked" row: registered, and its access gone.
-          await rows.revoke(first.home);
+          await rows.revoke(first.home, NO_RECORD);
           const view = await viewOf(w, a);
           expect(view.state, what).toBe("registered");
           rows.asked.length = 0;
@@ -761,8 +771,10 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         // record said so: the entry comes out and the access is off. The person turns it on again.
         for (const granted of [false, true]) {
           writeFileSync(file, withEntry);
-          await w.rows.revoke((await viewOf(w, a)).home);
-          if (granted) await w.rows.grant((await viewOf(w, a)).home, SPACE);
+          await w.rows.revoke((await viewOf(w, a)).home, NO_RECORD);
+          if (granted) {
+            await w.rows.grant((await viewOf(w, a)).home, SPACE, registrationOfRecord(record));
+          }
           writeRecords(w.input.stateDir, [{ ...record, state: "applying", grant: null }]);
           const asked = w.rows.asked.length;
           expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
@@ -777,7 +789,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
 
         // Ended after its record, before the entry was written: nothing to finish.
         writeFileSync(file, before);
-        await w.rows.revoke((await viewOf(w, a)).home);
+        await w.rows.revoke((await viewOf(w, a)).home, NO_RECORD);
         writeRecords(w.input.stateDir, [{ ...record, state: "applying", grant: null }]);
         expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
           { result: "removed", access: "off" },
@@ -1017,12 +1029,26 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         // A home that only the service's row still names, as after its folder was renamed.
         const gone = join(w.home, ".codex-gone");
         await w.rows.grant(
-          { ...selected, app: "codex", home: gone, instance: "codex-gone" },
+          {
+            ...selected,
+            app: "codex",
+            home: gone,
+            file: join(gone, "config.toml"),
+            instance: "codex-gone",
+          },
           SPACE,
+          NO_RECORD,
         );
         const input: SetupInput = {
           ...w.input,
-          rows: w.rows.live.map(({ app, home, instance }) => ({ app, home, instance })),
+          rows: w.rows.live.map(({ grant, app, home, file, instance, registration }) => ({
+            grant,
+            app,
+            home,
+            ...(file === undefined ? {} : { file }),
+            instance,
+            ...(registration === undefined ? {} : { registration }),
+          })),
         };
         expect(await settleHomes(input, w.rows)).toEqual([]);
         const views = await survey(input);
@@ -1282,7 +1308,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         }
         const kept = readFileSync(file, "utf8");
         writeV1(v1({ entry: a.format === "json" ? adopted : { ...left, tool_timeout_sec: 99 } }));
-        await w.rows.grant((await viewOf(w, a)).home, SPACE);
+        w.rows.earlier((await viewOf(w, a)).home, SPACE);
         expect(await remove(w, a), a.app).toMatchObject({
           result: "left",
           reason: "edited",
@@ -1309,7 +1335,83 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
     },
     SLOW,
   );
+
+  test.skipIf(root)(
+    "reused instance: a home turned off whose entry stayed reaches nothing once another home is given its instance, that home's connections go through, and an entry naming the instance without a registration reaches nothing",
+    async () => {
+      const w = await world();
+      const codex = ADAPTERS.find((a) => a.app === "codex") as Adapter;
+      const folderA = join(w.home, ".codex-work");
+      const folderB = join(w.home, ".codex");
+      const fileA = join(folderA, "config.toml");
+      const fileB = join(folderB, "config.toml");
+      seed(fileA, 'model = "m"\n');
+      seed(fileB, 'model = "m"\n');
+      // machine.toml's instance `shared` names one home, then the other.
+      const naming = (folder: string): SetupInput => ({
+        ...w.input,
+        instances: [{ ...claudeInstance("shared", { CODEX_HOME: folder }), target: "codex-cli" }],
+      });
+      const viewIn = async (input: SetupInput, file: string) => {
+        const found = (await survey(input)).find((v) => v.home.file === file);
+        if (found === undefined) throw new Error(`no home for ${file}`);
+        return found;
+      };
+      const applyIn = async (input: SetupInput, file: string) => {
+        const view = await viewIn(input, file);
+        return applyHome(input, view, SPACE, w.rows, planOf(input, [view], SPACE)[0]?.change);
+      };
+
+      const first = naming(folderA);
+      expect(await applyIn(first, fileA)).toMatchObject({ result: "applied", access: "on" });
+      const entryA = entryIn(codex, fileA);
+      expect(w.rows.may(entryA, SPACE)).toBe(true);
+      // Turned off while its file cannot be written: the access goes, the entry stays.
+      const restore = unwritable(fileA);
+      try {
+        expect(await removeHome(first, await viewIn(first, fileA), w.rows)).toMatchObject({
+          access: "off",
+          kept: "own",
+        });
+      } finally {
+        restore();
+      }
+      expect(entryIn(codex, fileA)).toEqual(entryA);
+      expect(w.rows.may(entryA, SPACE)).toBe(false);
+
+      const second = naming(folderB);
+      expect(await applyIn(second, fileB)).toMatchObject({ result: "applied", access: "on" });
+      const entryB = entryIn(codex, fileB) as Record<string, unknown>;
+      expect(entryInstance(entryB)).toBe("shared");
+      expect(w.rows.may(entryB, SPACE)).toBe(true);
+      expect(w.rows.may(entryA, SPACE), "the first home's entry, connecting now").toBe(false);
+      const nameOnly = Object.fromEntries(Object.entries(entryB).filter(([key]) => key !== "env"));
+      expect(w.rows.may(nameOnly, SPACE), "the instance without a registration").toBe(false);
+    },
+    SLOW,
+  );
 });
+
+function claudeInstance(id: string, env: Record<string, string>): Instance {
+  return {
+    id,
+    target: "claude-cli",
+    label: id,
+    account: "",
+    spaces: [],
+    exec: undefined,
+    argsPrefix: [],
+    configHome: undefined,
+    env,
+    openPermission: "inherit",
+    runPermission: "inherit",
+    extraArgs: [],
+    prompt: "sent",
+    viaLoginShell: false,
+    remoteAllowed: false,
+    enabled: true,
+  };
+}
 
 type Write = (fd: number, ...rest: unknown[]) => number;
 

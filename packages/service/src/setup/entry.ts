@@ -8,6 +8,7 @@
 // line above it. Anything else is the person's, and stays.
 import { isDeepStrictEqual } from "node:util";
 import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
+import { REGISTRATION_ENV } from "@ttasks/bridge/protocol";
 import { applyEdits, tableSpan, type EditValue } from "../config/edit.ts";
 import { scanToml, ScanError, tomlComments } from "../config/scan.ts";
 import { parseToml } from "../config/toml.ts";
@@ -20,15 +21,23 @@ export type EntryFormat = "json" | "toml";
 export const CODEX_STARTUP_TIMEOUT_SEC = 20;
 
 /**
- * The entry TTasks writes to run `argv`: its command and arguments, and for Codex the ticket's
- * variable, which Codex passes on only when an entry names it, and the cold-start
- * allowance. Claude Code reads an entry without `type` as stdio.
+ * The entry TTasks writes to run `argv`: its command and arguments, the registration's ID in its
+ * environment (`registration`, none only for a service that keeps none), and for Codex the
+ * ticket's variable, which Codex passes on only when an entry names it, and the cold-start
+ * allowance. Claude Code reads an entry without `type` as stdio. The ID is an environment value
+ * and not an argument: an earlier build's bridge refuses an argument it does not know, and ignores
+ * a variable.
  */
 export function intendedEntry(
   format: EntryFormat,
   argv: readonly string[],
+  registration: string | undefined,
 ): Readonly<Record<string, EditValue>> {
-  const entry = { command: argv[0] ?? "", args: argv.slice(1) };
+  const entry = {
+    command: argv[0] ?? "",
+    args: argv.slice(1),
+    ...(registration === undefined ? {} : { env: { [REGISTRATION_ENV]: registration } }),
+  };
   return format === "toml"
     ? { ...entry, env_vars: [envVar("TICKET")], startup_timeout_sec: CODEX_STARTUP_TIMEOUT_SEC }
     : entry;

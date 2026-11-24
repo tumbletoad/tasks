@@ -47,6 +47,8 @@ import { posix, win32 } from "node:path";
 import { MCP_SERVER_KEY } from "@ttasks/brand";
 // The bridge's own parser by its own path: the bridge's index would bring its runner into bundles.
 import { parseArgs } from "@ttasks/bridge/mcp/args";
+import { REGISTRATION_ENV } from "@ttasks/bridge/protocol";
+import { encodeIdBody } from "@ttasks/storage";
 import {
   HOME_VARIABLES,
   INSTANCE_ID,
@@ -300,9 +302,9 @@ export class GrantRefused extends Error {
  */
 export interface Access {
   /** Gives the home its row for `space`, or keeps the one it has: the row's ID. Throws when refused. */
-  grant(home: AgentHome, space: string): Promise<string>;
-  /** Takes back every live row of the home. Throws when that could not be done. */
-  revoke(home: AgentHome): Promise<void>;
+  grant(home: AgentHome, space: string, of: RegistrationOf): Promise<string>;
+  /** Takes back every live row of the home's registration. Throws when that could not be done. */
+  revoke(home: AgentHome, of: RegistrationOf): Promise<void>;
 }
 
 /** What setup reads, injected so tests use scratch homes (and doctor's probes fake commands). */
@@ -323,11 +325,13 @@ export interface SetupInput {
    * The service's live agent-home rows, when the caller asked for them (`setup/homes`): a home
    * setup proposes an instance for gets one that no other home's row holds (A3 3.7.8).
    */
-  readonly rows?: readonly {
-    readonly app: string;
-    readonly home: string;
-    readonly instance: string;
-  }[];
+  readonly rows?: readonly ServiceRow[];
+  /**
+   * Whether the service keeps the registration an entry carries (`setup/homes` says so). False
+   * for a service that still runs an earlier build after an update: new entries then carry none,
+   * as that build's did, so they keep working once the service runs this build. Default true.
+   */
+  readonly registers?: boolean;
   /** machine.toml's `[setup.managed] paths` (A3 3.12 rule 4). Default: none. */
   readonly managedPaths?: readonly string[];
   /** git's command for A3 3.12 rule 3, as an argv prefix. Default: `git` on `env`'s PATH. */
@@ -393,6 +397,97 @@ export function homeDigest(platform: NodeJS.Platform, home: string): string {
   const path = pathOf(platform).resolve(home);
   const folded = platform === "win32" || platform === "darwin" ? path.toLowerCase() : path;
   return createHash("sha256").update(`agent-home\0${folded}`).digest("hex");
+}
+
+/** A registration's ID: `rg_` and A1's ID alphabet. */
+export const REGISTRATION_ID = /^rg_[0-9a-z]{26}$/u;
+
+/**
+ * The ID of TTasks's registration in an app's settings file, which its entry carries and its row
+ * names. A digest of the app and the file, so the same file always gets the same one (an agent
+ * still running from before a removal goes on once the file is registered again) and another file
+ * never does. No secret: it tells registrations apart, it proves nothing.
+ */
+export function registrationId(platform: NodeJS.Platform, app: AgentApp, file: string): string {
+  const path = pathOf(platform).resolve(file);
+  const folded = platform === "win32" || platform === "darwin" ? path.toLowerCase() : path;
+  const digest = createHash("sha256").update(`registration\0${app}\0${folded}`).digest();
+  return `rg_${encodeIdBody(digest.subarray(0, 16))}`;
+}
+
+/** The registration an entry carries in its environment; undefined for an earlier build's entry. */
+export function entryRegistration(entry: unknown): string | undefined {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return undefined;
+  const env = (entry as { env?: unknown }).env;
+  if (typeof env !== "object" || env === null || Array.isArray(env)) return undefined;
+  const value = (env as Record<string, unknown>)[REGISTRATION_ENV];
+  return typeof value === "string" ? value : undefined;
+}
+
+/** One of the service's live agent-home rows (`setup/homes`). */
+export interface ServiceRow {
+  readonly grant: string;
+  readonly app: string;
+  readonly home: string;
+  /** Its registration's settings file; undefined for a row an earlier build made. */
+  readonly file?: string;
+  readonly instance: string;
+  /** Its registration's ID; undefined for an earlier build's row, or setup's for its entry without one. */
+  readonly registration?: string;
+}
+
+/**
+ * Which registration a grant or a revoke is for, beside its file: the ID its entry carries
+ * (undefined: an earlier build's entry, which carries none), and the row the home's record names
+ * (null when it names none; undefined when setup keeps no record of the home).
+ */
+export interface RegistrationOf {
+  readonly registration: string | undefined;
+  readonly recorded: string | null | undefined;
+}
+
+/** What setup's record of a home says of its registration, or that it keeps none. */
+export const registrationOfRecord = (record: HomeRecord | undefined): RegistrationOf =>
+  record === undefined
+    ? { registration: undefined, recorded: undefined }
+    : { registration: entryRegistration(record.entry), recorded: record.grant };
+
+/**
+ * Whether a row is the registration of TTasks's entry in `home`'s file: a row setup made names that
+ * file. A row an earlier build made names a folder only, where two files can be: it is the one the
+ * home's record names; else one of the folder's, for an entry without an ID (an earlier build's
+ * registration) or a home setup keeps no record of, and never for an entry that has its own ID. The
+ * service and setup decide it alike.
+ */
+export function rowOfHome(
+  platform: NodeJS.Platform,
+  row: Pick<ServiceRow, "grant" | "app" | "home" | "file">,
+  home: Pick<AgentHome, "app" | "home" | "file">,
+  of: RegistrationOf,
+): boolean {
+  if (row.app !== home.app) return false;
+  if (row.file !== undefined) return samePath(platform, row.file, home.file);
+  if (typeof of.recorded === "string") return row.grant === of.recorded;
+  if (of.recorded === null && of.registration !== undefined) return false;
+  return samePath(platform, row.home, home.home);
+}
+
+/**
+ * Whether a home has its access: a live row of its registration (rowOfHome), made for the entry
+ * setup wrote there, so a row a rollback's build gave the same file counts as off until the home is
+ * turned on again here. A home setup keeps no record of has it with any row of its own.
+ */
+export function hasAccess(
+  platform: NodeJS.Platform,
+  rows: readonly ServiceRow[],
+  view: Pick<HomeView, "home" | "record">,
+): boolean {
+  const of = registrationOfRecord(view.record);
+  return rows.some(
+    (row) =>
+      rowOfHome(platform, row, view.home, of) &&
+      (view.record === undefined || row.registration === of.registration),
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -865,6 +960,15 @@ export function recordArgv(record: HomeRecord): string[] {
   ];
 }
 
+/** The environment a record's entry gives its command, as the agent app adds it to its own. */
+export function recordEnv(record: HomeRecord): Record<string, string> {
+  const { env } = record.entry;
+  if (typeof env !== "object" || env === null || Array.isArray(env)) return {};
+  return Object.fromEntries(
+    Object.entries(env).filter((pair): pair is [string, string] => typeof pair[1] === "string"),
+  );
+}
+
 /** The entries that are TTasks's own in a home: the one it intends, and an earlier build's shapes. */
 const ownShapes = (record: HomeRecord): readonly unknown[] => [record.entry, ...record.also];
 
@@ -1169,7 +1273,13 @@ export function planChange(input: SetupInput, view: HomeView, space: string): Ch
   const { home } = view;
   // Claude Desktop makes its file in its developer settings; setup never creates it.
   if (home.app === "claude-desktop" && view.sha256 === null) return "not_set_up";
-  const entry = intendedEntry(APPS[home.app].format, entryArgv(input.tasks, home, space));
+  const registration =
+    input.registers === false ? undefined : registrationId(input.platform, home.app, home.file);
+  const entry = intendedEntry(
+    APPS[home.app].format,
+    entryArgv(input.tasks, home, space),
+    registration,
+  );
   return { entry, diff: diffOf(home.app, entry, view.parent) };
 }
 /** One selected home in a plan: as found, and the change apply would make there. */
@@ -1279,8 +1389,8 @@ const grantReason = (error: unknown): OutcomeReason =>
   error instanceof GrantRefused ? error.reason : "grant_failed";
 
 /** Whether the service confirmed that the home has no access now. */
-const revoked = (access: Access, home: AgentHome): Promise<boolean> =>
-  access.revoke(home).then(
+const revoked = (access: Access, home: AgentHome, of: RegistrationOf): Promise<boolean> =>
+  access.revoke(home, of).then(
     () => true,
     () => false,
   );
@@ -1521,7 +1631,7 @@ async function giveAccess(
   }
   let grant: string;
   try {
-    grant = await access.grant(home, space);
+    grant = await access.grant(home, space, registrationOfRecord(record));
   } catch (error) {
     if (registered) return { home, result: "failed", reason: grantReason(error) };
     // A row the service made before its answer was lost is taken back too.
@@ -1581,7 +1691,7 @@ async function undo(
   } catch {
     // Left as it was: see above.
   }
-  const off = given ? await revoked(access, home) : true;
+  const off = given ? await revoked(access, home, registrationOfRecord(record)) : true;
   if (!readable) {
     return {
       home,
@@ -1616,7 +1726,7 @@ export async function removeHome(
   access: Access,
 ): Promise<Outcome> {
   const { home, record } = view;
-  if (!(await revoked(access, home))) {
+  if (!(await revoked(access, home, registrationOfRecord(record)))) {
     return {
       home,
       result: "failed",
