@@ -2764,7 +2764,7 @@ export class SpaceWriter {
         continue;
       }
       const commitId = newId("op", this.#random);
-      let tasks: { tasks: string[]; task_count: number };
+      let tasks: { tasks?: string[]; task_count?: number } = {};
       conn.exec("SAVEPOINT exec");
       try {
         // The inversions first: the rules across rows are decided on the state they make (A1 3.10).
@@ -2813,7 +2813,7 @@ export class SpaceWriter {
         });
         const changes = applied.changes.map((c) => ({ ...c, action: "set" as const }));
         insertChanges(conn, seq, changes);
-        tasks = changedTasks(conn, space.refPrefix, changes);
+        if (request.intent !== undefined) tasks = changedTasks(conn, space.refPrefix, changes);
         // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
         // its children's, a restore brings them back, a field set back rewrites its document.
         if (this.#search) indexChanges(conn, seq, changes);
@@ -2918,6 +2918,10 @@ const isGroupCreate = (op: Operation): boolean =>
  * created, or a field of an existing row that changed) or unchanged.
  */
 function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow[]): OpResult[] {
+  // What a registry entry builds its answer from (OpResult's lifecycle, status_key, wrap_state,
+  // learnings and fields): an A1 request's caller reads the rows itself, and its receipts stay as
+  // earlier builds stored them.
+  const answering = run.request.intent !== undefined;
   const changed = new Set(
     changes.map((c) => `${rowKey(c.entity as Entity, c.entityId)}|${c.field ?? ""}`),
   );
@@ -3198,7 +3202,7 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           id: task.id,
           ref: formatTaskRef(run.plan.refPrefix, task.ref),
           version: task.version,
-          ...(learnings === 0 ? {} : { learnings }),
+          ...(learnings === 0 || !answering ? {} : { learnings }),
         };
       }
       case "task.complete":
@@ -3206,6 +3210,15 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
       case "task.reopen": {
         // The task as the request left it, which the answer says: never read again later.
         const task = readTask(conn, staged.target as Id<"t">);
+        if (!answering) {
+          return {
+            i,
+            status,
+            id: task.id,
+            ref: formatTaskRef(run.plan.refPrefix, task.ref),
+            version: task.version,
+          };
+        }
         const wrap = task.raw["wrap_state"];
         return {
           i,
@@ -3223,7 +3236,8 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
       default: {
         const task = readTask(conn, staged.target as Id<"t">);
         const fields =
-          op.kind === "task.patch" || op.kind === "task.move" || op.kind === "task.context_append"
+          answering &&
+          (op.kind === "task.patch" || op.kind === "task.move" || op.kind === "task.context_append")
             ? taskFields(changes, i, task.id)
             : [];
         return {
