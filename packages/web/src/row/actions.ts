@@ -44,6 +44,8 @@ export interface RowActions {
   readonly copy: (task: TaskRow, pack?: boolean, text?: string) => Promise<boolean>;
   /** Shows the task's folder in the file manager of the computer the service runs on. */
   readonly folder: (task: TaskRow) => void;
+  /** A read shows the task's folder changed since an Open was refused on it: the refusal is over. */
+  readonly folderChanged: (task: TaskRow) => void;
   /** Brings a T3 Code launch's thread up in T3 Code. */
   readonly openInT3: (launch: string) => void;
   /**
@@ -78,6 +80,7 @@ const INERT: Omit<RowActions, Reading> = {
   move: () => undefined,
   check: () => undefined,
   ask: () => undefined,
+  folderChanged: () => undefined,
 };
 
 const readOnlyOf = new WeakMap<RowActions, RowActions>();

@@ -2927,7 +2927,7 @@
     },
     {
       "id": "M6.page.open-folder-question",
-      "title": "Open's question on a folder's marker stays on the expanded task while the task is read again, and ends once a read shows another folder",
+      "title": "Open's question on a folder's marker stays on the expanded task while the task is read again, and ends once a read shows another folder, also after the task is collapsed and expanded again",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

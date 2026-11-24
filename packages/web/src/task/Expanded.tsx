@@ -697,7 +697,8 @@ export function Expanded({
   const requests = [...new Set(receipts.flatMap((receipt) => receipt.request ?? []))].sort();
   const { detail, base, failed, older, loadingOlder, olderFailed } = useDetail(task.id, requests);
   // A refusal holds while the task's folder stays as it was: a read that shows another folder says
-  // where it stands now, and one that changed something else keeps the question.
+  // where it stands now, and ends it in the list, so a card opened again does not bring it back.
+  // A read that changed something else keeps the question.
   const folderNow = detail === undefined ? undefined : JSON.stringify(detail.task.folder ?? null);
   const [held, setHeld] = useState<{ refused: FolderRefusal; folder: string | undefined }>();
   // A refusal that came before the first read takes that read's folder as its own.
@@ -706,10 +707,15 @@ export function Expanded({
   } else if (refused !== held?.refused || (held.folder === undefined && folderNow !== undefined)) {
     setHeld({ refused, folder: folderNow });
   }
-  const fresh =
+  const moved =
     held !== undefined &&
     held.refused === refused &&
-    (held.folder === undefined || held.folder === folderNow);
+    held.folder !== undefined &&
+    folderNow !== undefined &&
+    held.folder !== folderNow;
+  useLayoutEffect(() => {
+    if (moved) actions.folderChanged(task);
+  }, [moved, actions, task]);
   const learnings = detail?.learnings ?? [];
   const sources = useSourceWrites();
   const notes = useNoteWrites();
@@ -778,7 +784,7 @@ export function Expanded({
             task={task}
             detail={detail}
             base={base}
-            refused={fresh ? refused : undefined}
+            refused={refused}
             onShow={actions.folder}
             writes={writes?.folder}
           />

@@ -361,7 +361,7 @@ describe("[M6.page.busy-read] what busies the apps is read again until the servi
 });
 
 describe("[M6.page.open-folder-question] a folder question stays while its task is read again", () => {
-  test("Open's question on a folder's marker stays when the task is read again, until a read shows another folder", async () => {
+  test("Open's question on a folder's marker stays when the task is read again, until a read shows another folder, also when it is opened again", async () => {
     openAnswer = () =>
       Promise.reject(
         new Refused(400, "invalid_input", undefined, {
@@ -394,6 +394,12 @@ describe("[M6.page.open-folder-question] a folder question stays while its task 
       live.store.flush();
     });
     await settle();
+    expect(useThis()).toHaveLength(0);
+    // Collapsed and expanded again, the task does not ask about the old folder again.
+    await expand();
+    expect(container.querySelector(`${row} [data-part="expanded"]`)).toBeNull();
+    await expand();
+    expect(container.querySelector(`${row} [data-part="expanded"]`)).not.toBeNull();
     expect(useThis()).toHaveLength(0);
   });
 });
