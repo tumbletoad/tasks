@@ -1480,8 +1480,8 @@ export async function readUndoTarget(
 }
 
 /**
- * The newest commit under writer scope `$scope` after the commit that last applied `$undone`
- * before `$seq` (appliedSql) and before `$seq`, with the first task it changed and the kind of the
+ * The newest commit under writer scope `$scope` before `$seq` and after `$undone` was last applied
+ * before it (appliedSql), with the first task it changed and the kind of the
  * operation that changed it (`commits.ops[op].op`).
  */
 const SCRIPT_CHANGE: Statement = {

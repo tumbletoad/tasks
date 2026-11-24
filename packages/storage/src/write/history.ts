@@ -771,7 +771,7 @@ export function planInversions(
   const rows = new Map<string, RowState>();
   const kids = liveChildren(conn, changes);
   /** The tasks newer work keeps open. */
-  const kept = new Set<string>();
+  const keptOpen = new Set<string>();
   /**
    * Each (row, field) is named once: a child row of a create can block both its own create and
    * its parent's. The first naming stays, completed by what a later one knows (`wrote`).
@@ -876,7 +876,7 @@ export function planInversions(
         const newer = newerWork(conn, entity, id, applied, options.principal);
         for (const work of newer) blocked(conflict(work.where, work.version));
         if (newer.length > 0) {
-          if (field === "lifecycle") kept.add(id);
+          if (field === "lifecycle") keptOpen.add(id);
           continue;
         }
       }
@@ -955,7 +955,7 @@ export function planInversions(
   }
   // A task newer work keeps open keeps its wrap-up too: that work is the conflict that says why.
   plan.inversions = plan.inversions.filter(
-    (i) => !(i.entity === "tasks" && i.field === "wrap" && kept.has(i.id)),
+    (i) => !(i.entity === "tasks" && i.field === "wrap" && keptOpen.has(i.id)),
   );
   if (options.partial) keepTogether(plan, read);
   keepActiveUnwrapped(plan, read, (where, version, at) => {
@@ -1341,7 +1341,7 @@ function columnValues(columns: readonly string[], json: string): Record<string, 
   return Object.fromEntries(columns.map((c) => [c, sql(record[c] ?? null)]));
 }
 
-/** A list's rows: a task's by its project, or by its area outside a project; a project's by its area. */
+/** The rows of a list: tasks of a project, or of an area outside a project; projects of an area. */
 const LIST: Readonly<Record<"tasks" | "projects", string>> = {
   tasks: "project_id IS $project AND (project_id IS NOT NULL OR area_id IS $area)",
   projects: "area_id IS $area",
@@ -1809,9 +1809,9 @@ function groupRules(
       found.rule === "held"
         ? of(found.child.entity, found.child.id)
         : of("tasks", found.child.id, "grouping");
-    const [kept, other] = own.length > 0 ? [own, child] : [brought, group];
-    if (kept.length === 0) continue;
-    undo(kept);
+    const [held, other] = own.length > 0 ? [own, child] : [brought, group];
+    if (held.length === 0) continue;
+    undo(held);
     const newest = other.reduce((a, b) => (versionAt(b) > versionAt(a) ? b : a));
     if (versionAt(newest) <= since) continue;
     const [entity, id, field] = newest;
