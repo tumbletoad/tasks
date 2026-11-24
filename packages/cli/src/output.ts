@@ -399,7 +399,10 @@ function searchLines(result: Result): string[] {
  * the draft: a follow-up's draft is not the task the line is about.
  */
 function draftLine(task: Result, space: string, its = "its"): string {
-  if (task["result"] !== "exists") return `Added ${String(task["ref"])} to ${space}`;
+  if (task["result"] !== "exists") {
+    const project = typeof task["project"] === "string" ? `, in ${task["project"]}` : "";
+    return `Added ${String(task["ref"])} to ${space}${project}`;
+  }
   const ambiguous = task["ambiguous"];
   const several = Array.isArray(ambiguous);
   const logged =
@@ -788,7 +791,10 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       if (here !== undefined) {
         const total = result["here_total"];
         lines.push(`here: ${String(typeof total === "number" ? total : here.length)}`);
-        for (const task of here) lines.push(`  ${taskLine(task)} · ${String(task["match"])}`);
+        for (const task of here) {
+          const project = typeof task["project"] === "string" ? ` · ${task["project"]}` : "";
+          lines.push(`  ${taskLine(task)} · ${String(task["match"])}${project}`);
+        }
       }
       for (const section of (result["sections"] as Result[] | undefined) ?? []) {
         lines.push(`${String(section["name"])}:`);
@@ -815,6 +821,9 @@ export function render(entry: string, result: Result, space: string, asked: Aske
         const done = GROUP_DONE[str(result["result"])] ?? str(result["result"]);
         const folder = typeof group["folder"] === "string" ? `: ${group["folder"]}` : "";
         lines.push(`${done} ${str(group["kind"])} ${str(group["name"] ?? group["id"])}${folder}`);
+        const also = (result["also"] as Result[] | undefined) ?? [];
+        if (also.length > 0)
+          lines.push(`Also the folder of ${listed(also.map((p) => str(p["name"])))}.`);
         lines.push(...insideLines(result));
       }
       // A project a line, with the repository in its folder and the folder on this machine. A

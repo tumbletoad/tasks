@@ -1,7 +1,7 @@
 // The folder chooser's choices, from what the service listed for the text in the field. Plain code
 // without React, so every case is a unit test. A choice sets the field's text: a folder's ends in
 // its separator, so the next listing is that folder's.
-import type { FolderListing, FolderProject } from "../api.ts";
+import type { FolderListing } from "../api.ts";
 
 export interface Choice {
   readonly key: string;
@@ -11,7 +11,8 @@ export interface Choice {
   /** The field's text once it is chosen; for `make`, the folder to make. */
   readonly value: string;
   readonly link?: true;
-  readonly project?: FolderProject | string;
+  /** A place: the project whose folder it holds. */
+  readonly project?: string;
 }
 
 /** The choices for a listing; `make` offers to make the folder whose name was typed. */
@@ -45,7 +46,6 @@ export function choicesOf(listing: FolderListing | undefined, make: boolean): Ch
     label: folder.name,
     value: `${listing.at}${folder.name}${sep}`,
     ...(folder.link === undefined ? {} : { link: true }),
-    ...(folder.project === undefined ? {} : { project: folder.project }),
   }));
   const typed = listing.prefix.trim();
   if (make && typed !== "" && typed === listing.prefix && listing.exact === undefined) {

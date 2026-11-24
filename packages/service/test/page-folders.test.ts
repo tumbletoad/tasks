@@ -127,16 +127,24 @@ describe("[A7.3.12.m5-14.folders-list] The chooser lists folders by name, bounde
     });
   });
 
-  it("says which project of the space has a folder", async () => {
+  it("says which projects of the space have the folder named, every one of them", async () => {
     const fs = fakeFs({ "/home/mira/work": { portal: "dir", billing: "dir" } });
-    const projects = [{ id: "p_1", name: "Lumen portal", stored: "~/work/portal" }];
+    const projects = [
+      { id: "p_1", name: "Lumen portal", stored: "~/work/portal" },
+      { id: "p_2", name: "Portal bugs", stored: "~/work/portal" },
+    ];
     const listing = await listFolders("~/work/", linux(fs, { projects }));
     expect(listing.kind === "list" ? listing.folders : []).toEqual([
       { name: "billing" },
-      { name: "portal", project: { id: "p_1", name: "Lumen portal" } },
+      { name: "portal" },
     ]);
     expect(await listFolders("~/work/portal", linux(fs, { projects }))).toMatchObject({
-      exact: { project: { id: "p_1", name: "Lumen portal" } },
+      exact: {
+        projects: [
+          { id: "p_1", name: "Lumen portal" },
+          { id: "p_2", name: "Portal bugs" },
+        ],
+      },
     });
   });
 
@@ -450,7 +458,7 @@ describe("[A7.3.12.m5-14.folders-http] The page's folder calls over HTTP", () =>
   };
 
   it(
-    "lists a folder, marks the project that has one, and names a project's folder here and elsewhere",
+    "lists a folder, and names a project's folder here and elsewhere",
     async () => {
       const work = join(w.root, "work");
       mkdirSync(join(work, "portal"), { recursive: true });
@@ -481,13 +489,36 @@ describe("[A7.3.12.m5-14.folders-http] The page's folder calls over HTTP", () =>
       expect(listed.status).toBe(200);
       expect(listed.result).toMatchObject({
         kind: "list",
-        folders: [{ name: "billing" }, { name: "portal", project: { id: added.owner.id } }],
+        folders: [{ name: "billing" }, { name: "portal" }],
       });
       const line = await page<{ here?: { folder: string; state: string }; elsewhere: string[] }>(
         "/api/v1/machine/project_folder",
         { project: added.owner.id },
       );
       expect(line.result).toEqual({ here: { folder: added.folder, state: "here" }, elsewhere: [] });
+      // An archived project keeps its folder, and the folder typed names it beside the others.
+      await user.call(
+        "op/call",
+        {
+          space,
+          op: "group.manage",
+          input: {
+            action: "archive",
+            path: added.owner.id,
+            base: (
+              (await user.call(
+                "op/call",
+                { space, op: "space.status", input: {} },
+                { timeoutMs: SLOW },
+              )) as { as_of: string }
+            ).as_of,
+            request_id: "folders-http-archive-01",
+          },
+        },
+        { timeoutMs: SLOW },
+      );
+      const typed = await page<Listing>("/api/v1/machine/folders", { path: join(work, "portal") });
+      expect(typed.result).toMatchObject({ exact: { projects: [{ id: added.owner.id }] } });
       const made = await page<{ folder: string }>("/api/v1/machine/folder_make", {
         path: join(work, "atlas"),
       });

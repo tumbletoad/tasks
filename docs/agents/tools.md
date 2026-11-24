@@ -180,7 +180,7 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `action` | "add_project" \| "set" \| "clear" | yes | The action |
-| `result` | "created" \| "exists" \| "set" \| "cleared" \| "no_change" | yes | What happened; exists: another project has this folder here |
+| `result` | "created" \| "exists" \| "set" \| "cleared" \| "no_change" | yes | What happened; exists: a project of this name and area has this folder here |
 | `owner` | object | yes | Whose folder it is |
 | `owner.kind` | "project" \| "task" | yes | Project or task |
 | `owner.id` | string | yes | Its ID |
@@ -191,6 +191,9 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | `owner.area.name` | string | yes | Its name |
 | `owner.area.archived` | true | no | Archived, and the project with it |
 | `folder` | string, max 4096 | no | The folder here as stored, the home as ~; absent once cleared |
+| `also` | object[], max 1000 items | no | Other projects with this folder here |
+| `also[].id` | string | yes | Its ID |
+| `also[].name` | string | yes | Its name now |
 | `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved, and they are in it |
 | `followed` | object[], max 20 items | no | The first of them |
 | `followed[].kind` | "project" \| "task" | yes | Whose folder it is |
@@ -306,7 +309,7 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | `total_areas` | integer, 0 to 1000000000 | no | Areas the whole list holds |
 | `total_projects` | integer, 0 to 1000000000 | no | Projects the whole list holds |
 | `cursor` | string, max 330 | no | Pass it for the next page |
-| `result` | "created" \| "exists" \| "renamed" \| "moved" \| "archived" \| "unarchived" \| "folder_set" \| "folder_cleared" \| "no_change" | no | A write: what happened; exists: another project has this folder |
+| `result` | "created" \| "exists" \| "renamed" \| "moved" \| "archived" \| "unarchived" \| "folder_set" \| "folder_cleared" \| "no_change" | no | A write: what happened; exists: from an earlier build only |
 | `group` | object | no | A write: the group it changed |
 | `group.kind` | "area" \| "project" | yes | Area or project |
 | `group.id` | string | yes | Its ID |
@@ -316,6 +319,9 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | `group.area.id` | string | yes | Area ID |
 | `group.area.name` | string | yes | Its name |
 | `group.area.archived` | true | no | Archived, and the project with it |
+| `also` | object[], max 1000 items | no | Other projects with this folder here |
+| `also[].id` | string | yes | Its ID |
+| `also[].name` | string | yes | Its name now |
 | `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved, and they are in it |
 | `followed` | object[], max 20 items | no | The first of them |
 | `followed[].kind` | "project" \| "task" | yes | Whose folder it is |
@@ -1682,6 +1688,8 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | `tasks[].id` | string | no | Task ID |
 | `tasks[].ref` | string | no | Task reference |
 | `tasks[].title` | string | no | Its title now; absent when it could not be read |
+| `tasks[].project` | string | no | Its project now; absent when in none |
+| `tasks[].folder_of` | string[], max 1000 items | no | The projects that share its folder, when it joined none of them |
 | `tasks[].lifecycle` | "active" \| "completed" \| "archived" | no | Lifecycle |
 | `tasks[].matched_by` | "source_key" | no | How an existing task matched |
 | `tasks[].ambiguous` | string[] | no | Several active matches: pick one |
@@ -1946,6 +1954,8 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].result` | "created" \| "exists" | yes | What happened to the draft |
 | `follow_ups[].ref` | string | no | Task reference |
 | `follow_ups[].title` | string | no | Its title now; absent when it could not be read |
+| `follow_ups[].project` | string | no | Its project now; absent when in none |
+| `follow_ups[].folder_of` | string[], max 1000 items | no | The projects that share its folder, when it joined none of them |
 | `follow_ups[].lifecycle` | "active" \| "completed" \| "archived" | no | The matched task's lifecycle |
 | `follow_ups[].ambiguous` | string[] | no | Several active matches: pick one |
 | `follow_ups[].log_added` | boolean | yes | The draft's log entry was added |

@@ -127,8 +127,6 @@ export interface Listed {
   readonly name: string;
   /** A link (a junction on Windows) to a folder: opening it lists the folder it points to. */
   readonly link?: true;
-  /** The project of the tab's space whose folder this is. */
-  readonly project?: { readonly id: string; readonly name: string };
 }
 
 /** The folder a person's text names exactly, when it is one. */
@@ -138,7 +136,8 @@ export interface Exact {
   /** The name a project made from it gets: none for a drive or a root. */
   readonly name?: string;
   readonly repo?: string;
-  readonly project?: { readonly id: string; readonly name: string };
+  /** The projects of the tab's space whose folder this is, oldest first. */
+  readonly projects?: readonly { readonly id: string; readonly name: string }[];
 }
 
 export type Listing =
@@ -206,14 +205,15 @@ function hidden(name: string, prefix: string, platform: NodeJS.Platform): boolea
   return platform === "win32" && (name.startsWith("$") || name === "System Volume Information");
 }
 
-function projectOf(
+function projectsOf(
   stored: string,
   projects: readonly KnownProject[],
   os: FolderOs,
-): { id: string; name: string } | undefined {
+): { id: string; name: string }[] {
   const key = folderKey(stored, os);
-  const found = projects.find((p) => folderKey(p.stored, os) === key);
-  return found === undefined ? undefined : { id: found.id, name: found.name };
+  return projects
+    .filter((p) => folderKey(p.stored, os) === key)
+    .map((p) => ({ id: p.id, name: p.name }));
 }
 
 /** Where a person may begin: the home, the folders holding the projects' folders, the roots. */
@@ -335,14 +335,10 @@ export async function listFolders(text: string, facts: ListFacts): Promise<Listi
   const kept = shown.filter((f) => !dead.has(f.name));
   const projects = facts.projects ?? [];
   const storedOf = (name: string) => `${at}${name}`;
-  const folders: Listed[] = kept.map((f) => {
-    const project = projectOf(storedOf(f.name), projects, os);
-    return {
-      name: f.name,
-      ...(f.link ? { link: true as const } : {}),
-      ...(project === undefined ? {} : { project }),
-    };
-  });
+  const folders: Listed[] = kept.map((f) => ({
+    name: f.name,
+    ...(f.link ? { link: true as const } : {}),
+  }));
 
   // The folder the text names exactly: the one listed, or a listed one whose name it is.
   const same = (name: string) => (os === "linux" ? name === prefix : fold(name) === wanted);
@@ -354,12 +350,12 @@ export async function listFolders(text: string, facts: ListFacts): Promise<Listi
     const name = folderName(absolute, platform);
     const found = await bounded(() => facts.fs.repo(absolute).catch(() => undefined), left());
     const repo = found === "not_answering" ? undefined : found;
-    const project = projectOf(stored, projects, os);
+    const owners = projectsOf(stored, projects, os);
     exact = {
       folder: stored,
       ...(name === undefined ? {} : { name }),
       ...(repo === undefined ? {} : { repo }),
-      ...(project === undefined ? {} : { project }),
+      ...(owners.length === 0 ? {} : { projects: owners }),
     };
   }
   return {

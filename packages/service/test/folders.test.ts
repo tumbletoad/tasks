@@ -2,9 +2,9 @@
 // project made for a folder in one change, the folder moved on disk with everything inside it
 // following, a folder given another while it is still there, the undo and redo of a move, the
 // repository's name in a project's list, an agent's project created by name, and the checks at
-// bind: a folder inside TTasks's own data, a folder that is not there, and a folder another project
-// has; and a retry that replays after a rename. The folders are temporary ones of this test.
-// Fixture text only.
+// bind: a folder inside TTasks's own data and a folder that is not there; a folder added again for
+// a project of its name; and a retry that replays after a rename. The folders are temporary ones of
+// this test. Fixture text only.
 import { cpSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -210,38 +210,17 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
       changed.folder,
     ]);
 
-    // Adding a folder that a project has already answers that project, and makes none.
+    // Adding the folder again for a project of that name in that area answers that project.
     const again = FolderManageResult.parse(
       await call(user, "folder.manage", {
         action: "add_project",
-        project: "Portal again",
+        project: "portal",
+        area: "Client work",
         folder: moved,
         request_id: rid(),
       }),
     );
     expect(again).toMatchObject({ result: "exists", owner: { id: project, name: "Portal" } });
-    // Setting it on another project is refused, naming the project that has it.
-    const other = FolderManageResult.parse(
-      await call(user, "folder.manage", {
-        action: "add_project",
-        project: "Docs",
-        folder: folder("docs"),
-        request_id: rid(),
-      }),
-    );
-    const taken = await refused(
-      call(user, "folder.manage", {
-        action: "set",
-        project: other.owner.id,
-        folder: moved,
-        base: await asOf(user),
-        request_id: rid(),
-      }),
-    );
-    expect(taken).toMatchObject({
-      code: "conflict",
-      data: { reason: "folder_taken", project: { id: project, name: "Portal" } },
-    });
     // A project's folder is cleared on this machine; the task keeps its own.
     expect(
       FolderManageResult.parse(

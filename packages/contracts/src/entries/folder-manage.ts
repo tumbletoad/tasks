@@ -1,10 +1,11 @@
 // folder.manage: the person's own folders on this machine, for a project or a task. `add_project`
-// makes a project for a folder (or names the project that has it already), `set` gives a project
-// or a task its folder here, and `clear` takes it away. The person's only for now: an agent's
-// folder fields come with the agent tools' own step. A folder is an absolute path on this machine,
-// or one under `~`; the service stores it with the home written as `~` and checks it at bind: it
-// exists and is a folder, it is not inside TTasks's own data, and no other live project has it here.
-// A folder changed after it was moved takes every folder inside it along.
+// makes a project for a folder (or names the project of that name that has it already), `set`
+// gives a project or a task its folder here, and `clear` takes it away. The person's only for now:
+// an agent's folder fields come with the agent tools' own step. A folder is an absolute path on
+// this machine, or one under `~`; the service stores it with the home written as `~` and checks it
+// at bind: it exists and is a folder, and it is not inside TTasks's own data. Any number of
+// projects may share a folder; the answer names the others. A folder changed after it was moved
+// takes every folder inside it along.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeLine } from "../safe-text.ts";
@@ -12,6 +13,7 @@ import {
   WriteAsOf,
   Base,
   idPattern,
+  AlsoProjects,
   InsideFolders,
   ProjectArea,
   Replayed,
@@ -46,7 +48,7 @@ export const FolderManageResult = z.strictObject({
   action: z.enum(FOLDER_ACTIONS).describe("The action"),
   result: z
     .enum(["created", "exists", "set", "cleared", "no_change"])
-    .describe("What happened; exists: another project has this folder here"),
+    .describe("What happened; exists: a project of this name and area has this folder here"),
   owner: z
     .strictObject({
       kind: z.enum(["project", "task"]).describe("Project or task"),
@@ -61,6 +63,7 @@ export const FolderManageResult = z.strictObject({
     .max(4096)
     .describe("The folder here as stored, the home as ~; absent once cleared")
     .optional(),
+  also: AlsoProjects.optional(),
   ...InsideFolders,
   as_of: WriteAsOf,
   replayed: Replayed.optional(),
