@@ -66,15 +66,15 @@ function liveRow(host: HomeGateHost, instance: string, registration: string | un
 
 export function homeGate(host: HomeGateHost): HomeGate & { machineDefault(): string | undefined } {
   return {
-    may(instance, registration, space) {
+    may(home, space) {
       // The hand-made entry has no row: a row naming `manual` (setup refuses to make one) gives
       // it nothing, and nothing else of it outlives a revoke.
-      if (instance === MANUAL_INSTANCE) return machineDefault(host) === space;
-      return liveRow(host, instance, registration)?.spaces.includes(space) === true;
+      if (home.instance === MANUAL_INSTANCE) return machineDefault(host) === space;
+      return liveRow(host, home.instance, home.registration)?.spaces.includes(space) === true;
     },
-    spaceOf(instance, registration) {
-      if (instance === MANUAL_INSTANCE) return machineDefault(host);
-      const spaces = liveRow(host, instance, registration)?.spaces ?? [];
+    spaceOf(home) {
+      if (home.instance === MANUAL_INSTANCE) return machineDefault(host);
+      const spaces = liveRow(host, home.instance, home.registration)?.spaces ?? [];
       return spaces.length === 1 ? spaces[0] : undefined;
     },
     machineDefault: () => machineDefault(host),

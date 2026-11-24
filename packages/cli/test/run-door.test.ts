@@ -218,7 +218,9 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
     // no other connection of that home may.
     const live = (await service?.runs.list(spaceId, task))?.[0]?.run.id ?? "";
     expect(service?.runs.allows("codex", spaceId, live)).toBe(true);
-    expect(service?.ops.homes?.may("codex", undefined, spaceId)).toBe(false);
+    expect(service?.ops.homes?.may({ instance: "codex", registration: undefined }, spaceId)).toBe(
+      false,
+    );
     const ran = await running;
     expect(ran.code, ran.stdout + ran.stderr).toBe(0);
     expect(ran.stdout).toContain(ANSWER_MARK);

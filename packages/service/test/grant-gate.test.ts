@@ -88,6 +88,10 @@ afterAll(async () => {
   await w.close();
 }, LONG);
 
+/** The gate's connections: the hand-made entry, and an instance two rows hold, each with no registration. */
+const MANUAL = { instance: MANUAL_INSTANCE, registration: undefined };
+const SHARED = { instance: "shared", registration: undefined };
+
 /** A3 3.5's grant refusal as a bridge's agent reads it. */
 const GRANT_TEXT = renderError(GRANT);
 
@@ -676,8 +680,8 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
         ],
         defaultSpace: () => w.space,
       });
-      expect(gate.may(MANUAL_INSTANCE, undefined, life)).toBe(false);
-      expect(gate.may(MANUAL_INSTANCE, undefined, w.space)).toBe(true);
+      expect(gate.may(MANUAL, life)).toBe(false);
+      expect(gate.may(MANUAL, w.space)).toBe(true);
       // The configured default counts whether or not it is served now: the request path then says
       // `space_unavailable` or `ambiguous` for it, not that the entry is not registered.
       const away = `sp_${"4".repeat(26)}`;
@@ -686,15 +690,15 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
         spaces: () => [{ id: life, state: "open" }],
         defaultSpace: () => away,
       });
-      expect(unserved.may(MANUAL_INSTANCE, undefined, away)).toBe(true);
-      expect(unserved.may(MANUAL_INSTANCE, undefined, life)).toBe(false);
+      expect(unserved.may(MANUAL, away)).toBe(true);
+      expect(unserved.may(MANUAL, life)).toBe(false);
       // No default: the one space served, and with two none.
       const one = homeGate({
         grants: () => ({ list: () => [] }),
         spaces: () => [{ id: life, state: "open" }],
         defaultSpace: () => undefined,
       });
-      expect(one.may(MANUAL_INSTANCE, undefined, life)).toBe(true);
+      expect(one.may(MANUAL, life)).toBe(true);
       const two = homeGate({
         grants: () => ({ list: () => [] }),
         spaces: () => [
@@ -703,7 +707,7 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
         ],
         defaultSpace: () => undefined,
       });
-      expect(two.may(MANUAL_INSTANCE, undefined, life)).toBe(false);
+      expect(two.may(MANUAL, life)).toBe(false);
     },
   );
 
@@ -774,13 +778,11 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
           spaces: () => [],
           defaultSpace: () => undefined,
         });
-      expect(gate([rowOf(1, life)]).may("shared", undefined, life)).toBe(true);
-      expect(gate([rowOf(1, life), rowOf(2, life)]).may("shared", undefined, life)).toBe(false);
-      expect(gate([rowOf(1, life), rowOf(2, w.space)]).may("shared", undefined, w.space)).toBe(
-        false,
-      );
+      expect(gate([rowOf(1, life)]).may(SHARED, life)).toBe(true);
+      expect(gate([rowOf(1, life), rowOf(2, life)]).may(SHARED, life)).toBe(false);
+      expect(gate([rowOf(1, life), rowOf(2, w.space)]).may(SHARED, w.space)).toBe(false);
       const revoked = { ...rowOf(2, w.space), revoked_at: new Date().toISOString() };
-      expect(gate([rowOf(1, life), revoked]).may("shared", undefined, life)).toBe(true);
+      expect(gate([rowOf(1, life), revoked]).may(SHARED, life)).toBe(true);
     },
   );
 });

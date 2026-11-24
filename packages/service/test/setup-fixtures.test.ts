@@ -31,10 +31,10 @@ import {
   hasAccess,
   entryInstance,
   entryRegistration,
-  registrationOfRecord,
   planOf,
   planToken,
   readRecords,
+  registrationOfRecord,
   registrationId,
   removeHome,
   setupDir,
@@ -185,6 +185,17 @@ const recordPath = (w: World): string => join(setupDir(w.input.stateDir), SETUP_
 
 /** A grant or a revoke for a home setup keeps no record of. */
 const NO_RECORD = { registration: undefined, recorded: undefined } as const;
+
+/** The test's live rows as `setup/homes` lists them. */
+const serviceRows = (w: World): ServiceRow[] =>
+  w.rows.live.map(({ grant, app, home, file, instance, registration }) => ({
+    grant,
+    app,
+    home,
+    ...(file === undefined ? {} : { file }),
+    instance,
+    ...(registration === undefined ? {} : { registration }),
+  }));
 
 /** Whether the selected home has access: a live row of the test's grants table. */
 const accessOf = (w: World, a: Adapter, file: string): boolean =>
@@ -1548,22 +1559,12 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         }
         mkdirSync(setupDir(w.input.stateDir), { recursive: true });
         writeFileSync(recordPath(w), JSON.stringify({ format, homes: records }));
-        const rows = (): ServiceRow[] =>
-          w.rows.live.map(({ grant, app, home, file, instance, registration }) => ({
-            grant,
-            app,
-            home,
-            ...(file === undefined ? {} : { file }),
-            instance,
-            ...(registration === undefined ? {} : { registration }),
-          }));
-
         // After the update: registered, on, and each entry's connection goes through.
         const after = (await survey(input)).filter((v) => !v.home.home.endsWith(".codex-three"));
         for (const view of after) {
           const what = `format ${String(format)}: ${view.home.instance}`;
           expect(view.state, what).toBe("registered");
-          expect(hasAccess(process.platform, rows(), view), what).toBe(true);
+          expect(hasAccess(process.platform, serviceRows(w), view), what).toBe(true);
           expect(w.rows.may(view.entry, SPACE), what).toBe(true);
         }
 
@@ -1618,6 +1619,60 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
     SLOW,
   );
 
+  test(
+    "rolled back and forward: a row the build before this one gave a registered home shows off here, and turning the home on gives its row the registration again",
+    async () => {
+      const w = await world();
+      const codex = ADAPTERS.find((a) => a.app === "codex") as Adapter;
+      const file = codex.file(w);
+      seed(file, 'model = "m"\n');
+      expect(await apply(w, codex)).toMatchObject({ result: "applied", access: "on" });
+      const [record] = readRecords(w.input.stateDir);
+      if (record === undefined) throw new Error("no record");
+      const entry = entryIn(codex, file);
+      // That build turned it off and on: its row names the folder only, and the record that row.
+      await w.rows.revoke((await viewOf(w, codex)).home, registrationOfRecord(record));
+      const earlier = w.rows.earlier((await viewOf(w, codex)).home, SPACE);
+      writeRecords(w.input.stateDir, [{ ...record, grant: earlier }]);
+      const back = await viewOf(w, codex);
+      expect(back.state).toBe("registered");
+      expect(hasAccess(process.platform, serviceRows(w), back)).toBe(false);
+      expect(w.rows.may(entry, SPACE)).toBe(false);
+      expect(await applyHome(w.input, back, SPACE, w.rows)).toMatchObject({ access: "on" });
+      expect(w.rows.may(entry, SPACE)).toBe(true);
+      expect(w.rows.live.map((r) => [r.file, r.registration])).toEqual([
+        [file, entryRegistration(entry)],
+      ]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a service that keeps no registration yet (updated, not restarted): new entries carry none, as that build's did, and work",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        const file = a.file(w);
+        seed(file, a.format === "json" ? "{}\n" : "");
+        const input: SetupInput = { ...w.input, registers: false };
+        const view = (await survey(input)).find((v) => v.home.file === file) as HomeView;
+        const [item] = planOf(input, [view], SPACE);
+        const change = item?.change;
+        expect(
+          typeof change === "object" ? Object.keys(change.entry) : change,
+          a.app,
+        ).not.toContain("env");
+        expect(await applyHome(input, view, SPACE, w.rows, item?.change), a.app).toMatchObject({
+          result: "applied",
+          access: "on",
+        });
+        const entry = entryIn(a, file);
+        expect(entryRegistration(entry), a.app).toBeUndefined();
+        expect(w.rows.may(entry, SPACE), a.app).toBe(true);
+      }
+    },
+    SLOW,
+  );
   test.skipIf(root)(
     "reused instance: a home turned off whose entry stayed reaches nothing once another home is given its instance, that home's connections go through, and an entry naming the instance without a registration reaches nothing",
     async () => {

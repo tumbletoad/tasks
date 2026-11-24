@@ -551,7 +551,15 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         );
         const granted = (await life.user.call(
           "setup/home_grant",
-          { app: agent?.app, home: agent?.home, instance: "fake-agent-home", account: "", space },
+          {
+            app: agent?.app,
+            home: agent?.home,
+            // Claude Code's default home keeps its entry in the account's `.claude.json`.
+            file: join(account, ".claude.json"),
+            instance: "fake-agent-home",
+            account: "",
+            space,
+          },
           { timeoutMs: SLOW_MS },
         )) as { grant: { grant: string } };
         return async () => {

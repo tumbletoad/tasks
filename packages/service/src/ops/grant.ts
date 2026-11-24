@@ -34,18 +34,24 @@ import type { Caller } from "./caller.ts";
  */
 export { MANUAL_INSTANCE };
 
+/**
+ * Who a connection that is no session is, for the gate: the instance its entry names (`manual` for
+ * none) and the registration its entry carries (undefined for an earlier build's entry).
+ */
+export interface GateHome {
+  readonly instance: string;
+  readonly registration: string | undefined;
+}
+
 /** What the request path asks of the agent homes' rows (hub/home-gate.ts answers it). */
 export interface HomeGate {
+  /** Whether a call of the connection `home` may use the space `space` (an `sp_` ID). */
+  may(home: GateHome, space: string): boolean;
   /**
-   * Whether a call of the agent home `instance`, made under the registration its entry carries
-   * (undefined: none), may use the space `space` (an `sp_` ID).
+   * The space the connection `home` may use now: its live row's, or for `manual` the machine's
+   * default. None when there is no one such space.
    */
-  may(instance: string, registration: string | undefined, space: string): boolean;
-  /**
-   * The space the agent home `instance` of `registration` may use now: its live row's, or for
-   * `manual` the machine's default. None when there is no one such space.
-   */
-  spaceOf(instance: string, registration: string | undefined): string | undefined;
+  spaceOf(home: GateHome): string | undefined;
 }
 
 /**
@@ -97,10 +103,13 @@ export function checkGrant(
     return;
   }
   if (caller.class !== "bridge") return;
-  if (
-    space === undefined ||
-    host.homes?.may(caller.home ?? "", caller.registration, space) !== true
-  ) {
+  if (space === undefined || host.homes?.may(gateHomeOf(caller), space) !== true) {
     throw grantRefused();
   }
 }
+
+/** The connection a caller that is no session is, for the gate. */
+export const gateHomeOf = (caller: Caller): GateHome => ({
+  instance: caller.home ?? "",
+  registration: caller.registration,
+});

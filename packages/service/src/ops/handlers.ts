@@ -97,7 +97,7 @@ import {
   type PackContent,
 } from "../launch/open.ts";
 import type { Session, SessionPort } from "./binding.ts";
-import { checkGrant, grantRefused, standingOf, type HomeGate } from "./grant.ts";
+import { checkGrant, gateHomeOf, grantRefused, standingOf, type HomeGate } from "./grant.ts";
 import { dueDate, localTimeZone, pastInstant } from "./dates.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
 import {
@@ -514,7 +514,7 @@ function spaceOfCall(host: OpsHost, caller: Caller, named: string | undefined): 
     const entry = (): EntryFacts => ({
       named: binding?.named === true,
       manual: caller.home === undefined || caller.home === MANUAL_INSTANCE,
-      mayUse: host.homes?.spaceOf(caller.home ?? "", caller.registration),
+      mayUse: host.homes?.spaceOf(gateHomeOf(caller)),
     });
     if (held === undefined) {
       const facts = entry();

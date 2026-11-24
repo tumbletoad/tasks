@@ -98,7 +98,13 @@ export function keptRows(before?: (verb: "grant" | "revoke", home: AgentHome) =>
       return access.revoke(home, of);
     },
     may(entry, space) {
-      return gate.may(entryInstance(entry) ?? MANUAL_INSTANCE, entryRegistration(entry), space);
+      return gate.may(
+        {
+          instance: entryInstance(entry) ?? MANUAL_INSTANCE,
+          registration: entryRegistration(entry),
+        },
+        space,
+      );
     },
     earlier(home, space) {
       served.add(space);
