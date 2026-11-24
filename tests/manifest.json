@@ -4095,6 +4095,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.12.toast.reading-time",
+      "title": "A toast stays as long as its sentence takes to read: a short one as before, a long one longer, none for ever, an error until it is dismissed",
+      "source": "A5 3.12",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.2.2.files.whole-write",
       "title": "A write of durable state through the files package writes every byte or throws: writes that each take a few bytes still leave the whole text, and a write that takes none throws, keeps the old file whole and leaves no temporary file",
       "source": "A2 3.2.2, A1 3.13",
