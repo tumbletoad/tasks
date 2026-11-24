@@ -800,6 +800,155 @@ async function meanwhile(t: ContractTransport, answer: Value): Promise<() => Pro
   };
 }
 
+/**
+ * An answer's parts as of now, by entry (the rule in handlers.ts's ANSWERS): names and lists read
+ * when the answer is made, dated by its `as_of`. The rest of an answer is what the write did.
+ */
+const NOW: Readonly<Record<string, (answer: Value) => Value | undefined>> = {
+  "task.add": (a) => ({ as_of: a["as_of"], titles: refs(a["tasks"], "title") }),
+  "task.finish": (a) =>
+    refs(a["follow_ups"]).length === 0
+      ? undefined
+      : { as_of: a["as_of"], titles: refs(a["follow_ups"], "title") },
+  "group.manage": (a) => {
+    const group = (a["group"] ?? {}) as Value;
+    return {
+      as_of: a["as_of"],
+      name: group["name"],
+      area: group["area"],
+      list: [a["areas"], a["projects"], a["total_areas"], a["total_projects"], a["cursor"]],
+    };
+  },
+  "folder.manage": (a) => {
+    const owner = (a["owner"] ?? {}) as Value;
+    return { as_of: a["as_of"], name: owner["name"], area: owner["area"] };
+  },
+  "prefs.manage": (a) => ({ as_of: a["as_of"], prefs: unwritable(a["prefs"]) }),
+};
+
+/** Preference rows without who may change them, which is the caller's. */
+const unwritable = (rows: unknown): unknown =>
+  Array.isArray(rows)
+    ? (rows as Value[]).map((row) =>
+        Object.fromEntries(Object.entries(row).filter(([field]) => field !== "writable")),
+      )
+    : rows;
+
+/** A value without the fields `keys`. */
+const without = (value: Value, keys: readonly string[]): Value =>
+  Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
+
+/** What a write did, in its answer: the answer without its parts as of now and its retry's mark. */
+function did(entry: string, answer: Value): Value {
+  const rest = without(answer, ["replayed"]);
+  if (NOW[entry]?.(answer) === undefined) return rest;
+  const rows = (list: unknown) =>
+    Array.isArray(list) ? (list as Value[]).map((row) => without(row, ["title"])) : list;
+  const named = (holder: unknown) =>
+    typeof holder === "object" && holder !== null
+      ? without(holder as Value, ["name", "area"])
+      : holder;
+  const kept = without(rest, [
+    "as_of",
+    "areas",
+    "projects",
+    "total_areas",
+    "total_projects",
+    "cursor",
+    "prefs",
+  ]);
+  return {
+    ...kept,
+    ...("tasks" in kept ? { tasks: rows(kept["tasks"]) } : {}),
+    ...("follow_ups" in kept ? { follow_ups: rows(kept["follow_ups"]) } : {}),
+    ...("group" in kept ? { group: named(kept["group"]) } : {}),
+    ...("owner" in kept ? { owner: named(kept["owner"]) } : {}),
+  };
+}
+
+/**
+ * The parts of `answer` as of now, read again from the space through `t` with nothing written in
+ * between: what they must be at the answer's own `as_of`.
+ */
+async function asOfNow(t: ContractTransport, entry: string, answer: Value): Promise<Value> {
+  const asOf = (await t.aside("space.status", {}))["as_of"];
+  const titleOf = async (ref: unknown) =>
+    typeof ref === "string"
+      ? ((await t.aside("task.get", { task: ref }))["task"] as Value)["title"]
+      : undefined;
+  switch (entry) {
+    case "task.add":
+    case "task.finish": {
+      const rows = (answer[entry === "task.add" ? "tasks" : "follow_ups"] ?? []) as Value[];
+      return { as_of: asOf, titles: await Promise.all(rows.map((r) => titleOf(r["ref"]))) };
+    }
+    case "group.manage": {
+      const listed = await t.aside("group.manage", { action: "list" });
+      const group = (answer["group"] ?? {}) as Value;
+      const rows = [
+        ...((listed["areas"] ?? []) as Value[]),
+        ...((listed["areas"] ?? []) as Value[]).flatMap((a) => (a["projects"] ?? []) as Value[]),
+        ...((listed["projects"] ?? []) as Value[]),
+      ];
+      const row = rows.find((g) => g["id"] === group["id"]);
+      const area = ((listed["areas"] ?? []) as Value[]).find((a) =>
+        ((a["projects"] ?? []) as Value[]).some((p) => p["id"] === group["id"]),
+      );
+      return {
+        as_of: asOf,
+        name: row?.["name"],
+        area:
+          area === undefined
+            ? undefined
+            : {
+                id: area["id"],
+                name: area["name"],
+                ...(area["archived"] === true ? { archived: true } : {}),
+              },
+        list: [
+          listed["areas"],
+          listed["projects"],
+          listed["total_areas"],
+          listed["total_projects"],
+          listed["cursor"],
+        ],
+      };
+    }
+    case "folder.manage": {
+      const listed = await t.aside("group.manage", { action: "list" });
+      const owner = (answer["owner"] ?? {}) as Value;
+      const areas = (listed["areas"] ?? []) as Value[];
+      const area = areas.find((a) =>
+        ((a["projects"] ?? []) as Value[]).some((p) => p["id"] === owner["id"]),
+      );
+      const project = [
+        ...areas.flatMap((a) => (a["projects"] ?? []) as Value[]),
+        ...((listed["projects"] ?? []) as Value[]),
+      ].find((p) => p["id"] === owner["id"]);
+      return {
+        as_of: asOf,
+        name: owner["kind"] === "project" ? project?.["name"] : undefined,
+        // Only a project's creation, or the project that holds the folder, names its area.
+        area:
+          owner["area"] === undefined || area === undefined
+            ? undefined
+            : {
+                id: area["id"],
+                name: area["name"],
+                ...(area["archived"] === true ? { archived: true } : {}),
+              },
+      };
+    }
+    case "prefs.manage": {
+      const keys = refs(answer["prefs"], "key");
+      const got = await t.aside("prefs.manage", { action: "get", keys }, "person");
+      return { as_of: asOf, prefs: unwritable(got["prefs"]) };
+    }
+    default:
+      return {};
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // The grant gate on every face that carries an agent home's call (A3 3.7.8)
 
@@ -1029,14 +1178,40 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
                 meaning(entry.name, example.output as Value),
               );
             }
-            // The same write sent again, as after a lost answer, gets the answer it got (A3 3.4.1),
-            // whatever was written in between: here, a change to everything the answer names.
+            // The same write sent again, as after a lost answer, gets what the write did (A3 3.4.1),
+            // whatever was written in between: here, a change to everything the answer names. Its
+            // names and lists are the space's at its own as_of, read again before anything else is.
             if (receipted(entry.name, input)) {
               const value = result as Value;
               const takeBack = await meanwhile(transport, value);
-              const again = await transport.call(entry.name, input, actor);
+              const again = (await transport.call(entry.name, input, actor)) as Value;
+              const now =
+                NOW[entry.name]?.(again) === undefined
+                  ? undefined
+                  : await asOfNow(transport, entry.name, again);
               await takeBack();
-              expect.soft(again, `${key}: sent again`).toEqual({ ...value, replayed: true });
+              expect.soft(again["replayed"], `${key}: sent again`).toBe(true);
+              expect
+                .soft(did(entry.name, again), `${key}: what the write did, sent again`)
+                .toEqual(did(entry.name, value));
+              if (now !== undefined) {
+                expect.soft(NOW[entry.name]?.(again), `${key}: as of now, sent again`).toEqual(now);
+              }
+              // Its receipt, in its public shape (receipt.get is the page's and the command line's).
+              if (transport.carries?.("receipt.get") !== false) {
+                const receipt = await transport.call(
+                  "receipt.get",
+                  { request: input["request_id"] },
+                  actor,
+                );
+                expect.soft(receipt, `${key}: its receipt`).toMatchObject({ found: true });
+                expect
+                  .soft(
+                    findEntry("receipt.get")?.output.safeParse(receipt).success,
+                    `${key}: its receipt`,
+                  )
+                  .toBe(true);
+              }
             }
           }
         }

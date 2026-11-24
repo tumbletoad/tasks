@@ -2663,35 +2663,42 @@
     },
     {
       "id": "A3.answers.replay",
-      "title": "A retry with the same request ID gets the answer the first call got: a create of a group that exists, sent again after Undo removed the group, still changes nothing; a project made for a folder another project has names that project again; a folder change of a project or of a task names the folders that moved along again, a project's name as data",
+      "title": "A retry with the same request ID gets what the write did: a create of a group that exists, sent again after Undo removed the group, still changes nothing and names the group by its ID; a project made for a folder another project has names that project again; a folder change of a project or of a task names the folders that moved along again, a project's name as data",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A3.answers.replay-meanwhile",
-      "title": "A retry with the same request ID gets the first answer whatever was written in between: a project's creation after the project moved names the area it was made in, a folder change after its project was renamed names the project as it was, an import and a follow-up that found a task by key give the title they gave after the task was renamed, a preference set after another value was set says the value it set, and an undo after a script changed its task says what it said",
+      "title": "A retry repeats what the write did and names what it names as it is now, with the as_of of that read: a project's creation after the project moved says it was created and names its area now, a folder change after its project was renamed names the new name, an import and a follow-up that found a task by key find the same task and name its new title, a preference set after another value was set says the change it made and the value now, and an undo after a script changed its task says what it said",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A3.answers.what-the-writer-did",
-      "title": "An answer says what the writer did, not what the service expected: a project's folder move whose child was given a folder elsewhere just before the write names no folder that moved along, first and on its retry, and the child keeps the folder it was given",
+      "title": "An answer says what the writer did, not what the service expected: a project's folder move whose child was given a folder elsewhere just before the write names no folder that moved along, first and on its retry, and a project renamed between organize's decision and its write is named once, by its name now, in the group and in the list",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A3.answers.retry-first",
-      "title": "A request answered before is answered again before this build's rules read its input: an import an earlier build accepted with a mail header's date or February 30 is replayed and adds nothing, while a new request with that date is refused at its field, and a request whose answer was kept is answered from it also when its input breaks a rule of this build",
+      "title": "A request decided before is answered from its receipt before this build's rules read its input: an import an earlier build accepted with a mail header's date or February 30 is answered and adds nothing, an import with a field this build retired says the task it made and that the request could not be compared, a new request with either is refused, and another body under a used request ID is request_id_conflict",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
-      "id": "A3.answers.refusal-replay",
-      "title": "A refusal sent again names what the first refusal named: a refused batch of four drafts, whose first makes an area and a project and whose second has an effort the space does not have, names the second draft's effort both times and makes no group",
+      "id": "A3.answers.refusal-again",
+      "title": "A refused request wrote nothing and is decided again when sent again: a batch of four drafts, whose first makes an area and a project and whose second has an effort the space does not have, is refused at the second draft's effort both times and makes no group, and once the effort is on the scale the same request applies once",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.read-fails",
+      "title": "A read after the commit that fails leaves out names and lists and never what the write did: add_tasks, update_task, add_entry, remove_note, complete_task, reopen_task, delete_tasks, undo, redo, organize, folder.manage and a preference set each answer with the identities and outcomes the writer stored, and their retries add the names",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]

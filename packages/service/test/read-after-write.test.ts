@@ -91,8 +91,8 @@ describe("[A3.3.4.write.applied-answer] a write whose answer cannot be read afte
       // The undo applied once: a second plain undo is never needed to learn that.
       const undoId = rid();
       const undone = await unread(() => call("history.undo", { request_id: undoId }));
-      expect(HistoryUndoResult.parse(undone)).toMatchObject({ result: "undone" });
-      expect(undone).not.toHaveProperty("tasks");
+      // The tasks it changed come from the writer: what the undo did, read or not.
+      expect(HistoryUndoResult.parse(undone)).toMatchObject({ result: "undone", tasks: [task] });
       expect((await show(task))["summary"]).toBe("");
       expect((await show(task))["title"]).toBe("Fixture task for the answers");
 

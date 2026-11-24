@@ -592,7 +592,7 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
     expect(await asOf(user)).toBe(before);
   });
 
-  test("a retry of a folder set replays after the project was renamed in between", async () => {
+  test("a retry of a folder set after the project was renamed says what it did and names the project as it is now", async () => {
     const user = await session("cli-interactive");
     const made = FolderManageResult.parse(
       await call(user, "folder.manage", {
@@ -619,9 +619,14 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
       base: await asOf(user),
       request_id: rid(),
     });
-    // The retry is told what the first call was: the project by the name it had then.
+    // The retry is told what the write did, and names the project as it is now, as of now.
     const retry = FolderManageResult.parse(await call(user, "folder.manage", input));
-    expect(retry).toEqual({ ...first, replayed: true });
+    expect(retry).toEqual({
+      ...first,
+      owner: { ...first.owner, name: "Renamed" },
+      as_of: await asOf(user),
+      replayed: true,
+    });
   });
 
   test("an agent files a task into a project it names first, which is created with it", async () => {
