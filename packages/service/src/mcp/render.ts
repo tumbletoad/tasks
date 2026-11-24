@@ -237,6 +237,7 @@ type Source = {
   readonly who?: string | undefined;
   readonly url?: string | undefined;
   readonly ref?: string | undefined;
+  readonly at?: string | undefined;
   readonly captures_to?: readonly string[] | undefined;
   readonly captures_more?: number | undefined;
   readonly removed?: { readonly at: string; readonly by: string } | undefined;
@@ -321,6 +322,7 @@ const sourceLine = (source: Source): string =>
     source.key !== undefined && `key ${source.key}`,
     source.ref !== undefined && `ref ${source.ref}`,
     source.url,
+    source.at !== undefined && `at ${source.at}`,
     source.captures_to !== undefined && capturesTo(source.captures_to, source.captures_more),
     source.id,
   )}`;
@@ -753,9 +755,11 @@ function heldLines(rows: readonly { held?: Held }[], at: string): string[][] {
  * `add_tasks`' text (A3 3.4.5): the counts and every draft's line, never cut, then the warnings,
  * then which task holds each key a draft's source was linked without. A cut takes from the end, so
  * the held lines go first: each draft's own line already says how many of its sources were held,
- * and the warnings (one line for every group the call made) say what nothing else does.
+ * and the warnings (one line for every group the call made) say what nothing else does. A cut says
+ * the tasks were added and where to read on, never to send them again: a draft without a source
+ * key sent again is a task of its own.
  */
-function addRendered(result: OutputOf<"task.add">): Rendered {
+function addRendered(result: OutputOf<"task.add">, getTask: string): Rendered {
   const created = result.tasks.filter((t) => t.result !== "exists").length;
   // An existing task's line shows only its reference: with no task written, the answer offers no
   // base for changing one.
@@ -770,7 +774,7 @@ function addRendered(result: OutputOf<"task.add">): Rendered {
       { units: result.warnings.map((w) => [`warning: ${w}`]) },
       { units: heldLines(result.tasks, "tasks") },
     ],
-    more: "Send fewer tasks per call to see every line.",
+    more: `The tasks above are added or found as their lines say: send none of them again. Read one with ${getTask} for its sources and folder.`,
   };
 }
 
@@ -782,32 +786,51 @@ type Groups = OutputOf<"group.manage">;
 /** The most characters of a folder a list shows. */
 const LIST_FOLDER = 240;
 
+/** What a folder change did to the folders inside the old one (organize, update_task). */
+type Inside = Pick<Groups, "moved" | "followed" | "stayed" | "stayed_because" | "kept">;
+
+/**
+ * The counts and the reason are the product's words and always shown; the folders inside, named
+ * by a project's name or a task's reference, are data.
+ */
+function insideOf(result: Inside): { counts: (string | undefined)[]; lines: string[][] } {
+  const line =
+    (what: string) =>
+    (f: NonNullable<Inside["kept"]>[number]): string[] => [
+      `${what}: ${f.kind === "task" ? (f.ref ?? "") : (f.name ?? "")} ${f.folder}`,
+    ];
+  return {
+    counts: [
+      result.moved === undefined
+        ? undefined
+        : `Moved along with the old folder: ${String(result.moved)}`,
+      result.stayed === undefined || result.stayed_because === undefined
+        ? undefined
+        : `Stayed where they are, because ${stayedWhy(result.stayed_because, result.stayed)}: ${String(result.stayed)}`,
+    ],
+    lines: [
+      ...(result.followed ?? []).map(line("moved")),
+      ...(result.kept ?? []).map(line("stayed")),
+    ],
+  };
+}
+
 function groupsRendered(result: Groups, organize: string): Rendered {
   // A group's facts after its count: archived, and the ID that names it where its name does not.
   const facts = (g: { archived?: true | undefined; ref?: string | undefined }) =>
     `${g.archived === true ? ", archived" : ""}${g.ref === undefined ? "" : `, id ${g.ref}`}`;
   // A folder is shortened, so the line of any group fits a page and no group is left out of the text.
-  const project = (p: Groups["projects"][number]) =>
+  const project = (p: NonNullable<Groups["projects"]>[number]) =>
     `${p.name}${p.repo === undefined ? "" : ` [${p.repo}]`} (${String(p.active)}${facts(p)}${p.folder === undefined ? "" : `, ${clip(p.folder, LIST_FOLDER)}`})`;
-  // The counts and the reason are the product's words and always shown; the folders are data.
-  const insideCounts = [
-    result.moved === undefined
-      ? undefined
-      : `Moved along with the old folder: ${String(result.moved)}`,
-    result.stayed === undefined || result.stayed_because === undefined
-      ? undefined
-      : `Stayed where they are, because ${stayedWhy(result.stayed_because, result.stayed)}: ${String(result.stayed)}`,
-  ];
-  const insideFolder =
-    (what: string) =>
-    (f: NonNullable<Groups["kept"]>[number]): string[] => [
-      `${what}: ${f.kind === "task" ? (f.ref ?? "") : (f.name ?? "")} ${f.folder}`,
-    ];
-  const insideLines = [
-    ...(result.followed ?? []).map(insideFolder("moved")),
-    ...(result.kept ?? []).map(insideFolder("stayed")),
-  ];
-  const head = `${String(result.total_areas)} area${result.total_areas === 1 ? "" : "s"} · ${String(result.total_projects)} project${result.total_projects === 1 ? "" : "s"} · as_of ${result.as_of}${replayed(result)}`;
+  const { counts: insideCounts, lines: insideLines } = insideOf(result);
+  const areas = result.areas ?? [];
+  const projects = result.projects ?? [];
+  // A write whose list could not be read has none: it says so rather than count nothing.
+  const counted =
+    result.total_areas === undefined || result.total_projects === undefined
+      ? "list not read"
+      : `${String(result.total_areas)} area${result.total_areas === 1 ? "" : "s"} · ${String(result.total_projects)} project${result.total_projects === 1 ? "" : "s"}`;
+  const head = `${counted} · as_of ${result.as_of}${replayed(result)}`;
   const done =
     result.result === undefined
       ? undefined
@@ -824,12 +847,12 @@ function groupsRendered(result: Groups, organize: string): Rendered {
         data: true,
         units: [
           ...insideLines,
-          ...result.areas.flatMap((area) => [
+          ...areas.flatMap((area) => [
             [`${area.name} (${String(area.active)}${facts(area)})`],
             ...area.projects.map((p) => [`  ${project(p)}`]),
           ]),
-          ...(result.projects.length === 0 ? [] : [["No area:"]]),
-          ...result.projects.map((p) => [`  ${project(p)}`]),
+          ...(projects.length === 0 ? [] : [["No area:"]]),
+          ...projects.map((p) => [`  ${project(p)}`]),
         ],
       },
       ...(result.cursor === undefined
@@ -852,7 +875,8 @@ type Prefs = OutputOf<"prefs.manage">;
 const prefText = (value: unknown): string => JSON.stringify(value);
 
 function prefsRendered(result: Prefs): Rendered {
-  const row = (p: Prefs["prefs"][number]): string[] => {
+  const prefs = result.prefs ?? [];
+  const row = (p: NonNullable<Prefs["prefs"]>[number]): string[] => {
     const who =
       p.fixed === true
         ? "fixed in this build"
@@ -879,10 +903,12 @@ function prefsRendered(result: Prefs): Rendered {
         `${join(
           result.result,
           result.proposal !== undefined && `proposal ${result.proposal}`,
-          `${String(result.prefs.length)} key${result.prefs.length === 1 ? "" : "s"}`,
+          result.prefs === undefined
+            ? "keys not read"
+            : `${String(prefs.length)} key${prefs.length === 1 ? "" : "s"}`,
         )}${replayed(result)}`,
       ),
-      { data: true, units: [...changed, ...result.prefs.map(row)] },
+      { data: true, units: [...changed, ...prefs.map(row)] },
     ],
     more: "Ask for fewer keys.",
   };
@@ -922,12 +948,15 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
     // An append is no base: an answer that only appended offers none. A replace is a set, and is.
     const contextOnly =
       result.context === "appended" && result.fields.every((f) => f === "context");
+    const inside = insideOf(result);
     return {
       parts: [
         fixed(
           `${head}${contextOnly ? "" : ` · as_of ${result.as_of}`}${replayed(result)}`,
+          ...inside.counts,
           ...result.warnings.map((w) => `warning: ${w}`),
         ),
+        ...(inside.lines.length === 0 ? [] : [{ data: true, units: inside.lines }]),
       ],
       more: "",
     };
@@ -973,7 +1002,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
     };
   },
   "task.search": (result: Search, { tool }) => searchRendered(result, tool),
-  "task.add": (result: OutputOf<"task.add">) => addRendered(result),
+  "task.add": (result: OutputOf<"task.add">, { getTask }) => addRendered(result, getTask),
   "task.reopen": (result: OutputOf<"task.reopen">) => {
     const head =
       result.result === "reopened"

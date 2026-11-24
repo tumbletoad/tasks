@@ -4,7 +4,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { AppError, PrefsManageResult, TaskAddResult, type ErrorBody } from "@ttasks/contracts";
+import { AppError, PrefsReadResult, TaskAddResult, type ErrorBody } from "@ttasks/contracts";
 import type { ReceiptLookup, SpaceWriterHandle, WriteRequest } from "@ttasks/storage";
 import { MACHINE, writeFixture, type Fixture } from "@ttasks/storage/write-helpers";
 import type { Caller } from "../src/ops/caller.ts";
@@ -71,7 +71,7 @@ async function refusal(promise: Promise<unknown>): Promise<ErrorBody> {
 /** `ttasks prefs set <key> <value>` as the command line sends it: the value as one text. */
 const set = (caller: Caller, key: string, value: unknown) =>
   asOf().then(async (base) =>
-    PrefsManageResult.parse(
+    PrefsReadResult.parse(
       await call(caller, "prefs.manage", {
         action: "set",
         set: [{ key, value }],
@@ -82,8 +82,8 @@ const set = (caller: Caller, key: string, value: unknown) =>
   );
 
 const get = async (key: string): Promise<unknown> =>
-  PrefsManageResult.parse(await call(person, "prefs.manage", { action: "get", keys: [key] }))
-    .prefs[0]?.value;
+  PrefsReadResult.parse(await call(person, "prefs.manage", { action: "get", keys: [key] })).prefs[0]
+    ?.value;
 
 const add = async (tasks: Json[]) =>
   TaskAddResult.parse(await call(script, "task.add", { tasks, request_id: rid() })).tasks.map(
@@ -144,7 +144,7 @@ describe("[A3.3.4.prefs.set] the person changes a space's settings, and everythi
     expect(await asOf()).toBe(before);
     expect(await get("tasks.statuses")).toEqual(["open", "waiting", "review", "backlog"]);
     for (const who of [person, script]) {
-      const read = PrefsManageResult.parse(
+      const read = PrefsReadResult.parse(
         await call(who, "prefs.manage", { action: "describe", keys: ["tasks.statuses"] }),
       );
       expect(read.prefs[0]).toMatchObject({ writable: false, fixed: true });

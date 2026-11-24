@@ -128,7 +128,9 @@ export function newerWorkJson(newer: {
 
 export const ReceiptGetResult = z.union([
   z.strictObject({
-    found: z.literal(false).describe("No receipt for that request ID in this writer scope"),
+    found: z
+      .literal(false)
+      .describe("No receipt here: nothing was written under that ID; it can be sent again"),
   }),
   z.strictObject({
     found: z.literal(true).describe("The write was decided: its stored result follows"),
@@ -225,6 +227,30 @@ interface StoredConflict {
   at: number;
 }
 
+/**
+ * An operation's stored result in its public shape: the fields receipt.get names, and no more. A
+ * writer's result holds more for the answer built from it (a folder move's folders, the fields a
+ * patch changed), which is not what a lookup by request ID shows.
+ */
+function receiptOp(stored: object): z.input<typeof ReceiptOpResult> {
+  const r = stored as Record<string, unknown>;
+  const has = (key: string) => r[key] !== undefined;
+  return {
+    i: r["i"],
+    status: r["status"],
+    id: r["id"],
+    ...(has("task") ? { task: r["task"] } : {}),
+    ...(has("ref") ? { ref: r["ref"] } : {}),
+    ...(has("entry") ? { entry: r["entry"] } : {}),
+    version: r["version"],
+    ...(has("differs") ? { differs: r["differs"] } : {}),
+    // The lifecycle a draft matched in; another operation's lifecycle is the answer's to say.
+    ...(has("matched_by") ? { matched_by: r["matched_by"] } : {}),
+    ...(has("matched_by") && has("lifecycle") ? { lifecycle: r["lifecycle"] } : {}),
+    ...(has("ambiguous") ? { ambiguous: r["ambiguous"] } : {}),
+  } as z.input<typeof ReceiptOpResult>;
+}
+
 function receiptConflict(c: StoredConflict): z.input<typeof ReceiptConflict> {
   return {
     op: c.op,
@@ -262,7 +288,7 @@ export function receiptResult(
     ...(result.passed === undefined ? {} : { passed_over: [...result.passed] }),
     ...(result.newer === undefined ? {} : newerWorkJson(result.newer)),
     // A request or an import holds more operations than a reply shows: the first 50.
-    results: result.results.slice(0, 50) as z.input<typeof ReceiptOpResult>[],
+    results: result.results.slice(0, 50).map(receiptOp),
     ...(result.results.length > 50 ? { results_more: result.results.length - 50 } : {}),
     // Each conflict by the fields this build names: a receipt another build stored may hold more.
     ...(result.conflicts.length === 0
@@ -318,32 +344,9 @@ export const receiptGet = defineEntry({
       output: { found: false },
     },
     {
-      title: "A stale summary update: its conflict, without the value it saw",
+      title: "A stale summary update: refused, it wrote nothing and keeps no receipt",
       input: { request: requestId(13) },
-      output: {
-        found: true,
-        request: requestId(13),
-        status: "conflict",
-        decided_at: "2026-11-12T10:06:00.000Z",
-        as_of: AS_OF,
-        incarnation: "ai_5n0w8k3q7d1m9x4r2t6v0b8c3h",
-        results: [],
-        conflicts: [
-          {
-            op: 0,
-            entity: "tasks",
-            id: M14.id,
-            task: M14.id,
-            ref: M14.ref,
-            field: "summary",
-            version: 1045,
-            by: { actor: "ac_3k7m1q5t9w3z7c1f5h9k3n7r1v", kind: "agent", label: "Codex · work" },
-            at: "2026-11-12T09:58:00.000Z",
-          },
-        ],
-        error: { cause: "VERSION_CONFLICT", message: "A field changed after the base: read again" },
-        warnings: [],
-      },
+      output: { found: false },
     },
   ],
 });

@@ -6,7 +6,7 @@ import { defineEntry, under } from "../define.ts";
 import { safeText } from "../safe-text.ts";
 import {
   AGENT_LIMITS,
-  AsOf,
+  WriteAsOf,
   Base,
   Cwd,
   DRAFT_AGENT_MAX,
@@ -67,7 +67,7 @@ export const TaskFinishResult = z.strictObject({
       z.strictObject({
         result: z.enum(["created", "exists", "proposed"]).describe("What happened to the draft"),
         ref: TaskRef.optional(),
-        title: z.string().describe("Title"),
+        title: z.string().describe("Its title now; absent when it could not be read").optional(),
         lifecycle: Lifecycle.describe("The matched task's lifecycle").optional(),
         ambiguous: SeveralMatch.optional(),
         log_added: LogAdded,
@@ -78,7 +78,7 @@ export const TaskFinishResult = z.strictObject({
     .describe("One row per follow-up draft"),
   warnings: Warnings.optional(),
   proposal: ProposalId.optional(),
-  as_of: AsOf,
+  as_of: WriteAsOf,
   replayed: Replayed.optional(),
 });
 
@@ -132,7 +132,15 @@ export const taskFinish = defineEntry({
     },
   },
   budget: { typical: 100, max: 1500 },
-  errors: ["invalid_input", "not_found", "unbound", "conflict", "forbidden", "request_id_conflict"],
+  errors: [
+    "invalid_input",
+    "not_found",
+    "unbound",
+    "conflict",
+    "forbidden",
+    "request_id_conflict",
+    "applied_earlier",
+  ],
   examples: [
     {
       title: "Complete M-14 with a learning and a follow-up",

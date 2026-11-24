@@ -2670,6 +2670,90 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.answers.replay",
+      "title": "A retry with the same request ID gets what the write did: a create of a group that exists, sent again after Undo removed the group, still changes nothing and names the group by its ID; a project made for a folder another project has names that project again; a folder change of a project or of a task names the folders that moved along again, a project's name as data",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.replay-meanwhile",
+      "title": "A retry repeats what the write did, dated by the write itself, and names what it names as it is now: a project's creation after the project moved says it was created and names its area now, a folder change after its project was renamed names the new name, an import and a follow-up that found a task by key find the same task and name its new title, a preference set after another value was set says the change it made and the value now, and an undo after a script changed its task says what it said",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.what-the-writer-did",
+      "title": "An answer says what the writer did, not what the service expected: a project's folder move whose child was given a folder elsewhere just before the write names no folder that moved along, first and on its retry, and a project renamed between organize's decision and its write is named once, by its name now, in the group and in the list",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.earlier-version",
+      "title": "A request another version of TTasks applied is answered as applied before, with what its receipt holds and nothing more: each of the twelve writes made by an earlier version, sent again to its own tool or another with a body that parses or not while every read but the receipt fails, gets one applied_earlier answer naming its rows as receipt.get shows them and writes nothing; an update with a retired field names its task, one that cleared a retired place says nothing of fields, an area creation sent to folder.manage names the area and clears nothing, a receipt of a later version is answered the same, in the agent's text too, and a receipt whose result cannot be read still says applied before with its request ID",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.retry-first",
+      "title": "A request ID this version used holds it for that tool and that body: under it, another tool is request_id_conflict whatever its body, and another body to the same tool is request_id_conflict",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.as-of",
+      "title": "A write's answer is dated by its own commit, first and on every retry: each of the twelve writes, held just after its commit while another writer writes, and retried after one more write, answers both times with the position its commit left, and a retried create is no base for overwriting the summary a person gave the task since: the update based on it is a conflict",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.absent",
+      "title": "A write's answer renders without any field it may leave out: every write's example answer with those fields left out still matches its contract and renders in the agent's text and the command line's without a gap; a request ID with no receipt may be sent again, and one another version applied is printed in one line that says not to send it again, exit 4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.refusal-again",
+      "title": "A refused request wrote nothing and is decided again when sent again: a batch of four drafts, whose first makes an area and a project and whose second has an effort the space does not have, is refused at the second draft's effort both times and makes no group, and once the effort is on the scale the same request applies once",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.read-fails",
+      "title": "A read after the commit that fails leaves out names and lists and never what the write did: add_tasks, update_task, add_entry, remove_note, complete_task, reopen_task, delete_tasks, undo, redo, organize, folder.manage and a preference set each answer with the identities and outcomes the writer stored, and their retries add the names",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.groups",
+      "title": "An import makes an area or a project only for the drafts it adds: a draft that finds its task by key makes none of the groups it names and its answer announces none, and a group named by a matched draft and an added one is made once, for the added one",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.history",
+      "title": "A task's history holds that task's own changes: a task made in one call with another shows none of the other's entries, and paging reaches its first change, a change made between two pages moving no page",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.source-date",
+      "title": "A source's date is a real date: February 30 is refused at its field and nothing is added, and an agent reads back the date its source was stored with",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.bulk.one-call",
       "title": "Twenty-five task drafts at every agent limit (new groups, ten keyed sources, a log entry and a folder each, text of three-byte characters) fit in one add_tasks call, and ten such follow-ups in one complete_task",
       "owner": "M2",

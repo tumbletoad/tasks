@@ -5,7 +5,7 @@
 // revert and the page's toast (M5.08) build on it.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { AsOf, idPattern, patterns, Replayed, RequestId, TaskRef } from "../schemas.ts";
+import { WriteAsOf, idPattern, patterns, Replayed, RequestId, TaskRef } from "../schemas.ts";
 import { AS_OF_NEXT, requestId } from "./fixture.ts";
 
 /** A commit (`op_` ID): what the feed's events and a write's receipt name. */
@@ -53,21 +53,10 @@ export const NewerWorkFields = {
 /** What an undo and a redo return besides their outcome. */
 export const HistoryResultFields = {
   commit: CommitId.describe("The change undone or redone"),
-  // Both are left out when they could not be read after the change applied: the change still
-  // happened, and the answer says so.
-  tasks: z
-    .array(TaskRef)
-    .max(50)
-    .describe("The tasks it changed, the first 50; absent when they could not be read")
-    .optional(),
+  tasks: z.array(TaskRef).max(50).describe("The tasks it changed, the first 50"),
   // A space never holds more tasks than its references number.
-  task_count: z
-    .int()
-    .min(0)
-    .max(9_999_999_999)
-    .describe("How many tasks it changed; absent when they could not be read")
-    .optional(),
-  as_of: AsOf,
+  task_count: z.int().min(0).max(9_999_999_999).describe("How many tasks it changed"),
+  as_of: WriteAsOf,
   replayed: Replayed.optional(),
 };
 
@@ -125,7 +114,14 @@ export const historyUndo = defineEntry({
   output: HistoryUndoResult,
   // The CLI sets check_script itself, and leaves it out for --yes.
   faces: { ui: true, cli: { verb: "undo", exclude: ["check_script"] } },
-  errors: ["invalid_input", "not_found", "conflict", "forbidden", "request_id_conflict"],
+  errors: [
+    "invalid_input",
+    "not_found",
+    "conflict",
+    "forbidden",
+    "request_id_conflict",
+    "applied_earlier",
+  ],
   examples: [
     {
       title: "Undo the check-off of M-15",

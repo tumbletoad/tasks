@@ -266,7 +266,7 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
   );
 
   test(
-    "a refusal over a hundred notes and a question names the task and its author once, and no count; the answer, the receipt and a partial undo say the same",
+    "a refusal over a hundred notes and a question names the task and its author once, and no count; the answer, the same request sent again and a partial undo say the same",
     async () => {
       const task = await add("Fixture task with many notes");
       await call("task.delete", { tasks: [task], base: await asOf(), request_id: rid() });
@@ -287,7 +287,9 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
       expect(refused.data).not.toHaveProperty("newer_changes");
       // Each row once, for a program that looks closer.
       expect((refused.data?.["conflicts"] as Json[]).length).toBe(101);
-      expect(await call("receipt.get", { request: redo })).toMatchObject(newer);
+      // A refusal wrote nothing and keeps no receipt: sent again, it is decided again, alike.
+      expect(await call("receipt.get", { request: redo })).toEqual({ found: false });
+      expect((await refusal("history.redo", { request_id: redo })).data).toMatchObject(newer);
       // The removal stays undone: the next undo reaches the task's creation, which the notes keep,
       // and what it leaves says the same.
       const undone = await call("history.undo", { partial: true, request_id: rid() });
@@ -328,7 +330,7 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
   );
 
   test(
-    "an agent's log entry keeps the user's new task; receipt.get reads both outcomes",
+    "an agent's log entry keeps the user's new task; receipt.get reads the change, and a refusal keeps none",
     async () => {
       const task = await add("Fixture task an agent logs on");
       await call(
@@ -344,12 +346,7 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
           conflicts: [{ task, entity: "log_entries", field: "deleted", value: null, by: "script" }],
         },
       });
-      expect(await call("receipt.get", { request: refused })).toMatchObject({
-        found: true,
-        status: "conflict",
-        conflicts: [{ entity: "log_entries", ref: task, field: "deleted" }],
-        error: { cause: "UNDO_CONFLICT" },
-      });
+      expect(await call("receipt.get", { request: refused })).toEqual({ found: false });
       // Keep it: a partial undo changes nothing here, and the change leaves the stack.
       const kept = rid();
       const partial = await call("history.undo", { partial: true, request_id: kept });
@@ -376,7 +373,7 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
 
 describe("[A1.5.history.runs] a run keeps its task's create, through the request path", () => {
   test(
-    "the conflict and a partial undo's unresolved name the run, and receipt.get reads it",
+    "the conflict, the same request sent again and a partial undo's unresolved name the run",
     async () => {
       const task = await add("Fixture task the user runs");
       const id = String((await show(task))["id"]);
@@ -431,10 +428,10 @@ describe("[A1.5.history.runs] a run keeps its task's create, through the request
           ...newer,
         },
       });
-      expect(await call("receipt.get", { request: refused })).toMatchObject({
-        found: true,
-        status: "conflict",
-        conflicts: [{ entity: "runs", id: run, ref: task, field: "state" }],
+      // A refusal wrote nothing and keeps no receipt: sent again, it is decided again, alike.
+      expect(await call("receipt.get", { request: refused })).toEqual({ found: false });
+      expect((await refusal("history.undo", { request_id: refused })).data).toMatchObject({
+        conflicts: [{ entity: "runs", id: run, task, field: "state" }],
         ...newer,
       });
       const partial = await call("history.undo", { partial: true, request_id: rid() });
