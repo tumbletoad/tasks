@@ -120,6 +120,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - An older version of TTasks never writes a newer data format.
 - A version of TTasks from this one on offers a space's own effort sizes, also when a newer
   version wrote the list; only a list it cannot read at all falls back to its default levels.
+  Every space holds its own list: a new space, or one without levels, has the five default
+  levels stored when it opens, so each such version offers the same levels for it.
 - Agents read your effort levels, with their times and descriptions, and never change them.
 
 ## Your spaces on this machine

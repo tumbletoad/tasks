@@ -4,8 +4,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { EFFORT_NAME_MAX, EFFORT_SCALE_MAX, EXIT_CODES } from "@ttasks/contracts";
+import { EFFORT_LEVELS, EFFORT_NAME_MAX, EFFORT_SCALE_MAX, EXIT_CODES } from "@ttasks/contracts";
 import { contractWorld, type ContractWorld } from "@ttasks/service/test/contract";
+import { openSpaceConnection } from "@ttasks/storage";
+import { checkedDriver } from "@ttasks/testkit";
 import { runMain, type Ran } from "./cli-harness.ts";
 
 let w: ContractWorld & { root: string };
@@ -37,6 +39,32 @@ describe("[A3.3.4.prefs.tool] ttasks prefs", () => {
     );
     const script = await tasks(["prefs", "get", "--keys", "autonomy.level", "--json"], false);
     expect(script.code).toBe(EXIT_CODES.usage);
+  });
+});
+
+describe("[A1.3.16.prefs.effort-stored] a new space holds its levels", () => {
+  test("a space made through the service has the five default levels stored, by its own act", async () => {
+    const conn = openSpaceConnection(
+      await checkedDriver(),
+      join(w.root, "s", "mira", "space.db"),
+      "reader",
+    );
+    try {
+      const row = conn
+        .prepare(
+          "SELECT p.value AS value, k.actor_kind AS actor, k.undo_status AS undo " +
+            "FROM preferences p JOIN commits k ON k.seq = p.version " +
+            "WHERE p.key = 'tasks.effort_scale'",
+        )
+        .get();
+      expect(row).toMatchObject({ actor: "system", undo: null });
+      expect(JSON.parse(String(row?.["value"]))).toEqual(EFFORT_LEVELS);
+    } finally {
+      conn.close();
+    }
+    expect(firstLine(await tasks(["prefs", "get", "tasks.effort_scale"]))).toBe(
+      'tasks.effort_scale: ["XS","S","M","L","XL"] (default)',
+    );
   });
 });
 

@@ -126,8 +126,9 @@ describe("[A1.3.16.prefs.effort-any] every reader takes the names of any stored 
       base: await w.base(),
       request_id: w.rid(),
     });
+    // A reset stores the five, so it reads as set.
     const reset = await readers(w, names);
-    expect(reset.scale).toEqual(missing.scale);
+    expect(reset.scale).toEqual({ ...missing.scale, state: "set" });
     expect(reset.wrong).toContain(hintFor(names));
   });
 
@@ -149,6 +150,100 @@ describe("[A1.3.16.prefs.effort-any] every reader takes the names of any stored 
         JSON.stringify(junk),
       ).toEqual(EFFORT_LEVELS);
     }
+  });
+});
+
+describe("[A1.3.16.prefs.effort-stored] a space holds its levels, so every build reads the same", () => {
+  /** The stored row of the levels, and the commit that last wrote one: by whom, from where. */
+  const stored = (w: EffortWorld) =>
+    w.fx.reader
+      .prepare(
+        "SELECT p.value AS value, p.schema_ver AS ver, k.actor_kind AS actor, k.origin AS origin, " +
+          "k.undo_status AS undo FROM preferences p LEFT JOIN commits k ON k.seq = p.version " +
+          "WHERE p.key = 'tasks.effort_scale'",
+      )
+      .get();
+  const prefs = async (w: EffortWorld) =>
+    (
+      (await w.call("prefs.manage", { action: "get", keys: ["tasks.effort_scale"] }))[
+        "prefs"
+      ] as Json[]
+    )[0];
+
+  test("a space without levels stores the five as its own act, once; Undo leaves them; a reset stores them again", async () => {
+    const w = await spaces.next();
+    // The person's own change, then the space opens and stores its levels.
+    await w.call("task.add", { tasks: [{ title: "Fixture undone task" }], request_id: w.rid() });
+    expect(w.fx.writer.storeDefaults()).toBe(true);
+    expect(w.fx.writer.storeDefaults()).toBe(false);
+    const row = stored(w);
+    expect(row).toMatchObject({ ver: 2, actor: "system", origin: "system", undo: null });
+    expect(JSON.parse(String(row?.["value"]))).toEqual(EFFORT_LEVELS);
+    expect(await prefs(w)).toMatchObject({ value: EFFORT_LEVELS, is_default: true });
+    // Ctrl+Z takes back the person's change and leaves the levels.
+    await w.call("history.undo", { request_id: w.rid() });
+    expect(
+      w.fx.reader
+        .prepare("SELECT count(*) AS n FROM tasks WHERE deleted_at IS NULL AND title = $t")
+        .get({ t: "Fixture undone task" })?.["n"],
+    ).toBe(0);
+    expect(JSON.parse(String(stored(w)?.["value"]))).toEqual(EFFORT_LEVELS);
+    // A reset stores the five, by the person.
+    await w.setScale(["XS", "S"]);
+    await w.call("prefs.manage", {
+      action: "set",
+      set: [{ key: "tasks.effort_scale", reset: true }],
+      base: await w.base(),
+      request_id: w.rid(),
+    });
+    expect(stored(w)).toMatchObject({ ver: 2, actor: "human" });
+    expect(JSON.parse(String(stored(w)?.["value"]))).toEqual(EFFORT_LEVELS);
+    // A reset an earlier build left as null gets the five at the next open.
+    await w.store("null", 1);
+    expect(w.fx.writer.storeDefaults()).toBe(true);
+    expect(stored(w)).toMatchObject({ ver: 2, actor: "system" });
+    expect(JSON.parse(String(stored(w)?.["value"]))).toEqual(EFFORT_LEVELS);
+  });
+
+  test("a list of names stays as it is at an open; its untouched export saved back changes nothing", async () => {
+    const w = await spaces.next();
+    const names = EFFORT_LEVELS.map((known) => known.key);
+    const v1 = JSON.stringify(names.map((key) => ({ key })));
+    await w.store(v1, 1);
+    expect(w.fx.writer.storeDefaults()).toBe(false);
+    expect(stored(w)).toMatchObject({ value: v1, ver: 1 });
+    const read = await prefs(w);
+    expect(read).toMatchObject({ value: EFFORT_LEVELS, is_default: true });
+    const saved = await w.call("prefs.manage", {
+      action: "set",
+      set: [{ key: "tasks.effort_scale", value: read?.["value"] }],
+      base: await w.base(),
+      request_id: w.rid(),
+    });
+    expect(saved).toMatchObject({ result: "no_change", changed: [] });
+    expect(await prefs(w)).toMatchObject({ value: EFFORT_LEVELS, is_default: true });
+  });
+
+  test("the system stores only the default, only where nothing is stored", async () => {
+    const w = await spaces.next();
+    await w.setScale(["XS", "S"]);
+    const system = String(
+      w.fx.reader.prepare("SELECT id FROM actors WHERE kind = 'system'").get()?.["id"],
+    );
+    const result = w.fx.writer.submit({
+      space_id: w.fx.spaceId,
+      request_id: "fixture-system-levels-01",
+      actor: {
+        scope_id: "defaults",
+        principal_id: system,
+        actor_kind: "system",
+        machine_id: w.fx.human.machine_id,
+        origin: "system",
+      },
+      base: await w.base(),
+      ops: [{ kind: "pref.set", key: "tasks.effort_scale", value: EFFORT_LEVELS }],
+    });
+    expect(result.error).toMatchObject({ code: "PREFERENCE_FORBIDDEN" });
   });
 });
 

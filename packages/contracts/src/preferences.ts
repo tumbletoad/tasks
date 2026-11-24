@@ -72,6 +72,11 @@ export interface PreferenceSpec {
   readonly salvage?: (value: unknown) => PrefValue | undefined;
   /** A value an older version of the shape wrote, as this version reads it. */
   readonly upgrade?: (value: PrefValue, schemaVer: number) => PrefValue;
+  /**
+   * A space always holds a value of its own: the service stores the default in a space that has
+   * none, and a reset stores the default again. So a build whose default differs reads the same.
+   */
+  readonly stored?: true;
   /** One line for `describe` (A3 3.4.11). */
   readonly summary: string;
   /** A feature flag (A1 3.16). A graduated flag stays readable and is ignored. */
@@ -237,6 +242,7 @@ export const PREFERENCES: readonly PreferenceSpec[] = [
       unique: "key",
     },
     default: EFFORT_LEVELS,
+    stored: true,
     schemaVer: 2,
     summary: "The effort levels a task may take, smallest first, each with a time and a line",
     salvage: effortLevels,

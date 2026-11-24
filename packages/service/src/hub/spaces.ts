@@ -1399,6 +1399,9 @@ export class SpaceManager {
       return;
     }
     try {
+      // A new space, or one an earlier build left without them, holds the default effort levels
+      // from now on, so every build that opens it reads the same levels.
+      await writer.storeDefaults();
       await this.#options.settle?.({ id: writer.spaceId, writer, reader: space.reader });
     } catch (error) {
       await this.#refused(space, error, undefined);
