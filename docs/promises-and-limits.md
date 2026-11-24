@@ -385,7 +385,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   asked for: a setup that did not finish is finished later only by taking the access away. Turning
   them off takes the access away first, also when you changed the entry or its file cannot be read
   or written, and says what stays in the file; when TTasks's service does not confirm it, nothing
-  changes and you are told the tools are still on.
+  else changes and you are told that it could not be confirmed, with what to do.
+- An agent app's tools show as on only while they can start: its entry is there, the program it
+  runs is there and its access is on. Otherwise the app says which is missing, and turning it on
+  puts that back where it can be done from there. While its access may still be on, turning it off
+  is offered, whatever else is missing.
 - An update is checked before it runs. A failed update returns to the version before it.
 - An update does not end a background run unasked. It waits up to 15 minutes for running runs,
   then asks whether to stop them or give the update up; without anyone to ask, it gives up.

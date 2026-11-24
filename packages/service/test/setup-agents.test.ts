@@ -38,6 +38,7 @@ import {
   type SetupInput,
 } from "../src/setup/index.ts";
 import { keptRows } from "./setup-rows.ts";
+import { installedTasks } from "./harness.ts";
 
 const SLOW = 180_000;
 const SPACE = "sp_3z8sm956jp8dajmtsar5kx026c";
@@ -95,7 +96,7 @@ function world(label: string): World {
     root,
     home,
     state: join(root, "state"),
-    tasks: join(root, "install", "bin", windows ? "ttasks.exe" : "ttasks"),
+    tasks: installedTasks(root),
   };
 }
 

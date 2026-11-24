@@ -53,6 +53,8 @@ import {
   instanceHome,
   isTable,
   MANUAL_INSTANCE,
+  nodeDetectHost,
+  onPath,
   proposedAccount,
   proposedInstanceId,
   targetDef,
@@ -65,6 +67,7 @@ import { keyText, valueText, type EditValue } from "../config/edit.ts";
 import { scanToml, ScanError } from "../config/scan.ts";
 import { BOM, MAX_CONFIG_BYTES, parseToml, readConfigFile } from "../config/toml.ts";
 import { stageFile, type StagedFile } from "../hub/files.ts";
+import { toolsAnswer, type HomeState, type Refusal, type ToolsAnswer } from "./answer.ts";
 import { withAppLock } from "./app-lock.ts";
 import {
   addOwnEntry,
@@ -184,42 +187,6 @@ export interface AgentHome {
   readonly managed: boolean;
 }
 
-/** Why setup leaves a home alone: its file is in a state setup does not understand. */
-export type Refusal =
-  | "unreadable"
-  | "too_large"
-  | "encoding"
-  | "invalid_file"
-  | "duplicate_key"
-  | "managed"
-  | "wrong_type"
-  | "unsupported_layout"
-  | "foreign_entry"
-  /** Linux and macOS: the file or its folder belongs to another user, or anyone can change it. */
-  | "unsafe"
-  /** Claude Desktop's file is not there yet: the app makes it in its developer settings. */
-  | "not_set_up"
-  /** Several Claude Desktop configuration files: `--home` names the one the app uses. */
-  | "ambiguous"
-  /**
-   * Setup's own record cannot be read: a home's access can still be turned off, and no file, the
-   * record included, is changed until it can be read.
-   */
-  | "record_unreadable";
-
-export type HomeState =
-  /** No entry of TTasks's name, and setup can add one. */
-  | "not_registered"
-  /** The entry is exactly the one setup wrote. */
-  | "registered"
-  /** The entry setup wrote was changed since: setup leaves it alone. */
-  | "edited"
-  /** Setup wrote an entry that is gone now. */
-  | "missing"
-  /** A setup that did not finish (a crash, a failed undo): the next setup settles it first. */
-  | "interrupted"
-  | "refused";
-
 /** A home as setup finds it now. */
 export interface HomeView {
   readonly home: AgentHome;
@@ -261,6 +228,12 @@ export type OutcomeReason =
   | "revoke_failed"
   /** The OS refused to write the file: it is read-only, another program holds it, or the disk is full. */
   | "unwritable"
+  /** The tools cannot be turned on from here (answer.ts `ToolsWhy`). */
+  | "moved"
+  | "not_installed"
+  | "edited_gone"
+  | "access_off"
+  | "entry_left"
   /** Setup's own record of the home could not be written, so its file was left as it was. */
   | "state_unwritable";
 
@@ -270,15 +243,14 @@ export interface Outcome {
   readonly result: "applied" | "removed" | "unchanged" | "left" | "failed";
   readonly reason?: OutcomeReason;
   /**
-   * The home's access as this action left it, apart from its file: `on` once its row was given, or
-   * when turning it off failed and nothing was changed; `off` when none was given or it was taken
-   * back; `unknown` when a row may have been made and taking it back failed. Absent when the action
-   * did not touch it.
+   * The home's access as this action left it, apart from its file: `on` once its row was given;
+   * `off` when none was given or it was taken back; `unknown` when a revoke was asked for and the
+   * service did not confirm it, so its entry stays too. Absent when the action did not touch it.
    */
   readonly access?: "on" | "off" | "unknown";
   /** A removal that left an entry in the file: TTasks's own (`reason` says why), or one the person changed. */
   readonly kept?: "own" | "edited";
-  /** Facts the person should know: `undo_failed`, `entry_left`. */
+  /** Facts the person should know: `undo_failed`, `entry_left`, `undone` (its entry was taken out again). */
   readonly notes?: readonly string[];
 }
 
@@ -327,6 +299,8 @@ export interface SetupInput {
     readonly app: string;
     readonly home: string;
     readonly instance: string;
+    /** The row's ID, when the caller keeps it (the command line's status shows it). */
+    readonly grant?: string;
   }[];
   /** machine.toml's `[setup.managed] paths` (A3 3.12 rule 4). Default: none. */
   readonly managedPaths?: readonly string[];
@@ -1164,6 +1138,81 @@ function diffOf(
   ];
 }
 
+/**
+ * The one answer for a home's tools (answer.ts), from its facts read now: the access from
+ * `input.rows` (unknown when the caller has none), the program the entry in the file names, and
+ * `space`, the one the person is in ("" for the one the record names). `writable` is the plan's
+ * refusal of a new entry when the caller has one (several Claude Desktop files).
+ */
+export function toolsOf(
+  input: SetupInput,
+  view: HomeView,
+  space: string,
+  writable?: Refusal,
+): ToolsAnswer {
+  const { home, record } = view;
+  const program = programOf(input, view);
+  return toolsAnswer({
+    state: view.state,
+    ...(view.refusal === undefined ? {} : { refusal: view.refusal }),
+    entry: view.entry !== undefined,
+    ...(program === undefined ? {} : { program }),
+    access:
+      input.rows === undefined
+        ? "unknown"
+        : input.rows.some((r) => r.app === home.app && samePath(input.platform, r.home, home.home))
+          ? "live"
+          : "off",
+    otherSpace: record !== undefined && space !== "" && record.space !== space,
+    writable:
+      writable ?? (home.app === "claude-desktop" && view.sha256 === null ? "not_set_up" : true),
+    installed: isFile(input.tasks),
+    handMade: view.refusal === "foreign_entry" && entryInstance(view.entry) === null,
+  });
+}
+
+/**
+ * Whether the program an entry in the file names is there: an absolute path as a file, a name
+ * alone on the PATH of the person's environment. A path that is not there is `moved` when setup's
+ * own entry names it and it is not where TTasks is installed now (writing the entry again mends
+ * it), else `gone`.
+ */
+function programOf(input: SetupInput, view: HomeView): "there" | "moved" | "gone" | undefined {
+  const command = (view.entry as { command?: unknown } | undefined)?.command;
+  if (typeof command !== "string" || command === "") return undefined;
+  const { platform } = input;
+  if (!pathOf(platform).isAbsolute(command)) {
+    const host = nodeDetectHost({ platform, env: input.env, home: input.userHome });
+    return onPath(host, command) === undefined ? "gone" : "there";
+  }
+  if (isFile(command)) return "there";
+  return view.state === "registered" && !samePath(platform, command, input.tasks)
+    ? "moved"
+    : "gone";
+}
+
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What repairs a registered home whose entry is gone or runs a program that is gone, when the
+ * answer offers it: its entry written again with the present command, in the space it named
+ * (rewrite). The entry it replaces shows as taken out.
+ */
+function repairOf(input: SetupInput, view: HomeView, space: string): Change | undefined {
+  const recorded = view.record?.space;
+  if (recorded === undefined || toolsOf(input, view, space).on !== "repair") return undefined;
+  const change = planChange(input, view, recorded);
+  if (typeof change === "string") return undefined;
+  if (view.state === "missing") return change;
+  return { ...change, diff: [...entryLines(view.home.app, view.entry, "-"), ...change.diff] };
+}
+
 /** What applying a home would write, or why it cannot. Reads nothing more. */
 export function planChange(input: SetupInput, view: HomeView, space: string): Change | Refusal {
   const { home } = view;
@@ -1205,7 +1254,7 @@ export function planOf(input: SetupInput, views: readonly HomeView[], space: str
     view,
     change:
       view.state !== "not_registered"
-        ? undefined
+        ? repairOf(input, view, space)
         : view.home.app === "claude-desktop" && desktops.length > 1
           ? "ambiguous"
           : planChange(input, view, space),
@@ -1463,10 +1512,11 @@ async function writeEntry(
 }
 
 /**
- * Registers TTasks in one home that has no entry yet, and gives the home its access once the entry
- * is in place (giveAccess). The record is written before the file (writeEntry). A registered home
- * gets its row, or keeps it, for the space its entry names (`space` is empty when the apply
- * registers no new home), through the same checks of its entry. `planned` is the change the plan
+ * Turns a home's tools on as its answer (toolsOf) offers it from `space`, and does nothing it does
+ * not offer: a new entry, then its access once the entry is in place (giveAccess), the record
+ * written before the file (writeEntry); a registered home's access again; or its entry written again
+ * (rewrite). A registered home whose tools start gets its row renewed for the space its entry
+ * names. `space` is empty when the apply registers no new home. `planned` is the change the plan
  * holds for it (planOf), when the caller has one.
  */
 export async function applyHome(
@@ -1476,24 +1526,52 @@ export async function applyHome(
   access: Access,
   planned?: Change | Refusal,
 ): Promise<Outcome> {
-  const { home } = view;
-  if (view.state === "registered") {
-    // A registered home has its record (inspectHome).
-    const record = view.record;
-    if (record === undefined) return { home, result: "left", reason: "missing" };
-    const target = space === "" ? record.space : space;
-    if (record.space !== target) return { home, result: "left", reason: "other_space" };
-    return giveAccess(input, home, record, target, access, true);
+  const { home, record } = view;
+  const answer = toolsOf(input, view, space, typeof planned === "string" ? planned : undefined);
+  const left = (): Outcome => ({ home, result: "left", reason: answer.why ?? "not_registered" });
+  switch (answer.on) {
+    case "repair":
+      return rewrite(input, view, access);
+    case "grant":
+      return record === undefined
+        ? left()
+        : giveAccess(input, home, record, record.space, access, true);
+    case "add": {
+      if (view.state !== "not_registered") return left();
+      const change = typeof planned === "object" ? planned : planChange(input, view, space);
+      if (typeof change === "string") return { home, result: "left", reason: change };
+      const written = await writeEntry(input, view, space, change);
+      if (!("entry" in written)) return { home, ...written, access: "off" };
+      return giveAccess(input, home, written, space, access, false);
+    }
+    default:
+      if (view.state !== "registered" || record === undefined || answer.why !== undefined) {
+        return left();
+      }
+      return giveAccess(input, home, record, record.space, access, true);
   }
-  if (view.state === "refused")
-    return { home, result: "left", reason: view.refusal ?? "unreadable" };
-  if (view.state !== "not_registered") return { home, result: "left", reason: view.state };
-  const change = planned ?? planChange(input, view, space);
-  if (typeof change === "string") return { home, result: "left", reason: change };
+}
 
-  const written = await writeEntry(input, view, space, change);
+/**
+ * Repairs a registered home whose entry is gone or runs a program that is gone: the old entry and
+ * its access go as a removal does, then the entry is written with the present command, in the
+ * space it named, and gets its access as a new install does. A step that fails stops there, and the
+ * home is as that step left it: off, or as it was.
+ */
+async function rewrite(input: SetupInput, view: HomeView, access: Access): Promise<Outcome> {
+  const { home, record } = view;
+  if (record === undefined) return { home, result: "left", reason: "missing" };
+  const removed = await removeHome(input, view, access);
+  if (removed.result !== "removed") return { ...removed, result: "failed" };
+  const fresh = inspectHome(home, undefined);
+  if (fresh.state !== "not_registered") {
+    return { home, result: "failed", reason: "changed_meanwhile", access: "off" };
+  }
+  const change = planChange(input, fresh, record.space);
+  if (typeof change === "string") return { home, result: "failed", reason: change, access: "off" };
+  const written = await writeEntry(input, fresh, record.space, change);
   if (!("entry" in written)) return { home, ...written, access: "off" };
-  return giveAccess(input, home, written, space, access, false);
+  return giveAccess(input, home, written, record.space, access, false);
 }
 
 /**
@@ -1562,10 +1640,11 @@ function entryNow(
 /**
  * Takes back an apply that cannot stand. The decision is recorded first (`removing`), then the
  * access goes (when it may have been given), then the entry when a read shows it is still setup's
- * own. After a read that failed (`readable` false) the file is not touched: the record stays
- * `removing`, and the next run takes the entry out. A record that cannot be written stays as it
- * was: an unfinished one the next run finishes as a removal all the same, a registered home's stays
- * registered with its access off until the person asks again.
+ * own. After a read that failed (`readable` false), or a revoke the service did not confirm, the
+ * file is not touched: the record stays `removing`, and the next run takes the access and then the
+ * entry out. A record that cannot be written stays as it was: an unfinished one the next run
+ * finishes as a removal all the same, a registered home's stays registered with its access off
+ * until the person asks again.
  */
 async function undo(
   input: SetupInput,
@@ -1582,7 +1661,7 @@ async function undo(
     // Left as it was: see above.
   }
   const off = given ? await revoked(access, home) : true;
-  if (!readable) {
+  if (!readable || !off) {
     return {
       home,
       result: "failed",
@@ -1591,16 +1670,9 @@ async function undo(
       notes: ["undo_failed"],
     };
   }
-  const out = await takeOut(input, home, removing, off);
-  const note =
-    out.kept === "own" ? "undo_failed" : out.kept === "edited" ? "entry_left" : undefined;
-  return {
-    home,
-    result: "failed",
-    reason,
-    access: off ? "off" : "unknown",
-    ...(note === undefined ? {} : { notes: [note] }),
-  };
+  const out = await takeOut(input, home, removing);
+  const note = out.kept === "own" ? "undo_failed" : out.kept === "edited" ? "entry_left" : "undone";
+  return { home, result: "failed", reason, access: "off", notes: [note] };
 }
 
 /**
@@ -1621,7 +1693,7 @@ export async function removeHome(
       home,
       result: "failed",
       reason: "revoke_failed",
-      access: record === undefined || record.state === "applied" ? "on" : "unknown",
+      access: "unknown",
     };
   }
   if (record === undefined) {
@@ -1646,7 +1718,7 @@ export async function removeHome(
       };
     }
   }
-  return { ...(await takeOut(input, home, removing, true)), access: "off" };
+  return { ...(await takeOut(input, home, removing)), access: "off" };
 }
 
 /**
@@ -1657,15 +1729,10 @@ export async function removeHome(
  * from then on. An entry of TTasks's that could not be taken out keeps its record, so the next setup
  * tries again.
  */
-async function takeOut(
-  input: SetupInput,
-  home: AgentHome,
-  record: HomeRecord,
-  off: boolean,
-): Promise<Outcome> {
+async function takeOut(input: SetupInput, home: AgentHome, record: HomeRecord): Promise<Outcome> {
   const { format, servers } = APPS[home.app];
   const done = (outcome: Outcome): Outcome => {
-    if (off) forget(input, home);
+    forget(input, home);
     return outcome;
   };
   for (let attempt = 1; ; attempt += 1) {

@@ -8,7 +8,7 @@
 // line above it. Anything else is the person's, and stays.
 import { isDeepStrictEqual } from "node:util";
 import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
-import { applyEdits, tableSpan, type EditValue } from "../config/edit.ts";
+import { applyEdits, tableSpan, textDigest, type EditValue } from "../config/edit.ts";
 import { scanToml, ScanError, tomlComments } from "../config/scan.ts";
 import { parseToml } from "../config/toml.ts";
 import { addEntry, removeEntry } from "./json-edit.ts";
@@ -44,6 +44,8 @@ export interface Made {
    * Null when there are none, or for an entry an earlier build wrote.
    */
   readonly spacing: string | null;
+  /** TOML: the file the add met without a final line break, as `textDigest` (edit.ts `remove_table`). */
+  readonly ended?: string;
 }
 
 class NotJson extends Error {}
@@ -165,6 +167,7 @@ export function addOwnEntry(
     made: {
       parent: parsed.doc[servers] === undefined,
       spacing: added.text.slice(text.length, span.start),
+      ...(text === "" || text.endsWith("\n") ? {} : { ended: textDigest(text) }),
     },
   };
 }
@@ -183,7 +186,12 @@ export function removeOwnEntry(
       : { ok: false, reason: removed.reason };
   }
   const removed = applyEdits(text, [
-    { op: "remove_table", table: [servers, MCP_SERVER_KEY], before: made.spacing },
+    {
+      op: "remove_table",
+      table: [servers, MCP_SERVER_KEY],
+      before: made.spacing,
+      ...(made.ended === undefined ? {} : { ended: made.ended }),
+    },
   ]);
   if (removed.ok) return { ok: true, text: removed.text, made };
   return {

@@ -176,6 +176,18 @@ export async function waitFor<T>(
   }
 }
 
+/**
+ * An install's stable command in `<root>/install/bin`, which every entry setup writes runs: an
+ * empty file, as nothing runs it. Setup turns a home on only while it is there.
+ */
+export function installedTasks(root: string): string {
+  const bin = join(root, "install", "bin");
+  mkdirSync(bin, { recursive: true });
+  const tasks = join(bin, process.platform === "win32" ? "ttasks.exe" : "ttasks");
+  writeFileSync(tasks, "");
+  return tasks;
+}
+
 /** A temporary folder of this test, removed by its full name. Short, for Unix socket paths. */
 export function tempRoot(label: string): { root: string; cleanup: () => void } {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), `kh-${label}-`)));

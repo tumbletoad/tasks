@@ -11,10 +11,14 @@ import {
   applyApps,
   carryChoices,
   choose,
+  chooseOff,
   initialChoices,
+  offChosen,
   pendingOf,
   readApps,
+  shownOn,
   switchKey,
+  type Action,
   type AppRow,
   type AppsView,
   type Outcome,
@@ -56,10 +60,22 @@ interface Kept {
   readonly edited: boolean;
 }
 
+/** A switch that was not turned over: its row, its home, and why. */
+interface Failed {
+  readonly key: string;
+  readonly label: string;
+  readonly home: string;
+  readonly part: PartName;
+  readonly reason: string;
+  readonly field: string;
+  /** The service did not confirm that the tools are off. */
+  readonly unconfirmed: boolean;
+}
+
 /** What the last Apply came to, for the lines under the list. */
 type Said =
   | { readonly kind: "done"; readonly desktop: boolean; readonly kept: readonly Kept[] }
-  | { readonly kind: "partly"; readonly labels: readonly string[]; readonly kept: readonly Kept[] }
+  | { readonly kind: "partly"; readonly failed: readonly Failed[]; readonly kept: readonly Kept[] }
   | { readonly kind: "stale" | "failed" | "unknown" | "busy" };
 
 export function AgentApps({
@@ -86,7 +102,7 @@ export function AgentApps({
   const auth = useAuth();
   const detailId = useId();
   const [view, setView] = useState<AppsView | "failed" | undefined>(undefined);
-  const [choices, setChoices] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const [choices, setChoices] = useState<ReadonlyMap<string, Action>>(new Map());
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<Said | undefined>(undefined);
   const [details, setDetails] = useState(false);
@@ -176,8 +192,23 @@ export function AgentApps({
           // A failed one may have changed machine.toml too: the tiles follow either way.
           if (answer.outcomes.some((o) => o.part === "open")) onOpenChanged?.();
           if (failed.length > 0) {
-            const labels = failed.flatMap((o) => pendingOf(o)?.row.label ?? []);
-            setSaid({ kind: "partly", labels: [...new Set(labels)], kept });
+            const rows = failed.flatMap((o): Failed[] => {
+              const p = pendingOf(o);
+              return p === undefined
+                ? []
+                : [
+                    {
+                      key: switchKey(o.key, o.part),
+                      label: p.row.label,
+                      home: p.row.home ?? "none",
+                      part: o.part,
+                      reason: o.reason ?? "other",
+                      field: o.field ?? "none",
+                      unconfirmed: o.unconfirmed,
+                    },
+                  ];
+            });
+            setSaid({ kind: "partly", failed: rows, kept });
             return;
           }
           const desktop = done.some(
@@ -237,6 +268,11 @@ export function AgentApps({
                   </span>
                 )}
               </div>
+              {row.byName ? (
+                <p className={styles.why} data-part="by-name">
+                  {t("apps.byName", { label: row.label })}
+                </p>
+              ) : null}
               {row.also.map((host) => (
                 <p key={host} className={styles.why}>
                   {t("apps.also", { host: host.replace("-", "_") })}
@@ -252,10 +288,15 @@ export function AgentApps({
                     row={row}
                     part={part}
                     found={found}
-                    on={choices.get(switchKey(row.key, part)) ?? found.on}
+                    on={shownOn(choices, row, part)}
+                    offChosen={offChosen(choices, row, part)}
                     busy={busy}
                     onChange={(on) => {
                       turn(row, part, on);
+                    }}
+                    onOff={(off) => {
+                      setSaid(undefined);
+                      setChoices((before) => chooseOff(before, row, part, off));
                     }}
                   />
                 );
@@ -286,9 +327,7 @@ export function AgentApps({
           </div>
           {details ? (
             <pre id={detailId} className={styles.detail} dir="ltr">
-              {pending
-                .map((p) => [`# ${p.found.file}`, ...p.found.detail, ""].join("\n"))
-                .join("\n")}
+              {pending.map((p) => [`# ${p.found.file}`, ...p.detail, ""].join("\n")).join("\n")}
             </pre>
           ) : null}
         </div>
@@ -322,16 +361,21 @@ function Switch({
   part,
   found,
   on,
+  offChosen,
   busy,
   onChange,
+  onOff,
 }: {
   readonly t: Translate;
   readonly row: AppRow;
   readonly part: PartName;
   readonly found: Part;
   readonly on: boolean;
+  /** The person chose to turn off its access while the switch shows off. */
+  readonly offChosen: boolean;
   readonly busy: boolean;
   readonly onChange: (on: boolean) => void;
+  readonly onOff: (off: boolean) => void;
 }) {
   const whyId = useId();
   const why = found.why;
@@ -357,10 +401,24 @@ function Switch({
           {t("apps.why", {
             why,
             on: found.on ? "yes" : "no",
+            fix: found.change === "add" ? "yes" : "no",
+            off: found.off === undefined ? "no" : "yes",
             file: found.file,
             space: found.space?.name ?? t("apps.otherSpace"),
           })}
         </p>
+      )}
+      {found.off === undefined ? null : (
+        <Button
+          className={styles.quiet}
+          isDisabled={busy}
+          data-part="turn-off"
+          onPress={() => {
+            onOff(!offChosen);
+          }}
+        >
+          {t(offChosen ? "apps.keepAccess" : "apps.turnOff", { label: row.label })}
+        </Button>
       )}
     </>
   );
@@ -397,7 +455,21 @@ function SaidLine({ t, said }: { readonly t: Translate; readonly said: Said }) {
     case "partly":
       return (
         <div role="alert">
-          <p className={styles.error}>{t("apps.partly", { apps: said.labels.join(", ") })}</p>
+          <p className={styles.error}>{t("apps.partly")}</p>
+          <ul className={styles.error} data-part="failed">
+            {said.failed.map((f) => (
+              <li key={f.key}>
+                {t("apps.failedRow", {
+                  label: f.label,
+                  home: f.home,
+                  part: f.part,
+                  reason: f.reason,
+                  field: f.field,
+                  unconfirmed: f.unconfirmed ? "yes" : "no",
+                })}
+              </li>
+            ))}
+          </ul>
           <KeptLines t={t} kept={said.kept} />
         </div>
       );
