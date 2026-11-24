@@ -29,7 +29,7 @@ import {
 import { MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { createClaudePrintParser, startsTurn } from "../streams/claude-print.ts";
 import { JsonLines, type JsonLine } from "../streams/json-lines.ts";
-import { array, capText, record, string, type Json } from "../streams/values.ts";
+import { array, capText, codeBlock, record, string, type Json } from "../streams/values.ts";
 import { workOf } from "./print.ts";
 import type { OpenDriver, Work } from "./types.ts";
 
@@ -136,11 +136,7 @@ function permissionText(request: Json): string {
     .filter(([key, value]) => key !== "description" && value !== undefined && value !== null)
     .map(([key, value]) => `${key}: ${shown(value)}`)
     .join("\n");
-  if (details === "") return asks;
-  // As code, so a command's characters show as they are where the text is read as Markdown; the
-  // fence is one no line of it closes.
-  const fence = /^\s*~~~/mu.test(details) ? "```" : "~~~";
-  return `${asks}\n${fence}\n${details}\n${fence}`;
+  return details === "" ? asks : `${asks}\n${codeBlock(details)}`;
 }
 
 /** Words of an MCP tool's question (`elicitation`): who asks, what, and the choices of each field. */

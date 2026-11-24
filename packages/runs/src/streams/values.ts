@@ -55,3 +55,13 @@ export function capText(text: string, cap = TEXT_CAP_BYTES): { text: string; cap
     ? { text: whole, capped: false }
     : { text: whole.slice(0, read), capped: true };
 }
+
+/**
+ * `text` as a Markdown code block, so its characters show as they are: between lines of tildes
+ * longer than any run of tildes in it, so no line of it ends the block.
+ */
+export function codeBlock(text: string): string {
+  const longest = Math.max(0, ...Array.from(text.matchAll(/~+/gu), (run) => run[0].length));
+  const fence = "~".repeat(Math.max(3, longest + 1));
+  return `${fence}\n${text}\n${fence}`;
+}
