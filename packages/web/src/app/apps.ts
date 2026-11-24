@@ -18,6 +18,8 @@ export interface Part {
   readonly plan: string;
   /** tools: the space its entry names. */
   readonly space: { readonly id: string; readonly name: string | null } | undefined;
+  /** tools that show off while their access may be live: turning them off all the same. */
+  readonly off: { readonly detail: readonly string[]; readonly plan: string } | undefined;
 }
 
 export interface AppRow {
@@ -48,6 +50,8 @@ export interface Outcome {
   readonly field: string | undefined;
   /** Tools turned off: the access is off, and the entry stayed in its file (`reason` says why). */
   readonly kept: boolean;
+  /** Tools, failed: the service did not confirm that the access is off, so the entry stayed too. */
+  readonly unconfirmed: boolean;
 }
 
 export type Applied =
@@ -62,9 +66,12 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 const text = (v: unknown, max = 4096): string | undefined =>
   typeof v === "string" && v.length <= max ? v : undefined;
 
+const lines = (value: unknown): string[] =>
+  Array.isArray(value) ? value.flatMap((line) => text(line) ?? []).slice(0, 200) : [];
+
 function partOf(value: unknown): Part | undefined {
   if (!isRecord(value)) return undefined;
-  const { on, change, why, file, detail, plan, space } = value;
+  const { on, change, why, file, detail, plan, space, off } = value;
   if (typeof on !== "boolean" || typeof plan !== "string") return undefined;
   const named =
     isRecord(space) && typeof space["id"] === "string"
@@ -75,9 +82,13 @@ function partOf(value: unknown): Part | undefined {
     change: change === "add" || change === "remove" ? change : null,
     why: typeof why === "string" && WORD.test(why) ? why : undefined,
     file: text(file) ?? "",
-    detail: Array.isArray(detail) ? detail.flatMap((line) => text(line) ?? []).slice(0, 200) : [],
+    detail: lines(detail),
     plan,
     space: named,
+    off:
+      isRecord(off) && typeof off["plan"] === "string"
+        ? { detail: lines(off["detail"]), plan: off["plan"] }
+        : undefined,
   };
 }
 
@@ -127,6 +138,7 @@ export function appliedOf(value: unknown): Applied {
               field:
                 typeof o["field"] === "string" && WORD.test(o["field"]) ? o["field"] : undefined,
               kept: o["kept"] === true,
+              unconfirmed: o["unconfirmed"] === true,
             },
           ]
         : [],
@@ -137,11 +149,23 @@ export function appliedOf(value: unknown): Applied {
 /** One switch's place: its row and which of the two. */
 export const switchKey = (row: string, part: PartName): string => JSON.stringify([row, part]);
 
+/** What the person chose for a switch: to turn it on, or off. */
+export type Action = "add" | "remove";
+
 /**
- * The switches the person set apart from how they stand: on or off, until Apply. A switch that is
- * not in it stands as the view says.
+ * The switches the person chose to change, until Apply. A switch that is not in it stands as the
+ * view says.
  */
-export type Choices = ReadonlyMap<string, boolean>;
+export type Choices = ReadonlyMap<string, Action>;
+
+/** What an action on a part changes, when the part offers it: its lines and its token. */
+function offered(
+  found: Part,
+  action: Action,
+): { readonly detail: readonly string[]; readonly plan: string } | undefined {
+  if (found.change === action) return found;
+  return action === "remove" && !found.on ? found.off : undefined;
+}
 
 /**
  * The person's choices as they first see the switches: none in Settings, and at the first start
@@ -149,14 +173,14 @@ export type Choices = ReadonlyMap<string, boolean>;
  * something to know first (one of several Claude Desktop files, a home whose tools were turned off
  * before), or in a folder found by its name alone, is left to the person.
  */
-export function initialChoices(view: AppsView, propose: boolean): Map<string, boolean> {
-  const choices = new Map<string, boolean>();
+export function initialChoices(view: AppsView, propose: boolean): Map<string, Action> {
+  const choices = new Map<string, Action>();
   if (!propose) return choices;
   for (const row of view.rows.filter((r) => !r.byName)) {
     for (const part of ["open", "tools"] as const) {
       const found = row[part];
       if (found?.change === "add" && found.why === undefined) {
-        choices.set(switchKey(row.key, part), true);
+        choices.set(switchKey(row.key, part), "add");
       }
     }
   }
@@ -164,26 +188,21 @@ export function initialChoices(view: AppsView, propose: boolean): Map<string, bo
 }
 
 /** Whether a switch shows on: the person's choice, else how it stands. */
-export const shownOn = (choices: Choices, row: AppRow | undefined, part: PartName): boolean =>
-  row === undefined ? false : (choices.get(switchKey(row.key, part)) ?? row[part]?.on ?? false);
-
-/** `choices` with one switch set: back to how it stands, it is no longer the person's. */
-function setChoice(
-  choices: Map<string, boolean>,
-  row: AppRow,
-  part: PartName,
-  on: boolean,
-): Map<string, boolean> {
-  const key = switchKey(row.key, part);
-  if (row[part]?.on === on) choices.delete(key);
-  else choices.set(key, on);
-  return choices;
+export function shownOn(choices: Choices, row: AppRow | undefined, part: PartName): boolean {
+  if (row === undefined) return false;
+  const chosen = choices.get(switchKey(row.key, part));
+  return chosen === undefined ? (row[part]?.on ?? false) : chosen === "add";
 }
 
+/** Whether the person chose to turn off a switch that shows off (its access may still be live). */
+export const offChosen = (choices: Choices, row: AppRow, part: PartName): boolean =>
+  row[part]?.on === false && choices.get(switchKey(row.key, part)) === "remove";
+
 /**
- * A switch turned over by the person. Claude Desktop's settings files that have no entry yet share
- * one instance, so only one of them can take the tools in one apply: turning one on turns the
- * others off. One that has the tools already keeps them until the person turns it off.
+ * A switch turned over by the person: back to how it stands is no choice at all. Claude Desktop's
+ * settings files that have no entry yet share one instance, so only one of them can take the tools
+ * in one apply: turning one on turns the others off. One that has the tools already keeps them
+ * until the person turns it off.
  */
 export function choose(
   view: AppsView,
@@ -191,31 +210,49 @@ export function choose(
   row: AppRow,
   part: PartName,
   on: boolean,
-): Map<string, boolean> {
-  const choices = setChoice(new Map(before), row, part, on);
+): Map<string, Action> {
+  const choices = new Map(before);
+  const key = switchKey(row.key, part);
+  if (row[part]?.on === on) choices.delete(key);
+  else choices.set(key, on ? "add" : "remove");
   if (row.app !== "claude-desktop" || part !== "tools" || !on) return choices;
   for (const other of view.rows) {
-    const tools = other.tools;
-    if (other.key === row.key || other.app !== "claude-desktop" || tools === undefined) continue;
-    if (!tools.on) setChoice(choices, other, "tools", false);
+    if (other.key === row.key || other.app !== "claude-desktop") continue;
+    const otherKey = switchKey(other.key, "tools");
+    if (choices.get(otherKey) === "add") choices.delete(otherKey);
   }
+  return choices;
+}
+
+/** Turning off a switch that shows off, or taking that choice back. */
+export function chooseOff(
+  before: Choices,
+  row: AppRow,
+  part: PartName,
+  off: boolean,
+): Map<string, Action> {
+  const choices = new Map(before);
+  const key = switchKey(row.key, part);
+  if (off) choices.set(key, "remove");
+  else choices.delete(key);
   return choices;
 }
 
 /**
  * The person's choices carried over to a newer view (one that came back because something changed
- * since): each keeps while it can still be made, and every other switch stands as the newer view
- * says, also one another window turned over meanwhile.
+ * since): each keeps while the newer view still offers it, and every other switch stands as the
+ * newer view says, also one another window turned over meanwhile.
  */
-export function carryChoices(view: AppsView, before: Choices): Map<string, boolean> {
-  const choices = new Map<string, boolean>();
+export function carryChoices(view: AppsView, before: Choices): Map<string, Action> {
+  const choices = new Map<string, Action>();
   for (const row of view.rows) {
     for (const part of ["open", "tools"] as const) {
       const found = row[part];
       const key = switchKey(row.key, part);
       const wanted = before.get(key);
-      if (found === undefined || wanted === undefined || wanted === found.on) continue;
-      if (found.change === (wanted ? "add" : "remove")) choices.set(key, wanted);
+      if (found !== undefined && wanted !== undefined && offered(found, wanted) !== undefined) {
+        choices.set(key, wanted);
+      }
     }
   }
   return choices;
@@ -227,18 +264,29 @@ export interface Pending {
   readonly part: PartName;
   readonly found: Part;
   readonly on: boolean;
+  /** Exactly what changes in the part's file, and the token Apply sends. */
+  readonly detail: readonly string[];
+  readonly plan: string;
 }
 
-/** The switches that differ from how they stand and that the page can turn over. */
+/** The choices the view offers: what Apply sends. */
 export function pendingOf(view: AppsView, choices: Choices): Pending[] {
   const pending: Pending[] = [];
   for (const row of view.rows) {
     for (const part of ["open", "tools"] as const) {
       const found = row[part];
-      const on = choices.get(switchKey(row.key, part));
-      if (found === undefined || on === undefined || on === found.on) continue;
-      if (found.change !== (on ? "add" : "remove")) continue;
-      pending.push({ row, part, found, on });
+      const action = choices.get(switchKey(row.key, part));
+      if (found === undefined || action === undefined) continue;
+      const what = offered(found, action);
+      if (what === undefined) continue;
+      pending.push({
+        row,
+        part,
+        found,
+        on: action === "add",
+        detail: what.detail,
+        plan: what.plan,
+      });
     }
   }
   return pending;
@@ -256,7 +304,7 @@ export async function applyApps(
   return appliedOf(
     await api.applyAgentApps(
       space,
-      pending.map((p) => ({ key: p.row.key, part: p.part, on: p.on, plan: p.found.plan })),
+      pending.map((p) => ({ key: p.row.key, part: p.part, on: p.on, plan: p.plan })),
     ),
   );
 }

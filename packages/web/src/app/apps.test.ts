@@ -6,6 +6,8 @@ import {
   appliedOf,
   carryChoices,
   choose,
+  chooseOff,
+  offChosen,
   initialChoices,
   pendingOf,
   shownOn,
@@ -73,16 +75,16 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
 
   test("Apply sends only switches turned over that can be: off where it can be taken out", () => {
     const choices = new Map(initialChoices(VIEW, false))
-      .set(switchKey("codex", "tools"), false)
-      .set(switchKey("codex", "open"), false)
-      .set(switchKey("desktop", "tools"), true);
+      .set(switchKey("codex", "tools"), "remove")
+      .set(switchKey("codex", "open"), "remove")
+      .set(switchKey("desktop", "tools"), "add");
     expect(pendingOf(VIEW, choices).map((p) => [p.row.key, p.part, p.on])).toEqual([
       ["codex", "tools", false],
     ]);
   });
 
   test("a newer view keeps the person's choices that can still be made", () => {
-    const choices = new Map(initialChoices(VIEW, true)).set(switchKey("codex", "tools"), false);
+    const choices = new Map(initialChoices(VIEW, true)).set(switchKey("codex", "tools"), "remove");
     const newer = viewOf({
       ...VIEW,
       rows: [
@@ -91,7 +93,7 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
       ],
     });
     const carried = carryChoices(newer, choices);
-    expect(pendingOf(newer, carried).map((p) => [p.row.key, p.part, p.on, p.found.plan])).toEqual([
+    expect(pendingOf(newer, carried).map((p) => [p.row.key, p.part, p.on, p.plan])).toEqual([
       ["claude", "open", true, "0123456789abcdef"],
       ["codex", "tools", false, "fedcba9876543210"],
     ]);
@@ -162,6 +164,42 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
     // The last one turned on is the one applied; one that has the tools keeps them.
     expect(pendingOf(view, other).map((p) => [p.row.key, p.on])).toEqual([["b", true]]);
     expect(shownOn(other, view.rows[2], "tools")).toBe(true);
+  });
+
+  test("a switch that shows off while its access is live can be turned off beside it, or turned on", () => {
+    const broken = viewOf({
+      ...VIEW,
+      rows: [
+        {
+          ...VIEW.rows[0],
+          tools: {
+            ...part(false, "add"),
+            why: "missing",
+            off: { detail: [], plan: "aaaaaaaaaaaaaaaa" },
+          },
+        },
+      ],
+    });
+    const [row] = broken.rows;
+    if (row === undefined) throw new Error("no rows");
+    const off = chooseOff(initialChoices(broken, false), row, "tools", true);
+    expect(offChosen(off, row, "tools")).toBe(true);
+    expect(shownOn(off, row, "tools")).toBe(false);
+    expect(pendingOf(broken, off).map((p) => [p.part, p.on, p.plan])).toEqual([
+      ["tools", false, "aaaaaaaaaaaaaaaa"],
+    ]);
+    // A newer view that still offers it keeps it; taking it back leaves nothing to send.
+    expect(pendingOf(broken, carryChoices(broken, off))).toHaveLength(1);
+    expect(pendingOf(broken, chooseOff(off, row, "tools", false))).toEqual([]);
+    // Turning the switch on instead mends it.
+    const on = choose(broken, off, row, "tools", true);
+    expect(pendingOf(broken, on).map((p) => [p.part, p.on, p.plan])).toEqual([
+      ["tools", true, "0123456789abcdef"],
+    ]);
+    // A switch that shows off with no access left offers no turning off.
+    const [plain] = VIEW.rows;
+    if (plain === undefined) throw new Error("no rows");
+    expect(pendingOf(VIEW, chooseOff(new Map(), plain, "tools", true))).toEqual([]);
   });
 
   test("an answer of another shape is refused, and an applied one is read with its outcomes", () => {

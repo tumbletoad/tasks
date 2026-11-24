@@ -11,11 +11,14 @@ import {
   applyApps,
   carryChoices,
   choose,
+  chooseOff,
   initialChoices,
+  offChosen,
   pendingOf,
   readApps,
   shownOn,
   switchKey,
+  type Action,
   type AppRow,
   type AppsView,
   type Outcome,
@@ -65,6 +68,8 @@ interface Failed {
   readonly part: PartName;
   readonly reason: string;
   readonly field: string;
+  /** The service did not confirm that the tools are off. */
+  readonly unconfirmed: boolean;
 }
 
 /** What the last Apply came to, for the lines under the list. */
@@ -97,7 +102,7 @@ export function AgentApps({
   const auth = useAuth();
   const detailId = useId();
   const [view, setView] = useState<AppsView | "failed" | undefined>(undefined);
-  const [choices, setChoices] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const [choices, setChoices] = useState<ReadonlyMap<string, Action>>(new Map());
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<Said | undefined>(undefined);
   const [details, setDetails] = useState(false);
@@ -199,6 +204,7 @@ export function AgentApps({
                       part: o.part,
                       reason: o.reason ?? "other",
                       field: o.field ?? "none",
+                      unconfirmed: o.unconfirmed,
                     },
                   ];
             });
@@ -283,9 +289,14 @@ export function AgentApps({
                     part={part}
                     found={found}
                     on={shownOn(choices, row, part)}
+                    offChosen={offChosen(choices, row, part)}
                     busy={busy}
                     onChange={(on) => {
                       turn(row, part, on);
+                    }}
+                    onOff={(off) => {
+                      setSaid(undefined);
+                      setChoices((before) => chooseOff(before, row, part, off));
                     }}
                   />
                 );
@@ -316,9 +327,7 @@ export function AgentApps({
           </div>
           {details ? (
             <pre id={detailId} className={styles.detail} dir="ltr">
-              {pending
-                .map((p) => [`# ${p.found.file}`, ...p.found.detail, ""].join("\n"))
-                .join("\n")}
+              {pending.map((p) => [`# ${p.found.file}`, ...p.detail, ""].join("\n")).join("\n")}
             </pre>
           ) : null}
         </div>
@@ -352,16 +361,21 @@ function Switch({
   part,
   found,
   on,
+  offChosen,
   busy,
   onChange,
+  onOff,
 }: {
   readonly t: Translate;
   readonly row: AppRow;
   readonly part: PartName;
   readonly found: Part;
   readonly on: boolean;
+  /** The person chose to turn off its access while the switch shows off. */
+  readonly offChosen: boolean;
   readonly busy: boolean;
   readonly onChange: (on: boolean) => void;
+  readonly onOff: (off: boolean) => void;
 }) {
   const whyId = useId();
   const why = found.why;
@@ -387,10 +401,24 @@ function Switch({
           {t("apps.why", {
             why,
             on: found.on ? "yes" : "no",
+            fix: found.change === "add" ? "yes" : "no",
+            off: found.off === undefined ? "no" : "yes",
             file: found.file,
             space: found.space?.name ?? t("apps.otherSpace"),
           })}
         </p>
+      )}
+      {found.off === undefined ? null : (
+        <Button
+          className={styles.quiet}
+          isDisabled={busy}
+          data-part="turn-off"
+          onPress={() => {
+            onOff(!offChosen);
+          }}
+        >
+          {t(offChosen ? "apps.keepAccess" : "apps.turnOff", { label: row.label })}
+        </Button>
       )}
     </>
   );
@@ -437,6 +465,7 @@ function SaidLine({ t, said }: { readonly t: Translate; readonly said: Said }) {
                   part: f.part,
                   reason: f.reason,
                   field: f.field,
+                  unconfirmed: f.unconfirmed ? "yes" : "no",
                 })}
               </li>
             ))}
