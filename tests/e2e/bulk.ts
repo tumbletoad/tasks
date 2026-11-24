@@ -235,6 +235,8 @@ export interface Scales {
   readonly statuses: readonly string[];
   /** Levels, or their names alone. */
   readonly efforts: readonly (string | EffortLevel)[];
+  /** The levels as a newer build stores them, which this build only reads. */
+  readonly newer?: boolean;
 }
 
 /** The levels of a scale, a name alone as a level with nothing more. */
@@ -254,12 +256,12 @@ export function levelTip(key: string, levels: readonly EffortLevel[] = EFFORT_LE
  * active task holds, so those tasks move to the first status first. The levels change as a
  * person changes them: the tasks on a level the new list leaves out, in any state, go with it to
  * no size. A level's name longer than a person sets now is stored as the earlier build that let
- * them set it did, past this build's writer.
+ * them set it did, past this build's writer, and so are levels a newer build wrote.
  */
 export async function setScales(folder: string, machine: Machine, scales: Scales): Promise<void> {
   const levels = levelsOf(scales);
   const names = levels.map((level) => level.key);
-  const earlier = names.some((name) => name.length > EFFORT_NAME_MAX);
+  const earlier = scales.newer === true || names.some((name) => name.length > EFFORT_NAME_MAX);
   const status = scales.statuses[0] ?? "open";
   await writeRequests(
     folder,
@@ -299,10 +301,10 @@ export async function setScales(folder: string, machine: Machine, scales: Scales
     opened.conn
       .prepare(
         "INSERT INTO preferences (key, value, schema_ver, policy, created_seq, version) " +
-          "VALUES ('tasks.effort_scale', $value, 1, 0, 0, 0) " +
-          "ON CONFLICT (key) DO UPDATE SET value = $value, schema_ver = 1",
+          "VALUES ('tasks.effort_scale', $value, $ver, 0, 0, 0) " +
+          "ON CONFLICT (key) DO UPDATE SET value = $value, schema_ver = $ver",
       )
-      .run({ value: JSON.stringify(levels) });
+      .run({ value: JSON.stringify(levels), ver: scales.newer === true ? 99 : 1 });
   } finally {
     opened.conn.close();
   }

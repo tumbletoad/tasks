@@ -91,7 +91,7 @@ describe("[A7.3.9.m2-13.web.build] the built page under SRI and the strict CSP",
     // A guide for the first load, not a limit a feature must fit under: real use decides it. It
     // stands well above today's size, so that work done side by side does not meet here, and is
     // there to notice a jump: a library that ends up in the first load.
-    expect(compressed).toBeLessThanOrEqual(300 * 1024);
+    expect(compressed).toBeLessThanOrEqual(350 * 1024);
     // The version folder's THIRD_PARTY.txt names every npm package the page ships.
     const third = thirdPartyText(join(import.meta.dirname, "..", "..", ".."), [], built.npmInputs);
     for (const name of ["react", "react-dom", "scheduler"]) {

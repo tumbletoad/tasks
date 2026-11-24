@@ -322,7 +322,18 @@ export interface SnapshotMessage {
 export interface Scales {
   readonly statuses: readonly string[];
   readonly efforts: readonly EffortLevel[];
+  /**
+   * Why this build only shows the effort levels: a newer build wrote them, or they do not read and
+   * the defaults stand in for them. A write over either would lose what the space holds.
+   */
+  readonly effortsFixed?: "newer" | "unreadable";
 }
+
+/** A preference's read state (contracts' `PreferenceRead`) that leaves its value to be read only. */
+const FIXED: Readonly<Record<string, Scales["effortsFixed"]>> = {
+  newer: "newer",
+  invalid: "unreadable",
+};
 
 /** A space's scales until its preferences say otherwise (`tasks.statuses`, `tasks.effort_scale`). */
 export const DEFAULT_SCALES: Scales = {
@@ -352,14 +363,17 @@ function statusesOf(value: unknown): string[] | undefined {
 
 /** The scales the snapshot's preferences set; each one that does not read is its default. */
 export function scalesOf(list: unknown): Scales {
-  const valueOf = (key: string): unknown => {
+  const readOf = (key: string): Record<string, unknown> | undefined => {
     if (!Array.isArray(list)) return undefined;
     const found: unknown = list.find((p: unknown) => isRecord(p) && p["key"] === key);
-    return isRecord(found) ? found["value"] : undefined;
+    return isRecord(found) ? found : undefined;
   };
+  const efforts = readOf("tasks.effort_scale");
+  const fixed = FIXED[String(efforts?.["state"])];
   return {
-    statuses: statusesOf(valueOf("tasks.statuses")) ?? DEFAULT_SCALES.statuses,
-    efforts: effortLevels(valueOf("tasks.effort_scale")) ?? DEFAULT_SCALES.efforts,
+    statuses: statusesOf(readOf("tasks.statuses")?.["value"]) ?? DEFAULT_SCALES.statuses,
+    efforts: effortLevels(efforts?.["value"]) ?? DEFAULT_SCALES.efforts,
+    ...(fixed === undefined ? {} : { effortsFixed: fixed }),
   };
 }
 

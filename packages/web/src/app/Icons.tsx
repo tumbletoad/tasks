@@ -127,6 +127,25 @@ export const CrossIcon = () => (
   </Icon>
 );
 
+export const UpIcon = () => (
+  <Icon>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </Icon>
+);
+
+export const DownIcon = () => (
+  <Icon>
+    <path d="M12 5v14M6 13l6 6 6-6" />
+  </Icon>
+);
+
+/** Three dots: more actions. */
+export const MoreIcon = () => (
+  <Icon>
+    <path d="M6 12h.01M12 12h.01M18 12h.01" strokeWidth="2.6" />
+  </Icon>
+);
+
 export const MenuIcon = () => (
   <Icon>
     <path d="M4 7h16M4 12h16M4 17h16" />

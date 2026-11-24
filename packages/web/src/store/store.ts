@@ -160,6 +160,7 @@ export class LiveStore {
   /** The confirmed open tasks, without overlays. */
   #confirmed: ReadonlyMap<string, TaskRow> = new Map();
   #confirmedAsking: ReadonlyMap<string, TaskRow> = new Map();
+  #confirmedScales: Scales = DEFAULT_SCALES;
   #state: LiveState = {
     phase: "starting",
     stale: false,
@@ -317,7 +318,7 @@ export class LiveStore {
       settle = resolve;
     });
     this.#pending.add(request, overlay, settle);
-    if (overlay.tasks.length > 0) this.#view();
+    if (overlay.tasks.length > 0 || overlay.efforts !== undefined) this.#view();
     let answer: Promise<T>;
     try {
       answer = send(request);
@@ -414,6 +415,7 @@ export class LiveStore {
     if (held !== undefined) {
       this.#confirmed = held.tasks;
       this.#confirmedAsking = held.asking;
+      this.#confirmedScales = held.scales;
       this.#state = {
         ...this.#state,
         ...(phase === undefined ? {} : { phase }),
@@ -423,7 +425,7 @@ export class LiveStore {
         areas: held.areas,
         projects: held.projects,
         instances: held.instances,
-        scales: held.scales,
+        scales: this.#pending.scales(held.scales),
       };
     }
     this.#emit();
@@ -443,12 +445,20 @@ export class LiveStore {
     return ended;
   }
 
-  /** The pending overlays changed: the tasks the views see are made again. */
+  /** The pending overlays changed: the tasks and the scales the views see are made again. */
   #view(): void {
     const tasks = this.#pending.view(this.#confirmed);
     const asking = this.#pending.view(this.#confirmedAsking);
-    if (tasks === this.#state.tasks && asking === this.#state.asking) return;
-    this.#state = { ...this.#state, tasks, asking };
+    const made = this.#pending.scales(this.#confirmedScales);
+    const scales = made.efforts === this.#state.scales.efforts ? this.#state.scales : made;
+    if (
+      tasks === this.#state.tasks &&
+      asking === this.#state.asking &&
+      scales === this.#state.scales
+    ) {
+      return;
+    }
+    this.#state = { ...this.#state, tasks, asking, scales };
     this.#emit();
   }
 

@@ -1,7 +1,8 @@
 // Settings: how TTasks behaves for the person on this machine, one short page. Every control
 // changes something at once and can go back to its default; the page says once that all of it is
 // kept for this machine, the same in every space and browser here. Only what works is here. The
-// agent apps are the one exception: switches that change other apps' settings wait for Apply.
+// agent apps are the one exception: switches that change other apps' settings wait for Apply. The
+// effort levels belong to the space, and their section says so.
 import { useParams } from "@tanstack/react-router";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
@@ -22,6 +23,7 @@ import { useSheet } from "../keys/Sheet.tsx";
 import { useKeyLabel } from "../keys/labels.ts";
 import { isThemeChoice, THEME_CHOICES, type ThemeChoice } from "../theme/preference.ts";
 import { AgentApps } from "./AgentApps.tsx";
+import { EffortLevels } from "./EffortLevels.tsx";
 import { useTitle, useToast } from "./frame.ts";
 import { useMachine } from "./machine.ts";
 import { Turns } from "./turns.ts";
@@ -76,6 +78,7 @@ export function SettingsPage() {
       <Keyboard />
       <Terminal />
       <Apps />
+      <EffortLevels headingClass={styles.heading} />
     </div>
   );
 }
