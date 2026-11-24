@@ -49,7 +49,7 @@ CREATE INDEX IF NOT EXISTS port_holders_port ON port_holders(port);
  */
 export class NewerServiceDb extends Error {
   override readonly name = "NewerServiceDb";
-  constructor(readonly format: number) {
+  constructor(format: number) {
     super(
       `${PRODUCT_NAME}'s service.sqlite is in format ${String(format)}, which a newer version of ${PRODUCT_NAME} wrote; this version knows format ${String(SERVICE_DB_VERSION)}, so the service does not start. Run that version again, or a newer one: after a rollback, ${CLI_NAME} update --rollback goes back to it.`,
     );
