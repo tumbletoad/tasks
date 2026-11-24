@@ -248,8 +248,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   lost its connection to TTasks, is shown muted with its age, never as what runs now.
 - TTAM reads the agent apps' own session files on this computer, for every space, and opens each
   app's sign-in file to tell accounts apart, keeping no secret from it. While you look at the page,
-  it may start each agent app's own program for a few seconds, once a minute per account, to ask
-  how much of the plan is left. That app may then renew its own sign-in. No model turn is started.
+  it asks how much of each account's plan is left, at most once a minute (a Claude account every
+  five minutes): with the saved sign-in at the app's own usage service, or by starting the app's
+  own program for a few seconds, which may then renew its own sign-in. No model turn is started.
 - An agent shows with its task only when its agent app, its home and its session are those of a
   launch or a background run TTasks started for that task on this computer, within the last day or
   still running. After `/clear` in Claude Code the conversation is a new one and shows without a
