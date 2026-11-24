@@ -15,7 +15,7 @@
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { envVar } from "@ttasks/brand";
-import { atomicWrite, ensurePrivateDir } from "../hub/files.ts";
+import { atomicWrite, ensurePrivateDir, type Judged } from "../hub/files.ts";
 
 /**
  * The apps setup registers TTasks in, by the name the bridge's `--app` carries (A3 3.13.2-3.13.4).
@@ -101,17 +101,38 @@ export class SetupStateUnsafe extends Error {
   }
 }
 
-/** A record file could not be written (read-only, held, or the disk full): `file` says which. */
+/**
+ * A file in setup's folder could not be written: the file, its folder or the temporary file beside
+ * it is read-only, held, or the disk is full. `file` says which file setup was writing.
+ */
 export class SetupStateUnwritable extends Error {
   override readonly name = "SetupStateUnwritable";
   readonly file: string;
   constructor(file: string, cause: unknown) {
-    super(`Setup's record ${file} could not be written`, { cause });
+    super(`Setup's file ${file} could not be written`, { cause });
     this.file = file;
   }
 }
 
 export const setupDir = (stateDir: string): string => join(stateDir, SETUP_DIR);
+
+/**
+ * Setup's folder, made when it is missing and judged on Linux and macOS before `file` is written
+ * there: one other users can change throws SetupStateUnsafe, and one this user cannot make or
+ * write in throws SetupStateUnwritable for `file`.
+ */
+export function setupFolder(stateDir: string, file: string): string {
+  const dir = setupDir(stateDir);
+  let judged: Judged | undefined;
+  try {
+    judged = ensurePrivateDir(dir);
+  } catch (error) {
+    throw new SetupStateUnwritable(join(dir, file), error);
+  }
+  if (judged?.problem === "no_access") throw new SetupStateUnwritable(join(dir, file), judged);
+  if (judged !== undefined) throw new SetupStateUnsafe();
+  return dir;
+}
 
 const text = (value: unknown): value is string => typeof value === "string";
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every(text);
@@ -299,19 +320,19 @@ export function saveRecord(stateDir: string, record: HomeRecord, place: RecordPl
   writeStore(stateDir, [...further.filter((r) => !place.sameFile(r)), record], FURTHER_FILE);
 }
 
-/** Drops a file's record from wherever it is. One that cannot be written stays. */
+/**
+ * Drops a file's record from wherever it is. A record file that cannot be read is left as it is;
+ * one that cannot be written throws SetupStateUnwritable.
+ */
 export function dropRecord(
   stateDir: string,
   place: Omit<RecordPlace, "further" | "sameHome">,
 ): void {
   for (const file of place.twoFiled ? [SETUP_FILE, FURTHER_FILE] : [SETUP_FILE]) {
-    try {
-      const records = readStore(stateDir, file);
-      const kept = records.filter((r) => !place.sameFile(r));
-      if (kept.length !== records.length) writeStore(stateDir, kept, file);
-    } catch {
-      // Kept: a removal the next run finishes.
-    }
+    const records = tryStore(stateDir, file);
+    if (records === undefined) continue;
+    const kept = records.filter((r) => !place.sameFile(r));
+    if (kept.length !== records.length) writeStore(stateDir, kept, file);
   }
 }
 
@@ -358,19 +379,21 @@ export function readStateFile(path: string): unknown {
 
 /** Replaces one record file's records. */
 function writeStore(stateDir: string, records: readonly HomeRecord[], file: string): void {
-  try {
-    writeStateFile(stateDir, file, { format: SETUP_FORMAT, homes: records });
-  } catch (error) {
-    if (error instanceof SetupStateTooLarge || error instanceof SetupStateUnsafe) throw error;
-    throw new SetupStateUnwritable(join(setupDir(stateDir), file), error);
-  }
+  writeStateFile(stateDir, file, { format: SETUP_FORMAT, homes: records });
 }
 
-/** Replaces one of setup's record files, 0600 in its user-only folder. */
+/**
+ * Replaces one of setup's record files, 0600 in its user-only folder. Whatever keeps it from being
+ * written throws SetupStateUnwritable naming it, but a folder other users can change
+ * (SetupStateUnsafe) and a record too large to read back (SetupStateTooLarge).
+ */
 export function writeStateFile(stateDir: string, file: string, doc: unknown): void {
   const text = `${JSON.stringify(doc, null, 2)}\n`;
   if (Buffer.byteLength(text, "utf8") > MAX_STATE_BYTES) throw new SetupStateTooLarge();
-  const dir = setupDir(stateDir);
-  if (ensurePrivateDir(dir) !== undefined) throw new SetupStateUnsafe();
-  atomicWrite(join(dir, file), text, 0o600);
+  const path = join(setupFolder(stateDir, file), file);
+  try {
+    atomicWrite(path, text, 0o600);
+  } catch (error) {
+    throw new SetupStateUnwritable(path, error);
+  }
 }

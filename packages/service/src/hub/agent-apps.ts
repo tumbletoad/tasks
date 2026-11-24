@@ -55,6 +55,7 @@ import {
   samePath,
   SetupStateInvalid,
   SetupStateUnsafe,
+  SetupStateUnwritable,
   settleHomes,
   survey,
   accessOf,
@@ -639,6 +640,13 @@ function setupError(error: unknown): unknown {
       hint: "Run: ttasks doctor",
     });
   }
+  if (error instanceof SetupStateUnwritable) {
+    return new AppError({
+      code: "invalid_input",
+      message: `${error.message}.`,
+      hint: "Check that the disk has room and that you can write in that folder, then try again.",
+    });
+  }
   return error;
 }
 
@@ -792,6 +800,17 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
       );
       if (out[0]?.access !== "off") return "revoke_failed";
       const kept = leftOut(out, (o) => o.kept !== undefined);
+      const stuck = out.find((o) => o.record !== undefined)?.record;
+      if (stuck !== undefined) {
+        return {
+          key: c.key,
+          part: "tools",
+          result: "failed",
+          reason: "state_unwritable",
+          record: stuck,
+          ...(files.length > 1 && kept.length > 0 ? { files: kept } : {}),
+        };
+      }
       if (kept.length === 0) return undefined;
       const reason = out.find((o) => o.kept !== undefined)?.reason ?? "edited";
       return {
@@ -809,13 +828,23 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
       const access_ = out[0]?.access;
       const short = leftOut(out, (o) => o.result === "left" || o.result === "failed");
       const named = files.length > 1 && short.length > 0 ? { files: short } : {};
-      if (access_ === "on" && out.some((o) => o.result !== "failed" && o.result !== "left")) {
+      // A record that could not be written is the outcome, whatever the files did.
+      const stuck = out.find((o) => o.record !== undefined);
+      if (
+        stuck === undefined &&
+        access_ === "on" &&
+        out.some((o) => o.result !== "failed" && o.result !== "left")
+      ) {
         return Object.keys(named).length === 0
           ? undefined
           : { key: c.key, part: "tools", result: "done", ...named };
       }
-      const failed = out.find((o) => o.result === "failed") ?? out.find((o) => o.result === "left");
-      const reason = failed?.reason ?? failed?.result ?? "changed_meanwhile";
+      const failed =
+        stuck ?? out.find((o) => o.result === "failed") ?? out.find((o) => o.result === "left");
+      const reason =
+        stuck === undefined
+          ? (failed?.reason ?? failed?.result ?? "changed_meanwhile")
+          : "state_unwritable";
       const record = failed?.record === undefined ? {} : { record: failed.record };
       if (access_ !== "unknown" || reason === "revoke_failed") {
         return { key: c.key, part: "tools", result: "failed", reason, ...record, ...named };

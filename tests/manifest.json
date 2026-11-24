@@ -3627,7 +3627,7 @@
     },
     {
       "id": "A3.3.13.setup.access-rule",
-      "title": "Only the apply that finds a home's access off asks for it, marking its record before it asks, and only that apply takes it back when its file fails; adding or repairing a file of a home with its grant asks the service for nothing, and its failure takes that file's entry out only, at once and when settled; with the service silent nothing is offered, granted or revoked, and the access is said as unknown; nothing is given to a home (add, repair, access back, renewal) while a record of it owes its revoke, read where each grant is asked for, when the row offers Off only and says why, nor after a record of it could not be written in the same apply, whose outcome names that record file",
+      "title": "Only the apply that finds a home's access off asks for it, marking its record before it asks, and only that apply takes it back when its file fails; adding or repairing a file of a home with its grant asks the service for nothing, and its failure takes that file's entry out only, at once and when settled; with the service silent nothing is offered, granted or revoked, and the access is said as unknown; nothing is given to a home (add, repair, access back, renewal) while a record of it owes its revoke, read where each grant is asked for, when the row offers Off only and says why, nor after a record of it could not be written in the same apply, on any route (an add, giving the access back, a removal) and whatever refused it (the file or its folder), whose outcome names that record file",
       "source": "A3 3.13.1",
       "owner": "M4",
       "kind": "ci",

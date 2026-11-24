@@ -85,6 +85,7 @@ import {
   samePath,
   SetupStateInvalid,
   SetupStateUnsafe,
+  SetupStateUnwritable,
   settleHomes,
   snippetFor,
   survey,
@@ -702,6 +703,13 @@ function setupError(error: unknown): unknown {
       code: "invalid_input",
       message: `${error.message}, so nothing was changed.`,
       hint: `Run: ${CLI_NAME} doctor`,
+    });
+  }
+  if (error instanceof SetupStateUnwritable) {
+    return new AppError({
+      code: "invalid_input",
+      message: `${error.message}.`,
+      hint: "Check that the disk has room and that you can write in that folder, then run it again.",
     });
   }
   return error;
@@ -1328,8 +1336,9 @@ function report(
   notes: readonly string[] = [],
   blocks: readonly BlockOutcome[] = [],
 ): number {
+  // A record that could not be written leaves the home short of what was asked, whatever else did.
   const complete =
-    outcomes.every((o) => o.result !== "failed" && o.result !== "left") &&
+    outcomes.every((o) => o.result !== "failed" && o.result !== "left" && o.record === undefined) &&
     blocks.every((b) => b.result !== "failed" && b.result !== "left");
   if (globals.json) {
     io.stdout(
@@ -1380,6 +1389,9 @@ function report(
         const which = files.length === 1 ? "" : `${outcome.home.file}: `;
         io.stdout(`  ${which}${verb[outcome.result]}${reason}\n`);
         for (const note of outcome.notes ?? []) io.stdout(`  ${NOTE[note] ?? note}\n`);
+        if (outcome.record !== undefined && outcome.reason !== "state_unwritable") {
+          io.stdout(`  Setup could not write its own record ${outcome.record} either.\n`);
+        }
         const kept = keptText(outcome);
         if (kept !== undefined) io.stdout(`  ${kept}\n`);
       }

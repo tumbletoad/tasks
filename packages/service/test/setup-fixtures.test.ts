@@ -3,6 +3,7 @@
 // writes. After each action it compares the file's raw bytes, the home's access, and the other home
 // of the same app, which nothing may change. Every home is a folder under this file's own temporary
 // folder; no app's command runs, and the grants table is the test's own (setup-rows.ts).
+import { spawnSync } from "node:child_process";
 import fs, {
   chmodSync,
   existsSync,
@@ -2773,10 +2774,43 @@ describe("[A3.3.13.setup.home-files] What setup recorded is what it cleans up: a
   );
 });
 
+/**
+ * Makes `dir` refuse new files for this user, and so a file put in place by a rename: read-only on
+ * Linux and macOS, a rule that denies adding files on Windows. Returns its undo.
+ */
+function refusingNewFiles(dir: string): () => void {
+  if (!windows) {
+    const mode = statSync(dir).mode & 0o777;
+    chmodSync(dir, 0o555);
+    return () => {
+      chmodSync(dir, mode);
+    };
+  }
+  const icacls = join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "icacls.exe");
+  const run = (...args: string[]) => {
+    const ran = spawnSync(icacls, [dir, ...args], { encoding: "utf8", windowsHide: true });
+    if (ran.status !== 0) throw new Error(`icacls failed: ${ran.stdout}${ran.stderr}`);
+  };
+  // Everyone, which includes this user: adding a file or a folder, and writing data.
+  run("/deny", "*S-1-1-0:(AD,WD)");
+  return () => {
+    run("/remove:d", "*S-1-1-0");
+  };
+}
+
+/**
+ * What can keep a record from being written: its folder, on every system; the file alone only on
+ * Windows, where a read-only file is not replaced (elsewhere the folder decides).
+ */
+const RECORD_LOCKS: readonly (readonly [string, (w: World) => () => void])[] = [
+  ["its folder refuses new files", (w) => refusingNewFiles(setupDir(w.input.stateDir))],
+  ...(windows ? [["the file is read-only", (w: World) => unwritable(recordPath(w))] as const] : []),
+];
+
 describe("[A3.3.13.setup.access-rule] Nothing turns on for a home while a record of it owes its revoke or could not be written: one check where each grant is asked for", () => {
-  test.skipIf(root)(
-    "the first file's record read-only right after its grant: the undo revokes, the same apply turns the other file on not, and names the record file; settling later takes nothing a later grant gave (pull request 193's second review, finding 4)",
-    async () => {
+  test.skipIf(root).each(RECORD_LOCKS)(
+    "the first file's record cannot be written right after its grant (%s): the undo revokes, the same apply turns the other file on not, and names the record file; settling later takes nothing a later grant gave (pull request 193's second review, finding 4)",
+    async (_name, lock) => {
       const w = await world();
       const { plain, inner } = twoFiles(w);
       seed(plain, "{}\n");
@@ -2784,7 +2818,7 @@ describe("[A3.3.13.setup.access-rule] Nothing turns on for a home while a record
       let restore = (): void => undefined;
       let grants = 0;
       const rows = keptRows((verb) => {
-        if (verb === "grant" && (grants += 1) === 1) restore = unwritable(recordPath(w));
+        if (verb === "grant" && (grants += 1) === 1) restore = lock(w);
       });
       const input = { ...w.input, rows: rows.live };
       let done: Awaited<ReturnType<typeof turnOn>>;
@@ -2836,6 +2870,81 @@ describe("[A3.3.13.setup.access-rule] Nothing turns on for a home while a record
         { result: "applied", access: "on" },
         { result: "applied", access: "on" },
       ]);
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.access-rule] A record write that fails is the same event on every route: said for its file with the record file, and the apply gives the home nothing more", () => {
+  test.skipIf(root).each(RECORD_LOCKS)(
+    "giving an intact entry its access back, the record write after it fails (%s): that file names the record file, the access stays given, and the same apply adds nothing to the other file (pull request 193's third check, fix 4)",
+    async (_name, lock) => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      let armed = false;
+      let restore = (): void => undefined;
+      const rows = keptRows((verb) => {
+        if (verb === "grant" && armed) {
+          armed = false;
+          restore = lock(w);
+        }
+      });
+      const input = () => ({ ...w.input, rows: rows.live });
+      await turnOn(w, rows, input());
+      await rows.revoke((await filesOf(w, input()))[0]?.home ?? missingHome());
+      seed(inner, "{}\n");
+      rows.asked.length = 0;
+      armed = true;
+      let done: Awaited<ReturnType<typeof turnOn>>;
+      try {
+        done = await turnOn(w, rows, input());
+      } finally {
+        restore();
+      }
+      const record = recordPath(w);
+      expect(done).toMatchObject([
+        { result: "unchanged", reason: "state_unwritable", record, access: "on" },
+        { result: "left", reason: "state_unwritable", record },
+      ]);
+      expect(rows.asked.map((x) => x.verb)).toEqual(["grant"]);
+      expect(entryIn(CLAUDE, inner)).toBeUndefined();
+      // Writable again: the next apply adds the other file.
+      expect(await turnOn(w, rows, input())).toMatchObject([
+        { result: "unchanged" },
+        { result: "applied" },
+      ]);
+    },
+    SLOW,
+  );
+
+  test.skipIf(root).each(RECORD_LOCKS)(
+    "Off whose record cannot be dropped once the entry is out (%s): the file is removed and names the record file, and the next Off forgets the record",
+    async (_name, lock) => {
+      const w = await world();
+      const { plain } = twoFiles(w);
+      seed(plain, "{}\n");
+      await turnOn(w);
+      let restore = (): void => undefined;
+      let off: Awaited<ReturnType<typeof turnOff>>;
+      try {
+        off = await afterPlaced(
+          plain,
+          () => {
+            restore = lock(w);
+          },
+          () => turnOff(w),
+        );
+      } finally {
+        restore();
+      }
+      expect(off).toMatchObject([{ result: "removed", record: recordPath(w), access: "off" }]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+      expect(readRecords(w.input.stateDir)).toMatchObject([
+        { state: "removing", gives_access: false },
+      ]);
+      expect(await turnOff(w)).toMatchObject([{ result: "removed" }]);
+      expect(readRecords(w.input.stateDir)).toEqual([]);
     },
     SLOW,
   );

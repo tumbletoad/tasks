@@ -1584,9 +1584,33 @@ function putRecord(input: SetupInput, home: AgentHome, record: HomeRecord): void
   saveRecord(input.stateDir, record, placeOf(input, home));
 }
 
-/** Drops a file's record. One that cannot be written stays, and the next run finishes it. */
-function forget(input: SetupInput, home: AgentHome): void {
-  dropRecord(input.stateDir, placeOf(input, home));
+/** A record write that failed: its record file, when known. */
+interface Unwritten {
+  readonly record?: string;
+}
+
+/** The record file a failed record write names. */
+const unwritableAt = (error: unknown): Unwritten =>
+  error instanceof SetupStateUnwritable ? { record: error.file } : {};
+
+/**
+ * Puts a file's record in place of the one it has, or drops it (`record` undefined). Every record
+ * write of an apply, a removal or a settling goes through here, the first of an add aside
+ * (writeEntry): one that fails is said for its file, with its record file, and the apply gives the
+ * home nothing more. What it leaves is a record the next run settles.
+ */
+function writeRecord(
+  input: SetupInput,
+  home: AgentHome,
+  record: HomeRecord | undefined,
+): Unwritten | undefined {
+  try {
+    if (record === undefined) dropRecord(input.stateDir, placeOf(input, home));
+    else putRecord(input, home, record);
+    return undefined;
+  } catch (error) {
+    return unwritableAt(error);
+  }
 }
 
 /** Why the service refused a home's row, in setup's words. */
@@ -1740,12 +1764,9 @@ const EMPTY_JSON = "{}\n";
 interface NotWritten {
   readonly result: "left" | "failed";
   readonly reason: OutcomeReason;
-  readonly record?: string;
+  /** A record of the file could not be written. */
+  readonly unwritten?: Unwritten;
 }
-
-/** The record file a failed record write names. */
-const unwritableAt = (error: unknown): { readonly record?: string } =>
-  error instanceof SetupStateUnwritable ? { record: error.file } : {};
 
 /**
  * Writes the file's record (`applying`, with the entry as setup intends it, and `gives_access` when
@@ -1818,19 +1839,18 @@ async function writeEntry(
       if (error instanceof SetupStateTooLarge)
         return { result: "left", reason: "unsupported_layout" };
       if (error instanceof SetupStateInvalid || error instanceof SetupStateUnsafe) throw error;
-      return { ...failed("state_unwritable"), ...unwritableAt(error) };
+      return { ...failed("state_unwritable"), unwritten: unwritableAt(error) };
     }
     const bytes = now.kind === "read" ? now.bytes : undefined;
     const bom = now.kind === "read" && now.bom ? BOM : "";
     const wrote = await writeHomeFile(input, home, bytes, `${bom}${edited.text}`);
     if (wrote === "done") return record;
-    try {
-      if (before === undefined) forget(input, home);
-      else putRecord(input, home, before);
-    } catch {
-      // Left `applying`: the next run settles it as a removal.
+    // Nothing was written: the record goes back to what it was. One that cannot be is left
+    // `applying`, which the next run settles as a removal.
+    const unwritten = writeRecord(input, home, before);
+    if (!(wrote === "changed_meanwhile" && locked && attempt < TRIES)) {
+      return { ...failed(wrote), ...(unwritten === undefined ? {} : { unwritten }) };
     }
-    if (!(wrote === "changed_meanwhile" && locked && attempt < TRIES)) return failed(wrote);
   }
 }
 
@@ -1842,7 +1862,7 @@ interface Step {
    * A record of the file could not be written (its record file, when known): the apply gives the
    * home nothing more.
    */
-  readonly unwritten?: { readonly record?: string };
+  readonly unwritten?: Unwritten;
 }
 
 /**
@@ -1862,12 +1882,10 @@ async function putEntry(
   const { home } = view;
   const written = await writeEntry(input, view, space, change, gives);
   if (!("entry" in written)) {
-    const { record } = written;
+    const { unwritten, ...outcome } = written;
     return {
-      outcome: { home, ...written },
-      ...(written.reason === "state_unwritable"
-        ? { unwritten: record === undefined ? {} : { record } }
-        : {}),
+      outcome: { home, ...outcome, ...unwritten },
+      ...(unwritten === undefined ? {} : { unwritten }),
     };
   }
   const placed = entryNow(home, written);
@@ -1902,10 +1920,9 @@ async function putEntry(
     grant,
     at: written.at,
   };
-  try {
-    putRecord(input, home, applied);
-  } catch (error) {
-    return undo(input, home, written, access, "state_unwritable", gives, true, unwritableAt(error));
+  const unwritten = writeRecord(input, home, applied);
+  if (unwritten !== undefined) {
+    return undo(input, home, written, access, "state_unwritable", gives, true, unwritten);
   }
   return { outcome: { home, result: "applied" }, ...(gives ? { access: "live" as const } : {}) };
 }
@@ -1942,17 +1959,17 @@ async function undo(
   reason: OutcomeReason,
   asked: boolean,
   readable = true,
-  unwritten?: { readonly record?: string },
+  unwritten?: Unwritten,
 ): Promise<Step> {
   // A record that cannot be written is said, with the outcome: the apply then grants nothing more
   // for the home, since the record may still owe a revoke the next run asks for.
   let stuckAt = unwritten;
+  const write = (next: HomeRecord | undefined) => {
+    const failed = writeRecord(input, home, next);
+    stuckAt ??= failed;
+  };
   const removing = { ...record, state: "removing" as const };
-  try {
-    putRecord(input, home, removing);
-  } catch (error) {
-    stuckAt ??= unwritableAt(error);
-  }
+  write(removing);
   const gave = asked && record.gives_access === true;
   const off = gave ? await revoked(access, home) : true;
   const failed = (note: string): Outcome => ({
@@ -1966,14 +1983,11 @@ async function undo(
   if (!off) return { outcome: failed("undo_failed"), access: "unknown", ...stuck() };
   // No revoke is owed any more: what is left is the entry, whenever it can be taken out.
   const done = spent(removing);
-  try {
-    putRecord(input, home, done);
-  } catch (error) {
-    stuckAt ??= unwritableAt(error);
-  }
+  write(done);
   const settled = gave ? { access: "off" as const } : {};
   if (!readable) return { outcome: failed("undo_failed"), ...settled, ...stuck() };
   const out = await takeOut(input, home, done);
+  if (out.record !== undefined) stuckAt ??= { record: out.record };
   const note = out.kept === "own" ? "undo_failed" : out.kept === "edited" ? "entry_left" : "undone";
   return { outcome: failed(note), ...settled, ...stuck() };
 }
@@ -2006,12 +2020,16 @@ async function grantBack(
   } catch (error) {
     return { outcome: { home, result: "failed", reason: grantReason(error) }, access: "unknown" };
   }
-  if (record.grant !== grant) {
-    try {
-      putRecord(input, home, { ...record, grant });
-    } catch {
-      // The access is given all the same: the row's ID in the record is a note.
-    }
+  // The access is given all the same; a record that does not take the row's ID is said, and the
+  // apply gives the home nothing more.
+  const unwritten =
+    record.grant === grant ? undefined : writeRecord(input, home, { ...record, grant });
+  if (unwritten !== undefined) {
+    return {
+      outcome: { home, result: "unchanged", reason: "state_unwritable", ...unwritten },
+      access: "live",
+      unwritten,
+    };
   }
   return { outcome: { home, result: "unchanged" }, access: "live" };
 }
@@ -2183,15 +2201,14 @@ async function takeBack(input: SetupInput, view: HomeView): Promise<Outcome> {
   }
   const removing = spent({ ...record, state: "removing" });
   if (record.state !== "removing" || record.gives_access !== false) {
-    try {
-      putRecord(input, home, removing);
-    } catch (error) {
+    const unwritten = writeRecord(input, home, removing);
+    if (unwritten !== undefined) {
       const whose = whoseIn(home, readHomeFile(home), record);
       return {
         home,
         result: "failed",
         reason: "state_unwritable",
-        ...unwritableAt(error),
+        ...unwritten,
         ...(whose === "absent" ? {} : { kept: whose }),
       };
     }
@@ -2208,10 +2225,11 @@ async function takeBack(input: SetupInput, view: HomeView): Promise<Outcome> {
  */
 async function takeOut(input: SetupInput, home: AgentHome, record: HomeRecord): Promise<Outcome> {
   const { format, servers } = APPS[home.app];
-  const done = (outcome: Outcome): Outcome => {
-    forget(input, home);
-    return outcome;
-  };
+  // The record goes; one that cannot be dropped is said, and the next run forgets it.
+  const done = (outcome: Outcome): Outcome => ({
+    ...outcome,
+    ...writeRecord(input, home, undefined),
+  });
   for (let attempt = 1; ; attempt += 1) {
     const read = readHomeFile(home);
     if (read.kind === "refused") {

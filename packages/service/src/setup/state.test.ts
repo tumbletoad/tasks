@@ -1,6 +1,7 @@
 // Setup's two record files have one reader: state.ts. Every other source file reads a home's records
 // through setupRecords, which reads both; one that named a record file could read one by itself,
-// which is how a caller kept forgetting the other.
+// which is how a caller kept forgetting the other. It sees a name written as one literal only: a
+// name put together from parts passes it.
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, test } from "vitest";
