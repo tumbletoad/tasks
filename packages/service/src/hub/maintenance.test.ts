@@ -76,7 +76,7 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
     expect(second.verifiedAt).toBe(dailyAt);
   }, 60_000);
 
-  test("a newer backup whose sidecar is missing or does not read counts as one that does not restore", async () => {
+  test("a newer backup whose sidecar is missing or does not read names no copy: it stays listed and counts for none", async () => {
     const { root, cleanup } = tempRoot("upkeep-sidecar");
     cleanups.push(cleanup);
     const checked = await checkedDriver();
@@ -104,13 +104,17 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
       kind: "manual",
       now: () => dailyAt + 2000,
     });
+    const state = () =>
+      listBackups(backupsFolder(space.folder)).backups.find((b) => b.name === cut.name)?.state;
     writeFileSync(cut.sidecarFile, "{");
     const second = await runner.run({ ...job, now: dailyAt + 5000 });
-    expect(second).toMatchObject({ checked: true, unverified: 1, verifiedAt: dailyAt });
+    expect(second).toMatchObject({ checked: true, unverified: 0, verifiedAt: dailyAt });
+    expect(state()).toBe("invalid_sidecar");
 
     rmSync(cut.sidecarFile);
     const third = await runner.run({ ...job, now: dailyAt + 6000 });
-    expect(third).toMatchObject({ checked: true, unverified: 1, verifiedAt: dailyAt });
+    expect(third).toMatchObject({ checked: true, unverified: 0, verifiedAt: dailyAt });
+    expect(state()).toBe("missing_sidecar");
   }, 60_000);
 });
 

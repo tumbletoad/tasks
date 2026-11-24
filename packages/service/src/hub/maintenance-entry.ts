@@ -70,21 +70,12 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
   // Backups of this copy's history newer than the one that restores, or than the one whose trial
   // could not run, whose files are no longer whole (data missing or of another size): retention
   // passes them over, and they do not restore either. A `.db.gz` whose sidecar is missing or does
-  // not read names no history. In the default folder, which only this machine's writer of the
-  // space writes, one of this copy's epoch is this copy's (each claim and each restore in place
-  // here takes a new epoch); in a backup.dir that other spaces and machines may share it is nobody's
-  // known.
-  const epoch = own?.backups[0]?.sidecar?.epoch;
+  // not read names no history, so it counts for no copy: `space backups` lists it as it is.
   const newestKnown = verified ?? named(retention?.unchecked?.name);
   const broken =
     retention === undefined
       ? 0
-      : [
-          ...(own?.backups ?? []),
-          ...listing.backups.filter(
-            (b) => b.sidecar === undefined && job.cleanup && b.epoch === epoch,
-          ),
-        ].filter(
+      : (own?.backups ?? []).filter(
           (b) =>
             b.state !== "ok" &&
             (newestKnown === undefined || compareInHistory(b, newestKnown) < 0) &&
