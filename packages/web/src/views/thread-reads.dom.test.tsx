@@ -119,7 +119,7 @@ async function open(fails: "receipts" | "runs"): Promise<HTMLElement> {
           Promise.resolve(input.sections === undefined ? digest : sections),
       },
     },
-    busy: () => Promise.resolve([]),
+    busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => (fails === "receipts" ? lost() : Promise.resolve([])),
     runs: () => (fails === "runs" ? lost() : Promise.resolve([])),
   } as unknown as Api;

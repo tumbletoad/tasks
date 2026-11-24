@@ -32,7 +32,15 @@ const snapshot: SnapshotMessage = {
   areas: [{ id: "a_1", title: "Lumen", position: "a" }],
   projects: [],
   instances: [
-    { key: "codex-work", label: "Codex", glyph: "C", ring: 1, route: "terminal", runs: true },
+    {
+      key: "codex-work",
+      app: "Codex",
+      label: "Codex",
+      glyph: "C",
+      ring: 1,
+      route: "terminal",
+      runs: true,
+    },
   ],
 };
 
@@ -148,7 +156,7 @@ beforeEach(() => {
   Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
   const api = {
     client: client(),
-    busy: () => Promise.resolve([]),
+    busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => Promise.resolve([]),
     runs: () => Promise.resolve([]),
   } as unknown as Api;

@@ -80,7 +80,7 @@ beforeEach(async () => {
               }),
       },
     },
-    busy: () => Promise.resolve([]),
+    busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => Promise.resolve([]),
   } as unknown as Api;
   live = new Live({

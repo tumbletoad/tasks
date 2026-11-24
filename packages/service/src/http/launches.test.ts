@@ -202,8 +202,22 @@ describe("[M6.page.run-view] the page's view of a run", () => {
       },
       port: {
         instances: () => [
-          { key: "codex-work", label: "Codex", glyph: "Cx", ring: 1, route: "terminal" },
-          { key: "claude", label: "Claude", glyph: "Cl", ring: 2, route: "terminal" },
+          {
+            key: "codex-work",
+            app: "Codex",
+            label: "Codex",
+            glyph: "Cx",
+            ring: 1,
+            route: "terminal",
+          },
+          {
+            key: "claude",
+            app: "Claude",
+            label: "Claude",
+            glyph: "Cl",
+            ring: 2,
+            route: "terminal",
+          },
         ],
       },
       runs: port,

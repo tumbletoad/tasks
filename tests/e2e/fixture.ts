@@ -19,7 +19,7 @@ export const BULK_TASKS = 5_000;
 /** The finished world's Mira: thousands finished in one month, some checked off, some dropped. */
 export const FINISHED_TASKS = { done: 3_000, pending: 30, dropped: 5 } as const;
 
-function built(): string {
+export function built(): string {
   const ui = process.env["E2E_UI_BUILD"];
   if (ui === undefined) throw new Error("global-setup.ts did not build the page");
   return ui;

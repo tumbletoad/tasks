@@ -121,7 +121,7 @@ beforeEach(() => {
         get: () => new Promise(() => undefined),
       },
     },
-    busy: () => Promise.resolve([]),
+    busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => Promise.resolve([]),
     runs: () => Promise.resolve([]),
   } as unknown as Api;

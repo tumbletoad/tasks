@@ -29,6 +29,9 @@ import {
   envValue,
   instanceEntry,
   instanceHome,
+  appName,
+  instanceNames,
+  targetDef,
   nodeDetectHost,
   type Env,
   type EnvironmentSource,
@@ -338,6 +341,8 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   const byRow = new Map<string, Offer>();
   const owners = new Map<string, string>();
   const out: (Omit<AppRow, "open"> & { open?: Part | "offer" })[] = [];
+  /** The account each row's instance or offer names, by the row's key. */
+  const accounts = new Map<string, string>();
 
   const fixed = (key: string, on: boolean, why: Why): Part => ({
     on,
@@ -421,6 +426,8 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
           samePath(platform, p.configHome, home.home),
       );
       label = owner?.label ?? proposal?.label ?? label;
+      const account = owner?.account ?? proposal?.account;
+      if (account !== undefined) accounts.set(key, account);
       open = owner !== undefined ? ownedPart(key, owner) : offerPart(key, proposal, home.instance);
     }
     out.push({
@@ -446,6 +453,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     const owner = machine.instances.find(
       (i) => i.target === "t3" && i.t3?.providerInstance === provider,
     );
+    accounts.set(key, owner?.account ?? proposal.account);
     out.push({
       key,
       app: "t3",
@@ -456,9 +464,28 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     });
   }
 
+  // A row set up is named as Open names its instance: among the instances set up here. One not set
+  // up is named among those and the other rows not set up, so two found homes of one app differ.
+  const setUp = machine.instances.filter((i) => i.enabled).map((i) => ({ ...i, app: appName(i) }));
+  const owned = (row: Omit<AppRow, "open">) => setUp.findIndex((i) => i.id === owners.get(row.key));
+  const notSetUp = out.filter((row) => owned(row) < 0);
+  const setUpNames = instanceNames(setUp);
+  const otherNames = instanceNames([
+    ...setUp,
+    ...notSetUp.map((row) => ({
+      app: row.app === "t3" ? targetDef("t3").label : appLabel(row.app),
+      label: row.label,
+      account: accounts.get(row.key) ?? "",
+    })),
+  ]).slice(setUp.length);
+  const nameOf = (row: Omit<AppRow, "open">): string =>
+    (owned(row) >= 0
+      ? setUpNames[owned(row)]
+      : otherNames[notSetUp.findIndex((r) => r.key === row.key)]) ?? row.label;
   const view: AppsView = {
     space,
-    rows: out.map(({ open, ...row }): AppRow => {
+    rows: out.map(({ open, ...named }): AppRow => {
+      const row = { ...named, label: nameOf(named) };
       if (open !== "offer") return { ...row, ...(open === undefined ? {} : { open }) };
       const offer = byRow.get(row.key);
       if (offer === undefined) return row;
