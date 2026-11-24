@@ -168,7 +168,7 @@ export async function updateCommand(
     io.stdout(
       `${JSON.stringify({
         ok: code === 0,
-        ...summary(result),
+        ...outcomeJson(result),
         ...(report === undefined || spaces === undefined
           ? {}
           : { spaces: spacesJson(report, spaces.commands) }),
@@ -311,13 +311,20 @@ export function spacesJson(report: SpacesReport, commands: readonly string[]) {
   };
 }
 
-function summary(result: UpdateResult) {
+/** What `--json` says of the outcome, beside `ok` and the spaces. */
+export function outcomeJson(result: UpdateResult) {
   switch (result.outcome) {
     case "updated":
       return { outcome: result.outcome, from: result.from, to: result.to };
     case "current":
       return { outcome: result.outcome, version: result.version };
     case "repaired":
-      return { outcome: result.outcome, repair: result.repair.kind, current: result.current };
+      return {
+        outcome: result.outcome,
+        repair: result.repair.kind,
+        current: result.current,
+        // The service was left on this version: `current` takes effect at its next start.
+        ...(result.running === undefined ? {} : { running: result.running, restart: "deferred" }),
+      };
   }
 }

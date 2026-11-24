@@ -5179,7 +5179,7 @@
     },
     {
       "id": "A2.3.12.6.update.restart-consent",
-      "title": "An update restarts the service only on the person's decision, asked once and before anything is held or stopped: declined, or with nobody to ask, the update stops with nothing changed and no version folder left; a service that comes and goes is never restarted without that agreement; agreed, its runs are held and waited for before the restart; a repair restarts a running service only on that agreement, and a running service restarts itself after a repair only when the journal records it",
+      "title": "An update restarts the service only on the person's decision, asked once and before anything is held or stopped: declined, or with nobody to ask, the update stops with nothing changed and no version folder left; a service that comes and goes is never restarted without that agreement; agreed, its runs are held and waited for before the restart; a repair restarts a running service only on that agreement, and a running service restarts itself after a repair only when the journal records it; --json of a repair that left the service on another version names that version and a deferred restart",
       "source": "A2 3.12.6",
       "owner": "M6",
       "kind": "ci",

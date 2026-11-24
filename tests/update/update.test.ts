@@ -1250,7 +1250,7 @@ describe("[A2.3.12.6.update.restart-consent] the service is restarted only on th
     // began): declined now, the service runs on.
     cutOff(false);
     const left = await repairUpdate({ ...w.options, agreeRestart: answer(false) });
-    expect(left).toMatchObject({ outcome: "repaired", current: "0.2.0" });
+    expect(left).toMatchObject({ outcome: "repaired", current: "0.2.0", running: "0.1.0" });
     expect(asked).toBe(1);
     expect(w.control.calls).toEqual([]);
     expect(w.control.version).toBe("0.1.0");

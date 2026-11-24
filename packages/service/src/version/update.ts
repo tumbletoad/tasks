@@ -474,6 +474,8 @@ export interface SpacesReport {
 
 /**
  * `spaces`: undefined when the service that runs is of another version, or it serves no space.
+ * `running`: a repair left the service on this other version, by the person's decision; what was
+ * repaired takes effect at its next start.
  */
 export type UpdateResult =
   | {
@@ -487,6 +489,7 @@ export type UpdateResult =
       readonly outcome: "repaired";
       readonly repair: RepairOutcome;
       readonly current: string;
+      readonly running?: string;
       readonly spaces?: SpacesReport;
     };
 
@@ -698,7 +701,7 @@ async function repairFirst(
         options,
         `The service was not restarted and runs ${running.version}: ${what} takes effect at its next start (${PRODUCT_ID} service restart).`,
       );
-      return { repair, seen: running.version === current };
+      return { repair, seen: running.version === current, running: running.version };
     }
     // A service that runs may have started runs since the update was cut off: they are waited
     // for, or stopped once the person says so, as before any restart.
@@ -721,6 +724,8 @@ interface Repaired {
   readonly repair: RepairOutcome;
   /** The service answered on the version current names, when looked at or brought back. */
   readonly seen: boolean;
+  /** The service was left on this version by the person's decision, not restarted. */
+  readonly running?: string;
 }
 
 /**
@@ -1561,7 +1566,7 @@ export async function repairUpdate(options: UpdateOptions): Promise<UpdateResult
   const lock = await lockForUpdate(install, options);
   try {
     await at(options, "locked");
-    const { repair, seen } = await repairFirst(install, options, true, {});
+    const { repair, seen, running } = await repairFirst(install, options, true, {});
     if (repair.kind === "stuck") sayRepair(options, repair);
     const current = currentVersion(install.root, install.platform);
     if (current === undefined) throw new InstallError("current names no installed version.", 1);
@@ -1571,6 +1576,7 @@ export async function repairUpdate(options: UpdateOptions): Promise<UpdateResult
       outcome: "repaired",
       repair,
       current,
+      ...(running === undefined ? {} : { running }),
       ...(spaces === undefined ? {} : { spaces }),
     };
   } finally {

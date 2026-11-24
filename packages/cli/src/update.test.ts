@@ -6,7 +6,7 @@ import { CLI_NAME } from "@ttasks/brand";
 import { describe, expect, test } from "vitest";
 import type { SpaceAtEnd, SpaceNote, SpacesReport } from "@ttasks/service/version-update";
 import { spacesCheck } from "./doctor.ts";
-import { spaceLines, spacesJson } from "./update.ts";
+import { outcomeJson, spaceLines, spacesJson } from "./update.ts";
 
 const FAILED =
   "Migration to 0.6 failed (STORAGE_SQL). Your data is unchanged. The space stays at 0.5. Backup: pre-migrate-fixture-b. It is tried again after an update, or now with: ttasks space open <folder> --retry-migration";
@@ -117,6 +117,26 @@ describe("[A2.3.12.6.update.spaces] the end of an update names each space that i
       `${CLI_NAME} doctor`,
       `${CLI_NAME} space list`,
     ]);
+  });
+
+  test("--json of a repair that left the service on an older version names that version, and that the restart waits for its next start", () => {
+    expect(
+      outcomeJson({
+        outcome: "repaired",
+        repair: { kind: "nothing" },
+        current: "0.2.0",
+        running: "0.1.0",
+      }),
+    ).toEqual({
+      outcome: "repaired",
+      repair: "nothing",
+      current: "0.2.0",
+      running: "0.1.0",
+      restart: "deferred",
+    });
+    expect(
+      outcomeJson({ outcome: "repaired", repair: { kind: "nothing" }, current: "0.2.0" }),
+    ).toEqual({ outcome: "repaired", repair: "nothing", current: "0.2.0" });
   });
 
   test("--json has the same facts: each verdict with the service's reason, words and backup, the bound and the commands", () => {
