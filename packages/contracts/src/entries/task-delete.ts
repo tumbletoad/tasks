@@ -9,6 +9,7 @@ import { safeText } from "../safe-text.ts";
 import {
   AsOf,
   Base,
+  Compared,
   Replayed,
   RequestId,
   SourceId,
@@ -85,6 +86,7 @@ export const TaskDeleteResult = z.strictObject({
   commit: CommitId.describe("The change, which Undo names").optional(),
   as_of: AsOf,
   replayed: Replayed.optional(),
+  compared: Compared.optional(),
 });
 
 export const taskDelete = defineEntry({

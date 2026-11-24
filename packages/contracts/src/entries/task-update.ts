@@ -14,6 +14,7 @@ import {
   Mode,
   Priority,
   ProposalId,
+  Compared,
   Replayed,
   RequestId,
   SOURCE_AGENT_MAX,
@@ -105,6 +106,7 @@ export const TaskUpdateResult = z.strictObject({
   ...InsideFolders,
   warnings: Warnings,
   replayed: Replayed.optional(),
+  compared: Compared.optional(),
 });
 
 export const taskUpdate = defineEntry({

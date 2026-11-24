@@ -4,7 +4,16 @@
 // agent never takes back what the person wrote.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { AsOf, Base, Replayed, RequestId, TaskRef, TaskRefInput, patterns } from "../schemas.ts";
+import {
+  AsOf,
+  Base,
+  Compared,
+  Replayed,
+  RequestId,
+  TaskRef,
+  TaskRefInput,
+  patterns,
+} from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 
 /** A note's number as the person reads it in the thread: `3`, or its reference `n3`. */
@@ -29,6 +38,7 @@ export const NoteRemoveResult = z.strictObject({
   note: z.string().regex(patterns.entryRef).describe("The note, such as n3"),
   as_of: AsOf,
   replayed: Replayed.optional(),
+  compared: Compared.optional(),
 });
 
 export const noteRemove = defineEntry({

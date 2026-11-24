@@ -14,6 +14,7 @@ import {
   idPattern,
   InsideFolders,
   ProjectArea,
+  Compared,
   Replayed,
   RequestId,
   TaskRef,
@@ -64,6 +65,7 @@ export const FolderManageResult = z.strictObject({
   ...InsideFolders,
   as_of: AsOf,
   replayed: Replayed.optional(),
+  compared: Compared.optional(),
 });
 
 export const folderManage = defineEntry({

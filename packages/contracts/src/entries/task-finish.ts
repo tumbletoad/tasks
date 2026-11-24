@@ -17,6 +17,7 @@ import {
   Mode,
   PastInput,
   ProposalId,
+  Compared,
   Replayed,
   RequestId,
   SeveralMatch,
@@ -67,7 +68,7 @@ export const TaskFinishResult = z.strictObject({
       z.strictObject({
         result: z.enum(["created", "exists", "proposed"]).describe("What happened to the draft"),
         ref: TaskRef.optional(),
-        title: z.string().describe("Title"),
+        title: z.string().describe("Its title now; absent when it could not be read").optional(),
         lifecycle: Lifecycle.describe("The matched task's lifecycle").optional(),
         ambiguous: SeveralMatch.optional(),
         log_added: LogAdded,
@@ -80,6 +81,7 @@ export const TaskFinishResult = z.strictObject({
   proposal: ProposalId.optional(),
   as_of: AsOf,
   replayed: Replayed.optional(),
+  compared: Compared.optional(),
 });
 
 export const taskFinish = defineEntry({

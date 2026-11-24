@@ -104,6 +104,11 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "compared": {
+            "const": false,
+            "description": "A retry whose request this build could not compare: what that request did",
+            "type": "boolean"
+          },
           "entry": {
             "description": "Its ordinal: l3 for a log entry, n2 for a note",
             "pattern": "^[nl][1-9][0-9]{0,5}$",
@@ -122,7 +127,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -245,6 +250,11 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "compared": {
+            "const": false,
+            "description": "A retry whose request this build could not compare: what that request did",
+            "type": "boolean"
+          },
           "folder": {
             "description": "The folder here as stored, the home as ~; absent once cleared",
             "maxLength": 4096,
@@ -269,7 +279,7 @@
                   "type": "string"
                 },
                 "name": {
-                  "description": "A project's name",
+                  "description": "A project's name, when it could be read",
                   "type": "string"
                 },
                 "ref": {
@@ -306,7 +316,7 @@
                   "type": "string"
                 },
                 "name": {
-                  "description": "A project's name",
+                  "description": "A project's name, when it could be read",
                   "type": "string"
                 },
                 "ref": {
@@ -336,7 +346,7 @@
             "properties": {
               "area": {
                 "additionalProperties": false,
-                "description": "A project's area as of the write; absent: it has none",
+                "description": "A project's area; absent: it has none",
                 "properties": {
                   "archived": {
                     "const": true,
@@ -389,7 +399,7 @@
             "type": "object"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -556,7 +566,7 @@
             "type": "string"
           },
           "areas": {
-            "description": "Areas in the space's order, each with its projects",
+            "description": "Areas in the space's order, with their projects; absent: not read",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -660,6 +670,11 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "compared": {
+            "const": false,
+            "description": "A retry whose request this build could not compare: what that request did",
+            "type": "boolean"
+          },
           "cursor": {
             "description": "Pass it for the next page",
             "maxLength": 330,
@@ -685,7 +700,7 @@
                   "type": "string"
                 },
                 "name": {
-                  "description": "A project's name",
+                  "description": "A project's name, when it could be read",
                   "type": "string"
                 },
                 "ref": {
@@ -709,7 +724,7 @@
             "properties": {
               "area": {
                 "additionalProperties": false,
-                "description": "A project's area as of the write; absent: it has none",
+                "description": "A project's area; absent: it has none",
                 "properties": {
                   "archived": {
                     "const": true,
@@ -750,14 +765,13 @@
                 "type": "string"
               },
               "name": {
-                "description": "Its name now",
+                "description": "Its name now; absent when it is gone",
                 "type": "string"
               }
             },
             "required": [
               "kind",
-              "id",
-              "name"
+              "id"
             ],
             "type": "object"
           },
@@ -780,7 +794,7 @@
                   "type": "string"
                 },
                 "name": {
-                  "description": "A project's name",
+                  "description": "A project's name, when it could be read",
                   "type": "string"
                 },
                 "ref": {
@@ -864,7 +878,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -914,11 +928,7 @@
         },
         "required": [
           "action",
-          "as_of",
-          "areas",
-          "projects",
-          "total_areas",
-          "total_projects"
+          "as_of"
         ],
         "type": "object"
       },
@@ -977,6 +987,11 @@
             "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
           },
+          "compared": {
+            "const": false,
+            "description": "A retry whose request this build could not compare: what that request did",
+            "type": "boolean"
+          },
           "newer_work": {
             "description": "Who changed which task since, one entry per task and author",
             "items": {
@@ -1015,7 +1030,7 @@
             "type": "array"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -1112,6 +1127,11 @@
             "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
           },
+          "compared": {
+            "const": false,
+            "description": "A retry whose request this build could not compare: what that request did",
+            "type": "boolean"
+          },
           "newer_work": {
             "description": "Who changed which task since, one entry per task and author",
             "items": {
@@ -1141,7 +1161,7 @@
             "type": "array"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -1525,13 +1545,18 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "compared": {
+            "const": false,
+            "description": "A retry whose request this build could not compare: what that request did",
+            "type": "boolean"
+          },
           "note": {
             "description": "The note, such as n3",
             "pattern": "^[nl][1-9][0-9]{0,5}$",
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -1751,7 +1776,7 @@
                       "type": "null"
                     }
                   ],
-                  "description": "Its value now"
+                  "description": "The value it set"
                 }
               },
               "required": [
@@ -1763,8 +1788,13 @@
             },
             "type": "array"
           },
+          "compared": {
+            "const": false,
+            "description": "A retry whose request this build could not compare: what that request did",
+            "type": "boolean"
+          },
           "prefs": {
-            "description": "The keys asked for, sorted",
+            "description": "The keys asked for, sorted; absent on a set when they could not be read",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -1889,7 +1919,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -1904,8 +1934,7 @@
         },
         "required": [
           "action",
-          "as_of",
-          "prefs"
+          "as_of"
         ],
         "type": "object"
       },
@@ -2428,7 +2457,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -3280,13 +3309,18 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "compared": {
+            "const": false,
+            "description": "A retry whose request this build could not compare: what that request did",
+            "type": "boolean"
+          },
           "proposal": {
             "description": "Proposal ID",
             "pattern": "^pr_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "tasks": {
@@ -3374,13 +3408,12 @@
                   "type": "string"
                 },
                 "title": {
-                  "description": "Title",
+                  "description": "Its title now; absent when it could not be read",
                   "type": "string"
                 }
               },
               "required": [
                 "result",
-                "title",
                 "log_added"
               ],
               "type": "object"
@@ -3492,6 +3525,11 @@
             "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
           },
+          "compared": {
+            "const": false,
+            "description": "A retry whose request this build could not compare: what that request did",
+            "type": "boolean"
+          },
           "later": {
             "description": "Tasks of the change in the Trash from a later change, which restores them",
             "items": {
@@ -3513,7 +3551,7 @@
             "type": "array"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "restored": {
@@ -3881,6 +3919,11 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "compared": {
+            "const": false,
+            "description": "A retry whose request this build could not compare: what that request did",
+            "type": "boolean"
+          },
           "follow_ups": {
             "description": "One row per follow-up draft",
             "items": {
@@ -3953,13 +3996,12 @@
                   "type": "string"
                 },
                 "title": {
-                  "description": "Title",
+                  "description": "Its title now; absent when it could not be read",
                   "type": "string"
                 }
               },
               "required": [
                 "result",
-                "title",
                 "log_added"
               ],
               "type": "object"
@@ -3987,7 +4029,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -6390,6 +6432,11 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "compared": {
+            "const": false,
+            "description": "A retry whose request this build could not compare: what that request did",
+            "type": "boolean"
+          },
           "lifecycle": {
             "description": "Lifecycle",
             "enum": [
@@ -6405,7 +6452,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -7512,6 +7559,11 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "compared": {
+            "const": false,
+            "description": "A retry whose request this build could not compare: what that request did",
+            "type": "boolean"
+          },
           "context": {
             "description": "How it changed the context",
             "enum": [
@@ -7546,7 +7598,7 @@
                   "type": "string"
                 },
                 "name": {
-                  "description": "A project's name",
+                  "description": "A project's name, when it could be read",
                   "type": "string"
                 },
                 "ref": {
@@ -7583,7 +7635,7 @@
                   "type": "string"
                 },
                 "name": {
-                  "description": "A project's name",
+                  "description": "A project's name, when it could be read",
                   "type": "string"
                 },
                 "ref": {
@@ -7613,7 +7665,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {

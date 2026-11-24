@@ -267,21 +267,31 @@ export const SourceId = z.string().regex(idPattern("s")).describe("Source ID");
 export const ProposalId = z.string().regex(idPattern("pr")).describe("Proposal ID");
 export const Lifecycle = z.enum(["active", "completed", "archived"]).describe("Lifecycle");
 export const WrapState = z.enum(["pending", "wrapped"]).describe("Wrap-up state");
-export const Replayed = z.boolean().describe("True when a retry returned the stored result");
-/** A project's area as of a write: a project in an archived area is out of sight with it. */
+/**
+ * A retry's mark. A retry repeats what the write did, from what it stored; the names and lists in
+ * its answer are read as of now, and its `as_of` dates them.
+ */
+export const Replayed = z
+  .boolean()
+  .describe("True on a retry: what the write did, with names and lists as of now");
+/** A retry this build could not compare with the request it repeats (an earlier build's). */
+export const Compared = z
+  .literal(false)
+  .describe("A retry whose request this build could not compare: what that request did");
+/** A project's area now: a project in an archived area is out of sight with it. */
 export const ProjectArea = z
   .strictObject({
     id: z.string().regex(idPattern("a")).describe("Area ID"),
     name: z.string().describe("Its name"),
     archived: z.literal(true).describe("Archived, and the project with it").optional(),
   })
-  .describe("A project's area as of the write; absent: it has none");
+  .describe("A project's area; absent: it has none");
 export const Warnings = z.array(z.string()).describe("Warnings, one sentence each");
 
 /** A folder inside one whose change a write made: one that moved along with it, or stayed. */
 export const InsideFolder = z.strictObject({
   kind: z.enum(["project", "task"]).describe("Whose folder it is"),
-  name: z.string().describe("A project's name").optional(),
+  name: z.string().describe("A project's name, when it could be read").optional(),
   ref: TaskRef.optional(),
   folder: z.string().max(4096).describe("Where it is now, the home as ~"),
 });

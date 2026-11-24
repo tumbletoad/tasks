@@ -15,6 +15,7 @@ import {
   Mode,
   ProjectArea,
   ProposalId,
+  Compared,
   Replayed,
   RequestId,
 } from "../schemas.ts";
@@ -103,14 +104,25 @@ const AreaRow = z.strictObject({
   projects: z.array(ProjectRow).describe("Its projects on this page"),
 });
 
-export const GroupManageResult = z.strictObject({
-  action: z.enum(GROUP_ACTIONS).describe("The action"),
-  as_of: AsOf,
+/** The list a call reads; a write lists the groups as they are when its answer is made. */
+const GroupList = {
   areas: z.array(AreaRow).describe("Areas in the space's order, each with its projects"),
   /** Projects without an area (A1 3.4: a project's area is optional). */
   projects: z.array(ProjectRow).describe("Projects without an area, after every area"),
   total_areas: Count.describe("Areas the whole list holds"),
   total_projects: Count.describe("Projects the whole list holds"),
+};
+
+export const GroupManageResult = z.strictObject({
+  action: z.enum(GROUP_ACTIONS).describe("The action"),
+  as_of: AsOf,
+  // A write whose list could not be read leaves it out rather than show part of it as whole.
+  areas: GroupList.areas
+    .describe("Areas in the space's order, with their projects; absent: not read")
+    .optional(),
+  projects: GroupList.projects.optional(),
+  total_areas: GroupList.total_areas.optional(),
+  total_projects: GroupList.total_projects.optional(),
   cursor: z
     .string()
     .max(CURSOR_LENGTH)
@@ -136,7 +148,7 @@ export const GroupManageResult = z.strictObject({
     .strictObject({
       kind: z.enum(["area", "project"]).describe("Area or project"),
       id: z.string().regex(idPattern("[ap]")).describe("Its ID"),
-      name: z.string().describe("Its name now"),
+      name: z.string().describe("Its name now; absent when it is gone").optional(),
       folder: Folder.optional(),
       area: ProjectArea.optional(),
     })
@@ -145,7 +157,11 @@ export const GroupManageResult = z.strictObject({
   ...InsideFolders,
   proposal: ProposalId.optional(),
   replayed: Replayed.optional(),
+  compared: Compared.optional(),
 });
+
+/** What a list returns: the page is always there. */
+export const GroupListResult = GroupManageResult.extend(GroupList);
 
 const lumen = {
   id: "p_4g8k2m6q0s4w8y2b6d0f4h8k2m",

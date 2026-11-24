@@ -43,6 +43,7 @@ export {
   GROUP_CURSOR,
   GROUP_PAGE,
   groupManage,
+  GroupListResult,
   GroupManageInput,
   GroupManageResult,
 } from "./entries/group-manage.ts";
@@ -57,6 +58,7 @@ export {
   prefsManage,
   PrefsManageInput,
   PrefsManageResult,
+  PrefsReadResult,
 } from "./entries/prefs-manage.ts";
 export { runReport, RunReportInput, RunReportResult } from "./entries/run-report.ts";
 export {

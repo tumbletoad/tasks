@@ -13,6 +13,7 @@ import {
   LogLeftOut,
   Mode,
   ProposalId,
+  Compared,
   Replayed,
   RequestId,
   SeveralMatch,
@@ -40,7 +41,7 @@ export const TaskAddResult = z.strictObject({
           .describe("created, matched an existing task, or created in the Inbox"),
         id: TaskId.optional(),
         ref: TaskRef.optional(),
-        title: z.string().describe("Title"),
+        title: z.string().describe("Its title now; absent when it could not be read").optional(),
         lifecycle: Lifecycle.optional(),
         matched_by: z.enum(["source_key"]).describe("How an existing task matched").optional(),
         ambiguous: SeveralMatch.optional(),
@@ -53,6 +54,7 @@ export const TaskAddResult = z.strictObject({
   warnings: Warnings,
   proposal: ProposalId.optional(),
   replayed: Replayed.optional(),
+  compared: Compared.optional(),
 });
 
 export const taskAdd = defineEntry({

@@ -3,7 +3,7 @@
 // (later.ts). The keys and their value schemas are contracts' declarations (preferences.ts).
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { AsOf, Base, Mode, ProposalId, Replayed, RequestId } from "../schemas.ts";
+import { AsOf, Base, Mode, ProposalId, Compared, Replayed, RequestId } from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 
 /** The longest string and the longest list a value the tool shows has. */
@@ -81,20 +81,29 @@ const PrefRow = z.strictObject({
 export const PrefsManageResult = z.strictObject({
   action: z.enum(PREFS_ACTIONS).describe("The action"),
   as_of: AsOf,
-  prefs: z.array(PrefRow).describe("The keys asked for, sorted"),
+  prefs: z
+    .array(PrefRow)
+    .describe("The keys asked for, sorted; absent on a set when they could not be read")
+    .optional(),
   result: z.enum(["updated", "no_change", "proposed"]).describe("What a change did").optional(),
   changed: z
     .array(
       z.strictObject({
         key: z.string().describe("The key"),
         from: PrefValueOutput.describe("Its value before"),
-        to: PrefValueOutput.describe("Its value now"),
+        to: PrefValueOutput.describe("The value it set"),
       }),
     )
     .describe("The keys a change changed")
     .optional(),
   proposal: ProposalId.optional(),
   replayed: Replayed.optional(),
+  compared: Compared.optional(),
+});
+
+/** What a describe or a get returns: the keys are always there. */
+export const PrefsReadResult = PrefsManageResult.extend({
+  prefs: z.array(PrefRow).describe("The keys asked for, sorted"),
 });
 
 export const prefsManage = defineEntry({

@@ -9,6 +9,7 @@ import {
   Lifecycle,
   Mode,
   ProposalId,
+  Compared,
   Replayed,
   RequestId,
   TaskRef,
@@ -32,6 +33,7 @@ export const TaskReopenResult = z.strictObject({
   proposal: ProposalId.optional(),
   as_of: AsOf,
   replayed: Replayed.optional(),
+  compared: Compared.optional(),
 });
 
 export const taskReopen = defineEntry({
