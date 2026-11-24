@@ -794,6 +794,7 @@ export function Expanded({
             loadingOlder={loadingOlder ?? false}
             olderFailed={olderFailed ?? false}
             {...(writes === undefined ? {} : { onOpenAgain: writes.openAgain })}
+            onOpenInT3={actions.openInT3}
             removed={detail.removedNotes}
             onRemove={
               writes === undefined || base === undefined

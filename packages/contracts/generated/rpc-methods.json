@@ -1583,6 +1583,10 @@
             ],
             "type": "object"
           },
+          "link_opened": {
+            "description": "T3 Code: whether its thread came up; false leaves it to open again",
+            "type": "boolean"
+          },
           "note": {
             "description": "The note on the task that holds your words",
             "pattern": "^[nl][1-9][0-9]{0,5}$",

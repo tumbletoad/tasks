@@ -164,6 +164,8 @@ interface Item {
   readonly note?: DetailNote;
   /** Open the session's instance again with what was asked. */
   readonly again?: () => void;
+  /** Bring the session's T3 Code thread up. */
+  readonly inT3?: () => void;
   /** A run's entry: its record, drawn by RunBody in place of the text. */
   readonly run?: Run;
 }
@@ -192,6 +194,8 @@ export interface ThreadProps {
   readonly olderFailed?: boolean;
   /** Open an instance again with a request already on the task (its note). */
   readonly onOpenAgain?: (note: DetailNote, instance: Instance) => void;
+  /** Bring a T3 Code launch's thread up in T3 Code. */
+  readonly onOpenInT3?: (launch: string) => void;
   /** The notes taken back: a session whose request is one of them says so. */
   readonly removed?: readonly DetailNote[];
   /** The person's Remove of a note: none in a card that only reads. */
@@ -213,6 +217,7 @@ export function Thread({
   loadingOlder = false,
   olderFailed = false,
   onOpenAgain,
+  onOpenInT3,
   removed = [],
   onRemove,
   runsFailed = false,
@@ -307,6 +312,15 @@ export function Thread({
             onOpenAgain(asked, instance);
           }
         : undefined;
+    // A T3 thread T3 Code made stays there: it can be brought up again.
+    const inT3 =
+      receipt.route === "t3-mcp" &&
+      (receipt.state === "confirmed" || receipt.state === "dispatched") &&
+      onOpenInT3 !== undefined
+        ? () => {
+            onOpenInT3(receipt.id);
+          }
+        : undefined;
     items.push({
       key: `r:${receipt.id}`,
       at: receipt.at.prepared ?? 0,
@@ -321,6 +335,7 @@ export function Thread({
       ...(asked === undefined ? {} : { asked, note: asked }),
       ...(askedRemoved ? { askedRemoved } : {}),
       ...(again === undefined ? {} : { again }),
+      ...(inT3 === undefined ? {} : { inT3 }),
     });
   }
   for (const run of runs) {
@@ -483,6 +498,16 @@ export function Thread({
                   onClick={item.again}
                 >
                   {t("thread.openAgain")}
+                </button>
+              )}
+              {item.inT3 === undefined ? null : (
+                <button
+                  type="button"
+                  className={styles.again}
+                  data-part="open-in-t3"
+                  onClick={item.inT3}
+                >
+                  {t("row.openInT3")}
                 </button>
               )}
             </div>

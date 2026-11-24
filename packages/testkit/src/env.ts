@@ -3,10 +3,11 @@
 // can forget a part: every TTasks variable and agent app variable of the shell that runs the tests
 // is removed (a test run inside an agent app must not make every call an agent's), and the Agent
 // Monitor named is a file that does not exist, so no service a test starts runs the `ttam` of the
+// machine, and T3 Code's home is a folder that does not exist, so none reaches the T3 Code of the
 // machine. A test of the monitor names the test kit's fake in `extra`.
 import { ENV_PREFIX, envVar } from "@ttasks/brand";
 import { isAgentMarker } from "@ttasks/bridge/protocol";
-import { NO_MONITOR } from "./no-monitor.ts";
+import { NO_MONITOR, NO_T3_HOME } from "./no-monitor.ts";
 
 const AGENT_APP = /^(CLAUDE|CODEX_|T3CODE_)/iu;
 
@@ -21,6 +22,7 @@ export function testEnv(
   const key = (name: string) => (windows ? name.toUpperCase() : name);
   const given: Readonly<Record<string, string | undefined>> = {
     [envVar("MONITOR")]: NO_MONITOR,
+    T3CODE_HOME: NO_T3_HOME,
     ...extra,
   };
   const replaced = new Set(Object.keys(given).map(key));

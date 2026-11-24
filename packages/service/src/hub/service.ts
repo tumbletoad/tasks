@@ -740,6 +740,17 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // Made before the endpoint listens (its handler table takes the shim's methods), once the
     // socket folder, which holds the launch folders on Linux, has been checked below.
     const launching: { service?: LaunchService } = {};
+    // T3's routes over `<state>/t3` (M2.11): the paired one opens its thread links through the
+    // launch service's opener.
+    const t3 = t3Host({
+      log,
+      home: t3HomeOf(env, facts),
+      files: t3Files(layout.state, platform),
+      platform,
+      env,
+      instances: config.instances,
+      open: (url) => launching.service?.openLink(url) ?? Promise.resolve(false),
+    });
     // The registered spaces as the binds and the request path read them: the space manager's once
     // the configuration's are handed to it, and until then those of the configuration, opening,
     // beside any the manager has already. So a bind during startup settles the default and the only
@@ -909,16 +920,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           return { ...facts, monitor: await monitor.probe(await monitorIn(found)) };
         },
       },
-      // `ttasks setup t3` (M2.11): T3's routes over `<state>/t3`, the paired one and the CLI
-      // fallback (M6.10). Launching through them is a later step's.
-      t3: t3Host({
-        log,
-        home: t3HomeOf(env, facts),
-        files: t3Files(layout.state, platform),
-        platform,
-        env,
-        instances: config.instances,
-      }),
+      // `ttasks setup t3` (M2.11): T3's routes over `<state>/t3`; Open uses the same paired one.
+      t3,
       // `ttasks setup agents` (M2.14): the agent-home rows of the grants table.
       agentHomes: {
         log,
@@ -1053,6 +1056,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       install,
       commandFolder: layout.bin,
       markers,
+      t3: t3.route,
       ...(accountHome === undefined ? {} : { home: accountHome }),
       // The grant gate's rule for the session the click starts: its home's live row names its
       // space (binding/decide.ts standing).

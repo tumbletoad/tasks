@@ -17,7 +17,7 @@ import {
   type ReactNode,
 } from "react";
 import { Refused, requestId, type Instance, type Receipt, type Run } from "../api.ts";
-import { useToast } from "../app/frame.ts";
+import { useToast, type ToastAction } from "../app/frame.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { starChange, statusChange, triageChange } from "../edit/change.ts";
@@ -35,6 +35,7 @@ import {
   instanceRefusal,
   MARKER_REASONS,
   markerWords,
+  t3Refusal,
   type BusyOf,
   type FolderRefusal,
 } from "../row/launch.ts";
@@ -800,6 +801,42 @@ export function TaskList({
   // The row actions read the latest state through a ref: one object for every row, for good.
   latest.current = { expanded, unresolved: unresolved?.id, today: clock.today };
   const actions = useMemo<RowActions>(() => {
+    // A T3 launch's thread, brought up in T3 Code: its brief too when that never came up.
+    const openInT3 = (launch: string): void => {
+      api.t3("open", launch).then(
+        ({ opened }) => {
+          if (opened !== true) say(t("row.t3NotUp"));
+        },
+        (error: unknown) => {
+          if (!live.failed(error)) say(t("row.t3NotUp"));
+        },
+      );
+    };
+    // What T3 Code's refusal offers: Start when it does not run (Pair needs its server), Pair when
+    // TTasks is not paired, or the pairing ended or allows too little.
+    const t3Next = (why: string): ToastAction | undefined => {
+      const act =
+        why === "not_running"
+          ? "start"
+          : why === "not_paired" || why === "reconnect" || why === "pairing_denied"
+            ? "pair"
+            : undefined;
+      if (act === undefined) return undefined;
+      const answer = act === "start" ? "row.t3Starting" : "row.t3Pairing";
+      return {
+        label: { id: act === "start" ? "row.t3Start" : "row.t3Pair" },
+        run: () => {
+          api.t3(act).then(
+            ({ opened }) => {
+              say(t(answer, { opened: opened === true ? "yes" : String(opened) }));
+            },
+            (error: unknown) => {
+              if (!live.failed(error)) say(t(answer, { opened: "no" }));
+            },
+          );
+        },
+      };
+    };
     return {
       toggle: (task) => {
         if (latest.current.expanded === task.id) {
@@ -872,6 +909,25 @@ export function TaskList({
                   : []),
               ];
               const then = said.length === 0 ? undefined : said.join(" ");
+              // T3 Code refused before making a thread: why, and what to do.
+              if (
+                receipt.state === "failed" &&
+                (receipt.reason === "model_unavailable" || receipt.reason === "pairing_denied")
+              ) {
+                say(
+                  t("row.openT3", { why: receipt.reason, label: instance.label }),
+                  t3Next(receipt.reason),
+                );
+              }
+              // T3 Code made the thread and did not come forward: the same thread, brought up.
+              if (opened.linkOpened === false) {
+                say(t("row.t3NotUp"), {
+                  label: { id: "row.openInT3" },
+                  run: () => {
+                    openInT3(receipt.id);
+                  },
+                });
+              }
               // The app takes the brief by paste: it opens without it when the copy failed.
               if (copy !== undefined)
                 return (await toClipboard(copy, false, then)) ? receipt : undefined;
@@ -904,6 +960,13 @@ export function TaskList({
                     space: home.works ?? t("apps.otherSpace"),
                   }),
                 );
+                return undefined;
+              }
+              // T3 Code cannot open it now: why, and Start or Pair where they help.
+              const t3Why = t3Refusal(error);
+              if (t3Why !== undefined) {
+                refuse(task.id, undefined);
+                say(t("row.openT3", { why: t3Why, label: instance.label }), t3Next(t3Why));
                 return undefined;
               }
               const cannot = instanceRefusal(error);
@@ -1012,6 +1075,7 @@ export function TaskList({
           },
         );
       },
+      openInT3,
       // Run: the service queues the run and answers at once; the thread shows it from then on,
       // and the feed brings each of its steps. A refusal starts nothing and says why where the
       // person clicked; the folder line says it too when the folder is the reason. Without an

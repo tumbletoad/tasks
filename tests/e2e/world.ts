@@ -104,6 +104,8 @@ export interface World {
   terminal(): TerminalCall[];
   /** The folders the file manager was asked to show so far, as the service resolved them. */
   folders(): string[];
+  /** The app links the service was asked to open so far (a world with T3). */
+  links(): string[];
   /**
    * How the fake `ttam` answers from now on (a world with a monitor): one of its modes, `""` for
    * the recording as it is, or `none` for no TTAM at all.
@@ -191,7 +193,15 @@ export interface WorldOptions {
   readonly runs?: boolean;
   /** The test kit's fake `ttam` as the Agent Monitor, in the mode `World.monitor` sets. */
   readonly monitor?: boolean;
+  /**
+   * A T3 Code instance after the fake agent, whose T3 is a fake T3 server with this home; the links
+   * the service would open are recorded (`World.links`), never opened.
+   */
+  readonly t3?: string;
 }
+
+/** The T3 Code instance of a world with T3. */
+export const T3_INSTANCE = { key: "t3", label: "T3 Code · test", glyph: "T3" } as const;
 
 /** The fake Codex's instance in a world with runs: the first that can run, Run's default. */
 export const CODEX_INSTANCE = { key: "codex-fake", label: "Codex · test", glyph: "Cx" } as const;
@@ -316,8 +326,14 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     registerSpaces(
       home,
       [{ path: seeded.folder, id: opened.space.spaceId }, ...scaled],
-      codexes + fakeInstanceToml(home, holds),
+      codexes +
+        fakeInstanceToml(home, holds) +
+        (options.t3 === undefined
+          ? ""
+          : instanceToml({ id: T3_INSTANCE.key, target: "t3", label: T3_INSTANCE.label })),
     );
+    const links = join(temp.root, "links.txt");
+    writeFileSync(links, "");
 
     const record = join(temp.root, "terminal.jsonl");
     writeFileSync(record, "");
@@ -342,6 +358,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           E2E_TERMINAL: record,
           E2E_FOLDERS: shown,
           ...(options.monitor === true ? { E2E_MONITOR: monitor } : {}),
+          ...(options.t3 === undefined ? {} : { T3CODE_HOME: options.t3, E2E_LINKS: links }),
         },
       });
       json = await waitReady(home, proc.pid);
@@ -485,6 +502,10 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           .map((line) => JSON.parse(line) as TerminalCall),
       folders: () =>
         readFileSync(shown, "utf8")
+          .split("\n")
+          .filter((line) => line !== ""),
+      links: () =>
+        readFileSync(links, "utf8")
           .split("\n")
           .filter((line) => line !== ""),
       refuseNextOpen: (task) => {

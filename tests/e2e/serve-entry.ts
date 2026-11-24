@@ -1,7 +1,8 @@
 // The end-to-end tests' `ttasks serve`: the real runServe() in a child process, as
 // packages/service/test/serve-entry.ts runs it, with the page's built folder (E2E_UI), a
 // terminal that records the command line it is given and runs that shim (E2E_TERMINAL, the file it
-// records into), a file manager that records the folders it is asked to show (E2E_FOLDERS), and,
+// records into), a file manager that records the folders it is asked to show (E2E_FOLDERS), an
+// app link opener that records the links it is given (E2E_LINKS, for T3 Code), and,
 // with E2E_MONITOR, the test kit's fake `ttam` steered by that file: `none` is no TTAM at all,
 // another word is the fake's mode (packages/testkit/src/fakes/ttam.ts), and the file beside it
 // with `.agents` added holds the homes and agents it reports besides. Without it, as in every
@@ -24,6 +25,7 @@ import { fakeTerminal } from "./fake-terminal.ts";
 const ui = process.env["E2E_UI"];
 const record = process.env["E2E_TERMINAL"];
 const folders = process.env["E2E_FOLDERS"];
+const links = process.env["E2E_LINKS"];
 if (ui === undefined || record === undefined || folders === undefined) {
   process.stderr.write("E2E_UI, E2E_TERMINAL and E2E_FOLDERS must be set\n");
   process.exit(64);
@@ -61,6 +63,15 @@ const code = await runServe({
       appendFileSync(folders, `${folder}\n`);
       return Promise.resolve("opened");
     },
+    // With E2E_LINKS, an app's link (T3 Code's) is recorded there, one per line, and opens nothing.
+    ...(links === undefined
+      ? {}
+      : {
+          openLink: (url: string) => {
+            appendFileSync(links, `${url}\n`);
+            return Promise.resolve(true);
+          },
+        }),
   },
   agentApps: {
     home: agentHome,

@@ -3544,7 +3544,7 @@
     },
     {
       "id": "A4.5.t3.fake-server",
-      "title": "The T3 primary route against a fake T3 server: an idle thread with the launch ID as clientRequestId and the grant on the intent, a lost reply then one repeat returning the same thread across an HTTP reconnect, a T3 restart and a service restart, Unknown and no thread after an OAuth reauthorization, a 401 leading to Reconnect T3, a nested folder that asks and never uses the containing project, the folder check and the thread link with the draft",
+      "title": "The T3 primary route against a fake T3 server: an idle thread with the launch ID as clientRequestId and the grant on the intent, a lost reply then one repeat returning the same thread across an HTTP reconnect, a T3 restart and a service restart, Unknown and no thread after an OAuth reauthorization, a 401 or a 30-day token that ran out leading to Reconnect T3, a refused model, a narrower mode or a read-only pairing failing with its reason and no repeat, a nested folder that becomes a project of its own without a question and never uses the containing project, the folder check by the project's ID, and the thread link with the draft once and bare after",
       "source": "A4 3.4.1, A4 3.9.2, A4 3.9.3, A4 5.1, A7 3.9 M2.11",
       "owner": "M2",
       "kind": "ci",
@@ -3578,6 +3578,22 @@
       "id": "A4.3.4.1.t3.pairing",
       "title": "Pairing with T3 by OAuth: discovery, dynamic registration and PKCE with S256 only, a fresh verifier and state per attempt, the redirect on loopback, the state compared before any exchange, a deadline on every wait, loopback endpoints only, and no secret in a URL TTasks makes, an error or a refusal",
       "source": "A4 3.4.1, A4 3.16, A7 3.9 M2.11",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.4.1.t3.open",
+      "title": "Open in T3 Code through the service against a fake T3: one click makes one thread at a project root or a nested folder registered as its own project, with the brief in its composer and the typed words only in the launch's request; a double click and a lost answer give the same thread; a link that did not come up opens again with its brief, then bare; T3 not paired or not running refuses with its reason",
+      "source": "A4 3.4.1, A7 M2.10t",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.4.1.t3.e2e",
+      "title": "Against the real service in Chromium and Firefox with a fake T3: T3 not running offers Start, which opens its link; not paired offers Pair, which opens T3's approval page; a read-only pairing fails one press at once with Pair again and no thread; then Open makes one thread at a project root with the brief in its composer and the typed words only in the request, Open in T3 on its entry brings it up without the brief, and a folder inside the project opens as a project of its own (screenshots in Chromium only)",
+      "source": "A4 3.4.1, A5 3.8, A5 3.9, A7 M2.10t",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]

@@ -282,6 +282,13 @@ the behaviour it describes, and keep each one to a sentence or two.
   out. A Claude Code instance with a home of its own never opens in the default account instead:
   where no terminal can start, Open starts nothing and says so. The desktop apps open with their
   own account, and Open says so.
+- Open in T3 Code opens one thread on the task, in exactly its folder, with the brief in the
+  composer unsent and the task's reference and title as its name. A folder that is no T3
+  project's root or worktree is added to T3 Code's projects as it is, never opened in a project
+  that only contains it, and removing it there is yours to do.
+- A pairing with T3 Code is approved on T3 Code's own page and lasts the 30 days T3 Code gives it;
+  then Open asks to pair again. TTasks keeps the pairing's token in its own state and never reads
+  T3 Code's.
 - An instance set for some spaces is offered, opens and runs only in those: a run queued before
   its spaces changed does not start.
 - TTasks tells apart "asked the app to open" from "the agent connected", and says so when it does

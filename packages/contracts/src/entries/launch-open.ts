@@ -95,6 +95,10 @@ export const LaunchOpenResult = z.strictObject({
     .regex(patterns.entryRef)
     .describe("The note on the task that holds your words")
     .optional(),
+  link_opened: z
+    .boolean()
+    .describe("T3 Code: whether its thread came up; false leaves it to open again")
+    .optional(),
 });
 
 const BRIEF = [

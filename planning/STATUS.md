@@ -108,10 +108,10 @@ The session plans for lab sessions 1 to 3 were written before background runs an
 | M2.12 | HTTP and WebSocket | M1.09 | M | done |
 | M2.13 | Skeleton page | M2.12, M2.05 | M | done |
 | M2.14 | Setup v0 | M2.03 | S | done |
-| M2.10t | T3 Open from the page and the questions before dispatch, the part of M2.10 not built | M2.10, M2.11, M4.06 | M | ready |
+| M2.10t | T3 Open from the page, the part of M2.10 not built | M2.10, M2.11, M4.06 | M | done |
 | M2.15 | Real-machine acceptance | all | S RM | todo |
 
-M2.04b and M2.10t are not in the base count. Until M2.10t lands, Open on a T3 instance answers `no_route`. M2.07's places were replaced by folders (M4.09, M4.10, M6.16), and M4.11 retires what is left of them. M2.04's binding is replaced under M4.06.
+M2.04b and M2.10t are not in the base count. Open on a T3 instance opens a thread through the paired route; T3's command-line route and the token refresh path are dead against T3's server and wait for their removal. M2.07's places were replaced by folders (M4.09, M4.10, M6.16), and M4.11 retires what is left of them. M2.04's binding is replaced under M4.06.
 
 ## M3: durable space (parallel with M4)
 

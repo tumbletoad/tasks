@@ -1,7 +1,17 @@
 // The e2e tests' `test`: Playwright's, with a worker-scoped world (world.ts) around the real
 // service and the page built once per run (global-setup.ts).
 import { test as base } from "@playwright/test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { FakeT3 } from "../../packages/testkit/src/fake-t3.ts";
 import { startWorld, type World } from "./world.ts";
+
+/** A world whose T3 Code instance has a fake T3 server, which the test steers. */
+export interface T3World {
+  readonly world: World;
+  readonly fake: FakeT3;
+}
 
 /** The design scale's open tasks (A5 3.25, A1): the bulk world's Mira holds this many more. */
 export const BULK_TASKS = 5_000;
@@ -25,6 +35,7 @@ export const test = base.extend<
     restartable: World;
     large: World;
     monitored: World;
+    t3: T3World;
   }
 >({
   // A test's routes end with the test. One that still passes a request on when its test ends (the
@@ -98,6 +109,27 @@ export const test = base.extend<
         await use(world);
       } finally {
         await world.close();
+      }
+    },
+    { scope: "worker", timeout: 240_000 },
+  ],
+  // A world with a T3 Code instance whose T3 is a fake server in this worker, started only by the
+  // tests that use it. Its T3 runs and is not paired.
+  t3: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const folder = mkdtempSync(join(tmpdir(), "ttasks-e2e-t3-"));
+      const fake = await FakeT3.start(join(folder, "t3home"));
+      try {
+        const world = await startWorld(built(), { t3: fake.home });
+        try {
+          await use({ world, fake });
+        } finally {
+          await world.close();
+        }
+      } finally {
+        await fake.stop();
+        rmSync(folder, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
       }
     },
     { scope: "worker", timeout: 240_000 },

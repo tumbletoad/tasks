@@ -11,7 +11,7 @@
 // library hands every handler), so a report is accepted only on the connection that presented the
 // ticket or the credential, and never names its launch itself.
 import { existsSync } from "node:fs";
-import { isAbsolute, join, win32 } from "node:path";
+import { basename, isAbsolute, join, win32 } from "node:path";
 import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
@@ -98,6 +98,8 @@ import {
   type ReportMethod,
   type Route,
   type SpawnPlan,
+  type T3Route,
+  type T3Unavailable,
 } from "@ttasks/launch";
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
@@ -271,6 +273,8 @@ export interface LaunchOptions {
   readonly recordsWait?: (ms: number) => void;
   /** Shows a resolved folder in the file manager. Default: the OS's (openFolder). */
   readonly showFolder?: (folder: string) => Promise<OpenResult>;
+  /** Opens a link of an app such as T3 Code's: true when it opened. Default: the OS's opener. */
+  readonly openLink?: (url: string) => Promise<boolean>;
 }
 
 export interface LaunchServiceOptions extends LaunchOptions {
@@ -304,7 +308,12 @@ export interface LaunchServiceOptions extends LaunchOptions {
   readonly markers?: FolderMarkers;
   /** Where a terminal click's agent home is registered, when not for its space. None: nowhere. */
   readonly registeredElsewhere?: RegisteredElsewhere;
+  /** T3 Code's paired route (A4 3.4.1). None: a T3 instance opens nothing. */
+  readonly t3?: T3Route;
 }
+
+/** At most this many T3 briefs whose thread did not come up are kept for a second try. */
+const UNSENT_MAX = 64;
 
 /** A space's launching on one writer: its machine and store, and the copy that writer serves. */
 interface Launching {
@@ -405,6 +414,11 @@ export class LaunchService {
   readonly #listeners = new Set<(space: string) => void>();
   /** `launch.open` calls under way, by space and request ID: the last of each queue. */
   readonly #opening = new Map<string, Promise<OpenTaskResult>>();
+  /**
+   * The brief of a T3 launch whose thread link did not open, by launch: Open in T3 delivers it
+   * then. In memory only; after a restart the thread opens without it.
+   */
+  readonly #unsent = new Map<string, string>();
 
   constructor(options: LaunchServiceOptions) {
     this.#options = options;
@@ -744,6 +758,9 @@ export class LaunchService {
     if (choice.route !== "clipboard" && task.folder.kind === "other_machine") {
       throw this.#unavailable("other_machine");
     }
+    if (choice.route === "t3-mcp" && instance !== undefined) {
+      return this.#openT3(space, hosted, request, instance, choice);
+    }
     // Copy starts nothing: its brief says where the task opens (#briefOf).
     const set = choice.route === "clipboard" ? null : this.#planFolder(task.folder);
     // A link opens the folder resolved now (and again at its dispatch); a UNC one cannot.
@@ -909,6 +926,158 @@ export class LaunchService {
       ...(note === undefined ? {} : { note }),
       removed: probe.removed,
     };
+  }
+
+  /**
+   * Open in T3 Code (A4 3.4.1): T3 runs and is paired; the task's folder is bound to a T3 project,
+   * registered as one of its own when it is no project's root or worktree; then the click records
+   * its intent, makes the idle thread under the pairing's grant, checks the thread's folder, and
+   * opens the thread with the brief in its composer, unsent. The click waits for all of it, so the
+   * person sees the thread come up or hears why not. Nothing is recorded before T3 has the folder.
+   */
+  async #openT3(
+    space: string,
+    hosted: Launching,
+    request: OpenTaskRequest,
+    instance: Instance,
+    choice: Choice,
+  ): Promise<OpenTaskResult> {
+    const t3 = this.#options.t3;
+    if (t3 === undefined) throw this.#unavailable("no_route");
+    const refuse = (why: T3Unavailable): LaunchUnavailable => {
+      this.#log("launch.unavailable", "t3");
+      return new LaunchUnavailable("t3", undefined, why);
+    };
+    const available = await t3.availability();
+    if (available.state !== "ready") {
+      // Pairing needs T3's server: when it does not run, Start T3 Code comes first.
+      const running = available.state === "not_running" || (await t3.running());
+      throw refuse(running ? available.state : "not_running");
+    }
+    // T3 takes a provider instance only with its model: without one the account could be another.
+    if (instance.t3?.providerInstance !== undefined && instance.t3.model === "") {
+      throw refuse("model_required");
+    }
+    const { task, requestId } = request;
+    const set = this.#planFolder(task.folder);
+    const where = await this.resolveFolder(space, set);
+    if (where.status === "failed") {
+      this.#options.log.log("launch.folder_refused", { stage: "open", reason: where.reason });
+      throw new LaunchFolderUnavailable(where.reason, set?.stored);
+    }
+    await this.#checkMarker(space, task.folder, request.markFolder === true);
+    const bound = await t3.prepare({
+      folder: { path: where.folder, identity: where.identity },
+      name: basename(where.folder),
+    });
+    if (bound.kind !== "bound") throw refuse(bound.reason);
+    const brief = await this.#briefOf(space, request, choice);
+    const probe = brief(REFERENCE_LENGTH_STAND_IN);
+    if (probe.status !== "ok") throw this.#unavailable("too_long");
+    const note = await this.#saveWords(request, probe);
+    let intent = await hosted.machine.open(
+      {
+        task: task.id,
+        instance: instance.id,
+        route: "t3-mcp",
+        place: null,
+        taskVersion: task.version,
+        briefHash: probe.hash,
+        ...(probe.composer === "request" && note !== undefined
+          ? { evidence: { request: note } }
+          : {}),
+      },
+      requestId,
+    );
+    this.#changed(space);
+    const text = brief(intent.reference);
+    if (text.status !== "ok") throw this.#unavailable("too_long");
+    let linkOpened: boolean | undefined;
+    if (intent.state === "prepared") {
+      const planned = await t3.plan(intent.id, {
+        projectId: bound.projectId,
+        strategy: bound.strategy,
+        title: `${task.ref} ${sanitiseTitle(task.title)}`.trim(),
+        instance,
+        folder: where.identity,
+      });
+      // A pairing that ended between the check above and now leaves the intent to expire.
+      if (planned.kind === "ready") {
+        intent = (await hosted.machine.dispatch(intent.id, { grant: planned.grant })) ?? intent;
+        if (intent.state === "dispatched") {
+          intent = (await hosted.machine.report(intent.id, await t3.confirm(intent))) ?? intent;
+        }
+        if (intent.state === "confirmed") {
+          linkOpened = (await t3.openThread(intent, text.text)).opened;
+          if (!linkOpened) this.#keepUnsent(intent.id, text.text);
+        }
+        this.#changed(space);
+      }
+    }
+    return {
+      intent,
+      copy: undefined,
+      composer: composerOf(probe.composer, note, intent),
+      ...(note === undefined ? {} : { note }),
+      removed: probe.removed,
+      ...(linkOpened === undefined ? {} : { linkOpened }),
+    };
+  }
+
+  #keepUnsent(launch: string, brief: string): void {
+    this.#unsent.set(launch, brief);
+    const oldest = this.#unsent.keys().next().value;
+    if (this.#unsent.size > UNSENT_MAX && oldest !== undefined) this.#unsent.delete(oldest);
+  }
+
+  /**
+   * Open in T3 for a launch whose thread exists: the thread link through the OS, with the brief in
+   * the composer only when its first delivery did not come up (a draft the person changed in T3
+   * since stays). True when the opener took it.
+   */
+  async openThread(space: string, launch: string): Promise<boolean> {
+    const t3 = this.#options.t3;
+    const intent = await (await this.#space(space))?.store.readIntent(launch);
+    if (t3 === undefined || intent?.route !== "t3-mcp") return false;
+    const { opened } = await t3.openThread(intent, this.#unsent.get(launch));
+    if (opened) this.#unsent.delete(launch);
+    return opened;
+  }
+
+  /** Start T3 Code: its link with nothing to open starts the app, which ignores it. */
+  startT3(): Promise<boolean> {
+    return this.openLink("t3code://");
+  }
+
+  /**
+   * Pair with T3 Code from the page (A4 3.4.1 "Pairing"): T3's approval page opens in the
+   * browser, where the person approves; the pairing is kept when T3 answers. `not_running` when
+   * no T3 server answers.
+   */
+  async pairT3(): Promise<"opened" | "not_opened" | "not_running"> {
+    const t3 = this.#options.t3;
+    if (t3 === undefined) return "not_running";
+    let attempt: Awaited<ReturnType<T3Route["beginPairing"]>>;
+    try {
+      attempt = await t3.beginPairing();
+    } catch {
+      return "not_running";
+    }
+    void t3.finishPairing(attempt).then(
+      (kept) => {
+        this.#options.log.log("setup.paired", { replaced: kept.replaced });
+      },
+      () => undefined,
+    );
+    return (await this.openLink(attempt.url)) ? "opened" : "not_opened";
+  }
+
+  /** Opens a URL with the OS's opener (A4 3.6.5): true when the opener took it. */
+  async openLink(url: string): Promise<boolean> {
+    if (this.#options.openLink !== undefined) return this.#options.openLink(url);
+    const opened = await openUrl(url, await this.#openerOptions());
+    this.#options.log.log("launch.opener", { opener: opened.opener, result: opened.result });
+    return opened.result === "opened";
   }
 
   /**
@@ -1699,9 +1868,10 @@ ${instance}`;
       steps: { dispatch: (intent) => this.#dispatchStep(intent) },
       recovery: {
         observe: (intent) => this.host.observe(intent, served.copy),
-        // T3 (M2.11): not paired yet, so a T3 launch left open is Unknown.
-        grant: () => Promise.resolve(undefined),
-        replay: () => Promise.resolve({ kind: "refused" }),
+        // T3's one repeat with the same key, only under the grant the launch was dispatched with.
+        grant: () => this.#options.t3?.grant() ?? Promise.resolve(undefined),
+        replay: (intent) =>
+          this.#options.t3?.replay(intent) ?? Promise.resolve({ kind: "refused" }),
       },
       ...(now === undefined ? {} : { now }),
       ...(elapsed === undefined ? {} : { elapsed }),
@@ -1727,6 +1897,9 @@ ${instance}`;
         // Copy (A4 3.4.6): the page copies the pointer brief in the person's click. The launch is
         // Dispatched at once and Confirmed once an agent reads its task by its reference.
         return { kind: "accepted" };
+      case "t3-mcp":
+        // T3's idle-thread create under the grant Dispatching recorded (t3-route.ts).
+        return this.#options.t3?.dispatch(intent) ?? { kind: "refused" };
       default:
         return { kind: "refused" };
     }
