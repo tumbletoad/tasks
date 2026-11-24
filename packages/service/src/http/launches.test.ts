@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import { RUN_LIMITS, type RunRecord } from "@ttasks/contracts/runs";
 import { leftOutEvidence } from "../launch/open.ts";
 import { WORK_ON_IT } from "../runs/agent.ts";
+import type { ServedSpace } from "../ops/index.ts";
 import { receiptOf, UiLaunches, uiRun, type UiRunPort } from "./launches.ts";
 
 const ID = "la_00r5mfcw5rfzxb9enb2vg50z3g";
@@ -287,6 +288,51 @@ describe("[M6.page.run-view] the page's view of a run", () => {
     });
     expect(shown.map((r) => r.state)).toEqual(["running", ...Array<string>(10).fill("succeeded")]);
     expect(shown[0]?.id).toBe(listed[12]?.id);
+  });
+});
+
+describe("[A2.3.10.5.copies.gone] a page's call for a copy that is not served says what happened to it", () => {
+  test("while the space closes it says nothing yet; once closed, closed; once another folder serves it, replaced", async () => {
+    const id = "sp_00r5mfcw5rfzxb9enb2vg50z3k";
+    const loaded = "a".repeat(24);
+    let spaces: ServedSpace[] = [];
+    const entry = (state: ServedSpace["state"], copy: string, folder: string): ServedSpace => ({
+      id,
+      name: "Mira",
+      state,
+      folder,
+      copy,
+      writer: undefined,
+      reader: state === "open" ? ({} as never) : undefined,
+    });
+    const launches = new UiLaunches({
+      host: { machine: { id: "m_00r5mfcw5rfzxb9enb2vg50z3j" }, spaces: () => spaces },
+      port: { instances: () => [], busy: () => Promise.resolve([]) },
+      log: () => undefined,
+      changed: () => undefined,
+    });
+    const reason = (error: unknown) => (error as { data: Record<string, unknown> }).data;
+
+    spaces = [entry("open", loaded, "/mira")];
+    await expect(launches.busy(id, loaded)).resolves.toEqual([]);
+    spaces = [entry("closing", loaded, "/mira")];
+    expect(reason(await launches.busy(id, loaded).catch((e: unknown) => e))).toEqual({
+      reason: "closing",
+      retryable: true,
+    });
+    spaces = [entry("closed", loaded, "/mira")];
+    expect(reason(await launches.busy(id, loaded).catch((e: unknown) => e))).toEqual({
+      reason: "closed",
+      retryable: false,
+    });
+    expect(reason(await launches.last(id, loaded).catch((e: unknown) => e))).toMatchObject({
+      reason: "closed",
+    });
+    spaces = [entry("closed", loaded, "/mira"), entry("open", "b".repeat(24), "/mira-copy")];
+    expect(reason(await launches.busy(id, loaded).catch((e: unknown) => e))).toEqual({
+      reason: "replaced",
+      retryable: false,
+    });
   });
 });
 

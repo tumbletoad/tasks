@@ -204,6 +204,26 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     live.stop();
   });
 
+  test("a call refused because the space was closed says it was closed; one refused while it is closing says nothing yet", async () => {
+    const live = start();
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b" });
+    receive({
+      ...snapshot(5, [task("a", "One")]),
+      space: { ...snapshot(5).space, copy: "c".repeat(24) },
+    });
+    const refused = (reason: string) =>
+      Object.assign(new Error("space_unavailable"), {
+        code: "space_unavailable",
+        data: { reason },
+      });
+    expect(live.failed(refused("closing"))).toBe(false);
+    expect(live.getState().gone).toBeUndefined();
+    expect(live.failed(refused("closed"))).toBe(true);
+    expect(live.getState().gone).toEqual({ why: "closed" });
+    live.stop();
+  });
+
   test("a tab opened for one copy asks for it in its first subscription, then for the copy it loaded", async () => {
     const copy = "d".repeat(24);
     const live = start(copy);

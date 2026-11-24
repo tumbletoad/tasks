@@ -4878,6 +4878,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.10.5.copies.gone",
+      "title": "A page's call for a copy of its space that is not served says what happened to it: while the space closes or opens it is to be asked again and says nothing, once closed it says closed, once another folder serves the space it says replaced; the page shows closed as closed",
+      "source": "A2 3.10.5, A5 3.15",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.10.5.copies.session",
       "title": "An agent's terminal session goes on over a close and an open of its unchanged folder; after a claim of a backup, a note from its bridge and from its shell and a read are refused as replaced, in words that say not to retry and to start the agent again, and the claimed space holds no receipt",
       "source": "A2 3.10.5, A3 3.7.8, A1 3.18",
