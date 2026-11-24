@@ -69,7 +69,7 @@ import {
   HOSTS,
   isPrintApp,
   LockBusy,
-  notStarting,
+  toolsOf,
   planOf,
   planToken,
   PRINT_APPS,
@@ -89,9 +89,10 @@ import {
   type AgentApp,
   type Host,
   type HomeView,
-  type NotStarting,
+  type ToolsAnswer,
   type Outcome,
   type OutcomeReason,
+  type PlanItem,
   type PrintApp,
   type RowCall,
   type SetupInput,
@@ -274,14 +275,20 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
   ambiguous: `there are several Claude Desktop configuration files: pass --home <folder> for the one the app uses`,
   edited: "the entry was changed after setup wrote it",
   interrupted: `an earlier setup did not finish there: the next ${CLI_NAME} setup agents --apply or --remove settles it first`,
-  missing: "the entry setup wrote is gone",
+  missing: "the entry setup wrote is gone, so its tools do not start",
+  moved: `its entry runs ${PRODUCT_NAME} where it was installed before, so its tools do not start`,
+  not_installed: `${PRODUCT_NAME}'s command is not installed where the entry runs it, so its tools do not start: install ${PRODUCT_NAME} first`,
+  edited_gone:
+    "its entry was changed by hand and runs a program that is not there, so its tools do not start",
+  access_off: "its access is off, so its tools do not start",
+  entry_left: `its access is off, and its entry is still in its file: the next ${CLI_NAME} setup agents --apply or --remove takes it out`,
   not_registered: "setup has not registered it",
   changed_meanwhile: "its file changed while setup was working",
   unexpected_entry: "the entry is not there as setup wrote it",
   busy: "Claude Code kept its settings file locked while setup waited: try again in a moment",
   other_space: `it names another space: run ${CLI_NAME} setup agents --remove first`,
-  grant_failed: `${PRODUCT_NAME}'s service did not give it its grant row, so its entry was taken out again`,
-  instance_taken: `another agent home is registered as this instance, so its entry was taken out again: run ${CLI_NAME} setup agents again for a free one, or give this home an instance of its own in machine.toml`,
+  grant_failed: `${PRODUCT_NAME}'s service did not give it its grant row`,
+  instance_taken: `another agent home is registered as this instance: run ${CLI_NAME} setup agents again for a free one, or give this home an instance of its own in machine.toml`,
   record_unreadable: `${PRODUCT_NAME} cannot read its own record of the agent homes, so it changes no file there: ${CLI_NAME} setup agents --remove still turns access off`,
   revoke_failed: `${PRODUCT_NAME}'s service did not confirm that it took its access back, so nothing else was changed`,
   unwritable:
@@ -318,17 +325,10 @@ function reasonText(reason: OutcomeReason, home: HomeView["home"]): string {
 }
 
 const NOTE: Readonly<Record<string, string>> = {
+  undone: "Its entry was taken out again.",
   undo_failed: `The entry may still be there: the next ${CLI_NAME} setup agents --apply or --remove takes it out.`,
   entry_left:
     "The entry there is not exactly the one setup asked for, so it was left as it is: take it out by hand if it is not wanted.",
-};
-
-/** Why a registered home's tools do not start (notStarting), and what apply does about it. */
-const LACK_TEXT: Readonly<Record<NotStarting, string>> = {
-  missing: "registered, and its entry is gone, so its tools do not start: apply writes it again",
-  moved: `registered, and its entry runs ${PRODUCT_NAME} where it was installed before, so its tools do not start: apply writes it again with the command installed now`,
-  access_off:
-    "registered, and its access is off, so its tools do not start: apply gives it its access again",
 };
 
 const STATE_TEXT: Readonly<Record<HomeView["state"], string>> = {
@@ -339,6 +339,32 @@ const STATE_TEXT: Readonly<Record<HomeView["state"], string>> = {
   interrupted: "a setup that did not finish",
   refused: "left alone",
 };
+
+/**
+ * A home as its answer (toolsOf) says it: its state, the one reason, and what apply or --remove
+ * does about it. `live`: its access is live now, when the service said.
+ */
+function toolsLine(view: HomeView, answer: ToolsAnswer, live: boolean | undefined): string {
+  const { why } = answer;
+  const said =
+    why === undefined
+      ? STATE_TEXT[view.state]
+      : view.state === "registered" || view.state === "missing" || view.state === "edited"
+        ? `registered, and ${reasonText(why, view.home)}`
+        : view.state === "interrupted"
+          ? reasonText(why, view.home)
+          : `${STATE_TEXT[view.state]}: ${reasonText(why, view.home)}`;
+  const access = live === true ? "" : " and gives it its access again";
+  if (answer.on === "grant") return `${said}: apply gives it its access again`;
+  if (answer.on === "repair") {
+    return `${said}: apply writes it again with the command installed now${access}`;
+  }
+  if (answer.status === "off" && answer.off) {
+    const still = live === true ? "its access is still on, and " : "";
+    return `${said}: ${still}${CLI_NAME} setup agents --remove turns its access off`;
+  }
+  return said;
+}
 
 const HOST_TEXT: Readonly<Record<Host, string>> = { "codex-app": "the Codex app", t3: "T3 Code" };
 
@@ -511,7 +537,7 @@ export async function agentsCommand(
     const mode: Mode = parsed.mode;
     switch (mode) {
       case "status":
-        return await status(io, globals, await withRows(input, call), selected, call);
+        return await status(io, globals, await withRows(input, call), selected);
       case "preview":
         return await preview(io, globals, await rowsOf(), selected, parsed, spaceOf);
       case "print-block":
@@ -680,10 +706,11 @@ async function withRows(input: SetupInput, call: Call): Promise<SetupInput> {
   }
   const rows = (Array.isArray(listed) ? (listed as unknown[]) : []).flatMap((row) => {
     if (typeof row !== "object" || row === null) return [];
-    const { app, home, instance } = row as Record<string, unknown>;
-    return typeof app === "string" && typeof home === "string" && typeof instance === "string"
-      ? [{ app, home, instance }]
-      : [];
+    const { app, home, instance, grant } = row as Record<string, unknown>;
+    if (typeof app !== "string" || typeof home !== "string" || typeof instance !== "string") {
+      return [];
+    }
+    return [{ app, home, instance, ...(typeof grant === "string" ? { grant } : {}) }];
   });
   return { ...input, rows };
 }
@@ -713,10 +740,12 @@ const rowCall =
 const needsSpace = (views: readonly HomeView[]): boolean =>
   views.some((view) => view.state === "not_registered");
 
-/** Whether apply has anything to do: a home to register, or a registered one it renews or repairs. */
-const applies = (views: readonly HomeView[]): boolean =>
-  needsSpace(views) ||
-  views.some((view) => view.state === "registered" || view.state === "missing");
+/** Whether apply has anything to do: a home it turns on, or a registered one whose row it renews. */
+const applies = (input: SetupInput, items: readonly PlanItem[]): boolean =>
+  items.some(({ view, change }) => {
+    const answer = toolsOf(input, view, "", typeof change === "string" ? change : undefined);
+    return answer.on !== undefined || (view.state === "registered" && answer.why === undefined);
+  });
 
 /**
  * After a remove: revokes the agent-home rows of the selected homes that no longer have an entry of
@@ -766,28 +795,20 @@ async function status(
   globals: Globals,
   input: SetupInput,
   selected: Selected,
-  call: Call,
 ): Promise<number> {
+  // One snapshot of the rows for every home: its answer and its row say the same.
   const views = (await survey(input)).filter(selected);
-  let rows: { grant: string; app: string; home: string; spaces: string[] }[] | undefined;
-  try {
-    rows = ((await call("setup/homes", {}))["homes"] ?? []) as typeof rows;
-  } catch {
-    rows = undefined;
-  }
+  const { rows } = input;
   const rowOf = (view: HomeView) =>
     rows?.find((r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home));
   if (globals.json) {
     io.stdout(
       `${JSON.stringify({
-        homes: views.map((view) => {
-          const lack = notStarting(input, view);
-          return {
-            ...viewJson(view),
-            ...(lack === undefined ? {} : { not_starting: lack }),
-            row: rowOf(view)?.grant ?? null,
-          };
-        }),
+        homes: views.map((view) => ({
+          ...viewJson(view),
+          tools: toolsOf(input, view, ""),
+          row: rowOf(view)?.grant ?? null,
+        })),
         service: rows !== undefined,
       })}\n`,
     );
@@ -796,13 +817,19 @@ async function status(
   if (views.length === 0) io.stdout("No agent home was found.\n");
   for (const view of views) {
     const row = rowOf(view);
-    const reason = view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home)}`;
     const space = view.record === undefined ? "" : `, space ${view.record.space}`;
     const grant =
-      rows === undefined ? "" : row === undefined ? ", no grant row" : `, grant row ${row.grant}`;
-    const lack = notStarting(input, view);
-    const state = lack === undefined ? STATE_TEXT[view.state] : LACK_TEXT[lack];
-    io.stdout(`${title(view)}\n  ${state}${reason}${space}${grant}\n`);
+      rows === undefined
+        ? ""
+        : row === undefined
+          ? ", no grant row"
+          : `, grant row ${row.grant ?? "(no ID)"}`;
+    const said = toolsLine(
+      view,
+      toolsOf(input, view, ""),
+      rows === undefined ? undefined : row !== undefined,
+    );
+    io.stdout(`${title(view)}\n  ${said}${space}${grant}\n`);
   }
   if (rows === undefined) {
     io.stdout(`${PRODUCT_NAME}'s service is not running: the grant rows are not shown.\n`);
@@ -818,10 +845,6 @@ function approvals(views: readonly HomeView[], platform: NodeJS.Platform) {
   });
 }
 
-/** A registered home without its live row: its entry is in place, and apply gives it its access again. */
-const givesAccessBack = (input: SetupInput, view: HomeView): boolean =>
-  notStarting(input, view) === "access_off";
-
 async function preview(
   io: Io,
   globals: Globals,
@@ -836,10 +859,12 @@ async function preview(
   const registers = needsSpace(views);
   const blocks = parsed.parts.includes("block") ? await blockPlan(input, all, selected) : undefined;
   const blockChanges = (blocks ?? []).filter((b) => typeof b.change === "object").length;
-  const anything = applies(views) || blockChanges > 0;
+  const anything = applies(input, planOf(input, views, "")) || blockChanges > 0;
   // The space each new entry names comes from the service, which keeps the rows apply makes.
   const space = registers ? await spaceOf() : "";
   const items = planOf(input, views, space);
+  const answerOf = (view: HomeView, change: PlanItem["change"]) =>
+    toolsOf(input, view, space, typeof change === "string" ? change : undefined);
   const plan = planToken(space, items, blocks === undefined ? undefined : blockCanonical(blocks));
   const delegated = parsed.parts.includes("approve-tools") ? approvals(all, io.platform) : [];
   // The exact apply of this preview: the same selection, parts and space, and the plan's token.
@@ -865,18 +890,21 @@ async function preview(
         ...(registers ? { space } : {}),
         ...(anything ? { plan, apply } : {}),
         ...(blocks === undefined ? {} : { blocks: blocks.map(blockItemJson) }),
-        homes: items.map(({ view, change }) => ({
-          ...viewJson(view),
-          ...(change === undefined
-            ? givesAccessBack(input, view)
-              ? { change: { access: "on" } }
-              : {}
-            : typeof change === "string"
-              ? { state: "refused", reason: change }
-              : {
-                  change: { entry: change.entry, diff: change.diff },
-                }),
-        })),
+        // Every change says the access it leaves: each turn-on ends with the home's access on.
+        homes: items.map(({ view, change }) => {
+          const answer = answerOf(view, change);
+          return {
+            ...viewJson(view),
+            tools: answer,
+            ...(answer.on === undefined
+              ? typeof change === "string"
+                ? { state: "refused", reason: change }
+                : {}
+              : typeof change === "object"
+                ? { change: { entry: change.entry, diff: change.diff, access: "on" } }
+                : { change: { access: "on" } }),
+          };
+        }),
         ...(parsed.parts.includes("approve-tools")
           ? {
               approve_tools: delegated.map((d) => ({
@@ -900,20 +928,23 @@ async function preview(
     io.stdout(`${String(n)}. ${title(view)}\n`);
     const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
     io.stdout(`   ${view.home.file} (${hash})\n`);
-    const lack = notStarting(input, view);
-    if (lack !== undefined && typeof change !== "string") {
+    const answer = answerOf(view, change);
+    const live = input.rows?.some(
+      (r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home),
+    );
+    if (answer.on === "add" && typeof change === "object") {
       changes += 1;
-      io.stdout(`   ${LACK_TEXT[lack]}${change === undefined ? "." : ":"}\n`);
-      for (const line of change?.diff ?? []) io.stdout(`     ${line}\n`);
-    } else if (change === undefined) {
-      const reason = view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home)}`;
-      io.stdout(`   ${STATE_TEXT[view.state]}${reason}. Nothing to do.\n`);
-    } else if (typeof change === "string") {
-      io.stdout(`   left alone: ${reasonText(change, view.home)}.\n`);
-    } else {
-      changes += 1;
-      io.stdout(`   ${PRODUCT_NAME} writes one entry into this file, and nothing else there:\n`);
+      io.stdout(
+        `   ${PRODUCT_NAME} writes one entry into this file, and nothing else there, and gives this home its access:\n`,
+      );
       for (const line of change.diff) io.stdout(`     ${line}\n`);
+    } else if (answer.on !== undefined) {
+      changes += 1;
+      const diff = typeof change === "object" ? change.diff : [];
+      io.stdout(`   ${toolsLine(view, answer, live)}${diff.length === 0 ? "." : ":"}\n`);
+      for (const line of diff) io.stdout(`     ${line}\n`);
+    } else {
+      io.stdout(`   ${toolsLine(view, answer, live)}. Nothing to do.\n`);
     }
   }
   if (delegated.length > 0) {

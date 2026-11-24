@@ -53,6 +53,8 @@ import {
   instanceHome,
   isTable,
   MANUAL_INSTANCE,
+  nodeDetectHost,
+  onPath,
   proposedAccount,
   proposedInstanceId,
   targetDef,
@@ -65,6 +67,7 @@ import { keyText, valueText, type EditValue } from "../config/edit.ts";
 import { scanToml, ScanError } from "../config/scan.ts";
 import { BOM, MAX_CONFIG_BYTES, parseToml, readConfigFile } from "../config/toml.ts";
 import { stageFile, type StagedFile } from "../hub/files.ts";
+import { toolsAnswer, type ToolsAnswer } from "./answer.ts";
 import { withAppLock } from "./app-lock.ts";
 import {
   addOwnEntry,
@@ -261,6 +264,12 @@ export type OutcomeReason =
   | "revoke_failed"
   /** The OS refused to write the file: it is read-only, another program holds it, or the disk is full. */
   | "unwritable"
+  /** The tools cannot be turned on from here (answer.ts `ToolsWhy`). */
+  | "moved"
+  | "not_installed"
+  | "edited_gone"
+  | "access_off"
+  | "entry_left"
   /** Setup's own record of the home could not be written, so its file was left as it was. */
   | "state_unwritable";
 
@@ -277,7 +286,7 @@ export interface Outcome {
   readonly access?: "on" | "off" | "unknown";
   /** A removal that left an entry in the file: TTasks's own (`reason` says why), or one the person changed. */
   readonly kept?: "own" | "edited";
-  /** Facts the person should know: `undo_failed`, `entry_left`. */
+  /** Facts the person should know: `undo_failed`, `entry_left`, `undone` (its entry was taken out again). */
   readonly notes?: readonly string[];
 }
 
@@ -326,6 +335,8 @@ export interface SetupInput {
     readonly app: string;
     readonly home: string;
     readonly instance: string;
+    /** The row's ID, when the caller keeps it (the command line's status shows it). */
+    readonly grant?: string;
   }[];
   /** machine.toml's `[setup.managed] paths` (A3 3.12 rule 4). Default: none. */
   readonly managedPaths?: readonly string[];
@@ -1163,38 +1174,57 @@ function diffOf(
   ];
 }
 
-/** Why the tools of a home setup registered do not start: what is missing of the three. */
-export type NotStarting = "missing" | "moved" | "access_off";
+/**
+ * The one answer for a home's tools (answer.ts), from its facts read now: the access from
+ * `input.rows` (unknown when the caller has none), the program the entry in the file names, and
+ * `space`, the one the person is in ("" for the one the record names). `writable` is the plan's
+ * refusal of a new entry when the caller has one (several Claude Desktop files).
+ */
+export function toolsOf(
+  input: SetupInput,
+  view: HomeView,
+  space: string,
+  writable?: Refusal,
+): ToolsAnswer {
+  const { home, record } = view;
+  const program = programOf(input, view);
+  return toolsAnswer({
+    state: view.state,
+    ...(view.refusal === undefined ? {} : { refusal: view.refusal }),
+    entry: view.entry !== undefined,
+    ...(program === undefined ? {} : { program }),
+    access:
+      input.rows === undefined
+        ? "unknown"
+        : input.rows.some((r) => r.app === home.app && samePath(input.platform, r.home, home.home))
+          ? "live"
+          : "off",
+    otherSpace: record !== undefined && space !== "" && record.space !== space,
+    writable:
+      writable ?? (home.app === "claude-desktop" && view.sha256 === null ? "not_set_up" : true),
+    installed: isFile(input.tasks),
+    handMade: view.refusal === "foreign_entry" && entryInstance(view.entry) === null,
+  });
+}
 
 /**
- * Whether the tools of a home setup registered start, the one answer the page's switch and the
- * command line's status give: undefined when its entry is there, the program it runs is there and
- * its access is live (`input.rows`, when the caller read them), else the first that is not.
- * Undefined for a home in any other state too: its state says it.
+ * Whether the program an entry in the file names is there: an absolute path as a file, a name
+ * alone on the PATH of the person's environment. A path that is not there is `moved` when setup's
+ * own entry names it and it is not where TTasks is installed now (writing the entry again mends
+ * it), else `gone`.
  */
-export function notStarting(input: SetupInput, view: HomeView): NotStarting | undefined {
-  if (view.record?.state !== "applied") return undefined;
-  if (view.state === "missing") return "missing";
-  if (view.state !== "registered") return undefined;
-  // A command by its name alone is found on PATH, which setup cannot judge here; the present one
-  // missing is no install at all, which writing the entry again would not mend.
+function programOf(input: SetupInput, view: HomeView): "there" | "moved" | "gone" | undefined {
   const command = (view.entry as { command?: unknown } | undefined)?.command;
-  if (
-    typeof command === "string" &&
-    pathOf(input.platform).isAbsolute(command) &&
-    !samePath(input.platform, command, input.tasks) &&
-    !isFile(command)
-  ) {
-    return "moved";
+  if (typeof command !== "string" || command === "") return undefined;
+  const { platform } = input;
+  if (!pathOf(platform).isAbsolute(command)) {
+    const host = nodeDetectHost({ platform, env: input.env, home: input.userHome });
+    return onPath(host, command) === undefined ? "gone" : "there";
   }
-  const { rows } = input;
-  if (
-    rows !== undefined &&
-    !rows.some((r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home))
-  ) {
-    return "access_off";
-  }
-  return undefined;
+  if (isFile(command)) return "there";
+  return view.state === "registered" && !samePath(platform, command, input.tasks)
+    ? "moved"
+    : "gone";
 }
 
 function isFile(path: string): boolean {
@@ -1206,15 +1236,16 @@ function isFile(path: string): boolean {
 }
 
 /**
- * What repairs a registered home whose entry is gone or runs a program that is gone: its entry
- * written again with the present command, in the space it named (rewrite).
+ * What repairs a registered home whose entry is gone or runs a program that is gone, when the
+ * answer offers it: its entry written again with the present command, in the space it named
+ * (rewrite). The entry it replaces shows as taken out.
  */
-function repairOf(input: SetupInput, view: HomeView): Change | Refusal | undefined {
-  const lack = notStarting(input, view);
-  const space = view.record?.space;
-  if (space === undefined || (lack !== "missing" && lack !== "moved")) return undefined;
-  const change = planChange(input, view, space);
-  if (typeof change === "string" || lack === "missing") return change;
+function repairOf(input: SetupInput, view: HomeView, space: string): Change | undefined {
+  const recorded = view.record?.space;
+  if (recorded === undefined || toolsOf(input, view, space).on !== "repair") return undefined;
+  const change = planChange(input, view, recorded);
+  if (typeof change === "string") return undefined;
+  if (view.state === "missing") return change;
   return { ...change, diff: [...entryLines(view.home.app, view.entry, "-"), ...change.diff] };
 }
 
@@ -1259,7 +1290,7 @@ export function planOf(input: SetupInput, views: readonly HomeView[], space: str
     view,
     change:
       view.state !== "not_registered"
-        ? repairOf(input, view)
+        ? repairOf(input, view, space)
         : view.home.app === "claude-desktop" && desktops.length > 1
           ? "ambiguous"
           : planChange(input, view, space),
@@ -1517,10 +1548,11 @@ async function writeEntry(
 }
 
 /**
- * Registers TTasks in one home that has no entry yet, and gives the home its access once the entry
- * is in place (giveAccess). The record is written before the file (writeEntry). A registered home
- * gets its row, or keeps it, for the space its entry names (`space` is empty when the apply
- * registers no new home), through the same checks of its entry. `planned` is the change the plan
+ * Turns a home's tools on as its answer (toolsOf) offers it from `space`, and does nothing it does
+ * not offer: a new entry, then its access once the entry is in place (giveAccess), the record
+ * written before the file (writeEntry); a registered home's access again; or its entry written again
+ * (rewrite). A registered home whose tools start gets its row renewed for the space its entry
+ * names. `space` is empty when the apply registers no new home. `planned` is the change the plan
  * holds for it (planOf), when the caller has one.
  */
 export async function applyHome(
@@ -1530,26 +1562,30 @@ export async function applyHome(
   access: Access,
   planned?: Change | Refusal,
 ): Promise<Outcome> {
-  const { home } = view;
-  const lack = notStarting(input, view);
-  if (lack === "missing" || lack === "moved") return rewrite(input, view, access);
-  if (view.state === "registered") {
-    // A registered home has its record (inspectHome).
-    const record = view.record;
-    if (record === undefined) return { home, result: "left", reason: "missing" };
-    const target = space === "" ? record.space : space;
-    if (record.space !== target) return { home, result: "left", reason: "other_space" };
-    return giveAccess(input, home, record, target, access, true);
+  const { home, record } = view;
+  const answer = toolsOf(input, view, space, typeof planned === "string" ? planned : undefined);
+  const left = (): Outcome => ({ home, result: "left", reason: answer.why ?? "not_registered" });
+  switch (answer.on) {
+    case "repair":
+      return rewrite(input, view, access);
+    case "grant":
+      return record === undefined
+        ? left()
+        : giveAccess(input, home, record, record.space, access, true);
+    case "add": {
+      if (view.state !== "not_registered") return left();
+      const change = typeof planned === "object" ? planned : planChange(input, view, space);
+      if (typeof change === "string") return { home, result: "left", reason: change };
+      const written = await writeEntry(input, view, space, change);
+      if (!("entry" in written)) return { home, ...written, access: "off" };
+      return giveAccess(input, home, written, space, access, false);
+    }
+    default:
+      if (view.state !== "registered" || record === undefined || answer.why !== undefined) {
+        return left();
+      }
+      return giveAccess(input, home, record, record.space, access, true);
   }
-  if (view.state === "refused")
-    return { home, result: "left", reason: view.refusal ?? "unreadable" };
-  if (view.state !== "not_registered") return { home, result: "left", reason: view.state };
-  const change = planned ?? planChange(input, view, space);
-  if (typeof change === "string") return { home, result: "left", reason: change };
-
-  const written = await writeEntry(input, view, space, change);
-  if (!("entry" in written)) return { home, ...written, access: "off" };
-  return giveAccess(input, home, written, space, access, false);
 }
 
 /**
@@ -1671,15 +1707,8 @@ async function undo(
     };
   }
   const out = await takeOut(input, home, removing);
-  const note =
-    out.kept === "own" ? "undo_failed" : out.kept === "edited" ? "entry_left" : undefined;
-  return {
-    home,
-    result: "failed",
-    reason,
-    access: "off",
-    ...(note === undefined ? {} : { notes: [note] }),
-  };
+  const note = out.kept === "own" ? "undo_failed" : out.kept === "edited" ? "entry_left" : "undone";
+  return { home, result: "failed", reason, access: "off", notes: [note] };
 }
 
 /**

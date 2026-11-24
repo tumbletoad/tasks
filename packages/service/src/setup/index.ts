@@ -2,6 +2,7 @@
 // person's session, with the person's environment, and keeps the agent-home rows through the
 // service. Doctor's agent checks (A3 3.14) read through the same functions.
 export * from "./agents.ts";
+export * from "./answer.ts";
 export * from "./block.ts";
 export { unifiedDiff } from "./diff.ts";
 export { generatorNotice, markedAsGenerated } from "./generated.ts";

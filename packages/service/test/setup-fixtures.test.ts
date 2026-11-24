@@ -40,6 +40,7 @@ import {
   type SetupInput,
 } from "../src/setup/index.ts";
 import { keptRows, type KeptRows } from "./setup-rows.ts";
+import { installedTasks } from "./harness.ts";
 
 const SLOW = 120_000;
 const SPACE = "sp_3z8sm956jp8dajmtsar5kx026c";
@@ -135,7 +136,7 @@ async function world(wait?: (ms: number) => Promise<void>): Promise<World> {
       userHome: home,
       env,
       stateDir: join(dir, "state"),
-      tasks: join(dir, "install", "bin", windows ? "ttasks.exe" : "ttasks"),
+      tasks: installedTasks(dir),
       detection: await detect(nodeDetectHost({ env, home, timeoutMs: 30_000 })),
       instances: [],
       systemApplications: join(dir, "Applications"),
@@ -807,10 +808,12 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
         const before = readFileSync(file);
         w.rows.refuse.grant = "instance_taken";
+        // The outcome says what the cleanup did: the entry was taken out again.
         expect(await apply(w, a), a.app).toMatchObject({
           result: "failed",
           reason: "instance_taken",
           access: "off",
+          notes: ["undone"],
         });
         expect(readFileSync(file)).toEqual(before);
         expect(readRecords(w.input.stateDir)).toEqual([]);
@@ -828,10 +831,12 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
         const before = readFileSync(file);
         w.rows.refuse = { grant: "grant_failed", revoke: true };
+        // Nothing claims the entry went: it stays, and the outcome says so.
         expect(await apply(w, a), a.app).toMatchObject({
           result: "failed",
           reason: "grant_failed",
           access: "unknown",
+          notes: ["undo_failed"],
         });
         expect(entryIn(a, file), a.app).toBeDefined();
         expect(readRecords(w.input.stateDir), a.app).toMatchObject([{ state: "removing" }]);

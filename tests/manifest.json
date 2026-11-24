@@ -3480,6 +3480,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.13.setup.tools-table",
+      "title": "One answer for each home's tools, as a table for Claude Code, Codex and Claude Desktop: every combination of the entry (setup's, changed by hand, gone), the program it names, the access and the space, read through the page and the command line's status JSON on one scratch state; turning off is offered whenever the access is live, and every action offered is carried out",
+      "source": "A3 3.13.1, A3 3.14",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.13.setup.free-instance",
       "title": "A detected home whose proposed instance another home's live row holds is offered a free one (<id>-2), which its entry and row carry and its record keeps; an instance machine.toml names that another home holds is kept and its refusal is named instance_taken, with the home left as it was; an entry added by hand is left and the preview says how to take it out with the app's own mcp remove",
       "source": "A3 3.7.8, A3 3.13.1, A7 3.11 M4.05b",
