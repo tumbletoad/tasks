@@ -259,10 +259,10 @@ describe("[A3.3.4.prefs.move] ttasks prefs set --move", () => {
     const renamed = before.map((name) => (name === "Later" ? "Soon" : name)).join(",");
     const set = ["prefs", "set", "tasks.effort_scale", renamed, "--move", "Later=Soon"];
     const dry = await tasks([...set, "--dry-run"]);
-    expect([dry.code, dry.stdout]).toEqual([
-      0,
-      "Would move 1 task from Later to Soon. Nothing was changed.\n",
-    ]);
+    expect(dry.code).toBe(0);
+    expect(dry.stdout).toContain(
+      "Would move 1 task from Later to Soon.\nNothing was changed. The counts are as of now.\n",
+    );
     expect(await levels()).toEqual(before);
     const moved = await tasks(set);
     expect(moved.code).toBe(0);
@@ -279,24 +279,67 @@ describe("[A3.3.4.prefs.move] ttasks prefs set --move", () => {
   });
 });
 
-describe("[A3.3.4.prefs.move-preview] ttasks prefs set --dry-run answers as the write would", () => {
-  test("a move the write refuses is refused, and a move to the same name moves nothing, in the preview and the answer", async () => {
+describe("[A3.3.4.prefs.move-preview] ttasks prefs set --dry-run is the write's own request, decided and not written", () => {
+  test("it refuses what the write refuses and takes what it takes, from a value, --file or --reset, and a stale file is stale", async () => {
     const read = await tasks(["prefs", "get", "tasks.effort_scale", "--json"]);
     const names =
       (JSON.parse(read.stdout) as { prefs: { value: { key: string }[] }[] }).prefs[0]?.value.map(
         (level) => level.key,
       ) ?? [];
-    const [first = ""] = names;
-    const set = ["prefs", "set", "tasks.effort_scale", names.join(",")];
-    const missing = await tasks([...set, "--move", `${first}=Missing`, "--dry-run"]);
-    expect(missing.code).toBe(EXIT_CODES.usage);
-    expect(missing.stderr).toContain("A move goes to a level of the new list, or to no size.");
-    const same = await tasks([...set, "--move", `${first}=${first}`, "--dry-run"]);
-    expect([same.code, same.stdout]).toEqual([
-      0,
-      `Would move 0 tasks from ${first} to ${first}. Nothing was changed.\n`,
-    ]);
-    const applied = await tasks([...set, "--move", `${first}=${first}`]);
-    expect(applied.stdout).toContain(`0 tasks moved from ${first} to ${first}.`);
+    const [first = "", second = ""] = names;
+    const set = ["prefs", "set", "tasks.effort_scale"];
+    const same = async (args: readonly string[]) => {
+      const dry = await tasks([...set, ...args, "--dry-run"]);
+      const real = await tasks([...set, ...args]);
+      expect([dry.code, dry.stderr.split("\n")[0]], args.join(" ")).toEqual([
+        real.code,
+        real.stderr.split("\n")[0],
+      ]);
+      return dry;
+    };
+    // Refused as the write refuses them: a move to a name off the list, and a name twice.
+    for (const args of [
+      [names.join(","), "--move", `${first}=Missing`],
+      [[first, ...names].join(","), "--move", `${first}=${second}`],
+    ]) {
+      expect((await same(args)).code).not.toBe(0);
+    }
+    // Taken as the write takes it, from the levels by name and from the file a get printed.
+    const file = join(w.root, "levels-again.json");
+    writeFileSync(file, read.stdout);
+    for (const args of [[names.join(",")], ["--file", file]]) {
+      const dry = await tasks([...set, ...args, "--move", `${first}=${first}`, "--dry-run"]);
+      expect(dry.code, args.join(" ")).toBe(0);
+      expect(dry.stdout).toBe(
+        `Would move 0 tasks from ${first} to ${first}.\nNothing was changed. The counts are as of now.\n`,
+      );
+    }
+    // A file read before a change of the levels is stale, as it is for the write.
+    expect(
+      (await tasks([...set, [...names.slice(0, -1)].join(","), "--move", `${names.at(-1) ?? ""}=`]))
+        .code,
+    ).toBe(0);
+    expect((await same(["--file", file, "--move", `${first}=${first}`])).code).not.toBe(0);
+    // --reset is the same request in both.
+    await same(["--reset", "--move", `${first}=${first}`]);
+  });
+});
+
+describe("[A3.3.4.prefs.undo-said] ttasks undo says what an undo of a change of levels wrote", () => {
+  test("a rename whose task a script sized since: the levels go back, and the line says so", async () => {
+    const read = await tasks(["prefs", "get", "tasks.effort_scale", "--json"]);
+    const names =
+      (JSON.parse(read.stdout) as { prefs: { value: { key: string }[] }[] }).prefs[0]?.value.map(
+        (level) => level.key,
+      ) ?? [];
+    const [first = "", second = ""] = names;
+    const added = await tasks(["add", "Fixture renamed size", "--effort", first, "--json"]);
+    const ref = (JSON.parse(added.stdout) as { tasks: { ref: string }[] }).tasks[0]?.ref ?? "";
+    const renamed = names.map((name) => (name === first ? "Renamed" : name)).join(",");
+    const set = ["prefs", "set", "tasks.effort_scale", renamed, "--move", `${first}=Renamed`];
+    expect((await tasks(set)).code).toBe(0);
+    expect((await tasks(["set", ref, `effort=${second}`], false)).code).toBe(0);
+    const partial = await tasks(["undo", "--partial", "--yes"]);
+    expect(partial.stdout).toMatch(/^Undid your change to the effort levels in /u);
   });
 });

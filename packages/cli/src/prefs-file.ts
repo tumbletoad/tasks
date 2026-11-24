@@ -5,11 +5,11 @@
 // edit that lost it would otherwise put back what the file held over a newer change. The value
 // alone has no base on purpose: its person sets exactly that, whatever the space holds now.
 import { isAbsolute, join } from "node:path";
-import { checkEffortMoves, patterns, sizesHeldText, type EffortHeld } from "@ttasks/contracts";
+import { patterns } from "@ttasks/contracts";
 import { UsageError, type Globals, type VerbSpec } from "./args.ts";
 import type { ConnectOptions } from "./connect.ts";
 import type { Io } from "./io.ts";
-import { movedText, printError } from "./output.ts";
+import { movedText, prefChangeText } from "./output.ts";
 import { runVerb } from "./verbs.ts";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -48,55 +48,29 @@ function takeMoves(args: string[]): Move[] {
 }
 
 /**
- * `--dry-run`: what the moves would move, from a read of the key, and nothing written. It keeps the
- * write's rules (checkEffortMoves) and exits as the write would; the count is the read's, and the
- * write counts again.
+ * `--dry-run`'s answer: the write decided its request whole and wrote nothing (WriteRequest.dry_run),
+ * so it says what the write would. What it cannot know is what changes before the write.
  */
-async function preview(
-  io: Io,
-  globals: Globals,
-  verb: VerbSpec,
-  head: readonly string[],
-  moves: readonly Move[],
-  options: ConnectOptions,
-): Promise<number> {
-  const [action, key, value] = head;
-  if (action !== "set" || key === undefined || value === undefined) {
-    throw new UsageError("--dry-run goes with set, a key and its levels by name");
-  }
-  let read: Record<string, unknown> | undefined;
-  const code = await runVerb(io, globals, verb, ["get", key], options, (result) => {
-    read = (result["prefs"] as Record<string, unknown>[] | undefined)?.[0];
+function preview(io: Io, globals: Globals) {
+  return (result: Record<string, unknown>, printed: string): Promise<void> => {
+    if (globals.json) {
+      io.stdout(printed);
+      return Promise.resolve();
+    }
+    const changed = (result["changed"] ?? []) as { key: string; from: unknown; to: unknown }[];
+    const moved = (result["moved"] ?? []) as Parameters<typeof movedText>[0][];
+    io.stdout(
+      [
+        ...changed.map((c) => `Would set ${prefChangeText(c)}`),
+        ...moved.map((m) => `Would move ${movedText(m)}.`),
+        "Nothing was changed. The counts are as of now.",
+      ].join("\n") + "\n",
+    );
     return Promise.resolve();
-  });
-  if (code !== 0 || read === undefined) return code;
-  const now = ((read["value"] ?? []) as { key: string }[]).map((level) => level.key);
-  const next = value
-    .split(",")
-    .map((name) => name.trim())
-    .filter((name) => name !== "");
-  const held = (read["held"] ?? []) as EffortHeld[];
-  const refused = checkEffortMoves(now, next, held, moves);
-  if (refused !== undefined) {
-    const said =
-      refused.holders === undefined
-        ? { message: `${refused.message}.` }
-        : sizesHeldText(refused.holders);
-    return printError(io, globals.json, { code: "invalid_input", ...said });
-  }
-  const lines = moves.map((move) => {
-    const counts = move.to === move.from ? {} : (held.find((h) => h.effort === move.from) ?? {});
-    return `Would move ${movedText({ active: 0, finished: 0, trash: 0, ...counts, ...move })}.`;
-  });
-  io.stdout(
-    globals.json
-      ? `${JSON.stringify({ would_move: lines })}\n`
-      : `${lines.join("\n")} Nothing was changed.\n`,
-  );
-  return 0;
+  };
 }
 
-/** `ttasks prefs` with `--move`, `--dry-run` and `--file <file>` taken out, the file read first. */
+/** `ttasks prefs` with `--move` and `--file <file>` taken out, the file read first. */
 export async function prefsVerb(
   io: Io,
   globals: Globals,
@@ -107,8 +81,7 @@ export async function prefsVerb(
   const end = args.indexOf("--");
   const head = end === -1 ? [...args] : args.slice(0, end);
   const moves = takeMoves(head);
-  const dry = head.indexOf("--dry-run");
-  if (dry !== -1) return preview(io, globals, verb, head.toSpliced(dry, 1), moves, options);
+  const present = head.includes("--dry-run") ? preview(io, globals) : undefined;
   const withMoves = (input: Record<string, unknown>): void => {
     const item = (input["set"] as Record<string, unknown>[] | undefined)?.[0];
     if (moves.length === 0) return;
@@ -120,7 +93,7 @@ export async function prefsVerb(
   const at = head.findIndex((a) => a === "--file" || a.startsWith("--file="));
   if (at === -1) {
     const rest = [...head, ...(end === -1 ? [] : args.slice(end))];
-    return runVerb(io, globals, verb, rest, options, undefined, { input: withMoves });
+    return runVerb(io, globals, verb, rest, options, present, { input: withMoves });
   }
   const given = head[at] ?? "";
   const path = given.startsWith("--file=") ? given.slice("--file=".length) : head[at + 1];
@@ -139,7 +112,7 @@ export async function prefsVerb(
     throw new UsageError("--file is not JSON");
   }
   const rest = [...head, ...(end === -1 ? [] : args.slice(end))];
-  return runVerb(io, globals, verb, rest, options, undefined, {
+  return runVerb(io, globals, verb, rest, options, present, {
     input: (input) => {
       const items = Array.isArray(input["set"]) ? (input["set"] as unknown[]) : [];
       const item = items[0];

@@ -280,12 +280,11 @@ export function verbHelp(verb: VerbSpec): string {
       "  --create  Make the folder first when it is not there",
     );
   }
-  // `ttasks prefs --file`, `--move` and `--dry-run` are the CLI's own.
+  // `ttasks prefs --file` and `--move` are the CLI's own.
   if (verb.entry === "prefs.manage") {
     lines.push(
       "  --file <file>  The value from a file: what get --json printed, edited, or the value alone",
       "  --move <size>=<level>  The effort levels: move the tasks on a size; <size>= for no size",
-      "  --dry-run  With --move: say how many tasks would move, and change nothing",
     );
   }
   // `ttasks undo --yes` is the CLI's own: no question when a script's change is newer than yours.

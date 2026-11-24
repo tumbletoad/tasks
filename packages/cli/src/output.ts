@@ -35,6 +35,10 @@ function levelsIn(value: unknown): EffortLevel[] | undefined {
     : undefined;
 }
 
+/** A set's change of one key: its value from and to, a list of levels by their names. */
+export const prefChangeText = (change: { key?: unknown; from?: unknown; to?: unknown }): string =>
+  `${str(change.key)}: ${prefShown(change.from)} → ${prefShown(change.to)}`;
+
 /** A preference's value on one line: JSON, and a list of levels by their names. */
 function prefShown(value: unknown): string {
   return JSON.stringify(levelsIn(value)?.map((level) => level.key) ?? value);
@@ -590,12 +594,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       const tasks = ((result["tasks"] as unknown[] | undefined) ?? []).map(str);
       const count = typeof result["task_count"] === "number" ? result["task_count"] : tasks.length;
       const more = count > tasks.length ? ` and ${String(count - tasks.length)} more` : "";
-      const which =
-        result["levels"] === true
-          ? ` to the effort levels${count > 0 ? ` and ${tasksText(count)}` : ""}`
-          : tasks.length === 0
-            ? ""
-            : ` to ${tasks.join(", ")}${more}`;
+      const which = tasks.length === 0 ? "" : ` to ${tasks.join(", ")}${more}`;
       const done =
         result["result"] === "redone"
           ? "Redid your change"
@@ -604,7 +603,16 @@ export function render(entry: string, result: Result, space: string, asked: Aske
             : tasks.length > 0 || result["tasks"] === undefined
               ? "Undid part of your change"
               : "Nothing of your change was left to undo";
-      lines.push(`${done}${which} in ${space}${replay(result)}`, ...levelsReport(result));
+      // A change of the levels: what the step wrote says what was undone or redone, nothing else.
+      const levels = result["levels"] as { list: boolean; tasks: number } | undefined;
+      const again = result["result"] === "redone" ? "redo" : "undo";
+      const said =
+        levels === undefined
+          ? `${done}${which}`
+          : levels.list || levels.tasks > 0
+            ? `${again === "redo" ? "Redid" : "Undid"} your change to the effort levels${levels.tasks > 0 ? ` and ${tasksText(levels.tasks)}` : ""}`
+            : `Nothing of your change to the effort levels was left to ${again}`;
+      lines.push(`${said} in ${space}${replay(result)}`, ...levelsReport(result));
       const kept = (result["unresolved"] as Result[] | undefined) ?? [];
       // What a partial undo left, or the older changes a redo passed over: who changed what since.
       const newer = newerOf(result);
@@ -841,10 +849,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       // it changed from and to, or that the value was so already.
       if (result["action"] === "set" && Array.isArray(result["changed"])) {
         for (const change of result["changed"] as Result[]) {
-          lines.push(
-            `${str(change["key"])}: ${prefShown(change["from"])} → ${prefShown(change["to"])}`,
-            ...levelLines(change["to"]),
-          );
+          lines.push(prefChangeText(change), ...levelLines(change["to"]));
         }
         lines.push(...levelsReport(result));
         if (result["changed"].length > 0 || result["moved"] !== undefined) break;
