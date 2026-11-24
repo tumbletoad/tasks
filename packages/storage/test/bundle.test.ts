@@ -1320,7 +1320,7 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
     const parent = folders.make();
     const { restored, backup } = await restoreLatest(
       checked,
-      dir,
+      [dir],
       id,
       join(parent, "mira"),
       {},
@@ -1339,10 +1339,10 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
     expect(existsSync(newest.file)).toBe(true);
 
     // The target is checked before any candidate: one already there is refused at once.
-    await expectCode(() => restoreLatest(checked, dir, id, join(parent, "mira")), "SPACE_EXISTS");
+    await expectCode(() => restoreLatest(checked, [dir], id, join(parent, "mira")), "SPACE_EXISTS");
     // No backup of the space restores.
     await expectCode(
-      () => restoreLatest(checked, dir, newId("sp", osRandom), join(parent, "other")),
+      () => restoreLatest(checked, [dir], newId("sp", osRandom), join(parent, "other")),
       "BACKUP_INVALID",
     );
   });
@@ -1362,7 +1362,7 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
       () =>
         restoreLatest(
           checked,
-          dir,
+          [dir],
           space.spaceId,
           join(parent, "mira"),
           {},
@@ -1374,7 +1374,7 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
     );
     expect(readdirSync(parent)).toEqual([]);
     // With room for it, the newest is the one restored.
-    const { backup } = await restoreLatest(checked, dir, space.spaceId, join(parent, "mira"));
+    const { backup } = await restoreLatest(checked, [dir], space.spaceId, join(parent, "mira"));
     expect(backup).toBe(newest.name);
   });
 });
@@ -1419,12 +1419,12 @@ describe("[A1.5.restore.not-the-backup] a failure that is not the backup's is sa
     for (const nth of [1, 2]) {
       const failing = await failingOnce(".mira.restoring-", NO_MEMORY(), nth);
       await expectCode(
-        () => restoreLatest(failing, dir, space.spaceId, join(parent, "mira")),
+        () => restoreLatest(failing, [dir], space.spaceId, join(parent, "mira")),
         "STORAGE_SQL",
       );
       expect(readdirSync(parent)).toEqual([]);
     }
-    const { backup } = await restoreLatest(checked, dir, space.spaceId, join(parent, "mira"));
+    const { backup } = await restoreLatest(checked, [dir], space.spaceId, join(parent, "mira"));
     expect(backup).toBe(newest.name);
   });
 
@@ -1464,7 +1464,7 @@ describe("[A1.5.restore.not-the-backup] a failure that is not the backup's is sa
     await backupSpace(checked, folder, { kind: "manual", now: () => at - 1_000 });
     const parent = folders.make();
     const corrupt = await failingOnce(".mira.restoring-", sqliteError(11));
-    const { backup } = await restoreLatest(corrupt, dir, space.spaceId, join(parent, "mira"));
+    const { backup } = await restoreLatest(corrupt, [dir], space.spaceId, join(parent, "mira"));
     expect(backup).toBe(older.name);
     const [newest] = listBackups(dir).backups;
     if (newest === undefined) throw new Error("a backup expected");
@@ -1483,11 +1483,11 @@ describe("[A1.5.restore.not-the-backup] a failure that is not the backup's is sa
     const parent = folders.make();
     const failing = await failingOnce(".mira.restoring-", "DURABILITY_FAILED");
     await expectCode(
-      () => restoreLatest(failing, dir, space.spaceId, join(parent, "mira")),
+      () => restoreLatest(failing, [dir], space.spaceId, join(parent, "mira")),
       "DURABILITY_FAILED",
     );
     expect(readdirSync(parent)).toEqual([]);
-    const { backup } = await restoreLatest(checked, dir, space.spaceId, join(parent, "mira"));
+    const { backup } = await restoreLatest(checked, [dir], space.spaceId, join(parent, "mira"));
     expect(backup).toBe(newest.name);
     expect(older.name).not.toBe(newest.name);
   });

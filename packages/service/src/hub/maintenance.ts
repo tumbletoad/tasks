@@ -5,11 +5,11 @@
 //
 // Leftovers are removed only in a backups folder this service alone writes (A1 3.18): a
 // leftover looks exactly like the files of a backup in progress, and only one cleaner per folder
-// closes the window the age rule leaves. That is the space's own `backups/`, while this service
-// holds the space's writer.lock: every backup of the space is taken by its writer's service (a
-// migration's barrier, the daily one, a manual one through the service). A machine-local
-// `backup.dir` can be shared with other spaces, state folders and machines, so it is listed and
-// kept by retention, never cleaned automatically.
+// closes the window the age rule leaves. That is the default `<backups>/<space ID>`, while this
+// service holds the space's writer.lock: every backup of the space is taken by its writer's
+// service (a migration's barrier, the daily one, a manual one through the service). A
+// machine-local `backup.dir` can be shared with other spaces, state folders and machines, so it is
+// listed and kept by retention, never cleaned automatically.
 import { Worker } from "node:worker_threads";
 import type { Id } from "@ttasks/storage";
 
@@ -22,8 +22,11 @@ export interface MaintenanceJob {
    * trial restore the report gives (storage's backupHistories).
    */
   readonly incarnation: Id<"ai">;
-  /** The machine-local `backup.dir`, when set. Default: the space's own `backups/`. */
-  readonly backupDir?: string;
+  /**
+   * The folder the space's backups are written to, and the only one the run cleans. Never the
+   * space's own `backups/`, where backups went before: those stay until the person removes them.
+   */
+  readonly backupDir: string;
   /** Remove leftovers: only in a folder this service alone writes (above). */
   readonly cleanup: boolean;
   /** The service's start: a daily backup over 24 hours old is due at once (A1 3.18). */

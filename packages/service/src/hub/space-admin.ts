@@ -37,7 +37,8 @@ export type AdminJob =
   | {
       /** The newest backup of the space that verifies, into a new folder (A1 3.2). */
       readonly kind: "restore-latest";
-      readonly backupDir: string;
+      /** The space's backups folder, then a folder its backups were in before. */
+      readonly backupDirs: readonly [string, ...string[]];
       readonly spaceId: Id<"sp">;
       readonly target: string;
       /** The incarnation of the copy this machine serves, when known: its history is taken first. */

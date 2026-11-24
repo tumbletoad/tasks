@@ -62,7 +62,7 @@ import { checkSpacePath } from "../space-path.ts";
 import type { CheckedDriver } from "../startup-check.ts";
 import { SCHEMA_STEPS } from "../../migrations/index.ts";
 import { makeDurableFolder } from "../backup/backup.ts";
-import { backupHistories, listBackups, type BackupHistory } from "../backup/list.ts";
+import { backupHistories, listBackupsIn, type BackupHistory } from "../backup/list.ts";
 import { BUNDLE_POLICY, checkFreeSpace, existingFolder, freeBytes } from "../backup/policy.ts";
 import { utcStamp } from "../backup/sidecar.ts";
 import { productTables, type ProductTable } from "../backup/snapshot.ts";
@@ -89,7 +89,7 @@ export interface LatestRestored {
 }
 
 /**
- * Restores the newest complete backup of `spaceId` in `backupDir` that restores into the new folder
+ * Restores the newest complete backup of `spaceId` in `backupDirs` that restores into the new folder
  * `target` (see the header), and names it. Its candidates are one history's (list.ts
  * backupHistories): that of the copy this machine serves (`incarnation`), whenever the folder
  * holds a backup of it, whole or not, never another's in its place; else, a choice the result
@@ -102,7 +102,7 @@ export interface LatestRestored {
  */
 export async function restoreLatest(
   checked: CheckedDriver,
-  backupDir: string,
+  backupDirs: readonly [string, ...string[]],
   spaceId: Id<"sp">,
   target: string,
   options: RestoreOptions & { incarnation?: Id<"ai"> } = {},
@@ -119,7 +119,7 @@ export async function restoreLatest(
     throw new StorageError("SPACE_EXISTS", "A space folder is already there");
   }
   const { incarnation, ...restoreOptions } = options;
-  const all = backupHistories(listBackups(backupDir, seams.policy), spaceId);
+  const all = backupHistories(listBackupsIn(backupDirs, seams.policy), spaceId);
   const histories = all.filter((h) => h.backups.some((b) => b.state === "ok"));
   // Found before the incomplete ones are left out: a served copy whose backups are all cut short
   // has none that restores, which is not the same as having none.

@@ -16,7 +16,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
-import { backupsFolder, listBackups, StorageWorker, type Id } from "@ttasks/storage";
+import { backupsFolder, listBackupsIn, StorageWorker, type Id } from "@ttasks/storage";
 import { createSpaceAt, STEPS_0_1, STEPS_0_3, STEPS_LATEST } from "@ttasks/storage/revisions";
 import { checkedDriver, digestSpace } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
@@ -29,6 +29,7 @@ import { startService, type RunningService, type StartOptions } from "../src/hub
 import { readSpaceSettings, recordMigration, SPACES_FOLDER } from "../src/hub/space-settings.ts";
 import { RETRY_MIGRATION } from "../src/hub/spaces.ts";
 import {
+  backupsOf,
   readLog,
   registerSpaces,
   removeRuntimeDir,
@@ -164,9 +165,9 @@ function written(home: string, folder: string, id: Id<"sp">): Record<string, str
   const files: Record<string, string> = {};
   for (const [prefix, dir] of [
     ["", folder],
-    ["backups/", backupsFolder(folder)],
+    ["backups/", backupsOf(home, id)],
   ] as const) {
-    for (const name of readdirSync(dir).sort()) {
+    for (const name of existsSync(dir) ? readdirSync(dir).sort() : []) {
       const path = join(dir, name);
       files[`${prefix}${name}`] = statSync(path).isFile() ? sha(path) : "folder";
     }
@@ -195,9 +196,12 @@ async function dbState(
   }
 }
 
-/** The space's barrier backups that are complete, oldest first. */
-const barrierBackups = (folder: string): string[] =>
-  listBackups(backupsFolder(folder))
+/** The space's barrier backups that are complete, oldest first, wherever an upgrade put them. */
+const barrierBackups = (
+  home: string,
+  space: { readonly folder: string; readonly space: { readonly spaceId: Id<"sp"> } },
+): string[] =>
+  listBackupsIn([backupsOf(home, space.space.spaceId), backupsFolder(space.folder)])
     .backups.filter((b) => b.state === "ok" && b.sidecar?.kind === "pre-migrate")
     .map((b) => b.name)
     .sort();
@@ -258,8 +262,8 @@ describe("[A2.3.1.hub.failed-migration] a failed migration is not tried again by
 
       // Open 1: the migration is tried behind its own barrier backup, fails, and is recorded.
       let service = await start(home, space.folder, failing);
-      const [backup = "?"] = barrierBackups(space.folder);
-      expect(barrierBackups(space.folder)).toEqual([backup]);
+      const [backup = "?"] = barrierBackups(home, space);
+      expect(barrierBackups(home, space)).toEqual([backup]);
       expect(service.spaces()).toEqual([failedNow(id, backup)]);
       expect(readSpaceSettings(stateOf(home), id).failedMigrations).toEqual([
         failure(await dbState(space.folder), backup),
@@ -278,7 +282,7 @@ describe("[A2.3.1.hub.failed-migration] a failed migration is not tried again by
         await stop(service);
         expect(written(home, space.folder, id), `open ${String(open)}`).toEqual(after);
       }
-      expect(barrierBackups(space.folder)).toEqual([backup]);
+      expect(barrierBackups(home, space)).toEqual([backup]);
       expect(digestSpace(await checkedDriver(), space.folder)).toBe(fixture);
       // One attempt, nine opens it held back, and the message never in the log.
       expect(events(home, "space.read_only").map((e) => [e["code"], e["tried"]])).toEqual([
@@ -301,13 +305,13 @@ describe("[A2.3.1.hub.failed-migration] a failed migration is not tried again by
       const startWorker = workers(() => "failing-0.2");
 
       let service = await start(home, space.folder, { startWorker });
-      const [first = "?"] = barrierBackups(space.folder);
+      const [first = "?"] = barrierBackups(home, space);
       await stop(service);
 
       // An update: another build tries the same state again, behind its own barrier backup.
       const update = { version: "0.0.0", build: "fixture-update" };
       service = await start(home, space.folder, { startWorker, build: update });
-      const made = barrierBackups(space.folder);
+      const made = barrierBackups(home, space);
       expect(made).toHaveLength(2);
       const second = made.find((name) => name !== first) ?? "?";
       expect(service.spaces()).toEqual([failedNow(id, second)]);
@@ -335,15 +339,15 @@ describe("[A2.3.1.hub.failed-migration] a failed migration is not tried again by
       const startWorker = workers(() => "failing-0.2");
 
       let service = await start(home, space.folder, { startWorker });
-      const [first = "?"] = barrierBackups(space.folder);
+      const [first = "?"] = barrierBackups(home, space);
 
       // A restore in place of the barrier backup: a new epoch and incarnation, the record forgotten,
       // and the open after it tries, behind its own barrier backup.
       const change = await service.spaceManager.restoreInPlace(
         0,
-        join(backupsFolder(space.folder), `${first}.db.gz`),
+        join(backupsOf(home, id), `${first}.db.gz`),
       );
-      const afterRestore = barrierBackups(space.folder);
+      const afterRestore = barrierBackups(home, space);
       expect(afterRestore).toHaveLength(2);
       const second = afterRestore.find((name) => name !== first) ?? "?";
       expect(service.spaces()).toEqual([failedNow(id, second)]);
@@ -358,7 +362,7 @@ describe("[A2.3.1.hub.failed-migration] a failed migration is not tried again by
       const lastSeq = await writeCommits(space.folder, 1, "x", STEPS_0_1);
       expect(lastSeq).toBeGreaterThan(restored.lastSeq);
       service = await start(home, space.folder, { startWorker });
-      const afterWrite = barrierBackups(space.folder);
+      const afterWrite = barrierBackups(home, space);
       expect(afterWrite).toHaveLength(3);
       const third = afterWrite.find((name) => name !== first && name !== second) ?? "?";
       expect(service.spaces()).toEqual([failedNow(id, third)]);
@@ -380,7 +384,7 @@ describe("[A2.3.1.hub.failed-migration] a failed migration is not tried again by
       const state = await dbState(space.folder);
       let set: StepSet | undefined = "failing-0.2";
       const service = await start(home, space.folder, { startWorker: workers(() => set) });
-      const [first = "?"] = barrierBackups(space.folder);
+      const [first = "?"] = barrierBackups(home, space);
       expect(service.spaces()).toEqual([failedNow(id, first)]);
       const user = await session(home, service, "cli-interactive");
 
@@ -401,11 +405,11 @@ describe("[A2.3.1.hub.failed-migration] a failed migration is not tried again by
       const reopened = await call(user, "space/open", { path: space.folder });
       expect(reopened["space"]).toMatchObject({ state: "read_only", code: "MIGRATION_FAILED" });
       expect(service.spaces()).toEqual([notTried(id, first)]);
-      expect(barrierBackups(space.folder)).toEqual([first]);
+      expect(barrierBackups(home, space)).toEqual([first]);
 
       // The retry: tried, behind a new barrier backup, and it fails again on the same state.
       await call(user, "space/open", { path: space.folder, retry_migration: true });
-      const made = barrierBackups(space.folder);
+      const made = barrierBackups(home, space);
       expect(made).toHaveLength(2);
       const second = made.find((name) => name !== first) ?? "?";
       expect(service.spaces()).toEqual([failedNow(id, second)]);
@@ -418,14 +422,14 @@ describe("[A2.3.1.hub.failed-migration] a failed migration is not tried again by
       await call(user, "space/close", { space: space.folder });
       await call(user, "space/open", { path: space.folder });
       expect(service.spaces()).toEqual([notTried(id, second)]);
-      expect(barrierBackups(space.folder)).toHaveLength(2);
+      expect(barrierBackups(home, space)).toHaveLength(2);
       const migrated = await call(user, "space/open", {
         path: space.folder,
         retry_migration: true,
       });
       expect(migrated["space"]).toMatchObject({ state: "open", id });
       expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(barrierBackups(space.folder)).toHaveLength(3);
+      expect(barrierBackups(home, space)).toHaveLength(3);
       expect(readSpaceSettings(stateOf(home), id).failedMigrations).toBeUndefined();
       expect(readFileSync(settingsFile(home, id), "utf8")).not.toContain("failed_migrations");
       const added = await call(user, "op/call", {
@@ -490,7 +494,7 @@ describe("[A2.3.1.hub.failed-migration] a failed migration is not tried again by
         damage();
         service = await start(home, space.folder, { startWorker });
         count += 1;
-        expect(barrierBackups(space.folder), what).toHaveLength(count);
+        expect(barrierBackups(home, space), what).toHaveLength(count);
         expect(service.spaces()[0], what).toMatchObject({
           state: "read_only",
           reason: "migration_failed",
@@ -501,7 +505,7 @@ describe("[A2.3.1.hub.failed-migration] a failed migration is not tried again by
       // A failure that could not be recorded is tried again at the next open, and its message does
       // not promise otherwise.
       service = await start(home, space.folder, { startWorker });
-      expect(barrierBackups(space.folder)).toHaveLength(count + 1);
+      expect(barrierBackups(home, space)).toHaveLength(count + 1);
       expect(service.spaces()[0]?.message).not.toContain(RETRY_MIGRATION);
     },
     LONG,
@@ -552,14 +556,17 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       expect(events(home, "space.open")).toEqual([
         expect.objectContaining({ entry: 0, space: id, migrated: true }),
       ]);
-      const [backup] = barrierBackups(space.folder);
-      expect(barrierBackups(space.folder)).toHaveLength(1);
+      const [backup] = barrierBackups(home, space);
+      expect(barrierBackups(home, space)).toHaveLength(1);
       // What the space list and doctor tell the person: the revisions, and the backup from before.
+      // Outside the TTasks home, never in the space's own folder any more.
       expect(readSpaceSettings(stateOf(home), id).lastMigration).toMatchObject({
         from: "0.1",
         to: "0.5",
         backup,
+        backup_folder: backupsOf(home, id),
       });
+      expect(existsSync(backupsFolder(space.folder))).toBe(false);
       const user = await session(home, service, "cli-interactive");
       const added = await call(user, "op/call", {
         op: "task.add",
@@ -568,7 +575,12 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       });
       expect(added).toHaveProperty("tasks");
       const listed = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
-      expect(listed[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.5", backup });
+      expect(listed[0]?.["migrated"]).toMatchObject({
+        from: "0.1",
+        to: "0.5",
+        backup,
+        backup_folder: backupsOf(home, id),
+      });
       // A month later the backup from before is still there, and still named: retention keeps it.
       recordMigration(
         stateOf(home),
@@ -585,7 +597,7 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       });
       // Where an earlier build already removed it, the list still names it, as no longer there.
       for (const suffix of [".db.gz", ".json"]) {
-        rmSync(join(backupsFolder(space.folder), `${backup ?? ""}${suffix}`));
+        rmSync(join(backupsOf(home, id), `${backup ?? ""}${suffix}`));
       }
       const gone = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
       expect(gone[0]?.["migrated"]).toMatchObject({ backup, backup_listed: false });
@@ -613,7 +625,7 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
         openTimeoutMs: SLOW_OPEN_BOUND_MS,
         closeTimeoutMs: 30_000,
       });
-      const [backup = "?"] = barrierBackups(space.folder);
+      const [backup = "?"] = barrierBackups(home, space);
       expect(service.spaces()).toEqual([failedNow(id, backup)]);
       expect(readSpaceSettings(stateOf(home), id).failedMigrations).toEqual([
         failure(state, backup),
@@ -670,7 +682,7 @@ describe("[A1.5.backup.folder-away] an upgrade whose backups folder set for the 
       const service = await start(home, space.folder);
       expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
       expect(existsSync(drive)).toBe(false);
-      const [backup] = barrierBackups(space.folder);
+      const [backup] = barrierBackups(home, space);
       expect(backup).toBeDefined();
       const user = await session(home, service, "cli-interactive");
       const listed = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
@@ -687,6 +699,35 @@ describe("[A1.5.backup.folder-away] an upgrade whose backups folder set for the 
       expect(restored).toMatchObject({ read_only_copy: true });
       expect(existsSync(join(spaces, "copy", "space.db"))).toBe(true);
       expect(existsSync(drive)).toBe(false);
+    },
+    LONG,
+  );
+});
+
+describe("[A1.5.backup.outside-home] an upgrade whose backups folder beside the home cannot be made", () => {
+  test(
+    "goes on behind a backup in the space's own folder, which the record and a restore by name find",
+    async () => {
+      const { home, spaces } = setUp("unmade-upgrade");
+      const space = await spaceAt01(join(spaces, "work"));
+      const id = space.space.spaceId;
+      // A file where the folder beside the home goes.
+      writeFileSync(`${home}-backups`, "not a folder");
+      const service = await start(home, space.folder);
+      expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
+      const [backup] = barrierBackups(home, space);
+      expect(backup).toBeDefined();
+      expect(readSpaceSettings(stateOf(home), id).lastMigration).toMatchObject({
+        backup,
+        backup_folder: backupsFolder(space.folder),
+      });
+      const user = await session(home, service, "cli-interactive");
+      const restored = await call(user, "space/restore", {
+        backup,
+        of: space.folder,
+        to: join(spaces, "copy"),
+      });
+      expect(restored).toMatchObject({ read_only_copy: true });
     },
     LONG,
   );

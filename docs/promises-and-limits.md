@@ -73,6 +73,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 ## Backups, restore and export
 
 - A backup stays consistent while people and agents change tasks.
+- A space's backups go to its own folder beside the TTasks home (`~/.ttasks-backups`), so removing
+  the home folder leaves them. `ttasks space list` and `ttasks doctor` say where they are.
+- Backups made before they went there stay in the space's `backups` folder: listed with their
+  folder, restorable by name and as latest, and never moved or cleaned up.
 - A backup that is called verified has passed a trial restore. So has every backup you make with
   `ttasks space backup`.
 - While a space is open for changes, TTasks backs it up once a day. It keeps the backups of seven
@@ -91,10 +95,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   when it ended.
 - Within a copy's backups, the newest is the one that holds your latest saved work, also after the
   clock was set back. Clean-up never removes it, nor the newest backup that restores.
-- A backups folder you set for a space that is not there, such as one on a drive that is not
-  connected, is said as not there, with its path. No backup goes to a new folder in its place. An
-  upgrade does not wait for it: its backup goes to the space's own backups folder, and
-  `ttasks space list` says where.
+- A space's backups folder that is not there, such as one you set on a drive that is not
+  connected, or one TTasks cannot make, is said as not there, with its path. No backup goes to
+  another folder in its place, and nothing is cleaned up. An upgrade does not wait for it: its
+  backup goes to the space's own backups folder, and `ttasks space list` says where.
 - Making a backup or an export never overwrites an existing file.
 - A restore checks the backup first. A backup that is broken or too new leaves nothing half
   restored.
@@ -524,8 +528,11 @@ the behaviour it describes, and keep each one to a sentence or two.
 - When the service or the machine crashes during a run, the run keeps its answer as of the agent's
   last finished message. What the agent was still writing is only in the run's raw output.
 - Backups and exports are not encrypted. Their protection is that of the disk they are on.
-- Backups sit beside the space on the same disk unless you set another folder for them or copy an
-  export elsewhere. A lost disk then loses them with the space.
+- Backups are on the same disk as the TTasks home unless you set another folder for them or copy
+  an export elsewhere. A lost disk, or removing both folders or the folder above them, loses them
+  with the space.
+- Until the first backup after the update that moved backups out of the TTasks home, a space's
+  backups are still all inside it.
 - A space in a synced folder or on a network drive opens read-only, because a live database there
   can be damaged. For a synced folder you confirm once that it is excluded from sync. When the folder
   could not be checked, TTasks checks it again by itself for a few minutes and opens a local one for

@@ -285,7 +285,7 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
     const after = await world.tasks(["space", "list"]);
     expect(after.stdout).toMatch(
       new RegExp(
-        `Updated from schema 0\\.1 to 0\\.5 on [0-9-]+ [0-9:]+\\. The backup from just before it: ${newest[0] ?? "?"} `,
+        `Updated from schema 0\\.1 to 0\\.5 on [0-9-]+ [0-9:]+\\. The backup from just before it: ${newest[0] ?? "?"}, in `,
         "u",
       ),
     );

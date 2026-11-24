@@ -1,8 +1,10 @@
 // Machine-local locations (A2 3.2.1, 3.2.2) and the install ID that namespaces them (A2 S30).
 //
-// Two places per machine, the same on every OS (A2 3.2.1):
+// Three places per machine, the same on every OS (A2 3.2.1):
 // - the person's data and configuration in `~/.ttasks/` (`%USERPROFILE%\.ttasks\`): `config/`,
 //   `state/`, `cache/` and `spaces/`. Removing or updating the program never touches it.
+// - the spaces' backups beside it, in `~/.ttasks-backups/<space ID>/`, so that removing the data
+//   folder never takes a space and its backups together.
 // - the program in `~/.local/share/ttasks/` (`versions/` and `current`), with the command in
 //   `~/.local/bin/` (on Windows the same two under %USERPROFILE%).
 //
@@ -77,6 +79,8 @@ export interface Layout {
   readonly spaces: string;
   /** The person's skills: `<data>/skills/<name>/SKILL.md`. */
   readonly skills: string;
+  /** The spaces' backups, beside `data` and never inside it: `<data>-backups/<space ID>`. */
+  readonly backups: string;
   /** TTASKS_HOME when this is a separate install, else undefined. */
   readonly home: string | undefined;
 }
@@ -151,6 +155,7 @@ export function resolveLayout(facts: HostFacts): Layout {
     workdirs: path.join(state, "workdirs"),
     spaces: path.join(data, SPACES_FOLDER),
     skills: path.join(data, SKILLS_FOLDER),
+    backups: path.join(path.dirname(data), `${path.basename(data)}-backups`),
     home: separate === undefined ? undefined : root,
   };
 }

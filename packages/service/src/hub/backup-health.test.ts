@@ -85,9 +85,7 @@ describe("[A1.5.backup.failure-shown] what a space's backups report, run by run"
   test("a backups folder that is not there is said as that until a run finds it again", () => {
     const away = afterRun({ lastGood: AT }, run({ backup: "away" }));
     expect(away).toEqual({ lastGood: AT, trouble: { why: "away" } });
-    expect(troubleView(away)?.message).toMatch(
-      /^The backups folder set for this space is not there/,
-    );
+    expect(troubleView(away)?.message).toMatch(/^The backups folder for this space is not there/);
     expect(afterRun(away, run())).toEqual({ lastGood: AT });
   });
 

@@ -49,6 +49,7 @@ describe("[A2.3.2.hub.paths] state folders per OS", () => {
       workdirs: "/home/mira/.ttasks/state/workdirs",
       spaces: "/home/mira/.ttasks/spaces",
       skills: "/home/mira/.ttasks/skills",
+      backups: "/home/mira/.ttasks-backups",
       home: undefined,
     });
     // An account with no entry in the user database falls back to HOME.
@@ -79,6 +80,7 @@ describe("[A2.3.2.hub.paths] state folders per OS", () => {
     expect(layout.logs).toBe("C:\\Users\\mira\\.ttasks\\state\\logs");
     expect(layout.crash).toBe("C:\\Users\\mira\\.ttasks\\state\\crash");
     expect(layout.spaces).toBe("C:\\Users\\mira\\.ttasks\\spaces");
+    expect(layout.backups).toBe("C:\\Users\\mira\\.ttasks-backups");
     for (const path of Object.values(layout)) {
       if (typeof path === "string") expect(path.toLowerCase()).not.toContain("appdata");
     }
@@ -108,6 +110,8 @@ describe("[A2.3.2.hub.paths] state folders per OS", () => {
       for (const folder of [layout.config, layout.state, layout.cache, layout.spaces]) {
         expect(folder.startsWith(layout.data + sep)).toBe(true);
       }
+      // Removing the data folder never takes the backups with it.
+      expect(layout.backups.startsWith(layout.data + sep)).toBe(false);
       // A space in the default folder passes the space path rules, the hidden `.ttasks` included.
       const space = `${layout.spaces}${sep}work`;
       expect(checkSpacePath(space, layout.platform)).toBe(space);
@@ -130,6 +134,7 @@ describe("[A2.3.2.hub.paths] state folders per OS", () => {
       expect(layout.cache).toBe(`${home}${sep}cache`);
       expect(layout.logs).toBe(`${home}${sep}state${sep}logs`);
       expect(layout.spaces).toBe(`${home}${sep}spaces`);
+      expect(layout.backups).toBe(`${home}-backups`);
     }
     expect(() =>
       resolveLayout(facts("linux", { TTASKS_HOME: "ttasks-test" }, "/home/mira")),

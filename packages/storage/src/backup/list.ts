@@ -20,7 +20,7 @@
 // names the folder lists: on a file system that ignores case, `X.JSON` is the sidecar of `X.db.gz`
 // for a restore, so it must be for the listing too.
 import { lstatSync, readdirSync, rmSync, type Dirent, type Stats } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { errnoCode, fsCall, fsError } from "../files.ts";
 import type { Id } from "../ids.ts";
 import type { CheckedDriver } from "../startup-check.ts";
@@ -82,12 +82,16 @@ export interface BackupListing {
   leftovers: string[];
 }
 
-/** The folder's entries, or undefined when it is not there. */
+/**
+ * The folder's entries, or undefined when it is not there or cannot hold backups (a file in its
+ * place). Any other error is thrown: a folder that is there and cannot be read may hold the newest.
+ */
 function readFolder(folder: string): Dirent[] | undefined {
   try {
     return readdirSync(folder, { withFileTypes: true });
   } catch (error) {
-    if (errnoCode(error) === "ENOENT") return undefined;
+    const code = errnoCode(error);
+    if (code === "ENOENT" || code === "ENOTDIR") return undefined;
     throw fsError(error);
   }
 }
@@ -165,6 +169,43 @@ export function listBackups(
   backupDir: string,
   policy: BundlePolicy = BUNDLE_POLICY,
 ): BackupListing {
+  return listBackupsIn([backupDir], policy);
+}
+
+/**
+ * The backups of several folders as one listing, each folder read once: a space's backups folder
+ * first, then a folder its backups were in before. `folder`, `present` and `leftovers` are the
+ * first folder's, the one backups are written to; each backup's `file` says where it is.
+ */
+export function listBackupsIn(
+  folders: readonly [string, ...string[]],
+  policy: BundlePolicy = BUNDLE_POLICY,
+): BackupListing {
+  const [first, ...rest] = [...new Map(folders.map((f) => [resolve(f), f])).values()] as [
+    string,
+    ...string[],
+  ];
+  const own = readBackups(first, policy);
+  const backups = [
+    ...own.backups,
+    ...rest.flatMap((folder) => readBackups(folder, policy).backups),
+  ];
+  return {
+    folder: first,
+    present: own.present,
+    backups: [
+      ...groupHistories(backups).flatMap((h) => h.backups),
+      ...backups.filter((b) => b.sidecar === undefined).sort(byClock),
+    ],
+    leftovers: own.leftovers,
+  };
+}
+
+/** One folder's backups, unordered, and its leftovers. */
+function readBackups(
+  backupDir: string,
+  policy: BundlePolicy,
+): { present: boolean; backups: ListedBackup[]; leftovers: string[] } {
   const entries = readFolder(backupDir);
   // The base names that appear with a backup's exact suffixes, and the temporary files.
   const bases = new Set<string>();
@@ -213,15 +254,7 @@ export function listBackups(
     else state = data.size === sidecar.compressed_size ? "ok" : "size_mismatch";
     backups.push({ ...listed, state, sidecar });
   }
-  return {
-    folder: backupDir,
-    present: entries !== undefined,
-    backups: [
-      ...groupHistories(backups).flatMap((h) => h.backups),
-      ...backups.filter((b) => b.sidecar === undefined).sort(byClock),
-    ],
-    leftovers: leftovers.sort(),
-  };
+  return { present: entries !== undefined, backups, leftovers: leftovers.sort() };
 }
 
 /** How long a leftover stays untouched before it is removed: younger, it may be in progress. */
