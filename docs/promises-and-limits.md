@@ -23,7 +23,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   next one. The change it passed over stays, and a later Redo tries it again.
 - Working alone, you can undo everything you did, one step at a time, and redo it all, and the
   order of your lists comes back with it. Your own changes never hold back your Undo or Redo, a run
-  you queued or a session you opened included; what a run did since is the run's work.
+  you queued or stopped and a session you opened included; what a run did since, from its start
+  on, is the run's work.
 - Your undo history survives a restart and is shared by your windows and the command line.
 - Checking off a task completes it at once and can be undone. Neither Undo nor Redo checks a task
   off or archives it again when someone else added to it or changed it since.
