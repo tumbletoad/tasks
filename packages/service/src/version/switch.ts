@@ -711,12 +711,16 @@ function wayBack(
   return had !== undefined && had !== to && isInstalled(root, had) ? had : from;
 }
 
-/** Whether the build of `version`, by its own manifest, notes when it is seen working. */
+/**
+ * Whether the build of `version`, by its own manifest, notes when it is seen working. A manifest
+ * that does not read says nothing: the version is not taken for one from before the note, so a
+ * way back that is known to work is not given up for it.
+ */
 function notesSeen(root: string, version: string): boolean {
   try {
     return readVersionManifest(join(root, VERSIONS, version)).notes_seen_working === true;
   } catch {
-    return false;
+    return true;
   }
 }
 

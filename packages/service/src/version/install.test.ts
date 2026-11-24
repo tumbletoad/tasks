@@ -519,6 +519,28 @@ describe("[A2.3.12.6.update.way-back] an install cut off and run again keeps the
     expect(record(root).previous).toBe("0.1.0");
   });
 
+  test("a version whose manifest cannot be read just then is not taken for one that worked: the way back stays", async () => {
+    const { root, folder } = install();
+    fromBeforeTheNote(folder);
+    await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+    const b = addVersion(root, "0.2.0", "launcher two");
+    await finishInstall({ versionFolder: b, facts: facts(root) });
+    expect(record(root).previous).toBe("0.1.0");
+    // B never ran. While C is installed its manifest does not read (another program holds it).
+    const manifest = join(b, "manifest.json");
+    const text = readFileSync(manifest, "utf8");
+    rmSync(manifest);
+    writeFileSync(manifest, "{");
+    const c = addVersion(root, "0.3.0", "launcher three");
+    try {
+      await finishInstall({ versionFolder: c, facts: facts(root) });
+    } finally {
+      rmSync(manifest);
+      writeFileSync(manifest, text);
+    }
+    expect(record(root).previous).toBe("0.1.0");
+  });
+
   test("a note of a version seen working that could not be written is written at a later check", async () => {
     const { root, folder } = install();
     await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
