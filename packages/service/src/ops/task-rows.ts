@@ -58,6 +58,12 @@ export interface CompactRun {
   readonly instance: string;
 }
 
+/** The instances (machine.toml's keys) the task was last opened in and last ran with. */
+export interface CompactLast {
+  readonly open?: string;
+  readonly run?: string;
+}
+
 /** A question an agent asked on the task that waits for the person (`WAITS`, `RUN_WAITS`). */
 export interface CompactQuestion {
   /** The log entry, such as `l3`, or the run that ended with it. */
@@ -78,6 +84,7 @@ export type CompactValue =
   | readonly CompactSource[]
   | CompactPlace
   | CompactRun
+  | CompactLast
   | readonly CompactQuestion[];
 export type CompactRow = Readonly<Record<string, CompactValue>>;
 
@@ -144,6 +151,16 @@ const newestRun = (where: string, order = "r.queued_at DESC, r.id DESC") =>
   `FROM runs r WHERE r.task_id = t.id${where} ORDER BY ${order} LIMIT 1)`;
 
 /**
+ * The instances the task was last opened in and last ran with: what its Open and Run use. A copy of
+ * the brief opens no agent, and a refused Open is not the person's choice of agent.
+ */
+const LAST_USED =
+  "json_object('open', (SELECT l.instance_id FROM launches l WHERE l.task_id = t.id AND " +
+  "l.route <> 'clipboard' AND l.state <> 'failed' ORDER BY l.created_at DESC, l.id DESC LIMIT 1), " +
+  "'run', (SELECT r.instance_id FROM runs r WHERE r.task_id = t.id " +
+  "ORDER BY r.queued_at DESC, r.id DESC LIMIT 1)) AS x_last";
+
+/**
  * A task row's columns. `folders`: the space has the folders and runs tables (schema 0.5 on); a
  * space served read-only at an older revision may have neither, and its rows show no folder and
  * no run.
@@ -176,7 +193,8 @@ export function taskColumns(folders: boolean): string {
       ? `, ${foldersOf("task", "t.id")} AS x_folders_own, ` +
         `${foldersOf("project", "t.project_id")} AS x_folders_project, ` +
         `${newestRun(` AND ${OPEN_RUN}`)} AS x_run_open, ` +
-        `${newestRun(` AND ${RUN_WAITS}`, `${runAsked("r")} DESC`)} AS x_run_asks`
+        `${newestRun(` AND ${RUN_WAITS}`, `${runAsked("r")} DESC`)} AS x_run_asks, ` +
+        LAST_USED
       : "")
   );
 }
@@ -282,6 +300,18 @@ export function runOf(open: unknown, asks?: unknown): CompactRun | undefined {
   return rowRun(open) ?? rowRun(asks);
 }
 
+/** `x_last` as the row's `last`, or nothing when the task was never opened in an agent or run. */
+function lastOf(value: unknown): CompactLast | undefined {
+  const used = parsed(value);
+  if (!isPlain(used)) return undefined;
+  const { open, run } = used;
+  if (typeof open !== "string" && typeof run !== "string") return undefined;
+  return {
+    ...(typeof open === "string" ? { open } : {}),
+    ...(typeof run === "string" ? { run } : {}),
+  };
+}
+
 /** A question's start, at most `QUESTION_CHARS` UTF-16 units, cut between graphemes. */
 function cutQuestion(text: string): string {
   if (text.length <= QUESTION_CHARS) return text;
@@ -368,6 +398,7 @@ export async function taskRows(
         x_folders_project: projectFolders,
         x_run_open: open,
         x_run_asks: asks,
+        x_last: used,
         x_questions: asked,
         x_question_count: askedCount,
         x_reason: reason,
@@ -394,6 +425,8 @@ export async function taskRows(
       if (ended !== undefined) out["ending"] = ended;
       const run = runOf(open, asks);
       if (run !== undefined) out["run"] = run;
+      const last = lastOf(used);
+      if (last !== undefined) out["last"] = last;
       const questions = questionsOf(asked);
       if (questions.length > 0) out["questions"] = questions;
       const unshown = Number(askedCount ?? 0) - questions.length;

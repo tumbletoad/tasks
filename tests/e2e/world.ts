@@ -47,7 +47,12 @@ import {
   type Scales,
 } from "./bulk.ts";
 import type { FakeCodexCase } from "./codex-cases.ts";
-import { fakeInstanceToml, refuseFile, type TerminalCall } from "./fake-terminal.ts";
+import {
+  fakeInstanceToml,
+  refuseFile,
+  type FakeAgent,
+  type TerminalCall,
+} from "./fake-terminal.ts";
 
 const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
 
@@ -198,10 +203,12 @@ export interface WorldOptions {
    * the service would open are recorded (`World.links`), never opened.
    */
   readonly t3?: string;
+  /** More agents after the fake agent, each the fake agent under its own key and label. */
+  readonly agents?: readonly FakeAgent[];
 }
 
 /** The T3 Code instance of a world with T3. */
-export const T3_INSTANCE = { key: "t3", label: "T3 Code · test", glyph: "T3" } as const;
+export const T3_INSTANCE = { key: "t3", label: "T3 Code", glyph: "T3" } as const;
 
 /** The fake Codex's instance in a world with runs: the first that can run, Run's default. */
 export const CODEX_INSTANCE = { key: "codex-fake", label: "Codex · test", glyph: "Cx" } as const;
@@ -328,6 +335,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       [{ path: seeded.folder, id: opened.space.spaceId }, ...scaled],
       codexes +
         fakeInstanceToml(home, holds) +
+        (options.agents ?? []).map((agent) => fakeInstanceToml(home, holds, agent)).join("") +
         (options.t3 === undefined
           ? ""
           : instanceToml({ id: T3_INSTANCE.key, target: "t3", label: T3_INSTANCE.label })),

@@ -228,13 +228,14 @@ describe("[M6.page.run-follow] the page shows a run as the service has it", () =
     const instances: Instance[] = [
       {
         key: "codex-work",
+        app: "Codex",
         label: "Codex · work",
         glyph: "Cx",
         ring: 1,
         route: "terminal",
         runs: true,
       },
-      { key: "claude", label: "Claude", glyph: "Cl", ring: 2, route: "terminal" },
+      { key: "claude", app: "Claude", label: "Claude", glyph: "Cl", ring: 2, route: "terminal" },
     ];
     expect(
       agentMarker({ id: "ru_1", state: "needs_you", instance: "codex-work" }, instances),

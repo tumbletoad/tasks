@@ -4951,6 +4951,21 @@
                   "description": "In the Inbox",
                   "type": "boolean"
                 },
+                "last": {
+                  "additionalProperties": false,
+                  "description": "The agent instances it was last opened in and last ran with",
+                  "properties": {
+                    "open": {
+                      "description": "The instance of its newest Open that was not refused",
+                      "type": "string"
+                    },
+                    "run": {
+                      "description": "The instance of its newest run",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
                 "lifecycle": {
                   "description": "Lifecycle",
                   "enum": [
@@ -7740,6 +7755,21 @@
                 "inbox": {
                   "description": "In the Inbox",
                   "type": "boolean"
+                },
+                "last": {
+                  "additionalProperties": false,
+                  "description": "The agent instances it was last opened in and last ran with",
+                  "properties": {
+                    "open": {
+                      "description": "The instance of its newest Open that was not refused",
+                      "type": "string"
+                    },
+                    "run": {
+                      "description": "The instance of its newest run",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
                 },
                 "lifecycle": {
                   "description": "Lifecycle",

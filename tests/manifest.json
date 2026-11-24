@@ -2926,6 +2926,27 @@
       "profiles": ["v1"]
     },
     {
+      "id": "M6.page.open-choice",
+      "title": "A task's Open and Run each name one agent: the one the task last used for it, else the one the space last used here, else the first in Settings' order, and a collapsed row's tile opens the same one; a menu beside each holds every agent that can, grouped by app, the button's own checked; a pick does it with that agent and, once the service took it, makes it the button's; a refused pick is not the button's and its menu row says why; the menu opens from the keyboard, the arrows move and Escape gives the focus back; a default that cannot open says why on its button and its menu row; one agent has no menu, fifteen keep one button",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.last-agents",
+      "title": "A task's compact row names the agent it was last opened in, an Open the service took and not a copy of the brief, and the one it last ran with; every batch of its launches and runs carries the row",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.e2e.open-choice",
+      "title": "In Chromium and Firefox against the real service at 1,440 and 390 px: the strip's Open opens with its agent, the menu opens with another from the keyboard, and after a reload the button names the one just used; axe finds nothing and nothing scrolls sideways",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "M6.page.busy-read",
       "title": "A tab reads which agent apps are busy whenever it is live, again after it was offline, and tries a failed read again while it stays live",
       "owner": "M6",
@@ -3459,6 +3480,13 @@
       "id": "A4.3.2.approval.hash",
       "title": "Approval hashes: the canonical form is stable under key order, ignores only reference keys, refuses values JSON cannot carry, and changing any one byte of an approved definition disables it",
       "source": "A4 3.2, A4 3.12.1, A4 5.1, A7 3.9 M2.06",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.2.instance.names",
+      "title": "An instance is named the same way everywhere: its app's name alone when it is the only one of its app, else the app and its own name (its label without the app's name or a folder's name, else its account)",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]

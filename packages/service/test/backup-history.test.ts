@@ -287,7 +287,7 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
           ]),
         );
         await read("/api/v1/op/receipt.get", { request: lastRequest }, headers);
-        expect(await read("/api/v1/launch/busy", {}, headers)).toEqual({ busy: [] });
+        expect(await read("/api/v1/launch/busy", {}, headers)).toMatchObject({ busy: [] });
         expect(await held()).toEqual([]);
       };
 

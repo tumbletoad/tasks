@@ -286,6 +286,82 @@ describe("[M6.page.run-feed] a run's change carries its task's row, which shows 
   });
 });
 
+describe("[M6.page.last-agents] a task's row names the agents it was last opened in and ran with", () => {
+  test("each launch's batch carries the row; a refused Open and a copy of the brief name none; the snapshot holds the same", async () => {
+    const added = TaskAddResult.parse(
+      await call("task.add", { tasks: [{ title: "Fixture last agents" }], request_id: rid() }),
+    );
+    const task = added.tasks[0]?.id ?? "";
+    const served = service.ops.spaces().find((s) => s.writer !== undefined);
+    const writer = served?.writer;
+    if (writer === undefined || served?.id === undefined) throw new Error("no space is open");
+    const machine = service.ops.machine.id;
+    const store = new SpaceExecutionStore({
+      writer,
+      spaceId: served.id,
+      credential: {
+        scope_id: `launches:${machine}`,
+        principal_id: await writer.actor("human", "user"),
+        actor_kind: "human",
+        machine_id: machine,
+        origin: "ui",
+      },
+    });
+    const lastOf = async (from: number) => {
+      const { batch } = await readBatch(reader, from, { here });
+      const rows = batch.events.flatMap((e) => e.entities).filter((e) => e.type === "task");
+      return rows.at(-1)?.row?.["last"];
+    };
+    const open = (instance: string, route: "terminal" | "t3-mcp" | "clipboard" = "terminal") =>
+      store.createIntent(
+        {
+          task,
+          machine,
+          instance,
+          route,
+          place: null,
+          taskVersion: 1,
+          briefHash: "0123456789abcdef".repeat(4),
+        },
+        rid(),
+      );
+
+    let from = (await readHead(reader)).cursor.seq;
+    await open("claude-work");
+    expect(await lastOf(from)).toEqual({ open: "claude-work" });
+
+    // T3 Code refused the Open: the work account stays the task's.
+    const t3 = await open("t3-personal", "t3-mcp");
+    from = (await readHead(reader)).cursor.seq;
+    await store.transitionIntent(t3.id, "prepared", "failed", { reason: "pairing_denied" });
+    expect(await lastOf(from)).toEqual({ open: "claude-work" });
+
+    from = (await readHead(reader)).cursor.seq;
+    await open("claude-work", "clipboard");
+    await store.createRun(
+      {
+        task,
+        routine: null,
+        machine,
+        instance: "codex-personal",
+        adapter: "codex",
+        place: null,
+        request: "Fixture request",
+        briefHash: "0123456789abcdef".repeat(4),
+        permission: "full-access",
+        limits: RUN_LIMITS.task,
+      },
+      rid(),
+    );
+    expect(await lastOf(from)).toEqual({ open: "claude-work", run: "codex-personal" });
+    const snapshot = await readSnapshot(reader, here);
+    expect(snapshot.tasks.find((r) => r["id"] === task)?.["last"]).toEqual({
+      open: "claude-work",
+      run: "codex-personal",
+    });
+  });
+});
+
 describe("[A5.3.5.http.waiting-since] a waiting task's row says when its wait began", () => {
   test("from its creation or from the change to waiting; a new person keeps it; open has none", async () => {
     const added = TaskAddResult.parse(

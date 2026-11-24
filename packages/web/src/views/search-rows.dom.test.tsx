@@ -43,7 +43,7 @@ beforeEach(() => {
   vi.useFakeTimers({ now: Date.UTC(2026, 10, 14, 12), toFake: ["Date"] });
   const api = {
     client: { task: {} },
-    busy: () => Promise.resolve([]),
+    busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => Promise.resolve([]),
   } as unknown as Api;
   live = new Live({

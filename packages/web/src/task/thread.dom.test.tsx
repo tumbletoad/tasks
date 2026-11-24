@@ -16,6 +16,7 @@ import { Thread } from "./Thread.tsx";
 
 const CLAUDE: Instance = {
   key: "claude",
+  app: "Claude Code",
   label: "Claude Code · work",
   glyph: "Cc",
   ring: 1,
@@ -206,7 +207,16 @@ describe("[A4.3.4.1.t3.open] a T3 Code launch's entry brings its thread up in T3
               t3("la_t3001", "failed", "model_unavailable"),
               t3("la_t3002", "failed", "pairing_denied"),
             ]}
-            instances={[{ key: "t3", label: "T3 Code", glyph: "T3", ring: 2, route: "t3-mcp" }]}
+            instances={[
+              {
+                key: "t3",
+                app: "T3 Code",
+                label: "T3 Code",
+                glyph: "T3",
+                ring: 2,
+                route: "t3-mcp",
+              },
+            ]}
             partial={false}
             onOpenInT3={(launch) => asked.push(launch)}
           />
