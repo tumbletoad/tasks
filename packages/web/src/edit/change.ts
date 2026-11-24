@@ -60,7 +60,7 @@ export type Source =
   | { readonly kind: "title"; readonly title: string }
   | { readonly kind: "star"; readonly on: boolean; readonly today: string }
   | { readonly kind: "priority"; readonly level: number }
-  | { readonly kind: "effort"; readonly effort?: string }
+  | { readonly kind: "effort"; readonly effort?: string; readonly levels?: string }
   | { readonly kind: "due"; readonly date?: string; readonly words?: string }
   | { readonly kind: "status"; readonly status: string }
   | { readonly kind: "inbox" }
@@ -120,7 +120,14 @@ export function priorityChange(level: number): Change {
 const none: Msg = { id: "edit.none" };
 const cleared: Msg = { id: "toast.priorityCleared" };
 
-export function effortChange(effort: string | undefined): Change {
+/** The effort levels a size was chosen from, as a kept edit remembers them. */
+export const levelsKey = (levels: readonly unknown[]): string => JSON.stringify(levels);
+
+/**
+ * A size, with the levels it was chosen from (levelsKey): a kept one is sent again only while the
+ * levels are those, since a change of them can give its name another meaning or none.
+ */
+export function effortChange(effort: string | undefined, levels?: string): Change {
   return effort === undefined
     ? {
         fields: ["effort"],
@@ -136,7 +143,7 @@ export function effortChange(effort: string | undefined): Change {
         overlay: { set: { effort } },
         said: { id: "toast.effort", values: { value: effort } },
         shown: plain(effort),
-        source: { kind: "effort", effort },
+        source: { kind: "effort", effort, ...(levels === undefined ? {} : { levels }) },
       };
 }
 
@@ -370,7 +377,9 @@ export function changeOf(source: unknown): Change | undefined {
     }
     case "effort":
       if (s["effort"] === undefined) return effortChange(undefined);
-      return text(s["effort"], 40) ? effortChange(s["effort"]) : undefined;
+      return text(s["effort"], 40)
+        ? effortChange(s["effort"], typeof s["levels"] === "string" ? s["levels"] : undefined)
+        : undefined;
     case "due": {
       const date = s["date"];
       if (date === undefined) return dueChange(undefined, undefined);

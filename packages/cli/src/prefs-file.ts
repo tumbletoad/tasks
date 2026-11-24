@@ -9,6 +9,7 @@ import { patterns } from "@ttasks/contracts";
 import { UsageError, type Globals, type VerbSpec } from "./args.ts";
 import type { ConnectOptions } from "./connect.ts";
 import type { Io } from "./io.ts";
+import { movedText, prefChangeText } from "./output.ts";
 import { runVerb } from "./verbs.ts";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -31,7 +32,46 @@ function valueOf(json: unknown, key: string): { value: unknown; base?: string } 
   return { value: row["value"], base };
 }
 
-/** `ttasks prefs` with `--file <file>` taken out and read first. */
+type Move = { from: string; to: string | null };
+
+/** Each `--move <size>=<level>` taken out of `args`; `<size>=` takes the size off. */
+function takeMoves(args: string[]): Move[] {
+  const moves: Move[] = [];
+  for (let at = args.indexOf("--move"); at !== -1; at = args.indexOf("--move")) {
+    const given = args.splice(at, 2)[1] ?? "";
+    const cut = given.indexOf("=");
+    if (cut < 1) throw new UsageError("--move takes <size>=<level>, or <size>= for no size");
+    const to = given.slice(cut + 1).trim();
+    moves.push({ from: given.slice(0, cut).trim(), to: to === "" ? null : to });
+  }
+  return moves;
+}
+
+/**
+ * The answer as printed, or a dry run's: the write decided its request whole and wrote nothing
+ * (WriteRequest.dry_run), so it says what the write would. What it cannot know is what changes
+ * before the write. `sent` is the request's own input, so the words follow what it asked.
+ */
+function present(io: Io, globals: Globals, sent: () => Record<string, unknown> | undefined) {
+  return (result: Record<string, unknown>, printed: string): Promise<void> => {
+    if (globals.json || sent()?.["dry_run"] !== true) {
+      io.stdout(printed);
+      return Promise.resolve();
+    }
+    const changed = (result["changed"] ?? []) as { key: string; from: unknown; to: unknown }[];
+    const moved = (result["moved"] ?? []) as Parameters<typeof movedText>[0][];
+    io.stdout(
+      [
+        ...changed.map((c) => `Would set ${prefChangeText(c)}`),
+        ...moved.map((m) => `Would move ${movedText(m)}.`),
+        "Nothing was changed. The counts are as of now.",
+      ].join("\n") + "\n",
+    );
+    return Promise.resolve();
+  };
+}
+
+/** `ttasks prefs` with `--move` and `--file <file>` taken out, the file read first. */
 export async function prefsVerb(
   io: Io,
   globals: Globals,
@@ -41,8 +81,23 @@ export async function prefsVerb(
 ): Promise<number> {
   const end = args.indexOf("--");
   const head = end === -1 ? [...args] : args.slice(0, end);
+  const moves = takeMoves(head);
+  let sent: Record<string, unknown> | undefined;
+  const shown = present(io, globals, () => sent);
+  const withMoves = (input: Record<string, unknown>): void => {
+    sent = input;
+    const item = (input["set"] as Record<string, unknown>[] | undefined)?.[0];
+    if (moves.length === 0) return;
+    if (input["action"] !== "set" || item === undefined) {
+      throw new UsageError("--move goes with set and a key");
+    }
+    item["moves"] = moves;
+  };
   const at = head.findIndex((a) => a === "--file" || a.startsWith("--file="));
-  if (at === -1) return runVerb(io, globals, verb, args, options);
+  if (at === -1) {
+    const rest = [...head, ...(end === -1 ? [] : args.slice(end))];
+    return runVerb(io, globals, verb, rest, options, shown, { input: withMoves });
+  }
   const given = head[at] ?? "";
   const path = given.startsWith("--file=") ? given.slice("--file=".length) : head[at + 1];
   if (path === undefined || path === "") throw new UsageError("--file needs a file");
@@ -60,7 +115,7 @@ export async function prefsVerb(
     throw new UsageError("--file is not JSON");
   }
   const rest = [...head, ...(end === -1 ? [] : args.slice(end))];
-  return runVerb(io, globals, verb, rest, options, undefined, {
+  return runVerb(io, globals, verb, rest, options, shown, {
     input: (input) => {
       const items = Array.isArray(input["set"]) ? (input["set"] as unknown[]) : [];
       const item = items[0];
@@ -73,6 +128,7 @@ export async function prefsVerb(
       const { value, base } = valueOf(json, String(item["key"]));
       item["value"] = value;
       if (base !== undefined && input["base"] === undefined) input["base"] = base;
+      withMoves(input);
     },
   });
 }

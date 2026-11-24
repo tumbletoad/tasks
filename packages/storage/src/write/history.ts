@@ -86,7 +86,8 @@ export type InvertibleEntity =
   | "places"
   | "areas"
   | "projects"
-  | "folders";
+  | "folders"
+  | "preferences";
 
 interface Table {
   readonly fields: Readonly<Record<string, readonly string[]>>;
@@ -113,6 +114,9 @@ const TABLES: Readonly<Record<InvertibleEntity, Table>> = {
   areas: { fields: CHILD_FIELDS.areas, tombstone: "deleted", where: BY_ID },
   projects: { fields: CHILD_FIELDS.projects, tombstone: "deleted", where: BY_ID },
   folders: { fields: CHILD_FIELDS.folders, tombstone: "deleted", where: BY_ID },
+  // Only the effort levels' step is ever on a stack, and it never creates the row (writer.ts:
+  // changeLevels), so no inversion tombstones one: the row has no such field.
+  preferences: { fields: CHILD_FIELDS.preferences, tombstone: "deleted", where: "key = $id" },
 };
 
 /**
@@ -432,6 +436,8 @@ export const UNDO_TARGET_SQL =
 
 const SQL = {
   changes: "SELECT * FROM changes WHERE seq = $seq ORDER BY n",
+  ops: "SELECT ops FROM commits WHERE seq = $seq",
+  preference: "SELECT * FROM preferences WHERE key = $id",
   undone:
     `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
     "AND undo_status = 'undone' ORDER BY seq",
@@ -709,6 +715,29 @@ export interface PlanOptions {
    * rule across rows that the row meets broken counts from it (applyInversions).
    */
   applied: (change: StoredChange) => number;
+  /** A change of the effort levels (levelsStep): the write of the list it found. */
+  levels?: { listFrom: number | undefined };
+}
+
+const EFFORT_SCALE = "tasks.effort_scale";
+
+/**
+ * Whether commit `seq` is a change of the effort levels, by its own record, whatever it did to the
+ * list's value: the write of the list it found (`list_from`), or undefined when it is none.
+ */
+export function levelsStep(
+  conn: Connection,
+  seq: number,
+): { listFrom: number | undefined } | undefined {
+  const ops = conn.prepare(SQL.ops).get({ seq })?.["ops"];
+  const entries = typeof ops === "string" ? parsed(ops) : [];
+  for (const entry of Array.isArray(entries) ? (entries as unknown[]) : []) {
+    const e = entry as { op?: unknown; target?: unknown; input?: { list_from?: unknown } };
+    if (e.op !== "pref.set" || e.target !== EFFORT_SCALE) continue;
+    const from = e.input?.list_from;
+    return { listFrom: typeof from === "number" ? from : undefined };
+  }
+  return undefined;
 }
 
 const parsed = (json: string): unknown => {
@@ -974,6 +1003,28 @@ export function planInversions(
   plan.inversions = plan.inversions.filter(
     (i) => !(i.entity === "tasks" && i.field === "wrap" && keptOpen.has(i.id)),
   );
+  // A change of the effort levels moves its tasks with its list: they go back only while the list
+  // is as the change left it. Its own row of the list inverts, or, where it left the list's value
+  // as it was, the list still holds the write it found; else the list's conflict says why.
+  if (options.levels !== undefined) {
+    const own = changes.some((c) => c.entity === "preferences");
+    const row = conn.prepare(SQL.preference).get({ id: EFFORT_SCALE });
+    const list =
+      row === undefined ? undefined : rowState("preferences", row, TABLES.preferences.fields);
+    const { listFrom } = options.levels;
+    const held = own
+      ? !plan.inversions.some((i) => i.entity === "preferences")
+      : listFrom !== undefined &&
+        (list === undefined ? 0 : provenanceOf(list, "value")) !== listFrom;
+    if (held) {
+      plan.inversions = plan.inversions.filter(
+        (i) => !(i.entity === "tasks" && i.field === "effort"),
+      );
+      if (!own && list !== undefined) {
+        blocked(fieldConflict("preferences", EFFORT_SCALE, null, "value", {}));
+      }
+    }
+  }
   if (options.partial) keepTogether(plan, read);
   keepActiveUnwrapped(plan, read, (where, version, at) => {
     blocked(conflict(where, version), at);
@@ -1858,6 +1909,7 @@ function ownersOf(entity: InvertibleEntity, raw: Row): { entity: InvertibleEntit
     }
     case "sources":
     case "areas":
+    case "preferences":
       return [];
   }
 }

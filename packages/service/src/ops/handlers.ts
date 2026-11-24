@@ -29,6 +29,8 @@ import {
   isKeyList,
   effortKeys,
   effortNamesFit,
+  sizesHeldText,
+  type EffortHeld,
   EFFORT_NAME_MAX,
   samePrefValue,
   laterIn,
@@ -60,6 +62,7 @@ import {
   normaliseStored,
   type InsideFolder,
   type Id,
+  type EffortMove,
   type Operation,
   type OpResult,
   type SourceFields,
@@ -172,7 +175,7 @@ import {
   readTask,
   readReviewedMark,
   readTaskLinks,
-  readKeyHolders,
+  readEffortHeld,
   readTaskKeys,
   readEffortLevels,
   readTaskRef,
@@ -962,6 +965,8 @@ async function submit(
     readonly answer?: Readonly<Record<string, unknown>>;
     /** False for an undo or redo: the stack's own move never joins the stack (A1 3.10.1). */
     readonly undoable?: false;
+    /** Decided as it would be written, then rolled back: a preview (WriteRequest.dry_run). */
+    readonly dryRun?: true;
     /** Hints of the refusals whose remedy differs for this entry (resultFailure). */
     readonly hints?: Readonly<Record<string, string>>;
     /** The index of complete_task's `once` wrap-up operation (resultFailure). */
@@ -1014,6 +1019,7 @@ async function submit(
       ...(typeof input["reason"] === "string" ? { reason: input["reason"] } : {}),
       ...(principal.actorKind === "human" && options.undoable !== false ? { undoable: true } : {}),
       ...(options.active === true ? { active: true } : {}),
+      ...(options.dryRun === true ? { dry_run: true } : {}),
       ...(options.warnings === undefined || options.warnings.length === 0
         ? {}
         : { warnings: [...options.warnings] }),
@@ -2513,6 +2519,9 @@ const historyAnswer: Answer = async (view, stored) => {
     commit: done.id,
     tasks: done.tasks,
     task_count: done.task_count,
+    ...(done.levels === undefined ? {} : { levels: done.levels }),
+    ...(done.lifecycles === undefined ? {} : { lifecycles: done.lifecycles }),
+    ...levelsOf(done),
     ...(stored.passed === undefined ? {} : { passed_over: stored.passed }),
     ...(stored.newer === undefined ? {} : newerWorkJson(stored.newer)),
     ...(word === "partial"
@@ -2659,6 +2668,7 @@ const prefsAnswer: Answer = async (view, stored) => {
   const sets = (stored.answer?.["changed"] ?? []) as { key: string }[];
   const keys = new Set(sets.map((s) => s.key));
   const read = await now(view, readSpacePreferences);
+  const held = keys.has(EFFORT_SCALE_KEY) ? await now(view, readEffortHeld) : undefined;
   const asked = TOOL_PREFERENCES.filter((p) => keys.has(p.key));
   return {
     action: "set",
@@ -2666,13 +2676,20 @@ const prefsAnswer: Answer = async (view, stored) => {
     ...(read === undefined
       ? {}
       : {
-          prefs: asked.map((p) => prefRow(p, "get", read.reads.get(p.key), view.principal)),
+          prefs: asked.map((p) => prefRow(p, "get", read.reads.get(p.key), view.principal, held)),
         }),
     result: stored.status === "applied" ? "updated" : "no_change",
     changed: sets.filter((_, k) => stored.results[k]?.status !== "unchanged"),
+    ...levelsOf(stored.results[0]),
     ...replayed(stored),
   };
 };
+
+/** What a change of the effort levels, or its undo or redo, says the writer did: from its receipt. */
+const levelsOf = (done: OpResult | undefined) => ({
+  ...(done?.moved === undefined ? {} : { moved: done.moved }),
+  ...(done?.off_list === undefined ? {} : { off_list: done.off_list }),
+});
 
 const ANSWERS: Readonly<Record<string, Answer>> = {
   "task.add": addAnswer,
@@ -3625,15 +3642,18 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       call.principal.audience === "agent" ? AGENT_PREFERENCES : TOOL_PREFERENCES,
     );
     let read;
+    let held;
     try {
       read = await readSpacePreferences(readerOf(call.space));
+      const levels = action === "get" && declared.some((p) => p.key === EFFORT_SCALE_KEY);
+      held = levels ? await readEffortHeld(readerOf(call.space)) : undefined;
     } catch (error) {
       throw storageFailure(error);
     }
     return {
       action,
       as_of: read.space.asOf,
-      prefs: declared.map((p) => prefRow(p, action, read.reads.get(p.key), call.principal)),
+      prefs: declared.map((p) => prefRow(p, action, read.reads.get(p.key), call.principal, held)),
     };
   },
 
@@ -4433,12 +4453,14 @@ const prefWritable = (p: PreferenceSpec, principal: Principal): boolean =>
  * A value as the caller gave it, in its key's form: the command line gives one text, so a list is
  * keys separated by commas, a number its digits and a switch true or false. A list of named items
  * given as names keeps what `current` says of each name that stays: a person who reorders or adds
- * levels by name keeps every time and line. Undefined when it does not fit the key.
+ * levels by name keeps every time and line. A new name that one move renames a level to takes that
+ * level's time and line. Undefined when it does not fit the key.
  */
 function prefValueOf(
   p: PreferenceSpec,
   given: unknown,
   current: PrefValue | null,
+  moves: readonly EffortMove[] = [],
 ): PrefValue | undefined {
   let value: unknown = given;
   const { shape } = p;
@@ -4457,28 +4479,44 @@ function prefValueOf(
   }
   if (isKeyList(shape) && Array.isArray(value)) {
     const items: readonly unknown[] = Array.isArray(current) ? current : [];
+    const known = (key: unknown) => items.find((item) => (item as { key?: unknown }).key === key);
+    const kept = new Set(scaleKeysOf(value));
+    const renamed = (name: string): object | undefined => {
+      const into = moves.filter((move) => move.to === name);
+      const from = into.length === 1 && !kept.has(into[0]?.from ?? "") ? into[0]?.from : undefined;
+      const level = from === undefined ? undefined : known(from);
+      return level === undefined ? undefined : { ...(level as object), key: name };
+    };
     value = value.map((item: unknown) =>
-      typeof item === "string"
-        ? (items.find((known) => (known as { key?: unknown }).key === item) ?? { key: item })
-        : item,
+      typeof item === "string" ? (known(item) ?? renamed(item) ?? { key: item }) : item,
     );
   }
   return fitsShape(shape, value) ? (value as PrefValue) : undefined;
 }
+
+/** The one preference whose change moves tasks with it, and joins the undo stack. */
+const EFFORT_SCALE_KEY = "tasks.effort_scale";
 
 /** A key's new value, checked, and where the caller gave it. */
 interface PrefChange {
   readonly p: PreferenceSpec;
   readonly value: PrefValue | null;
   readonly path: string;
+  readonly moves?: EffortMove[];
 }
 
 /**
- * `set` (A3 3.4.11): the keys' new values through A1's `pref.set`, in one request that never joins
- * the undo stack: setting the earlier value again changes a key back. The answer says what changed.
+ * `set` (A3 3.4.11): the keys' new values through A1's `pref.set`, in one request. A change of the
+ * effort levels, which moves tasks with it, is a step on the person's undo stack; a change of any
+ * other key is not: setting the earlier value again changes it back. The answer says what changed.
  */
 async function prefsSet(call: Call): Promise<unknown> {
-  const items = (call.input["set"] ?? []) as { key: string; value?: unknown; reset?: boolean }[];
+  const items = (call.input["set"] ?? []) as {
+    key: string;
+    value?: unknown;
+    reset?: boolean;
+    moves?: EffortMove[];
+  }[];
   if (items.length === 0) throw invalid("set", "Required to set", "Give a key and its new value.");
   const reader = readerOf(call.space);
   const before = await readSpacePreferences(reader).catch((error: unknown) => {
@@ -4508,6 +4546,10 @@ async function prefsSet(call: Call): Promise<unknown> {
     if (!prefWritable(p, call.principal)) {
       throw invalid(`${path}.key`, "Not a key this caller changes");
     }
+    if (item.moves !== undefined && p.key !== EFFORT_SCALE_KEY) {
+      throw invalid(`${path}.moves`, "Only the effort levels move tasks");
+    }
+    const moves = item.moves === undefined ? {} : { moves: item.moves };
     const reset = item.reset === true;
     if (reset === (item.value !== undefined)) {
       throw invalid(
@@ -4516,9 +4558,9 @@ async function prefsSet(call: Call): Promise<unknown> {
         "Give the new value, or reset to put the key back to its default.",
       );
     }
-    if (reset) return { p, value: null, path };
+    if (reset) return { p, value: null, path, ...moves };
     const now = before.reads.get(p.key)?.value ?? p.default;
-    const value = prefValueOf(p, item.value, now);
+    const value = prefValueOf(p, item.value, now, item.moves);
     if (value === undefined) {
       const meantReset = String(item.value).trim().toLowerCase() === "null";
       throw invalid(
@@ -4538,8 +4580,16 @@ async function prefsSet(call: Call): Promise<unknown> {
         );
       }
     }
-    return { p, value, path };
+    return { p, value, path, ...moves };
   });
+  const levels = changes.some(({ p }) => p.key === EFFORT_SCALE_KEY);
+  if (levels && changes.length > 1) {
+    throw invalid(
+      "set",
+      "Set the effort levels in a call of their own",
+      "Send tasks.effort_scale alone, then the other keys in a second call: only the levels go on your undo stack.",
+    );
+  }
   for (const { p, path } of changes) {
     if (before.reads.get(p.key)?.state === "newer") {
       throw invalid(
@@ -4560,9 +4610,15 @@ async function prefsSet(call: Call): Promise<unknown> {
   try {
     result = await submit(
       call,
-      changes.map(({ p, value }): Operation => ({ kind: "pref.set", key: p.key, value })),
+      changes.map(({ p, value, moves }): Operation => ({
+        kind: "pref.set",
+        key: p.key,
+        value,
+        ...(moves === undefined ? {} : { moves }),
+      })),
       {
-        undoable: false,
+        ...(levels ? {} : { undoable: false }),
+        ...(call.input["dry_run"] === true ? { dryRun: true } : {}),
         answer: { changed: sets },
         hints: {
           conflict:
@@ -4571,49 +4627,23 @@ async function prefsSet(call: Call): Promise<unknown> {
       },
     );
   } catch (error) {
-    throw (await keysInUse(reader, changes)) ?? error;
+    throw sizesHeld(error) ?? error;
   }
   return answerOf(call, result);
 }
 
 /**
- * The refusal of a scale change that removes a key active tasks hold (the writer's rule), naming
- * those tasks so the person knows what to move first. Undefined when that is not why it failed.
+ * The writer's refusal of a change of levels that drops sizes tasks hold, without a move, in the
+ * person's words: each size with how many tasks hold it, and the move that takes them along.
  */
-async function keysInUse(
-  reader: WorkerConnection,
-  changes: readonly PrefChange[],
-): Promise<AppError | undefined> {
-  for (const { p, value, path } of changes) {
-    if (p.key !== "tasks.statuses" && p.key !== "tasks.effort_scale") continue;
-    const field = p.key === "tasks.statuses" ? "status" : "effort";
-    const kept = new Set(scaleKeysOf(value ?? p.default));
-    let holders;
-    try {
-      const now = await readTaskKeys(reader);
-      holders = await readKeyHolders(
-        reader,
-        field,
-        now[field].filter((key) => !kept.has(key)),
-      );
-    } catch {
-      return undefined;
-    }
-    if (holders.count === 0) continue;
-    const named = holders.tasks.map((t) => `${t.ref} (${t.key})`).join(", ");
-    const more = holders.count - holders.tasks.length;
-    return new AppError({
-      code: "invalid_input",
-      message: `Active tasks hold ${field === "status" ? "a status" : "an effort"} this change removes: ${named}${more > 0 ? ` and ${String(more)} more` : ""}. Nothing was changed.`,
-      hint: `Give them another ${field} or finish them, then change ${p.key} again.`,
-      data: {
-        issues: [{ path: `${path}.value`, message: "Active tasks hold a key it removes" }],
-        tasks: holders.tasks.map((t) => t.ref),
-        task_count: holders.count,
-      },
-    });
-  }
-  return undefined;
+function sizesHeld(error: unknown): AppError | undefined {
+  const held = error instanceof AppError ? error.data["holders"] : undefined;
+  if (!(error instanceof AppError) || !Array.isArray(held) || held.length === 0) return undefined;
+  return new AppError({
+    code: "invalid_input",
+    ...sizesHeldText(held as EffortHeld[]),
+    data: error.data,
+  });
 }
 
 /** A scale's keys from its value: a list of keys, or of `{key}` objects. */
@@ -4630,6 +4660,7 @@ function prefRow(
   action: string,
   read: PreferenceRead | undefined,
   principal: Principal,
+  held?: Awaited<ReturnType<typeof readEffortHeld>>,
 ): Record<string, unknown> {
   const value = read?.value ?? p.default;
   const fallback = p.default;
@@ -4643,6 +4674,7 @@ function prefRow(
     ...(p.policy ? { policy: true } : {}),
     ...(laterSet(p) === undefined ? {} : { fixed: true }),
     ...(later === undefined ? {} : { in_force: later.inForce }),
+    ...(action === "get" && p.key === EFFORT_SCALE_KEY && held !== undefined ? { held } : {}),
   };
 }
 

@@ -16,6 +16,8 @@ import { checkedDriver } from "../../packages/testkit/src/index.ts";
 import {
   EFFORT_LEVELS,
   EFFORT_NAME_MAX,
+  effortKeys,
+  readPreference,
   type EffortLevel,
 } from "../../packages/contracts/src/preferences.ts";
 import { day } from "./days.ts";
@@ -128,7 +130,9 @@ async function writeRequests(
       });
       request += 1;
       if (result.status !== "applied") {
-        throw new Error(`a bulk request was ${result.status}: ${result.error?.code ?? ""}`);
+        const why =
+          result.error === undefined ? "" : `${result.error.code}: ${result.error.message}`;
+        throw new Error(`a bulk request was ${result.status}: ${why}`);
       }
     }
   } finally {
@@ -246,9 +250,10 @@ export function levelTip(key: string, levels: readonly EffortLevel[] = EFFORT_LE
 }
 
 /**
- * Sets the space's statuses and effort scale, as its owner. A scale never drops a key an active
- * task holds, so the tasks on a key the new one leaves out move first: to the first status, and to
- * no effort. A level's name longer than a person sets now is stored as the earlier build that let
+ * Sets the space's statuses and effort scale, as its owner. A scale never drops a status an
+ * active task holds, so those tasks move to the first status first. The levels change as a
+ * person changes them: the tasks on a level the new list leaves out, in any state, go with it to
+ * no size. A level's name longer than a person sets now is stored as the earlier build that let
  * them set it did, past this build's writer.
  */
 export async function setScales(folder: string, machine: Machine, scales: Scales): Promise<void> {
@@ -262,27 +267,29 @@ export async function setScales(folder: string, machine: Machine, scales: Scales
     [
       (read) =>
         read(
-          "SELECT id, status, effort FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL",
-        ).flatMap((task): Operation[] => {
-          const off = !scales.statuses.includes(String(task["status"]));
-          const effort = task["effort"];
-          const unsized = typeof effort === "string" && effort !== "" && !names.includes(effort);
-          if (!off && !unsized) return [];
-          return [
-            {
-              kind: "task.patch",
-              task: String(task["id"]),
-              ...(off ? { set: { status } } : {}),
-              ...(unsized ? { unset: ["effort"] } : {}),
-            },
-          ];
-        }),
-      [
-        { kind: "pref.set", key: "tasks.statuses", value: [...scales.statuses] },
-        ...(earlier
-          ? []
-          : [{ kind: "pref.set" as const, key: "tasks.effort_scale", value: levels }]),
-      ],
+          "SELECT id, status FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL",
+        ).flatMap((task): Operation[] =>
+          scales.statuses.includes(String(task["status"]))
+            ? []
+            : [{ kind: "task.patch", task: String(task["id"]), set: { status } }],
+        ),
+      (read) => {
+        const [row] = read(
+          "SELECT value, schema_ver FROM preferences WHERE key = 'tasks.effort_scale'",
+        );
+        const stored =
+          row === undefined
+            ? undefined
+            : { value: String(row["value"]), schemaVer: Number(row["schema_ver"]) };
+        const now = effortKeys(readPreference("tasks.effort_scale", stored).value) ?? [];
+        const moves = now.filter((key) => !names.includes(key)).map((from) => ({ from, to: null }));
+        return [
+          { kind: "pref.set", key: "tasks.statuses", value: [...scales.statuses] },
+          ...(earlier
+            ? []
+            : [{ kind: "pref.set" as const, key: "tasks.effort_scale", value: levels, moves }]),
+        ];
+      },
     ],
     () => Date.now(),
   );

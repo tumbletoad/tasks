@@ -424,7 +424,7 @@ describe("[A1.3.16.prefs.read] the writer reads preferences through the registry
     expect(doubled.error).toMatchObject({ code: "VALIDATION_FAILED", field: "ops[0].effort" });
   });
 
-  test("a scale that drops a key an active task holds is refused, and nothing changes", () => {
+  test("a scale that drops a key tasks hold is refused, and nothing changes: a status while an active task holds it, a size while any task does", () => {
     const sized = newId("t");
     const waiting = newId("t");
     expectStatus(
@@ -446,13 +446,17 @@ describe("[A1.3.16.prefs.read] the writer reads preferences through the registry
       submit([set("tasks.effort_scale", [{ key: "XS" }, { key: "M" }, { key: "L" }])]),
       "applied",
     );
-    // A finished task keeps its key and holds nothing back; an active one moved off it neither.
+    // A finished task still holds its size, which only a move takes off; an active task moved off
+    // a status holds nothing back.
     expectStatus(submit([{ kind: "task.complete", task: sized }]), "applied");
     expectStatus(
       submit([{ kind: "task.patch", task: waiting, set: { status: "open" } }]),
       "applied",
     );
-    expectStatus(submit([set("tasks.effort_scale", [{ key: "S" }, { key: "M" }])]), "applied");
+    expect(submit([set("tasks.effort_scale", [{ key: "S" }, { key: "M" }])]).error).toMatchObject({
+      code: "VALIDATION_FAILED",
+      holders: [{ effort: "L", active: 0, finished: 1, trash: 0 }],
+    });
     expectStatus(submit([set("tasks.statuses", ["open", "review", "backlog"])]), "applied");
     expect(one("SELECT effort FROM tasks WHERE id = $id", { id: sized })).toBe("L");
   });

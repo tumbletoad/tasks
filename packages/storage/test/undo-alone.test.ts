@@ -3,19 +3,23 @@
 // them, edits them, adds to their context and log, checks them off, reopens and archives them,
 // moves them to the Trash and back, adds notes and takes them back and puts them back, sets
 // folders, links tickets and unlinks and relinks them, makes, renames, moves, archives and removes
-// areas and projects, often several of these in one request. In between, and between their undos
-// and redos, they queue runs, stop them and open sessions, which are no steps on their stack. No
-// one else writes. Then they undo until nothing is left and redo until nothing is left: every Undo
-// and Redo applies whole, each Undo gives back the space before the step it took back and each
-// Redo the space after it, every position and the order of every list included. The rules every
-// write keeps (space-rules.ts) are checked after every write. A run keeps its task's create
-// (undo-runs.test.ts), so runs go on the tasks that were there before the first step. Each ticket
-// goes to one task: while two tasks hold one key, an Undo or Redo never brings a link of it back,
-// also when the person linked both, a limit for now. Fixture text and paths only.
+// areas and projects, often several of these in one request. They size tasks and change the
+// effort levels, which moves the tasks on a renamed, merged, removed or swapped level. In between,
+// and between their undos and redos, they queue runs, stop them and open sessions, which are no
+// steps on their stack. No one else writes. Then they undo until nothing is left, the space opens
+// again, and they redo until nothing is left: every Undo and Redo applies whole, each Undo gives
+// back the space before the step it took back and each Redo the space after it, every position,
+// the order of every list and the effort levels included. The rules every write keeps
+// (space-rules.ts) are checked after every write. A run keeps its task's create (undo-runs.test.ts),
+// so runs go on the tasks that were there before the first step. Each ticket goes to one task:
+// while two tasks hold one key, an Undo or Redo never brings a link of it back, also when the
+// person linked both, a limit for now. Fixture text and paths only.
 import fc from "fast-check";
+import { EFFORT_SCALE_MAX } from "@ttasks/contracts/preferences";
 import { afterAll, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
-import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
+import { readSpacePreference } from "../src/preferences.ts";
+import type { Credential, EffortMove, Operation, WriteResult } from "../src/write/request.ts";
 import { tempFolders } from "./space-helpers.ts";
 import { listsOf, ruled } from "./space-rules.ts";
 import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
@@ -51,12 +55,22 @@ type Forward =
   /** A new area, a project in it and a task in that. */
   | { kind: "file" }
   | { kind: "regroup"; p: number; a: number }
-  | { kind: "project_delete" | "project_restore"; p: number };
+  | { kind: "project_delete" | "project_restore"; p: number }
+  /** A task's size: a level of the list now, or none. */
+  | { kind: "size"; t: number; v: number };
 
 /** On no stack: the person queues a run, stops the newest queued one, opens a session. */
 type Aside = { kind: "run" | "stop" | "session"; t: number };
 
-type Step = Forward | { kind: "batch"; steps: readonly Forward[] } | Aside;
+/** A change of the effort levels, made from the list now; a request of its own. */
+type Levels = {
+  kind: "levels";
+  how: "rename" | "remove" | "merge" | "swap" | "add" | "reorder";
+  a: number;
+  b: number;
+};
+
+type Step = Forward | { kind: "batch"; steps: readonly Forward[] } | Aside | Levels;
 
 const isAside = (s: Step): s is Aside =>
   s.kind === "run" || s.kind === "stop" || s.kind === "session";
@@ -156,7 +170,21 @@ const forward: fc.Arbitrary<Forward> = fc.oneof(
     }),
     weight: 2,
   },
+  { arbitrary: fc.record({ kind: fc.constant("size" as const), t: n, v: n }), weight: 3 },
 );
+const levels: fc.Arbitrary<Levels> = fc.record({
+  kind: fc.constant("levels" as const),
+  how: fc.constantFrom(
+    "rename" as const,
+    "remove" as const,
+    "merge" as const,
+    "swap" as const,
+    "add" as const,
+    "reorder" as const,
+  ),
+  a: n,
+  b: n,
+});
 const aside: fc.Arbitrary<Aside> = fc.record({
   kind: fc.constantFrom("run" as const, "stop" as const, "session" as const),
   t: n,
@@ -171,6 +199,7 @@ const step: fc.Arbitrary<Step> = fc.oneof(
     weight: 3,
   },
   { arbitrary: aside, weight: 1 },
+  { arbitrary: levels, weight: 2 },
 );
 
 /** A run: the person's steps, then what they do on no stack between their undos and redos. */
@@ -405,12 +434,14 @@ function opsOf(w: World, s: Forward): Operation[] {
       const id = newId("t");
       const title = `Fixture task ${String(w.tasks.length + 1)}`;
       const sibling = task(s.at);
+      const effort = nth([null, ...levelsOf(w).map((l) => l.key)], s.at);
       w.tasks.push(id);
       return [
         {
           kind: "task.create",
           id,
           title,
+          ...(effort === null ? {} : { effort }),
           ...(s.where === "project"
             ? { project: nth(w.projects, s.at) }
             : s.where === "before"
@@ -549,6 +580,55 @@ function opsOf(w: World, s: Forward): Operation[] {
       return [{ kind: "project.delete", project: nth(w.projects, s.p) }];
     case "project_restore":
       return [{ kind: "project.restore", project: nth(w.projects, s.p) }];
+    case "size": {
+      const effort = nth([null, ...levelsOf(w).map((l) => l.key)], s.v);
+      return effort === null
+        ? [{ kind: "task.patch", task: task(s.t), unset: ["effort"] }]
+        : [{ kind: "task.patch", task: task(s.t), set: { effort } }];
+    }
+  }
+}
+
+/** The effort levels as the space reads them now. */
+const levelsOf = (w: World): { key: string }[] =>
+  readSpacePreference(w.fx.reader, "tasks.effort_scale").value as { key: string }[];
+
+/** Names a change of levels gives a level, the first one the list does not have. */
+const NEW_NAMES = ["Tiny", "Medium", "Big", "Huge", "Q", "R", "T", "U", "V", "W", "Y"];
+
+/** A change of the effort levels from the list now, with the moves that carry its tasks. */
+function levelsOps(w: World, s: Levels): Operation[] {
+  const now = levelsOf(w);
+  const x = nth(now, s.a);
+  const others = now.filter((l) => l !== x);
+  const y = others.length === 0 ? undefined : nth(others, s.b);
+  const fresh = NEW_NAMES.find((name) => !now.some((l) => l.key === name)) ?? "Z";
+  const change = (value: { key: string }[], moves: EffortMove[] = []): Operation[] => [
+    { kind: "pref.set", key: "tasks.effort_scale", value, ...(moves.length > 0 ? { moves } : {}) },
+  ];
+  switch (s.how) {
+    case "rename":
+      return change(
+        now.map((l) => (l === x ? { ...l, key: fresh } : l)),
+        [{ from: x.key, to: fresh }],
+      );
+    case "remove":
+    case "merge": {
+      if (others.length === 0) return [];
+      const to = s.how === "merge" || s.b % 2 === 0 ? (y?.key ?? null) : null;
+      return change(others, [{ from: x.key, to }]);
+    }
+    case "swap":
+      return y === undefined
+        ? []
+        : change(now, [
+            { from: x.key, to: y.key },
+            { from: y.key, to: x.key },
+          ]);
+    case "add":
+      return now.length >= EFFORT_SCALE_MAX ? [] : change([...now, { key: fresh }]);
+    case "reorder":
+      return change([...now].reverse());
   }
 }
 
@@ -624,10 +704,14 @@ const GONE: Readonly<Record<keyof typeof ROWS, string>> = {
   folders: "deleted_at",
 };
 
-/** What a person can see of a space: every row but its bookkeeping, and every list's order. */
+/**
+ * What a person can see of a space: every row but its bookkeeping, every list's order, and the
+ * effort levels as the space reads them.
+ */
 interface Space {
   rows: Record<string, Record<string, Record<string, unknown>>>;
   lists: Record<string, string[]>;
+  levels: unknown;
 }
 
 function spaceOf(w: World): Space {
@@ -643,7 +727,7 @@ function spaceOf(w: World): Space {
         ]),
     );
   }
-  return { rows, lists: listsOf(w.fx.reader) };
+  return { rows, lists: listsOf(w.fx.reader), levels: levelsOf(w) };
 }
 
 /**
@@ -667,7 +751,7 @@ function without(now: Space, was: Space): Space {
       .map(([list, ids]): [string, string[]] => [list, ids.filter((id) => old.has(id))])
       .filter(([, ids]) => ids.length > 0),
   );
-  return { rows, lists };
+  return { rows, lists, levels: now.levels };
 }
 
 async function run({ steps, between }: Plan): Promise<void> {
@@ -698,7 +782,12 @@ async function run({ steps, between }: Plan): Promise<void> {
         continue;
       }
       const counts = [w.tasks.length, w.areas.length, w.projects.length] as const;
-      const ops = s.kind === "batch" ? s.steps.flatMap((f) => opsOf(w, f)) : opsOf(w, s);
+      const ops =
+        s.kind === "batch"
+          ? s.steps.flatMap((f) => opsOf(w, f))
+          : s.kind === "levels"
+            ? levelsOps(w, s)
+            : opsOf(w, s);
       if (ops.length === 0) continue;
       const before = spaceOf(w);
       const result = submit(fx.human, ops, true);
@@ -728,6 +817,11 @@ async function run({ steps, between }: Plan): Promise<void> {
       expect(without(spaceOf(w), before), `${label}: the space before its step`).toEqual(before);
     }
     expect(history("undo").error?.code, "nothing is left to undo").toBe("NOTHING_TO_UNDO");
+    // The space opened again, as a restart opens it: it stores nothing over what Undo left.
+    const undone = spaceOf(w);
+    fx.reopen();
+    fx.writer.storeDefaults();
+    expect(spaceOf(w), "the space as Undo left it, opened again").toEqual(undone);
     for (const [r, { after }] of done.entries()) {
       const label = `redo ${String(r + 1)} of ${String(done.length)}`;
       const result = history("redo");

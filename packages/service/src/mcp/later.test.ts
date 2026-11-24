@@ -80,6 +80,13 @@ describe("[A3.3.3.mcp.later] what a later step builds is never offered", () => {
     }
   });
 
+  test("an agent's preferences tool reads and nothing else: no field of a set, whatever its words", () => {
+    const tool = toolOfEntry("prefs.manage");
+    const properties = (tool?.inputSchema as { properties?: Record<string, unknown> } | undefined)
+      ?.properties;
+    expect(Object.keys(properties ?? {}).sort()).toEqual(["action", "keys"]);
+  });
+
   test("a name no tool offers appears nowhere an agent reads", async () => {
     const skills = (await listSkills(undefined)).skills.map((skill): [string, string] => [
       `skill ${skill.name}`,

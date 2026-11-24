@@ -9,6 +9,7 @@ import { ToggleButton, ToggleButtonGroup, type Key } from "react-aria-components
 import { classes } from "../app/css.ts";
 import {
   effortChange,
+  levelsKey,
   priorityChange,
   statusChange,
   triageChange,
@@ -598,7 +599,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
             columns={shared}
             span={Math.min(efforts.length, shared)}
             onChange={(next) => {
-              edits.edit(task, effortChange(next));
+              edits.edit(task, effortChange(next, levelsKey(state.scales.efforts)));
             }}
           />
           <Unsaved task={task.id} field="effort" />

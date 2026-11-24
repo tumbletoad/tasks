@@ -66,6 +66,8 @@ class World {
   /** What the next call of each entry answers: a result, or an error to throw. */
   readonly answers = new Map<string, ((input: Record<string, unknown>) => unknown)[]>();
   seq = 10;
+  /** The effort levels the screen shows, as a kept size remembers them. */
+  levels = "levels-a";
 
   constructor(rows: readonly TaskRow[], keeper?: Keeper, leaving?: () => Promise<unknown>) {
     this.store = new LiveStore({
@@ -111,6 +113,7 @@ class World {
       failed: () => false,
       onChanges: (listener) => this.store.onChanges(listener),
       rowOf: (ref) => [...this.store.getState().tasks.values()].find((t) => t.ref === ref),
+      levels: () => this.levels,
       newRequest: () => `rq-${String((requests += 1))}`,
       ...(keeper === undefined ? {} : { keeper: { onGone: () => () => undefined, ...keeper } }),
       ...(leaving === undefined ? {} : { leaving }),
@@ -268,7 +271,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     }));
     // The person sets the priority, then the effort, seeing the screen at seq 10.
     w.edits.edit(task(1), priorityChange(1));
-    w.edits.edit(task(1), effortChange("M"));
+    w.edits.edit(task(1), effortChange("M", w.levels));
     await flush();
     // An agent's effort change (seq 11) lands before the priority commit (seq 12); the feed has
     // not brought either yet.
@@ -376,7 +379,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       as_of: w.asOf(13),
     }));
     w.edits.edit(task(1), priorityChange(1));
-    w.edits.edit(task(1), effortChange("M"));
+    w.edits.edit(task(1), effortChange("M", w.levels));
     const undone = w.edits.undo();
     await flush();
     expect(w.calls.map((c) => c.name)).toEqual(["task.update"]);
@@ -412,7 +415,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     w.edits.edit(task(1), priorityChange(1));
     const undone = w.edits.undo();
     // Another task's edit, after Ctrl+Z: it shows at once and goes out after the undo.
-    w.edits.edit(task(2), effortChange("M"));
+    w.edits.edit(task(2), effortChange("M", w.levels));
     expect(w.row("t_00002")?.effort).toBe("M");
     await flush();
     expect(w.calls.map((c) => c.name)).toEqual(["task.update"]);
@@ -589,7 +592,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     w.answer("task.update", () => {
       throw new Error("network");
     });
-    w.edits.edit(task(1), effortChange("M"));
+    w.edits.edit(task(1), effortChange("M", w.levels));
     await flush();
     expect(kept.at(-1)?.map((u) => [u.task, u.field, u.reason])).toEqual([
       ["t_00001", "effort", "failed"],
@@ -719,7 +722,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     w.answer("task.update", () => {
       throw appError("internal", {});
     });
-    w.edits.edit(task(1), effortChange("M"));
+    w.edits.edit(task(1), effortChange("M", w.levels));
     await flush();
     const tryAgain = w.lastToast()?.action;
     expect(tryAgain?.label).toEqual({ id: "toast.tryAgain" });
@@ -802,7 +805,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     w.answer("task.update", () => new Promise((resolve) => (answer = resolve)));
     w.answer("task.update", () => updated(15));
     w.edits.edit(task(1), titleChange("Oil all gates"));
-    w.edits.edit(task(1), effortChange("S"));
+    w.edits.edit(task(1), effortChange("S", w.levels));
     await flush();
     expect(w.calls).toHaveLength(4);
     answer(updated(14));
@@ -924,7 +927,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       task: "t_00001",
       ref: "M-1",
       field: "effort",
-      change: effortChange("M"),
+      change: effortChange("M", "levels-a"),
       reason: "failed",
       base: "1.10.01234567",
     };
@@ -1065,6 +1068,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
       result: "undone",
       commit: "op_y",
       tasks: ["M-2"],
+      lifecycles: ["M-2"],
       task_count: 1,
       as_of: w.asOf(13),
     }));
@@ -1107,6 +1111,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
       result: "undone",
       commit: "op_r",
       tasks: ["M-7"],
+      lifecycles: ["M-7"],
       task_count: 1,
       as_of: w.asOf(12),
     }));
@@ -1233,6 +1238,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
         result: "undone",
         commit: checked,
         tasks: ["M-1"],
+        lifecycles: ["M-1"],
         task_count: 1,
         as_of: w.asOf(12),
       };
@@ -1246,6 +1252,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
       result: "redone",
       commit: checked,
       tasks: ["M-1"],
+      lifecycles: ["M-1"],
       task_count: 1,
       as_of: w.asOf(14),
     }));
@@ -1269,6 +1276,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
       result: "undone",
       commit: checked,
       tasks: ["M-1"],
+      lifecycles: ["M-1"],
       task_count: 1,
       as_of: w.asOf(16),
     }));
@@ -1524,6 +1532,229 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
   });
 });
 
+describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made in this tab or elsewhere", () => {
+  const intl = createIntl({ locale: SOURCE_LOCALE, messages: CATALOGUE });
+  const said = (text: string | Msg | undefined): string =>
+    text === undefined || typeof text === "string"
+      ? String(text)
+      : sayMsg((id, values) => intl.formatMessage({ id }, values), text);
+
+  test("its toast says what it wrote and names tasks off the levels; a checked row stays checked", async () => {
+    const w = new World([task(1), task(2)]);
+    w.edits.hold(task(1), undefined, 0);
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: "op_l",
+      tasks: ["M-1", "M-2"],
+      task_count: 2,
+      levels: { list: true, tasks: 2 },
+      off_list: [{ effort: "Medium", tasks: ["M-2"], count: 1 }],
+      as_of: w.asOf(12),
+    }));
+    await w.edits.undo();
+    expect(said(w.lastToast()?.text)).toBe(
+      "Effort levels put back. 1 task is on a size that is not a level now: M-2",
+    );
+    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.redo" });
+    expect(w.edits.getState().leaving.get("t_00001")).toMatchObject({ done: true });
+  });
+
+  test("a checked row's box undoes the check-off that checked it, whatever was redone since", async () => {
+    const w = new World([task(1), task(2)]);
+    // The check-off, redone: its row holds, checked.
+    w.answer("history.redo", () => ({
+      result: "redone",
+      commit: "op_check",
+      tasks: ["M-1"],
+      task_count: 1,
+      lifecycles: ["M-1"],
+      as_of: w.asOf(12),
+    }));
+    await w.edits.redo();
+    w.edits.hold(task(1), undefined, 0);
+    // The swap of two sizes, redone after it: it names the task too, and checks nothing off.
+    w.answer("history.redo", () => ({
+      result: "redone",
+      commit: "op_swap",
+      tasks: ["M-1", "M-2"],
+      task_count: 2,
+      levels: { list: false, tasks: 2 },
+      as_of: w.asOf(13),
+    }));
+    await w.edits.redo();
+    expect(w.edits.getState().leaving.get("t_00001")).toMatchObject({ done: true });
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: "op_check",
+      tasks: ["M-1"],
+      task_count: 1,
+      lifecycles: ["M-1"],
+      as_of: w.asOf(14),
+    }));
+    w.edits.uncheck("t_00001");
+    await flush();
+    expect(w.calls.at(-1)).toMatchObject({ name: "history.undo", input: { commit: "op_check" } });
+  });
+
+  test("an undo of it that wrote nothing says so, and offers no redo of nothing", async () => {
+    const w = new World([task(1)]);
+    w.answer("history.undo", () => ({
+      result: "partial",
+      commit: "op_l",
+      tasks: [],
+      task_count: 0,
+      levels: { list: false, tasks: 0 },
+      as_of: w.asOf(12),
+      unresolved: [
+        {
+          entity: "tasks",
+          task: "M-1",
+          field: "effort",
+          by: "script",
+          at: "2026-11-12T10:42:00.000Z",
+        },
+      ],
+    }));
+    await w.edits.undo(undefined, true);
+    expect(said(w.lastToast()?.text)).toBe(
+      "Nothing of the change of the effort levels was left to undo: 1 task kept a newer size",
+    );
+    expect(w.lastToast()?.action).toBeUndefined();
+  });
+
+  test("a redo of an undo that wrote nothing says nothing was redone, and names the tasks off the levels", async () => {
+    const w = new World([task(1)]);
+    w.answer("history.redo", () => ({
+      result: "redone",
+      commit: "op_l",
+      tasks: [],
+      task_count: 0,
+      levels: { list: false, tasks: 0 },
+      off_list: [{ effort: "Medium", tasks: ["M-2"], count: 1 }],
+      as_of: w.asOf(12),
+    }));
+    await w.edits.redo();
+    expect(said(w.lastToast()?.text)).toBe(
+      "Nothing of the change of the effort levels was left to redo. 1 task is on a size that is not a level now: M-2",
+    );
+    expect(w.lastToast()?.action).toBeUndefined();
+  });
+
+  test("a redo that passed over an older change says what the change of levels it redid wrote", async () => {
+    const w = new World([task(1)]);
+    w.answer("history.redo", () => ({
+      result: "redone",
+      commit: "op_l",
+      tasks: ["M-2"],
+      task_count: 1,
+      levels: { list: false, tasks: 1 },
+      as_of: w.asOf(12),
+      passed_over: [`op_${"11".padStart(26, "0")}`],
+      newer_work: [{ task: "M-1", by: "Codex · work", at: "2026-11-12T10:42:00.000Z" }],
+    }));
+    await w.edits.redo();
+    expect(said(w.lastToast()?.text)).toBe(
+      "Sizes changed again. Not redone: Codex · work changed M-1 since",
+    );
+    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.undo" });
+  });
+
+  test("a size kept unsent is not sent again, by its line or its toast, once the levels changed", async () => {
+    const w = new World([task(1)]);
+    w.answer("task.update", () => {
+      throw appError("internal", {});
+    });
+    w.edits.edit(task(1), effortChange("M", w.levels));
+    await flush();
+    const tryAgain = w.lastToast()?.action;
+    expect(tryAgain?.label).toEqual({ id: "toast.tryAgain" });
+    w.levels = "levels-b";
+    tryAgain?.run();
+    w.edits.apply("t_00001", "effort");
+    await flush();
+    expect(w.calls.filter((c) => c.name === "task.update")).toHaveLength(1);
+    expect(w.edits.unsaved("t_00001", "effort")?.change.set).toEqual({ effort: "M" });
+  });
+
+  test("a refused one offers Undo the rest from a page that did not make it", async () => {
+    const w = new World([task(1)]);
+    const step = `op_${"12".padStart(26, "0")}`;
+    const list = {
+      entity: "preferences",
+      id: "tasks.effort_scale",
+      field: "value",
+      by: "user",
+      at: "2026-11-12T10:42:00.000Z",
+    };
+    w.answer("history.undo", () => {
+      throw appError("conflict", {
+        cause: "UNDO_CONFLICT",
+        commit: step,
+        levels: true,
+        conflicts: [{ ...list, version: 13 }],
+      });
+    });
+    await w.edits.undo();
+    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.undoRest" });
+    // The rest of a change of levels whose list someone changed since is nothing: it says so.
+    w.answer("history.undo", () => ({
+      result: "partial",
+      commit: step,
+      tasks: [],
+      task_count: 0,
+      levels: { list: false, tasks: 0 },
+      off_list: [{ effort: "Medium", tasks: ["M-2"], count: 1 }],
+      as_of: w.asOf(14),
+      unresolved: [list],
+    }));
+    w.lastToast()?.action?.run();
+    await flush();
+    expect(w.calls.at(-1)).toMatchObject({
+      name: "history.undo",
+      input: { partial: true, commit: step },
+    });
+    expect(said(w.lastToast()?.text)).toBe(
+      "Not undone: someone else changed the effort levels since, and the levels stay as they are. 1 task is on a size that is not a level now: M-2",
+    );
+    expect(w.lastToast()?.action).toBeUndefined();
+  });
+
+  test("a refused undo of one task's size made elsewhere is no change of levels: nothing to undo the rest of", async () => {
+    const w = new World([task(1)]);
+    w.answer("history.undo", () => {
+      throw appError("conflict", {
+        cause: "UNDO_CONFLICT",
+        commit: `op_${"12".padStart(26, "0")}`,
+        conflicts: [
+          {
+            task: "M-1",
+            field: "effort",
+            version: 13,
+            by: "Codex",
+            at: "2026-11-12T10:42:00.000Z",
+          },
+        ],
+      });
+    });
+    await w.edits.undo();
+    expect(w.lastToast()?.action).toBeUndefined();
+  });
+
+  test("a size kept by an earlier build, which does not say its levels, is chosen again", async () => {
+    const w = new World([task(1)]);
+    w.answer("task.update", () => {
+      throw appError("internal", {});
+    });
+    w.edits.edit(task(1), effortChange("M"));
+    await flush();
+    w.edits.apply("t_00001", "effort");
+    await flush();
+    expect(w.calls.filter((c) => c.name === "task.update")).toHaveLength(1);
+    const kept = w.edits.unsaved("t_00001", "effort");
+    expect(kept === undefined ? undefined : w.edits.relevelled(kept)).toBe(true);
+  });
+});
+
 describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", () => {
   const never = () => new Promise(() => undefined);
   const undone = (w: World, seq: number, commit = "op_c") => ({
@@ -1565,7 +1796,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     w.answer("history.undo", never);
     void w.edits.undo();
     // The person edits two tasks after Ctrl+Z: each shows at once, and waits for the undo.
-    w.edits.edit(task(2), effortChange("M"));
+    w.edits.edit(task(2), effortChange("M", w.levels));
     w.edits.edit(task(1), priorityChange(1));
     expect(w.row("t_00002")?.effort).toBe("M");
     expect(w.row("t_00001")?.priority).toBe(1);
@@ -1589,6 +1820,28 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     expect(w.edits.getState().unsaved.size).toBe(0);
   });
 
+  test("an undo of a change of levels recovered from its receipt still says so, with what is off the levels", async () => {
+    const w = new World([task(1)]);
+    w.answer("history.undo", never);
+    w.answer("history.undo", never);
+    void w.edits.undo();
+    await flush();
+    const off = [{ effort: "Medium", tasks: ["M-1"], count: 1 }];
+    w.answer("receipt.get", (input) => {
+      const found = applied(w, String(input["request"]), 11);
+      return {
+        ...found,
+        results: [{ ...found.results[0], levels: { list: true, tasks: 1 }, off_list: off }],
+      };
+    });
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(w.toasts.map((t) => t?.text)).toContainEqual({
+      id: "toast.levels",
+      values: { kind: "undo", list: "yes", newer: 0, count: 1, tasks: "M-1" },
+    });
+  });
+
   test("an undo the service has not decided yet is sent again with its own ID, and that answer lets the queue go on", async () => {
     const w = new World([task(1), task(2)]);
     w.answer("history.undo", never);
@@ -1596,7 +1849,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     w.answer("receipt.get", () => ({ found: false }));
     w.answer("task.update", () => updated(w, 12));
     void w.edits.undo();
-    w.edits.edit(task(2), effortChange("M"));
+    w.edits.edit(task(2), effortChange("M", w.levels));
     await flush();
     expect(names(w)).toEqual(["history.undo"]);
     await vi.advanceTimersByTimeAsync(ASK_MS);
@@ -1616,7 +1869,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     w.answer("receipt.get", () => ({ found: false }));
     w.answer("task.update", () => updated(w, 12));
     void w.edits.undo();
-    w.edits.edit(task(2), effortChange("M"));
+    w.edits.edit(task(2), effortChange("M", w.levels));
     await vi.advanceTimersByTimeAsync(ASK_MS);
     await flush();
     expect(names(w)).toEqual(["history.undo", "history.undo", "receipt.get"]);
@@ -1633,7 +1886,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     w.answer("history.undo", down);
     w.answer("receipt.get", down);
     void w.edits.undo();
-    w.edits.edit(task(2), effortChange("M"));
+    w.edits.edit(task(2), effortChange("M", w.levels));
     await vi.advanceTimersByTimeAsync(ASK_MS);
     await flush();
     // Nothing went out after the undo, and nothing of the person's is lost.
@@ -1715,7 +1968,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     await flush();
     // The answer came; the feed has not named the commit yet. Undo, then another task's edit.
     w.lastToast()?.action?.run();
-    w.edits.edit(task(2), effortChange("M"));
+    w.edits.edit(task(2), effortChange("M", w.levels));
     await flush();
     expect(names(w)).toEqual(["task.update"]);
     w.feed([task(1, { priority: 1, version: 2 })], requestOf(w, "task.update"), ["priority"]);
@@ -1737,7 +1990,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     const write = requestOf(w, "task.update");
     w.answer("receipt.get", (input) => applied(w, String(input["request"]), 11));
     w.lastToast()?.action?.run();
-    w.edits.edit(task(2), effortChange("M"));
+    w.edits.edit(task(2), effortChange("M", w.levels));
     await vi.advanceTimersByTimeAsync(ASK_MS);
     await flush();
     expect(
@@ -1905,7 +2158,7 @@ describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives 
     // Another edit's toast took the place of the edit's Try again: the late refusal updates the
     // line under the field and leaves the newer toast alone.
     const two = hanging(w, "task.update");
-    w.edits.edit(task(2), effortChange("M"));
+    w.edits.edit(task(2), effortChange("M", w.levels));
     await vi.advanceTimersByTimeAsync(ASK_MS);
     await flush();
     w.answer("task.update", () => updated(w, 12));
@@ -1920,7 +2173,7 @@ describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives 
 
     // Try again, clicked before the late decision, is the person's newer edit: it stands.
     const three = hanging(w, "task.update");
-    w.edits.edit(task(2), effortChange("S"), { base: w.asOf(12) });
+    w.edits.edit(task(2), effortChange("S", w.levels), { base: w.asOf(12) });
     await vi.advanceTimersByTimeAsync(ASK_MS);
     await flush();
     w.answer("task.update", () => new Promise(() => undefined));

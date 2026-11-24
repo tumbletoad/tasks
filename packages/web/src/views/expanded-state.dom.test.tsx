@@ -15,7 +15,7 @@ import { Live } from "../live.ts";
 import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
 import { Thread } from "../task/Thread.tsx";
 import { keepTitleDraft, readTitleDraft, unsavedKeeper } from "../unsent.ts";
-import { priorityChange, waitingChange } from "../edit/change.ts";
+import { effortChange, levelsKey, priorityChange, waitingChange } from "../edit/change.ts";
 import type { DetailLog } from "../task/detail.ts";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
@@ -808,6 +808,40 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
         line?.querySelector<HTMLElement>('[data-part="keep-theirs"]')?.click();
       });
       expect(Object.keys(localStorage).filter((key) => key.includes(".t_00001."))).toEqual([]);
+      expect(updates).toEqual([]);
+    } finally {
+      localStorage.clear();
+    }
+  });
+
+  test("a size kept from effort levels that changed since is not sent again: its line asks to choose again and keeps it", async () => {
+    localStorage.clear();
+    unsavedKeeper(SPACE.id).save(
+      new Map([
+        [
+          "t_00001 effort",
+          {
+            id: crypto.randomUUID(),
+            task: "t_00001",
+            ref: "M-1",
+            field: "effort",
+            change: effortChange("M", levelsKey([{ key: "M" }, { key: "Gone" }])),
+            reason: "failed",
+            base: "1.9.01234567",
+          },
+        ],
+      ]),
+    );
+    try {
+      mount(<TaskList view="open" filter={OPEN} empty="" />);
+      apply(snapshot([task(1)]));
+      expand("t_00001");
+      await settle();
+      const line = container.querySelector('li[data-key="t_00001"] [data-part="unsaved"]');
+      expect(line?.getAttribute("data-reason")).toBe("levels");
+      expect(line?.textContent).toContain("the effort levels changed since");
+      expect(line?.querySelector('[data-part="unsaved-value"]')?.textContent).toBe("M");
+      expect(line?.querySelector('[data-part="apply-mine"]')).toBeNull();
       expect(updates).toEqual([]);
     } finally {
       localStorage.clear();
