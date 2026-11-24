@@ -85,7 +85,7 @@ export const SPACE_HEADER = httpHeader("space");
 export const BUILD_HEADER = httpHeader("build");
 /**
  * The header that names the copy of its space a tab loaded (the feed's `space.copy`): a call is
- * refused when the space is served from another copy now (ops/copies.ts spaceChanged).
+ * refused when the space is served from another copy now (ops/copies.ts copyGone).
  */
 export const COPY_HEADER = httpHeader("copy");
 

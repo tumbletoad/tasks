@@ -95,12 +95,12 @@ import {
 } from "@ttasks/launch";
 import {
   ambiguousError,
+  copyGone,
   copyOf,
   findSpace,
   isAmbiguity,
   onlySpace,
   sessionReplaced,
-  spaceChanged,
   type Copy,
 } from "./copies.ts";
 import {
@@ -673,7 +673,8 @@ export function defaultOf<S extends Copy>(
  */
 function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): UsableSpace {
   const space = spaceOfCall(host, caller, named);
-  if (caller.copy !== undefined && space.copy !== caller.copy) throw spaceChanged();
+  if (caller.copy !== undefined && space.copy !== caller.copy)
+    throw copyGone(host.spaces(), space.id);
   const session = caller.binding?.kind === "session" ? caller.binding.session : undefined;
   if (session?.copy !== undefined && space.copy !== session.copy) throw sessionReplaced();
   return space;

@@ -17,16 +17,16 @@ const BUILD_HEADER = httpHeader("build");
 const SPACE_HEADER = httpHeader("space");
 const COPY_HEADER = httpHeader("copy");
 
-/** A call refused because the tab's copy of its space is not the one served now. */
-export function isReplaced(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
+/**
+ * Why a call was refused because the tab's copy of its space is not the one served now: the space
+ * was closed, or another copy serves it.
+ */
+export function copyGoneWhy(error: unknown): "closed" | "replaced" | undefined {
+  if (!(error instanceof Error)) return undefined;
   const { code, data } = error as Error & { code?: unknown; data?: unknown };
-  return (
-    code === "space_unavailable" &&
-    typeof data === "object" &&
-    data !== null &&
-    (data as Record<string, unknown>)["reason"] === "replaced"
-  );
+  if (code !== "space_unavailable" || typeof data !== "object" || data === null) return undefined;
+  const reason = (data as Record<string, unknown>)["reason"];
+  return reason === "closed" || reason === "replaced" ? reason : undefined;
 }
 
 /** An instance the page draws a tile for (the service's UiInstance). */

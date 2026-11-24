@@ -38,7 +38,7 @@ import {
   type Route,
 } from "@ttasks/launch";
 import { leftOutOf, type LeftOut } from "../launch/open.ts";
-import { findSpace, isAmbiguity, spaceChanged } from "../ops/copies.ts";
+import { copyGone, findSpace, isAmbiguity } from "../ops/copies.ts";
 import { launchError } from "../ops/handlers.ts";
 import { readOnly, type OpsHost, type ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
@@ -421,7 +421,7 @@ export class UiLaunches {
 
   /**
    * The served space a request names (its `TTasks-Space`): an ID or a name (A2 3.10.5). `copy`, the
-   * copy the page loaded, must be the one served (copies.ts spaceChanged).
+   * copy the page loaded, must be the one served (copies.ts copyGone).
    */
   #space(ref: string | undefined, copy: string | undefined): ServedSpace {
     if (ref === undefined) throw invalid("Name the space of this tab.", "space");
@@ -430,15 +430,13 @@ export class UiLaunches {
       ref,
     );
     const space = isAmbiguity(found) ? undefined : found;
-    if (space?.reader === undefined || space.id === undefined) {
-      if (copy !== undefined) throw spaceChanged();
-      throw new AppError({
-        code: "space_unavailable",
-        message: "This space cannot open tasks on this machine now.",
-      });
-    }
-    if (copy !== undefined && space.copy !== copy) throw spaceChanged();
-    return space;
+    const served = space?.reader !== undefined && space.id !== undefined;
+    if (served && (copy === undefined || space.copy === copy)) return space;
+    if (copy !== undefined) throw copyGone(this.#options.host.spaces(), ref);
+    throw new AppError({
+      code: "space_unavailable",
+      message: "This space cannot open tasks on this machine now.",
+    });
   }
 
   /**
