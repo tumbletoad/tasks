@@ -15,15 +15,18 @@ import {
   LAUNCHD_WRAPPER,
   plistNotOurs,
   readPlist,
+  plistProgram,
   REGISTRY_ROOT,
   renderPlist,
   renderRunValue,
   renderUnit,
   runDataNotOurs,
+  runDataProgram,
   runKeys,
   serviceNames,
   startupApproved,
   unitNotOurs,
+  unitProgram,
   WRITTEN_BY,
   type ServicePlatform,
 } from "./render.ts";
@@ -171,6 +174,7 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
     for (const path of HOSTILE_PATHS) {
       expect(execWords(`${execPath(path)} serve`)).toEqual([path, "serve"]);
       expect(isOwnUnit(renderUnit({ program: path }))).toBe(true);
+      expect(unitProgram(renderUnit({ program: path }))).toBe(path);
     }
     // A plist escapes XML's three characters.
     const plist = renderPlist({
@@ -180,6 +184,10 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
       logs: "/Users/a&b/logs",
     });
     expect(plist).toContain("<string>/Users/a&amp;b/&lt;x&gt;/current/bin/ttasks-launchd</string>");
+    expect(plistProgram(plist)).toBe("/Users/a&b/<x>/current/bin/ttasks-launchd");
+    expect(runDataProgram(renderRunValue("TTasks", "C:\\a b\\bin\\ttasksw.exe").data)).toBe(
+      "C:\\a b\\bin\\ttasksw.exe",
+    );
     // Relative paths and control characters are refused everywhere, and systemd takes no quote,
     // apostrophe or backslash in a program path, escaped or not.
     for (const bad of [

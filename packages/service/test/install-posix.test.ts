@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { renderPlist, renderUnit, withDelegate } from "../src/install/render.ts";
-import { applyPlan, delegateUnit, planInstall } from "../src/install/commands.ts";
+import { applyPlan, delegateUnit, planInstall, STATUS_ASK_MS } from "../src/install/commands.ts";
 import { serviceEntry } from "../src/install/entries.ts";
 import {
   captureIO,
@@ -453,9 +453,8 @@ describe.skipIf(!posix)(
       expect(status.io.text()).toContain("  Entry:    ");
       expect(status.io.text()).toContain(": not installed\n");
       expect(status.io.text()).toContain(
-        "  systemd:  no unit of this install, so nothing starts the service at sign-in or boot. To have it start by itself: ttasks service install\n",
+        "  Autostart: off: this install has no unit, so nothing starts the service at sign-in or boot. To have it start by itself: ttasks service install\n",
       );
-      expect(status.io.text()).toContain("  Linger:   on\n");
       expect(status.io.text()).not.toContain("starts at boot");
       expect(status.io.text()).toContain("started by manual");
 
@@ -482,12 +481,22 @@ describe.skipIf(!posix)(
         `systemctl --user enable ${UNIT}`,
         `systemctl --user start ${UNIT}`,
       ]);
-      // Once the unit runs it, status speaks of linger as before, and start goes through systemd.
+      // Once the unit runs it, status speaks of linger, and start goes through systemd.
       const after = await run(fake, "status", {});
       expect(after.io.text()).toContain(
-        "  Linger:   on: the service starts at boot, before you sign in\n",
+        "  Autostart: on: the service starts at boot, before you sign in\n",
       );
       expect(after.io.text()).toContain("  systemd:  enabled, active\n");
+      // A unit the person disabled starts nothing, linger or not.
+      await fake.tools.run("systemctl", ["--user", "disable", UNIT]);
+      const disabled = await run(fake, "status", { json: true });
+      expect(JSON.parse(disabled.io.text())).toMatchObject({
+        starts: { on: false, fix: "ttasks service install" },
+      });
+      expect((await run(fake, "status", {})).io.text()).toContain(
+        "  Autostart: off: systemd has the unit disabled, so it does not start the service at sign-in or boot. To have it start by itself: ttasks service install\n",
+      );
+      expect((await run(fake, "install")).code).toBe(0);
       // A later install with the unit's service running stops nothing.
       const calls = fake.service.events.length;
       expect((await run(fake, "install")).code).toBe(0);
@@ -630,6 +639,54 @@ describe.skipIf(!posix)(
         "<plist><dict><key>Label</key><string>other</string></dict></plist>\n",
       );
       expect((await run(fake, "install")).code).toBe(4);
+    });
+
+    test("Linux: a user manager that does not answer is unknown, and every question of the status is bounded", async () => {
+      const fake = fakeContext({ platform: "linux", dir, tools: { linger: "yes" } });
+      expect((await run(fake, "install")).code).toBe(0);
+      const asked: (number | undefined)[] = [];
+      const silent: FakeContext = {
+        ...fake,
+        ctx: {
+          ...fake.ctx,
+          run: (file, args, options) => {
+            asked.push(options?.timeoutMs);
+            return args.includes("show")
+              ? Promise.resolve({ code: null, stdout: "", stderr: "", failure: "ETIMEDOUT" })
+              : fake.ctx.run(file, args, options);
+          },
+        },
+      };
+      const status = await run(silent, "status", { json: true });
+      expect(JSON.parse(status.io.text())).toMatchObject({
+        autostart: { user_manager: null, unanswered: "ETIMEDOUT" },
+        starts: { on: null, text: "unknown: the systemd user manager did not answer within 5 s" },
+      });
+      expect(asked.length).toBeGreaterThan(0);
+      expect(asked.every((ms) => ms === STATUS_ASK_MS)).toBe(true);
+    });
+
+    test("Linux and macOS: a unit or launch agent that starts another install's launcher, or one that is gone, is not on", async () => {
+      for (const platform of ["linux", "darwin"] as const) {
+        const fake = fakeContext({ platform, dir: join(dir, platform), tools: { linger: "yes" } });
+        expect((await run(fake, "install")).code).toBe(0);
+        const startsOf = async (context: FakeContext) =>
+          (
+            JSON.parse((await run(context, "status", { json: true })).io.text()) as {
+              starts: { on: boolean | null; text: string; fix?: string };
+            }
+          ).starts;
+        expect((await startsOf(fake)).on).toBe(true);
+        const elsewhere = join(dir, platform, "other", "current", "bin", "ttasks");
+        const another = await startsOf({ ...fake, ctx: { ...fake.ctx, program: elsewhere } });
+        expect(another.on).toBe(false);
+        expect(another.text).toContain(`the entry starts another install (${fake.ctx.program})`);
+        expect(another.fix).toBe("ttasks service install");
+        rmSync(fake.ctx.program);
+        const gone = await startsOf(fake);
+        expect(gone.on).toBe(false);
+        expect(gone.text).toContain(`the program the entry starts is gone (${fake.ctx.program})`);
+      }
     });
   },
 );
