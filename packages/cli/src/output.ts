@@ -11,6 +11,9 @@ import {
   isErrorCode,
   messageWithHint,
   AppError,
+  effortLevels,
+  effortTimeText,
+  type EffortLevel,
   type ErrorBody,
   type ErrorClass,
 } from "@ttasks/contracts";
@@ -24,6 +27,29 @@ export const str = (value: unknown): string =>
     : "";
 
 export const RESTART_HINT = `Restart the service: ${CLI_NAME} service restart.`;
+
+/** The effort levels of a preference's value, when it is a list of them. */
+function levelsIn(value: unknown): EffortLevel[] | undefined {
+  return Array.isArray(value) && value.some((item) => typeof item === "object")
+    ? effortLevels(value)
+    : undefined;
+}
+
+/** A preference's value on one line: JSON, and a list of levels by their names. */
+function prefShown(value: unknown): string {
+  return JSON.stringify(levelsIn(value)?.map((level) => level.key) ?? value);
+}
+
+/** One line per level that says more than its name: its time and what belongs on it. */
+function levelLines(value: unknown): string[] {
+  return (levelsIn(value) ?? []).flatMap((level) => {
+    const said = [
+      level.time === undefined ? undefined : `about ${effortTimeText(level.time)}`,
+      level.about,
+    ].filter((part) => part !== undefined);
+    return said.length === 0 ? [] : [`  ${level.key}: ${said.join(". ")}`];
+  });
+}
 
 /** Any failure as A3's error body. A JSON-RPC protocol error is the service's `internal`. */
 export function bodyOf(error: unknown): ErrorBody {
@@ -767,7 +793,8 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       if (result["action"] === "set" && Array.isArray(result["changed"])) {
         for (const change of result["changed"] as Result[]) {
           lines.push(
-            `${str(change["key"])}: ${JSON.stringify(change["from"])} → ${JSON.stringify(change["to"])}`,
+            `${str(change["key"])}: ${prefShown(change["from"])} → ${prefShown(change["to"])}`,
+            ...levelLines(change["to"]),
           );
         }
         if (result["changed"].length > 0) break;
@@ -777,7 +804,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
         const shown =
           result["action"] === "describe"
             ? `${str(pref["summary"])} (${str(pref["shape"])})`
-            : `${JSON.stringify(pref["value"])}${pref["is_default"] === true ? " (default)" : ""}`;
+            : `${prefShown(pref["value"])}${pref["is_default"] === true ? " (default)" : ""}`;
         const inForce =
           "in_force" in pref
             ? ` · in force: ${JSON.stringify(pref["in_force"])}, as this build does not read it yet`
@@ -785,6 +812,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
         const fixed = pref["fixed"] === true ? " · fixed in this build" : "";
         lines.push(
           `${str(pref["key"])}: ${shown}${pref["policy"] === true ? " · policy" : ""}${fixed}${inForce}`,
+          ...(result["action"] === "describe" ? [] : levelLines(pref["value"])),
         );
       }
       break;

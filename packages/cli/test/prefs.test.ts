@@ -1,8 +1,10 @@
 // `ttasks prefs` as a person reads it: a key this build does not act on yet is still the person's
 // to read, though an agent is not shown it. The CLI in this process against a service in this
 // process; fixture text and temporary folders only.
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { EFFORT_KEY_MAX, EFFORT_SCALE_MAX, EXIT_CODES } from "@ttasks/contracts";
+import { EFFORT_NAME_MAX, EFFORT_SCALE_MAX, EXIT_CODES } from "@ttasks/contracts";
 import { contractWorld, type ContractWorld } from "@ttasks/service/test/contract";
 import { runMain, type Ran } from "./cli-harness.ts";
 
@@ -20,6 +22,9 @@ afterAll(async () => {
 const tasks = (args: readonly string[], terminal = true): Promise<Ran> =>
   runMain(args, { home: w.home, tty: terminal });
 
+/** The first line of a prefs answer: the key and its value, a list of levels by their names. */
+const firstLine = (ran: Ran): string => ran.stdout.split("\n")[0] ?? "";
+
 describe("[A3.3.4.prefs.tool] ttasks prefs", () => {
   test("a person reads a key nothing acts on yet, with what is in force; a script is not shown it", async () => {
     const person = await tasks(["prefs", "get", "--keys", "autonomy.level", "--json"]);
@@ -36,26 +41,37 @@ describe("[A3.3.4.prefs.tool] ttasks prefs", () => {
 });
 
 describe("[A3.3.4.prefs.set] ttasks prefs set", () => {
-  test("--reset puts a setting back to its default; a size called null is refused; get <key> reads that key", async () => {
+  test("--reset puts the default levels back; a level called null is refused; get <key> reads that key", async () => {
     expect((await tasks(["prefs", "set", "tasks.effort_scale", "S,M,L,XL"])).code).toBe(0);
     const typed = await tasks(["prefs", "set", "tasks.effort_scale", "null"]);
     expect(typed.code).toBe(EXIT_CODES.usage);
     expect(typed.stderr).toContain("reset puts it back to its default");
     const got = await tasks(["prefs", "get", "tasks.effort_scale"]);
     expect(got.code).toBe(0);
-    expect(got.stdout).toBe('tasks.effort_scale: ["S","M","L","XL"]\n');
+    // Each level that stayed kept its time and line: one line each under the names.
+    expect(got.stdout.split("\n")).toEqual([
+      'tasks.effort_scale: ["S","M","L","XL"]',
+      "  S: about 1 hour. A reply that needs some reading first; a small, clear fix; checking an agent's short change",
+      "  M: about 4 hours. One long focused sitting: a summary of a few sources; a meeting prepared with its papers",
+      "  L: about 2 days. Work over several sittings: a first draft of a report; a design for a feature; a tax return",
+      "  XL: about 1 week. A week or more: too big to plan as one piece, a signal to split it",
+      "",
+    ]);
     const reset = await tasks(["prefs", "set", "tasks.effort_scale", "--reset"]);
     expect(reset.code).toBe(0);
-    expect(reset.stdout).toBe('tasks.effort_scale: ["S","M","L","XL"] → ["S","M","L"]\n');
-    expect((await tasks(["prefs", "get", "tasks.effort_scale"])).stdout).toBe(
-      'tasks.effort_scale: ["S","M","L"] (default)\n',
+    expect(firstLine(reset)).toBe(
+      'tasks.effort_scale: ["S","M","L","XL"] → ["XS","S","M","L","XL"]',
+    );
+    expect(reset.stdout).toContain("\n  XS: about 10 minutes. A quick reply");
+    expect(firstLine(await tasks(["prefs", "get", "tasks.effort_scale"]))).toBe(
+      'tasks.effort_scale: ["XS","S","M","L","XL"] (default)',
     );
     const both = await tasks(["prefs", "set", "tasks.effort_scale", "S,M", "--reset"]);
     expect(both.code).toBe(EXIT_CODES.usage);
   });
 
-  test("a person sets the effort scale, reads it back and uses a new size at once; a script and an agent's shell are refused", async () => {
-    const scale = ["prefs", "set", "tasks.effort_scale", "XS,S,M,L,XL"];
+  test("a person adds a level, reads it back and uses it at once; a script and an agent's shell are refused", async () => {
+    const scale = ["prefs", "set", "tasks.effort_scale", "XS, S, M, L, XL, Two weeks"];
     for (const refused of [
       await tasks(scale, false),
       await runMain([...scale, "--space", w.space], {
@@ -71,42 +87,107 @@ describe("[A3.3.4.prefs.set] ttasks prefs set", () => {
     }
     const set = await tasks(scale);
     expect(set.code).toBe(0);
-    expect(set.stdout).toBe('tasks.effort_scale: ["S","M","L"] → ["XS","S","M","L","XL"]\n');
+    expect(firstLine(set)).toBe(
+      'tasks.effort_scale: ["XS","S","M","L","XL"] → ["XS","S","M","L","XL","Two weeks"]',
+    );
     const got = await tasks(["prefs", "get", "--keys", "tasks.effort_scale"]);
-    expect(got.stdout).toBe('tasks.effort_scale: ["XS","S","M","L","XL"]\n');
-    const added = await tasks(["add", "Fixture sized task", "--effort", "XL", "--json"]);
+    expect(firstLine(got)).toBe('tasks.effort_scale: ["XS","S","M","L","XL","Two weeks"]');
+    // A level with neither a time nor a line has no line of its own.
+    expect(got.stdout).not.toContain("  Two weeks");
+    const added = await tasks(["add", "Fixture sized task", "--effort", "Two weeks", "--json"]);
     expect(added.code).toBe(0);
     const ref = (JSON.parse(added.stdout) as { tasks: { ref: string }[] }).tasks[0]?.ref ?? "";
-    // Dropping the size the new task holds is refused, naming it.
-    const dropped = await tasks(["prefs", "set", "tasks.effort_scale", "XS,S,M,L"]);
+    // Dropping the level the new task holds is refused, naming it.
+    const dropped = await tasks(["prefs", "set", "tasks.effort_scale", "XS,S,M,L,XL"]);
     expect(dropped.code).toBe(EXIT_CODES.usage);
     expect(dropped.stderr).toContain(
-      `Active tasks hold an effort this change removes: ${ref} (XL).`,
+      `Active tasks hold an effort this change removes: ${ref} (Two weeks).`,
     );
-    expect((await tasks(["prefs", "get", "--keys", "tasks.effort_scale"])).stdout).toBe(
-      'tasks.effort_scale: ["XS","S","M","L","XL"]\n',
+    // A new name longer than a level's name may be is refused, saying so.
+    const long = await tasks([
+      "prefs",
+      "set",
+      "tasks.effort_scale",
+      `XS,S,M,L,XL,Two weeks,${"W".repeat(EFFORT_NAME_MAX + 1)}`,
+    ]);
+    expect(long.code).toBe(EXIT_CODES.usage);
+    expect(long.stderr).toContain(
+      `A new level's name has at most ${String(EFFORT_NAME_MAX)} characters`,
+    );
+    expect(firstLine(await tasks(["prefs", "get", "--keys", "tasks.effort_scale"]))).toBe(
+      'tasks.effort_scale: ["XS","S","M","L","XL","Two weeks"]',
     );
   });
 
-  test("ten sizes of the longest name are set, given to a task and printed as they are", async () => {
+  test("[A3.3.4.prefs.file] the levels go out with --json and back in whole with --file, against the base they were read at", async () => {
+    const read = await tasks(["prefs", "get", "tasks.effort_scale", "--json"]);
+    expect(read.code).toBe(0);
+    const out = JSON.parse(read.stdout) as {
+      as_of: string;
+      prefs: { key: string; value: { key: string; time?: unknown; about?: string }[] }[];
+    };
+    const row = out.prefs[0];
+    if (row === undefined) throw new Error("no row");
+    expect(row.value.map((level) => level.key)).toEqual(["XS", "S", "M", "L", "XL", "Two weeks"]);
+    // The person edits the file: a time and a line for the new level, another line for S.
+    const two = row.value.find((level) => level.key === "Two weeks");
+    const small = row.value.find((level) => level.key === "S");
+    if (two === undefined || small === undefined) throw new Error("no level");
+    two.time = { amount: 2, unit: "weeks" };
+    two.about = "A project of its own";
+    small.about = "A reply after some reading";
+    const file = join(w.root, "levels.json");
+    writeFileSync(file, JSON.stringify(out, null, 2));
+    const set = await tasks(["prefs", "set", "tasks.effort_scale", "--file", file]);
+    expect(set.stderr).toBe("");
+    expect(set.code).toBe(0);
+    const got = await tasks(["prefs", "get", "tasks.effort_scale"]);
+    expect(got.stdout).toContain("\n  S: about 1 hour. A reply after some reading\n");
+    expect(got.stdout).toContain("\n  Two weeks: about 2 weeks. A project of its own\n");
+    // The same file again: its base is older than the change it made, so it is refused.
+    const again = await tasks(["prefs", "set", "tasks.effort_scale", "--file", file]);
+    expect(again.code).not.toBe(0);
+    expect(again.stderr).toMatch(/^error conflict/u);
+    // The value alone, as a person writes it by hand, needs no base.
+    const bare = join(w.root, "bare.json");
+    writeFileSync(bare, JSON.stringify([...row.value, { key: "Later" }]));
+    const added = await tasks(["prefs", "set", "tasks.effort_scale", `--file=${bare}`]);
+    expect(added.code).toBe(0);
+    expect(firstLine(await tasks(["prefs", "get", "tasks.effort_scale"]))).toBe(
+      'tasks.effort_scale: ["XS","S","M","L","XL","Two weeks","Later"]',
+    );
+    for (const wrong of [
+      ["--file", join(w.root, "missing.json")],
+      ["--file", file, "--reset"],
+      ["XS", "--file", file],
+    ]) {
+      expect((await tasks(["prefs", "set", "tasks.effort_scale", ...wrong])).code).toBe(
+        EXIT_CODES.usage,
+      );
+    }
+  });
+
+  test("ten levels of the longest name are set, given to a task and printed as they are", async () => {
     const names = [
       "XS",
       "S",
       "M",
       "L",
-      "XL",
-      ...["Deep-work", "1.5d", "two_days", "Week"].map((n) => n.padEnd(EFFORT_KEY_MAX, "x")),
-      "Q".repeat(EFFORT_KEY_MAX),
+      "Two weeks",
+      "Later",
+      ...["Deep-work", "1.5d", "two days"].map((n) => n.padEnd(EFFORT_NAME_MAX, "x")),
+      "Q".repeat(EFFORT_NAME_MAX),
     ];
     expect(names).toHaveLength(EFFORT_SCALE_MAX);
     const set = await tasks(["prefs", "set", "tasks.effort_scale", names.join(",")]);
     expect(set.stderr).toBe("");
     expect(set.code).toBe(0);
-    const longest = names.at(-1) ?? "";
-    const added = await tasks(["add", "Fixture longest size", "--effort", longest, "--json"]);
-    expect(added.code).toBe(0);
-    const ref = (JSON.parse(added.stdout) as { tasks: { ref: string }[] }).tasks[0]?.ref ?? "";
-    const found = await tasks(["find", `effort:${longest}`]);
-    expect(found.stdout).toContain(`${ref} · open · ${longest} · Fixture longest size`);
+    for (const longest of [names.at(-1) ?? "", names.at(-2) ?? ""]) {
+      const added = await tasks(["add", "Fixture longest size", "--effort", longest, "--json"]);
+      expect(added.code).toBe(0);
+      const ref = (JSON.parse(added.stdout) as { tasks: { ref: string }[] }).tasks[0]?.ref ?? "";
+      const found = await tasks(["find", `effort:"${longest}"`]);
+      expect(found.stdout).toContain(`${ref} · open · ${longest} · Fixture longest size`);
+    }
   });
 });

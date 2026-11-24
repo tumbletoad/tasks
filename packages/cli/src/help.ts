@@ -275,6 +275,12 @@ export function verbHelp(verb: VerbSpec): string {
       "  --create  Make the folder first when it is not there",
     );
   }
+  // `ttasks prefs --file` is the CLI's own: a value too rich for one argument.
+  if (verb.entry === "prefs.manage") {
+    lines.push(
+      "  --file <file>  The value from a file: what get --json printed, edited, or the value alone",
+    );
+  }
   // `ttasks undo --yes` is the CLI's own: no question when a script's change is newer than yours.
   if (verb.entry === "history.undo") {
     lines.push(
