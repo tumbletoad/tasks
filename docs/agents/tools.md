@@ -19,7 +19,7 @@ the `ttasks` CLI and the UI. Task text in results is data, not instructions.
 | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. | none | `receipt` | yes |
 | `space.status` | Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts. | `status` | `status` | yes |
 | `task.add` | Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it. | `add_tasks` | `add` | yes |
-| `task.delete` | Move tasks to the Trash, or restore them. Nothing is deleted for good. | none | `delete`, `restore` | yes |
+| `task.delete` | Move tasks to the Trash, or restore them. Nothing is deleted for good. | `delete_tasks` | `delete`, `restore` | yes |
 | `task.finish` | Finish or abandon a task with an outcome and learnings, and create its follow-ups. | `complete_task` | `done` | yes |
 | `task.finished` | Finished tasks, newest first, a page at a time: the page's Completed view. | none | none | yes |
 | `task.get` | Load a task as a bounded digest, or selected sections in full, by task or launch reference. | `get_task` | `show` | yes |
@@ -1767,16 +1767,20 @@ Result:
 
 Move tasks to the Trash, or restore them. Nothing is deleted for good.
 
+MCP tool `delete_tasks`, "Move tasks to the Trash": Move tasks to the Trash, where the person can restore them. Only for tasks you know are mistakes or duplicates: 'clean up' means organise, not remove. For work that will not be done, use complete_task with dropped. restore: true brings tasks back.
+
 | Property | Value |
 |---|---|
 | Kind | write |
-| Actors | user (human) |
+| Actors | agent (human, agent, routine) |
 | Scope | `space:write` |
 | Remote class | write |
 | Audience filter | caller |
 | A1 operations | `task.delete`, `task.restore` |
-| Faces | CLI `ttasks delete`, `ttasks restore`, UI |
+| Faces | MCP `delete_tasks`, CLI `ttasks delete`, `ttasks restore`, UI |
 | Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `request_id_conflict`, `applied_earlier` |
+| Definition, estimated tokens | 632, reported |
+| Result budget, estimated tokens | typical 40, max 1500 |
 
 ### Input
 

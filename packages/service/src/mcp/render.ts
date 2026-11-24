@@ -1053,6 +1053,36 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
       more: "",
     };
   },
+  "task.delete": (result: OutputOf<"task.delete">) => {
+    const refs = (list: readonly string[] | undefined) => (list ?? []).join(", ");
+    const head =
+      result.result === "moved"
+        ? `moved to the Trash ${refs(result.moved)}`
+        : result.result === "restored"
+          ? `restored ${refs(result.moved)}`
+          : "no change";
+    return {
+      parts: [
+        fixed(
+          `${join(head, result.commit !== undefined && `change ${result.commit}`, `as_of ${result.as_of}`)}${replayed(result)}`,
+          result.already !== undefined ? `Already so: ${refs(result.already)}` : undefined,
+          result.later !== undefined
+            ? `In the Trash from a later change: ${refs(result.later)}`
+            : undefined,
+          ...(result.restored ?? []).flatMap((task) => [
+            ...(task.regrouped === undefined
+              ? []
+              : [`${task.ref}: its group was gone, it is in the ${task.regrouped}`]),
+            ...(task.held ?? []).map(
+              (held) =>
+                `${task.ref}: link ${held.source} stayed with ${held.by}, which holds its key`,
+            ),
+          ]),
+        ),
+      ],
+      more: "",
+    };
+  },
   "group.manage": (result: Groups, { tool }) => groupsRendered(result, tool),
   "prefs.manage": (result: Prefs) => prefsRendered(result),
   "run.report": (result: OutputOf<"run.report">) => ({

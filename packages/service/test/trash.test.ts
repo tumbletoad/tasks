@@ -1,13 +1,13 @@
 // Moving tasks to the Trash and back through real requests: the person at a terminal calls the
-// request path in this process, an agent's shell is refused, and an agent reads the MCP text. The
-// Trash lists what was removed on purpose, grouped by the change; an undone creation stays on Redo.
-// A restore names where each task is back and a link another task took meanwhile. Fixture text
-// only.
+// request path in this process, an agent moves tasks there under its own name, and an agent reads
+// the MCP text. The Trash lists what was removed on purpose, grouped by the change; an undone
+// creation stays on Redo. A restore names where each task is back and a link another task took
+// meanwhile. Fixture text only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
 import { RUN_LIMITS } from "@ttasks/contracts/runs";
 import { SHIM_METHODS, SpaceExecutionStore } from "@ttasks/launch";
-import { renderResult } from "../src/mcp/index.ts";
+import { bridgePrincipal, renderResult } from "../src/mcp/index.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
@@ -282,11 +282,66 @@ describe("[A3.trash] the Trash through real requests", () => {
     expect(refs((await trash({ q: a })).rows)).toEqual([]);
   });
 
-  test("an agent's shell is refused in words that say removal is the user's; an agent writing to a removed task is told who removed it", async () => {
+  test("an agent moves several tasks in one call: one change under its name, which the person restores with one call; an agent restores what it removed", async () => {
+    // An agent app's shell, under the name its session gives it.
+    const agent: Caller = {
+      class: "cli-agent",
+      env: { TTASKS_SPACE: w.space },
+      principal: { ...bridgePrincipal({ instance: "claude-code" }, "m"), origin: "cli" },
+    };
+    const [a, b, c] = [
+      await add({ title: "Fixture agent duplicate one" }),
+      await add({ title: "Fixture agent duplicate two" }),
+      await add({ title: "Fixture agent mistake" }),
+    ];
+    const moved = await call(
+      "task.delete",
+      { tasks: [a, b], base: await asOf(), request_id: rid() },
+      agent,
+    );
+    expect(moved).toMatchObject({ result: "moved", moved: [a, b] });
+    expect(renderResult("task.delete", moved)).toMatch(
+      new RegExp(
+        `^moved to the Trash ${a}, ${b} · change ${String(moved["commit"])} · as_of `,
+        "u",
+      ),
+    );
+    const listed = (await trash()).rows.filter((r) => [a, b].includes(r.ref));
+    expect(listed.map((r) => r.removed)).toEqual([
+      expect.objectContaining({ id: moved["commit"], by: "agent:claude-code", count: 2 }),
+      expect.objectContaining({ id: moved["commit"], by: "agent:claude-code", count: 2 }),
+    ]);
+    // A write to one of them tells the agent who removed it.
+    const write = await refusal(
+      "entry.add",
+      { task: a, kind: "progress", text: "Fixture progress.", request_id: rid() },
+      agent,
+    );
+    expect(write).toMatchObject({ code: "not_found", data: { reason: "in_trash", task: a } });
+    expect(write.message).toMatch(
+      new RegExp(`^${a} is in the Trash: agent:claude-code moved it there at `, "u"),
+    );
+    // The person takes the whole change back in one call.
+    const back = await call("task.delete", {
+      restore: true,
+      change: moved["commit"],
+      request_id: rid(),
+    });
+    expect(back).toMatchObject({ result: "restored", moved: [a, b] });
+    expect(refs((await trash({ q: "Fixture agent duplicate" })).rows)).toEqual([]);
+    // The agent brings back what it removed by mistake.
+    await call("task.delete", { tasks: [c], base: await asOf(), request_id: rid() }, agent);
+    const restored = await call(
+      "task.delete",
+      { tasks: [c], restore: true, base: await asOf(), request_id: rid() },
+      agent,
+    );
+    expect(restored).toMatchObject({ result: "restored", moved: [c] });
+    expect(renderResult("task.delete", restored)).toMatch(new RegExp(`^restored ${c} · `, "u"));
+  });
+
+  test("an agent's shell writing to a task the person removed is told who removed it", async () => {
     const a = await add({ title: "Fixture agent and trash" });
-    const refused = await refusal("task.delete", { tasks: [a], request_id: rid() }, AGENT);
-    expect(refused).toMatchObject({ code: "forbidden", data: { rule: "user_only" } });
-    expect(refused.message).toContain("agents cannot remove tasks yet");
     await remove([a]);
     const write = await refusal(
       "entry.add",

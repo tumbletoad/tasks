@@ -224,6 +224,7 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
       "add_entry",
       "add_tasks",
       "complete_task",
+      "delete_tasks",
       "get_task",
       "organize",
       "preferences",

@@ -1038,6 +1038,14 @@ const GRANT_CALLS: readonly [string, (n: number) => Record<string, unknown>][] =
       request_id: `contract-grant-${String(n).padStart(8, "0")}`,
     }),
   ],
+  [
+    "task.delete",
+    (n) => ({
+      tasks: ["M-1"],
+      base: ANY_BASE,
+      request_id: `contract-grant-${String(n).padStart(8, "0")}`,
+    }),
+  ],
 ];
 
 /**
