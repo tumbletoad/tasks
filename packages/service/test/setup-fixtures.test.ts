@@ -2059,7 +2059,8 @@ describe("[A3.3.13.setup.access-rule] Only the apply that finds a home's access 
       seed(plain, "{}\n");
       seed(inner, "{}\n");
       const before = [bytesOf(plain), bytesOf(inner)];
-      const silent = { ...w.input, rows: undefined };
+      // No rows: no service said.
+      const silent = w.input;
       for (const { answer } of await answers(w, silent)) {
         expect(answer).toEqual({ status: "off", off: true });
       }
@@ -2478,7 +2479,7 @@ describe("[A3.3.13.setup.plan-bound] A plan is bound to what its apply writes an
         expect(await apply(w, a)).toMatchObject({ result: "applied", access: "on" });
         const on = await tokenOf(w, a, { ...w.input, rows: w.rows.live });
         const off = await tokenOf(w, a, { ...w.input, rows: [] });
-        const unknown = await tokenOf(w, a, { ...w.input, rows: undefined });
+        const unknown = await tokenOf(w, a, w.input);
         expect(new Set([on, off, unknown]).size, a.app).toBe(3);
         // The service does not answer: a renewal asks for no access, and nothing is taken.
         await w.rows.revoke((await viewOf(w, a)).home);

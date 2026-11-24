@@ -220,7 +220,8 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await page.reload();
     await expect(appsHeading(page)).toBeVisible();
 
-    // A file setup cannot read while its tools are on: the switch shows the access, and turns off.
+    // A file setup cannot read while its access is on: it cannot say that the tools start, so the
+    // switch shows off, says why, and the access is taken away beside it.
     await flip(page, toolsFor("Codex"), true);
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
@@ -229,11 +230,10 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     fresh.writeCodex(broken);
     await page.reload();
     await expect(appsHeading(page)).toBeVisible();
-    await expect(toggle(page, toolsFor("Codex"))).toBeChecked();
-    await expect(toggle(page, toolsFor("Codex"))).toBeEnabled();
+    await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
     await expect(page.getByText(`${PRODUCT_NAME} cannot read ~`)).toBeVisible();
     await widths(page, "settings-apps-unreadable");
-    await flip(page, toolsFor("Codex"), false);
+    await page.getByRole("button", { name: "Take Codex's access away" }).click();
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText(
       `Codex no longer has the ${PRODUCT_NAME} tools. Its entry is still in ~`,
@@ -271,10 +271,10 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
       await expect(page.locator('[data-part="record"]')).toContainText(
         `${PRODUCT_NAME} cannot read its own record of the agent apps, ~`,
       );
-      await expect(toggle(page, toolsFor("Codex"))).toBeChecked();
-      await expect(toggle(page, toolsFor("Codex"))).toBeEnabled();
+      await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
+      await expect(toggle(page, toolsFor("Codex"))).toBeDisabled();
       await widths(page, "settings-apps-record-unreadable");
-      await flip(page, toolsFor("Codex"), false);
+      await page.getByRole("button", { name: "Take Codex's access away" }).click();
       await page.getByRole("button", { name: "Apply" }).click();
       await expect(page.getByRole("status")).toContainText("Done.");
       await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
@@ -299,7 +299,7 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await page.reload();
     await expect(appsHeading(page)).toBeVisible();
     await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
-    await expect(page.getByText("The entry is gone from the app's settings")).toBeVisible();
+    await expect(page.getByText("The entry is not in the app's settings")).toBeVisible();
     await widths(page, "settings-apps-missing");
     // Its access is still on: beside the switch it can be taken away, and that choice taken back.
     await page.getByRole("button", { name: "Take Codex's access away" }).click();
@@ -324,20 +324,20 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
     expect(fresh.codexConfig()).toBe(bare);
 
-    // A file setup cannot replace: that row is named with its home and why, and stays off.
+    // A file setup cannot replace: the row says so before anything is applied, and stays off.
     const writable = fresh.readOnlyCodex();
     try {
-      await flip(page, toolsFor("Codex"), true);
-      await page.getByRole("button", { name: "Apply" }).click();
-      await expect(page.locator('[data-part="failed"]')).toContainText(
-        /Codex \(~[\\/]\.codex\): its settings file could not be written/u,
-      );
-      await widths(page, "settings-apps-failed-row");
-      await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
+      await page.reload();
+      await expect(appsHeading(page)).toBeVisible();
+      await expect(page.getByText("is read-only, so")).toBeVisible();
+      await expect(toggle(page, toolsFor("Codex"))).toBeDisabled();
+      await widths(page, "settings-apps-read-only");
       expect(fresh.codexConfig()).toBe(bare);
     } finally {
       writable();
     }
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
 
     // Everything out again, from the same place.
     await flip(page, openIn("Claude Code"), false);
@@ -355,6 +355,72 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     const row = page.locator("li[data-task]", { hasText: "Draft the spring newsletter" });
     await expect(row.locator('[data-part="tile"]')).toBeVisible();
     await expect(row.locator('[data-part="tile"]')).not.toHaveAccessibleName("Open in Claude Code");
+  });
+});
+
+test.describe("[A7.3.12.m5-12.e2e.two-files] Claude Code's two settings files: one row, each file that needs something named, the entry added beside an On switch, and a file left out said before the space opens", () => {
+  test("the first start with a file setup cannot read: the space waits until the person has read which file got no entry; once mended, its entry is added beside the On switch; Off takes both out @one-browser", async ({
+    page,
+    fresh,
+  }) => {
+    const inside = /~[\\/]\.claude[\\/]\.claude\.json/u;
+    const original = fresh.claudeFile();
+    await fresh.forgetSpaces();
+    fresh.insideClaude('{"theme": "dark",}\n');
+    try {
+      await firstStart(page, fresh);
+      await nameField(page).fill("Kiln");
+      await page.getByRole("button", { name: "Make the space" }).click();
+      await expect(appsHeading(page)).toBeVisible({ timeout: SLOW_MS });
+      const claude = page.locator('[data-app="claude-code"]');
+      const innerLine = claude.locator('[data-part="file"]', { hasText: inside });
+      await expect(innerLine).toContainText(`${PRODUCT_NAME} cannot read it`);
+      await widths(page, "two-files-first-start");
+      await page.getByRole("button", { name: "Apply" }).click();
+      // Set up where it can be; the page stays until the person has read the file left out.
+      const left = page.locator('[data-part="left-out"]');
+      await expect(left).toContainText(inside);
+      await expect(left).toContainText(`${PRODUCT_NAME} cannot read that file`);
+      expect(fresh.claudeEntry()).toBeDefined();
+      expect(fresh.insideClaudeEntry()).toBeUndefined();
+      await widths(page, "two-files-left-out");
+      expect(await violations(page)).toEqual([]);
+      await page.getByRole("button", { name: "Continue" }).click();
+      await showsSpace(page, "Kiln");
+
+      // Mended by the person: the tools are on, and the entry is offered there beside the switch.
+      fresh.insideClaude('{"theme": "dark"}\n');
+      await page.goto(`${fresh.origin}/s/${spaceOf(page)}/settings`);
+      await expect(appsHeading(page)).toBeVisible();
+      await expect(toggle(page, toolsFor("Claude Code"))).toBeChecked();
+      await expect(claude.locator('[data-part="file"]')).toHaveCount(1);
+      await expect(innerLine).toContainText(`no entry of ${PRODUCT_NAME}'s there`);
+      await widths(page, "two-files-lacking");
+      await claude.locator('[data-part="more"]').click();
+      await expect(changes(page)).toContainText(inside);
+      await widths(page, "two-files-chosen");
+      await page.getByRole("button", { name: "Apply" }).click();
+      await expect(page.getByRole("status")).toContainText("Done");
+      expect(fresh.insideClaudeEntry()).toBeDefined();
+      await expect(claude.locator('[data-part="file"]')).toHaveCount(0);
+      await expect(claude.locator('[data-part="more"]')).toHaveCount(0);
+      await widths(page, "two-files-done");
+      expect(await violations(page)).toEqual([]);
+
+      // Off takes the entry out of both files; the first start's other switches go too.
+      for (const app of ["Claude Code", "Codex"]) {
+        await flip(page, toolsFor(app), false);
+        await flip(page, openIn(app), false);
+      }
+      await page.getByRole("button", { name: "Apply" }).click();
+      await expect(page.getByRole("status")).toContainText("Done");
+      expect(fresh.claudeEntry()).toBeUndefined();
+      expect(fresh.insideClaudeEntry()).toBeUndefined();
+    } finally {
+      fresh.insideClaude(null);
+      fresh.writeClaudeFile(original === "" ? null : original);
+    }
+    await fresh.forgetSpaces();
   });
 });
 

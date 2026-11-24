@@ -13,7 +13,7 @@ const on: ToolsAnswer = { status: "on", off: true };
 const unknown: ToolsAnswer = { status: "unknown", off: true };
 const offLive = (why: ToolsAnswer["why"], turn?: ToolsAnswer["on"]): ToolsAnswer => ({
   status: "off",
-  why,
+  ...(why === undefined ? {} : { why }),
   ...(turn === undefined ? {} : { on: turn }),
   off: true,
 });
@@ -127,9 +127,19 @@ describe("[A3.3.13.setup.home-answer] A home's row from its files' answers: on w
   test("a file's tools are on only when its entry will start: its program there, naming the home's instance and space", () => {
     expect(toolsAnswer(base)).toEqual({ status: "on", off: true });
     expect(toolsAnswer({ ...base, binds: false })).toEqual(offLive("unbound"));
-    expect(toolsAnswer({ ...base, state: "edited", program: undefined, owned: false })).toEqual(
-      offLive("no_program"),
-    );
+    // An entry with no command: no program to name.
+    const noProgram: ToolsFacts = {
+      state: "edited",
+      entry: true,
+      binds: true,
+      access: "live",
+      otherSpace: false,
+      writable: true,
+      installed: true,
+      handMade: false,
+      owned: false,
+    };
+    expect(toolsAnswer(noProgram)).toEqual(offLive("no_program"));
     expect(
       toolsAnswer({
         ...base,
