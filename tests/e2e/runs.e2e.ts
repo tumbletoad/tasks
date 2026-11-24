@@ -416,7 +416,9 @@ test.describe("[M6.page.e2e.earlier-asks] An earlier run's question stays in sig
       rowOf(page, ref).scrollIntoViewIfNeeded(),
     );
 
-    // Stopping the run that works takes nothing of the question.
+    // Stopping the run that works takes nothing of the question. It has taken its case, so the
+    // reply gets the next.
+    await expect.poll(() => world.codexLeft(ref), { timeout: SLOW_MS }).toEqual(["answer"]);
     await openTask(page, world, ref);
     await runsOf(page, ref).nth(1).getByRole("button", { name: /^Stop/u }).click();
     await expect(stateOf(runsOf(page, ref).nth(1))).toContainText("Stopped", { timeout: SLOW_MS });
