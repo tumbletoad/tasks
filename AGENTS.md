@@ -19,12 +19,17 @@ If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checko
 - Build the best solution you can defend. When a plan, a rule, a comment, a test or existing code
   stands in the way of a better product, say so. Change it when it is yours to change. Propose it
   in your pull request when it is outside your task, also for code that was written earlier.
-- Protect a person's work first. What ordinary or plausible use can turn into loss, damage or
-  frustration is always fixed. For a case that needs a program on the same machine working against
-  the product on purpose, take the cheap protection or none: no machinery, and no refusal, warning
-  or extra step that every other person then meets.
+- Serve the common use, and leave the rare corner. A small, intuitive solution that serves how
+  the product is normally used beats a complicated one that covers a little more: lean and 98%
+  over ten times the rules and 99%. An unlikely corner case is left unhandled and stated as a
+  limit in one line. A complicated solution is justified only where it gives near-complete
+  coverage.
+- Protect a person's work first. What ordinary use can turn into loss, damage or frustration is
+  always fixed. For a case that needs two unlikely things at once, or a program on the same
+  machine working against the product on purpose, take the cheap protection or none: no
+  machinery, and no refusal, warning or extra step that every other person then meets.
 - Fewer concepts, fewer steps, fewer refusals. Before you add a rule, a check, a setting or a
-  warning that a person meets, ask who it helps in plausible use and what it costs everyone else.
+  warning that a person meets, ask who it helps in ordinary use and what it costs everyone else.
 - Fix the cause. A workaround with a comment that explains it is still a defect.
 - When a mistake keeps coming back, make it impossible, or make a type, a lint rule or a test catch
   it. A written rule is the last resort.
@@ -69,7 +74,8 @@ If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checko
   the OS, and for UI work screenshots of the states that changed. Say what you did not test.
 - A question for the owner goes in the pull request with the default you chose. Carry on with it.
 - Substantial changes get an independent review. It ranks findings by how likely a person is to
-  run into them and what it costs them.
+  run into them and what it costs them. It holds a change only for what ordinary use meets, and
+  notes a rare corner in one line.
 - Work on branches and merge through pull requests. Merge main into the branch first. Name the
   files in every commit: never `git add -A`.
 - Names come from `packages/brand`.
