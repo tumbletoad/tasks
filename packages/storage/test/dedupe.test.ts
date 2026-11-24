@@ -21,6 +21,7 @@ import {
   type WriteResult,
 } from "../src/write/request.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
+import { checkSpace } from "./space-rules.ts";
 import {
   checkHistory,
   expectStatus,
@@ -1068,7 +1069,9 @@ const sessionsProperty = (seen: Record<string, number>) =>
       };
       // A reopen is the user's act and may leave two active tasks with one key; dedupe never does.
       let reopened = false;
+      let rules = checkSpace(space.reader);
       for (const s of steps) {
+        rules = checkSpace(space.reader, rules);
         if (s.kind === "jump") {
           now += (DEDUPE_WINDOW_DAYS + 1) * DAY;
           model.window += 1;
@@ -1159,6 +1162,7 @@ const sessionsProperty = (seen: Record<string, number>) =>
           for (const key of KEYS) expect(model.active(key), key).toBeLessThanOrEqual(1);
         }
       }
+      checkSpace(space.reader, rules);
       checkHistory(space.reader);
     } finally {
       space.close();

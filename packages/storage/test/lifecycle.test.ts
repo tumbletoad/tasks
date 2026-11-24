@@ -11,6 +11,7 @@ import {
 } from "../src/search/documents.ts";
 import type { Operation, WriteResult } from "../src/write/request.ts";
 import { tempFolders } from "./space-helpers.ts";
+import { checkSpace } from "./space-rules.ts";
 import {
   checkHistory,
   expectStatus,
@@ -664,6 +665,7 @@ describe("[A1.5.write.wrap-up-additive] wrap-up never changes context, notes, lo
             learnings: [],
             planned: true,
           };
+          let rules = checkSpace(fx.reader);
           for (const given of steps) {
             const s =
               given.kind === "again"
@@ -751,6 +753,7 @@ describe("[A1.5.write.wrap-up-additive] wrap-up never changes context, notes, lo
               planned_for: model.planned ? "2026-11-20" : null,
             });
             expect(live(id)).toEqual(model.learnings);
+            rules = checkSpace(fx.reader, rules);
           }
         }),
         { numRuns: 60, seed: 20261114 },

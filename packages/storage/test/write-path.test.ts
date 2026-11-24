@@ -17,6 +17,7 @@ import {
 } from "../src/write/request.ts";
 import { SpaceWriter } from "../src/write/writer.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
+import { checkSpace } from "./space-rules.ts";
 import {
   checkHistory,
   expectStatus,
@@ -344,8 +345,10 @@ describe("[A1.5.write.read-your-writes] an operation never fails against an earl
                     };
             }
           });
+          const before = checkSpace(fx.reader);
           const result = submit(ops, { actor: "claude" });
           expect(["applied", "unchanged"], JSON.stringify(result.error)).toContain(result.status);
+          checkSpace(fx.reader, before);
         },
       ),
       { numRuns: 60 },
