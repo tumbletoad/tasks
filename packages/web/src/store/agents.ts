@@ -98,13 +98,15 @@ function accountOf(o: Obj): AgentsAccount {
     app: word(MONITOR_PROVIDERS, o["app"]),
     appName: text(o["appName"]),
     account: text(o["account"]),
+    sameAs: textOrNull(o["sameAs"]),
     plan: textOrNull(o["plan"]),
     windows: list(o["windows"], windowOf),
     readingAgeMs: numOrNull(o["readingAgeMs"]),
     refreshing: o["refreshing"] === true,
     limited: o["limited"] === true,
-    failed: o["failed"] === true,
-    unavailable: o["unavailable"] === true,
+    failed: textOrNull(o["failed"]),
+    retryInMs: numOrNull(o["retryInMs"]),
+    unavailable: textOrNull(o["unavailable"]),
   };
 }
 

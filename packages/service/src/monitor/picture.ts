@@ -75,17 +75,23 @@ export function pictureOf(
     quietMs: a.quietMs,
     nested: nested.get(a.rowId) ?? [],
   }));
+  const profiles = new Map(snapshot.accounts.map((a) => [a.homeId, a.profile]));
   const accounts = snapshot.accounts.map((a): AgentsAccount => ({
     key: keyOf(a.homeId),
     app: a.provider,
     appName: a.providerName,
     account: a.profile,
+    sameAs:
+      a.sameAccount === null || a.sameAccount === a.homeId
+        ? null
+        : (profiles.get(a.sameAccount) ?? null),
     plan: a.plan,
     windows: a.windows,
     readingAgeMs: a.readingAgeMs,
     refreshing: a.refreshing,
     limited: a.limited,
     failed: a.failed,
+    retryInMs: a.retryInMs,
     unavailable: a.unavailable,
   }));
   return { ageMs, settling: snapshot.settling, sessions, unseen, accounts };

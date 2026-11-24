@@ -1,7 +1,9 @@
 // TTAM's lines, read into TTasks's shapes (@ttasks/contracts/monitor). Only the fields TTasks
 // reads are looked at: an unknown field is ignored and an unknown enum value becomes `unknown`.
 // A field TTasks reads that is missing or of another type makes the whole snapshot one that does
-// not fit (ShapeError), never an emptier one.
+// not fit (ShapeError), never an emptier one. The exception is a field TTAM added within the
+// schema version TTasks reads: an earlier build of that version lacks it, so it is read with
+// `added` and absent reads as null.
 import {
   MONITOR_ACTIVITIES,
   MONITOR_LIVENESS,
@@ -45,6 +47,9 @@ function int(value: unknown): number {
 
 const intOrNull = (value: unknown): number | null => (value === null ? null : int(value));
 
+/** `o[key]`, a field TTAM added within the schema version: null when the build predates it. */
+const added = (o: Obj, key: string): unknown => (key in o ? o[key] : null);
+
 function num(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new ShapeError();
   return value;
@@ -80,7 +85,8 @@ function home(value: unknown): MonitorHome {
     providerName: str(h["provider"]),
     label: str(h["label"]),
     path: str(h["path"]),
-    present: bool(h["present"]),
+    // null: TTAM could not look at it.
+    present: h["present"] === null ? false : bool(h["present"]),
   };
 }
 
@@ -123,18 +129,21 @@ function usageWindow(captured: number, value: unknown): MonitorWindow {
 function account(captured: number, value: unknown): MonitorAccount {
   const a = obj(value);
   const status = obj(a["status"]);
+  const retry = intOrNull(added(status, "retry_at_ms"));
   return {
     provider: provider(a["provider"]),
     providerName: str(a["provider"]),
     homeId: str(a["home_id"]),
     profile: str(a["profile"]),
+    sameAccount: strOrNull(added(a, "same_account")),
     plan: strOrNull(a["plan"]),
     windows: list(a["windows"]).map((w) => usageWindow(captured, w)),
     readingAgeMs: ageOf(captured, intOrNull(a["observed_at_ms"])),
     refreshing: bool(status["refreshing"]),
     limited: strOrNull(status["limited"]) !== null,
-    failed: strOrNull(status["error"]) !== null,
-    unavailable: strOrNull(status["unavailable"]) !== null,
+    failed: strOrNull(status["error"]),
+    retryInMs: retry === null ? null : retry - captured,
+    unavailable: strOrNull(status["unavailable"]),
   };
 }
 

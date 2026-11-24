@@ -5,16 +5,17 @@
 // Monitor data describes every agent on this computer, other projects' too. It stays in the
 // service and the person's own page: it never reaches an agent's tools, a space, a log or another
 // machine. Its only free text is a home's label and path, an agent's name and folder, a provider
-// TTasks does not know by name, a plan's name and a usage window's scope and label.
+// TTasks does not know by name, a plan's name, a usage window's scope and label, and TTAM's reason
+// why an account has no fresh reading.
 //
 // An enum value TTasks does not know is `unknown`, never dropped. Times are ages at the moment the
 // snapshot was captured, never clock times: the age now is that plus the time since it arrived.
 
 /** The versions of TTAM's lines this build reads: a build fits when its hello names both. */
-export const MONITOR_SCHEMA_VERSION = 4;
-export const MONITOR_QUERY_VERSION = 1;
+export const MONITOR_SCHEMA_VERSION = 8;
+export const MONITOR_QUERY_VERSION = 2;
 
-export const MONITOR_PROVIDERS = ["claude", "codex", "antigravity"] as const;
+export const MONITOR_PROVIDERS = ["claude", "codex", "antigravity", "cursor", "grok"] as const;
 export type MonitorProvider = (typeof MONITOR_PROVIDERS)[number] | "unknown";
 
 /** `working`: a turn is in progress, not that tokens are being generated now. */
@@ -52,6 +53,7 @@ export interface MonitorHome {
   readonly label: string;
   /** Absolute, local: how a home TTasks launches agents with is matched to this one. */
   readonly path: string;
+  /** TTAM looked at it and it is there: only then can it hold an agent TTAM sees. */
   readonly present: boolean;
 }
 
@@ -103,6 +105,8 @@ export interface MonitorAccount {
   readonly providerName: string;
   readonly homeId: string;
   readonly profile: string;
+  /** The home ID of the first listed home signed in to the same account; null: alone or unknown. */
+  readonly sameAccount: string | null;
   readonly plan: string | null;
   /** Empty without a reading. */
   readonly windows: readonly MonitorWindow[];
@@ -112,10 +116,18 @@ export interface MonitorAccount {
   readonly refreshing: boolean;
   /** A limit of the account is reached. */
   readonly limited: boolean;
-  /** The latest live query failed; a reading shown is older. */
-  readonly failed: boolean;
-  /** The account has no plan usage to read, such as an API key sign-in. Not a failure. */
-  readonly unavailable: boolean;
+  /**
+   * Why the reading is not fresh, in TTAM's words: a check failed, or the home or its sign-in could
+   * not be read. null while the reading is fresh or nothing failed.
+   */
+  readonly failed: string | null;
+  /** Until TTAM asks again after the provider turned it away. */
+  readonly retryInMs: number | null;
+  /**
+   * Why the account has no plan usage to read, in TTAM's words, such as an API key sign-in or an
+   * expired one. Not a failure.
+   */
+  readonly unavailable: string | null;
 }
 
 export interface MonitorSnapshot {
@@ -230,13 +242,16 @@ export interface AgentsAccount {
   readonly app: MonitorProvider;
   readonly appName: string;
   readonly account: string;
+  /** The account label of another home signed in to the same account, listed before this one. */
+  readonly sameAs: string | null;
   readonly plan: string | null;
   readonly windows: readonly MonitorWindow[];
   readonly readingAgeMs: number | null;
   readonly refreshing: boolean;
   readonly limited: boolean;
-  readonly failed: boolean;
-  readonly unavailable: boolean;
+  readonly failed: string | null;
+  readonly retryInMs: number | null;
+  readonly unavailable: string | null;
 }
 
 export interface AgentsPicture {

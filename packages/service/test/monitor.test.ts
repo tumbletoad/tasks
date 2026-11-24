@@ -202,10 +202,10 @@ describe("[A5.agents.monitor] the monitor module speaks TTAM's line protocol", (
 
   test("a hello with other versions does not fit, and says whether TTAM is newer or older", async () => {
     const cases = [
-      ["version=5,1", "newer"],
-      ["version=4,2", "newer"],
-      ["version=3,1", "older"],
-      ["version=4,0", "older"],
+      ["version=9,2", "newer"],
+      ["version=8,3", "newer"],
+      ["version=4,1", "older"],
+      ["version=8,1", "older"],
     ] as const;
     for (const [mode, side] of cases) {
       const { monitor, pids } = setup({ mode });
@@ -540,7 +540,7 @@ describe("[A3.3.14.doctor.monitor] where ttam comes from, and whether it fits", 
     expect(
       readJsonLines(log).filter((line) => (line as { get?: number }).get !== undefined),
     ).toEqual([]);
-    expect(await monitor.probe(command("version=5,1"))).toMatchObject({
+    expect(await monitor.probe(command("version=9,2"))).toMatchObject({
       fits: false,
       problem: { kind: "does_not_fit", monitor: "newer" },
     });

@@ -1,6 +1,7 @@
 // The Agents page's picture of a snapshot: each conversation once with the agents inside it, each
 // account's plan usage, and nothing the page does not show. Fixture data only.
 import { readFileSync } from "node:fs";
+import { MONITOR_SCHEMA_VERSION } from "@ttasks/contracts/monitor";
 import { TTAM_CONVERSATIONS } from "@ttasks/testkit";
 import { describe, expect, test } from "vitest";
 import { readSnapshot } from "./lines.ts";
@@ -14,7 +15,7 @@ const snapshots = readFileSync(TTAM_CONVERSATIONS.on, "utf8")
   .map((line) => JSON.parse(line) as { from: string; line?: string })
   .flatMap((r) => (r.from === "ttam" && r.line !== undefined ? [JSON.parse(r.line) as Obj] : []))
   .filter((line) => line["type"] === "snapshot");
-const last = readSnapshot(snapshots.at(-1) ?? {}, 4);
+const last = readSnapshot(snapshots.at(-1) ?? {}, MONITOR_SCHEMA_VERSION);
 
 describe("[A5.agents.picture] the Agents page's picture of a snapshot", () => {
   test("each conversation once, with every agent inside it one level under it", () => {
@@ -22,13 +23,15 @@ describe("[A5.agents.picture] the Agents page's picture of a snapshot", () => {
     expect(picture.ageMs).toBe(1_500);
     expect(picture.settling).toBe(false);
     expect(picture.sessions.map((s) => [s.appName, s.title, s.activity])).toEqual([
+      ["antigravity", "Port the parser", "idle"],
       ["claude", "synthetic-project", "working"],
       ["claude", "synthetic-project", "unknown"],
       ["codex", "API documentation", "working"],
       ["codex", "Release checklist", "idle"],
+      ["cursor", "Sort the import queue", "unknown"],
       ["example", "synthetic-project", "idle"],
     ]);
-    const [claude, , codex] = picture.sessions;
+    const [, claude, , codex] = picture.sessions;
     expect(claude?.nested.map((n) => [n.kind, n.title, n.activity])).toEqual([
       ["subagent", "Survey the fixtures", "unknown"],
       ["subagent", "scout", "unknown"],
@@ -44,7 +47,7 @@ describe("[A5.agents.picture] the Agents page's picture of a snapshot", () => {
   test("an agent app TTasks does not know keeps its name, and its state stays unknown", () => {
     const picture = pictureOf(last, 0);
     expect(picture.sessions.at(-1)).toMatchObject({ app: "unknown", appName: "example" });
-    expect(picture.sessions[1]).toMatchObject({ activity: "unknown", quietMs: null });
+    expect(picture.sessions[2]).toMatchObject({ activity: "unknown", quietMs: null });
   });
 
   test("an agent whose parent is gone or whose chain loops stands on its own", () => {
@@ -83,15 +86,36 @@ describe("[A5.agents.picture] the Agents page's picture of a snapshot", () => {
       ["codex", "spare", null],
       ["codex", "codex", "plus"],
       ["antigravity", "antigravity-cli", null],
+      ["cursor", "cursor", null],
+      ["grok", "grok", null],
       ["example", "example", "team"],
     ]);
     const plus = picture.accounts[2];
-    expect(plus).toMatchObject({ limited: true, refreshing: false, failed: false });
+    expect(plus).toMatchObject({ limited: true, refreshing: false, failed: null, sameAs: null });
     expect(plus?.windows.map((w) => [w.kind, w.usedPercent, w.limited])).toEqual([
-      ["weekly", 100, false],
+      ["weekly", 100, true],
       ["session", 100, true],
     ]);
     expect(picture.accounts[1]).toMatchObject({ windows: [], readingAgeMs: null });
+  });
+
+  test("a home signed in to the same account as one listed before it names that one", () => {
+    const [, spare, plus] = last.accounts;
+    if (spare === undefined || plus === undefined) throw new Error("fixture");
+    const shared = pictureOf(
+      {
+        ...last,
+        accounts: [
+          { ...spare, sameAccount: spare.homeId },
+          { ...plus, sameAccount: spare.homeId },
+        ],
+      },
+      0,
+    );
+    expect(shared.accounts.map((a) => [a.account, a.sameAs])).toEqual([
+      ["spare", null],
+      ["codex", "spare"],
+    ]);
   });
 
   test("no session ID, home path or process reaches the page", () => {

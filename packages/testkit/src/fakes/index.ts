@@ -29,6 +29,10 @@ export const FAKE_TTAM = here("ttam.ts");
 export const TTAM_CONVERSATIONS = {
   on: fileURLToPath(new URL("../../../../fixtures/ttam/query-usage-on.jsonl", import.meta.url)),
   off: fileURLToPath(new URL("../../../../fixtures/ttam/query-usage-off.jsonl", import.meta.url)),
+  /** Usage queries on, from the first build of this schema version: no field added within it. */
+  first: fileURLToPath(
+    new URL("../../../../fixtures/ttam/query-usage-on-first-8.jsonl", import.meta.url),
+  ),
 } as const;
 
 /** The fake `ttam`'s program and arguments, `query` left for the caller to add. */

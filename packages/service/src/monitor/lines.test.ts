@@ -1,6 +1,7 @@
 // TTAM's snapshot lines read into TTasks's shapes: every recorded snapshot whole, an unknown value
 // kept as unknown, a field TTasks reads in another shape refused. Fixture data only.
 import { readFileSync } from "node:fs";
+import { MONITOR_QUERY_VERSION, MONITOR_SCHEMA_VERSION } from "@ttasks/contracts/monitor";
 import { TTAM_CONVERSATIONS } from "@ttasks/testkit";
 import { describe, expect, test } from "vitest";
 import { readLine, readSnapshot, ShapeError } from "./lines.ts";
@@ -17,6 +18,7 @@ function recorded(file: string): Obj[] {
     .filter((line) => line["type"] === "snapshot");
 }
 
+const V = MONITOR_SCHEMA_VERSION;
 const ALL = [...recorded(TTAM_CONVERSATIONS.on), ...recorded(TTAM_CONVERSATIONS.off)];
 const LAST = recorded(TTAM_CONVERSATIONS.on).at(-1) ?? {};
 
@@ -35,7 +37,7 @@ describe("[A5.agents.monitor-lines] TTAM's lines read into TTasks's snapshot", (
     expect(ALL.length).toBeGreaterThan(4);
     for (const line of ALL) {
       const wire = line["snapshot"] as Obj;
-      const read = readSnapshot(line, 4);
+      const read = readSnapshot(line, V);
       expect(read.settling).toBe(line["settling"]);
       expect(read.usage).toBe(line["usage"]);
       expect(read.generation).toBe(wire["generation"]);
@@ -45,8 +47,20 @@ describe("[A5.agents.monitor-lines] TTAM's lines read into TTasks's snapshot", (
     }
   });
 
+  test("a build of the same schema version from before a field was added within it reads whole", () => {
+    const first = recorded(TTAM_CONVERSATIONS.first);
+    expect(first.length).toBeGreaterThan(2);
+    for (const line of first) {
+      const read = readSnapshot(line, V);
+      expect(read.accounts.map((a) => a.homeId)).toEqual(accountsOf(line).map((a) => a["home_id"]));
+      for (const account of read.accounts) {
+        expect(account).toMatchObject({ sameAccount: null, retryInMs: null });
+      }
+    }
+  });
+
   test("a provider TTasks does not know is shown by its name, with its home and account", () => {
-    const read = readSnapshot(LAST, 4);
+    const read = readSnapshot(LAST, V);
     const agent = read.agents.find((a) => a.providerName === "example");
     expect(agent).toMatchObject({ provider: "unknown", kind: "session", activity: "idle" });
     expect(read.homes.find((h) => h.providerName === "example")?.provider).toBe("unknown");
@@ -68,7 +82,7 @@ describe("[A5.agents.monitor-lines] TTAM's lines read into TTasks's snapshot", (
       Object.assign(window ?? {}, { kind: "fortnightly" });
       s["new_top_level"] = "ignored";
     });
-    const read = readSnapshot({ ...line, usage: "sometimes", extra: true }, 4);
+    const read = readSnapshot({ ...line, usage: "sometimes", extra: true }, V);
     expect(read.agents).toHaveLength(agentsOf(LAST).length);
     expect(read.agents[0]).toMatchObject({
       activity: "unknown",
@@ -94,11 +108,11 @@ describe("[A5.agents.monitor-lines] TTAM's lines read into TTasks's snapshot", (
         (accountsOf({ snapshot: s })[0] ?? {})["status"] = null;
       },
       (s) => {
-        s["schema_version"] = 5;
+        s["schema_version"] = V - 1;
       },
     ];
     for (const change of broken) {
-      expect(() => readSnapshot(changed(LAST, change), 4)).toThrow(ShapeError);
+      expect(() => readSnapshot(changed(LAST, change), V)).toThrow(ShapeError);
     }
   });
 
@@ -110,7 +124,7 @@ describe("[A5.agents.monitor-lines] TTAM's lines read into TTasks's snapshot", (
       Object.assign(b ?? {}, { started_at_ms: captured + 9_000, last_activity_ms: null });
       Object.assign(c ?? {}, { started_at_ms: null });
     });
-    const [a, b, c] = readSnapshot(line, 4).agents;
+    const [a, b, c] = readSnapshot(line, V).agents;
     expect(a).toMatchObject({ ageMs: 5_000, quietMs: 1 });
     expect(b).toMatchObject({ ageMs: 0, quietMs: null });
     expect(c?.ageMs).toBeNull();
@@ -118,10 +132,58 @@ describe("[A5.agents.monitor-lines] TTAM's lines read into TTasks's snapshot", (
 
   test("a line is read by its type; one that is no JSON object is no line", () => {
     expect(
-      readLine('{"type":"hello","version":"1","build":null,"schema_version":4,"query_version":1}'),
-    ).toMatchObject({ type: "hello", schemaVersion: 4, queryVersion: 1, build: { version: "1" } });
+      readLine(
+        `{"type":"hello","version":"1","build":null,"schema_version":${String(V)},"query_version":${String(MONITOR_QUERY_VERSION)}}`,
+      ),
+    ).toMatchObject({
+      type: "hello",
+      schemaVersion: V,
+      queryVersion: MONITOR_QUERY_VERSION,
+      build: { version: "1" },
+    });
+    expect(readLine('{"id":1,"type":"waiting","subject":"codex:codex","since_ms":1}')).toEqual({
+      type: "other",
+    });
     expect(readLine('{"type":"later","x":1}')).toEqual({ type: "other" });
     expect(readLine("not json")).toBeUndefined();
     expect(readLine("[1,2]")).toBeUndefined();
+  });
+
+  test("a home TTAM could not look at reads as not there, and the snapshot stays whole", () => {
+    const line = changed(LAST, (s) => {
+      const [home] = s["homes"] as Obj[];
+      Object.assign(home ?? {}, { present: null });
+    });
+    const read = readSnapshot(line, V);
+    expect(read.homes[0]?.present).toBe(false);
+    expect(read.agents).toHaveLength(agentsOf(LAST).length);
+  });
+
+  test("an account says why it has no fresh reading, when TTAM asks again, and whom it shares", () => {
+    const line = changed(LAST, (s) => {
+      const captured = s["captured_at_ms"] as number;
+      const [a, b] = s["account_usage"] as Obj[];
+      Object.assign((a?.["status"] ?? {}) as Obj, {
+        error: "The service turned the request away.",
+        retry_at_ms: captured + 30_000,
+        unavailable: null,
+      });
+      Object.assign(a ?? {}, { same_account: a?.["home_id"] });
+      Object.assign(b ?? {}, { same_account: a?.["home_id"] });
+      Object.assign((b?.["status"] ?? {}) as Obj, {
+        error: null,
+        retry_at_ms: null,
+        unavailable: "API key sign-in.",
+      });
+    });
+    const [a, b] = readSnapshot(line, V).accounts;
+    expect(a).toMatchObject({
+      failed: "The service turned the request away.",
+      retryInMs: 30_000,
+      unavailable: null,
+      sameAccount: a?.homeId,
+    });
+    expect(b).toMatchObject({ failed: null, retryInMs: null, unavailable: "API key sign-in." });
+    expect(b?.sameAccount).toBe(a?.homeId);
   });
 });
