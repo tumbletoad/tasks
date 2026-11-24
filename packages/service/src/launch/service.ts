@@ -760,9 +760,7 @@ export class LaunchService {
     if (choice.route === "terminal" && instance !== undefined) {
       const agent = agentHomeOf(instance, this.#options.home, platform);
       const elsewhere =
-        agent === undefined
-          ? undefined
-          : this.#options.registeredElsewhere?.(agent, space);
+        agent === undefined ? undefined : this.#options.registeredElsewhere?.(agent, space);
       if (elsewhere !== undefined) {
         this.#log("launch.unavailable", "other_space");
         throw new LaunchUnavailable(
