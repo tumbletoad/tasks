@@ -467,8 +467,9 @@ function listText({ shown, more }: ShortList, name: (item: string) => string | M
 
 /**
  * The toast of a change of the effort levels undone or redone, composed of what it wrote and
- * nothing else: the levels, the sizes put back, the sizes others' newer work kept, the tasks left
- * off the levels. One that wrote nothing says so and offers nothing to take back.
+ * nothing else: the levels, the sizes put back, the sizes others' newer work kept, and whenever
+ * the answer names them, the tasks left off the levels. One that wrote nothing says so and offers
+ * nothing to take back.
  */
 function levelsToast(
   kind: "undo" | "redo",
@@ -482,24 +483,23 @@ function levelsToast(
   const unresolved =
     (result as { unresolved?: readonly { entity: string; field: string; by: string }[] })
       .unresolved ?? [];
-  // The list held by someone else's later change: none of the step came back, and it is gone.
+  const offList = result.off_list ?? [];
+  const off = {
+    count: offList.reduce((n, o) => n + o.count, 0),
+    tasks: offList.flatMap((o) => o.tasks).join(", "),
+  };
+  // The list held by someone else's later change: none of the step came back.
   const list = unresolved.find((u) => u.entity === "preferences");
   if (list !== undefined) {
-    return { kind: "error", text: { id: "toast.levelsNotUndone", values: whoOf(list.by) } };
+    const values = { ...whoOf(list.by), ...off };
+    return { kind: "error", text: { id: "toast.levelsNotUndone", values } };
   }
   const newer = unresolved.filter((u) => u.field === "effort").length;
   const { levels } = result;
   if (levels === undefined || (!levels.list && levels.tasks === 0)) {
-    return { kind: "info", text: { id: "toast.levelsNothing", values: { kind, newer } } };
+    return { kind: "info", text: { id: "toast.levelsNothing", values: { kind, newer, ...off } } };
   }
-  const off = result.off_list ?? [];
-  const values = {
-    kind,
-    list: levels.list ? "yes" : "no",
-    newer,
-    count: off.reduce((n, o) => n + o.count, 0),
-    tasks: off.flatMap((o) => o.tasks).join(", "),
-  };
+  const values = { kind, list: levels.list ? "yes" : "no", newer, ...off };
   return { kind: "undo", text: { id: "toast.levels", values }, action };
 }
 
@@ -1209,20 +1209,21 @@ export class Edits {
           void this.undo(result.commit);
         },
       } as const;
-      if (passed.length === 0 && result.levels !== undefined) {
-        say(levelsToast("redo", result, undo));
-        return;
-      }
-      say({
-        kind: "undo",
-        text:
-          passed.length === 0
-            ? { id: "toast.redone" }
-            : newer === undefined
-              ? { id: "toast.redonePassedOwn" }
-              : { id: "toast.redonePassed", values: newer },
-        action: undo,
-      });
+      const redone: Omit<Toast, "key"> =
+        result.levels === undefined
+          ? { kind: "undo", text: { id: "toast.redone" }, action: undo }
+          : levelsToast("redo", result, undo);
+      say(
+        passed.length === 0
+          ? redone
+          : {
+              ...redone,
+              text:
+                newer === undefined
+                  ? { id: "toast.redonePassedOwn", values: { redone: redone.text } }
+                  : { id: "toast.redonePassed", values: { ...newer, redone: redone.text } },
+            },
+      );
     });
   }
 

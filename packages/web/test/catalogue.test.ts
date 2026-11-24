@@ -134,6 +134,7 @@ const SAMPLE = {
   tasks: "LUM-212 and LUM-214",
   list: "yes",
   newer: 1,
+  redone: "Redone",
   home: "~/.codex",
   timed: "yes",
   described: "yes",

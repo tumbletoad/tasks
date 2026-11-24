@@ -606,12 +606,17 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       // A change of the levels: what the step wrote says what was undone or redone, nothing else.
       const levels = result["levels"] as { list: boolean; tasks: number } | undefined;
       const again = result["result"] === "redone" ? "redo" : "undo";
+      const sizes = `the size${levels?.tasks === 1 ? "" : "s"} of ${tasksText(levels?.tasks ?? 0)}`;
       const said =
         levels === undefined
           ? `${done}${which}`
-          : levels.list || levels.tasks > 0
+          : levels.list
             ? `${again === "redo" ? "Redid" : "Undid"} your change to the effort levels${levels.tasks > 0 ? ` and ${tasksText(levels.tasks)}` : ""}`
-            : `Nothing of your change to the effort levels was left to ${again}`;
+            : levels.tasks > 0
+              ? again === "redo"
+                ? `Changed ${sizes} again`
+                : `Put back ${sizes}`
+              : `Nothing of your change to the effort levels was left to ${again}`;
       lines.push(`${said} in ${space}${replay(result)}`, ...levelsReport(result));
       const kept = (result["unresolved"] as Result[] | undefined) ?? [];
       // What a partial undo left, or the older changes a redo passed over: who changed what since.

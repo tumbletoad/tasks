@@ -1622,6 +1622,43 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
     expect(w.lastToast()?.action).toBeUndefined();
   });
 
+  test("a redo of an undo that wrote nothing says nothing was redone, and names the tasks off the levels", async () => {
+    const w = new World([task(1)]);
+    w.answer("history.redo", () => ({
+      result: "redone",
+      commit: "op_l",
+      tasks: [],
+      task_count: 0,
+      levels: { list: false, tasks: 0 },
+      off_list: [{ effort: "Medium", tasks: ["M-2"], count: 1 }],
+      as_of: w.asOf(12),
+    }));
+    await w.edits.redo();
+    expect(said(w.lastToast()?.text)).toBe(
+      "Nothing of the change of the effort levels was left to redo. 1 task is on a size that is not a level now: M-2",
+    );
+    expect(w.lastToast()?.action).toBeUndefined();
+  });
+
+  test("a redo that passed over an older change says what the change of levels it redid wrote", async () => {
+    const w = new World([task(1)]);
+    w.answer("history.redo", () => ({
+      result: "redone",
+      commit: "op_l",
+      tasks: ["M-2"],
+      task_count: 1,
+      levels: { list: false, tasks: 1 },
+      as_of: w.asOf(12),
+      passed_over: [`op_${"11".padStart(26, "0")}`],
+      newer_work: [{ task: "M-1", by: "Codex · work", at: "2026-11-12T10:42:00.000Z" }],
+    }));
+    await w.edits.redo();
+    expect(said(w.lastToast()?.text)).toBe(
+      "Sizes changed again. Not redone: Codex · work changed M-1 since",
+    );
+    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.undo" });
+  });
+
   test("a size kept unsent is not sent again, by its line or its toast, once the levels changed", async () => {
     const w = new World([task(1)]);
     w.answer("task.update", () => {
@@ -1666,6 +1703,7 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
       tasks: [],
       task_count: 0,
       levels: { list: false, tasks: 0 },
+      off_list: [{ effort: "Medium", tasks: ["M-2"], count: 1 }],
       as_of: w.asOf(14),
       unresolved: [list],
     }));
@@ -1676,7 +1714,7 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
       input: { partial: true, commit: step },
     });
     expect(said(w.lastToast()?.text)).toBe(
-      "Not undone: someone else changed the effort levels since. Undo the rest took that change off your undo stack: it cannot be redone, and the levels stay as they are",
+      "Not undone: someone else changed the effort levels since, and the levels stay as they are. 1 task is on a size that is not a level now: M-2",
     );
     expect(w.lastToast()?.action).toBeUndefined();
   });
