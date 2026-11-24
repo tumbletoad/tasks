@@ -277,38 +277,13 @@ const groupPlaces = (kind: "area" | "project"): Child => ({
   column: "deleted_at",
 });
 
-/** A group's tasks: a task in it that another commit created or moved there keeps it. */
-const groupTasks = (column: "area_id" | "project_id"): Child => ({
-  entity: "tasks",
-  key: "id",
-  task: "id",
-  parent: column,
-  where: "",
-  fields: TASK_FIELDS,
-  field: "deleted",
-  column: "deleted_at",
-});
-
-/** An area's tasks, projects and places, and a project's tasks and places (A7 3.15.5). */
-const AREA_CHILDREN: readonly Child[] = [
-  groupTasks("area_id"),
-  {
-    entity: "projects",
-    key: "id",
-    task: "NULL",
-    parent: "area_id",
-    where: "",
-    fields: CHILD_FIELDS.projects,
-    field: "deleted",
-    column: "deleted_at",
-  },
-  groupPlaces("area"),
-];
-const PROJECT_CHILDREN: readonly Child[] = [
-  groupTasks("project_id"),
-  groupPlaces("project"),
-  folderChild("project", "NULL"),
-];
+/**
+ * An area's places, and a project's places and folders (A7 3.15.5). What is filed in a group, its
+ * tasks and an area's projects, is decided on the state the inversion makes (groupRules): the same
+ * undo may move it out.
+ */
+const AREA_CHILDREN: readonly Child[] = [groupPlaces("area")];
+const PROJECT_CHILDREN: readonly Child[] = [groupPlaces("project"), folderChild("project", "NULL")];
 
 const CHILDREN: Readonly<Partial<Record<InvertibleEntity, readonly Child[]>>> = {
   tasks: TASK_CHILDREN,

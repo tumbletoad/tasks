@@ -273,6 +273,32 @@ const GROUP_CASES: readonly (readonly Step[])[] = [
     { kind: "restore", who: "human", p: 0 },
     { kind: "move", who: "human", t: 0, p: 0 },
   ],
+  // A step that files a new area and moves a project into it is undone whole: the same undo moves
+  // the project out (seed -377774187, path "1281:1:0:0:1:2:2:2:4:4:4:5:4:4:4:4:4:4").
+  [
+    {
+      kind: "batch",
+      who: "human",
+      m: 0,
+      steps: [
+        { kind: "file", who: "human" },
+        { kind: "move", who: "human", t: 0, p: 0 },
+        { kind: "regroup", who: "human", p: 0, a: 2 },
+      ],
+    },
+    { kind: "undo", partial: false },
+    { kind: "redo" },
+    { kind: "undo", partial: false },
+  ],
+  // A redo after a later step's create was undone gives back its own commit; the later rows stay
+  // out of sight (seed -147665983, path "2153:2:0:1:3:3:3:5:7:10:11:10:10:10:10:10:10:10:10").
+  [
+    { kind: "project_set", who: "human", m: 0, p: 0, path: 0, carry: [] },
+    { kind: "file", who: "human" },
+    { kind: "undo", partial: false },
+    { kind: "undo", partial: false },
+    { kind: "redo" },
+  ],
   // One request that deletes an empty project and sets its folder: refused, the project named.
   [
     { kind: "project_set", who: "human", m: 0, p: 2, path: 0, carry: [] },
@@ -430,10 +456,10 @@ function expectedMove(path: string, from: string, to: string, os: FolderOs): str
 }
 
 /**
- * The space as an undo of a commit gives it back: the rows the commit created are out of sight
- * (an undone create keeps its row), and the others are as they were.
+ * The space as an undo or a redo gives `was` back: rows created since are out of sight (an undone
+ * create keeps its row), and the others are as they were.
  */
-function undoneTo(now: Snapshot, was: Snapshot): Snapshot {
+function backTo(now: Snapshot, was: Snapshot): Snapshot {
   const old = (id: string): boolean => Object.hasOwn(was.tasks, id);
   const made = Object.keys(now.tasks).filter((id) => !old(id));
   expect(
@@ -649,7 +675,7 @@ async function run(steps: readonly Step[]): Promise<void> {
             const entry = done.pop();
             if (entry !== undefined) {
               if (whole && entry.clean) {
-                expect(undoneTo(snapshot(w), entry.before), "an undo gives back the space").toEqual(
+                expect(backTo(snapshot(w), entry.before), "an undo gives back the space").toEqual(
                   entry.before,
                 );
               }
@@ -660,7 +686,9 @@ async function run(steps: readonly Step[]): Promise<void> {
             const entry = undone.shift();
             if (entry !== undefined) {
               if (entry.clean)
-                expect(snapshot(w), "a redo gives back the commit").toEqual(entry.after);
+                expect(backTo(snapshot(w), entry.after), "a redo gives back the commit").toEqual(
+                  entry.after,
+                );
               done.push(entry);
             }
           }

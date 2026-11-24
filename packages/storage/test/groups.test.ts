@@ -3,6 +3,7 @@
 // text only, in a temporary space.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { SqlValue } from "../src/driver.ts";
+import { newId } from "../src/ids.ts";
 import { openSpace } from "../src/space.ts";
 import type { Operation, WriteRequest, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
@@ -258,6 +259,30 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     // A restore whose slug a new project took meanwhile is refused, and changes nothing.
     created(submit([{ kind: "project.create", title: "Spare" }]));
     expectStatus(submit([{ kind: "project.restore", project: empty }]), "rejected");
+  });
+
+  test("a step that makes a group and files what was there into it is undone whole: the undo moves it out", () => {
+    const task = created(submit([{ kind: "task.create", title: "Dig" }], "codex"));
+    const area = newId("a");
+    const project = newId("p");
+    expectStatus(
+      submit([
+        { kind: "area.create", id: area, title: "Garden" },
+        { kind: "project.move", project: fx.project, area },
+        { kind: "project.create", id: project, title: "Beds", area },
+        { kind: "task.move", task, project },
+      ]),
+      "applied",
+    );
+    expectStatus(undo(), "applied");
+    expect([
+      row("areas", area)["deleted_at"],
+      row("projects", project)["deleted_at"],
+    ]).not.toContain(null);
+    expect(row("projects", fx.project)["area_id"]).toBe(fx.areas.lumen);
+    expect(
+      fx.reader.prepare("SELECT project_id FROM tasks WHERE id = $id").get({ id: task }),
+    ).toEqual({ project_id: null });
   });
 
   test("a project restored after its area is gone comes back without an area, with its tasks", () => {
