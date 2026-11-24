@@ -1023,7 +1023,8 @@ export async function survey(input: SetupInput): Promise<HomeView[]> {
     r.app === h.app && samePath(platform, r.home, h.home);
   const found = discover(input);
   const homes = await agentHomes(input, found);
-  for (const record of records) {
+  // Every record names a home to show, also one whose folder is no longer found.
+  for (const record of all) {
     if (!homes.some((h) => ofHome(h)(record))) homes.push(await homeOfRecord(input, found, record));
   }
   for (const row of input.rows ?? []) {
@@ -1369,6 +1370,19 @@ export function toolsOf(
 }
 
 /**
+ * Whether an apply renews a file's home's row: the file is set up and its tools start, and the
+ * service said its access is live. Without the service nothing is offered.
+ */
+export function renews(input: SetupInput, view: HomeView, space: string): boolean {
+  return (
+    view.state === "registered" &&
+    view.record !== undefined &&
+    accessOf(input, view.home) === "live" &&
+    toolsOf(input, view, space).why === undefined
+  );
+}
+
+/**
  * The program an entry in the file runs: an absolute path as a file, a name alone on the PATH of
  * the person's environment. Setup's own entry running an install that is there but is not this one
  * is `older`; one naming a path that is not there, other than where TTasks is installed now, is
@@ -1536,9 +1550,11 @@ export function planToken(
 //
 // Each settings file of a home goes through these by itself, with its own record. Only the apply
 // that finds the home's access off asks for it, and only that apply takes it back when its file
-// fails: its record says so (`gives_access`) before it asks. An apply that finds the access live
-// writes a file without touching it. Turning a home off takes its access back first, then each
-// file's entry. A record that is not `applied` is finished by the next setup run as a removal.
+// fails: its record says so (`gives_access`) before it asks, and says it no more once that one
+// revoke is done (`spent`). An apply that finds the access live writes a file without touching it.
+// Nothing grants while a record of the home still owes its revoke (`owesRevoke`). Turning a home
+// off takes its access back first, then each file's entry. A record that is not `applied` is
+// finished by the next setup run as a removal.
 
 /**
  * Puts a file's record in place of the one it has. `agents.json` keeps one record per home, its
@@ -1790,7 +1806,7 @@ async function writeEntry(
       account: home.account,
       space,
       state: "applying",
-      ...(gives ? { gives_access: true as const } : {}),
+      gives_access: gives,
       entry: change.entry,
       also: replacing === undefined ? [] : [replacing.entry, ...replacing.also],
       made: {
@@ -1930,12 +1946,29 @@ async function undo(
   const off = gave ? await revoked(access, home) : true;
   const failed = (note: string): Outcome => ({ home, result: "failed", reason, notes: [note] });
   if (!off) return { outcome: failed("undo_failed"), access: "unknown" };
+  // No revoke is owed any more: what is left is the entry, whenever it can be taken out.
+  const done = spent(removing);
+  try {
+    putRecord(input, home, done);
+  } catch {
+    // Left marked: the next run revokes once more before anything grants, which changes nothing.
+  }
   const settled = gave ? { access: "off" as const } : {};
   if (!readable) return { outcome: failed("undo_failed"), ...settled };
-  const out = await takeOut(input, home, removing);
+  const out = await takeOut(input, home, done);
   const note = out.kept === "own" ? "undo_failed" : out.kept === "edited" ? "entry_left" : "undone";
   return { outcome: failed(note), ...settled };
 }
+
+/** A record whose revoke is done, or was never owed: it takes nothing back from now on. */
+const spent = (record: HomeRecord): HomeRecord => ({ ...record, gives_access: false });
+
+/**
+ * Whether a record may still take its home's access back: one pending with the mark, or an earlier
+ * build's pending record, which has none. Nothing grants for the home until it is settled.
+ */
+const owesRevoke = (record: HomeRecord | undefined): boolean =>
+  record !== undefined && record.state !== "applied" && record.gives_access !== false;
 
 /**
  * Gives a file's intact entry its home's access back (the answer's `grant`): complete once the
@@ -1970,8 +2003,11 @@ async function grantBack(
  * another, whatever the one before did, and does nothing an answer does not offer. The home's
  * access is asked for first: off, the first file that turns the tools on asks for it (putEntry);
  * live, each file is added or repaired without touching it; unknown, nothing that needs it is
- * done. An apply that turns nothing on renews the live row once, for the space the home's entries
- * name, so it names the home's account and hosts as they are now. `items` are one home's
+ * done. While a record of the home still owes its revoke (a run that ended midway, whose revoke
+ * was not confirmed), nothing is turned on: what it gave would be taken back with it. An apply that
+ * turns nothing on renews the live row once, for the space the home's entries name, so it names
+ * the home's account and hosts as they are now. Each file's result is judged by the access as it
+ * is when that file's turn comes. `items` are one home's
  * files from planOf, the first first. Each outcome says the home's access as the service says it
  * after the last file.
  */
@@ -1988,6 +2024,7 @@ export async function applyFiles(
   const outcomes: Outcome[] = [];
   const renewed: number[] = [];
   let turned = false;
+  const owed = items.some(({ view }) => owesRevoke(view.record));
   for (const { view, change } of items) {
     const refusal = typeof change === "string" ? change : undefined;
     const answer = toolsOf(input, view, space, refusal, state);
@@ -1998,7 +2035,9 @@ export async function applyFiles(
     });
     let step: Step;
     if (answer.on !== undefined) turned = true;
-    if (answer.on === "add" || answer.on === "repair") {
+    if (answer.on !== undefined && owed) {
+      step = { outcome: left("interrupted") };
+    } else if (answer.on === "add" || answer.on === "repair") {
       const planned =
         answer.on === "repair"
           ? repairOf(input, view, space)
@@ -2016,13 +2055,9 @@ export async function applyFiles(
         state === "live"
           ? { outcome: { home: view.home, result: "unchanged" } }
           : await grantBack(input, view, view.record, access);
-    } else if (
-      view.state === "registered" &&
-      answer.why === undefined &&
-      start.state === "live" &&
-      view.record !== undefined
-    ) {
-      renewed.push(outcomes.length);
+    } else if (view.state === "registered" && answer.why === undefined && state === "live") {
+      // On as it stands: renewed below when the access was live from the start.
+      if (start.state === "live" && view.record !== undefined) renewed.push(outcomes.length);
       step = { outcome: { home: view.home, result: "unchanged" } };
     } else {
       step = { outcome: left() };
@@ -2031,7 +2066,7 @@ export async function applyFiles(
     if (step.access !== undefined) state = step.access;
   }
   const first = renewed[0];
-  if (first !== undefined && !turned) {
+  if (first !== undefined && !turned && !owed) {
     const record = items[first]?.view.record;
     try {
       await access.grant(home, home.space ?? record?.space ?? space);
@@ -2097,8 +2132,9 @@ export async function removeHome(
 }
 
 /**
- * One file's part of turning its home off, once the home's access is off: the record says
- * `removing`, then the entry comes out while it is still setup's own (takeOut). Without its record
+ * One file's part of turning its home off, once the home's access is off or owed no revoke: the
+ * record says `removing` and that nothing is left to revoke, then the entry comes out while it is
+ * still setup's own (takeOut). Without its record
  * setup changes nothing there, and says what stays: an entry of TTasks's name it has no record of
  * is the person's. A record that cannot be written leaves the entry in its file.
  */
@@ -2113,8 +2149,8 @@ async function takeBack(input: SetupInput, view: HomeView): Promise<Outcome> {
     }
     return { home, result: "unchanged", reason: "not_registered" };
   }
-  const removing = { ...record, state: "removing" as const };
-  if (record.state !== "removing") {
+  const removing = spent({ ...record, state: "removing" });
+  if (record.state !== "removing" || record.gives_access !== false) {
     try {
       putRecord(input, home, removing);
     } catch {
@@ -2206,7 +2242,8 @@ export async function settleHomes(input: SetupInput, access: Access): Promise<Ou
   const outcomes: Outcome[] = [];
   for (const record of pending) {
     const home = await homeOfRecord(input, found, record);
-    if (record.gives_access === true && !(await revoked(access, home))) {
+    // An earlier build's pending record has no mark: settled as that build does, with the revoke.
+    if (owesRevoke(record) && !(await revoked(access, home))) {
       outcomes.push({ home, result: "failed", reason: "revoke_failed", access: "unknown" });
       continue;
     }

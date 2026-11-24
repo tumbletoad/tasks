@@ -52,10 +52,12 @@ export interface HomeRecord {
    */
   readonly state: "applying" | "applied" | "removing";
   /**
-   * The apply that wrote this record found the home's access off and asks for it: only such a
-   * record takes the access back when its apply fails or a run that ended midway is settled.
+   * Whether this record may take the home's access back, once, when its apply fails or a run that
+   * ended midway is settled. `true`: its apply found the access off and asks for it. `false`: its
+   * apply attached to access that was there, or its one revoke is done; it takes nothing back.
+   * Absent: an earlier build's record, which is settled as that build settles it, with the revoke.
    */
-  readonly gives_access?: true;
+  readonly gives_access?: boolean;
   /** The entry TTasks writes there, as it intended it: never what it read back. */
   readonly entry: Readonly<Record<string, unknown>>;
   /** Other entries that are TTasks's own there: what an earlier build's writers left midway. */
@@ -135,7 +137,7 @@ function isRecord(value: unknown): value is HomeRecord {
     typeof made["parent"] === "boolean" &&
     (made["spacing"] === null || text(made["spacing"])) &&
     (made["ended"] === undefined || text(made["ended"])) &&
-    (value["gives_access"] === undefined || value["gives_access"] === true)
+    (value["gives_access"] === undefined || typeof value["gives_access"] === "boolean")
   );
 }
 
@@ -248,6 +250,19 @@ export function readStateFile(path: string): unknown {
   } catch {
     throw new SetupStateInvalid();
   }
+}
+
+/** Each of setup's record files that is there and cannot be read, by its full path. */
+export function unreadableRecords(stateDir: string): string[] {
+  return [SETUP_FILE, FURTHER_FILE].flatMap((file) => {
+    try {
+      readRecords(stateDir, file);
+      return [];
+    } catch (error) {
+      if (error instanceof SetupStateInvalid) return [join(setupDir(stateDir), file)];
+      throw error;
+    }
+  });
 }
 
 /** Replaces setup's record. The folder is made user-only, and one others can change is refused. */

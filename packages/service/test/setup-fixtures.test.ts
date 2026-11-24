@@ -768,15 +768,19 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         const withEntry = readFileSync(file);
 
         // Ended after the entry was written, before its access, and after its access, before the
-        // record said so, in an apply that asked for the access: the entry comes out and the access
-        // is off. The person turns it on again.
-        for (const granted of [false, true]) {
+        // record said so: the entry comes out and the access is off. The person turns it on again.
+        // The record is as an earlier build writes it, without the mark: settled as that build
+        // does, with the revoke; this build's own marked record is settled the same way.
+        expect(record).not.toHaveProperty("gives_access");
+        for (const [granted, mark] of [
+          [false, {}],
+          [true, {}],
+          [true, { gives_access: true }],
+        ] as const) {
           writeFileSync(file, withEntry);
           await w.rows.revoke((await viewOf(w, a)).home);
           if (granted) await w.rows.grant((await viewOf(w, a)).home, SPACE);
-          writeRecords(w.input.stateDir, [
-            { ...record, state: "applying", gives_access: true, grant: null },
-          ]);
+          writeRecords(w.input.stateDir, [{ ...record, state: "applying", grant: null, ...mark }]);
           const asked = w.rows.asked.length;
           expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
             { result: "removed", access: "off" },
@@ -788,11 +792,13 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           expect(await settleHomes(w.input, w.rows)).toEqual([]);
         }
 
-        // The same in an apply that found the access live and did not ask for it: the entry comes
-        // out, and the access it did not give stays.
+        // The same in an apply that found the access live and attached to it: the entry comes out,
+        // and the access it did not give stays.
         writeFileSync(file, withEntry);
         await w.rows.grant((await viewOf(w, a)).home, SPACE);
-        writeRecords(w.input.stateDir, [{ ...record, state: "applying", grant: null }]);
+        writeRecords(w.input.stateDir, [
+          { ...record, state: "applying", gives_access: false, grant: null },
+        ]);
         const asked = w.rows.asked.length;
         expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
           { result: "removed", access: "on" },
@@ -909,15 +915,18 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             reason: "grant_failed",
             access: "off",
           });
-          expect(readRecords(w.input.stateDir), a.app).toMatchObject([{ state: "removing" }]);
-          // The next run, which may be another app's: it takes the access back, never gives it.
+          // Its one revoke is done: the record is kept for the entry only.
+          expect(readRecords(w.input.stateDir), a.app).toMatchObject([
+            { state: "removing", gives_access: false },
+          ]);
+          // The next run, which may be another app's: it never gives the access, nor revokes again.
           rows.refuse = {};
           const asked = rows.asked.length;
           await settleHomes(w.input, rows);
           expect(
             rows.asked.slice(asked).map((x) => x.verb),
             a.app,
-          ).toEqual(["revoke"]);
+          ).toEqual([]);
           expect(rows.live, a.app).toEqual([]);
         } finally {
           restore();
@@ -2095,7 +2104,7 @@ describe("[A3.3.13.setup.cuts] What a run cut between two of its steps leaves: w
       for (const written of [false, true]) {
         const w = await world();
         const { inner } = await bothOn(w);
-        rewriteRecord(w, inner, (r) => ({ ...r, state: "applying" }));
+        rewriteRecord(w, inner, (r) => ({ ...r, state: "applying", gives_access: false }));
         if (!written) seed(inner, "{}\n");
         const seen = await answers(w);
         expect(seen[1]?.answer, String(written)).toEqual(
@@ -2120,7 +2129,7 @@ describe("[A3.3.13.setup.cuts] What a run cut between two of its steps leaves: w
     async () => {
       const w = await world();
       const { inner } = await bothOn(w);
-      rewriteRecord(w, inner, (r) => ({ ...r, state: "applying" }));
+      rewriteRecord(w, inner, (r) => ({ ...r, state: "applying", gives_access: false }));
       editEntry(inner);
       expect((await answers(w))[1]?.answer).toMatchObject({ why: "foreign_entry" });
       expect((await answers(w))[1]?.answer.on).toBeUndefined();
@@ -2131,7 +2140,7 @@ describe("[A3.3.13.setup.cuts] What a run cut between two of its steps leaves: w
 
       const v = await world();
       const two = await bothOn(v);
-      rewriteRecord(v, two.inner, (r) => ({ ...r, state: "applying" }));
+      rewriteRecord(v, two.inner, (r) => ({ ...r, state: "applying", gives_access: false }));
       const broken = `${readFileSync(two.inner, "utf8")},`;
       writeFileSync(two.inner, broken);
       expect((await answers(v))[1]?.answer).toEqual({
@@ -2220,6 +2229,7 @@ describe("[A3.3.13.setup.cuts] What a run cut between two of its steps leaves: w
       rewriteRecord(w, plain, (r) => ({
         ...r,
         state: "applying",
+        gives_access: false,
         entry: { ...r.entry, command: join(w.dir, "new", basename(w.input.tasks)) },
         also: [r.entry],
       }));
@@ -2494,6 +2504,183 @@ describe("[A3.3.13.setup.plan-bound] A plan is bound to what its apply writes an
         expect(w.rows.asked, a.app).toEqual([]);
         expect(w.rows.live, a.app).toEqual([]);
       }
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.access-rule] A mark is one revoke: once it is done the record takes nothing back, an earlier build's pending record is settled with its revoke, and nothing turns on while a revoke is owed", () => {
+  test(
+    "a marked add cut after its grant, its file then unreadable: settling revokes once and spends the mark, so the access the other file gets later is never taken by the next settling (pull request 193's first review, point 1)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      // The plain file not set up; the inner file's add cut right after the service gave it the
+      // access: pending and marked, the row live. Then the inner file cannot be read.
+      seed(plain, "{}\n");
+      writeRecords(w.input.stateDir, []);
+      rewriteRecord(w, inner, (r) => ({ ...r, state: "applying", gives_access: true }));
+      writeFileSync(inner, `${readFileSync(inner, "utf8")},`);
+      w.rows.asked.length = 0;
+      expect(await settleHomes(live(w), w.rows)).toMatchObject([
+        { result: "left", reason: "invalid_file", kept: "own", access: "off" },
+      ]);
+      expect(furtherRecords(w)).toMatchObject([{ state: "removing", gives_access: false }]);
+      // The plain file is turned on: it asks for the access, and gets it.
+      expect(await turnOn(w)).toMatchObject([
+        { result: "applied", access: "on" },
+        { result: "left", reason: "invalid_file", access: "on" },
+      ]);
+      // An unrelated run settles again: the inner file is still owed its cleanup, never a revoke.
+      expect(await settleHomes(live(w), w.rows)).toMatchObject([
+        { result: "left", reason: "invalid_file", access: "on" },
+      ]);
+      expect(w.rows.asked.map((x) => x.verb)).toEqual(["revoke", "grant"]);
+      expect(w.rows.live).toHaveLength(1);
+      expect(homeAnswer(await answers(w)).status).toBe("on");
+    },
+    SLOW,
+  );
+
+  test(
+    "a failed add whose revoke is done keeps its record only for the entry: a later settling takes the entry out without a revoke",
+    async () => {
+      const w = await world();
+      const { plain } = twoFiles(w);
+      seed(plain, "{}\n");
+      // The service refuses the row, and the file cannot be written for the undo.
+      let restore = (): void => undefined;
+      const rows = keptRows((verb) => {
+        if (verb === "grant") restore = unwritable(plain);
+      });
+      rows.refuse.grant = "grant_failed";
+      try {
+        await turnOn(w, rows, { ...w.input, rows: rows.live });
+        expect(readRecords(w.input.stateDir)).toMatchObject([
+          { state: "removing", gives_access: false },
+        ]);
+      } finally {
+        restore();
+      }
+      rows.refuse = {};
+      rows.asked.length = 0;
+      await settleHomes(w.input, rows);
+      expect(rows.asked).toEqual([]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+    },
+    SLOW,
+  );
+
+  test(
+    "nothing turns on while a record of the home still owes its revoke: one not confirmed leaves the other file off, and asks for no access",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      seed(plain, "{}\n");
+      writeRecords(w.input.stateDir, []);
+      rewriteRecord(w, inner, (r) => ({ ...r, state: "applying", gives_access: true }));
+      w.rows.refuse.revoke = true;
+      expect(await settleHomes(live(w), w.rows)).toMatchObject([
+        { result: "failed", reason: "revoke_failed" },
+      ]);
+      w.rows.asked.length = 0;
+      expect(await turnOn(w)).toMatchObject([
+        { result: "left", reason: "interrupted" },
+        { result: "left" },
+      ]);
+      expect(w.rows.asked).toEqual([]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+    },
+    SLOW,
+  );
+
+  test(
+    "each file's result is the access as it is when its turn comes: two intact entries given their access back are both on, as is a second one after the first was added (point 6)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      const home = (await filesOf(w))[0]?.home ?? missingHome();
+      await w.rows.revoke(home);
+      expect(await turnOn(w)).toMatchObject([
+        { result: "unchanged", access: "on" },
+        { result: "unchanged", access: "on" },
+      ]);
+      // After a rollback's Off: the first file needs its entry, the second keeps its own.
+      await w.rows.revoke(home);
+      seed(plain, "{}\n");
+      writeRecords(w.input.stateDir, []);
+      expect(await turnOn(w)).toMatchObject([
+        { result: "applied", access: "on" },
+        { result: "unchanged", access: "on" },
+      ]);
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.home-files] Every record names a home to show: a recorded entry whose folder is gone, or whose record an earlier build left in the further file, is shown and taken out by Off", () => {
+  test(
+    "the inner file first and the plain one further: an earlier build's Off took the inner entry out, then the folder was renamed; the plain file's entry and record are shown, and Off takes them out (point 5)",
+    async () => {
+      const w = await world();
+      const { folder, plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      // The earlier build's Off: the access taken away, the inner entry and its record gone; the
+      // plain file's record where that build does not look. Then the folder renamed.
+      const [first] = readRecords(w.input.stateDir);
+      if (first === undefined) throw new Error("no record");
+      await w.rows.revoke((await filesOf(w))[0]?.home ?? missingHome());
+      writeRecords(w.input.stateDir, []);
+      writeRecords(w.input.stateDir, [first], FURTHER_FILE);
+      rmSync(inner);
+      renameSync(folder, `${folder}-moved`);
+      // The next start looks for the homes again.
+      const now = live(w, {
+        ...w.input,
+        detection: await detect(nodeDetectHost({ env: w.input.env, home: w.home })),
+      });
+      const views = await filesOf(w, now);
+      expect(views.map((v) => [v.home.file, v.state])).toEqual([[plain, "registered"]]);
+      expect(toolsOf(now, views[0] as HomeView, "").off).toBe(true);
+      expect(await turnOff(w, w.rows, now)).toMatchObject([{ result: "removed", access: "off" }]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+      expect(furtherRecords(w)).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a limit stated, its second half true: after two rollbacks with a change of how Claude Code is started, both records may be in the further file; this build shows the home, offers Off with the access off, and Off takes both entries out (point 4)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      const before = [bytesOf(plain), bytesOf(inner)];
+      await turnOn(w);
+      const records = [...readRecords(w.input.stateDir), ...furtherRecords(w)];
+      writeRecords(w.input.stateDir, []);
+      writeRecords(w.input.stateDir, records, FURTHER_FILE);
+      await w.rows.revoke((await filesOf(w))[0]?.home ?? missingHome());
+      const seen = await answers(w);
+      expect(seen.map((s) => s.answer)).toEqual([
+        { status: "off", why: "access_off", on: "grant", off: true },
+        { status: "off", why: "access_off", on: "grant", off: true },
+      ]);
+      expect(await turnOff(w)).toMatchObject([{ result: "removed" }, { result: "removed" }]);
+      expect([bytesOf(plain), bytesOf(inner)]).toEqual(before);
+      expect(furtherRecords(w)).toEqual([]);
     },
     SLOW,
   );
