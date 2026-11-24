@@ -696,10 +696,20 @@ export function Expanded({
   const ended = useSyncExternalStore(live.subscribe, () => live.getState().gone !== undefined);
   const requests = [...new Set(receipts.flatMap((receipt) => receipt.request ?? []))].sort();
   const { detail, base, failed, older, loadingOlder, olderFailed } = useDetail(task.id, requests);
-  // A refusal holds until the detail is read again: that read says where the folder stands then.
-  const [held, setHeld] = useState<{ refused: FolderRefusal; detail: Detail | undefined }>();
-  if (refused !== held?.refused) setHeld(refused === undefined ? undefined : { refused, detail });
-  const fresh = held !== undefined && held.refused === refused && held.detail === detail;
+  // A refusal holds while the task's folder stays as it was: a read that shows another folder says
+  // where it stands now, and one that changed something else keeps the question.
+  const folderNow = detail === undefined ? undefined : JSON.stringify(detail.task.folder ?? null);
+  const [held, setHeld] = useState<{ refused: FolderRefusal; folder: string | undefined }>();
+  // A refusal that came before the first read takes that read's folder as its own.
+  if (refused === undefined) {
+    if (held !== undefined) setHeld(undefined);
+  } else if (refused !== held?.refused || (held.folder === undefined && folderNow !== undefined)) {
+    setHeld({ refused, folder: folderNow });
+  }
+  const fresh =
+    held !== undefined &&
+    held.refused === refused &&
+    (held.folder === undefined || held.folder === folderNow);
   const learnings = detail?.learnings ?? [];
   const sources = useSourceWrites();
   const notes = useNoteWrites();

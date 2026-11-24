@@ -85,11 +85,14 @@ let busyAnswer: (read: number) => Promise<Busy[]>;
 let busyReads: number;
 /** The agents the space last used, as a read of busy says them. */
 let lastNow: LastUsed;
+/** The task's folder as a read of it says; none: the space's work folder. */
+let taskFolder: { readonly path: string; readonly of: "task" } | undefined;
 
 beforeEach(() => {
   opened = [];
   busyReads = 0;
   lastNow = {};
+  taskFolder = undefined;
   openAnswer = (call) =>
     Promise.resolve({ receipt: receipt(`la_${String(call)}`), copy: undefined });
   busyAnswer = () => Promise.resolve([]);
@@ -137,6 +140,7 @@ beforeEach(() => {
                     sources: [],
                     more: { instructions: 0, notes: 0, log: 0, sources: 0, learnings: 0 },
                     version: 1,
+                    ...(taskFolder === undefined ? {} : { folder: taskFolder }),
                   },
                 }
               : { view: "sections", as_of: "1.10.01234567", sections: {} },
@@ -353,5 +357,43 @@ describe("[M6.page.busy-read] what busies the apps is read again until the servi
     await settle();
     expect(busyReads).toBe(offline + 1);
     expect(tile()?.dataset["state"]).toBe("ready");
+  });
+});
+
+describe("[M6.page.open-folder-question] a folder question stays while its task is read again", () => {
+  test("Open's question on a folder's marker stays when the task is read again, until a read shows another folder", async () => {
+    openAnswer = () =>
+      Promise.reject(
+        new Refused(400, "invalid_input", undefined, {
+          field: "task",
+          reason: "marker_missing",
+          folder: "~/lumen",
+          of: "task",
+        }),
+      );
+    await settle();
+    await expand();
+    click(openButton(), 1);
+    await settle();
+    const useThis = () =>
+      [...container.querySelectorAll(`${row} button`)].filter(
+        (b) => b.textContent === "Use this folder",
+      );
+    expect(useThis()).toHaveLength(1);
+    // A fresh snapshot reads the expanded task again.
+    act(() => {
+      live.store.push(snapshot());
+      live.store.flush();
+    });
+    await settle();
+    expect(useThis()).toHaveLength(1);
+    // A read that shows another folder says where the task opens now: the question is over.
+    taskFolder = { path: "~/elsewhere", of: "task" };
+    act(() => {
+      live.store.push(snapshot());
+      live.store.flush();
+    });
+    await settle();
+    expect(useThis()).toHaveLength(0);
   });
 });
