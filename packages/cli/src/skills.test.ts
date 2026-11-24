@@ -88,7 +88,10 @@ describe("[A3.3.6.mcp.skills] ttasks skills", () => {
       expect(await state()).toBe("same");
       expect((await run(home, "skills", "diff", "sizing-effort")).out).toContain("has not changed");
 
-      const older = today.replace("## XS", "## XS\n\nAn example that was dropped since.");
+      const older = today.replace(
+        "# Sizing effort",
+        "# Sizing effort\n\nAn example that was dropped since.",
+      );
       writeFileSync(madeFrom, older);
       writeFileSync(file, `${older}\nThe user's own rule.\n`);
       expect(await state()).toBe("changed");
@@ -128,7 +131,10 @@ describe("[A3.3.6.mcp.skills] ttasks skills", () => {
       const madeFrom = join(home, "skills", ".copied-from", "sizing-effort.md");
       expect((await run(home, "skills", "copy", "sizing-effort")).code).toBe(0);
       const today = readFileSync(file, "utf8");
-      const older = today.replace("## XS", "## XS\n\nAn example that was dropped since.");
+      const older = today.replace(
+        "# Sizing effort",
+        "# Sizing effort\n\nAn example that was dropped since.",
+      );
       const edited = `${older}\nThe user's own rule.\n`;
       const cases: { name: string; file: string; record: string | undefined }[] = [
         { name: "an edited copy", file: edited, record: older },

@@ -181,10 +181,17 @@ function Slots({
       <span className={styles.prio} data-level={model.priority?.level}>
         {model.priority === undefined ? null : say(model.priority.text)}
       </span>
+      {/* Focusable, so the keyboard brings up what the level means as the mouse does. */}
       <span
         className={styles.effort}
         data-part="row-effort"
-        data-tip={model.effort === undefined ? undefined : say(model.effort.tip)}
+        {...(model.effort === undefined
+          ? {}
+          : {
+              "data-tip": say(model.effort.tip),
+              "aria-description": say(model.effort.tip),
+              tabIndex: tab,
+            })}
       >
         {model.effort?.key}
       </span>

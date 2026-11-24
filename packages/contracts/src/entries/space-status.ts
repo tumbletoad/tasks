@@ -276,9 +276,10 @@ export const spaceStatus = defineEntry({
           {
             ...SIZING,
             text:
-              "TTasks's part: how its tools do this.\nThis space's sizes, smallest first: S, M, L. ...\n\n" +
+              "TTasks's part: how its tools do this.\neffort takes exactly one size's name ...\n\n" +
+              "This space's sizes, smallest first. ...\n- XS, about 10 minutes: A quick reply, ...\n...\n\n" +
               "The user's part: how they want it done, within the rules above.\n\n# Sizing effort\n\n" +
-              "Put a task on the size whose examples it is closest to, and on the larger one when in doubt. ...",
+              "Compare the task with what each size says belongs on it ...",
           },
         ],
       },

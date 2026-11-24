@@ -27,6 +27,10 @@ import {
   GROUP_CURSOR,
   GROUP_PAGE,
   isKeyList,
+  effortKeys,
+  effortNamesFit,
+  EFFORT_NAME_MAX,
+  samePrefValue,
   laterIn,
   AUTONOMY_IN_FORCE,
   LATER_PREFERENCES,
@@ -170,6 +174,7 @@ import {
   readTaskLinks,
   readKeyHolders,
   readTaskKeys,
+  readEffortLevels,
   readTaskRef,
   readTitles,
   logOf,
@@ -2756,7 +2761,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (reading) {
       // Only the files asked for are read.
       const [space, read] = await Promise.all([
-        readTaskKeys(reader).then((keys) => ({ sizes: keys.effort.map((key) => ({ key })) })),
+        readEffortLevels(reader).then((sizes) => ({ sizes })),
         readSkills(call.host.skillsFolder, asked),
       ]);
       skillFields = {
@@ -4426,10 +4431,15 @@ const prefWritable = (p: PreferenceSpec, principal: Principal): boolean =>
 
 /**
  * A value as the caller gave it, in its key's form: the command line gives one text, so a list is
- * keys separated by commas, a number its digits and a switch true or false. Undefined when it does
- * not fit the key.
+ * keys separated by commas, a number its digits and a switch true or false. A list of named items
+ * given as names keeps what `current` says of each name that stays: a person who reorders or adds
+ * levels by name keeps every time and line. Undefined when it does not fit the key.
  */
-function prefValueOf(p: PreferenceSpec, given: unknown): PrefValue | undefined {
+function prefValueOf(
+  p: PreferenceSpec,
+  given: unknown,
+  current: PrefValue | null,
+): PrefValue | undefined {
   let value: unknown = given;
   const { shape } = p;
   if (typeof given === "string") {
@@ -4445,7 +4455,14 @@ function prefValueOf(p: PreferenceSpec, given: unknown): PrefValue | undefined {
       value = text === "true";
     }
   }
-  if (isKeyList(shape) && Array.isArray(value)) value = value.map((key: unknown) => ({ key }));
+  if (isKeyList(shape) && Array.isArray(value)) {
+    const items: readonly unknown[] = Array.isArray(current) ? current : [];
+    value = value.map((item: unknown) =>
+      typeof item === "string"
+        ? (items.find((known) => (known as { key?: unknown }).key === item) ?? { key: item })
+        : item,
+    );
+  }
   return fitsShape(shape, value) ? (value as PrefValue) : undefined;
 }
 
@@ -4463,6 +4480,10 @@ interface PrefChange {
 async function prefsSet(call: Call): Promise<unknown> {
   const items = (call.input["set"] ?? []) as { key: string; value?: unknown; reset?: boolean }[];
   if (items.length === 0) throw invalid("set", "Required to set", "Give a key and its new value.");
+  const reader = readerOf(call.space);
+  const before = await readSpacePreferences(reader).catch((error: unknown) => {
+    throw storageFailure(error);
+  });
   const changes = items.map((item, k): PrefChange => {
     const path = `set.${String(k)}`;
     // Before the lookup: a machine key nothing reads yet is not one of the tool's, and still says so.
@@ -4496,7 +4517,8 @@ async function prefsSet(call: Call): Promise<unknown> {
       );
     }
     if (reset) return { p, value: null, path };
-    const value = prefValueOf(p, item.value);
+    const now = before.reads.get(p.key)?.value ?? p.default;
+    const value = prefValueOf(p, item.value, now);
     if (value === undefined) {
       const meantReset = String(item.value).trim().toLowerCase() === "null";
       throw invalid(
@@ -4505,11 +4527,18 @@ async function prefsSet(call: Call): Promise<unknown> {
         `It takes ${shapeText(p.shape)}.${meantReset ? " reset puts it back to its default." : ""}`,
       );
     }
+    if (p.key === "tasks.effort_scale") {
+      const held = effortKeys(now) ?? [];
+      const long = (effortKeys(value) ?? []).find((name) => !effortNamesFit([name], held));
+      if (long !== undefined) {
+        throw invalid(
+          `${path}.value`,
+          `A new level's name has at most ${String(EFFORT_NAME_MAX)} characters`,
+          "Give it a shorter name: it shows whole in the row and the card.",
+        );
+      }
+    }
     return { p, value, path };
-  });
-  const reader = readerOf(call.space);
-  const before = await readSpacePreferences(reader).catch((error: unknown) => {
-    throw storageFailure(error);
   });
   for (const { p, path } of changes) {
     if (before.reads.get(p.key)?.state === "newer") {
@@ -4524,15 +4553,22 @@ async function prefsSet(call: Call): Promise<unknown> {
   // changes that key: kept with the request, so a replay says what changed then.
   const sets = changes.map(({ p, value }) => ({
     key: p.key,
-    from: shownValue(p, before.reads.get(p.key)?.value ?? p.default),
-    to: shownValue(p, value ?? p.default),
+    from: before.reads.get(p.key)?.value ?? p.default,
+    to: value ?? p.default,
   }));
   let result;
   try {
     result = await submit(
       call,
       changes.map(({ p, value }): Operation => ({ kind: "pref.set", key: p.key, value })),
-      { undoable: false, answer: { changed: sets } },
+      {
+        undoable: false,
+        answer: { changed: sets },
+        hints: {
+          conflict:
+            "It changed since you read it: read it again, make your change to what it holds now, and set it again.",
+        },
+      },
     );
   } catch (error) {
     throw (await keysInUse(reader, changes)) ?? error;
@@ -4588,13 +4624,6 @@ const scaleKeysOf = (value: unknown): string[] =>
       )
     : [];
 
-/** A stored or default value as the tool shows it: a list of `{key}` objects as its keys. */
-function shownValue(p: PreferenceSpec, value: PrefValue | null): PrefValue | null {
-  return isKeyList(p.shape) && Array.isArray(value)
-    ? value.map((item: unknown) => String((item as { key?: unknown }).key))
-    : value;
-}
-
 /** One key's row: its value as the registry reads it (the default unless it fits), A1 3.16. */
 function prefRow(
   p: PreferenceSpec,
@@ -4602,15 +4631,13 @@ function prefRow(
   read: PreferenceRead | undefined,
   principal: Principal,
 ): Record<string, unknown> {
-  const value = shownValue(p, read?.value ?? p.default);
-  const fallback = shownValue(p, p.default);
+  const value = read?.value ?? p.default;
+  const fallback = p.default;
   const later = LATER_PREFERENCES.find((row) => row.key === p.key);
   return {
     key: p.key,
     ...(action === "describe" ? { summary: p.summary, shape: shapeText(p.shape) } : {}),
-    ...(action === "get"
-      ? { value, is_default: JSON.stringify(value) === JSON.stringify(fallback) }
-      : {}),
+    ...(action === "get" ? { value, is_default: samePrefValue(value, fallback) } : {}),
     default: fallback,
     writable: prefWritable(p, principal) && read?.state !== "newer",
     ...(p.policy ? { policy: true } : {}),

@@ -891,7 +891,7 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
       "VALIDATION_FAILED",
       "status",
     ]);
-    expect(code({ kind: "task.patch", task: id, set: { effort: "XL" } })).toEqual([
+    expect(code({ kind: "task.patch", task: id, set: { effort: "XXL" } })).toEqual([
       "VALIDATION_FAILED",
       "effort",
     ]);

@@ -4,6 +4,7 @@
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
 import { PRODUCT_NAME, CLI_NAME } from "@ttasks/brand";
+import { EFFORT_LEVELS, type EffortLevel } from "@ttasks/contracts/preferences";
 import type { Instance } from "../api.ts";
 import en from "../i18n/en.json" with { type: "json" };
 import type { MessageId, Values } from "../i18n/intl.tsx";
@@ -75,7 +76,7 @@ function row(t: TaskRow, extra: Partial<RowInput> = {}): RowInput {
   return { task: t, instances: [CX, CC], ...extra };
 }
 
-const ctx = (view: RowView, grouping: Grouping) => contextFor(view, grouping, CLOCK);
+const ctx = (view: RowView, grouping: Grouping) => contextFor(view, grouping, CLOCK, EFFORT_LEVELS);
 
 /** What a person reads off a row: its words, column by column. */
 function read(model: RowModel) {
@@ -404,7 +405,7 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
   });
 
   test("a day filter that implies the due date leaves the column empty", () => {
-    const dayFilter = contextFor("today", "flat", CLOCK, ["due"]);
+    const dayFilter = contextFor("today", "flat", CLOCK, EFFORT_LEVELS, ["due"]);
     const model = renderRow(row(task({ title: "t", due_date: "2026-11-14" })), dayFilter);
     expect(model.due).toBeUndefined();
     expect(model.description.map(say).join(" ")).not.toContain("due");
@@ -445,9 +446,32 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
       renderRow(row(task({ title: "t", ...fields })), ctx(view, "area"));
     const m = model({ effort: "M", priority: 2 });
     expect(m.effort?.key).toBe("M");
-    expect(say(m.effort?.tip)).toBe("Effort M");
+    expect(say(m.effort?.tip)).toBe(
+      "Effort M, about 4 hours. One long focused sitting: a summary of a few sources; a meeting prepared with its papers",
+    );
+    // A screen reader hears what the tip shows: the name, its time and what belongs on it.
     const described = m.description.map(say);
-    expect(described.indexOf("effort M")).toBe(described.indexOf("priority 2") + 1);
+    expect(
+      described.indexOf(
+        "effort M, about 4 hours. One long focused sitting: a summary of a few sources; a meeting prepared with its papers",
+      ),
+    ).toBe(described.indexOf("priority 2") + 1);
+    // The tip says what the level has: a time, a line, either or neither.
+    const tip = (efforts: readonly EffortLevel[]) =>
+      say(
+        renderRow(
+          row(task({ title: "t", effort: "Q" })),
+          contextFor("open", "area", CLOCK, efforts),
+        ).effort?.tip,
+      );
+    expect(tip([{ key: "Q", time: { amount: 1, unit: "days" } }])).toBe("Effort Q, about 1 day");
+    expect(tip([{ key: "Q", time: { amount: 30, unit: "minutes" }, about: "A call" }])).toBe(
+      "Effort Q, about 30 minutes. A call",
+    );
+    expect(tip([{ key: "Q", about: "Deep work" }])).toBe("Effort Q. Deep work");
+    // A name the space no longer has, or a level with neither, is its name.
+    expect(tip([{ key: "Q" }])).toBe("Effort Q");
+    expect(tip(EFFORT_LEVELS)).toBe("Effort Q");
     expect(model({}).effort).toBeUndefined();
     expect(model({ effort: "" }).effort).toBeUndefined();
     expect(model({ effort: "L", lifecycle: "completed" }, "completed").effort).toBeUndefined();

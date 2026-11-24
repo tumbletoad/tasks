@@ -388,7 +388,8 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
     expect(read["missing"]).toEqual(["no-such-skill"]);
     // The space's own scale, whatever it holds.
     const prefs = await call("prefs.manage", { action: "get", keys: ["tasks.effort_scale"] });
-    const scale = (prefs["prefs"] as Json[])[0]?.["value"] as string[];
+    const levels = (prefs["prefs"] as Json[])[0]?.["value"] as { key: string }[];
+    const scale = levels.map((level) => level.key);
     expect(scale.length).toBeGreaterThan(0);
     const sizing = String(named(read["asked"], "sizing-effort")?.["text"]);
     expect(sizesNamed(sizing, scale)).toEqual(scale);

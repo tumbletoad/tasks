@@ -4,7 +4,7 @@
 // message or row the page cannot read is no message or row.
 //
 // Rows are the service's compact rows: a field that is null in the space is absent.
-import { EFFORT_FALLBACK, effortKeys } from "@ttasks/contracts/preferences";
+import { EFFORT_LEVELS, effortLevels, type EffortLevel } from "@ttasks/contracts/preferences";
 import type { Instance } from "../api.ts";
 import { parseAgents, type AgentsView } from "./agents.ts";
 
@@ -318,22 +318,24 @@ export interface SnapshotMessage {
   readonly scales?: Scales;
 }
 
-/** The status keys a task may take, and its effort keys, in the space's order. */
+/** The status keys a task may take, and its effort levels, in the space's order. */
 export interface Scales {
   readonly statuses: readonly string[];
-  readonly efforts: readonly string[];
+  readonly efforts: readonly EffortLevel[];
 }
 
 /** A space's scales until its preferences say otherwise (`tasks.statuses`, `tasks.effort_scale`). */
 export const DEFAULT_SCALES: Scales = {
   statuses: ["open", "waiting", "review", "backlog"],
-  efforts: EFFORT_FALLBACK,
+  efforts: EFFORT_LEVELS,
 };
 
-/** The sizes a task's card offers: the space's, then the task's own if the scale lost it. */
-export function effortOptions(scales: Scales, effort: string | undefined): string[] {
+/** The levels a task's card offers: the space's, then the task's own if the scale lost it. */
+export function effortOptions(scales: Scales, effort: string | undefined): EffortLevel[] {
   const options = [...scales.efforts];
-  if (effort !== undefined && effort !== "" && !options.includes(effort)) options.push(effort);
+  if (effort !== undefined && effort !== "" && !options.some((level) => level.key === effort)) {
+    options.push({ key: effort });
+  }
   return options;
 }
 
@@ -357,7 +359,7 @@ export function scalesOf(list: unknown): Scales {
   };
   return {
     statuses: statusesOf(valueOf("tasks.statuses")) ?? DEFAULT_SCALES.statuses,
-    efforts: effortKeys(valueOf("tasks.effort_scale")) ?? DEFAULT_SCALES.efforts,
+    efforts: effortLevels(valueOf("tasks.effort_scale")) ?? DEFAULT_SCALES.efforts,
   };
 }
 

@@ -113,12 +113,16 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
     );
     await expect(toast(page)).toHaveText("Priority set to P2");
 
-    // Effort: L.
+    // Effort: L, the fourth of the default levels.
     await tabInto(page, effort);
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
     await page.keyboard.press("Space");
-    await expect(effort.getByRole("radio", { name: "L" })).toHaveAttribute("aria-checked", "true");
+    await expect(effort.getByRole("radio", { name: "L", exact: true })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
 
     // Due: the pill opens the popover with its field focused; "+3d" previews, Enter applies, and
     // focus comes back to the pill.
@@ -152,7 +156,10 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
       "true",
       { timeout: SLOW_MS },
     );
-    await expect(effort.getByRole("radio", { name: "L" })).toHaveAttribute("aria-checked", "true");
+    await expect(effort.getByRole("radio", { name: "L", exact: true })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
     // Collapsed again: an expanded card stays where it is until it is collapsed (A5 3.15).
     await title.focus();
     await page.keyboard.press("Escape");
@@ -678,7 +685,7 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
         await row
           .getByRole("radiogroup", { name: "Effort" })
           // Another effort in each theme, so each toast sets one (the second would clear it).
-          .getByRole("radio", { name: theme === "sumi" ? "L" : "S" })
+          .getByRole("radio", { name: theme === "sumi" ? "L" : "S", exact: true })
           .click();
         await expect(toastAction(page)).toHaveText("Undo");
         await row.locator('[data-part="due"]').click();

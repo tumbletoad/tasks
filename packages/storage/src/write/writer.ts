@@ -26,7 +26,14 @@
 // that reach SQL text are the column names of fields.ts, so no request can run SQL of its own
 // (A1 3.7). The writer runs where its connection lives: in a storage worker in
 // the service, or in-thread in tests and the sample generator. It is synchronous.
-import { mayWrite, preferenceSpec } from "@ttasks/contracts/preferences";
+import {
+  EFFORT_NAME_MAX,
+  effortNamesFit,
+  mayWrite,
+  PREFERENCES,
+  preferenceSpec,
+  samePrefValue,
+} from "@ttasks/contracts/preferences";
 import type { Connection, Row, SqlValue } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
 import { isId, newId, osRandom, type Id, type RandomSource } from "../ids.ts";
@@ -1027,6 +1034,50 @@ export class SpaceWriter {
     });
     this.#registered = true;
     return wrote;
+  }
+
+  /**
+   * Stores the default of each space preference a space always holds (PreferenceSpec.stored) where
+   * it holds none or a reset: one `pref.set` request as the space's system actor, which no undo
+   * stack holds. Returns whether it wrote. Safe to call again; only the authority writes.
+   */
+  storeDefaults(): boolean {
+    const conn = this.#usable();
+    const { missing, space, system, asOf } = conn.transaction("deferred", () => ({
+      missing: PREFERENCES.filter((p) => {
+        if (p.scope !== "space" || p.stored !== true) return false;
+        const row = conn.prepare(SQL.preferenceRow).get({ id: p.key });
+        if (row === undefined) return true;
+        // A newer build's row is read-only here, its reset included: that build fills it.
+        return (
+          row["value"] === "null" &&
+          new RowReader("preferences", row).int("schema_ver", "count") <= p.schemaVer
+        );
+      }),
+      space: decodeSpaceRow(conn.prepare(SQL.space).get()),
+      system: conn.prepare(SQL.systemActor).get()?.["id"],
+      asOf: readAsOf(conn),
+    }));
+    if (missing.length === 0 || space.authority.machineId !== this.#machine.id) return false;
+    if (!isId(system, "ac"))
+      throw new StorageError("SPACE_INVALID", "The space has no system actor");
+    const result = this.submit({
+      space_id: space.spaceId,
+      request_id: `store-defaults-${newId("op", this.#random).slice(3)}`,
+      actor: {
+        scope_id: "defaults",
+        principal_id: system,
+        actor_kind: "system",
+        machine_id: this.#machine.id,
+        origin: "system",
+      },
+      base: asOf,
+      ops: missing.map((p) => ({ kind: "pref.set", key: p.key, value: p.default })),
+    });
+    if (result.status !== "applied") {
+      throw new StorageError("SPACE_INVALID", "The space's default preferences were not stored");
+    }
+    return true;
   }
 
   /**
@@ -2294,10 +2345,16 @@ export class SpaceWriter {
           // Who may write the key is decided here, so the refusal has its receipt (A3 3.8.3
           // step 4). The admin scope a policy key also needs is the caller's check (A6 3.6.3).
           const spec = must(preferenceSpec(op.key), "A checked pref.set names a declared key");
-          if (!mayWrite(spec, request.actor.actor_kind)) {
+          const row = conn.prepare(SQL.preferenceRow).get({ id: op.key });
+          // The space's own act (storeDefaults): a value every space holds, where it holds none.
+          const fills =
+            request.actor.actor_kind === "system" &&
+            spec.stored === true &&
+            (row === undefined || row["value"] === "null") &&
+            samePrefValue(op.value, spec.default);
+          if (!fills && !mayWrite(spec, request.actor.actor_kind)) {
             problem("PREFERENCE_FORBIDDEN", "Only the user changes this preference", i, "key");
           }
-          const row = conn.prepare(SQL.preferenceRow).get({ id: op.key });
           // A newer build's value is kept unchanged: read-only here (A1 3.16). Said before any
           // other reason, so nobody changes tasks for a change this build cannot make.
           if (
@@ -2314,8 +2371,18 @@ export class SpaceWriter {
           // A task keeps its status and effort whatever the scale says, so a scale never drops a
           // key an active task holds: the person moves those tasks first and loses nothing.
           if (isScaleKey(op.key)) {
-            const kept = new Set(scaleKeys(op.value ?? spec.default));
-            const removed = listPreference(conn, op.key).filter((key) => !kept.has(key));
+            const next = scaleKeys(op.value ?? spec.default);
+            const kept = new Set(next);
+            const held = listPreference(conn, op.key);
+            if (op.key === "tasks.effort_scale" && !effortNamesFit(next, held)) {
+              problem(
+                "VALIDATION_FAILED",
+                `A new level's name has at most ${String(EFFORT_NAME_MAX)} characters`,
+                i,
+                "value",
+              );
+            }
+            const removed = held.filter((key) => !kept.has(key));
             const inUse = op.key === "tasks.statuses" ? SQL.statusInUse : SQL.effortInUse;
             if (
               removed.length > 0 &&
@@ -4369,21 +4436,25 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     }
     case "pref.set": {
       const spec = must(preferenceSpec(op.key), "A checked pref.set names a declared key");
+      const value = op.value === null && spec.stored === true ? spec.default : op.value;
       const values = {
         id: op.key,
-        value: op.value === null ? "null" : canonicalJson(op.value),
+        value: value === null ? "null" : canonicalJson(value),
         schema_ver: spec.schemaVer,
       };
       // An earlier operation of the request may have created the row: read it as it is now.
       if (conn.prepare(SQL.preferenceRow).get({ id: op.key }) === undefined) {
         // Nothing is set: a reset changes nothing.
-        if (op.value === null) return;
+        if (value === null) return;
         conn
           .prepare(SQL.insertPreference)
           .run({ ...values, policy: spec.policy ? 1 : 0, seq: run.seq });
         wrote(run, i, "preferences", op.key, null, null);
         return;
       }
+      // The value the key reads as already is no change, whatever form its row holds it in.
+      const now = readSpacePreference(conn, op.key);
+      if (value !== null && now.state === "set" && samePrefValue(now.value, value)) return;
       conn.prepare(SQL.updatePreference).run(values);
       wrote(run, i, "preferences", op.key, null, ["value"]);
       return;

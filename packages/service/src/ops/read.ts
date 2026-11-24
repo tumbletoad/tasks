@@ -32,6 +32,8 @@ import {
   AppError,
   CAPTURES_TO_MAX,
   dayOf,
+  effortLevels,
+  type EffortLevel,
   PREFERENCES,
   weekLastDay,
   type DayClock,
@@ -1251,6 +1253,12 @@ const EFFORT_SCALE: Statement = {
   sql: "SELECT value, schema_ver FROM preferences WHERE key = 'tasks.effort_scale'",
   mode: "get",
 };
+
+/** The space's effort levels, smallest first, each with its time and line when it has them. */
+export async function readEffortLevels(reader: WorkerConnection): Promise<EffortLevel[]> {
+  const [row] = await snapshot(reader, [EFFORT_SCALE]);
+  return effortLevels(readPreference("tasks.effort_scale", storedOf(row)).value) ?? [];
+}
 
 /** The status keys and the effort keys a task of the space may take, in their order. */
 export async function readTaskKeys(
