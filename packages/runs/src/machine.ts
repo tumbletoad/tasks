@@ -28,7 +28,7 @@ import {
   type RunResult,
   type RunState,
 } from "@ttasks/contracts/runs";
-import { RunRefused, seenRun, type RunMover, type RunStore } from "@ttasks/launch/execution-store";
+import { RunRefused, seenRun, type RunStore } from "@ttasks/launch/execution-store";
 
 /** How long the machine waits for one call to the store, as the launch machine does. */
 export const RUN_STORE_DEADLINE_MS = 15_000;
@@ -240,22 +240,17 @@ export class RunMachine {
   /**
    * The person's Stop. A queued run is `cancelled` at once: it has no container. A run whose
    * container may hold processes is `cancelling`, committed before anything is stopped, and
-   * `stopping` says the caller must stop it. Any other run is returned as it is. The move is the
-   * person's, not the run's.
+   * `stopping` says the caller must stop it. Any other run is returned as it is.
    */
   cancel(id: string): Promise<{ run: RunRecord | undefined; stopping: boolean }> {
     return this.#section(id, async () => {
-      const run = await this.#decide(
-        id,
-        (r) => {
-          if (r.state === "queued") return { next: "cancelled" };
-          if (r.state === "starting" || r.state === "running" || r.state === "waiting_for_input") {
-            return { next: "cancelling" };
-          }
-          return undefined;
-        },
-        "person",
-      );
+      const run = await this.#decide(id, (r) => {
+        if (r.state === "queued") return { next: "cancelled" };
+        if (r.state === "starting" || r.state === "running" || r.state === "waiting_for_input") {
+          return { next: "cancelling" };
+        }
+        return undefined;
+      });
       return { run, stopping: run?.state === "cancelling" };
     });
   }
@@ -285,7 +280,6 @@ export class RunMachine {
   async #decide(
     id: string,
     rule: (run: RunRecord) => Move | undefined,
-    by: RunMover = "run",
   ): Promise<RunRecord | undefined> {
     let run = await this.#read(id);
     for (let attempt = 0; attempt < RETRIES && run !== undefined; attempt += 1) {
@@ -295,7 +289,7 @@ export class RunMachine {
         isRunEdge(run.state, wanted.next) || !isRunEdge(run.state, "reconciling")
           ? wanted
           : { next: "reconciling" as const };
-      const tried = await this.#try(run, move, by);
+      const tried = await this.#try(run, move);
       if (tried.error?.code === "unavailable") throw tried.error;
       if (tried.kind === "moved" && move !== wanted) {
         run = tried.run;
@@ -308,14 +302,14 @@ export class RunMachine {
   }
 
   /** One compare-and-set on the record the move was decided on: its state and its version. */
-  async #try(run: RunRecord, move: Move, by: RunMover = "run"): Promise<Tried> {
+  async #try(run: RunRecord, move: Move): Promise<Tried> {
     const patch = fresh(run, move.patch);
     if (move.next === run.state && Object.keys(patch.evidence ?? {}).length === 0) {
       return { kind: "moved", run };
     }
     try {
       const after = await this.#call(() =>
-        this.#store.transitionRun(run.id, seenRun(run), move.next, patch, by),
+        this.#store.transitionRun(run.id, seenRun(run), move.next, patch),
       );
       return { kind: "moved", run: after };
     } catch (error) {
@@ -330,7 +324,7 @@ export class RunMachine {
       ) {
         const rest: RunPatch = { ...patch };
         delete rest.result;
-        return this.#try(run, { next: move.next, patch: rest }, by);
+        return this.#try(run, { next: move.next, patch: rest });
       }
       return { kind: "refused", run: error.current ?? run, error };
     }

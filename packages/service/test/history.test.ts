@@ -506,6 +506,50 @@ describe("[A1.5.history.runs] runs beside Undo, through the request path", () =>
           data: { cause: "UNDO_CONFLICT", newer_work: [{ task: started.task, by: "run" }] },
         });
         expect((await show(started.task))["lifecycle"]).toBe("active");
+
+        // In the Trash and back, then a run queued that starts and answers: the Redo is refused.
+        const answered = await add("Fixture task whose run answers");
+        await call("task.delete", { tasks: [answered], base: await asOf(), request_id: rid() });
+        await call("history.undo", { request_id: rid() });
+        const run = await machine.queue(
+          {
+            task: String((await show(answered))["id"]),
+            routine: null,
+            instance: "codex-work",
+            adapter: "codex",
+            place: null,
+            request: "Fixture instruction.",
+            briefHash: "a1b2c3d4".repeat(8),
+            permission: "full-access",
+            limits: RUN_LIMITS.task,
+          },
+          rid(),
+        );
+        expect((await machine.begin(run.id)).began).toBe(true);
+        expect((await machine.started(run.id, 4242, 1))?.state).toBe("running");
+        const end = await machine.settle(run.id, {
+          kind: "exited",
+          result: {
+            ok: true,
+            outcome: "success",
+            exitCode: 0,
+            signal: null,
+            nativeId: null,
+            text: "Fixture answer.",
+            error: null,
+            usage: null,
+            appTools: null,
+            declined: 0,
+            permissionDenials: 0,
+            durationMs: 1,
+          },
+        });
+        expect(end?.state).toBe("succeeded");
+        expect(await refusal("history.redo", { request_id: rid() })).toMatchObject({
+          code: "conflict",
+          data: { cause: "UNDO_CONFLICT", newer_work: [{ task: answered, by: "run" }] },
+        });
+        expect((await show(answered))["ref"]).toBe(answered);
       } finally {
         hold.release();
       }

@@ -29,8 +29,10 @@
 //   writes only what that undo took back), and for a task to anything on it (a field, a note, a
 //   log entry, a link, a run, a folder), keeps it in sight, as a conflict that names the newest
 //   such change; a task kept open keeps its wrap-up too. The principal's own changes (its writes,
-//   undos and redos, and the runs it queues and stops) do not count: the person made them. What a
-//   run wrote as the run (the commit names it: its start, progress and end) is the run's.
+//   undos and redos, and the runs it queues and stops) do not count: the person made them. Every
+//   other move of a run (its start, progress, question, answer, end, the settlement after a Stop)
+//   is the run's, whoever's commit holds it: the run machine writes them all with the person's
+//   credential, so what the change is decides (RUN_WORK), in history of every build alike.
 // - Clearing a tombstone (a redo of a create's undo, or the undo of a delete) brings a row back. A
 //   source whose key, or a place whose owner and machine, another live row holds now stays
 //   tombstoned, and that row is the conflict: the unique indexes allow one live row each.
@@ -351,14 +353,27 @@ function liveChildren(conn: Connection, changes: readonly StoredChange[]): Map<s
 const COMMIT_COLUMNS = "seq, id, undo_status, undone_by";
 
 /**
- * Changes after `$since` of row `$entity` `$id`, and of everything of task `$task`, by others: not
- * the principal's own (the header): what the principal wrote and no run did.
+ * A person's Stop of a run: a queued run straight to cancelled, a working one into cancelling.
+ * Only the run machine's cancel moves a run so.
+ */
+const STOP =
+  "(c.entity = 'runs' AND c.field = 'state' AND (" +
+  "(json_extract(c.before, '$.state') = 'queued' AND json_extract(c.after, '$.state') = 'cancelled') " +
+  "OR (json_extract(c.after, '$.state') = 'cancelling' " +
+  "AND json_extract(c.before, '$.state') <> 'cancelling')))";
+
+/** A run's own change: every move of its state but a person's Stop. Its queue is the person's. */
+const RUN_WORK = `(c.entity = 'runs' AND c.action = 'set' AND NOT ${STOP})`;
+
+/**
+ * Changes after `$since` of row `$entity` `$id`, and of everything of task `$task`, by others: all
+ * but the principal's own (the header).
  */
 function newerWhere(runs: string): string {
   return (
     "WHERE c.seq > $since " +
     `AND (c.task_id = $task OR (c.entity = $entity AND c.entity_id = $id)${runs}) ` +
-    "AND NOT (k.principal_id = $principal AND k.run_id IS NULL)"
+    `AND NOT (k.principal_id = $principal AND NOT ${RUN_WORK})`
   );
 }
 
@@ -371,13 +386,17 @@ function newerWorkSql(runs: string): string {
   );
 }
 
-/** Who made those changes: each author once, with the time of their newest, a run's apart. */
+/**
+ * Who made those changes: each author once, with the time of their newest, a run's apart. A Stop
+ * is the person's who stopped the run.
+ */
 function newerAuthorsSql(runs: string): string {
+  const run = `(c.entity = 'runs' AND NOT ${STOP})`;
   return (
-    "SELECT c.entity = 'runs' AS run, k.author_id AS actor, a.kind AS kind, a.label AS label, " +
+    `SELECT ${run} AS run, k.author_id AS actor, a.kind AS kind, a.label AS label, ` +
     "k.origin AS origin, max(k.at) AS at FROM changes c JOIN commits k ON k.seq = c.seq " +
     `JOIN actors a ON a.id = k.author_id ${newerWhere(runs)} ` +
-    "GROUP BY c.entity = 'runs', k.author_id, k.origin"
+    `GROUP BY ${run}, k.author_id, k.origin`
   );
 }
 
@@ -421,6 +440,10 @@ const SQL = {
     "SELECT k.seq AS seq FROM commits k WHERE k.seq IN (SELECT value FROM json_each($seqs)) " +
     "AND k.principal_id = $principal " +
     "AND NOT EXISTS (SELECT 1 FROM changes c WHERE c.seq = k.seq AND c.entity = 'runs')",
+  /** Of the commits in `$seqs`, those holding another principal's Stop of a run. */
+  othersStops:
+    "SELECT DISTINCT c.seq AS seq FROM changes c JOIN commits k ON k.seq = c.seq " +
+    `WHERE c.seq IN (SELECT value FROM json_each($seqs)) AND k.principal_id <> $principal AND ${STOP}`,
   /** The rows the redos of step `$seq` wrote again, each with the newest redo that wrote it. */
   redone:
     "SELECT c.entity AS entity, c.entity_id AS id, c.field AS field, max(c.seq) AS seq " +
@@ -1072,8 +1095,8 @@ export type Held = Pick<InversionPlan, "conflicts" | "since" | "applied">;
  * that author's newest change there; a row of no task (an area, a project, a source) by its own
  * changes. The conflicts' own authors are named too: a key another row took counts. The
  * principal's own changes are no one's newer work: they hold a redo back only after an earlier
- * step of the person's was passed over, and that step's conflicts say why. What a run wrote is
- * the run's: one that keeps a task is named as a run.
+ * step of the person's was passed over, and that step's conflicts say why. A run that keeps a
+ * task is named as the run, but for another person's Stop of it, named as that person.
  */
 export function newerWorkOf(
   conn: Connection,
@@ -1081,12 +1104,16 @@ export function newerWorkOf(
   principal: Id<"ac">,
 ): NewerWork {
   const conflicts = held.flatMap((h) => h.conflicts);
-  const own = new Set(
-    conn
-      .prepare(SQL.ownSteps)
-      .all({ seqs: JSON.stringify([...new Set(conflicts.map((c) => c.version))]), principal })
-      .map((row) => new RowReader("commits", row).int("seq", "seq")),
-  );
+  const seqs = JSON.stringify([...new Set(conflicts.map((c) => c.version))]);
+  const commits = (sql: string): Set<number> =>
+    new Set(
+      conn
+        .prepare(sql)
+        .all({ seqs, principal })
+        .map((row) => new RowReader("commits", row).int("seq", "seq")),
+    );
+  const own = commits(SQL.ownSteps);
+  const stops = commits(SQL.othersStops);
   const work = new Map<string, NewerWork["work"][number]>();
   const named = (
     where: { task?: Id<"t">; ref?: string },
@@ -1109,7 +1136,7 @@ export function newerWorkOf(
   for (const { conflicts: theirs, since: sinceOf, applied } of held) {
     const scopes = new Map<string, { c: FieldConflict; since: number }>();
     for (const c of theirs) {
-      if (!own.has(c.version)) named(c, c.by, c.entity === "runs", c.at);
+      if (!own.has(c.version)) named(c, c.by, c.entity === "runs" && !stops.has(c.version), c.at);
       const key = c.task === undefined ? `${c.entity}|${c.id}` : `tasks|${c.task}`;
       const since = sinceOf.get(c) ?? applied;
       const earlier = scopes.get(key);
