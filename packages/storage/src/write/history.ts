@@ -1396,8 +1396,8 @@ export interface Applied {
  *   project folders of every machine whose folder the plan brought back or set back. A folder of
  *   the plan's that another live project's folder holds by the machine's case rule does not come
  *   back, and the conflict names that other folder's path, with who set it.
- * - **A project and what is in it** (groupRules): a deleted project holds no live task and no live
- *   folder, and a task in a project is in that project's area.
+ * - **A group and what is in it** (groupRules): a deleted area holds no live task or project, a
+ *   deleted project no live task or folder, and a task in a project is in that project's area.
  * - **A redo writes nothing out of sight** (ownersLive, with `owners`).
  *
  * When a rule breaks, the writes roll back to a savepoint, the conflicts are named on the state
@@ -1518,6 +1518,7 @@ function sharedFolders(conn: Connection, inversions: readonly Inversion[], broke
 
 /** The inversions the group rules (groupRules) look at. */
 const inGroupRules = (i: Inversion): boolean =>
+  i.entity === "areas" ||
   i.entity === "projects" ||
   i.entity === "folders" ||
   (i.entity === "tasks" && (i.field === "deleted" || i.field === "grouping"));
@@ -1619,17 +1620,40 @@ export function brokenIn(
   return inside && project["deleted_at"] !== null && child["deleted_at"] === null;
 }
 
+/** A group rule a plan breaks: a group, and a row of it that breaks the rule with it. */
+interface Break {
+  readonly rule: GroupBreak["rule"];
+  readonly group: { readonly entity: "areas" | "projects"; readonly id: string };
+  readonly child: { readonly entity: "tasks" | "folders" | "projects"; readonly id: string };
+}
+
 /**
- * The group rules (groupBreaks) on the state the plan makes (applyInversions). When the plan
- * breaks one, its inversions on its own side stay undone: a project's tombstone or move together
- * with its folders' tombstones and its tasks' moves, or the task or folder it would bring into a
- * deleted project. The other side is named, with who wrote it: for a task, who put it into the
- * project.
+ * The live tasks and projects of the deleted areas among `$areas`, and of the areas of the tasks
+ * and projects in `$rows`: what a plan that takes an area away, or brings a row back into one,
+ * would leave out of sight.
+ */
+const LIVE_IN_DELETED_AREAS =
+  "WITH gone AS (SELECT id FROM areas WHERE deleted_at IS NOT NULL AND (id IN " +
+  "(SELECT value FROM json_each($areas)) OR id IN (SELECT area_id FROM tasks WHERE id IN " +
+  "(SELECT value FROM json_each($rows))) OR id IN (SELECT area_id FROM projects WHERE id IN " +
+  "(SELECT value FROM json_each($rows))))) " +
+  "SELECT 'projects' AS entity, p.id AS id, p.area_id AS area FROM projects p JOIN gone ON " +
+  "gone.id = p.area_id WHERE p.deleted_at IS NULL UNION ALL SELECT 'tasks', t.id, t.area_id " +
+  "FROM tasks t JOIN gone ON gone.id = t.area_id WHERE t.deleted_at IS NULL ORDER BY 3, 1, 2";
+
+/**
+ * The group rules on the state the plan makes (applyInversions): those of a project and what is in
+ * it (groupBreaks), and a deleted area holds no live task or project. When the plan breaks one,
+ * its inversions on its own side stay undone: an area's or a project's tombstone (a project's with
+ * its folders'), a project's move with its tasks' moves, or the row it would bring into a deleted
+ * group. What newer work keeps in sight keeps its group, so a partial undo leaves a task with its
+ * project and its area.
  *
  * A break whose every side the plan set back (`seq`) or is older than the plan's sides of it were
  * last applied (Inversion.applied) is as it was before it: the plan brings back what a person had,
- * also a break that an earlier version let in. Only a side written since by another makes it the
- * plan's.
+ * also a break that an earlier version let in. The other side is named by its newest change since
+ * then, with who made it: who filed a task into the project, or who brought it back. A side the
+ * step itself wrote is not named: the conflict that kept that row is.
  */
 function groupRules(
   conn: Connection,
@@ -1661,13 +1685,41 @@ function groupRules(
     moved: ids("projects", "grouping"),
     regrouped,
   });
+  const areaBreaks = conn
+    .prepare(LIVE_IN_DELETED_AREAS)
+    .all({
+      areas: JSON.stringify(ids("areas")),
+      rows: JSON.stringify([...ids("tasks"), ...ids("projects")]),
+    })
+    .map((row): Break => {
+      const r = new RowReader("areas", row);
+      return {
+        rule: "held",
+        group: { entity: "areas", id: r.text("area") },
+        child: { entity: r.oneOf("entity", ["tasks", "projects"]), id: r.text("id") },
+      };
+    });
+  const all: Break[] = [
+    ...breaks.map(({ rule, project, child }): Break => ({
+      rule,
+      group: { entity: "projects", id: project },
+      child,
+    })),
+    ...areaBreaks,
+  ];
   const undo = (list: readonly Inversion[]): void => {
     for (const i of list) broken.undone.add(i);
   };
-  /** A project's own side: its tombstone with its folders', or its move with its tasks'. */
-  const projectSide = (project: string, field: "deleted" | "grouping"): Inversion[] => {
-    const own = of("projects", project, field);
-    if (own.length === 0) return own;
+  /**
+   * A group's own side: an area's tombstone, a project's with its folders', or a project's move
+   * with its tasks'.
+   */
+  const groupSide = (
+    { entity, id: project }: Break["group"],
+    field: "deleted" | "grouping",
+  ): Inversion[] => {
+    const own = of(entity, project, field);
+    if (own.length === 0 || entity === "areas") return own;
     if (field === "grouping") {
       return [
         ...own,
@@ -1682,46 +1734,45 @@ function groupRules(
       .flatMap((row) => of("folders", String(row["id"]), "deleted"));
     return [...own, ...theirs];
   };
-  const asBefore = (
-    [entity, id, field]: readonly [InvertibleEntity, string, string],
-    since: number,
-  ): boolean => {
+  type Side = readonly [InvertibleEntity, string, string];
+  const versionAt = ([entity, id, field]: Side): number => {
     const row = readRow(conn, entity, id);
     if (row === undefined) throw misuse("A row the plan read has gone");
-    const version = versionOf(row, field);
-    return version === seq || version < since;
+    return versionOf(row, field);
   };
-  const sides = ({ rule, project, child }: GroupBreak) =>
+  /**
+   * The group's side, then the row's: a deleted group and a live row in it, or a stray task. A
+   * row filed into the group by the change that brought it back is named by its filing.
+   */
+  const sides = ({ rule, group, child }: Break): { group: Side[]; child: Side[] } =>
     rule === "stray"
-      ? ([
-          ["projects", project, "grouping"],
-          ["tasks", child.id, "grouping"],
-        ] as const)
-      : ([
-          ["projects", project, "deleted"],
-          [child.entity, child.id, "deleted"],
-          ...(child.entity === "tasks" ? ([["tasks", child.id, "grouping"]] as const) : []),
-        ] as const);
-  for (const found of breaks) {
-    const rows = sides(found);
+      ? { group: [[group.entity, group.id, "grouping"]], child: [["tasks", child.id, "grouping"]] }
+      : {
+          group: [[group.entity, group.id, "deleted"]],
+          child: [
+            ...(child.entity === "folders" ? [] : [[child.entity, child.id, "grouping"] as const]),
+            [child.entity, child.id, "deleted"],
+          ],
+        };
+  for (const found of all) {
+    const { group, child } = sides(found);
+    const rows = [...group, ...child];
     const since = Math.min(
       ...rows.flatMap(([entity, id, field]) => of(entity, id, field).map((i) => i.applied)),
     );
-    if (rows.every((side) => asBefore(side, since))) continue;
-    const { rule, project, child } = found;
-    const task = child.entity === "tasks" ? (child.id as Id<"t">) : null;
-    const side = projectSide(project, rule === "held" ? "deleted" : "grouping");
+    if (rows.every((side) => versionAt(side) === seq || versionAt(side) < since)) continue;
+    const own = groupSide(found.group, found.rule === "held" ? "deleted" : "grouping");
     const brought =
-      rule === "held" ? of(child.entity, child.id) : of("tasks", child.id, "grouping");
-    if (side.length > 0) {
-      undo(side);
-      const field = child.entity === "tasks" ? "grouping" : "deleted";
-      broken.named.push({ entity: child.entity, id: child.id, task, field });
-    } else if (brought.length > 0) {
-      undo(brought);
-      const field = rule === "held" ? "deleted" : "grouping";
-      broken.named.push({ entity: "projects", id: project, task: null, field });
-    }
+      found.rule === "held"
+        ? of(found.child.entity, found.child.id)
+        : of("tasks", found.child.id, "grouping");
+    const [kept, other] = own.length > 0 ? [own, child] : [brought, group];
+    if (kept.length === 0) continue;
+    undo(kept);
+    const newest = other.reduce((a, b) => (versionAt(b) > versionAt(a) ? b : a));
+    if (versionAt(newest) <= since) continue;
+    const [entity, id, field] = newest;
+    broken.named.push({ entity, id, task: entity === "tasks" ? (id as Id<"t">) : null, field });
   }
 }
 
