@@ -1805,14 +1805,16 @@ interface DraftFolders {
   /** `task.folder_set` for each draft that keeps a folder of its own: after every other operation. */
   readonly ops: Operation[];
   readonly warnings: string[];
+  /** By draft index: the projects that share the folder of a draft that joined none of them. */
+  readonly shared: Record<string, string[]>;
 }
 
 /**
  * The folders of new tasks. A draft that names no area and no project goes to the project whose
  * folder holds its folder most closely (`deepestProject`), and keeps a folder of its own only when
  * it is not that project's folder itself. When several live projects have that folder, the task
- * goes to the project of the session's task if it is one of them, else to none, and the result
- * names them. Archived projects count only when no live one has it: the task is in no project,
+ * goes to the project of the session's task if it is one of them, else to none, and `shared`
+ * keeps them, so the answer names them as data. Archived projects count only when no live one has it: the task is in no project,
  * and the result says so. `ids` are the drafts' task IDs.
  */
 async function draftFolders(
@@ -1821,7 +1823,7 @@ async function draftFolders(
   ids: readonly string[],
   path: (k: number) => string,
 ): Promise<DraftFolders> {
-  const none = (): DraftFolders => ({ list: [...list], ops: [], warnings: [] });
+  const none = (): DraftFolders => ({ list: [...list], ops: [], warnings: [], shared: {} });
   if (!list.some((draft) => typeof draft["folder"] === "string")) {
     return none();
   }
@@ -1829,6 +1831,7 @@ async function draftFolders(
   const out = [...list];
   const ops: Operation[] = [];
   const warnings: string[] = [];
+  const shared: Record<string, string[]> = {};
   let projects: readonly ProjectFolderRow[] | undefined;
   let bound: Promise<string | undefined> | undefined;
   const looks = new Map<string, Promise<string | undefined>>();
@@ -1858,8 +1861,9 @@ async function draftFolders(
         chosen = live.find((p) => p.project === project);
         if (chosen === undefined) {
           const where = toInbox(draft, agent) ? "in the Inbox" : "in no project";
+          shared[String(k)] = live.map((p) => p.project);
           warnings.push(
-            `${at}: the folder is the folder of ${listed(live.map((p) => p.name))}, so the task is ${where}. Name its project to file it there.`,
+            `${at}: several projects have the folder, so the task is ${where}. Name one of them as its project to file it there.`,
           );
         }
       } else if (found !== undefined && live.length === 0) {
@@ -1874,7 +1878,7 @@ async function draftFolders(
     }
     if (own) ops.push({ kind: "task.folder_set", task: ids[k] ?? "", path: folder.stored });
   }
-  return { list: out, ops, warnings };
+  return { list: out, ops, warnings, shared };
 }
 
 /**
@@ -2309,13 +2313,21 @@ async function draftRows(
   const outcomes = drafts.map((d) => draftOutcome(result, d.first));
   const ids = outcomes.flatMap((o) => (o.id === undefined ? [] : [o.id]));
   const titles = ids.length === 0 ? undefined : await now(view, (r) => readTitles(r, ids));
+  // The projects that share the folder of a draft that joined none of them: their names now.
+  const shared = (result.answer?.["shared"] ?? {}) as Record<string, string[] | undefined>;
+  const groups = Object.keys(shared).length === 0 ? undefined : await now(view, readGroups);
   return drafts.map((d, k) => {
     const outcome = outcomes[k] ?? draftOutcome(result, d.first);
     const read = titles?.get(outcome.id ?? "");
+    const folderOf = (shared[String(k)] ?? []).flatMap((id) => {
+      const { name } = groupNow(groups, "project", id);
+      return name === undefined ? [] : [name];
+    });
     return {
       ...outcome,
       ...(read === undefined ? {} : { title: read.title }),
       ...(read?.project === undefined ? {} : { project: read.project }),
+      ...(folderOf.length === 0 ? {} : { folder_of: folderOf }),
       ...draftLog(result, d),
       ...heldOf(result, d.sources, d.at),
     };
@@ -2446,6 +2458,7 @@ const finishAnswer: Answer = async (view, stored) => {
       ...(row["ref"] === undefined ? {} : { ref: row["ref"] }),
       ...(row["title"] === undefined ? {} : { title: row["title"] }),
       ...(row["project"] === undefined ? {} : { project: row["project"] }),
+      ...(row["folder_of"] === undefined ? {} : { folder_of: row["folder_of"] }),
       ...(row["result"] === "exists" ? { lifecycle: row["lifecycle"] } : {}),
       ...(row["ambiguous"] === undefined ? {} : { ambiguous: row["ambiguous"] }),
       log_added: row["log_added"],
@@ -3015,7 +3028,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const pathOf = draftPathOf(ops, ids, at, sourcePaths);
     const submitted = await submit(call, [...named.groups, ...ops], {
       warnings: [...duplicates, ...folders.warnings],
-      answer: { made: named.made, paths: pathsOf(ops, pathOf) },
+      answer: { made: named.made, paths: pathsOf(ops, pathOf), shared: folders.shared },
       inserted: { at: 0, count: named.groups.length },
       pathOf,
     });
@@ -3303,7 +3316,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ...(own > 1 ? { wrapUp: 1 } : {}),
       inserted: { at: own, count: groups.length },
       warnings: folders.warnings,
-      answer: { made: named.made, paths: pathsOf(ops, pathOf) },
+      answer: { made: named.made, paths: pathsOf(ops, pathOf), shared: folders.shared },
       pathOf,
     });
     await markersAfter(call, ops, ownResults(submitted));

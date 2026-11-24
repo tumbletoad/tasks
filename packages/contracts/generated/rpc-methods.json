@@ -4080,6 +4080,14 @@
                   },
                   "type": "array"
                 },
+                "folder_of": {
+                  "description": "The projects that share its folder, when it joined none of them",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 1000,
+                  "type": "array"
+                },
                 "held": {
                   "description": "Sources linked without their key, which another task holds",
                   "items": {
@@ -4675,6 +4683,14 @@
                     "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
                     "type": "string"
                   },
+                  "type": "array"
+                },
+                "folder_of": {
+                  "description": "The projects that share its folder, when it joined none of them",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 1000,
                   "type": "array"
                 },
                 "held": {

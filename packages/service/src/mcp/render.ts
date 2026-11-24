@@ -720,11 +720,19 @@ function draftLine(row: Added, path: string): string {
   return `${path}: ${what.trimEnd()}`;
 }
 
-/** The project each draft's task is in now, by the draft's path: stored names, so data. */
+/**
+ * The project each draft's task is in now, or the projects that share its folder when it joined
+ * none of them, by the draft's path: stored names, so data.
+ */
 function projectLines(rows: readonly Added[], path: string): string[][] {
-  return rows.flatMap((row, k) =>
-    row.project === undefined ? [] : [[`${path}.${String(k)}: in ${clip(row.project, 120)}`]],
-  );
+  return rows.flatMap((row, k) => {
+    const at = `${path}.${String(k)}`;
+    const names = (row.folder_of ?? []).map((name) => clip(name, 120));
+    return [
+      ...(row.project === undefined ? [] : [[`${at}: in ${clip(row.project, 120)}`]]),
+      ...(names.length === 0 ? [] : [[`${at}: its folder is the folder of ${names.join(", ")}`]]),
+    ];
+  });
 }
 
 /** What to do with a log entry this request added to no task: a matched one may hold it already. */
@@ -855,6 +863,9 @@ function groupsRendered(result: Groups, organize: string): Rendered {
       {
         data: true,
         units: [
+          ...(result.also === undefined
+            ? []
+            : [[`Also the folder of ${result.also.map((p) => clip(p.name, 120)).join(", ")}`]]),
           ...insideLines,
           ...areas.flatMap((area) => [
             [`${area.name} (${String(area.active)}${facts(area)})`],

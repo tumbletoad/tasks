@@ -69,6 +69,11 @@ export const TaskFinishResult = z.strictObject({
         ref: TaskRef.optional(),
         title: z.string().describe("Its title now; absent when it could not be read").optional(),
         project: z.string().describe("Its project now; absent when in none").optional(),
+        folder_of: z
+          .array(z.string())
+          .max(1000)
+          .describe("The projects that share its folder, when it joined none of them")
+          .optional(),
         lifecycle: Lifecycle.describe("The matched task's lifecycle").optional(),
         ambiguous: SeveralMatch.optional(),
         log_added: LogAdded,
