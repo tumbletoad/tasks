@@ -188,7 +188,7 @@ export const CATALOGUE: readonly TargetDef[] = [
           "--session-id",
           "{session}",
           "-n",
-          "{task.id}",
+          "{task.id} {task.title}",
           "{permission}",
           "{extra_args}",
           "--",
@@ -226,7 +226,7 @@ export const CATALOGUE: readonly TargetDef[] = [
           "--session-id",
           "{session}",
           "-n",
-          "{task.id}",
+          "{task.id} {task.title}",
           "{permission}",
           "{extra_args}",
         ],
@@ -461,9 +461,9 @@ export const HOME_VARIABLES: readonly string[] = [
 export const WHOLE_ELEMENT_PLACEHOLDERS = ["exec", "permission", "extra_args", "tool_env"] as const;
 
 /**
- * Every placeholder of an argv or URL template, and where it may appear. None stands for task
- * text or the person's words: other accounts, shell histories and app logs can read a command
- * line or a link, so the brief is a pointer and the task's title is not offered.
+ * Every placeholder of an argv or URL template, and where it may appear. The task's title is the
+ * one piece of task text offered, and on a command line only: the agent app's session history
+ * holds it anyway. Nothing stands for the person's words.
  */
 export const PLACEHOLDERS: Readonly<Record<string, { argv: boolean; url: boolean }>> = {
   exec: { argv: true, url: false },
@@ -474,6 +474,7 @@ export const PLACEHOLDERS: Readonly<Record<string, { argv: boolean; url: boolean
   brief: { argv: true, url: true },
   session: { argv: true, url: true },
   "task.id": { argv: true, url: true },
+  "task.title": { argv: true, url: false },
   "launch.ref": { argv: true, url: true },
 };
 

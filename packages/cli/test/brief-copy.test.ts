@@ -68,14 +68,18 @@ describe("[A4.5.brief.copy-cli] ttasks brief --copy and --pack", () => {
       const copied = await tasks(["brief", "M-1", "--copy"]);
       expect(copied.code).toBe(0);
       expect(copied.copied).toHaveLength(1);
-      expect(copied.copied[0]).toMatch(/^TTasks task M-1 \(launch L[0-9A-Z]{5}\)\./u);
+      expect(copied.copied[0]).toMatch(
+        /^TTasks task M-1 "Fixture task for the brief" \(launch L[0-9A-Z]{5}\)\./u,
+      );
       expect(copied.stdout).toMatch(/^Brief copied to the clipboard \(launch L[0-9A-Z]{5}\)\.\n$/u);
       expect(copied.stdout).not.toContain("Fixture task");
 
       // Without --copy the brief is printed, and the clipboard is not touched.
       const printed = await tasks(["brief", "M-1"]);
       expect(printed.copied).toEqual([]);
-      expect(printed.stdout).toMatch(/^TTasks task M-1 \(launch L[0-9A-Z]{5}\)\./u);
+      expect(printed.stdout).toMatch(
+        /^TTasks task M-1 "Fixture task for the brief" \(launch L[0-9A-Z]{5}\)\./u,
+      );
 
       const pack = await tasks(["brief", "M-1", "--pack"]);
       expect(pack.code).toBe(0);

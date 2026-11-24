@@ -60,7 +60,8 @@ If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checko
 - A schema change is a new migration step. One open pull request touches
   `packages/storage/migrations` at a time.
 - Create files and folders through `packages/files`, so each gets its exact mode whatever the umask.
-- No task text, prompts or tokens in logs, command lines or URLs.
+- No task text, prompts or tokens in logs, command lines or URLs; a task's title may stand in the
+  session name and the brief of a session the person opens.
 - A test that fails only under load assumes something about time or the machine: remove the
   assumption, not the assertion.
 - Name a new dependency with its version and licence in the pull request.
