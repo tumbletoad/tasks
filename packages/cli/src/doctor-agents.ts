@@ -62,12 +62,11 @@ import {
   manualRemoval,
   readBlockRecords,
   homeGroups,
-  FURTHER_FILE,
-  readRecords,
   readsHome,
   recordArgv,
   recordedBlocks,
   samePath,
+  setupRecords,
   SetupStateInvalid,
   survey,
   toolsOf,
@@ -254,30 +253,23 @@ export async function agentChecks(
 ): Promise<Check[]> {
   const env = options.agents?.env ?? io.env;
   const checks: Check[] = [envCheck(env)];
-  let records;
-  try {
-    records = readRecords(state);
-  } catch (error) {
-    if (!(error instanceof SetupStateInvalid)) throw error;
+  // Every record of either record file is a home set up; a further file whose record cannot be
+  // read is named on its file's row below.
+  const read = setupRecords(state);
+  if (read.blind) {
     return [
       ...checks,
       instancesCheck(io, undefined, options),
       {
         id: "agents",
         status: "fail",
-        detail: `Setup's record of the agent homes (setup/agents.json in the state folder) cannot be read, so setup changes no file. Turning access off still works (${CLI_NAME} setup agents --remove, or Settings). To clean up, move the record aside, take ${PRODUCT_NAME}'s entries out of the apps by hand, then run: ${CLI_NAME} setup agents`,
+        detail: `Setup's record of the agent homes (${read.unreadable[0] ?? "in the state folder"}) cannot be read, so setup changes no file. Turning access off still works (${CLI_NAME} setup agents --remove, or Settings). To clean up, move the record aside, take ${PRODUCT_NAME}'s entries out of the apps by hand, then run: ${CLI_NAME} setup agents`,
       },
       await blockCheck(io, state, options),
       ...SKIPPED_ROWS,
     ];
   }
-  // The further files' records too: a record of either file is a home set up. One that cannot be
-  // read is named on its file's row below.
-  try {
-    records = [...records, ...readRecords(state, FURTHER_FILE)];
-  } catch (error) {
-    if (!(error instanceof SetupStateInvalid)) throw error;
-  }
+  const records = read.all;
   checks.push(instancesCheck(io, records, options));
   let session: Session | undefined;
   try {

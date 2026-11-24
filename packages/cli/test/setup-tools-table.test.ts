@@ -237,7 +237,8 @@ const TABLE: readonly Row[] = [
     space: "other",
     seen: s("on", "edited", false, true),
   },
-  // A turning off whose revoke the service did not confirm: the next apply finishes it first.
+  // An earlier build's turning off, left midway: its record may still take the access back, so Off
+  // finishes it, and nothing is offered to turn on before.
   {
     entry: "removing",
     program: "there",
@@ -250,7 +251,7 @@ const TABLE: readonly Row[] = [
     program: "there",
     access: "off",
     space: "here",
-    seen: s("off", "entry_left", true, true),
+    seen: s("off", "interrupted", false, true),
   },
 ];
 

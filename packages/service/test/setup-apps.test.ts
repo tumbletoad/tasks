@@ -34,7 +34,6 @@ import {
   gitOnPath,
   planChange,
   planOf,
-  readRecords,
   removeHome,
   runCommand,
   survey,
@@ -42,6 +41,7 @@ import {
   type HomeView,
   type SetupInput,
 } from "../src/setup/index.ts";
+import { readRecords } from "./setup-records.ts";
 import { keptRows } from "./setup-rows.ts";
 import { installedTasks } from "./harness.ts";
 

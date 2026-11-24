@@ -28,15 +28,14 @@ import {
   planChange,
   planOf,
   planToken,
-  readRecords,
   removeHome,
   setupDir,
-  SETUP_FILE,
   survey,
   type Change,
   type HomeView,
   type SetupInput,
 } from "../src/setup/index.ts";
+import { SETUP_FILE, readRecords } from "./setup-records.ts";
 import { keptRows } from "./setup-rows.ts";
 import { installedTasks } from "./harness.ts";
 

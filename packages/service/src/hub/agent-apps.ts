@@ -49,7 +49,7 @@ import {
   planOf,
   planToken,
   removeFiles,
-  unreadableRecords,
+  setupRecords,
   rowAccess,
   runCommand,
   samePath,
@@ -193,6 +193,8 @@ export interface AppsOutcome {
   readonly kept?: true;
   /** tools, failed: the service did not confirm that the access is off, so the entry stayed too. */
   readonly unconfirmed?: true;
+  /** tools, failed for `state_unwritable`: setup's record file it could not write. */
+  readonly record?: string;
   /**
    * tools: each settings file left otherwise than asked, shown with `~`, with why: turned on, each
    * that got no entry; turned off, each that still holds one.
@@ -316,7 +318,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     run: (argv, childEnv) => runCommand(argv, childEnv, userHome),
   };
   const views = userHome === "" ? [] : await survey(input);
-  const [damaged] = unreadableRecords(host.stateDir);
+  const [damaged] = setupRecords(host.stateDir).unreadable;
   // Claude Desktop with several settings files (a Windows app installed twice over the years): the
   // engine changes none of them on its own, and here the person picks one with its switch.
   // A change that did not finish shows what turning it on writes once it is finished.
@@ -814,10 +816,19 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
       }
       const failed = out.find((o) => o.result === "failed") ?? out.find((o) => o.result === "left");
       const reason = failed?.reason ?? failed?.result ?? "changed_meanwhile";
+      const record = failed?.record === undefined ? {} : { record: failed.record };
       if (access_ !== "unknown" || reason === "revoke_failed") {
-        return { key: c.key, part: "tools", result: "failed", reason, ...named };
+        return { key: c.key, part: "tools", result: "failed", reason, ...record, ...named };
       }
-      return { key: c.key, part: "tools", result: "failed", reason, unconfirmed: true, ...named };
+      return {
+        key: c.key,
+        part: "tools",
+        result: "failed",
+        reason,
+        unconfirmed: true,
+        ...record,
+        ...named,
+      };
     });
     return { applied: true, outcomes, view: (await look(host, space)).view };
   });

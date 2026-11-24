@@ -79,7 +79,7 @@ import {
   PRINT_LABELS,
   removeFiles,
   renews,
-  unreadableRecords,
+  setupRecords,
   rowAccess,
   runCommand,
   samePath,
@@ -334,7 +334,10 @@ function keptText(outcome: Outcome): string | undefined {
  * hand) also says what to take out of which file, so the next setup can register the home (A3
  * 3.7.8: the grant gate's refusal of such an entry sends the person here).
  */
-function reasonText(reason: OutcomeReason, home: HomeView["home"]): string {
+function reasonText(reason: OutcomeReason, home: HomeView["home"], record?: string): string {
+  if (reason === "state_unwritable" && record !== undefined) {
+    return `setup could not write its own record ${record} (a full disk, or a read-only file?), so it did nothing more in this home: run ${CLI_NAME} setup agents again once it can`;
+  }
   if (reason !== "foreign_entry") return REASON[reason];
   const removal = manualRemoval(home);
   return `${REASON.foreign_entry} (one added by hand). For setup to register this home, take ${removal.what} out of ${removal.file}; then run ${CLI_NAME} setup agents again`;
@@ -345,6 +348,7 @@ const NOTE: Readonly<Record<string, string>> = {
   undo_failed: `The entry may still be there: the next ${CLI_NAME} setup agents --apply or --remove takes it out.`,
   entry_left:
     "The entry there is not exactly the one setup asked for, so it was left as it is: take it out by hand if it is not wanted.",
+  file_gone: "Its file is gone, so only setup's record of it was taken out.",
 };
 
 const STATE_TEXT: Readonly<Record<HomeView["state"], string>> = {
@@ -423,6 +427,7 @@ const outcomeJson = (outcome: Outcome) => ({
   ...(outcome.access === undefined ? {} : { access: outcome.access }),
   ...(outcome.kept === undefined ? {} : { kept: outcome.kept }),
   ...(outcome.notes === undefined ? {} : { notes: outcome.notes }),
+  ...(outcome.record === undefined ? {} : { record: outcome.record }),
 });
 
 interface SpaceRow {
@@ -582,8 +587,9 @@ export async function agentsCommand(
         );
       case "apply": {
         const access = rowAccess(rowCall(call));
-        const { outcomes, blocks } = await withSetupLock(input.stateDir, async () => {
-          // What a run that ended midway left is settled first, and said.
+        const { outcomes, notes, blocks } = await withSetupLock(input.stateDir, async () => {
+          // What a run that ended midway left is settled first, and said: as an outcome for a home
+          // this apply was asked about, as a note for any other.
           const settled = mcp ? await settleHomes(await rowsOf(), access) : [];
           // The preview again, under the lock: apply goes on only when it is the plan the
           // person saw (`--plan`), whatever changed in the homes, machine.toml or the spaces.
@@ -610,13 +616,17 @@ export async function agentsCommand(
               ...(settled.length === 0 ? {} : { data: { settled: settled.map(outcomeJson) } }),
             });
           }
-          const done: Outcome[] = [...settled];
+          const done: Outcome[] = settled.filter((o) => selected(o));
           for (const files of homeGroups(input.platform, items, (i) => i.view.home)) {
             done.push(...(await applyFiles(rowed, files, space, access)));
           }
-          return { outcomes: done, blocks: (planned ?? []).map((b) => applyBlock(input, b)) };
+          return {
+            outcomes: done,
+            notes: settled.filter((o) => !selected(o)).map(settledText),
+            blocks: (planned ?? []).map((b) => applyBlock(input, b)),
+          };
         });
-        return report(io, globals, "apply", outcomes, [], blocks);
+        return report(io, globals, "apply", outcomes, notes, blocks);
       }
       case "remove": {
         const access = rowAccess(rowCall(call));
@@ -643,7 +653,7 @@ export async function agentsCommand(
             said.push(...(await revokeLeftRows(input, selected, call)));
             // A selected home with a file whose record cannot be read is never passed over in silence.
             if (surveyed.some((v) => selected(v) && v.refusal === "record_unreadable")) {
-              said.push(...unreadableRecords(input.stateDir).map(recordUnreadableText));
+              said.push(...setupRecords(input.stateDir).unreadable.map(recordUnreadableText));
             }
           }
           if (!block) {
@@ -902,10 +912,19 @@ async function status(
       io.stdout(`  ${view.home.file}: ${toolsLine(view, answer, live)}\n`);
     }
   }
+  unreadableRecords(io, input, homes.flat());
   if (rows === undefined) {
     io.stdout(`${PRODUCT_NAME}'s service is not running: the grant rows are not shown.\n`);
   }
   return 0;
+}
+
+/** Each record file setup cannot read, by its path, when a shown home's file needs it. */
+function unreadableRecords(io: Io, input: SetupInput, views: readonly HomeView[]): void {
+  if (!views.some((v) => v.refusal === "record_unreadable")) return;
+  for (const file of setupRecords(input.stateDir).unreadable) {
+    io.stdout(`${recordUnreadableText(file)}\n`);
+  }
 }
 
 /** The approve-tools part of each selected home: a change for the person to make, never made. */
@@ -1031,6 +1050,7 @@ async function preview(
       io.stdout(`   ${toolsLine(view, answer, live)}. Nothing to do.\n`);
     }
   }
+  if (mcp) unreadableRecords(io, input, all);
   if (delegated.length > 0) {
     io.stdout(
       `approve-tools: ${PRODUCT_NAME} never changes another app's approval settings. To approve its tools yourself:\n`,
@@ -1081,6 +1101,20 @@ async function blockPlan(
     homes.map((v) => v.home),
   );
   return planBlocks(views.filter(selected));
+}
+
+/** A home an apply was not asked about, whose setup that did not finish it settled first. */
+function settledText(outcome: Outcome): string {
+  const where = `${title(outcome)}, ${outcome.home.file}`;
+  if (outcome.result === "removed" || outcome.result === "unchanged") {
+    return `${where}: a setup that did not finish there was finished.`;
+  }
+  const why =
+    outcome.reason === undefined
+      ? ""
+      : `: ${reasonText(outcome.reason, outcome.home, outcome.record)}`;
+  const kept = keptText(outcome);
+  return `${where}: a setup that did not finish there is still to be finished${why}.${kept === undefined ? "" : ` ${kept}`}`;
 }
 
 /** What a remove says when setup's own record cannot be read: the access went, nothing else. */
@@ -1342,7 +1376,7 @@ function report(
         const reason =
           outcome.reason === undefined || outcome.result === "removed"
             ? ""
-            : `: ${reasonText(outcome.reason, outcome.home)}`;
+            : `: ${reasonText(outcome.reason, outcome.home, outcome.record)}`;
         const which = files.length === 1 ? "" : `${outcome.home.file}: `;
         io.stdout(`  ${which}${verb[outcome.result]}${reason}\n`);
         for (const note of outcome.notes ?? []) io.stdout(`  ${NOTE[note] ?? note}\n`);

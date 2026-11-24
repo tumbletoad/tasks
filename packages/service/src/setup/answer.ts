@@ -69,6 +69,11 @@ export interface ToolsFacts {
   readonly handMade: boolean;
   /** Setup's record holds an entry of its own in the file, which turning off takes out. */
   readonly owned: boolean;
+  /**
+   * A record of the home still owes its revoke (a run that ended midway, whose revoke the service
+   * did not confirm): nothing turns on until turning off has asked for it again.
+   */
+  readonly owed: boolean;
 }
 
 /** The one reason a file gives: why the tools do not start, why it cannot be turned on, or what to know. */
@@ -110,6 +115,17 @@ export interface ToolsAnswer {
  * will start: its program is there, and it names the home's instance and space.
  */
 export function toolsAnswer(f: ToolsFacts): ToolsAnswer {
+  const answer = fileAnswer(f);
+  if (!f.owed) return answer;
+  // Turning off asks for the revoke that is owed; turning on waits for it.
+  return {
+    status: answer.status,
+    why: answer.on !== undefined ? "interrupted" : (answer.why ?? "interrupted"),
+    off: true,
+  };
+}
+
+function fileAnswer(f: ToolsFacts): ToolsAnswer {
   const off = f.access !== "off" || f.owned;
   const live = f.access === "live" ? "on" : f.access === "unknown" ? "unknown" : "off";
   const made = (

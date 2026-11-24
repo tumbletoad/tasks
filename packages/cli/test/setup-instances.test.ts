@@ -7,7 +7,7 @@
 // A real service in this process with a test's terminal (it records each start and starts
 // nothing), the CLI in this process, fake `claude` and `codex` commands (testkit) on a scratch
 // PATH, and scratch agent homes in the test's temporary folder. No real agent home is read.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { instanceLabel, LABEL_MAX } from "@ttasks/launch";
@@ -228,6 +228,55 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
       expect(readFileSync(machineToml(), "utf8")).toBe(before);
       expect(await tiles()).toEqual([]);
       expect((await run(["setup", "instances", "--remove"])).stdout).toContain("Nothing to remove");
+    },
+    SLOW,
+  );
+
+  test(
+    "a home whose only record is its further settings file's keeps the instance that record names (pull request 193's second review, finding 1)",
+    async () => {
+      const setup = join(stateOf(w.home), "setup");
+      const stores = [join(setup, "agents.json"), join(setup, "agents-further.json")] as const;
+      const kept = stores.map((f) => (existsSync(f) ? readFileSync(f, "utf8") : undefined));
+      // A hand-made entry in the plain file; setup registered the inner one as `custom-reader`.
+      const record = {
+        app: "claude-code",
+        home: join(user, ".claude"),
+        file: join(user, ".claude", ".claude.json"),
+        is_default: true,
+        instance: "custom-reader",
+        account: "",
+        space: "sp_3z8sm956jp8dajmtsar5kx026c",
+        state: "applied",
+        entry: { command: join(w.home, "bin", windows ? "ttasks.exe" : "ttasks"), args: [] },
+        also: [],
+        made: { file: false, parent: false, spacing: null },
+        grant: null,
+        at: "2026-11-24T00:00:00.000Z",
+      };
+      mkdirSync(setup, { recursive: true });
+      writeFileSync(stores[0], JSON.stringify({ format: 2, homes: [] }));
+      writeFileSync(stores[1], JSON.stringify({ format: 2, homes: [record] }));
+      try {
+        const claude = (await preview()).add.find(
+          (a) => a.entry["config_home"] === join(user, ".claude"),
+        );
+        expect(claude?.id).toBe("custom-reader");
+        const only = await run(
+          ["setup", "instances", "--instance", "custom-reader", "--json"],
+          false,
+        );
+        expect(only.code, only.stderr).toBe(0);
+        expect((JSON.parse(only.stdout) as Preview).add.map((a) => a.id)).toEqual([
+          "custom-reader",
+        ]);
+      } finally {
+        stores.forEach((file, i) => {
+          const was = kept[i];
+          if (was === undefined) rmSync(file, { force: true });
+          else writeFileSync(file, was);
+        });
+      }
     },
     SLOW,
   );

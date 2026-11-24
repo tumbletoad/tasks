@@ -49,7 +49,7 @@ import {
 import { homeFolder, hostFacts, resolveLayout } from "@ttasks/service/paths";
 import {
   blockOf,
-  readRecords,
+  setupRecords,
   samePath,
   t3Proposals,
   t3SettingsOf,
@@ -183,12 +183,13 @@ async function surveyOf(
     nodeDetectHost({ platform: io.platform, env, home: userHome }),
     existing.filter((i) => i.target !== "t3"),
   );
-  let records: HomeRecord[] = [];
-  try {
-    records = readRecords(layout.state);
-  } catch {
-    // Setup agents' record cannot be read: the proposals keep detection's IDs.
-  }
+  // Setup agents' records of both files; when they cannot be read, the proposals keep detection's
+  // IDs. A home's `applied` record names its instance before a pending one.
+  const recorded = setupRecords(layout.state).all;
+  const records: HomeRecord[] = [
+    ...recorded.filter((r) => r.state === "applied"),
+    ...recorded.filter((r) => r.state !== "applied"),
+  ];
   const taken = new Set(existing.map((i) => i.id));
   const offers: Offer[] = [];
   const left: Left[] = [];

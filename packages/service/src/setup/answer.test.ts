@@ -122,6 +122,7 @@ describe("[A3.3.13.setup.home-answer] A home's row from its files' answers: on w
     installed: true,
     handMade: false,
     owned: true,
+    owed: false,
   };
 
   test("a file's tools are on only when its entry will start: its program there, naming the home's instance and space", () => {
@@ -138,6 +139,7 @@ describe("[A3.3.13.setup.home-answer] A home's row from its files' answers: on w
       installed: true,
       handMade: false,
       owned: false,
+      owed: false,
     };
     expect(toolsAnswer(noProgram)).toEqual(offLive("no_program"));
     expect(
@@ -183,6 +185,17 @@ describe("[A3.3.13.setup.home-answer] A home's row from its files' answers: on w
     ]) {
       expect(toolsAnswer(facts).on).toBeUndefined();
     }
+  });
+
+  test("while a record of the home owes its revoke, a file offers Off and nothing to turn on, and says why", () => {
+    expect(toolsAnswer({ ...base, owed: true })).toEqual({
+      status: "on",
+      why: "interrupted",
+      off: true,
+    });
+    expect(
+      toolsAnswer({ ...base, owed: true, state: "not_registered", entry: false, owned: false }),
+    ).toEqual({ status: "off", why: "interrupted", off: true });
   });
 
   test("a file with no entry in a home set up in another space is not offered from here", () => {

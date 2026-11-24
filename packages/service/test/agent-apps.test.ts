@@ -419,7 +419,7 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
   );
 
   it(
-    "a setup that ended midway is shown as settling leaves it, and Apply settles it, then writes exactly what it showed",
+    "a setup that ended midway is shown as settling leaves it: Off settles it, and the next Apply writes exactly what it showed",
     async () => {
       const recordPath = join(stateOf(w.home), "setup", "agents.json");
       const look = async () => (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
@@ -471,8 +471,18 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
           ],
         }),
       );
-      const shown = row(await look(), "claude-code");
-      expect(shown.tools).toMatchObject({ on: false, change: "add", why: "interrupted" });
+      // An earlier build's pending record may still take the access back: until Off has settled
+      // it, nothing is offered to turn on.
+      const pending = row(await look(), "claude-code");
+      expect(pending.tools).toMatchObject({ on: false, change: null, why: "interrupted" });
+      expect(pending.tools?.off).toBeDefined();
+      const settled = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+        space,
+        changes: [{ key: pending.key, part: "tools", on: false, plan: pending.tools?.off?.plan }],
+      });
+      expect(settled.result.outcomes).toMatchObject([{ result: "done" }]);
+      const shown = row(settled.result.view, "claude-code");
+      expect(shown.tools).toMatchObject({ on: false, change: "add" });
       expect(shown.tools?.detail.join("\n")).not.toContain("claude-before");
       const applied = await call<Applied>(w, "/api/v1/machine/apps_apply", {
         space,
@@ -936,6 +946,54 @@ describe("[A7.3.12.m5-12.page-files] A damaged record file is named by its own p
       } finally {
         rmSync(further, { force: true });
         rmSync(inner, { force: true });
+      }
+    },
+    SLOW,
+  );
+
+  it(
+    "both of Claude Code's entries in place, then its further record file damaged: Off says the inner entry stays, with its file, and the page keeps naming both (pull request 193's second review, finding 3)",
+    async () => {
+      const plain = join(w.user, ".claude.json");
+      const inner = join(w.user, ".claude", ".claude.json");
+      const further = join(stateOf(w.home), "setup", "agents-further.json");
+      const shownInner = join("~", ".claude", ".claude.json");
+      writeFileSync(plain, "{}\n");
+      writeFileSync(inner, "{}\n");
+      const look = async () =>
+        row((await call<AppsView>(w, "/api/v1/machine/apps", { space })).result, "claude-code");
+      const turn = async (on: boolean, found: AppsView["rows"][number]) =>
+        call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: found.key, part: "tools", on, plan: found.tools?.plan }],
+        });
+      try {
+        expect((await turn(true, await look())).result.outcomes).toMatchObject([
+          { result: "done" },
+        ]);
+        writeFileSync(further, '{"format": 2, "homes": [');
+        const off = await turn(false, await look());
+        expect(off.result.outcomes).toMatchObject([
+          {
+            result: "done",
+            reason: "record_unreadable",
+            kept: true,
+            files: [{ file: shownInner, why: "record_unreadable" }],
+          },
+        ]);
+        expect(claudeEntry(w.user)).toBeUndefined();
+        expect(readFileSync(inner, "utf8")).toContain(MCP_SERVER_KEY);
+        // Afterwards the page names the damaged record, and the row the file whose entry stays.
+        const after = (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+        expect(after.record).toBe(further);
+        expect(row(after, "claude-code").tools?.files).toContainEqual({
+          file: shownInner,
+          why: "record_unreadable",
+        });
+      } finally {
+        rmSync(further, { force: true });
+        rmSync(inner, { force: true });
+        rmSync(plain, { force: true });
       }
     },
     SLOW,

@@ -880,3 +880,114 @@ async function revokeAll(): Promise<void> {
     session.close();
   }
 }
+
+describe("[A3.3.13.setup.home-files] ttasks setup agents cleans up by what it recorded, says what it could not, and an apply's exit is about the homes it was asked about", () => {
+  const plain = () => join(user, ".claude.json");
+  const inner = () => join(user, ".claude", ".claude.json");
+  const further = () => join(stateOf(home), "setup", "agents-further.json");
+  const claude = ["setup", "agents", "--app", "claude-code"];
+  interface Done {
+    homes: { file: string; result: string; reason?: string; kept?: string; notes?: string[] }[];
+    notes?: string[];
+  }
+  /** Turns Claude Code's default home on, each file that is there. */
+  const claudeOn = async () => {
+    const planned = await run([...claude, "--space", space, "--json"], false);
+    const applied = await run((JSON.parse(planned.stdout) as { apply: string[] }).apply.slice(1));
+    expect(applied.code, applied.stdout).toBe(0);
+  };
+  const recordedFiles = () =>
+    [recordFile(), further()].flatMap((f) =>
+      existsSync(f)
+        ? (JSON.parse(readFileSync(f, "utf8")) as { homes: { file: string }[] }).homes.map(
+            (h) => h.file,
+          )
+        : [],
+    );
+
+  test(
+    "Off with the inner file malformed, then that file deleted: Remove forgets its record, saying the file is gone, and exits 0 (pull request 193's second review, finding 2)",
+    async () => {
+      const before = readFileSync(plain(), "utf8");
+      writeFileSync(inner(), "{}\n");
+      try {
+        await claudeOn();
+        writeFileSync(inner(), `${readFileSync(inner(), "utf8")},`);
+        expect((await run([...claude, "--remove"])).code).toBe(10);
+        rmSync(inner());
+        const removed = await run([...claude, "--remove", "--json"]);
+        expect(removed.code, removed.stdout).toBe(0);
+        expect((JSON.parse(removed.stdout) as Done).homes).toContainEqual(
+          expect.objectContaining({ file: inner(), result: "removed", notes: ["file_gone"] }),
+        );
+        expect(recordedFiles()).not.toContain(inner());
+        expect(readFileSync(plain(), "utf8")).toBe(before);
+      } finally {
+        rmSync(inner(), { force: true });
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "both entries in place, then agents-further.json damaged: Remove exits 10 and names the inner file and that record, the first time and every time after; status and preview name the record too (finding 3)",
+    async () => {
+      const before = readFileSync(plain(), "utf8");
+      writeFileSync(inner(), "{}\n");
+      let good: string | undefined;
+      try {
+        await claudeOn();
+        good = readFileSync(further(), "utf8");
+        writeFileSync(further(), '{"format": 2, "homes": [');
+        const status = await run([...claude, "--status"], false);
+        expect(status.stdout).toContain(further());
+        const preview = await run([...claude, "--space", space], false);
+        expect(preview.stdout).toContain(further());
+        for (const time of ["first", "again"]) {
+          const removed = await run([...claude, "--remove"]);
+          expect(removed.code, `${time}: ${removed.stdout}`).toBe(10);
+          expect(removed.stdout).toContain(`The entry is still in ${inner()}.`);
+          expect(removed.stdout).toContain(further());
+        }
+        expect(readFileSync(plain(), "utf8")).toBe(before);
+      } finally {
+        if (good !== undefined) writeFileSync(further(), good);
+        await run([...claude, "--remove"]);
+        rmSync(inner(), { force: true });
+      }
+      expect(recordedFiles()).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a Claude Code cleanup that could not finish is said as a note by a Codex apply, which exits 0 (pull request 193's second review; also on main)",
+    async () => {
+      const before = readFileSync(plain(), "utf8");
+      const codexFile = join(user, ".codex", "config.toml");
+      let on: string | undefined;
+      try {
+        await claudeOn();
+        on = readFileSync(plain(), "utf8");
+        writeFileSync(plain(), `${on},`);
+        expect((await run([...claude, "--remove"])).code).toBe(10);
+        const planned = await run(
+          ["setup", "agents", "--app", "codex", "--space", space, "--json"],
+          false,
+        );
+        const apply = (JSON.parse(planned.stdout) as { apply: string[] }).apply.slice(1);
+        const applied = await run([...apply, "--json"]);
+        expect(applied.code, applied.stdout).toBe(0);
+        const done = JSON.parse(applied.stdout) as Done;
+        expect(done.homes.map((h) => h.file)).toEqual([codexFile]);
+        expect(done.notes?.join("\n")).toContain(plain());
+      } finally {
+        if (on !== undefined) writeFileSync(plain(), on);
+        await run([...claude, "--remove"]);
+        await run(["setup", "agents", "--app", "codex", "--remove"]);
+      }
+      expect(readFileSync(plain(), "utf8")).toBe(before);
+    },
+    SLOW,
+  );
+});

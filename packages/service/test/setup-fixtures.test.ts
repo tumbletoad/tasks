@@ -28,25 +28,22 @@ import { withAppLock } from "../src/setup/app-lock.ts";
 import {
   applyFiles,
   applyHome,
-  FURTHER_FILE,
   homeAnswer,
   planOf,
   planToken,
-  readRecords,
   removeFiles,
   removeHome,
   setupDir,
-  SETUP_FILE,
   settleHomes,
   survey,
   toolsOf,
-  writeRecords,
   type Access,
   type AgentApp,
   type HomeRecord,
   type HomeView,
   type SetupInput,
 } from "../src/setup/index.ts";
+import { FURTHER_FILE, SETUP_FILE, readRecords, writeRecords } from "./setup-records.ts";
 import { keptRows, type KeptRows } from "./setup-rows.ts";
 import { installedTasks } from "./harness.ts";
 
@@ -2201,7 +2198,9 @@ describe("[A3.3.13.setup.cuts] What a run cut between two of its steps leaves: w
         const w = await world();
         const { plain, inner } = await bothOn(w);
         await w.rows.revoke((await filesOf(w))[0]?.home ?? missingHome());
-        if (first === "removing") rewriteRecord(w, plain, (r) => ({ ...r, state: "removing" }));
+        if (first === "removing") {
+          rewriteRecord(w, plain, (r) => ({ ...r, state: "removing", gives_access: false }));
+        }
         const seen = await answers(w);
         expect(
           seen.map((s) => s.answer),
@@ -2681,6 +2680,162 @@ describe("[A3.3.13.setup.home-files] Every record names a home to show: a record
       expect(await turnOff(w)).toMatchObject([{ result: "removed" }, { result: "removed" }]);
       expect([bytesOf(plain), bytesOf(inner)]).toEqual(before);
       expect(furtherRecords(w)).toEqual([]);
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.home-files] What setup recorded is what it cleans up: a recorded file that is gone, and an entry whose record cannot be read, are never passed over", () => {
+  test(
+    "Off with one file malformed, then that file deleted: Off is still offered, and it and settling forget the record, saying the file is gone (pull request 193's second review, finding 2)",
+    async () => {
+      for (const by of ["off", "settling"] as const) {
+        const w = await world();
+        const { plain, inner } = twoFiles(w);
+        seed(plain, "{}\n");
+        seed(inner, "{}\n");
+        await turnOn(w);
+        writeFileSync(inner, `${readFileSync(inner, "utf8")},`);
+        expect(await turnOff(w), by).toMatchObject([
+          { result: "removed", access: "off" },
+          { result: "left", reason: "invalid_file" },
+        ]);
+        expect(furtherRecords(w)).toMatchObject([{ state: "removing" }]);
+        rmSync(inner);
+        const seen = await answers(w);
+        expect(seen.map((s) => s.file)).toEqual([plain, inner]);
+        expect(homeAnswer(seen).off, by).toBe(true);
+        const done = by === "off" ? await turnOff(w) : await settleHomes(live(w), w.rows);
+        expect(
+          done.find((o) => o.home.file === inner),
+          by,
+        ).toMatchObject({
+          result: "removed",
+          notes: ["file_gone"],
+        });
+        expect(furtherRecords(w), by).toEqual([]);
+        expect((await filesOf(w)).map((v) => v.home.file)).toEqual([plain]);
+        expect(homeAnswer(await answers(w)).off).toBe(false);
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "a file turned on, then deleted: its home offers Off, which forgets its record with the other file's entry, and nothing writes the file again",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      rmSync(inner);
+      const seen = await answers(w);
+      expect(seen.map((s) => s.file)).toEqual([plain, inner]);
+      expect(homeAnswer(seen)).toMatchObject({ status: "on", off: true });
+      await turnOn(w);
+      expect(existsSync(inner)).toBe(false);
+      expect(await turnOff(w)).toMatchObject([
+        { result: "removed", access: "off" },
+        { result: "removed", notes: ["file_gone"] },
+      ]);
+      expect([readRecords(w.input.stateDir), furtherRecords(w)]).toEqual([[], []]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+    },
+    SLOW,
+  );
+
+  test(
+    "both entries in place and agents-further.json then damaged: Off says the inner entry stays, with its file, the first time and every time after, and the file says why (pull request 193's second review, finding 3)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      writeFileSync(join(setupDir(w.input.stateDir), FURTHER_FILE), '{"format": 2, "homes": [');
+      const innerBytes = bytesOf(inner);
+      expect(await turnOff(w)).toMatchObject([
+        { result: "removed", access: "off" },
+        { result: "left", reason: "record_unreadable", kept: "own", access: "off" },
+      ]);
+      expect((await answers(w))[1]?.answer).toMatchObject({ why: "record_unreadable" });
+      const again = await turnOff(w);
+      expect(again).toMatchObject([
+        { result: "left", reason: "record_unreadable" },
+        { result: "left", reason: "record_unreadable", kept: "own" },
+      ]);
+      expect(again[0]?.kept).toBeUndefined();
+      expect(bytesOf(inner)).toEqual(innerBytes);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.access-rule] Nothing turns on for a home while a record of it owes its revoke or could not be written: one check where each grant is asked for", () => {
+  test.skipIf(root)(
+    "the first file's record read-only right after its grant: the undo revokes, the same apply turns the other file on not, and names the record file; settling later takes nothing a later grant gave (pull request 193's second review, finding 4)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      let restore = (): void => undefined;
+      let grants = 0;
+      const rows = keptRows((verb) => {
+        if (verb === "grant" && (grants += 1) === 1) restore = unwritable(recordPath(w));
+      });
+      const input = { ...w.input, rows: rows.live };
+      let done: Awaited<ReturnType<typeof turnOn>>;
+      try {
+        done = await turnOn(w, rows, input);
+      } finally {
+        restore();
+      }
+      const record = recordPath(w);
+      expect(done).toMatchObject([
+        { result: "failed", reason: "state_unwritable", record },
+        { result: "left", reason: "state_unwritable", record },
+      ]);
+      expect(rows.asked.map((x) => x.verb)).toEqual(["grant", "revoke"]);
+      expect(entryIn(CLAUDE, inner)).toBeUndefined();
+      // The record writable again: what it still owes is settled, and nothing live is taken.
+      await settleHomes({ ...w.input, rows: rows.live }, rows);
+      expect(rows.asked.filter((x) => x.verb === "grant")).toHaveLength(1);
+      expect(rows.live).toEqual([]);
+      expect([entryIn(CLAUDE, plain), entryIn(CLAUDE, inner)]).toEqual([undefined, undefined]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a revoke the service did not confirm: the row offers Off only, and says why; Off asks for the revoke again, and then the home turns on (pull request 193's second review)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      seed(plain, "{}\n");
+      writeRecords(w.input.stateDir, []);
+      rewriteRecord(w, inner, (r) => ({ ...r, state: "applying", gives_access: true }));
+      w.rows.refuse.revoke = true;
+      expect(await settleHomes(live(w), w.rows)).toMatchObject([
+        { result: "failed", reason: "revoke_failed" },
+      ]);
+      const seen = await answers(w);
+      expect(seen.map((s) => s.answer.on)).toEqual([undefined, undefined]);
+      expect(seen.map((s) => s.answer.why)).toEqual(["interrupted", "interrupted"]);
+      expect(homeAnswer(seen)).toMatchObject({ off: true });
+      w.rows.refuse = {};
+      w.rows.asked.length = 0;
+      await turnOff(w);
+      expect(w.rows.asked.map((x) => x.verb)).toEqual(["revoke"]);
+      expect(await turnOn(w)).toMatchObject([
+        { result: "applied", access: "on" },
+        { result: "applied", access: "on" },
+      ]);
     },
     SLOW,
   );
