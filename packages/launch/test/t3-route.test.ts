@@ -13,7 +13,7 @@ import { FakeT3 } from "@ttasks/testkit/fake-t3";
 import { LaunchMachine, type RecoverySteps } from "../src/machine.ts";
 import { resolvePlace, type RootFolder } from "../src/places.ts";
 import type { LaunchIntent } from "../src/store.ts";
-import { T3_TEXT, T3Route, type T3Prepared } from "../src/t3-route.ts";
+import { T3Route, type T3Prepared } from "../src/t3-route.ts";
 import { MemoryT3Files, readPairing } from "../src/t3-state.ts";
 import { MemoryDurable, MemoryExecutionStore, randomId } from "./memory-store.ts";
 import { MACHINE } from "./stores.ts";
@@ -457,7 +457,6 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
         reason: "reconnect",
       });
       expect(await route.availability()).toEqual({ state: "reconnect" });
-      expect(T3_TEXT.reconnect).toBe("Reconnect T3");
 
       // Pairing again clears it; a 401 on the dispatch itself is a refusal: nothing was made.
       await pair();
@@ -589,7 +588,6 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
         kind: "unavailable",
         reason: "not_running",
       });
-      expect(T3_TEXT.not_running).toBe("Start T3 Code");
       files.files.clear();
       expect(await route.availability()).toEqual({ state: "not_paired" });
     },

@@ -69,9 +69,9 @@ export type T3Unavailable =
 export const T3_TEXT = {
   not_paired: `Pair ${PRODUCT_NAME} with T3 Code first: ${CLI_NAME} setup t3`,
   not_running: "Start T3 Code",
-  reconnect: "Reconnect T3",
+  reconnect: `T3 Code no longer accepts ${PRODUCT_NAME}'s pairing. Pair again: ${CLI_NAME} setup t3`,
   no_answer: "T3 Code did not answer. Try again.",
-  not_registered: "T3 Code did not add this folder as a project.",
+  not_registered: `T3 Code did not add this folder as a project. Add it in T3 Code, or pair again choosing Full access: ${CLI_NAME} setup t3`,
   model_required: "Set t3_model for this instance: T3 takes a provider instance with its model.",
   pairing_denied: `The pairing with T3 Code does not allow this. Pair again, choosing Full access: ${CLI_NAME} setup t3`,
 } as const satisfies Record<T3Unavailable, string>;
