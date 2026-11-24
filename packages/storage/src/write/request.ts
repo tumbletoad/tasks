@@ -17,6 +17,7 @@ import {
   readPreference,
   type PrefValue,
 } from "@ttasks/contracts/preferences";
+import { isTimeZone } from "@ttasks/contracts/day";
 import { isId, type Id } from "../ids.ts";
 import { inRange, RANGES } from "../rows.ts";
 import { OPEN_SETS } from "../schema.ts";
@@ -1270,7 +1271,6 @@ const isScope = (scope: unknown): scope is string =>
   !scope.includes("\t") &&
   scope !== SYSTEM_SCOPE;
 const DATE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/;
-const TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/;
 const AS_OF = /^([0-9]{1,10})\.([0-9]{1,15})\.([0-9a-hjkmnp-tv-z]{8})$/;
 
 /** Whether `text` is a calendar date `YYYY-MM-DD`. */
@@ -1281,17 +1281,6 @@ export function isDate(text: unknown): text is string {
   const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
   const date = new Date(Date.UTC(y, m - 1, d));
   return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
-}
-
-/** Whether `name` is an IANA time zone this runtime knows. A bare offset is refused (A1 3.4). */
-export function isTimeZone(name: unknown): name is string {
-  if (typeof name !== "string" || name.length > 64 || !TIME_ZONE.test(name)) return false;
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: name });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** Parses the wire form of an `as_of`, `<epoch>.<seq>.<tag>` (A1 3.5), or returns undefined. */

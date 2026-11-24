@@ -46,6 +46,20 @@ export function dateOf(day: number): string {
   return new Date(day * DAY_MS).toISOString().slice(0, 10);
 }
 
+/** The form of an IANA time zone name: a bare offset is none (A1 3.4). */
+export const TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/u;
+
+/** Whether `name` is an IANA time zone this runtime knows. */
+export function isTimeZone(name: unknown): name is string {
+  if (typeof name !== "string" || name.length > 64 || !TIME_ZONE.test(name)) return false;
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Building a formatter is the costly part of reading a date: one per time zone. */
 const dateFormats = new Map<string, Intl.DateTimeFormat>();
 

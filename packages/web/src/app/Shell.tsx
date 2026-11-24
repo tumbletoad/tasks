@@ -137,7 +137,16 @@ export function Shell({ space }: { readonly space: string }) {
     <ToastContext.Provider value={say}>
       <SheetContext.Provider value={sheetControl}>
         <div className={styles.frame} data-phase={state.phase}>
-          <a className={styles.skip} href="#main">
+          {/* Focus moves without following the link: a `#main` entry would not hold the search the
+              tab's entry holds (route.ts). */}
+          <a
+            className={styles.skip}
+            href="#main"
+            onClick={(event) => {
+              event.preventDefault();
+              document.getElementById("main")?.focus();
+            }}
+          >
             {t("app.skip")}
           </a>
           <nav className={styles.sidebar} aria-label={t("nav.label")}>

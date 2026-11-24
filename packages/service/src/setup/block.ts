@@ -34,14 +34,8 @@ import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/bran
 import { commitEdit } from "../config/edit.ts";
 import { BOM, MAX_CONFIG_BYTES } from "../config/toml.ts";
 import { toolOf } from "../mcp/tools.ts";
-import {
-  managedFile,
-  readText,
-  samePath,
-  type AgentHome,
-  type Refusal,
-  type SetupInput,
-} from "./agents.ts";
+import { managedFile, readText, samePath, type AgentHome, type SetupInput } from "./agents.ts";
+import type { Refusal } from "./answer.ts";
 import { generatorNotice } from "./generated.ts";
 import { unifiedDiff } from "./diff.ts";
 import {

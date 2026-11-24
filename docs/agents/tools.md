@@ -2638,6 +2638,7 @@ MCP tool `search`, "Search tasks and learnings": Use to find tasks before you ad
 | `limit` | integer, 1 to 50 | no | Rows per page; default 15 |
 | `cursor` | string, max 40 | no | Next page: the last page's cursor, alone |
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
+| `time_zone` | string, max 64 | no, user only | IANA time zone that today and relative days count in; default: the service's |
 
 ### Output
 

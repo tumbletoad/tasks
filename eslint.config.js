@@ -194,6 +194,38 @@ const noDeadButton = [
     message: 'A button needs an action: onClick, or type="submit" in a form.',
   },
 ];
+// The page has one clock (row/useClock.ts), so everything that depends on the day moves to the next
+// one together; a reading of today or of the time zone anywhere else would stay on yesterday. The
+// rule sees the usual ways to read them; it cannot see `Date.now()` compared with a due date.
+const DAY_MESSAGE = "Read the day from useClock (row/useClock.ts), the page's one clock.";
+const noOwnDay = [
+  { selector: "NewExpression[callee.name='Date'][arguments.length=0]", message: DAY_MESSAGE },
+  { selector: "CallExpression[callee.property.name='toDateString']", message: DAY_MESSAGE },
+  { selector: "MemberExpression[property.name='resolvedOptions']", message: DAY_MESSAGE },
+  {
+    selector:
+      "CallExpression[callee.name='localDate'] > CallExpression.arguments[callee.object.name='Date'][callee.property.name='now']",
+    message: DAY_MESSAGE,
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name=/^(toLocaleDateString|toLocaleTimeString|getDate|getDay|getMonth|getFullYear|getHours|getMinutes|setDate|setHours)$/]",
+    message: "A date in the browser's default zone: read it with the clock's zone (row/dates.ts).",
+  },
+];
+// Formatting in the default zone shows another day than the clock: dates.ts formats with its zone.
+const FORMAT_MESSAGE =
+  "Format a date with the clock's zone: formatInstant or formatDay (row/dates.ts).";
+const noOwnFormat = [
+  {
+    selector: "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
+    message: FORMAT_MESSAGE,
+  },
+  {
+    selector: "CallExpression[callee.property.name=/^format(Date|Time)(ToParts)?$/]",
+    message: FORMAT_MESSAGE,
+  },
+];
 const stdoutImports = ["process", "node:process"].map((name) => ({
   name,
   importNames: ["stdout"],
@@ -342,6 +374,53 @@ export default defineConfig([
         ...noAppData,
         ...noUiProse,
         ...noDeadButton,
+        ...noOwnDay,
+        ...noOwnFormat,
+      ],
+    },
+  },
+  {
+    // The formatters, each with the clock's zone.
+    files: ["packages/web/src/row/dates.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...noShell,
+        ...noTmpdir,
+        ...noAppData,
+        ...noUiProse,
+        ...noDeadButton,
+        ...noOwnDay,
+      ],
+    },
+  },
+  {
+    // The day rules the page shares with the service take their clock from the caller.
+    files: ["packages/contracts/src/day.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...noShell,
+        ...noTmpdir,
+        ...noAppData,
+        ...noUmask,
+        ...noReport,
+        ...noOwnDay,
+      ],
+    },
+  },
+  {
+    // The clock itself reads the day.
+    files: ["packages/web/src/row/useClock.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...noShell,
+        ...noTmpdir,
+        ...noAppData,
+        ...noUiProse,
+        ...noDeadButton,
+        ...noOwnFormat,
       ],
     },
   },

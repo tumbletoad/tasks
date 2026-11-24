@@ -3,7 +3,7 @@
 // calendar, which the clock names, so every function here is pure: the same clock gives the same
 // answer on every machine, and tests pass their own. The calendar arithmetic is day.ts's, shared
 // with the service.
-import { dayNumber, localDate, type DayClock } from "@ttasks/contracts/day";
+import { dayNumber, type DayClock } from "@ttasks/contracts/day";
 
 /** The viewer's calendar and its locale. */
 export interface Clock extends DayClock {
@@ -28,12 +28,6 @@ export function formatter(
     formats.set(key, format);
   }
   return format;
-}
-
-/** Today's clock for this browser: its zone and the page's locale. */
-export function browserClock(locale: string, now: number = Date.now()): Clock {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return { today: localDate(now, timeZone), now, timeZone, locale };
 }
 
 /**

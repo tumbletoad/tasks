@@ -3571,6 +3571,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.13.setup.tools-table",
+      "title": "One answer for each home's tools, as a table for Claude Code, Codex and Claude Desktop: every combination of the entry (setup's, changed by hand, gone), the program it names, the access and the space, read through the page and the command line's status JSON on one scratch state; turning off is offered whenever the access is live, and every action offered is carried out",
+      "source": "A3 3.13.1, A3 3.14",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.13.setup.free-instance",
       "title": "A detected home whose proposed instance another home's live row holds is offered a free one (<id>-2), which its entry and row carry and its record keeps; an instance machine.toml names that another home holds is kept and its refusal is named instance_taken, with the home left as it was; an entry added by hand is left and the preview says how to take it out with the app's own mcp remove",
       "source": "A3 3.7.8, A3 3.13.1, A7 3.11 M4.05b",
@@ -3588,7 +3596,7 @@
     },
     {
       "id": "A3.3.13.setup.fixtures",
-      "title": "Agent setup's fixture table, run through the production planner, writer and grants for Claude Code, Codex and Claude Desktop with the raw bytes, the access and the other home compared after each action: add then remove gives back every byte (a byte order mark, CRLF, four spaces, tabs, one line, unknown keys, an empty servers object with spaces inside, comments, no final newline, an empty file, no file, which setup creates and deletes again except Claude Desktop's); access is given once the entry is in place and taken back before it comes out; a file setup does not accept stays as it was; an entry changed by hand, a comment in or above its table included, and a change made while setup gives the access stay and lose their access; a file changed since the plan is not written while Claude Code's file takes the entry as it is then; a Claude Code session that saves during setup keeps its save under its own lock, one that keeps the lock leaves nothing written, and a left lock is taken over; a file that cannot be written gives no access and its entry comes out at the next setup; a run that ended midway is finished or undone once; a refused row takes the entry back and a failed revoke is done again; a read that fails right after the write keeps the record to take the entry out; giving a registered home its access back checks its entry as a new install does; with setup's own record unreadable every home with access still turns off and nothing turns on; a volume without hard links still gets a new file; an earlier build's records are read in place",
+      "title": "Agent setup's fixture table, run through the production planner, writer and grants for Claude Code, Codex and Claude Desktop with the raw bytes, the access and the other home compared after each action: add then remove gives back every byte (a byte order mark, CRLF, four spaces, tabs, one line, unknown keys, an empty servers object with spaces inside, comments, no final newline, an empty file, no file, which setup creates and deletes again except Claude Desktop's); access is given once the entry is in place and taken back before it comes out; a file setup does not accept stays as it was; an entry changed by hand, a comment in or above its table included, and a change made while setup gives the access stay and lose their access; a file changed since the plan is not written while Claude Code's file takes the entry as it is then; a Claude Code session that saves during setup keeps its save under its own lock, one that keeps the lock leaves nothing written, and a left lock is taken over; a file that cannot be written gives no access and its entry comes out at the next setup; a run that ended midway is finished or undone once; a refused row takes the entry back and a failed revoke is done again, the entry kept until one is confirmed; a read that fails right after the write keeps the record to take the entry out; giving a registered home its access back checks its entry as a new install does; with setup's own record unreadable every home with access still turns off and nothing turns on; a volume without hard links still gets a new file; an earlier build's records are read in place",
       "source": "A3 3.13.1, A3 3.7.4",
       "owner": "M4",
       "kind": "ci",
@@ -4950,6 +4958,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.13.e2e.search-day",
+      "title": "In Chromium and Firefox against the real service: a search left open is read again over midnight and when the page is shown again on a later day, with no Results changed offer, its rows in place and the field and its focus kept",
+      "source": "A5 3.13",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.13.e2e.search-address",
+      "title": "In Chromium and Firefox against the real service: a capture draft switched to search, the search typed on and its expanded result leave the address free of the words, typing adds no history entry per keystroke, and a reload, Back and Forward bring the search back",
+      "source": "A5 3.3, A5 3.13",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-10.e2e.keyboard",
       "title": "In Chromium and Firefox: both modes by keyboard alone (/ and typing, Enter to the first result, the list's arrows and Enter and Escape, / back to the field, Escape out to add mode), the lens and the plus switching with the text carried, and Tab taking the area type-ahead's first suggestion",
       "source": "A5 3.13, A7 3.12 M5.10",
@@ -5046,7 +5070,7 @@
     },
     {
       "id": "A7.3.12.m5-12.web-apps",
-      "title": "The page's agent apps: the first start proposes every switch that can be on, Settings shows them as they stand, Apply sends only switches that can be turned over, and a newer view keeps the person's choices that can still be made",
+      "title": "The page's agent apps: the first start proposes every switch that can be on except in a folder found by its name alone or with something to know first, Settings shows them as they stand, Apply sends only switches that can be turned over, and a newer view keeps the person's choices that can still be made and takes every other switch as it stands now",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5089,6 +5113,13 @@
     {
       "id": "A7.3.12.m5-12.page-apps",
       "title": "Over HTTP as the page calls them: a space from a name alone, each app's two switches with what they write, one click that adds and one that takes out again, a home that changed since the view written nowhere with the new view returned, and a space not served or a switch named twice refused",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.page-status",
+      "title": "Over HTTP as the page calls them: the tools switch is on only while the entry is there, the program it runs is there and its access is live, says which is missing, and turning it on mends it (the entry written again with the present command, the access given again); a folder found by its name alone is marked so the first start leaves it off; each home has one label within the bound the instance verb takes, the same in every batch, a saved one as saved, and each Open entry goes in on its own so one the service refuses is named with its field",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5436,6 +5467,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.13.web.search-day",
+      "title": "A search left open reads again on the page's next day: over midnight while the page is open with the open card kept open and no Results changed, when a page that slept past midnight is shown again, and at the next minute when it was never hidden; on the same day it is not read again",
+      "source": "A5 3.13",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.13.web.search-finished",
       "title": "A search's Completed group draws its rows as Completed does: when each task was completed or dropped, and no priority, effort or age; its To do rows keep theirs",
       "source": "A5 3.13, A5 3.5",
@@ -5764,8 +5803,16 @@
     },
     {
       "id": "A5.3.4.web.today-page",
-      "title": "Today in a DOM with the real live store: today's date shows once with the day's numbers, each a link to the search or view it counts, done this week from the service's finished tasks (a dash until it answers, read again when a task is finished and only then, dropped tasks left out), a tab shown again on a later day moves on to it, the sections are section elements under their headings with no view heading, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
+      "title": "Today in a DOM with the real live store: today's date shows once with the day's numbers, each a link to the search or view it counts, done this week from the service's finished tasks (a dash until it answers, read again when a task is finished and only then, dropped tasks left out), a tab shown again on a later day moves on to it, and so does one that was never hidden at the next minute, the sections are section elements under their headings with no view heading, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
       "source": "A5 3.4, A5 3.15, A5 3.22, A7 3.12 M5.04",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.4.e2e.new-day",
+      "title": "In Chromium and Firefox against the real service: a page left open over midnight, through a sleep no timer saw, and shown again on a later day shows that day's date and sections without a reload, with the draft in the top field, its focus and the open card kept",
+      "source": "A5 3.4",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

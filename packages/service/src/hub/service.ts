@@ -1115,7 +1115,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         platform,
         configDir: layout.config,
         stateDir: layout.state,
-        root: layout.root,
         tasks: join(layout.bin, platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME),
         userHome: options.agentApps?.home ?? personHome,
         env: async () =>

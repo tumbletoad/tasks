@@ -50,6 +50,8 @@ export interface FrozenSearch {
   readonly scope: Scope;
   readonly parsed: string;
   readonly audience: "user" | "agent";
+  /** The zone the search counted its days in: its pages show dates in it too. */
+  readonly timeZone: string;
   readonly match: string | null;
   readonly limit: number;
   readonly items: readonly FrozenItem[];

@@ -101,6 +101,27 @@ export class Live {
     return this.store.onChanges(listener);
   }
 
+  /**
+   * The feed is back: live again, or a fresh snapshot. A read that failed while the service did not
+   * answer can be tried again then. A feed that resumes sends nothing it missed of what lies outside
+   * the store (finished tasks, a search), so a read of those that must be current reads again too.
+   */
+  onBack(listener: () => void): () => void {
+    let wasLive = this.getState().phase === "live";
+    const unwatch = this.store.subscribe(() => {
+      const isLive = this.getState().phase === "live";
+      if (isLive && !wasLive) listener();
+      wasLive = isLive;
+    });
+    const stop = this.store.onChanges(({ reset }) => {
+      if (reset) listener();
+    });
+    return () => {
+      unwatch();
+      stop();
+    };
+  }
+
   /** The tab's space ID, once known. Every API call names it. */
   get spaceId(): string | undefined {
     return this.store.space;

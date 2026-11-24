@@ -48,6 +48,26 @@ export interface PageRoute {
   readonly task?: string;
 }
 
+/** The most a search holds: what the top field takes. */
+const QUERY_MAX = 500;
+
+/**
+ * The search a history entry of the search route holds. What the person types is the person's
+ * words, so the page keeps it in the tab's history entry (a reload, Back and Forward bring it
+ * back) and never in the address, where a copied link, the browser's history and anything that
+ * syncs addresses would hold it. A `?q=` in the address is read too: the page's own links to a
+ * filter (Today's numbers) and older links use it, and the search route moves it into the entry.
+ */
+export function searchQueryOf(location: {
+  readonly state: unknown;
+  readonly search: unknown;
+}): string {
+  const kept = (location.state as { q?: unknown } | null | undefined)?.q;
+  if (typeof kept === "string" && kept.length <= QUERY_MAX) return kept;
+  const linked = (location.search as { q?: unknown } | null | undefined)?.q;
+  return typeof linked === "string" && linked.length <= QUERY_MAX ? linked : "";
+}
+
 export interface Fragment {
   /** A one-time sign-in code, when the fragment held one of the right shape. */
   readonly code?: string;
