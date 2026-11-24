@@ -494,7 +494,12 @@ export async function surveyBlocks(
   homes: readonly AgentHome[],
 ): Promise<BlockView[]> {
   const records = readBlockRecords(input.stateDir);
-  const all = [...homes];
+  // A block is the home folder's: two settings files of one folder (setup's homes) share it.
+  const all = homes.filter(
+    (home, i) =>
+      homes.findIndex((h) => h.app === home.app && samePath(input.platform, h.home, home.home)) ===
+      i,
+  );
   for (const record of records) {
     if (!all.some((h) => sameHome(input.platform, record, h))) all.push(homeOfBlock(record));
   }
