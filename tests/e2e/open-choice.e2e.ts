@@ -94,16 +94,20 @@ test.describe("[M6.e2e.open-choice] One Open button names its agent; the others 
 
       // The first in Settings' order: the fake agent, the only one named without its account.
       await expect(openOf(page, ref)).toHaveAccessibleName("Open in Claude Code");
-      const first = await opensWith(page, () => openOf(page, ref).click());
-      expect(first).toBe("fake-agent");
-      await expect
-        .poll(() => world.terminal().length, { timeout: SLOW_MS })
-        .toBeGreaterThanOrEqual(1);
-
-      // While an agent opens it is off in the menu, which the keyboard then passes over.
-      await expect(openOf(page, ref)).toHaveAttribute("aria-disabled", "false", {
-        timeout: SLOW_MS,
-      });
+      // Keep the session running until the page has seen it. The menu skips an opening agent.
+      world.hold(ref);
+      try {
+        const first = await opensWith(page, () => openOf(page, ref).click());
+        expect(first).toBe("fake-agent");
+        await expect(
+          stripOf(page, ref).getByRole("button", {
+            name: "Open another in Claude Code",
+            exact: true,
+          }),
+        ).toBeEnabled({ timeout: SLOW_MS });
+      } finally {
+        world.release(ref);
+      }
 
       // Another one from the keyboard: Down opens the menu, the arrows move, Enter opens.
       await menuButton(page, ref).focus();
