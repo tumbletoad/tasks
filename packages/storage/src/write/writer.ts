@@ -4536,6 +4536,10 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       const owner = must(staged.owner, "A folder has an owner");
       const { machine, os } = must(staged.folder, "A folder has its machine");
       const kind = owner.kind === "task" ? "task" : "project";
+      // A project an earlier operation of the request deleted takes no folder.
+      if (kind === "project" && readRow(conn, "projects", owner.id)["deleted_at"] !== null) {
+        problem("DELETED", "The project is deleted", i, "project");
+      }
       const row = conn.prepare(FOLDER_SQL.liveOf).get({ kind, owner: owner.id, machine });
       const movedProjects: { id: string; moved: string }[] = [];
       if (row === undefined) {
