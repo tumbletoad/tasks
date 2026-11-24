@@ -1254,8 +1254,7 @@ function takenBy(
       .prepare(entity === "areas" ? SQL.areaTaken : SQL.projectTaken)
       .get({ slug: raw["slug"] as string, id: raw["id"] as string });
   } else if (entity === "folders") {
-    // One live folder per owner and machine. Two live projects on one folder is a rule across
-    // rows, decided on the state the inversion makes (applyInversions).
+    // One live folder per owner and machine.
     found = conn.prepare(SQL.folderTaken).get({
       kind: raw["owner_kind"] as string,
       owner: raw["owner_id"] as string,
