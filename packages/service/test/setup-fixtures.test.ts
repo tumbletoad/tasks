@@ -1555,6 +1555,34 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
     SLOW,
   );
 
+  test(
+    "two entries changed by hand, the first running a program that is not there: on while the access is live, as the second runs, and both are named",
+    async () => {
+      const w = await world();
+      const { plain, explicit } = filesOf(w);
+      seed(plain, "{}\n");
+      seed(explicit, "{}\n");
+      expect(await applyDefault(w)).toMatchObject({ result: "applied", access: "on" });
+      const edit = (file: string, key: string, value: string) => {
+        const doc = JSON.parse(readFileSync(file, "utf8")) as {
+          mcpServers: Record<string, Record<string, unknown>>;
+        };
+        (doc.mcpServers[MCP_SERVER_KEY] as Record<string, unknown>)[key] = value;
+        writeFileSync(file, JSON.stringify(doc));
+      };
+      edit(plain, "command", join(w.dir, "nowhere", "ttasks"));
+      edit(explicit, "cwd", w.dir);
+      expect(toolsOf(known(w), await defaultView(w, known(w)), SPACE)).toEqual({
+        status: "on",
+        why: "edited_gone",
+        file: plain,
+        more: [{ why: "edited", file: explicit }],
+        off: true,
+      });
+    },
+    SLOW,
+  );
+
   test.skipIf(root)(
     "an add that writes nothing says the access as it is: still on for a live grant whose record was lost, off when there is none, unknown when the service was not asked",
     async () => {
