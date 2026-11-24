@@ -61,10 +61,20 @@ const MESSAGES: Record<T3Failure, string> = {
 export class T3Error extends Error {
   override readonly name = "T3Error";
   readonly failure: T3Failure;
-  constructor(failure: T3Failure) {
+  /** A tool's refusal: T3's fixed code for it (`model_unavailable`), when it gave one. */
+  readonly code: string | undefined;
+  constructor(failure: T3Failure, code?: string) {
     super(MESSAGES[failure]);
     this.failure = failure;
+    this.code = code;
   }
+}
+
+/** T3's code of a tool's refusal (`structuredContent.code`), when it is one of its fixed words. */
+function refusalCode(result: Record<string, unknown>): string | undefined {
+  const failure = result["structuredContent"];
+  const code = isObject(failure) ? failure["code"] : undefined;
+  return typeof code === "string" && /^[a-z_]{1,64}$/u.test(code) ? code : undefined;
 }
 
 /** Whether a failure says for certain that T3 did nothing. */
@@ -145,17 +155,27 @@ export async function readT3Origin(
     if (posix && unsafe(info)) return { status: "unsafe" };
     if (!info.isFile() || info.size > MAX_RUNTIME_FILE) return { status: "not_running" };
     const value = JSON.parse(await handle.readFile("utf8")) as unknown;
-    const origin =
-      typeof value === "object" && value !== null
-        ? loopbackUrl((value as Record<string, unknown>)["origin"])
-        : undefined;
-    return origin === undefined
+    const origin = isObject(value) ? loopbackUrl(value["origin"]) : undefined;
+    // A server that was killed leaves its file behind: only a live `pid` runs (T3's own rule).
+    const pid = isObject(value) ? value["pid"] : undefined;
+    return origin === undefined || (typeof pid === "number" && !alive(pid))
       ? { status: "not_running" }
       : { status: "ok", origin: origin.origin };
   } catch {
     return { status: "not_running" };
   } finally {
     await handle?.close().catch(() => undefined);
+  }
+}
+
+/** Whether a process with this ID runs (one of another user answers EPERM). */
+function alive(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
   }
 }
 
@@ -288,7 +308,7 @@ export class T3Mcp {
       }
       const result = answer.result;
       if (!isObject(result)) throw new T3Error("unreadable");
-      if (result["isError"] === true) throw new T3Error("tool_error");
+      if (result["isError"] === true) throw new T3Error("tool_error", refusalCode(result));
       const structured = result["structuredContent"];
       if (isObject(structured)) return structured;
       const content = result["content"];

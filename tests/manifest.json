@@ -3523,7 +3523,7 @@
     },
     {
       "id": "A4.5.t3.fake-server",
-      "title": "The T3 primary route against a fake T3 server: an idle thread with the launch ID as clientRequestId and the grant on the intent, a lost reply then one repeat returning the same thread across an HTTP reconnect, a T3 restart and a service restart, Unknown and no thread after an OAuth reauthorization, a 401 leading to Reconnect T3, a nested folder that asks and never uses the containing project, the folder check and the thread link with the draft",
+      "title": "The T3 primary route against a fake T3 server: an idle thread with the launch ID as clientRequestId and the grant on the intent, a lost reply then one repeat returning the same thread across an HTTP reconnect, a T3 restart and a service restart, Unknown and no thread after an OAuth reauthorization, a 401 or a 30-day token that ran out leading to Reconnect T3, a model or mode T3 refuses failing with its reason and no repeat, a nested folder that becomes a project of its own without a question and never uses the containing project, the folder check by the project's ID, and the thread link with the draft once and bare after",
       "source": "A4 3.4.1, A4 3.9.2, A4 3.9.3, A4 5.1, A7 3.9 M2.11",
       "owner": "M2",
       "kind": "ci",

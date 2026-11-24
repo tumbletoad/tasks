@@ -222,7 +222,7 @@ describe("[A4.5.t3.binding] exact-folder binding for T3", () => {
         const resolution = await resolvePlace({ root: "work", path: "repo-wt" }, roots);
         if (resolution.status !== "ok") throw new Error("fixture");
         const folder = { path: resolution.folder, identity: resolution.identity };
-        const prepared = await route.prepare({ place: "pl-wt", folder, name: "repo-wt" });
+        const prepared = await route.prepare({ folder, name: "repo-wt" });
         expect(prepared).toEqual({
           kind: "bound",
           projectId: main,
@@ -269,10 +269,12 @@ describe("[A4.5.t3.binding] exact-folder binding for T3", () => {
         });
         expect((await route.confirm(dispatched as never)).kind).toBe("confirmed");
 
-        // Archived: the project is no binding any more, and the folder asks.
+        // Archived: the project is no binding any more, and the worktree becomes a project of its own.
         const archived = fake.projects.get(main);
         if (archived !== undefined) archived.archivedAt = "2026-11-14T09:00:00Z";
-        expect((await route.prepare({ place: "pl-wt", folder, name: "repo-wt" })).kind).toBe("ask");
+        const own = await route.prepare({ folder, name: "repo-wt" });
+        expect(own).toMatchObject({ kind: "bound", strategy: { type: "root" } });
+        expect(own).not.toMatchObject({ projectId: main });
       } finally {
         await fake.stop();
       }

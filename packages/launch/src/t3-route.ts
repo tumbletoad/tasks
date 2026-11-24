@@ -20,7 +20,7 @@
 // plan is written before Dispatching, so the repeat after a restart sends the same call.
 import { PRODUCT_NAME, CLI_NAME } from "@ttasks/brand";
 import type { Permission } from "./catalogue.ts";
-import { EVIDENCE_ID } from "./intents.ts";
+import { EVIDENCE_ID, type FailReason } from "./intents.ts";
 import type { DispatchOutcome, Observation } from "./machine.ts";
 import type { FolderIdentity } from "./places.ts";
 import type { Instance } from "./sections.ts";
@@ -37,12 +37,9 @@ import {
 import { beginPairing, refreshGrant, type Grant, type PairingAttempt } from "./t3-oauth.ts";
 import {
   newGrantId,
-  NOT_NOW_MS,
-  notNowUntil,
   readPairing,
   readPlan,
   REFRESH_KEEPS_GRANT,
-  rememberNotNow,
   writePairing,
   writePlan,
   type T3Files,
@@ -89,7 +86,7 @@ export const T3_TEXT = {
   not_running: "Start T3 Code",
   reconnect: "Reconnect T3",
   no_answer: "T3 Code did not answer. Try again.",
-  not_registered: "T3 opens only registered folders.",
+  not_registered: "T3 Code did not add this folder as a project.",
   model_required: "Set t3_model for this instance: T3 takes a provider instance with its model.",
   provider_required:
     "Set t3_provider_instance for this instance: T3's command line takes a model with its provider instance.",
@@ -126,6 +123,12 @@ export const T3_RUNTIME_MODES: Readonly<Record<Permission, string | undefined>> 
   "auto-edit": "auto-accept-edits",
   // T3 has no read-only mode: every change waits for an approval.
   "read-only": "approval-required",
+};
+
+/** T3's refusals of a launch that it makes before any thread, by its code. */
+const PRE_LAUNCH: Readonly<Record<string, FailReason>> = {
+  model_unavailable: "model_unavailable",
+  runtime_mode_escalation_denied: "mode_denied",
 };
 
 /** A thread link's brief may hold this many characters (A4 3.4.1: T3's limit is 8,000). */
@@ -207,7 +210,9 @@ export class T3Route {
   async availability(): Promise<T3Availability> {
     const pairing = this.pairing();
     if (pairing === undefined) return { state: "not_paired" };
-    if (pairing.reconnect) return { state: "reconnect" };
+    // T3 gives no refresh token: a pairing ends when its token runs out (30 days).
+    const ended = pairing.refreshToken === undefined && this.#ranOut(pairing);
+    if (pairing.reconnect || ended) return { state: "reconnect" };
     if (this.#options.home === undefined) return { state: "not_running" };
     const origin = await readT3Origin(this.#options.home, this.#platform);
     if (origin.status !== "ok") return { state: "not_running" };
@@ -390,61 +395,37 @@ export class T3Route {
 
   /**
    * Binds the task's resolved folder to T3 (A4 3.4.1 steps 1 to 4): an exact project root or an
-   * existing worktree, else the Register question, else, after Not now, unavailable for 30 days.
-   * `place` keys the Not now answer: the folder as the space stores it. `name` is the title of the
-   * task's project, which the question names and the registered T3 project takes as its title.
+   * existing worktree. Any other folder is registered as a project of its own, titled `name`, and
+   * bound to it: a thread runs only at a project root, and the person chose this folder for the
+   * task. It is never bound to a containing project.
    */
   async prepare(input: {
-    readonly place: string;
     readonly folder: BindFolder;
     readonly name: string;
-  }): Promise<T3Prepared> {
+  }): Promise<Extract<T3Prepared, { kind: "bound" | "unavailable" }>> {
     const available = await this.availability();
     if (available.state !== "ready") return { kind: "unavailable", reason: available.state };
-    let projects: T3Project[];
     try {
-      projects = await this.#projects();
-    } catch (error) {
-      return { kind: "unavailable", reason: unavailableFor(error) };
-    }
-    const binding = await bindFolder(projects, input.folder, this.#platform);
-    if (binding.kind === "bound") return binding;
-    const until = notNowUntil(this.#options.files, input.place);
-    if (until !== undefined && this.#now() < until) {
-      return { kind: "unavailable", reason: "not_registered" };
-    }
-    return { kind: "ask", question: "register", text: T3_TEXT.register(input.name) };
-  }
-
-  /**
-   * Register (A4 3.4.1 step 4): `t3_project_create` for exactly the folder, titled by `name`, the
-   * task's project, then step 2 again. A folder that still binds to nothing is unavailable; it is
-   * never bound to a containing project.
-   */
-  async register(input: {
-    readonly place: string;
-    readonly folder: BindFolder;
-    readonly name: string;
-  }): Promise<T3Prepared> {
-    try {
-      await this.#call("t3_project_create", {
+      const binding = await bindFolder(await this.#projects(), input.folder, this.#platform);
+      if (binding.kind === "bound") return binding;
+      const made = await this.#call("t3_project_create", {
         workspaceRoot: input.folder.path,
         title: input.name,
       });
+      if (typeof made["id"] !== "string" || made["id"] === "") throw new T3Error("unreadable");
+      return { kind: "bound", projectId: made["id"], strategy: { type: "root" } };
     } catch (error) {
-      // A project made meanwhile (another click, T3's own UI) is found by the list below.
-      if (!(error instanceof T3Error) || error.failure !== "tool_error") {
-        return { kind: "unavailable", reason: unavailableFor(error) };
+      // T3 refused the folder (a pairing below Full access, a project made there meanwhile):
+      // what T3 lists now decides.
+      if (error instanceof T3Error && error.failure === "tool_error") {
+        const binding = await this.#projects()
+          .then((projects) => bindFolder(projects, input.folder, this.#platform))
+          .catch(() => undefined);
+        if (binding?.kind === "bound") return binding;
+        return { kind: "unavailable", reason: "not_registered" };
       }
+      return { kind: "unavailable", reason: unavailableFor(error) };
     }
-    const again = await this.prepare(input);
-    return again.kind === "ask" ? { kind: "unavailable", reason: "not_registered" } : again;
-  }
-
-  /** Not now (A4 3.4.1 step 4): T3 is unavailable for this folder for 30 days. */
-  notNow(place: string): void {
-    const now = this.#now();
-    rememberNotNow(this.#options.files, place, now + NOT_NOW_MS, now);
   }
 
   /**
@@ -564,6 +545,9 @@ export class T3Route {
       if (!(error instanceof T3Error)) return { kind: "unknown" };
       // A 401 did nothing. It marks "Reconnect T3" unless the token ran out during the call.
       if (error.failure === "unauthorized") this.#refusedToken(pairing);
+      // T3 checks the model and the mode before it makes the thread.
+      const before = error.code === undefined ? undefined : PRE_LAUNCH[error.code];
+      if (before !== undefined) return { kind: "refused", reason: before };
       return certainNothingDone(error.failure) ? { kind: "refused" } : { kind: "unknown" };
     }
   }
@@ -578,33 +562,30 @@ export class T3Route {
     const thread = intent.evidence.thread;
     const plan = readPlan(this.#options.files, intent.id);
     if (thread === undefined || plan === undefined) return { kind: "pending" };
-    let read: Record<string, unknown>;
-    let projects: T3Project[];
+    let found: unknown;
+    let folder: unknown;
     try {
-      read = await this.#call("t3_thread_read", { threadId: thread, limit: 1 });
-      projects = await this.#projects();
+      found = (await this.#call("t3_thread_read", { threadId: thread, limit: 1 }))["thread"];
+      if (!isObject(found) || typeof found["projectId"] !== "string") return { kind: "pending" };
+      if (found["projectId"] !== plan.projectId) {
+        return { kind: "failed", reason: "folder_mismatch", evidence: { thread } };
+      }
+      const worktree = found["worktreePath"];
+      folder =
+        typeof worktree === "string" && worktree !== ""
+          ? worktree
+          : (await this.#call("t3_project_read", { projectId: plan.projectId }))["workspaceRoot"];
     } catch {
       return { kind: "pending" };
     }
-    const found = read["thread"];
-    if (!isObject(found) || typeof found["projectId"] !== "string") return { kind: "pending" };
-    const evidence = { thread };
-    if (found["projectId"] !== plan.projectId) {
-      return { kind: "failed", reason: "folder_mismatch", evidence };
-    }
-    const worktree = found["worktreePath"];
-    const folder =
-      typeof worktree === "string" && worktree !== ""
-        ? worktree
-        : projects.find((p) => p.id === plan.projectId)?.root;
-    if (folder === undefined) return { kind: "pending" };
+    if (typeof folder !== "string") return { kind: "pending" };
     const identity = await identityAt(folder);
     if (identity === undefined) return { kind: "pending" };
     const same =
       identity.dev.toString() === plan.folder.dev && identity.ino.toString() === plan.folder.ino;
     return same
       ? { kind: "confirmed", evidence: { folder_checked: true, thread } }
-      : { kind: "failed", reason: "folder_mismatch", evidence };
+      : { kind: "failed", reason: "folder_mismatch", evidence: { thread } };
   }
 
   /**

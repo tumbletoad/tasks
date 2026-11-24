@@ -4,17 +4,16 @@
 // client registration and the authorization code flow with PKCE (S256), and MCP over Streamable
 // HTTP at `<origin>/mcp` with the tools the route calls. Tests only; fixture data only.
 //
-// What is measured and what is assumed (A4 3.4.1): nothing of T3's server has
-// been observed by the lab yet (L05 and L06 wait for lab sessions). The tool names and their input
-// fields follow the T3 MCP tool schemas as T3 lists them to an agent session on Windows
-// (2026-11-14) and A4 3.4.1 (T3 source at `322f6544`). The answers' shapes, the OAuth endpoints
-// (the MCP authorization specification's discovery, RFC 7591 registration, RFC 7636 PKCE), the
-// file `server-runtime.json` with an `origin` field, and the rule that a thread's ID derives from the
-// authorization (the "grant namespace") and `clientRequestId` are assumed from A4 and the MCP
-// specification. The fake keeps its state across a restart, as T3 keeps its database, and forgets
-// its MCP sessions, as a new server process would.
+// What it plays follows T3 Code's own source (pingdotgg/t3code 0.1.11, MIT; its server's
+// `auth/McpOAuth.ts`, `auth/EnvironmentAuth.ts`, `mcp/McpToolAccess.ts` and
+// `mcp/toolkits/project/`): the OAuth endpoints under `/oauth/mcp/`, the `authorization_code`
+// grant only and a 30-day token with no refresh token, a request namespace of `client:<session>` per
+// authorization, a launch's thread ID `mcp:launch:<SHA-256 of [namespace, key]>` that a repeat with
+// the same key replays, Full access to register a project, and a refusal as a tool result with
+// `isError` and T3's fixed `code`. The fake keeps its state across a restart, as T3 keeps its
+// database, and forgets its MCP sessions, as a new server process would.
 import { spawnSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
@@ -114,6 +113,7 @@ interface Code {
   readonly client: string;
   readonly redirectUri: string;
   readonly challenge: string;
+  readonly access: FakeT3Access;
   used: boolean;
 }
 
@@ -121,7 +121,27 @@ interface Token {
   readonly namespace: string;
   readonly kind: "access" | "refresh";
   readonly client: string;
+  /** The access the person approved on T3's page (its runtime-mode ceiling). */
+  readonly access: FakeT3Access;
   revoked: boolean;
+}
+
+/** The access levels T3's approval page offers, broadest last. */
+export type FakeT3Access = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
+const ACCESS_RANK: readonly string[] = [
+  "approval-required",
+  "auto-accept-edits",
+  "auto",
+  "full-access",
+];
+
+/** A refusal as T3 answers it: an `OrchestratorMcpFailure` with its fixed code. */
+class Refusal extends Error {
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
 }
 
 /** A reply the fake drops: before it does the call, or after. `then` runs before the drop. */
@@ -170,12 +190,21 @@ export class FakeT3 {
   readonly home: string;
   readonly environmentId = "env-fake-local";
 
-  /** What the authorization page does: approve with full access, or deny. */
+  /** What the authorization page does: approve, or deny. */
   approval: "approve" | "deny" = "approve";
-  /** Seconds an access token lives, or undefined for no `expires_in`. */
-  expiresIn: number | undefined = 3600;
-  /** Whether a refresh keeps the authorization's namespace (L05 will tell for the real T3). */
+  /** The access the person chooses on the approval page. */
+  access: FakeT3Access = "full-access";
+  /** Seconds an access token lives: T3's 30 days. Undefined for no `expires_in`. */
+  expiresIn: number | undefined = 30 * 24 * 60 * 60;
+  /**
+   * Issue refresh tokens, which T3 does not: only for the tests of TTasks's refresh path, until it
+   * is removed with the command-line route.
+   */
+  refreshTokens = false;
+  /** Whether a refresh keeps the authorization's namespace. */
   refreshKeepsNamespace = true;
+  /** The models T3 offers, or undefined for any. A launch with another is `model_unavailable`. */
+  models: readonly string[] | undefined = undefined;
   /** Answer MCP requests as an SSE stream instead of a JSON body. */
   sse = false;
   /** With `sse`: keep each stream open after its reply, as the specification allows. */
@@ -386,16 +415,18 @@ export class FakeT3 {
       case "/.well-known/oauth-authorization-server":
         json(200, {
           issuer: this.#origin,
-          authorization_endpoint: `${this.#origin}/oauth/authorize`,
-          token_endpoint: `${this.#origin}/oauth/token`,
-          registration_endpoint: `${this.#origin}/oauth/register`,
+          authorization_endpoint: `${this.#origin}/oauth/mcp/authorize`,
+          token_endpoint: `${this.#origin}/oauth/mcp/token`,
+          registration_endpoint: `${this.#origin}/oauth/mcp/register`,
           response_types_supported: ["code"],
-          grant_types_supported: ["authorization_code", "refresh_token"],
+          grant_types_supported: this.refreshTokens
+            ? ["authorization_code", "refresh_token"]
+            : ["authorization_code"],
           code_challenge_methods_supported: ["S256"],
           token_endpoint_auth_methods_supported: ["none"],
         });
         return;
-      case "/oauth/register":
+      case "/oauth/mcp/register":
         if (this.registrationGate !== undefined) {
           this.registrationsWaiting += 1;
           await this.registrationGate;
@@ -403,10 +434,10 @@ export class FakeT3 {
         }
         this.#register(body, json);
         return;
-      case "/oauth/authorize":
+      case "/oauth/mcp/authorize":
         this.#authorize(url, res);
         return;
-      case "/oauth/token":
+      case "/oauth/mcp/token":
         this.#token(body, json);
         return;
       case "/mcp":
@@ -445,7 +476,9 @@ export class FakeT3 {
       client_id: client.id,
       redirect_uris: client.redirectUris,
       token_endpoint_auth_method: "none",
-      grant_types: ["authorization_code", "refresh_token"],
+      grant_types: this.refreshTokens
+        ? ["authorization_code", "refresh_token"]
+        : ["authorization_code"],
       response_types: ["code"],
     });
   }
@@ -481,7 +514,13 @@ export class FakeT3 {
     if (this.approval === "deny") back.searchParams.set("error", "access_denied");
     else {
       const code = random("code-");
-      this.#codes.set(code, { client: clientId, redirectUri, challenge, used: false });
+      this.#codes.set(code, {
+        client: clientId,
+        redirectUri,
+        challenge,
+        access: this.access,
+        used: false,
+      });
       back.searchParams.set("code", code);
     }
     res.writeHead(302, { location: back.toString() });
@@ -491,19 +530,25 @@ export class FakeT3 {
   #token(body: string, json: (s: number, v: unknown) => void): void {
     this.tokenRequests += 1;
     const form = new URLSearchParams(body);
-    const issue = (namespace: string, client: string) => {
+    const issue = (namespace: string, client: string, level: FakeT3Access) => {
       const access = random("fake-at-");
       const refresh = random("fake-rt-");
-      this.#tokens.set(access, { namespace, kind: "access", client, revoked: false });
-      this.#tokens.set(refresh, { namespace, kind: "refresh", client, revoked: false });
+      const held = { namespace, client, access: level, revoked: false };
+      this.#tokens.set(access, { ...held, kind: "access" });
+      if (this.refreshTokens) this.#tokens.set(refresh, { ...held, kind: "refresh" });
       json(200, {
         access_token: access,
         token_type: "Bearer",
-        refresh_token: refresh,
-        scope: "full",
+        ...(this.refreshTokens ? { refresh_token: refresh } : {}),
+        scope:
+          level === "full-access"
+            ? "orchestration:read orchestration:operate settings:write"
+            : "orchestration:read orchestration:operate",
         ...(this.expiresIn === undefined ? {} : { expires_in: this.expiresIn }),
       });
     };
+    // T3's namespace of a new authorization: its MCP client session.
+    const session = () => `client:${randomUUID()}`;
     if (form.get("grant_type") === "authorization_code") {
       const code = this.#codes.get(form.get("code") ?? "");
       const verifier = form.get("code_verifier") ?? "";
@@ -518,8 +563,7 @@ export class FakeT3 {
         return;
       }
       code.used = true;
-      // A new authorization: T3's request namespace for this client's session.
-      issue(random("ns-"), code.client);
+      issue(session(), code.client, code.access);
       return;
     }
     if (form.get("grant_type") === "refresh_token") {
@@ -529,7 +573,11 @@ export class FakeT3 {
         return;
       }
       refresh.revoked = true;
-      issue(this.refreshKeepsNamespace ? refresh.namespace : random("ns-"), refresh.client);
+      issue(
+        this.refreshKeepsNamespace ? refresh.namespace : session(),
+        refresh.client,
+        refresh.access,
+      );
       return;
     }
     json(400, { error: "unsupported_grant_type" });
@@ -661,11 +709,16 @@ export class FakeT3 {
       req.socket.destroy();
       return;
     }
-    let answer: { data: unknown } | { error: string };
+    let answer: { data: unknown } | { error: { code: string; message: string } };
     try {
-      answer = { data: this.#tool(name, args, token.namespace) };
+      answer = { data: this.#tool(name, args, token) };
     } catch (error) {
-      answer = { error: error instanceof Error ? error.message : "error" };
+      answer = {
+        error: {
+          code: error instanceof Refusal ? error.code : "orchestration_error",
+          message: error instanceof Error ? error.message : "error",
+        },
+      };
     }
     if (fault?.when === "after" && fault.rpcError !== undefined) {
       record("rpc_error_after");
@@ -680,7 +733,14 @@ export class FakeT3 {
     }
     if ("error" in answer) {
       record("error");
-      reply({ result: { isError: true, content: [{ type: "text", text: answer.error }] } });
+      const failure = { _tag: "OrchestratorMcpFailure", ...answer.error };
+      reply({
+        result: {
+          isError: true,
+          structuredContent: failure,
+          content: [{ type: "text", text: JSON.stringify(failure) }],
+        },
+      });
       return;
     }
     record("answered");
@@ -692,8 +752,12 @@ export class FakeT3 {
     });
   }
 
-  /** One tool's work. Throws a T3 error message for a refusal. */
-  #tool(name: string, args: Record<string, unknown>, namespace: string): unknown {
+  /** One tool's work, for a caller with `token`'s namespace and access. Throws a Refusal. */
+  #tool(
+    name: string,
+    args: Record<string, unknown>,
+    token: Pick<Token, "namespace" | "access">,
+  ): unknown {
     switch (name) {
       case "t3_environment_read":
         return { environmentId: this.environmentId, label: "Local" };
@@ -715,34 +779,48 @@ export class FakeT3 {
       case "t3_project_create": {
         const root = args["workspaceRoot"];
         const title = args["title"];
-        if (typeof root !== "string" || typeof title !== "string") throw new Error("bad input");
-        if (realKey(root) === undefined) throw new Error("The folder does not exist");
-        // A4: the only conflict is another active project with the exact same root.
+        if (typeof root !== "string" || typeof title !== "string") {
+          throw new Refusal("invalid_request", "bad input");
+        }
+        if (token.access !== "full-access") {
+          throw new Refusal("capability_denied", "Registering a project needs full access.");
+        }
+        if (realKey(root) === undefined) {
+          throw new Refusal("invalid_request", "The folder does not exist");
+        }
+        // The only conflict is another active project with the exact same root.
         for (const p of this.projects.values()) {
           if (p.archivedAt === null && p.workspaceRoot === root) {
-            throw new Error("A project with this root exists");
+            throw new Refusal("invalid_request", "A project with this root exists");
           }
         }
         const id = this.addProject(root, title);
-        return { project: { id, title, workspaceRoot: root } };
+        return { id, title, workspaceRoot: root, archivedAt: null };
+      }
+      case "t3_project_read": {
+        const project = this.projects.get(String(args["projectId"]));
+        if (project === undefined)
+          throw new Refusal("invalid_request", "The project was not found.");
+        return { ...project };
       }
       case "t3_thread_launch":
-        return this.#launch(args, namespace);
+        return this.#launch(args, token);
       case "t3_thread_read": {
         const thread = this.threads.get(String(args["threadId"]));
-        if (thread === undefined) throw new Error("No such thread");
+        if (thread === undefined) throw new Refusal("thread_not_found", "No such thread");
         return {
           thread: {
-            id: thread.id,
+            threadId: thread.id,
             projectId: thread.projectId,
             title: thread.title,
             worktreePath: thread.worktreePath,
             status: "idle",
+            archived: false,
           },
         };
       }
       default:
-        throw new Error("Unknown tool");
+        throw new Refusal("invalid_request", "Unknown tool");
     }
   }
 
@@ -810,7 +888,13 @@ export class FakeT3 {
     if (noun === "project" && verb === "add") {
       const [root, ...more] = rest;
       if (root === undefined || more.length > 0) throw new Error("Usage: t3 project add <path>");
-      return this.#tool("t3_project_create", { workspaceRoot: root, title: basename(root) }, "cli");
+      return {
+        project: this.#tool(
+          "t3_project_create",
+          { workspaceRoot: root, title: basename(root) },
+          { namespace: "cli", access: "full-access" },
+        ),
+      };
     }
     if (noun === "thread" && verb === "start") {
       const [target, message, ...options] = rest;
@@ -874,49 +958,76 @@ export class FakeT3 {
     return found;
   }
 
-  #launch(args: Record<string, unknown>, namespace: string): unknown {
+  #launch(args: Record<string, unknown>, token: Pick<Token, "namespace" | "access">): unknown {
+    const { namespace } = token;
     const title = args["title"];
-    if (typeof title !== "string" || title === "") throw new Error("title is required");
+    if (typeof title !== "string" || title === "") {
+      throw new Refusal("invalid_request", "title is required");
+    }
+    // The mode may not be broader than the one the person approved (checked on every call).
+    const mode = args["runtimeMode"];
+    if (typeof mode === "string" && ACCESS_RANK.indexOf(mode) > ACCESS_RANK.indexOf(token.access)) {
+      throw new Refusal("runtime_mode_escalation_denied", `Runtime mode ${mode} is too broad.`);
+    }
+    const key = typeof args["clientRequestId"] === "string" ? args["clientRequestId"] : null;
+    // The thread ID derives from the request namespace and the key, so a repeat under the same
+    // authorization replays the first launch, and under another makes a new one.
+    const id =
+      key === null
+        ? random("mcp:launch:")
+        : `mcp:launch:${createHash("sha256")
+            .update(JSON.stringify([namespace, key]))
+            .digest("hex")}`;
+    if (this.threads.has(id)) return this.#launched(id);
     const project = this.projects.get(String(args["projectId"]));
-    if (project === undefined || project.archivedAt !== null) throw new Error("No such project");
+    if (project === undefined || project.archivedAt !== null) {
+      throw new Refusal("invalid_request", "The project was not found.");
+    }
+    const selection = args["modelSelection"] as { model?: unknown } | undefined;
+    if (
+      this.models !== undefined &&
+      typeof selection?.model === "string" &&
+      !this.models.includes(selection.model)
+    ) {
+      throw new Refusal("model_unavailable", `Model ${selection.model} is not advertised.`);
+    }
     const strategy = (args["workspaceStrategy"] ?? { type: "root" }) as Record<string, unknown>;
     let worktreePath: string | null = null;
     if (strategy["type"] === "existing_worktree") {
       const path = strategy["worktreePath"];
       const listed = gitWorktrees(project.workspaceRoot);
-      const key = typeof path === "string" ? realKey(path) : undefined;
-      if (key === undefined || listed?.some((w) => realKey(w) === key) !== true) {
-        throw new Error("worktreePath is not a worktree of the project");
+      const at = typeof path === "string" ? realKey(path) : undefined;
+      if (at === undefined || listed?.some((w) => realKey(w) === at) !== true) {
+        throw new Refusal("invalid_request", "worktreePath is not a worktree of the project");
       }
       worktreePath = path as string;
     } else if (strategy["type"] !== "root") {
-      throw new Error("Unsupported workspace strategy");
+      throw new Refusal("invalid_request", "Unsupported workspace strategy");
     }
-    const key = typeof args["clientRequestId"] === "string" ? args["clientRequestId"] : null;
-    // A4: the thread ID derives from the request namespace and the key, so a repeat under the
-    // same authorization returns the same thread, and under another makes a new one.
-    const id =
-      key === null
-        ? random("thread-")
-        : `thread-${createHash("sha256").update(`${namespace}\n${key}`).digest("hex").slice(0, 24)}`;
-    if (!this.threads.has(id)) {
-      this.threads.set(id, {
-        id,
-        projectId: project.id,
-        title,
-        worktreePath,
-        namespace,
-        clientRequestId: key,
-        modelSelection: args["modelSelection"] ?? null,
-        runtimeMode: args["runtimeMode"] ?? null,
-        message: typeof args["message"] === "string",
-      });
-    }
+    this.threads.set(id, {
+      id,
+      projectId: project.id,
+      title,
+      worktreePath,
+      namespace,
+      clientRequestId: key,
+      modelSelection: args["modelSelection"] ?? null,
+      runtimeMode: args["runtimeMode"] ?? null,
+      message: typeof args["message"] === "string",
+    });
+    return this.#launched(id);
+  }
+
+  /** A launch's answer, the first time and on every repeat with its key. */
+  #launched(id: string): unknown {
+    const thread = this.threads.get(id);
     return {
       threadId: id,
-      projectId: project.id,
-      environmentId: this.environmentId,
-      link: `t3code://threads/${this.environmentId}/${id}`,
+      projectId: thread?.projectId,
+      modelSelection: thread?.modelSelection ?? { instanceId: "codex", model: "default" },
+      runId: null,
+      status: null,
+      link: `https://app.t3.codes/threads/${this.environmentId}/${encodeURIComponent(id)}`,
     };
   }
 }
@@ -925,6 +1036,7 @@ const TOOLS = [
   "t3_environment_read",
   "t3_project_list",
   "t3_project_create",
+  "t3_project_read",
   "t3_thread_launch",
   "t3_thread_read",
 ];
