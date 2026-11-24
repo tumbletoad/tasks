@@ -531,3 +531,157 @@ describe("[A3.3.13.setup.tools-table] One answer for each home's tools: what the
     SLOW,
   );
 });
+
+/** Claude Code's default folder with both of its files: plain Claude Code's, and the one inside. */
+interface FilesRow {
+  /** What the file inside the folder holds, beside setup's own entry in the plain one. */
+  readonly inside: "own" | "none" | "edited" | "unreadable" | "edited_gone";
+  readonly access: "live" | "off";
+  readonly seen: Seen;
+  /** The page, where it differs: it says a file it cannot read as one reason. */
+  readonly page?: Seen;
+  /** The reason is about the file inside the folder. */
+  readonly about: boolean;
+}
+
+const FILES_TABLE: readonly FilesRow[] = [
+  { inside: "own", access: "live", seen: s("on", undefined, false, true), about: false },
+  // A reader that started using the folder later: on, and turning on writes its file.
+  { inside: "none", access: "live", seen: s("on", "file_lacks", true, true), about: true },
+  { inside: "edited", access: "live", seen: s("on", "edited", false, true), about: true },
+  {
+    inside: "unreadable",
+    access: "live",
+    seen: s("on", "invalid_file", false, true),
+    page: s("on", "file_unreadable", false, true),
+    about: true,
+  },
+  { inside: "edited_gone", access: "live", seen: s("on", "edited_gone", false, true), about: true },
+  { inside: "none", access: "off", seen: s("off", "access_off", true, false), about: false },
+];
+
+describe("[A3.3.13.setup.tools-table-files] One answer for a home with two settings files: what the page and the command line say and offer, which file it is about, and that what is offered is done", () => {
+  const inside = () => join(user, ".claude", ".claude.json");
+  const plain = () => join(user, ".claude.json");
+
+  /** Setup's entry in both files, then the file inside the folder as the row says. */
+  async function putFiles(row: FilesRow): Promise<void> {
+    await reset();
+    rmSync(inside(), { force: true });
+    writeFileSync(plain(), "{}\n");
+    // A file only one program reads yet: the one inside comes later, without the entry.
+    if (row.inside !== "none") writeFileSync(inside(), '{"theme": "dark"}\n');
+    const shown = (await page(spaces.here))["claude-code"];
+    const applied = await call<Applied>("/api/v1/machine/apps_apply", {
+      space: spaces.here,
+      changes: [{ key: shown.key, part: "tools", on: true, plan: shown.tools?.plan }],
+    });
+    expect(applied.outcomes.map((o) => o.result)).toEqual(["done"]);
+    if (row.inside === "none") writeFileSync(inside(), '{"theme": "dark"}\n');
+    const text = readFileSync(inside(), "utf8");
+    const doc = () => JSON.parse(text) as { mcpServers: Record<string, Record<string, unknown>> };
+    if (row.inside === "edited" || row.inside === "edited_gone") {
+      const edited = doc();
+      const entry = edited.mcpServers[MCP_SERVER_KEY] as Record<string, unknown>;
+      if (row.inside === "edited") entry["cwd"] = root;
+      else entry["command"] = nowhere();
+      writeFileSync(inside(), JSON.stringify(edited, null, 2));
+    }
+    if (row.inside === "unreadable") writeFileSync(inside(), text.replace(/\}\s*$/u, ",}\n"));
+    if (row.access === "off") {
+      await asPerson(async (person) => {
+        await person("setup/home_revoke", { app: "claude-code", home: HOME["claude-code"]() });
+      });
+    }
+  }
+
+  interface FilesPart extends Part {
+    readonly whyFile?: string;
+    readonly add?: { readonly plan: string };
+  }
+
+  test.each(FILES_TABLE.map((row) => [`${row.inside} inside, access ${row.access}`, row] as const))(
+    "%s",
+    async (_name, row) => {
+      await putFiles(row);
+      const view = await call<{ rows: (PageRow & { files?: string[] })[] }>(
+        "/api/v1/machine/apps",
+        { space: spaces.here },
+      );
+      const claude = view.rows.find((r) => r.app === "claude-code" && r.home !== null);
+      if (claude === undefined) throw new Error("no Claude Code row");
+      const tools = claude.tools as FilesPart;
+      // The row names both files; the reason, the one it is about.
+      expect(claude.files?.length, "files").toBe(2);
+      expect(
+        s(
+          tools.on ? "on" : "off",
+          tools.why,
+          tools.change === "add" || tools.add !== undefined,
+          tools.change === "remove" || tools.off !== undefined,
+        ),
+      ).toEqual(row.page ?? row.seen);
+      expect(
+        tools.whyFile !== undefined && sameFolder(tools.whyFile, inside()),
+        "page's file",
+      ).toBe(row.about);
+      const ran = await runMain(["setup", "agents", "--status", "--json"], {
+        home,
+        tty: false,
+        main: { agents: { env, home: user, systemApplications: join(user, "Apps") } },
+      });
+      const said = (
+        JSON.parse(ran.stdout) as {
+          homes: {
+            app: string;
+            home: string;
+            files?: { file: string }[];
+            tools: { status: string; why?: string; file?: string; on?: string; off: boolean };
+          }[];
+        }
+      ).homes.find(
+        (h) =>
+          h.app === "claude-code" && h.home.toLowerCase() === HOME["claude-code"]().toLowerCase(),
+      );
+      expect(said?.files?.length, "command line's files").toBe(2);
+      expect(
+        said === undefined
+          ? undefined
+          : s(
+              said.tools.status as Seen["status"],
+              said.tools.why,
+              said.tools.on !== undefined,
+              said.tools.off,
+            ),
+      ).toEqual(row.seen);
+      expect(
+        said?.tools.file?.toLowerCase() === inside().toLowerCase(),
+        "command line's file",
+      ).toBe(row.about);
+
+      // Each action offered is carried out from here, and none is refused.
+      for (const on of [true, false]) {
+        if (on ? !row.seen.on : !row.seen.off) continue;
+        await putFiles(row);
+        const before = (await page(spaces.here))["claude-code"].tools as FilesPart;
+        const plan = on ? (before.change === "add" ? before.plan : before.add?.plan) : before.plan;
+        const applied = await call<Applied>("/api/v1/machine/apps_apply", {
+          space: spaces.here,
+          changes: [{ key: (await page(spaces.here))["claude-code"].key, part: "tools", on, plan }],
+        });
+        expect(applied.applied, `turned ${on ? "on" : "off"}`).toBe(true);
+        expect(applied.outcomes.map((o) => o.result)).toEqual(["done"]);
+        const after = (await page(spaces.here))["claude-code"].tools as FilesPart;
+        expect(after.on, `turned ${on ? "on" : "off"}`).toBe(on);
+        if (on) expect(after.why, "nothing left to say").toBeUndefined();
+        // Off takes setup's own entry out of the plain file; the person's file stays as it is.
+        if (!on) {
+          const doc = JSON.parse(readFileSync(plain(), "utf8")) as { mcpServers?: object };
+          expect(doc.mcpServers, "plain file").toBeUndefined();
+        }
+      }
+      rmSync(inside(), { force: true });
+    },
+    SLOW,
+  );
+});

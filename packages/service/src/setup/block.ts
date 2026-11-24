@@ -447,13 +447,13 @@ function homeOfBlock(record: BlockRecord): AgentHome {
   return {
     app: record.app,
     home: record.home,
-    file: record.file,
-    isDefault: false,
+    // A block names no settings file: its home is found by its folder.
+    files: [],
     variable: "",
     instance: record.instance,
     account: "",
     hosts: [],
-    managed: false,
+    managed: [],
   };
 }
 

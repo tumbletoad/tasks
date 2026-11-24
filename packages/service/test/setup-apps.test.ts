@@ -39,6 +39,7 @@ import {
   runCommand,
   survey,
   t3HomesOf,
+  type FileView,
   type HomeView,
   type SetupInput,
 } from "../src/setup/index.ts";
@@ -169,7 +170,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       const input = await inputOf(w, place.env);
 
       const view = only(await survey(input), "claude-desktop");
-      expect(view.home).toMatchObject({ instance: "claude-desktop", file, hosts: [] });
+      expect(view.home).toMatchObject({ instance: "claude-desktop", files: [file], hosts: [] });
       expect(view.state).toBe("not_registered");
       const change = planChange(input, view, SPACE);
       if (typeof change === "string") throw new Error(change);
@@ -184,7 +185,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         "claude-desktop",
       ];
       expect(change.entry).toEqual({ command: w.tasks, args: argv.slice(1) });
-      expect(change.diff).toEqual([
+      expect(change.writes[0]?.diff).toEqual([
         `+ mcpServers.${MCP_SERVER_KEY}.command = ${JSON.stringify(w.tasks)}`,
         `+ mcpServers.${MCP_SERVER_KEY}.args = ${JSON.stringify(argv.slice(1))}`,
       ]);
@@ -219,7 +220,10 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
 
       const registered = only(await survey(input), "claude-desktop");
       expect(registered.state).toBe("registered");
-      expect((await applyHome(input, registered, SPACE, ROWS)).result).toBe("unchanged");
+      // With the service saying the access is on, applying again renews it and changes nothing.
+      expect((await applyHome({ ...input, rows: ROWS.live }, registered, SPACE, ROWS)).result).toBe(
+        "unchanged",
+      );
       expect(await removeHome(input, registered, ROWS)).toMatchObject({ result: "removed" });
       expect(readFileSync(file)).toEqual(before);
       expect(readRecords(w.state)).toEqual([]);
@@ -251,7 +255,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       writeFileSync(file, bare);
       const view = only(await survey(input), "claude-desktop");
       const change = planChange(input, view, SPACE);
-      expect(typeof change !== "string" && change.diff[0]).toBe("+ mcpServers = {}");
+      expect(typeof change !== "string" && change.writes[0]?.diff[0]).toBe("+ mcpServers = {}");
       expect((await applyHome(input, view, SPACE, ROWS)).result).toBe("applied");
       expect(
         await removeHome(input, only(await survey(input), "claude-desktop"), ROWS),
@@ -324,7 +328,12 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       // A second candidate beside the first: found on Windows, made up elsewhere (one place only).
       const second: HomeView = found[1] ?? {
         ...first,
-        home: { ...first.home, home: join(w.root, "other"), file: join(w.root, "other", "c.json") },
+        home: {
+          ...first.home,
+          home: join(w.root, "other"),
+          files: [join(w.root, "other", "c.json")],
+        },
+        files: [{ ...(first.files[0] as FileView), file: join(w.root, "other", "c.json") }],
       };
       expect(planOf(input, [first, second], SPACE).map((i) => i.change)).toEqual([
         "ambiguous",
@@ -349,12 +358,21 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       const again = (await survey(input)).filter((v) => v.home.app === "claude-desktop");
       const broken: HomeView = again[1] ?? {
         ...first,
-        home: { ...first.home, home: dirname(brokenFile), file: brokenFile },
+        home: { ...first.home, home: dirname(brokenFile), files: [brokenFile] },
         state: "refused",
         refusal: "invalid_file",
-        sha256: null,
+        files: [
+          {
+            file: brokenFile,
+            state: "refused",
+            refusal: "invalid_file",
+            sha256: null,
+            bound: null,
+            parent: false,
+          },
+        ],
       };
-      expect(broken).toMatchObject({ state: "refused", sha256: null });
+      expect(broken).toMatchObject({ state: "refused", files: [{ sha256: null }] });
       expect(planOf(input, [first, broken], SPACE).map((i) => i.change)).toEqual([
         "ambiguous",
         undefined,
@@ -414,17 +432,15 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       const before = readFileSync(settings);
       const input = await inputOf(w);
       const views = await survey(input);
-      expect(
-        views.map((v) => [v.home.app, v.home.instance, v.home.hosts, v.home.isDefault]).sort(),
-      ).toEqual(
+      expect(views.map((v) => [v.home.app, v.home.instance, v.home.hosts]).sort()).toEqual(
         [
-          ["claude-code", "claude-work", ["t3"], false],
-          ["codex", "codex", ["t3"], true],
-          ["codex", "codex-second", ["t3"], false],
+          ["claude-code", "claude-work", ["t3"]],
+          ["codex", "codex", ["t3"]],
+          ["codex", "codex-second", ["t3"]],
         ].sort(),
       );
       const work = byFolder(views, "claude-code", "work-claude");
-      expect(work.home.file).toBe(join(w.home, "work-claude", ".claude.json"));
+      expect(work.home.files).toEqual([join(w.home, "work-claude", ".claude.json")]);
 
       for (const view of views) {
         expect(await applyHome(input, view, SPACE, ROWS), view.home.instance).toMatchObject({
@@ -485,8 +501,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       }
 
       // T3 names Claude Code's default folder by its path: its Claude then reads `.claude.json`
-      // inside that folder, not the user's `~/.claude.json` where the default home's entry goes, so
-      // that home is not marked as read by T3.
+      // inside that folder, which is a file of that home from then on, and the home is read by T3.
       mkdirSync(join(w.home, ".claude"));
       const explicitT3 = join(w.root, "t3-explicit", "userdata");
       mkdirSync(explicitT3, { recursive: true, mode: 0o700 });
@@ -500,11 +515,9 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         { mode: 0o600 },
       );
       const explicit = await inputOf(w, { T3CODE_HOME: join(w.root, "t3-explicit") });
-      expect(byFolder(await survey(explicit), "claude-code", ".claude").home).toMatchObject({
-        isDefault: true,
-        file: join(w.home, ".claude.json"),
-        hosts: [],
-      });
+      const t3Read = byFolder(await survey(explicit), "claude-code", ".claude").home;
+      expect(t3Read.hosts).toEqual(["t3"]);
+      expect(t3Read.files).toContain(join(w.home, ".claude", ".claude.json"));
       expect(t3HomesOf(explicit)).toEqual([
         {
           app: "claude-code",

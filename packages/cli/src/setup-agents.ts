@@ -88,6 +88,7 @@ import {
   withSetupLock,
   type AgentApp,
   type Host,
+  type FileView,
   type HomeView,
   type ToolsAnswer,
   type Outcome,
@@ -294,6 +295,9 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
   unwritable:
     "its file could not be written: it is read-only, another program holds it, or the disk is full",
   state_unwritable: `setup could not write its own record of it (a full disk?), so its file was left as it was: run ${CLI_NAME} setup agents --remove again once it can`,
+  access_unknown: `${PRODUCT_NAME}'s service did not say whether it has its access, so none was given back: run ${CLI_NAME} setup agents again once the service answers`,
+  file_lacks:
+    "there is no entry of setup's yet, so an app that reads that file does not get the tools",
 };
 
 /**
@@ -306,22 +310,23 @@ function accessText(outcome: Outcome): string | undefined {
   if (outcome.access === "unknown") {
     return `Access could not be confirmed off: run ${CLI_NAME} setup agents --remove again while ${PRODUCT_NAME}'s service runs.`;
   }
-  if (outcome.kept === "edited") {
-    return `Access is off. Your edited entry is still in ${outcome.home.file}.`;
-  }
-  if (outcome.kept === "own") return `Access is off. The entry is still in ${outcome.home.file}.`;
+  const file = outcome.file ?? outcome.home.files[0] ?? outcome.home.home;
+  if (outcome.kept === "edited") return `Access is off. Your edited entry is still in ${file}.`;
+  if (outcome.kept === "own") return `Access is off. The entry is still in ${file}.`;
   return "Access is off.";
 }
 
 /**
- * Why a home was left, for people. An entry of TTasks's name that setup did not write (one added by
- * hand) also says what to take out of which file, so the next setup can register the home (A3
- * 3.7.8: the grant gate's refusal of such an entry sends the person here).
+ * Why a home was left, for people, and in which of its files when it has several. An entry of
+ * TTasks's name that setup did not write (one added by hand) also says what to take out of which
+ * file, so the next setup can register the home (A3 3.7.8: the grant gate's refusal of such an
+ * entry sends the person here).
  */
-function reasonText(reason: OutcomeReason, home: HomeView["home"]): string {
-  if (reason !== "foreign_entry") return REASON[reason];
-  const removal = manualRemoval(home);
-  return `${REASON.foreign_entry} (one added by hand). For setup to register this home, take ${removal.what} out of ${removal.file}; then run ${CLI_NAME} setup agents again`;
+function reasonText(reason: OutcomeReason, home: HomeView["home"], file?: string): string {
+  const where = file === undefined || home.files.length < 2 ? "" : `in ${file}, `;
+  if (reason !== "foreign_entry") return `${where}${REASON[reason]}`;
+  const removal = manualRemoval(home, file ?? home.files[0] ?? home.home);
+  return `${where}${REASON.foreign_entry} (one added by hand). For setup to register this home, take ${removal.what} out of ${removal.file}; then run ${CLI_NAME} setup agents again`;
 }
 
 const NOTE: Readonly<Record<string, string>> = {
@@ -350,12 +355,17 @@ function toolsLine(view: HomeView, answer: ToolsAnswer, live: boolean | undefine
     why === undefined
       ? STATE_TEXT[view.state]
       : view.state === "registered" || view.state === "missing" || view.state === "edited"
-        ? `registered, and ${reasonText(why, view.home)}`
+        ? `registered, and ${reasonText(why, view.home, answer.file)}`
         : view.state === "interrupted"
-          ? reasonText(why, view.home)
-          : `${STATE_TEXT[view.state]}: ${reasonText(why, view.home)}`;
+          ? reasonText(why, view.home, answer.file)
+          : `${STATE_TEXT[view.state]}: ${reasonText(why, view.home, answer.file)}`;
   const access = live === true ? "" : " and gives it its access again";
   if (answer.on === "grant") return `${said}: apply gives it its access again`;
+  if (answer.on === "add" && view.state === "registered") {
+    return why === "file_lacks"
+      ? `${said}: apply writes it there${access}`
+      : `${said}: apply writes the entry into each file that has none, and gives it its access again`;
+  }
   if (answer.on === "repair") {
     return `${said}: apply writes it again with the command installed now${access}`;
   }
@@ -365,6 +375,24 @@ function toolsLine(view: HomeView, answer: ToolsAnswer, live: boolean | undefine
   }
   return said;
 }
+
+const FILE_TEXT: Readonly<Record<FileView["state"], string>> = {
+  absent: "no entry of setup's yet",
+  own: "setup's entry",
+  edited: "setup's entry, changed by hand",
+  gone: "setup's entry is gone",
+  foreign: "an entry setup did not write",
+  refused: "left alone",
+};
+
+/** What each file of a home with several holds, a line each; none for a home of one file. */
+const fileLines = (view: HomeView): string[] =>
+  view.files.length < 2
+    ? []
+    : view.files.map(
+        (f) =>
+          `${f.file}: ${FILE_TEXT[f.state]}${f.refusal === undefined || f.refusal === "record_unreadable" ? "" : ` (${REASON[f.refusal]})`}`,
+      );
 
 const HOST_TEXT: Readonly<Record<Host, string>> = { "codex-app": "the Codex app", t3: "T3 Code" };
 
@@ -380,14 +408,25 @@ const title = (view: Pick<HomeView, "home">): string => {
 const viewJson = (view: HomeView) => ({
   app: view.home.app,
   home: view.home.home,
-  file: view.home.file,
+  file: view.files[0]?.file ?? view.home.home,
   instance: view.home.instance,
   account: view.home.account,
   hosts: view.home.hosts,
   ...(view.home.shadows === undefined ? {} : { shadows: view.home.shadows }),
   state: view.state,
   ...(view.refusal === undefined ? {} : { reason: view.refusal }),
-  sha256: view.sha256,
+  sha256: view.files[0]?.sha256 ?? null,
+  // A home with several settings files (Claude Code's default folder): what each holds.
+  ...(view.files.length < 2
+    ? {}
+    : {
+        files: view.files.map((f) => ({
+          file: f.file,
+          state: f.state,
+          ...(f.refusal === undefined ? {} : { reason: f.refusal }),
+          sha256: f.sha256,
+        })),
+      }),
   ...(view.record === undefined ? {} : { space: view.record.space, grant: view.record.grant }),
 });
 
@@ -399,6 +438,7 @@ const outcomeJson = (outcome: Outcome) => ({
   ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
   ...(outcome.access === undefined ? {} : { access: outcome.access }),
   ...(outcome.kept === undefined ? {} : { kept: outcome.kept }),
+  ...(outcome.file === undefined || outcome.home.files.length < 2 ? {} : { file: outcome.file }),
   ...(outcome.notes === undefined ? {} : { notes: outcome.notes }),
 });
 
@@ -572,10 +612,12 @@ export async function agentsCommand(
           const settled = mcp ? await settleHomes(await rowsOf(), access) : [];
           // The preview again, under the lock: apply goes on only when it is the plan the
           // person saw (`--plan`), whatever changed in the homes, machine.toml or the spaces.
-          const all = (await survey(await rowsOf())).filter(selected);
+          // With the access each home has now, which the plan names and a renewal needs.
+          const live = await rowsOf();
+          const all = (await survey(live)).filter(selected);
           const views = mcp ? all : [];
           const space = needsSpace(views) ? await spaceOf() : "";
-          const items = planOf(input, views, space);
+          const items = planOf(live, views, space);
           const planned = block ? await blockPlan(input, all, selected) : undefined;
           const token = planToken(
             space,
@@ -595,7 +637,7 @@ export async function agentsCommand(
           }
           const done: Outcome[] = [...settled];
           for (const item of items) {
-            done.push(await applyHome(input, item.view, space, access, item.change));
+            done.push(await applyHome(live, item.view, space, access, item.change));
           }
           return { outcomes: done, blocks: (planned ?? []).map((b) => applyBlock(input, b)) };
         });
@@ -706,11 +748,20 @@ async function withRows(input: SetupInput, call: Call): Promise<SetupInput> {
   }
   const rows = (Array.isArray(listed) ? (listed as unknown[]) : []).flatMap((row) => {
     if (typeof row !== "object" || row === null) return [];
-    const { app, home, instance, grant } = row as Record<string, unknown>;
+    const { app, home, instance, grant, spaces } = row as Record<string, unknown>;
     if (typeof app !== "string" || typeof home !== "string" || typeof instance !== "string") {
       return [];
     }
-    return [{ app, home, instance, ...(typeof grant === "string" ? { grant } : {}) }];
+    const space: unknown = Array.isArray(spaces) ? spaces[0] : undefined;
+    return [
+      {
+        app,
+        home,
+        instance,
+        ...(typeof grant === "string" ? { grant } : {}),
+        ...(typeof space === "string" ? { space } : {}),
+      },
+    ];
   });
   return { ...input, rows };
 }
@@ -740,11 +791,18 @@ const rowCall =
 const needsSpace = (views: readonly HomeView[]): boolean =>
   views.some((view) => view.state === "not_registered");
 
-/** Whether apply has anything to do: a home it turns on, or a registered one whose row it renews. */
+/**
+ * Whether apply has anything to do: a home it turns on, or a registered one whose row it renews,
+ * which needs the service to have said what its access is.
+ */
 const applies = (input: SetupInput, items: readonly PlanItem[]): boolean =>
-  items.some(({ view, change }) => {
+  items.some(({ view, change, access }) => {
     const answer = toolsOf(input, view, "", typeof change === "string" ? change : undefined);
-    return answer.on !== undefined || (view.state === "registered" && answer.why === undefined);
+    const renews =
+      view.state === "registered" &&
+      access !== "unknown" &&
+      (answer.why === undefined || answer.file !== undefined);
+    return answer.on !== undefined || renews;
   });
 
 /**
@@ -830,6 +888,7 @@ async function status(
       rows === undefined ? undefined : row !== undefined,
     );
     io.stdout(`${title(view)}\n  ${said}${space}${grant}\n`);
+    for (const line of fileLines(view)) io.stdout(`  ${line}\n`);
   }
   if (rows === undefined) {
     io.stdout(`${PRODUCT_NAME}'s service is not running: the grant rows are not shown.\n`);
@@ -901,7 +960,14 @@ async function preview(
                 ? { state: "refused", reason: change }
                 : {}
               : typeof change === "object"
-                ? { change: { entry: change.entry, diff: change.diff, access: "on" } }
+                ? {
+                    change: {
+                      entry: change.entry,
+                      diff: change.writes[0]?.diff ?? [],
+                      ...(change.writes.length < 2 ? {} : { files: change.writes }),
+                      access: "on",
+                    },
+                  }
                 : { change: { access: "on" } }),
           };
         }),
@@ -926,23 +992,34 @@ async function preview(
   for (const { view, change } of items) {
     n += 1;
     io.stdout(`${String(n)}. ${title(view)}\n`);
-    const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
-    io.stdout(`   ${view.home.file} (${hash})\n`);
+    for (const f of view.files) {
+      const hash = f.sha256 === null ? "not there yet" : `sha256 ${f.sha256}`;
+      io.stdout(`   ${f.file} (${hash})\n`);
+    }
     const answer = answerOf(view, change);
     const live = input.rows?.some(
       (r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home),
     );
-    if (answer.on === "add" && typeof change === "object") {
+    const each = typeof change === "object" ? change.writes : [];
+    /** The lines each file gains, under its name when there are several. */
+    const writes = () => {
+      for (const w of each) {
+        if (each.length > 1) io.stdout(`     ${w.file}:\n`);
+        for (const line of w.diff) io.stdout(`     ${each.length > 1 ? "  " : ""}${line}\n`);
+      }
+    };
+    if (answer.on === "add" && view.state !== "registered" && each.length > 0) {
       changes += 1;
       io.stdout(
-        `   ${PRODUCT_NAME} writes one entry into this file, and nothing else there, and gives this home its access:\n`,
+        each.length > 1
+          ? `   ${PRODUCT_NAME} writes one entry into each of these files, and nothing else there, and gives this home its access:\n`
+          : `   ${PRODUCT_NAME} writes one entry into this file, and nothing else there, and gives this home its access:\n`,
       );
-      for (const line of change.diff) io.stdout(`     ${line}\n`);
+      writes();
     } else if (answer.on !== undefined) {
       changes += 1;
-      const diff = typeof change === "object" ? change.diff : [];
-      io.stdout(`   ${toolsLine(view, answer, live)}${diff.length === 0 ? "." : ":"}\n`);
-      for (const line of diff) io.stdout(`     ${line}\n`);
+      io.stdout(`   ${toolsLine(view, answer, live)}${each.length === 0 ? "." : ":"}\n`);
+      writes();
     } else {
       io.stdout(`   ${toolsLine(view, answer, live)}. Nothing to do.\n`);
     }

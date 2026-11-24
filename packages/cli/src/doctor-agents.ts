@@ -38,7 +38,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { uptime } from "node:os";
-import { basename, join, win32 } from "node:path";
+import { basename, dirname, join, win32 } from "node:path";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
 import generatedTools from "@ttasks/contracts/generated/mcp-tools.json" with { type: "json" };
 import { makeDir } from "@ttasks/files";
@@ -63,6 +63,7 @@ import {
   readBlockRecords,
   readRecords,
   readsHome,
+  settingsFile,
   recordArgv,
   recordedBlocks,
   samePath,
@@ -336,7 +337,7 @@ export async function agentChecks(
     }
     checks.push(grantsCheck(input, views, rows));
     const surveyed = await survey(input);
-    checks.push(manualCheck(surveyed));
+    checks.push(manualCheck(input, surveyed));
     checks.push(t3Check(input, surveyed));
     checks.push(await blockCheck(io, state, options, input));
     checks.push(...SKIPPED_ROWS);
@@ -482,13 +483,17 @@ async function mcpCheck(
       view.home.app === "codex"
         ? ["mcp", "get", MCP_SERVER_KEY, "--json"]
         : ["mcp", "get", MCP_SERVER_KEY];
-    const out = await output(input, view, resolve([...exec, ...args]));
-    if (out === undefined) {
-      return {
-        id,
-        status: "fail",
-        detail: `${name(view)}: the app's own mcp get does not find ${PRODUCT_NAME}'s entry, though its file has it. Run: ${fix}`,
-      };
+    // Each file that holds setup's entry, as the app reads it: with its home's variable or without.
+    for (const file of view.files.filter((f) => f.state === "own")) {
+      const out = await output(input, view, resolve([...exec, ...args]), file.file);
+      if (out === undefined) {
+        const which = view.files.length < 2 ? "its file" : fileWords(input, view, file.file);
+        return {
+          id,
+          status: "fail",
+          detail: `${name(view)}: the app's own mcp get does not find ${PRODUCT_NAME}'s entry, though ${which} has it. Run: ${fix}`,
+        };
+      }
     }
   }
   const argv = recordArgv(record);
@@ -523,6 +528,18 @@ async function mcpCheck(
       id,
       status: "fail",
       detail: `${name(view)}: the entry's --space or --instance does not match its grant row. Run: ${fix}`,
+    };
+  }
+  // Another settings file of the home that a program reads without setup's entry.
+  if (answer.file !== undefined) {
+    const which = fileWords(input, view, answer.file);
+    return {
+      id,
+      status: "warn",
+      detail:
+        answer.why === "file_lacks"
+          ? `${name(view)}: ${which} has no ${PRODUCT_NAME} entry yet, so an app that reads that file cannot reach ${PRODUCT_NAME}. Run: ${CLI_NAME} setup agents, then the apply it prints`
+          : `${name(view)}: ${which} does not hold setup's entry as it wrote it, so setup leaves that file alone. ${CLI_NAME} setup agents --status says why.`,
     };
   }
   return {
@@ -586,8 +603,9 @@ function output(
   input: SetupInput,
   view: HomeView,
   argv: readonly string[],
+  file?: string,
 ): Promise<string | undefined> {
-  const { env } = commandEnv(input, view.home);
+  const { env } = commandEnv(input, view.home, file);
   return helperOutput(argv, {
     env,
     cwd: input.userHome,
@@ -649,7 +667,7 @@ function grantsCheck(
  * alone while the entry is there: so the row says what to take out of which file. A home is named
  * by its app and setup's instance for it, and its file by its name, without the home's path.
  */
-function manualCheck(views: readonly HomeView[]): Check {
+function manualCheck(input: SetupInput, views: readonly HomeView[]): Check {
   const found = views.filter((v) => v.state === "refused" && v.refusal === "foreign_entry");
   if (found.length === 0) {
     return {
@@ -660,11 +678,12 @@ function manualCheck(views: readonly HomeView[]): Check {
   }
   const parts = found.map((view) => {
     // The file by its name only: ttasks setup agents shows each home's file in full.
-    const removal = manualRemoval(view.home);
-    const how = `take ${removal.what} out of that home's ${basename(removal.file)} (${CLI_NAME} setup agents shows its full path)`;
+    const foreign = view.files.find((f) => f.state === "foreign");
+    const removal = manualRemoval(view.home, foreign?.file ?? view.home.files[0] ?? view.home.home);
+    const how = `take ${removal.what} out of ${fileWords(input, view, removal.file)} (${CLI_NAME} setup agents shows its full path)`;
     // The instance the service sees, by its own rule (binding's `instanceIn`): an entry without
     // --instance, or with one that is `manual` or no instance ID, acts as the hand-made entry.
-    const named = entryInstance(view.entry);
+    const named = entryInstance(foreign?.entry);
     const instance =
       named === undefined
         ? undefined
@@ -680,6 +699,17 @@ function manualCheck(views: readonly HomeView[]): Check {
     return `${name(view)}: ${what}, ${how}, then run: ${CLI_NAME} setup agents`;
   });
   return { id: "manual", status: "warn", detail: parts.join(" ") };
+}
+
+/**
+ * One of a home's settings files in a row's words, by its name and never its path: for Claude Code's
+ * default folder, which of its two.
+ */
+function fileWords(input: SetupInput, view: HomeView, file: string): string {
+  if (view.files.length < 2) return `that home's ${basename(file)}`;
+  return samePath(input.platform, dirname(file), view.home.home)
+    ? `the ${basename(file)} inside that home's folder`
+    : `the ${basename(file)} in your home folder`;
 }
 
 /** A T3 provider instance's key that a row may show as it is. */
@@ -717,29 +747,15 @@ function t3Check(input: SetupInput, views: readonly HomeView[]): Check {
       `Passed over, ${T3_SKIP_TEXT.unknown_driver}: ${unknown.map((s) => plain(s.id)).join(", ")}.`,
     );
   }
-  // A provider instance that names Claude Code's default folder by its path reads `.claude.json`
-  // inside it, not the user's `~/.claude.json` the default home's entry is in (readsHome).
-  const elsewhere = homes.filter((t3) =>
-    views.some(
-      (v) =>
-        v.home.app === t3.app &&
-        samePath(input.platform, v.home.home, t3.home) &&
-        !readsHome(input.platform, t3, v.home.app, v.home.home, v.home.isDefault),
-    ),
-  );
+  // The file the provider instance's agent reads: for Claude Code's default folder, the one inside
+  // it when T3 sets the folder as its home, else the user's `~/.claude.json`.
   const gaps = homes.filter((t3) => {
-    if (elsewhere.includes(t3)) return false;
-    const view = views.find((v) =>
-      readsHome(input.platform, t3, v.home.app, v.home.home, v.home.isDefault),
-    );
-    return view === undefined || !(view.state === "registered" || view.state === "edited");
+    const view = views.find((v) => readsHome(input.platform, t3, v.home.app, v.home.home));
+    const file = settingsFile(input.platform, input.userHome, t3.app, t3.home, t3.isDefault);
+    const read = view?.files.find((f) => samePath(input.platform, f.file, file));
+    return read === undefined || !(read.state === "own" || read.state === "edited");
   });
-  if (
-    gaps.length === 0 &&
-    elsewhere.length === 0 &&
-    unclear.length === 0 &&
-    settings.file !== "refused"
-  ) {
+  if (gaps.length === 0 && unclear.length === 0 && settings.file !== "refused") {
     return {
       id: "t3.homes",
       status: "ok",
@@ -766,13 +782,6 @@ function t3Check(input: SetupInput, views: readonly HomeView[]): Check {
     );
   }
   parts.push(...notes);
-  parts.push(
-    ...elsewhere.map((t3) =>
-      t3.isDefault
-        ? `T3 Code's provider instance ${label(t3)} uses Claude Code's default home, so Claude Code reads the user's .claude.json, while machine.toml names that folder by its variable and setup's entry is inside it: set the instance's home path in T3 Code's settings to that folder.`
-        : `T3 Code's provider instance ${label(t3)} names Claude Code's default folder as its home path, so Claude Code reads the configuration inside that folder, where setup wrote no entry: in T3 Code's settings, clear the instance's home path so it uses the default home as the CLI does.`,
-    ),
-  );
   if (gaps.length > 0) {
     parts.push(
       `T3 Code's provider instance${gaps.length === 1 ? "" : "s"} ${gaps.map(label).join(", ")} ${gaps.length === 1 ? "runs" : "run"} in a home without ${PRODUCT_NAME}'s entry. Run: ${CLI_NAME} setup agents --app t3`,

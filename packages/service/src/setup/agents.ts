@@ -41,9 +41,10 @@
 // Every path, variable and file read goes through the injected input, so tests run on scratch
 // homes.
 import { createHash } from "node:crypto";
-import { lstatSync, rmSync, statSync } from "node:fs";
+import { lstatSync, realpathSync, rmSync, statSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { posix, win32 } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { MCP_SERVER_KEY } from "@ttasks/brand";
 // The bridge's own parser by its own path: the bridge's index would bring its runner into bundles.
 import { parseArgs } from "@ttasks/bridge/mcp/args";
@@ -67,7 +68,14 @@ import { keyText, valueText, type EditValue } from "../config/edit.ts";
 import { scanToml, ScanError } from "../config/scan.ts";
 import { BOM, MAX_CONFIG_BYTES, parseToml, readConfigFile } from "../config/toml.ts";
 import { stageFile, type StagedFile } from "../hub/files.ts";
-import { toolsAnswer, type HomeState, type Refusal, type ToolsAnswer } from "./answer.ts";
+import {
+  toolsAnswer,
+  type FileFacts,
+  type FileState,
+  type HomeState,
+  type Refusal,
+  type ToolsAnswer,
+} from "./answer.ts";
 import { withAppLock } from "./app-lock.ts";
 import {
   addOwnEntry,
@@ -98,12 +106,14 @@ import {
   AGENT_APPS,
   isAgentApp,
   readRecords,
+  recordFiles,
   SetupStateInvalid,
   SetupStateTooLarge,
   SetupStateUnsafe,
   writeRecords,
   type AgentApp,
   type HomeRecord,
+  type Made,
 } from "./state.ts";
 
 export { CODEX_STARTUP_TIMEOUT_SEC } from "./entry.ts";
@@ -162,10 +172,8 @@ export interface AgentHome {
   readonly app: AgentApp;
   /** The home folder: `~/.claude`, `~/.codex`, `~/.codex-work`, one a variable names, or the folder of Claude Desktop's file. */
   readonly home: string;
-  /** The file that holds the entry. */
-  readonly file: string;
-  /** The app's default home, which no variable selects. */
-  readonly isDefault: boolean;
+  /** The settings files a program reads this home's entry from (homeFiles), each holding the same entry. */
+  readonly files: readonly string[];
   /** The variable that selects a home (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), from the catalogue. */
   readonly variable: string;
   /** The A4 instance the entry names (`--instance`). */
@@ -183,30 +191,42 @@ export interface AgentHome {
    * never homes of their own, so Codex run in one of them reads this entry.
    */
   readonly shadows?: readonly string[];
-  /** A3 3.12 rules 3 and 4: machine.toml lists the file, or another git repository tracks it. */
-  readonly managed: boolean;
+  /** Those of `files` that A3 3.12 rules 3 and 4 make managed: machine.toml lists it, or another git repository tracks it. */
+  readonly managed: readonly string[];
 }
 
-/** A home as setup finds it now. */
-export interface HomeView {
-  readonly home: AgentHome;
-  readonly state: HomeState;
+/** One settings file of a home as setup finds it now. */
+export interface FileView {
+  readonly file: string;
+  /** What the file holds of setup's, judged against the home's record (answer.ts `FileState`). */
+  readonly state: FileState;
   readonly refusal?: Refusal;
   /** SHA-256 of the file as read; null when there is no file. */
   readonly sha256: string | null;
+  /** What a plan of the file is bound to (boundOf); null when it cannot be read. */
+  readonly bound: string | null;
   /** Whether the servers' table (`mcpServers`, `mcp_servers`) exists. */
   readonly parent: boolean;
   /** TTasks's entry as found, when there is one. TTasks's own data: never another key's value. */
   readonly entry?: unknown;
+}
+
+/** A home as setup finds it now: the home's state, from each of its files (homeState). */
+export interface HomeView {
+  readonly home: AgentHome;
+  readonly state: HomeState;
+  readonly refusal?: Refusal;
+  /** Each of `home.files`, in order. */
+  readonly files: readonly FileView[];
   readonly record?: HomeRecord;
 }
 
-/** What setup writes for one home. */
+/** What setup writes for one home: the one entry, into each of the files that take it. */
 export interface Change {
   /** The entry setup writes, exactly: its keys and values. */
   readonly entry: Readonly<Record<string, EditValue>>;
-  /** The entry as the lines its file gains: for JSON, its servers' table first when it is new. */
-  readonly diff: readonly string[];
+  /** Each file the entry goes into, with the lines it gains (JSON: its servers' table first when it is new). */
+  readonly writes: readonly { readonly file: string; readonly diff: readonly string[] }[];
 }
 
 export type OutcomeReason =
@@ -235,7 +255,11 @@ export type OutcomeReason =
   | "access_off"
   | "entry_left"
   /** Setup's own record of the home could not be written, so its file was left as it was. */
-  | "state_unwritable";
+  | "state_unwritable"
+  /** One of the home's files has no entry while another has (answer.ts `ToolsWhy`). */
+  | "file_lacks"
+  /** The service did not say whether the home has its access, so none was given back. */
+  | "access_unknown";
 
 /** What happened to one home. */
 export interface Outcome {
@@ -250,6 +274,8 @@ export interface Outcome {
   readonly access?: "on" | "off" | "unknown";
   /** A removal that left an entry in the file: TTasks's own (`reason` says why), or one the person changed. */
   readonly kept?: "own" | "edited";
+  /** The file `reason` or `kept` is about. */
+  readonly file?: string;
   /** Facts the person should know: `undo_failed`, `entry_left`, `undone` (its entry was taken out again). */
   readonly notes?: readonly string[];
 }
@@ -301,6 +327,8 @@ export interface SetupInput {
     readonly instance: string;
     /** The row's ID, when the caller keeps it (the command line's status shows it). */
     readonly grant?: string;
+    /** The space the row grants, when the caller keeps it. */
+    readonly space?: string;
   }[];
   /** machine.toml's `[setup.managed] paths` (A3 3.12 rule 4). Default: none. */
   readonly managedPaths?: readonly string[];
@@ -409,12 +437,68 @@ export function agentHomeOf(
   return { app, home: (app === "codex" ? codexSharedHome(platform, path) : undefined) ?? path };
 }
 
-/** The file of an app's entry in a home. */
-function fileOf(input: SetupInput, app: AgentApp, home: string, isDefault: boolean): string {
-  const p = pathOf(input.platform);
+/**
+ * The settings file a program reads a home's entry from: for Claude Code's default home started
+ * with no variable (`isDefault`) the user's `~/.claude.json`, else the file inside the home.
+ */
+export function settingsFile(
+  platform: NodeJS.Platform,
+  userHome: string,
+  app: AgentApp,
+  home: string,
+  isDefault: boolean,
+): string {
+  const p = pathOf(platform);
   if (app === "codex") return p.join(home, CODEX_FILE);
   if (app === "claude-desktop") return p.join(home, DESKTOP_FILE);
-  return isDefault ? p.join(input.userHome, CLAUDE_FILE) : p.join(home, CLAUDE_FILE);
+  return isDefault ? p.join(userHome, CLAUDE_FILE) : p.join(home, CLAUDE_FILE);
+}
+
+/** Claude Code's default home folder, `~/.claude`. */
+const claudeDefault = (input: Pick<SetupInput, "platform" | "userHome">): string =>
+  pathOf(input.platform).join(input.userHome, ".claude");
+
+/**
+ * The settings files of a home: every file a program reads the home's entry from, the one place
+ * that says which. Claude Code reads its default folder's entry from `~/.claude.json` when it is
+ * started plainly, and from `~/.claude/.claude.json` when it is started with its home set to that
+ * folder (as T3 Code may start it): each of the two is a file of the home while it is there or a
+ * reader TTasks knows of reads it (`readers`: machine.toml's instance of the folder, T3's provider
+ * instances, each by whether it starts Claude Code with no variable). With neither, the file a
+ * plain start reads. One that is a link to the other is that file. Every other home has one file.
+ * `isDefault` orders them: the file a plain start reads first, unless the home's own instance
+ * names the folder by its variable.
+ */
+function homeFiles(
+  input: SetupInput,
+  app: AgentApp,
+  home: string,
+  isDefault: boolean,
+  readers: readonly boolean[],
+): string[] {
+  const { platform, userHome } = input;
+  const own = settingsFile(platform, userHome, app, home, false);
+  if (app !== "claude-code" || !samePath(platform, home, claudeDefault(input))) return [own];
+  const plain = settingsFile(platform, userHome, app, home, true);
+  const read = (file: string, byPlain: boolean) => fileThere(file) || readers.includes(byPlain);
+  let files = [plain, own].filter((file, i) => read(file, i === 0));
+  if (files.length === 2) {
+    if (linksTo(platform, own, plain)) files = [plain];
+    else if (linksTo(platform, plain, own)) files = [own];
+  }
+  if (files.length === 0) return [plain];
+  return isDefault ? files : files.reverse();
+}
+
+/** Whether `link` is a link whose target is `file`. */
+function linksTo(platform: NodeJS.Platform, link: string, file: string): boolean {
+  try {
+    return (
+      lstatSync(link).isSymbolicLink() && samePath(platform, realpathSync(link), realpathSync(file))
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -447,23 +531,17 @@ function discover(input: SetupInput): Discovered {
 }
 
 /**
- * Whether a T3 provider instance reads the entry of a home: the same folder, and for Claude Code
- * the same file. T3 sets CLAUDE_CONFIG_DIR from a non-empty `homePath`, and Claude Code then reads
- * `.claude.json` inside that folder, even when the folder is the default one, whose entry setup
- * keeps in the user's `~/.claude.json`.
+ * Whether a T3 provider instance reads the entry of a home: the same app and folder. For Claude
+ * Code's default folder T3 reads one of its two files (with or without CLAUDE_CONFIG_DIR), and
+ * both are files of the home (homeFiles).
  */
 export function readsHome(
   platform: NodeJS.Platform,
   t3: T3Home,
   app: AgentApp,
   home: string,
-  isDefault: boolean,
 ): boolean {
-  return (
-    t3.app === app &&
-    samePath(platform, t3.home, home) &&
-    (app !== "claude-code" || t3.isDefault === isDefault)
-  );
+  return t3.app === app && samePath(platform, t3.home, home);
 }
 
 /** The other apps that read a home: the Codex app reads the default Codex home, T3 its instances'. */
@@ -472,17 +550,42 @@ function hostsOf(
   found: Discovered,
   app: AgentApp,
   home: string,
-  isDefault: boolean,
 ): readonly Host[] {
   const hosts: Host[] = [];
   const codexDefault = pathOf(input.platform).join(input.userHome, ".codex");
   if (app === "codex" && found.engines.length > 0 && samePath(input.platform, home, codexDefault)) {
     hosts.push("codex-app");
   }
-  if (found.t3.some((t) => readsHome(input.platform, t, app, home, isDefault))) {
+  if (found.t3.some((t) => readsHome(input.platform, t, app, home))) {
     hosts.push("t3");
   }
   return hosts;
+}
+
+/**
+ * A home's files and their judgement, as discovery and a record's home both make them: machine.toml's
+ * enabled instance of the folder and T3's provider instances there are the readers it knows of.
+ */
+async function filesOfHome(
+  input: SetupInput,
+  found: Discovered,
+  app: AgentApp,
+  home: string,
+  isDefault: boolean,
+): Promise<{ files: string[]; managed: string[] }> {
+  const { platform, userHome } = input;
+  const readers = [
+    ...input.instances
+      .filter((i) => i.enabled && i.target === APPS[app].target && app !== "claude-desktop")
+      .map((i) => homeOf(i, app, userHome, platform))
+      .filter((h) => samePath(platform, h.path, home))
+      .map((h) => h.isDefault),
+    ...found.t3.filter((t) => readsHome(platform, t, app, home)).map((t) => t.isDefault),
+  ];
+  const files = homeFiles(input, app, home, isDefault, readers);
+  const managed: string[] = [];
+  for (const file of files) if (await managedFile(input, file, home)) managed.push(file);
+  return { files, managed };
 }
 
 /**
@@ -537,24 +640,21 @@ export async function agentHomes(
           samePath(platform, homeOf(i, app, userHome, platform).path, path)),
     );
     // The instance's own selection wins (A4 3.2): one that names the default folder by its variable
-    // runs Claude Code with `.claude.json` inside that folder, so that is the file of its entry.
+    // runs Claude Code with `.claude.json` inside that folder, so that file comes first.
     const isDefault =
       owner === undefined || app === "claude-desktop"
         ? found_
         : homeOf(owner, app, userHome, platform).isDefault;
     const home = p.resolve(path);
-    const file = fileOf(input, app, home, isDefault);
     homes.push({
       app,
       home,
-      file,
-      isDefault,
+      ...(await filesOfHome(input, found, app, home, isDefault)),
       variable: rule?.env ?? "",
       instance: owner?.id ?? id,
       ...(owner === undefined ? { proposed: true } : {}),
       account: owner?.account ?? account,
-      hosts: hostsOf(input, found, app, home, isDefault),
-      managed: await managedFile(input, file, home),
+      hosts: hostsOf(input, found, app, home),
     });
   };
   for (const home of input.detection.homes) {
@@ -658,9 +758,27 @@ type FileRead =
       readonly bom: boolean;
       readonly parent: boolean;
       readonly entry: unknown;
+      /** JSON: SHA-256 of the servers' table as parsed, of `null` without one. */
+      readonly servers?: string;
     };
 
 const refused = (refusal: Refusal) => ({ kind: "refused", refusal }) as const;
+
+const NO_SERVERS = sha256(Buffer.from(JSON.stringify(null), "utf8"));
+
+/**
+ * What a plan of a file is bound to, so that apply writes what it showed or shows it again: the
+ * file as read, and for Claude Code its servers' table. Claude Code saves its own state into its
+ * file while a session runs, often more than once a minute, so a plan bound to the whole file
+ * would be stale before the person could apply it; apply splices its entry into the file as it
+ * is then, and every other server stays as the preview found it.
+ */
+function boundOf(app: AgentApp, read: FileRead): string | null {
+  if (read.kind === "refused") return null;
+  if (app === "claude-code")
+    return read.kind === "read" ? (read.servers ?? NO_SERVERS) : NO_SERVERS;
+  return read.kind === "read" ? read.sha256 : "missing";
+}
 
 /**
  * Whether the path is a link (a junction on Windows too): another tool keeps what it points at, and a
@@ -736,13 +854,17 @@ export function readText(file: string, home: string, maxBytes: number): TextRead
   };
 }
 
-function readJson(text: string, servers: string): { parent: boolean; entry: unknown } | Refusal {
+function readJson(
+  text: string,
+  servers: string,
+): { parent: boolean; entry: unknown; servers: string } | Refusal {
   const parsed = parseStrictJson(text);
   if (!parsed.ok) return parsed.reason;
   const doc = parsed.value;
   if (typeof doc !== "object" || doc === null || Array.isArray(doc)) return "wrong_type";
   const table = (doc as Record<string, unknown>)[servers];
-  if (table === undefined) return { parent: false, entry: undefined };
+  const digest = sha256(Buffer.from(JSON.stringify(table ?? null), "utf8"));
+  if (table === undefined) return { parent: false, entry: undefined, servers: digest };
   if (typeof table !== "object" || table === null || Array.isArray(table)) {
     return "wrong_type";
   }
@@ -751,6 +873,7 @@ function readJson(text: string, servers: string): { parent: boolean; entry: unkn
     entry: Object.hasOwn(table, MCP_SERVER_KEY)
       ? (table as Record<string, unknown>)[MCP_SERVER_KEY]
       : undefined,
+    servers: digest,
   };
 }
 
@@ -784,11 +907,11 @@ function readToml(text: string): { parent: boolean; entry: unknown } | Refusal {
   return { parent: true, entry: value[MCP_SERVER_KEY] };
 }
 
-/** Reads and judges a home's file (readText's checks, then the app's format). Never writes. */
-function readHomeFile(home: AgentHome): FileRead {
-  if (home.managed) return refused("managed");
+/** Reads and judges one of a home's files (readText's checks, then the app's format). Never writes. */
+function readHomeFile(home: AgentHome, file: string): FileRead {
+  if (home.managed.includes(file)) return refused("managed");
   const row = APPS[home.app];
-  const read = readText(home.file, home.home, row.maxBytes);
+  const read = readText(file, home.home, row.maxBytes);
   if (read.kind !== "text") return read;
   const judged = row.format === "toml" ? readToml(read.text) : readJson(read.text, row.servers);
   if (typeof judged === "string") return refused(judged);
@@ -853,28 +976,67 @@ function whoseIn(home: AgentHome, read: FileRead, record: HomeRecord): "own" | "
   return whoseEntry(format, servers, read.text, ownShapes(record), read.entry);
 }
 
-/** A home as it is now, judged against setup's record of it. */
-export function inspectHome(home: AgentHome, record: HomeRecord | undefined): HomeView {
-  const read = readHomeFile(home);
+/** Whether the record names `file` as one it wrote its entry into. */
+const recordNames = (platform: NodeJS.Platform, record: HomeRecord, file: string): boolean =>
+  recordFiles(record).some((f) => samePath(platform, f.file, file));
+
+/** One of a home's files as it is now, judged against setup's record of the home. */
+function inspectFile(home: AgentHome, file: string, record: HomeRecord | undefined): FileView {
+  const read = readHomeFile(home, file);
   const base = {
-    home,
+    file,
     sha256: read.kind === "read" ? read.sha256 : null,
+    bound: boundOf(home.app, read),
     parent: read.kind === "read" && read.parent,
     ...(read.kind === "read" && read.entry !== undefined ? { entry: read.entry } : {}),
-    ...(record === undefined ? {} : { record }),
   };
   if (read.kind === "refused") return { ...base, state: "refused", refusal: read.refusal };
-  if (record === undefined) {
-    return entryOf(read) === undefined
-      ? { ...base, state: "not_registered" }
-      : { ...base, state: "refused", refusal: "foreign_entry" };
+  if (record === undefined || !recordNames(process.platform, record, file)) {
+    return { ...base, state: entryOf(read) === undefined ? "absent" : "foreign" };
   }
-  if (record.state !== "applied") return { ...base, state: "interrupted" };
   const whose = whoseIn(home, read, record);
-  if (whose === "absent") return { ...base, state: "missing" };
-  return { ...base, state: whose === "own" ? "registered" : "edited" };
+  return { ...base, state: whose === "absent" ? "gone" : whose };
 }
-/** A home rebuilt from its record, for a home that detection no longer finds. */
+
+/**
+ * The home's state from its files: refused while none can be read; with no record, an entry setup
+ * did not write in any of them refuses the home, and else it is not registered yet; a record that
+ * did not finish is interrupted; else registered while one file holds setup's entry, edited while
+ * one holds it changed, and missing otherwise.
+ */
+function homeState(
+  files: readonly FileView[],
+  record: HomeRecord | undefined,
+): { state: HomeState; refusal?: Refusal } {
+  const refusal = (f: FileView | undefined) =>
+    f?.refusal === undefined ? {} : { refusal: f.refusal };
+  if (files.every((f) => f.state === "refused")) return { state: "refused", ...refusal(files[0]) };
+  if (record === undefined) {
+    return files.some((f) => f.state === "foreign")
+      ? { state: "refused", refusal: "foreign_entry" }
+      : { state: "not_registered" };
+  }
+  if (record.state !== "applied") return { state: "interrupted" };
+  if (files.some((f) => f.state === "own")) return { state: "registered" };
+  if (files.some((f) => f.state === "edited")) return { state: "edited" };
+  return { state: "missing" };
+}
+
+/** A home as it is now: each of its files, judged against setup's record of it. */
+export function inspectHome(home: AgentHome, record: HomeRecord | undefined): HomeView {
+  const files = home.files.map((file) => inspectFile(home, file, record));
+  return {
+    home,
+    ...homeState(files, record),
+    files,
+    ...(record === undefined ? {} : { record }),
+  };
+}
+
+/**
+ * A home with its record: the recorded instance and account, which its entry names and its row
+ * carries even when machine.toml now names the home otherwise, and the files a program reads now.
+ */
 async function homeOfRecord(
   input: SetupInput,
   found: Discovered,
@@ -883,13 +1045,11 @@ async function homeOfRecord(
   return {
     app: record.app,
     home: record.home,
-    file: record.file,
-    isDefault: record.is_default,
+    ...(await filesOfHome(input, found, record.app, record.home, record.is_default)),
     variable: targetDef(APPS[record.app].target).detect.homes?.env ?? "",
     instance: record.instance,
     account: record.account,
-    hosts: hostsOf(input, found, record.app, record.home, record.is_default),
-    managed: await managedFile(input, record.file, record.home),
+    hosts: hostsOf(input, found, record.app, record.home),
   };
 }
 
@@ -897,11 +1057,43 @@ async function homeOfRecord(
 const recordOf = (records: readonly HomeRecord[], home: AgentHome, platform: NodeJS.Platform) =>
   records.find((r) => r.app === home.app && samePath(platform, r.home, home.home));
 
+/** The row of a home in the service's live rows, if there is one. */
+const rowOf = (input: SetupInput, home: Pick<AgentHome, "app" | "home">) =>
+  input.rows?.find((r) => r.app === home.app && samePath(input.platform, r.home, home.home));
+
 /**
- * Every home setup knows of, inspected now: the homes found, then recorded homes not found. A home
- * with a record is the recorded one, its file, selection, instance and account: what setup changed
- * there is what it checks, takes back and renews a row for, even when machine.toml now names the
- * home otherwise. Remove, then apply, moves an entry to what the machine says now.
+ * The homes of live rows (`input.rows`) that no home in `homes` is: a folder renamed, or setup's
+ * record lost or unreadable. Each is listed with its row's instance, so its access can be turned off.
+ */
+async function rowHomes(
+  input: SetupInput,
+  found: Discovered,
+  homes: readonly AgentHome[],
+): Promise<AgentHome[]> {
+  const listed: AgentHome[] = [];
+  for (const row of input.rows ?? []) {
+    const { app } = row;
+    if (!isAgentApp(app)) continue;
+    const known = (h: AgentHome) => h.app === app && samePath(input.platform, h.home, row.home);
+    if (homes.some(known) || listed.some(known)) continue;
+    listed.push({
+      app,
+      home: row.home,
+      ...(await filesOfHome(input, found, app, row.home, true)),
+      variable: targetDef(APPS[app].target).detect.homes?.env ?? "",
+      instance: row.instance,
+      account: "",
+      hosts: hostsOf(input, found, app, row.home),
+    });
+  }
+  return listed;
+}
+
+/**
+ * Every home setup knows of, inspected now: the homes found, then recorded homes not found, then
+ * the homes of live rows neither accounts for. A home with a record is the recorded one (its
+ * instance and account): what setup changed there is what it checks, takes back and renews a row
+ * for. Remove, then apply, moves an entry to what the machine says now.
  */
 export async function survey(input: SetupInput): Promise<HomeView[]> {
   let records: HomeRecord[];
@@ -918,6 +1110,7 @@ export async function survey(input: SetupInput): Promise<HomeView[]> {
       homes.push(await homeOfRecord(input, found, record));
     }
   }
+  homes.push(...(await rowHomes(input, found, homes)));
   const views: HomeView[] = [];
   for (const home of freeInstances(input, homes, records)) {
     const record = recordOf(records, home, input.platform);
@@ -937,32 +1130,21 @@ export async function survey(input: SetupInput): Promise<HomeView[]> {
 async function unrecorded(input: SetupInput): Promise<HomeView[]> {
   const found = discover(input);
   const homes = await agentHomes(input, found);
-  const rows = input.rows ?? [];
-  for (const row of rows) {
-    if (!isAgentApp(row.app)) continue;
-    if (homes.some((h) => h.app === row.app && samePath(input.platform, h.home, row.home))) {
-      continue;
-    }
-    homes.push({
-      app: row.app,
-      home: row.home,
-      file: fileOf(input, row.app, row.home, false),
-      isDefault: false,
-      variable: targetDef(APPS[row.app].target).detect.homes?.env ?? "",
-      instance: row.instance,
-      account: "",
-      hosts: hostsOf(input, found, row.app, row.home, false),
-      managed: false,
-    });
-  }
+  homes.push(...(await rowHomes(input, found, homes)));
   return homes.map((home) => {
-    const row = rows.find((r) => r.app === home.app && samePath(input.platform, r.home, home.home));
+    const row = rowOf(input, home);
     return {
       home: row === undefined ? home : { ...home, instance: row.instance },
       state: "refused",
       refusal: "record_unreadable",
-      sha256: null,
-      parent: false,
+      files: home.files.map((file): FileView => ({
+        file,
+        state: "refused",
+        refusal: "record_unreadable",
+        sha256: null,
+        bound: null,
+        parent: false,
+      })),
     };
   });
 }
@@ -1045,10 +1227,13 @@ export function entryInstance(entry: unknown): string | null | undefined {
  * the one table or member, in the home's own file. Never a command: a pasted command runs in
  * whatever shell and account it is pasted into, which can be another home's.
  */
-export function manualRemoval(home: AgentHome): { readonly file: string; readonly what: string } {
+export function manualRemoval(
+  home: AgentHome,
+  file: string,
+): { readonly file: string; readonly what: string } {
   const servers = APPS[home.app].servers;
   return {
-    file: home.file,
+    file,
     what:
       APPS[home.app].format === "toml"
         ? `the [${servers}.${keyText(MCP_SERVER_KEY)}] table`
@@ -1097,10 +1282,14 @@ export function t3HomesOf(input: HostsInput): readonly T3Home[] {
 // ---------------------------------------------------------------------------------------------
 // The change
 
-/** The environment of the app's command for a home (A4 3.8's rule for the home variables). */
+/**
+ * The environment of the app's command that reads `file` of a home (A4 3.8's rule for the home
+ * variables): the home's variable set, except for the file Claude Code reads with none.
+ */
 export function commandEnv(
-  input: Pick<SetupInput, "env" | "platform">,
+  input: Pick<SetupInput, "env" | "platform" | "userHome">,
   home: AgentHome,
+  file: string = home.files[0] ?? "",
 ): { env: Env; set: Record<string, string>; unset: string[] } {
   const fold = (name: string) => (input.platform === "win32" ? name.toUpperCase() : name);
   const scrub = new Set(HOME_VARIABLES.map(fold));
@@ -1114,9 +1303,14 @@ export function commandEnv(
     env[name] = value;
   }
   const set: Record<string, string> = {};
-  if (home.variable !== "" && !(home.app === "claude-code" && home.isDefault)) {
-    set[home.variable] = home.home;
-  }
+  const plain =
+    home.app === "claude-code" &&
+    samePath(
+      input.platform,
+      file,
+      settingsFile(input.platform, input.userHome, home.app, home.home, true),
+    );
+  if (home.variable !== "" && !plain) set[home.variable] = home.home;
   return { env: { ...env, ...set }, set, unset: unset.sort() };
 }
 
@@ -1138,11 +1332,21 @@ function diffOf(
   ];
 }
 
+/** A home's access as the service's live rows say: unknown when the caller has none. */
+export function accessOf(
+  input: SetupInput,
+  view: Pick<HomeView, "home">,
+): "live" | "off" | "unknown" {
+  if (input.rows === undefined) return "unknown";
+  return rowOf(input, view.home) === undefined ? "off" : "live";
+}
+
 /**
  * The one answer for a home's tools (answer.ts), from its facts read now: the access from
- * `input.rows` (unknown when the caller has none), the program the entry in the file names, and
- * `space`, the one the person is in ("" for the one the record names). `writable` is the plan's
- * refusal of a new entry when the caller has one (several Claude Desktop files).
+ * `input.rows` (unknown when the caller has none), each file's entry and the program it names,
+ * and `space`, the one the person is in ("" for the one the record names). The space a home is set
+ * up for is its record's, else its live row's. `writable` is the plan's refusal of a new entry
+ * when the caller has one (several Claude Desktop files).
  */
 export function toolsOf(
   input: SetupInput,
@@ -1151,34 +1355,46 @@ export function toolsOf(
   writable?: Refusal,
 ): ToolsAnswer {
   const { home, record } = view;
-  const program = programOf(input, view);
+  const named = record?.space ?? rowOf(input, home)?.space;
   return toolsAnswer({
     state: view.state,
     ...(view.refusal === undefined ? {} : { refusal: view.refusal }),
-    entry: view.entry !== undefined,
-    ...(program === undefined ? {} : { program }),
-    access:
-      input.rows === undefined
-        ? "unknown"
-        : input.rows.some((r) => r.app === home.app && samePath(input.platform, r.home, home.home))
-          ? "live"
-          : "off",
-    otherSpace: record !== undefined && space !== "" && record.space !== space,
-    writable:
-      writable ?? (home.app === "claude-desktop" && view.sha256 === null ? "not_set_up" : true),
+    files: view.files.map((f): FileFacts => {
+      const program = programOf(input, view, f);
+      return {
+        file: f.file,
+        state: f.state,
+        ...(f.refusal === undefined ? {} : { refusal: f.refusal }),
+        ...(program === undefined ? {} : { program }),
+        writable:
+          writable ??
+          (home.app === "claude-desktop" && f.sha256 === null
+            ? "not_set_up"
+            : // A file whose folder is not there (renamed, or gone) cannot take an entry.
+              input.isFolder(pathOf(input.platform).dirname(f.file))
+              ? true
+              : "unreadable"),
+        handMade: f.state === "foreign" && entryInstance(f.entry) === null,
+      };
+    }),
+    access: accessOf(input, view),
+    otherSpace: named !== undefined && space !== "" && named !== space,
     installed: isFile(input.tasks),
-    handMade: view.refusal === "foreign_entry" && entryInstance(view.entry) === null,
   });
 }
 
 /**
- * Whether the program an entry in the file names is there: an absolute path as a file, a name
- * alone on the PATH of the person's environment. A path that is not there is `moved` when setup's
- * own entry names it and it is not where TTasks is installed now (writing the entry again mends
- * it), else `gone`.
+ * Whether the program a file's entry names is there: an absolute path as a file, a name alone on
+ * the PATH of the person's environment. A path that is not there is `moved` when setup's own entry
+ * of a registered home names it and it is not where TTasks is installed now (writing the entry
+ * again mends it), else `gone`.
  */
-function programOf(input: SetupInput, view: HomeView): "there" | "moved" | "gone" | undefined {
-  const command = (view.entry as { command?: unknown } | undefined)?.command;
+function programOf(
+  input: SetupInput,
+  view: HomeView,
+  file: FileView,
+): "there" | "moved" | "gone" | undefined {
+  const command = (file.entry as { command?: unknown } | undefined)?.command;
   if (typeof command !== "string" || command === "") return undefined;
   const { platform } = input;
   if (!pathOf(platform).isAbsolute(command)) {
@@ -1186,7 +1402,9 @@ function programOf(input: SetupInput, view: HomeView): "there" | "moved" | "gone
     return onPath(host, command) === undefined ? "gone" : "there";
   }
   if (isFile(command)) return "there";
-  return view.state === "registered" && !samePath(platform, command, input.tasks)
+  return view.state === "registered" &&
+    file.state === "own" &&
+    !samePath(platform, command, input.tasks)
     ? "moved"
     : "gone";
 }
@@ -1200,32 +1418,88 @@ function isFile(path: string): boolean {
 }
 
 /**
- * What repairs a registered home whose entry is gone or runs a program that is gone, when the
+ * The entry for `space` into each of `targets`, with the lines each file gains. Claude Desktop
+ * makes its file in its developer settings: setup never creates it, so one that is not there
+ * takes nothing. With no file to take it, the reason is the first file's: one setup cannot read,
+ * or an entry that is not setup's.
+ */
+function changeInto(
+  input: SetupInput,
+  view: HomeView,
+  space: string,
+  targets: readonly FileView[],
+): Change | Refusal {
+  const { home } = view;
+  const writes = targets.filter((f) => !(home.app === "claude-desktop" && f.sha256 === null));
+  if (writes.length === 0) {
+    if (targets.length > 0) return "not_set_up";
+    return view.files.find((f) => f.state === "refused")?.refusal ?? "foreign_entry";
+  }
+  const entry = intendedEntry(APPS[home.app].format, entryArgv(input.tasks, home, space));
+  return {
+    entry,
+    writes: writes.map((f) => ({ file: f.file, diff: diffOf(home.app, entry, f.parent) })),
+  };
+}
+
+/**
+ * What applying a home would write, or why it cannot: its entry, into each file that takes one
+ * once what an earlier setup left is settled (no entry, or setup's own). Reads nothing more.
+ */
+export function planChange(input: SetupInput, view: HomeView, space: string): Change | Refusal {
+  return changeInto(
+    input,
+    view,
+    space,
+    view.files.filter((f) => f.state === "absent" || f.state === "gone" || f.state === "own"),
+  );
+}
+
+/**
+ * What repairs a registered home whose entries are gone or run a program that is gone, when the
  * answer offers it: its entry written again with the present command, in the space it named
- * (rewrite). The entry it replaces shows as taken out.
+ * (rewrite). An entry it replaces shows as taken out.
  */
 function repairOf(input: SetupInput, view: HomeView, space: string): Change | undefined {
   const recorded = view.record?.space;
   if (recorded === undefined || toolsOf(input, view, space).on !== "repair") return undefined;
   const change = planChange(input, view, recorded);
   if (typeof change === "string") return undefined;
-  if (view.state === "missing") return change;
-  return { ...change, diff: [...entryLines(view.home.app, view.entry, "-"), ...change.diff] };
+  return {
+    ...change,
+    writes: change.writes.map((w) => {
+      const found = view.files.find((f) => f.file === w.file);
+      return found?.state === "own"
+        ? { ...w, diff: [...entryLines(view.home.app, found.entry, "-"), ...w.diff] }
+        : w;
+    }),
+  };
 }
 
-/** What applying a home would write, or why it cannot. Reads nothing more. */
-export function planChange(input: SetupInput, view: HomeView, space: string): Change | Refusal {
-  const { home } = view;
-  // Claude Desktop makes its file in its developer settings; setup never creates it.
-  if (home.app === "claude-desktop" && view.sha256 === null) return "not_set_up";
-  const entry = intendedEntry(APPS[home.app].format, entryArgv(input.tasks, home, space));
-  return { entry, diff: diffOf(home.app, entry, view.parent) };
+/**
+ * What completes a registered home one of whose files has no entry, when the answer offers it:
+ * the entry its record names, into each file that has none (complete).
+ */
+function completionOf(input: SetupInput, view: HomeView, space: string): Change | undefined {
+  const recorded = view.record?.space;
+  if (recorded === undefined || view.state !== "registered") return undefined;
+  if (toolsOf(input, view, space).on !== "add") return undefined;
+  const change = changeInto(
+    input,
+    view,
+    recorded,
+    view.files.filter((f) => f.state === "absent" || f.state === "gone"),
+  );
+  return typeof change === "string" ? undefined : change;
 }
+
 /** One selected home in a plan: as found, and the change apply would make there. */
 export interface PlanItem {
   readonly view: HomeView;
-  /** The change for a home without an entry, or why it cannot get one; undefined otherwise. */
+  /** The change for a home that gets an entry, or why it cannot get one; undefined otherwise. */
   readonly change: Change | Refusal | undefined;
+  /** The home's access as the plan found it, which its apply may give back (accessOf). */
+  readonly access: "live" | "off" | "unknown";
 }
 
 /** Whether a file is there, a link or one setup refuses to read included. */
@@ -1248,35 +1522,35 @@ export function planOf(input: SetupInput, views: readonly HomeView[], space: str
   const desktops = views.filter(
     (v) =>
       v.home.app === "claude-desktop" &&
-      (v.sha256 !== null || (v.state === "refused" && fileThere(v.home.file))),
+      v.files.some((f) => f.sha256 !== null || (f.state === "refused" && fileThere(f.file))),
   );
   return views.map((view) => ({
     view,
     change:
-      view.state !== "not_registered"
-        ? repairOf(input, view, space)
-        : view.home.app === "claude-desktop" && desktops.length > 1
-          ? "ambiguous"
-          : planChange(input, view, space),
+      view.state === "registered"
+        ? (completionOf(input, view, space) ?? repairOf(input, view, space))
+        : view.state !== "not_registered"
+          ? repairOf(input, view, space)
+          : view.home.app === "claude-desktop" && desktops.length > 1
+            ? "ambiguous"
+            : planChange(input, view, space),
+    access: accessOf(input, view),
   }));
 }
 
 /**
- * The plan's token (A3 3.13.1): a digest of what apply would do in the selected
- * homes, which the preview prints and `--apply --plan` checks again under the lock, so apply does
- * exactly what the preview showed or refuses. It covers the space, each home with its file,
- * instance, account, hosts and state (everything the home's row names) and, for a change, the
- * exact entry, and the hash of the file it goes into (a Codex file and Claude Desktop's). Claude
- * Code's `.claude.json` is covered by its state and entry but not its hash: Claude Code rewrites it
- * while a session runs, and apply splices the entry into it as it is then. `blocks` is the
- * instruction block's part of the plan (block.ts `blockCanonical`), when the
- * plan holds that part.
+ * The plan's token (A3 3.13.1): a digest of what apply would do in the selected homes, which the
+ * preview prints and `--apply --plan` checks again under the lock, so apply does exactly what the
+ * preview showed or refuses. It covers the space, each home with its instance, account, hosts and
+ * state (everything the home's row names), each of its files as read (FileView `bound`: Claude
+ * Code's servers' table, every other file whole), the access apply may give back (unknown too)
+ * and, for a change, the exact entry and its lines in each file. `blocks` is the instruction
+ * block's part of the plan (block.ts `blockCanonical`), when the plan holds that part.
  */
 export function planToken(space: string, items: readonly PlanItem[], blocks?: unknown): string {
-  const canonical = items.map(({ view, change }) => [
+  const canonical = items.map(({ view, change, access }) => [
     view.home.app,
     view.home.home,
-    view.home.file,
     view.home.instance,
     // The row apply makes names the account and the hosts too.
     view.home.account,
@@ -1284,11 +1558,13 @@ export function planToken(space: string, items: readonly PlanItem[], blocks?: un
     view.state,
     view.refusal ?? null,
     view.record?.space ?? null,
+    view.files.map((f) => [f.file, f.state, f.refusal ?? null, f.bound]),
+    access,
     change === undefined
       ? null
       : typeof change === "string"
         ? change
-        : [change.entry, change.diff, view.home.app === "claude-code" ? null : view.sha256],
+        : [change.entry, change.writes],
   ]);
   return createHash("sha256")
     .update(JSON.stringify(blocks === undefined ? [space, canonical] : [space, canonical, blocks]))
@@ -1340,17 +1616,18 @@ const timer = (ms: number): Promise<void> =>
   });
 
 /**
- * Runs `work` under the app's own lock on the home's file (Claude Code's), or at once for an app
- * that has none. `busy` when another writer keeps the lock through every pause, `unwritable` when
- * the lock cannot be made beside the file.
+ * Runs `work` under the app's own lock on one of the home's files (Claude Code's), or at once for
+ * an app that has none. `busy` when another writer keeps the lock through every pause,
+ * `unwritable` when the lock cannot be made beside the file.
  */
 async function underAppLock<T>(
   input: SetupInput,
   home: AgentHome,
+  file: string,
   work: () => T,
 ): Promise<T | "busy" | "unwritable"> {
   if (!APPS[home.app].locked) return work();
-  const ran = await withAppLock(home.file, input.wait ?? timer, work);
+  const ran = await withAppLock(file, input.wait ?? timer, work);
   return ran.held ? ran.value : ran.why;
 }
 
@@ -1362,12 +1639,12 @@ type Written = "done" | "too_large" | "changed_meanwhile" | "unwritable" | "busy
 class ChangedMeanwhile extends Error {}
 
 /**
- * Whether the home's file is still exactly `before` (undefined: still no file), in a place setup
- * may write. A stat or two and one read: what runs under the app's lock.
+ * Whether one of the home's files is still exactly `before` (undefined: still no file), in a place
+ * setup may write. A stat or two and one read: what runs under the app's lock.
  */
-function stillAsRead(home: AgentHome, before: Buffer | undefined): boolean {
-  if (placeRefusal(home.file, home.home) !== undefined) return false;
-  const again = readConfigFile(home.file, APPS[home.app].maxBytes);
+function stillAsRead(home: AgentHome, file: string, before: Buffer | undefined): boolean {
+  if (placeRefusal(file, home.home) !== undefined) return false;
+  const again = readConfigFile(file, APPS[home.app].maxBytes);
   if (again.kind === "missing") return before === undefined;
   return (
     again.kind === "bytes" &&
@@ -1378,15 +1655,17 @@ function stillAsRead(home: AgentHome, before: Buffer | undefined): boolean {
 }
 
 /**
- * Puts `whole` in place of the bytes `before` setup read (undefined: no file yet), with the file's
- * own mode. The new file is written and flushed beside the old one first; under the app's own lock
- * the file is only compared once more and the new one renamed over it, or, where there was no
- * file, put in place only where nothing is (StagedFile.create). A file the OS will not let setup
- * write (read-only, held by another program, a full disk) is `unwritable`.
+ * Puts `whole` in place of the bytes `before` setup read in one of the home's files (undefined: no
+ * file yet), with the file's own mode. The new file is written and flushed beside the old one
+ * first; under the app's own lock the file is only compared once more and the new one renamed
+ * over it, or, where there was no file, put in place only where nothing is (StagedFile.create). A
+ * file the OS will not let setup write (read-only, held by another program, a full disk) is
+ * `unwritable`.
  */
 async function writeHomeFile(
   input: SetupInput,
   home: AgentHome,
+  file: string,
   before: Buffer | undefined,
   whole: string,
 ): Promise<Written> {
@@ -1394,26 +1673,26 @@ async function writeHomeFile(
   let mode = 0o600;
   if (before !== undefined) {
     try {
-      mode = lstatSync(home.file).mode & 0o777;
+      mode = lstatSync(file).mode & 0o777;
     } catch {
       return "changed_meanwhile";
     }
   }
   let staged: StagedFile;
   try {
-    staged = stageFile(home.file, whole, mode);
+    staged = stageFile(file, whole, mode);
   } catch {
     return "unwritable";
   }
   try {
-    return await underAppLock(input, home, (): Written => {
+    return await underAppLock(input, home, file, (): Written => {
       if (before === undefined) {
-        return placeRefusal(home.file, home.home) === undefined && staged.create()
+        return placeRefusal(file, home.home) === undefined && staged.create()
           ? "done"
           : "changed_meanwhile";
       }
       staged.replace(() => {
-        if (!stillAsRead(home, before)) throw new ChangedMeanwhile();
+        if (!stillAsRead(home, file, before)) throw new ChangedMeanwhile();
       });
       return "done";
     });
@@ -1429,12 +1708,13 @@ async function writeHomeFile(
 async function deleteHomeFile(
   input: SetupInput,
   home: AgentHome,
+  file: string,
   before: Buffer,
 ): Promise<Written> {
   try {
-    return await underAppLock(input, home, (): Written => {
-      if (!stillAsRead(home, before)) return "changed_meanwhile";
-      rmSync(home.file);
+    return await underAppLock(input, home, file, (): Written => {
+      if (!stillAsRead(home, file, before)) return "changed_meanwhile";
+      rmSync(file);
       return "done";
     });
   } catch {
@@ -1448,50 +1728,117 @@ const EMPTY_JSON = "{}\n";
 interface NotWritten {
   readonly result: "left" | "failed";
   readonly reason: OutcomeReason;
+  readonly file?: string;
+}
+
+/** One file's part of an entry being written: the file as read, and as it will be. */
+interface Spliced {
+  readonly file: string;
+  readonly before: Buffer | undefined;
+  readonly whole: string;
+  readonly made: Made;
 }
 
 /**
- * Writes the home's record (`applying`, with the entry as setup intends it), then the entry into the
- * file as it is now: the record and the splice outside the app's lock, before the file changes. A
- * file that changed since the plan is left alone, except Claude Code's: the app's own state, which a
- * running session saves while setup works, so it is read and worked out again, a few times. When
- * nothing was written the record goes again.
+ * The entry spliced into one of the home's files as it is now. A file that changed since the plan
+ * (its `bound`) is left alone; Claude Code's is bound by its servers' table, as its sessions save
+ * their own state into it.
  */
-async function writeEntry(
+function splice(home: AgentHome, view: FileView, entry: Change["entry"]): Spliced | NotWritten {
+  const { format, servers } = APPS[home.app];
+  const failed = (reason: OutcomeReason): NotWritten => ({
+    result: "failed",
+    reason,
+    file: view.file,
+  });
+  const now = readHomeFile(home, view.file);
+  if (now.kind === "refused" || entryOf(now) !== undefined) return failed("changed_meanwhile");
+  if (boundOf(home.app, now) !== view.bound) return failed("changed_meanwhile");
+  const text = now.kind === "read" ? now.text : format === "json" ? EMPTY_JSON : "";
+  const edited = addOwnEntry(format, servers, text, entry);
+  if (!edited.ok)
+    return failed(edited.reason === "invalid_file" ? "invalid_file" : "unsupported_layout");
+  return {
+    file: view.file,
+    before: now.kind === "read" ? now.bytes : undefined,
+    whole: `${now.kind === "read" && now.bom ? BOM : ""}${edited.text}`,
+    made: { file: now.kind === "missing", ...edited.made },
+  };
+}
+
+/** Puts back files this run wrote, each while it is still exactly what was written: whether all were. */
+async function putBack(
+  input: SetupInput,
+  home: AgentHome,
+  written: readonly Spliced[],
+): Promise<boolean> {
+  let all = true;
+  for (const s of written) {
+    const now = Buffer.from(s.whole, "utf8");
+    const wrote =
+      s.before === undefined
+        ? await deleteHomeFile(input, home, s.file, now)
+        : await writeHomeFile(input, home, s.file, now, s.before.toString("utf8"));
+    if (wrote !== "done") all = false;
+  }
+  return all;
+}
+
+/**
+ * Writes the home's record, then the entry into each file of `change` as it is now: the record and
+ * the splices outside the app's lock, before any file changes. A new install's record says
+ * `applying`; a registered home that gains a file (`kept`, its record) stays `applied`, since its
+ * access already follows its entry. A file that cannot be written takes back the ones this run
+ * wrote, and the record goes back as it was; Claude Code's file, which a running session saves
+ * while setup works, is read and worked out again, a few times.
+ */
+async function writeEntries(
   input: SetupInput,
   view: HomeView,
   space: string,
   change: Change,
+  kept?: HomeRecord,
 ): Promise<HomeRecord | NotWritten> {
   const { home } = view;
-  const { format, servers, locked } = APPS[home.app];
-  const failed = (reason: OutcomeReason): NotWritten => ({ result: "failed", reason });
+  const { locked } = APPS[home.app];
   for (let attempt = 1; ; attempt += 1) {
-    const now = readHomeFile(home);
-    if (now.kind === "refused" || entryOf(now) !== undefined) return failed("changed_meanwhile");
-    if (!locked && (now.kind === "read" ? now.sha256 : null) !== view.sha256) {
-      return failed("changed_meanwhile");
+    const spliced: Spliced[] = [];
+    for (const w of change.writes) {
+      const found = view.files.find((f) => f.file === w.file);
+      if (found === undefined) return { result: "failed", reason: "changed_meanwhile" };
+      const s = splice(home, found, change.entry);
+      if (!("whole" in s)) return s;
+      spliced.push(s);
     }
-    const text = now.kind === "read" ? now.text : format === "json" ? EMPTY_JSON : "";
-    const edited = addOwnEntry(format, servers, text, change.entry);
-    if (!edited.ok) {
-      return failed(edited.reason === "invalid_file" ? "invalid_file" : "unsupported_layout");
-    }
-    const record: HomeRecord = {
-      app: home.app,
-      home: home.home,
-      file: home.file,
-      is_default: home.isDefault,
-      instance: home.instance,
-      account: home.account,
-      space,
-      state: "applying",
-      entry: change.entry,
-      also: [],
-      made: { file: now.kind === "missing", ...edited.made },
-      grant: null,
-      at: new Date().toISOString(),
-    };
+    const [first, ...rest] = spliced;
+    if (first === undefined) return { result: "failed", reason: "changed_meanwhile" };
+    const files = spliced.map((s) => ({ file: s.file, made: s.made }));
+    const record: HomeRecord =
+      kept === undefined
+        ? {
+            app: home.app,
+            home: home.home,
+            file: first.file,
+            is_default: isDefaultFile(input, home, first.file),
+            instance: home.instance,
+            account: home.account,
+            space,
+            state: "applying",
+            entry: change.entry,
+            also: [],
+            made: first.made,
+            ...(rest.length === 0 ? {} : { more: files.slice(1) }),
+            grant: null,
+            at: new Date().toISOString(),
+          }
+        : {
+            ...kept,
+            // An earlier build's entry has another shape: the new one is setup's own too.
+            also: isDeepStrictEqual(kept.entry, change.entry)
+              ? kept.also
+              : [...kept.also, change.entry],
+            more: [...(kept.more ?? []), ...files],
+          };
     try {
       putRecord(input.stateDir, input.platform, record);
     } catch (error) {
@@ -1500,24 +1847,56 @@ async function writeEntry(
       if (error instanceof SetupStateTooLarge)
         return { result: "left", reason: "unsupported_layout" };
       if (error instanceof SetupStateInvalid || error instanceof SetupStateUnsafe) throw error;
-      return failed("state_unwritable");
+      return { result: "failed", reason: "state_unwritable" };
     }
-    const before = now.kind === "read" ? now.bytes : undefined;
-    const bom = now.kind === "read" && now.bom ? BOM : "";
-    const wrote = await writeHomeFile(input, home, before, `${bom}${edited.text}`);
+    const written: Spliced[] = [];
+    let wrote: Written = "done";
+    let at = first.file;
+    for (const s of spliced) {
+      wrote = await writeHomeFile(input, home, s.file, s.before, s.whole);
+      if (wrote !== "done") {
+        at = s.file;
+        break;
+      }
+      written.push(s);
+    }
     if (wrote === "done") return record;
-    forget(input, home);
-    if (!(wrote === "changed_meanwhile" && locked && attempt < TRIES)) return failed(wrote);
+    const back = await putBack(input, home, written);
+    try {
+      if (!back) putRecord(input.stateDir, input.platform, { ...record, state: "removing" });
+      else if (kept === undefined) forget(input, home);
+      else putRecord(input.stateDir, input.platform, kept);
+    } catch {
+      // Kept as it is: a record that did not finish is settled by the next run.
+    }
+    if (!(back && wrote === "changed_meanwhile" && locked && attempt < TRIES)) {
+      return { result: "failed", reason: wrote, file: at };
+    }
   }
 }
 
+/** Whether `file` is the app's default home's, read with no variable (a record's `is_default`). */
+function isDefaultFile(input: SetupInput, home: AgentHome, file: string): boolean {
+  const { platform, userHome } = input;
+  if (home.app === "claude-desktop") return true;
+  if (home.app === "codex")
+    return samePath(platform, home.home, pathOf(platform).join(userHome, ".codex"));
+  return samePath(platform, file, settingsFile(platform, userHome, home.app, home.home, true));
+}
+
+/** The files of a home that hold setup's own entry now. */
+const ownFiles = (view: HomeView): string[] =>
+  view.files.filter((f) => f.state === "own").map((f) => f.file);
+
 /**
  * Turns a home's tools on as its answer (toolsOf) offers it from `space`, and does nothing it does
- * not offer: a new entry, then its access once the entry is in place (giveAccess), the record
- * written before the file (writeEntry); a registered home's access again; or its entry written again
- * (rewrite). A registered home whose tools start gets its row renewed for the space its entry
- * names. `space` is empty when the apply registers no new home. `planned` is the change the plan
- * holds for it (planOf), when the caller has one.
+ * not offer: a new entry into each of its files, then its access once the entries are in place
+ * (giveAccess), the record written before the files (writeEntries); the entry into a registered
+ * home's file that has none, then its access; a registered home's access again; or its entries
+ * written again (rewrite). A registered home whose tools start gets its row renewed for the space
+ * its entry names, only when the service said what its access is. `space` is empty when the apply
+ * registers no new home. `planned` is the change the plan holds for it (planOf), when the caller
+ * has one.
  */
 export async function applyHome(
   input: SetupInput,
@@ -1528,35 +1907,55 @@ export async function applyHome(
 ): Promise<Outcome> {
   const { home, record } = view;
   const answer = toolsOf(input, view, space, typeof planned === "string" ? planned : undefined);
-  const left = (): Outcome => ({ home, result: "left", reason: answer.why ?? "not_registered" });
+  const left = (): Outcome => ({
+    home,
+    result: "left",
+    reason: answer.why ?? "not_registered",
+    ...(answer.file === undefined ? {} : { file: answer.file }),
+  });
   switch (answer.on) {
     case "repair":
       return rewrite(input, view, access);
     case "grant":
       return record === undefined
         ? left()
-        : giveAccess(input, home, record, record.space, access, true);
+        : giveAccess(input, home, record, record.space, access, true, ownFiles(view));
     case "add": {
+      if (view.state === "registered" && record !== undefined) {
+        const change = typeof planned === "object" ? planned : completionOf(input, view, space);
+        if (change === undefined) return left();
+        const written = await writeEntries(input, view, record.space, change, record);
+        if (!("entry" in written)) return { home, ...written };
+        const expected = [...ownFiles(view), ...change.writes.map((w) => w.file)];
+        return giveAccess(input, home, written, record.space, access, true, expected);
+      }
       if (view.state !== "not_registered") return left();
       const change = typeof planned === "object" ? planned : planChange(input, view, space);
       if (typeof change === "string") return { home, result: "left", reason: change };
-      const written = await writeEntry(input, view, space, change);
+      const written = await writeEntries(input, view, space, change);
       if (!("entry" in written)) return { home, ...written, access: "off" };
-      return giveAccess(input, home, written, space, access, false);
+      const expected = change.writes.map((w) => w.file);
+      return giveAccess(input, home, written, space, access, false, expected);
     }
     default:
-      if (view.state !== "registered" || record === undefined || answer.why !== undefined) {
+      if (
+        view.state !== "registered" ||
+        record === undefined ||
+        (answer.why !== undefined && answer.file === undefined)
+      ) {
         return left();
       }
-      return giveAccess(input, home, record, record.space, access, true);
+      // A renewal gives back only an access the service said is there.
+      if (input.rows === undefined) return { home, result: "left", reason: "access_unknown" };
+      return giveAccess(input, home, record, record.space, access, true, ownFiles(view));
   }
 }
 
 /**
- * Repairs a registered home whose entry is gone or runs a program that is gone: the old entry and
- * its access go as a removal does, then the entry is written with the present command, in the
- * space it named, and gets its access as a new install does. A step that fails stops there, and the
- * home is as that step left it: off, or as it was.
+ * Repairs a registered home whose entries are gone or run a program that is gone: the old entries
+ * and the access go as a removal does, then the entry is written with the present command, in the
+ * space it named, and gets its access as a new install does. A step that fails stops there, and
+ * the home is as that step left it: off, or as it was.
  */
 async function rewrite(input: SetupInput, view: HomeView, access: Access): Promise<Outcome> {
   const { home, record } = view;
@@ -1569,17 +1968,19 @@ async function rewrite(input: SetupInput, view: HomeView, access: Access): Promi
   }
   const change = planChange(input, fresh, record.space);
   if (typeof change === "string") return { home, result: "failed", reason: change, access: "off" };
-  const written = await writeEntry(input, fresh, record.space, change);
+  const written = await writeEntries(input, fresh, record.space, change);
   if (!("entry" in written)) return { home, ...written, access: "off" };
-  return giveAccess(input, home, written, record.space, access, false);
+  const expected = change.writes.map((w) => w.file);
+  return giveAccess(input, home, written, record.space, access, false, expected);
 }
 
 /**
- * Gives a home whose entry is in its file its access, for a new install and a registered home
- * alike: the entry is read and must be the one setup intended, the access is asked for, the file is
- * read once more after the service's answer, and the record says `applied` with the row. Anything
- * else takes it all back (undo). `registered`: the home was registered before this apply, so it may
- * have access already, and a row the service refuses leaves that as it was.
+ * Gives a home whose entries are in its files its access, for a new install and a registered home
+ * alike: each file in `expected` is read and must hold the entry setup intended, the access is
+ * asked for, the files are read once more after the service's answer, and the record says
+ * `applied` with the row. Anything else takes it all back (undo). `registered`: the home was
+ * registered before this apply, so it may have access already, and a row the service refuses
+ * leaves that as it was.
  */
 async function giveAccess(
   input: SetupInput,
@@ -1588,9 +1989,10 @@ async function giveAccess(
   space: string,
   access: Access,
   registered: boolean,
+  expected: readonly string[],
 ): Promise<Outcome> {
   // The entry as setup intended it, read back from its place: anything else there is not its own.
-  const placed = entryNow(home, record);
+  const placed = entryNow(home, record, expected);
   if (placed.whose !== "own") {
     return undo(input, home, record, access, placed.reason, {
       given: registered,
@@ -1605,7 +2007,7 @@ async function giveAccess(
     // A row the service made before its answer was lost is taken back too.
     return undo(input, home, record, access, grantReason(error));
   }
-  const after = entryNow(home, record);
+  const after = entryNow(home, record, expected);
   if (after.whose !== "own") {
     return undo(input, home, record, access, after.reason, {
       readable: after.whose !== "unchecked",
@@ -1622,27 +2024,34 @@ async function giveAccess(
 }
 
 /**
- * Setup's entry in the home's file as a read right now finds it. A read that fails cannot tell what
- * is there (`unchecked`): only a read that succeeds decides that the entry is gone or not setup's.
+ * Setup's entry in each of `files` as a read right now finds it: `own` only when every one holds
+ * it. A read that fails cannot tell what is there (`unchecked`): only a read that succeeds decides
+ * that an entry is gone or not setup's.
  */
 function entryNow(
   home: AgentHome,
   record: HomeRecord,
+  files: readonly string[],
 ):
   | { readonly whose: "own" }
   | { readonly whose: "edited" | "absent" | "unchecked"; readonly reason: OutcomeReason } {
-  const read = readHomeFile(home);
-  if (read.kind === "refused") return { whose: "unchecked", reason: read.refusal };
-  const whose = whoseIn(home, read, record);
-  return whose === "own" ? { whose } : { whose, reason: "changed_meanwhile" };
+  if (files.length === 0) return { whose: "absent", reason: "changed_meanwhile" };
+  let found: { whose: "edited" | "absent"; reason: OutcomeReason } | undefined;
+  for (const file of files) {
+    const read = readHomeFile(home, file);
+    if (read.kind === "refused") return { whose: "unchecked", reason: read.refusal };
+    const whose = whoseIn(home, read, record);
+    if (whose !== "own") found ??= { whose, reason: "changed_meanwhile" };
+  }
+  return found ?? { whose: "own" };
 }
 
 /**
  * Takes back an apply that cannot stand. The decision is recorded first (`removing`), then the
- * access goes (when it may have been given), then the entry when a read shows it is still setup's
- * own. After a read that failed (`readable` false), or a revoke the service did not confirm, the
- * file is not touched: the record stays `removing`, and the next run takes the access and then the
- * entry out. A record that cannot be written stays as it was: an unfinished one the next run
+ * access goes (when it may have been given), then the entries that a read shows are still setup's
+ * own. After a read that failed (`readable` false), or a revoke the service did not confirm, no
+ * file is touched: the record stays `removing`, and the next run takes the access and then the
+ * entries out. A record that cannot be written stays as it was: an unfinished one the next run
  * finishes as a removal all the same, a registered home's stays registered with its access off
  * until the person asks again.
  */
@@ -1676,11 +2085,12 @@ async function undo(
 }
 
 /**
- * Turns a home's access off, then takes TTasks's entry out of its file when it is still exactly the
- * one setup wrote. The revoke is asked for first and alone: when the service does not confirm it,
- * nothing else changes, and the access is as it was. Once the access is off, the record says
- * `removing` before the file is touched, so a run that ends midway is finished by the next one; a
- * record that cannot be written leaves the entry in its file, and the access off all the same.
+ * Turns a home's access off, then takes TTasks's entry out of each file it wrote it into, where it
+ * is still exactly the one setup wrote. The revoke is asked for first and alone: when the service
+ * does not confirm it, nothing else changes, and the access is as it was. Once the access is off,
+ * the record says `removing` before any file is touched, so a run that ends midway is finished by
+ * the next one; a record that cannot be written leaves the entries in their files, and the access
+ * off all the same.
  */
 export async function removeHome(
   input: SetupInput,
@@ -1708,13 +2118,18 @@ export async function removeHome(
     try {
       putRecord(input.stateDir, input.platform, removing);
     } catch {
-      const whose = whoseIn(home, readHomeFile(home), record);
+      const left = recordFiles(record)
+        .map((f) => ({ file: f.file, whose: whoseIn(home, readHomeFile(home, f.file), record) }))
+        .sort((a, b) => (a.whose === "own" ? -1 : b.whose === "own" ? 1 : 0))
+        .find((f) => f.whose !== "absent");
       return {
         home,
         result: "failed",
         reason: "state_unwritable",
         access: "off",
-        ...(whose === "absent" ? {} : { kept: whose }),
+        ...(left === undefined || left.whose === "absent"
+          ? {}
+          : { kept: left.whose, file: left.file }),
       };
     }
   }
@@ -1722,43 +2137,63 @@ export async function removeHome(
 }
 
 /**
- * The file's part of a removal: TTasks's entry out when it is still its own, with what its add made
- * (the servers' table, the bytes around it, the file itself when nothing else is left in it). No
- * file is no entry, so a home whose folder is gone is done. The record goes once nothing of
- * TTasks's is left there and its access is off. An entry the person changed stays, and is theirs
- * from then on. An entry of TTasks's that could not be taken out keeps its record, so the next setup
- * tries again.
+ * One file's part of a removal: TTasks's entry out when it is still its own, with what its add
+ * made there (the servers' table, the bytes around it, the file itself when nothing else is left
+ * in it). No file is no entry. An entry the person changed stays, and is theirs from then on.
  */
-async function takeOut(input: SetupInput, home: AgentHome, record: HomeRecord): Promise<Outcome> {
+async function takeOutOf(
+  input: SetupInput,
+  home: AgentHome,
+  record: HomeRecord,
+  { file, made }: { readonly file: string; readonly made: Made },
+): Promise<Pick<Outcome, "result" | "reason" | "kept" | "file">> {
   const { format, servers } = APPS[home.app];
-  const done = (outcome: Outcome): Outcome => {
-    forget(input, home);
-    return outcome;
-  };
   for (let attempt = 1; ; attempt += 1) {
-    const read = readHomeFile(home);
-    if (read.kind === "refused") {
-      return { home, result: "left", reason: read.refusal, kept: "own" };
-    }
+    const read = readHomeFile(home, file);
+    if (read.kind === "refused") return { result: "left", reason: read.refusal, kept: "own", file };
     const whose = whoseIn(home, read, record);
-    if (whose === "absent" || read.kind !== "read") {
-      return done({ home, result: "removed", reason: "missing" });
-    }
-    if (whose === "edited") return done({ home, result: "left", reason: "edited", kept: "edited" });
-    const edited = removeOwnEntry(format, servers, read.text, record.made);
+    if (whose === "absent" || read.kind !== "read") return { result: "removed", reason: "missing" };
+    if (whose === "edited") return { result: "left", reason: "edited", kept: "edited", file };
+    const edited = removeOwnEntry(format, servers, read.text, made);
     if (!edited.ok) {
       const reason = edited.reason === "invalid_file" ? "invalid_file" : "unsupported_layout";
-      return { home, result: "failed", reason, kept: "own" };
+      return { result: "failed", reason, kept: "own", file };
     }
     const wrote =
-      record.made.file && holdsNothing(format, edited.text)
-        ? await deleteHomeFile(input, home, read.bytes)
-        : await writeHomeFile(input, home, read.bytes, `${read.bom ? BOM : ""}${edited.text}`);
-    if (wrote === "done") return done({ home, result: "removed" });
+      made.file && holdsNothing(format, edited.text)
+        ? await deleteHomeFile(input, home, file, read.bytes)
+        : await writeHomeFile(
+            input,
+            home,
+            file,
+            read.bytes,
+            `${read.bom ? BOM : ""}${edited.text}`,
+          );
+    if (wrote === "done") return { result: "removed" };
     if (wrote !== "changed_meanwhile" || attempt >= TRIES) {
-      return { home, result: "failed", reason: wrote, kept: "own" };
+      return { result: "failed", reason: wrote, kept: "own", file };
     }
   }
+}
+
+/**
+ * The files' part of a removal, for each file the record names. A home whose folder is gone is
+ * done. The record goes once nothing of TTasks's is left in any of them and its access is off;
+ * while an entry of TTasks's could not be taken out the record stays, so the next setup tries
+ * again. The outcome is the first file's that kept an entry of TTasks's, else the first's that
+ * kept one the person changed.
+ */
+async function takeOut(input: SetupInput, home: AgentHome, record: HomeRecord): Promise<Outcome> {
+  const each = [];
+  for (const f of recordFiles(record)) each.push(await takeOutOf(input, home, record, f));
+  const own = each.find((o) => o.kept === "own");
+  if (own !== undefined) return { home, ...own };
+  forget(input, home);
+  const edited = each.find((o) => o.kept === "edited");
+  if (edited !== undefined) return { home, ...edited };
+  return each.every((o) => o.reason === "missing")
+    ? { home, result: "removed", reason: "missing" }
+    : { home, result: "removed" };
 }
 
 /**

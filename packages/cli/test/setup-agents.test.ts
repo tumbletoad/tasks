@@ -505,9 +505,10 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
           homes: { app: string; instance: string; change: { entry: { args: string[] } } }[];
         };
         // The default Codex home would be `codex`, which the other home's row holds; Claude Code's
-        // `claude` is free and kept.
+        // `claude` is free and kept. The other home, whose folder is gone, is listed by its row.
         expect(planned.homes.map((h) => [h.app, h.instance]).sort()).toEqual([
           ["claude-code", "claude"],
+          ["codex", "codex"],
           ["codex", "codex-2"],
         ]);
         const codex = planned.homes.find((h) => h.app === "codex");
@@ -522,7 +523,17 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
         ).toEqual(["codex"]);
 
         const applied = await run([...planned.apply.slice(1), "--json"]);
-        expect(applied.code, applied.stdout + applied.stderr).toBe(0);
+        // The other home cannot be turned on from here (its folder is gone), so not all is done.
+        expect(applied.code, applied.stdout + applied.stderr).toBe(10);
+        expect(
+          (
+            JSON.parse(applied.stdout) as { homes: { instance: string; result: string }[] }
+          ).homes.map((h) => [h.instance, h.result]),
+        ).toEqual([
+          ["claude", "applied"],
+          ["codex-2", "applied"],
+          ["codex", "left"],
+        ]);
         expect((await rows()).map((r) => [r.app, r.instance]).sort()).toEqual([
           ["claude-code", "claude"],
           ["codex", "codex"],
@@ -600,11 +611,15 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
           apply: string[];
           homes: { instance: string }[];
         };
-        expect(planned.homes.map((h) => h.instance)).toEqual(["codex-mine"]);
+        // The other home's live row, whose folder is gone, is listed too: it can be turned off.
+        expect(planned.homes.map((h) => h.instance)).toEqual(["codex-mine", "codex-mine"]);
         const applied = await run([...planned.apply.slice(1), "--json"]);
         expect(applied.code, applied.stdout).toBe(10);
         expect(JSON.parse(applied.stdout)).toMatchObject({
-          homes: [{ app: "codex", result: "failed", reason: "instance_taken" }],
+          homes: [
+            { app: "codex", result: "failed", reason: "instance_taken" },
+            { app: "codex", result: "left" },
+          ],
         });
         const text = await run(planned.apply.slice(1));
         expect(text.stdout).toContain("another agent home is registered as this instance");

@@ -1,7 +1,9 @@
 // Setup's record of what it did in each agent home (A3 3.13.1): `<state>/setup/agents.json`,
-// 0600 in a 0700 folder, replaced atomically. Per home: the app, the home and its file, the
-// instance, account and space the entry names, the entry TTasks writes there, what its write made
-// beside it (the file, the servers' table, the bytes around the entry), and the agent-home grant.
+// 0600 in a 0700 folder, replaced atomically. Per home: the app, the home and each file setup wrote
+// its entry into, the instance, account and space the entry names, the entry TTasks writes there,
+// what each write made beside it (the file, the servers' table, the bytes around the entry), and
+// the agent-home grant. A home's first file is kept where an earlier build reads it (`file`,
+// `made`), so a rollback finds the home and takes the entry out of that file.
 //
 // No copy of a file and no other key's value: these files hold other servers' secrets, and A3 3.13.1
 // step 5 forbids whole-file backups. What the record holds is TTasks's own entry as it intended to
@@ -30,10 +32,21 @@ export const SETUP_FORMAT = 2;
 /** The record is read back whole; it holds a few entries, so this bound is generous. */
 const MAX_STATE_BYTES = 4 * 1024 * 1024;
 
+/** What a write made beside the entry in one file, which its removal gives back (entry.ts `Made`). */
+export interface Made {
+  /** TTasks created the file: it goes when nothing else is left in it. */
+  readonly file: boolean;
+  readonly parent: boolean;
+  readonly spacing: string | null;
+  readonly ended?: string;
+}
+
 export interface HomeRecord {
   readonly app: AgentApp;
   readonly home: string;
+  /** The first file setup wrote the entry into: the one an earlier build knows. */
   readonly file: string;
+  /** Whether `file` is the one Claude Code reads when started with no variable. */
   readonly is_default: boolean;
   readonly instance: string;
   readonly account: string;
@@ -50,18 +63,25 @@ export interface HomeRecord {
   readonly entry: Readonly<Record<string, unknown>>;
   /** Other entries that are TTasks's own there: what an earlier build's writers left midway. */
   readonly also: readonly unknown[];
-  /** What the write made beside the entry, which its removal gives back (entry.ts `Made`). */
-  readonly made: {
-    /** TTasks created the file: it goes when nothing else is left in it. */
-    readonly file: boolean;
-    readonly parent: boolean;
-    readonly spacing: string | null;
-    readonly ended?: string;
-  };
+  /** What the write made beside the entry in `file`. */
+  readonly made: Made;
+  /**
+   * The home's other files setup wrote the same entry into, each with what its write made there
+   * (Claude Code's default folder has two). Absent in a record of one file, an earlier build's too.
+   */
+  readonly more?: readonly { readonly file: string; readonly made: Made }[];
   /** The agent-home row in the service's grants table (A2 3.2.5), when the service made one. */
   readonly grant: string | null;
   readonly at: string;
 }
+
+/** Every file a record names, the first one first, each with what its write made there. */
+export const recordFiles = (
+  record: HomeRecord,
+): readonly { readonly file: string; readonly made: Made }[] => [
+  { file: record.file, made: record.made },
+  ...(record.more ?? []),
+];
 
 /** Setup's record cannot be read: nothing is changed until it can. */
 export class SetupStateInvalid extends Error {
@@ -111,20 +131,26 @@ function isHome(r: Record<string, unknown>): boolean {
   );
 }
 
+const isMade = (made: unknown): made is Made =>
+  isObject(made) &&
+  typeof made["file"] === "boolean" &&
+  typeof made["parent"] === "boolean" &&
+  (made["spacing"] === null || text(made["spacing"])) &&
+  (made["ended"] === undefined || text(made["ended"]));
+
 function isRecord(value: unknown): value is HomeRecord {
   if (!isObject(value) || !isHome(value)) return false;
-  const made = value["made"];
+  const more = value["more"];
   return (
     (value["state"] === "applying" ||
       value["state"] === "applied" ||
       value["state"] === "removing") &&
     isObject(value["entry"]) &&
     Array.isArray(value["also"]) &&
-    isObject(made) &&
-    typeof made["file"] === "boolean" &&
-    typeof made["parent"] === "boolean" &&
-    (made["spacing"] === null || text(made["spacing"])) &&
-    (made["ended"] === undefined || text(made["ended"]))
+    isMade(value["made"]) &&
+    (more === undefined ||
+      (Array.isArray(more) &&
+        more.every((m) => isObject(m) && text(m["file"]) && isMade(m["made"]))))
   );
 }
 

@@ -221,8 +221,8 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
       ).toEqual(["claude", "codex", "codex-t3x"]);
 
       // T3 names Claude Code's default folder by its path: its Claude reads `.claude.json` inside
-      // that folder, not the user's file where the default home's entry is. Doctor says so, names
-      // an instance turned off and the entries it passed over, and checks the rest.
+      // that folder, a file of that home without the entry yet. Doctor says so, names an instance
+      // turned off and the entries it passed over, and checks the rest.
       writeFileSync(
         settings,
         JSON.stringify({
@@ -239,12 +239,15 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
       );
       const explicit = row(await doctor(), "t3.homes");
       expect(explicit).toMatchObject({ status: "warn" });
-      expect(explicit?.detail).toContain("clear the instance's home path");
+      expect(explicit?.detail).toContain("claudeAgent (Claude Code) runs in a home without");
       expect(explicit?.detail).toContain("Turned off in T3 Code, so not checked: claude_off.");
       expect(explicit?.detail).toContain("a kind of agent this build does not know: future.");
       expect(explicit?.detail).toContain("(a key that is not a plain name) was passed over");
       expect(explicit?.detail).not.toContain(user);
       expect(explicit?.detail).not.toContain("\u001b");
+      // One apply writes the entry into that file too, and the instance reads it.
+      await applyAll(["--app", "t3"]);
+      expect(row(await doctor(), "t3.homes")?.detail).not.toContain("claudeAgent");
 
       // Remove: every entry and row back, every file as it was (T3's file only by this test).
       const removed = await run(["setup", "agents", "--remove", "--json"]);

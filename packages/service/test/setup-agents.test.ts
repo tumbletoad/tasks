@@ -219,14 +219,14 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
         "--app",
         app,
       ];
-      expect(claude.home.file).toBe(join(w.home, ".claude.json"));
+      expect(claude.home.files).toEqual([join(w.home, ".claude.json")]);
       const claudeChange = changeOf(input, claude);
       expect(claudeChange.entry).toEqual({ command: w.tasks, args: argv("claude", "claude-code") });
-      expect(claudeChange.diff).toEqual([
+      expect(claudeChange.writes[0]?.diff).toEqual([
         `+ mcpServers.${MCP_SERVER_KEY}.command = ${JSON.stringify(w.tasks)}`,
         `+ mcpServers.${MCP_SERVER_KEY}.args = ${JSON.stringify(argv("claude", "claude-code"))}`,
       ]);
-      expect(claude.sha256).toMatch(/^[0-9a-f]{64}$/u);
+      expect(claude.files[0]?.sha256).toMatch(/^[0-9a-f]{64}$/u);
       const codex = byHome(views, "codex", ".codex");
       const codexChange = changeOf(input, codex);
       expect(codexChange.entry).toEqual({
@@ -235,12 +235,14 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
         env_vars: [envVar("TICKET")],
         startup_timeout_sec: 20,
       });
-      expect(codexChange.diff.slice(0, 1)).toEqual([`+ [mcp_servers.${MCP_SERVER_KEY}]`]);
-      expect(codexChange.diff.slice(-2)).toEqual([
+      expect(codexChange.writes[0]?.diff.slice(0, 1)).toEqual([
+        `+ [mcp_servers.${MCP_SERVER_KEY}]`,
+      ]);
+      expect(codexChange.writes[0]?.diff.slice(-2)).toEqual([
         `+ env_vars = ["${envVar("TICKET")}"]`,
         "+ startup_timeout_sec = 20",
       ]);
-      expect(byHome(views, "codex", ".codex-work").sha256).toBeNull();
+      expect(byHome(views, "codex", ".codex-work").files[0]?.sha256).toBeNull();
       // Nothing was written by looking.
       expect(files.map(snapshot)).toEqual(before);
       expect(existsSync(join(setupDir(w.state), SETUP_FILE))).toBe(false);
@@ -289,9 +291,10 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
       expect(existsSync(join(w.root, "elsewhere-claude"))).toBe(false);
       expect(existsSync(join(w.root, "elsewhere-codex"))).toBe(false);
 
-      // Applying again changes nothing.
+      // Applying again, with the service saying the access is on, changes nothing.
       for (const view of afterApply) {
-        expect((await applyHome(input, view, SPACE, ROWS)).result).toBe("unchanged");
+        const known = { ...input, rows: ROWS.live };
+        expect((await applyHome(known, view, SPACE, ROWS)).result).toBe("unchanged");
       }
 
       // Remove: every file as it was, byte for byte; the file setup created is gone again.
@@ -325,7 +328,7 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
       const [view] = await survey(input);
       expect(view?.state).toBe("not_registered");
       if (view === undefined) return;
-      expect(changeOf(input, view).diff[0]).toBe("+ mcpServers = {}");
+      expect(changeOf(input, view).writes[0]?.diff[0]).toBe("+ mcpServers = {}");
       expect((await applyHome(input, view, SPACE, ROWS)).result).toBe("applied");
       expect(Object.keys(JSON.parse(readFileSync(file, "utf8")) as object)).toEqual(["mcpServers"]);
       expect(await removeHome(input, (await survey(input))[0] ?? view, ROWS)).toMatchObject({
@@ -360,17 +363,17 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
         instances: [claudeInstance("claude-main", { CLAUDE_CONFIG_DIR: folder })],
       };
       const view = byHome(await survey(input), "claude-code", ".claude");
+      // Its file first; plain Claude Code's, which is there, reads the same home.
       expect(view.home).toMatchObject({
         instance: "claude-main",
-        isDefault: false,
-        file: join(folder, ".claude.json"),
+        files: [join(folder, ".claude.json"), join(w.home, ".claude.json")],
       });
       expect((await applyHome(input, view, SPACE, ROWS)).result).toBe("applied");
-      expect(JSON.parse(readFileSync(join(folder, ".claude.json"), "utf8"))).toMatchObject({
-        mcpServers: { [MCP_SERVER_KEY]: { command: w.tasks } },
-      });
-      // The default file, which that instance never reads, is untouched.
-      expect(readFileSync(join(w.home, ".claude.json"), "utf8")).toBe("{}");
+      for (const file of view.home.files) {
+        expect(JSON.parse(readFileSync(file, "utf8")), file).toMatchObject({
+          mcpServers: { [MCP_SERVER_KEY]: { command: w.tasks } },
+        });
+      }
     },
     SLOW,
   );
@@ -395,14 +398,19 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
         instances: [claudeInstance("claude-main", { CLAUDE_CONFIG_DIR: folder })],
       };
       const view = byHome(await survey(named), "claude-code", ".claude");
-      expect(view.home).toMatchObject({ file: defaultFile, instance: "claude", isDefault: true });
+      expect(view.home).toMatchObject({
+        files: [defaultFile, join(folder, ".claude.json")],
+        instance: "claude",
+      });
+      // Its entry is in the file it wrote; the instance's file has none yet.
       expect(view.state).toBe("registered");
+      expect(view.files.map((f) => f.state)).toEqual(["own", "absent"]);
       expect(await removeHome(named, view, ROWS)).toMatchObject({ result: "removed" });
       expect(readFileSync(defaultFile, "utf8")).toBe("{}");
       expect(readRecords(w.state)).toEqual([]);
       // Now the home is what the machine says: the instance's own file and ID.
       expect(byHome(await survey(named), "claude-code", ".claude").home).toMatchObject({
-        file: join(folder, ".claude.json"),
+        files: [join(folder, ".claude.json"), defaultFile],
         instance: "claude-main",
       });
 

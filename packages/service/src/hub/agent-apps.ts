@@ -36,6 +36,7 @@ import {
   type Proposal,
 } from "@ttasks/launch";
 import { isId } from "@ttasks/storage";
+import { machineDigest } from "../config/edit.ts";
 import { loadMachineConfig, MACHINE_TOML } from "../config/machine-toml.ts";
 import type { ConnectionClass, Grant } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
@@ -98,25 +99,35 @@ export interface AgentAppsHost {
  */
 export type Why = string;
 
-export interface Part {
+/** What one action on a switch changes: its files, their lines, and its token. */
+export interface Changes {
+  /** The file that changes, its home shown as `~`: the first, when several do. */
+  readonly file: string;
+  /** Every file that changes, when there are several. */
+  readonly files?: readonly string[];
+  /** Exactly what changes: the lines written or taken out, and `# <file>` before each further file's. */
+  readonly detail: readonly string[];
+  /** A token of the action as shown: apply goes on only with the same one. */
+  readonly plan: string;
+}
+
+export interface Part extends Changes {
   /** On now. */
   readonly on: boolean;
   /** What turning it over does; null when the page cannot turn it over. */
   readonly change: "add" | "remove" | null;
   readonly why?: Why;
-  /** The file that changes, its home shown as `~`. */
-  readonly file: string;
-  /** Exactly what changes in `file`: the lines that are written or taken out. */
-  readonly detail: readonly string[];
-  /** A token of this switch as shown: apply goes on only with the same one. */
-  readonly plan: string;
+  /** The file `why` is about, when the home has several. */
+  readonly whyFile?: string;
   /** tools: the space the entry names, when it names one. */
   readonly space?: { readonly id: string; readonly name: string | null };
   /**
    * tools that show off while their access may be live (the entry or the program it runs is gone):
-   * turning them off all the same, what it takes out and its token.
+   * turning them off all the same.
    */
-  readonly off?: { readonly detail: readonly string[]; readonly plan: string };
+  readonly off?: Changes;
+  /** tools that show on while one of the home's files has no entry: writing it there. */
+  readonly add?: Changes;
 }
 
 export interface AppRow {
@@ -125,6 +136,8 @@ export interface AppRow {
   readonly label: string;
   /** The home, shown with `~`; null for T3 Code, whose instances are in its own settings. */
   readonly home: string | null;
+  /** The home's settings files, shown with `~`, when it has several (Claude Code's default folder). */
+  readonly files?: readonly string[];
   /** Other apps that read this home's tools: the Codex app, T3 Code. */
   readonly also: readonly string[];
   /**
@@ -166,6 +179,8 @@ export interface AppsOutcome {
    * (`edited`: the person changed it, so it is theirs).
    */
   readonly kept?: true;
+  /** tools turned off with an entry kept: its file, shown as `~`. */
+  readonly file?: string;
   /** tools, failed: the service did not confirm that the access is off, so the entry stayed too. */
   readonly unconfirmed?: true;
 }
@@ -255,6 +270,8 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   const userHome = host.userHome ?? "";
   const shown = (path: string) => shownPath(platform, host.userHome, path);
   const env = await host.env();
+  // What the open switches are bound to: machine.toml as this look read it.
+  const machineFile = machineDigest(host.configDir) ?? null;
   const machine = loadMachineConfig(host.configDir, platform).config;
   const detection = await detect(nodeDetectHost({ platform, env, home: userHome }));
   const rows = host.homes
@@ -265,6 +282,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
       app: attr(grant, "app"),
       home: attr(grant, "home"),
       instance: attr(grant, "instance"),
+      ...(grant.spaces[0] === undefined ? {} : { space: grant.spaces[0] }),
     }));
   const input: SetupInput = {
     platform,
@@ -287,9 +305,9 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   // A change that did not finish shows what turning it on writes once it is finished.
   const plan = planOf(input, views, space).map((item): Planned =>
     item.change === "ambiguous"
-      ? { view: item.view, change: planOf(input, [item.view], space)[0]?.change, several: true }
+      ? { ...item, change: planOf(input, [item.view], space)[0]?.change, several: true }
       : item.view.state === "interrupted"
-        ? { view: item.view, change: planChange(input, item.view, space) }
+        ? { ...item, change: planChange(input, item.view, space) }
         : item,
   );
   const written = readInstancesRecord(host.stateDir);
@@ -319,7 +337,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
       change: "remove",
       file: configFile,
       detail: blockOf(new Map(mine.entries)).map((line) => `- ${line}`),
-      plan: digest([key, "remove", mine.entries]),
+      plan: digest([key, "remove", mine.entries, machineFile]),
     };
   };
   const offerPart = (key: string, proposal: Proposal | undefined, id: string): Part | "offer" => {
@@ -346,7 +364,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     view.home.proposed === true &&
     !selected(view) &&
     view.state === "not_registered" &&
-    view.sha256 === null &&
+    view.files.every((f) => f.sha256 === null) &&
     view.home.hosts.length === 0 &&
     detection.homes.some(
       (h) => h.source === "home" && h.suffix !== "" && samePath(platform, h.path, view.home.home),
@@ -388,6 +406,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
       app: home.app,
       label,
       home: shown(home.home),
+      ...(home.files.length > 1 ? { files: home.files.map(shown) } : {}),
       also: home.hosts,
       ...(byName(view) ? { byName: true as const } : {}),
       ...(open === undefined ? {} : { open }),
@@ -429,7 +448,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
           change: "add",
           file: configFile,
           detail: blockOf(offer.entry).map((line) => `+ ${line}`),
-          plan: digest([row.key, "add", [...offer.entry]]),
+          plan: digest([row.key, "add", [...offer.entry], machineFile]),
         },
       };
     }),
@@ -460,43 +479,62 @@ const UNREADABLE = new Set<string>([
 function toolsPart(
   host: AgentAppsHost,
   space: string,
-  { view, change, several }: Planned,
+  { view, change, access, several }: Planned,
   answer: ToolsAnswer,
   shown: (path: string) => string,
 ): Part {
-  const file = shown(view.home.file);
-  const plan = (word: string) => digest([word, planToken(space, [{ view, change }])]);
+  const plan = (word: string) => digest([word, planToken(space, [{ view, change, access }])]);
   const recorded = view.record?.space;
   const why =
     answer.why !== undefined && UNREADABLE.has(answer.why)
       ? "file_unreadable"
       : (answer.why ?? (several === true && answer.on === "add" ? "several" : undefined));
+  /** The files an action changes, each with its lines; the home's first file when none does. */
+  const changes = (
+    word: string,
+    sections: readonly { readonly file: string; readonly lines: readonly string[] }[],
+  ): Changes => {
+    const [first, ...rest] = sections;
+    return {
+      file: shown(first?.file ?? view.home.files[0] ?? view.home.home),
+      ...(rest.length === 0 ? {} : { files: sections.map((s) => shown(s.file)) }),
+      detail: [
+        ...(first?.lines ?? []),
+        ...rest.flatMap((s) => ["", `# ${shown(s.file)}`, ...s.lines]),
+      ],
+      plan: plan(word),
+    };
+  };
   const base = {
     on: answer.status === "on",
     ...(why === undefined ? {} : { why }),
-    file,
+    ...(answer.file === undefined ? {} : { whyFile: shown(answer.file) }),
     ...(recorded === undefined
       ? {}
       : { space: { id: recorded, name: host.spaceName(recorded) ?? null } }),
   };
-  // What turning it off takes out of the file: setup's own entry, never one the person changed.
-  const own =
-    view.entry !== undefined && (view.state === "registered" || view.state === "interrupted");
-  const removing = {
-    detail: own ? entryLines(view.home.app, view.entry, "-") : [],
-    plan: plan("remove"),
-  };
+  // What turning it off takes out: setup's own entry in each file, never one the person changed.
+  const removing = changes(
+    "remove",
+    view.files
+      .filter((f) => f.state === "own" && f.entry !== undefined)
+      .map((f) => ({ file: f.file, lines: entryLines(view.home.app, f.entry, "-") })),
+  );
+  const adding = changes(
+    "add",
+    typeof change === "object" ? change.writes.map((w) => ({ file: w.file, lines: w.diff })) : [],
+  );
+  const none = (word: string) => ({ ...changes(word, []), detail: [] });
   if (base.on) {
+    // A file with no entry beside one that has it: writing it there, beside the switch.
+    const add = answer.on === "add" ? { add: adding } : {};
     return answer.off
-      ? { ...base, change: "remove", ...removing }
-      : { ...base, change: null, detail: [], plan: plan(why ?? "on") };
+      ? { ...base, change: "remove", ...removing, ...add }
+      : { ...base, change: null, ...none(why ?? "on"), ...add };
   }
   const off = answer.off ? { off: removing } : {};
-  if (answer.on === undefined) {
-    return { ...base, change: null, detail: [], plan: plan(why ?? "off"), ...off };
-  }
-  const detail = typeof change === "object" ? [...change.diff] : [];
-  return { ...base, change: "add", detail, plan: plan("add"), ...off };
+  if (answer.on === undefined) return { ...base, change: null, ...none(why ?? "off"), ...off };
+  return { ...base, change: "add", ...adding, ...off };
 }
 
 const PLAN = /^[0-9a-f]{16}$/u;
@@ -591,20 +629,39 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
       (method, input) => verb(method)(input, "ui") as Promise<Record<string, unknown>>,
     );
     const first = await look(host, space);
-    const partOf = (c: AppsChange) => first.view.rows.find((r) => r.key === c.key)?.[c.part];
-    // Each switch as it was shown, and only what it offered: on, off, or off beside it.
-    const fits = changes.every((c) => {
-      const part = partOf(c);
-      if (part === undefined) return false;
-      if (part.change === (c.on ? "add" : "remove") && part.plan === c.plan) return true;
-      return !c.on && part.off?.plan === c.plan;
-    });
+    /** What turning a switch over as asked changes, as a look shows it: on, off, or beside it. */
+    const offered = (seen: Look, c: AppsChange): Changes | undefined => {
+      const part = seen.view.rows.find((r) => r.key === c.key)?.[c.part];
+      if (part === undefined) return undefined;
+      if (part.change === (c.on ? "add" : "remove")) return part;
+      return c.on ? part.add : part.off;
+    };
+    // Each switch as it was shown, and only what it offered.
+    const fits = changes.every((c) => offered(first, c)?.plan === c.plan);
     // Something changed since the person looked: nothing is written, they see it as it is now.
     if (!fits) return { applied: false, view: first.view };
-    // What a run that ended midway left is finished first (it only ever takes access away); the
-    // switches the person turned over, as they saw them, then apply to what is now.
+    // What a run that ended midway left is finished first (it only ever takes access away). That
+    // can change what a switch writes (its files, its entry, the space it names): each switch then
+    // goes on only as the person saw it, or none does and the person sees the new view.
     const now =
       (await settleHomes(first.input, access)).length === 0 ? first : await look(host, space);
+    // What a switch writes: an app's entry turned on is the entry and its files, whatever the
+    // cleanup left of the servers' table around it; anything else is the lines shown.
+    const written = (seen: Look, c: AppsChange) => {
+      const found = offered(seen, c);
+      if (found === undefined) return undefined;
+      const change = c.part === "tools" && c.on ? seen.items.get(c.key)?.change : undefined;
+      return typeof change === "object"
+        ? JSON.stringify([change.entry, change.writes.map((w) => w.file)])
+        : JSON.stringify([found.file, found.files, found.detail]);
+    };
+    // Turning off what the cleanup already turned off is what the person asked for.
+    const offNow = (c: AppsChange) => {
+      const part = now.view.rows.find((r) => r.key === c.key)?.[c.part];
+      return !c.on && part !== undefined && !part.on && part.off === undefined;
+    };
+    const asShown = (c: AppsChange) => offNow(c) || written(now, c) === written(first, c);
+    if (now !== first && !changes.every(asShown)) return { applied: false, view: now.view };
 
     const outcomes: AppsOutcome[] = [];
     const done = (c: AppsChange, reason?: string): void => {
@@ -682,7 +739,15 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
       if (outcome.access !== "off") return "revoke_failed";
       if (outcome.kept === undefined) return undefined;
       const reason = outcome.reason ?? outcome.result;
-      return { key: c.key, part: "tools", result: "done", reason, kept: true };
+      const file = outcome.file ?? outcome.home.files[0];
+      return {
+        key: c.key,
+        part: "tools",
+        result: "done",
+        reason,
+        kept: true,
+        ...(file === undefined ? {} : { file: shownPath(host.platform, host.userHome, file) }),
+      };
     });
     // On is on once the home has its access: a new entry, or one in place whose access went.
     await each(true, async (item, c) => {

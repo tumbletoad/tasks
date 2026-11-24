@@ -506,7 +506,8 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             event === "the record cannot be written" ? unwritable(recordPath(w)) : null;
           let outcome;
           try {
-            outcome = await applyHome(w.input, view, "", rows);
+            // The service says the access is off: giving it back is what turning on offers.
+            outcome = await applyHome({ ...w.input, rows: rows.live }, view, "", rows);
           } finally {
             restore?.();
           }
@@ -1484,16 +1485,16 @@ describe("[A3.3.13.setup.plan-bound] A plan is bound to what its apply writes an
         expect(await apply(w, a)).toMatchObject({ result: "applied", access: "on" });
         const on = await tokenOf(w, a, { ...w.input, rows: w.rows.live });
         const off = await tokenOf(w, a, { ...w.input, rows: [] });
-        const unknown = await tokenOf(w, a, { ...w.input, rows: undefined });
+        const unknown = await tokenOf(w, a, w.input);
         expect(new Set([on, off, unknown]).size, a.app).toBe(3);
         // The service did not say: a renewal asks for no access.
         await w.rows.revoke((await viewOf(w, a)).home);
         w.rows.asked.length = 0;
         const view = await viewOf(w, a);
-        expect(
-          await applyHome({ ...w.input, rows: undefined }, view, SPACE, w.rows),
-          a.app,
-        ).toMatchObject({ result: "left", reason: "access_unknown" });
+        expect(await applyHome(w.input, view, SPACE, w.rows), a.app).toMatchObject({
+          result: "left",
+          reason: "access_unknown",
+        });
         expect(w.rows.asked, a.app).toEqual([]);
         expect(w.rows.live, a.app).toEqual([]);
       }

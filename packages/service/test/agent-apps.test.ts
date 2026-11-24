@@ -418,8 +418,17 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
     async () => {
       const recordPath = join(stateOf(w.home), "setup", "agents.json");
       const look = async () => (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
-      const claude = row(await look(), "claude-code");
-      expect(claude.tools).toMatchObject({ on: false, change: "add" });
+      const turn = async (on: boolean) => {
+        const found = row(await look(), "claude-code");
+        await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: found.key, part: "tools", on, plan: found.tools?.plan }],
+        });
+      };
+      // Claude Code's home with nothing of setup's in it.
+      if (row(await look(), "claude-code").tools?.on !== true) await turn(true);
+      await turn(false);
+      expect(claudeEntry(w.user)).toBeUndefined();
       // A run that stopped before it wrote its entry, under an instance this home is no longer offered.
       const kept = existsSync(recordPath) ? readFileSync(recordPath, "utf8") : undefined;
       const argv = [

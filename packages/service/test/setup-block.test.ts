@@ -118,13 +118,12 @@ function world(): World {
       return {
         app,
         home,
-        file: join(home, app === "codex" ? "config.toml" : ".claude.json"),
-        isDefault: false,
+        files: [join(home, app === "codex" ? "config.toml" : ".claude.json")],
         variable: app === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR",
         instance,
         account: "work",
         hosts: [],
-        managed: false,
+        managed: [],
       };
     },
   };
