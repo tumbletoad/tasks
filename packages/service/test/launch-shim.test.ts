@@ -16,10 +16,10 @@ import { afterEach, describe, expect, test } from "vitest";
 import { RpcError } from "@ttasks/bridge/protocol";
 import { CLAIM_WINDOW_MS, REFUSED, startTimes, type PlanFolder } from "@ttasks/launch";
 import type { FakeAgentReport } from "@ttasks/runs/fake-agents";
+import { failingAgentArgv } from "../../testkit/src/failing-agent.ts";
 import { readLog, stateOf, waitFor } from "./harness.ts";
 import {
   CLI_BIN,
-  FAILURE_FIXTURE,
   LONG_MS,
   ShimLab,
   shimEnv,
@@ -469,7 +469,7 @@ describe("[A4.5.shim.client] the shim's own steps", () => {
     { timeout: 300_000 },
     async () => {
       const l = await lab("exit-code");
-      const intent = await l.launch(l.plan({ fixture: FAILURE_FIXTURE }));
+      const intent = await l.launch({ ...l.plan(), argv: failingAgentArgv });
       const shim = l.shims[0];
       if (shim === undefined) throw new Error("no shim was started");
       shim.endInput();

@@ -11,7 +11,7 @@
 // The command line is exactly `<cli> shim <ticket>` (A4 3.6.2): no task text, title or folder.
 // Fixture data only. Tests only.
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CLI_NAME } from "../../packages/brand/src/index.ts";
 import { startTimes } from "../../packages/launch/src/process.ts";
@@ -21,6 +21,7 @@ import { FAKE_CLI_AGENT, FAKE_TERMINAL } from "../../packages/testkit/src/index.
 
 /** The CLI's entry from the source tree, as `pnpm ttasks` runs it. */
 const CLI_BIN = fileURLToPath(new URL("../../packages/cli/src/bin.ts", import.meta.url));
+const FAILING_AGENT_SHIM = fileURLToPath(new URL("./failing-agent-shim.ts", import.meta.url));
 
 /** The one instance the page offers: the fake agent, as machine.toml's `[[instance]]` has it. */
 export const FAKE_INSTANCE = {
@@ -76,6 +77,8 @@ export interface TerminalCall {
 /** The file of task IDs whose next launch the fake terminal refuses, one a line. */
 export const refuseFile = (record: string): string => `${record}.refuse`;
 
+export const failAgentFile = (record: string): string => `${record}.fail-agent`;
+
 /** Whether the next launch of `task` is to be refused: once, then the line goes. */
 function refused(record: string, task: string | null): boolean {
   const file = refuseFile(record);
@@ -92,7 +95,10 @@ function refused(record: string, task: string | null): boolean {
 export function fakeTerminal(record: string): TerminalStart {
   return async ({ intent, ticket, folder }) => {
     if (refused(record, intent.task)) return { kind: "refused" };
-    const command = [process.execPath, CLI_BIN, "shim", ticket];
+    const failAgent = failAgentFile(record);
+    const fail = existsSync(failAgent);
+    if (fail) unlinkSync(failAgent);
+    const command = [process.execPath, fail ? FAILING_AGENT_SHIM : CLI_BIN, "shim", ticket];
     const pid =
       process.platform === "win32"
         ? await inWindow(command, folder, `${record}.${intent.id}`)

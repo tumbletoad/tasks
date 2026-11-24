@@ -238,8 +238,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     test.setTimeout(SLOW_MS * 4);
     await page.emulateMedia({ reducedMotion: "reduce" });
     const ref = await newTask(world, "Review the appointment export");
-    // An agent that cannot start: it ends at once.
-    world.hold(ref, 1);
+    world.failNextAgent();
     let p = await expanded(page, world, ref);
     await p.open.click();
     await expect(p.entries("failed")).toHaveCount(1, { timeout: SLOW_MS });
