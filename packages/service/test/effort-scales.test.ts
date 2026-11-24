@@ -225,6 +225,7 @@ describe("[A1.3.16.prefs.effort-stored] a space holds its levels, so every build
       request_id: w.rid(),
     });
     expect(saved).toMatchObject({ result: "no_change", changed: [] });
+    expect(stored(w)).toMatchObject({ value: v1, ver: 1 });
     expect(await prefs(w)).toMatchObject({ value: EFFORT_LEVELS, is_default: true });
   });
 

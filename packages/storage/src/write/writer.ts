@@ -4453,6 +4453,9 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         wrote(run, i, "preferences", op.key, null, null);
         return;
       }
+      // The value the key reads as already is no change, whatever form its row holds it in.
+      const now = readSpacePreference(conn, op.key);
+      if (value !== null && now.state === "set" && samePrefValue(now.value, value)) return;
       conn.prepare(SQL.updatePreference).run(values);
       wrote(run, i, "preferences", op.key, null, ["value"]);
       return;
