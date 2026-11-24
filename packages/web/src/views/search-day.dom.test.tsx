@@ -72,6 +72,8 @@ let api: Api;
 /** What a search of the open tasks finds now. */
 let open: unknown[];
 let searches: number;
+/** The service does not answer searches. */
+let failing: boolean;
 
 beforeEach(() => {
   vi.useFakeTimers({
@@ -96,11 +98,13 @@ beforeEach(() => {
   Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
   open = [found(1)];
   searches = 0;
+  failing = false;
   api = {
     client: {
       task: {
         search: (input: { scope?: string }) => {
           searches += 1;
+          if (failing) return Promise.reject(new Error("unreachable"));
           return Promise.resolve({
             as_of: at(10),
             scope: input.scope,
@@ -203,6 +207,48 @@ describe("[A5.3.13.web.search-day] a search left open reads again on the page's 
     });
     await settle();
     expect(titles()).toEqual(["Task 2"]);
+  });
+
+  test("a page that wakes before the service answers reads the new day once the feed is back", async () => {
+    await mount();
+    open = [found(2)];
+    failing = true;
+    act(() => {
+      live.store.set({ phase: "offline" });
+    });
+    vi.setSystemTime(LATE + 8 * 60 * MINUTE);
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await settle();
+    expect(container.textContent).toContain("The search could not be read.");
+    failing = false;
+    act(() => {
+      live.store.set({ phase: "live" });
+    });
+    await settle();
+    expect(titles()).toEqual(["Task 2"]);
+    expect(container.textContent).not.toContain("The search could not be read.");
+  });
+
+  test("a read of the new day that fails while the feed stays live is read again on its next snapshot", async () => {
+    await mount();
+    open = [found(2)];
+    failing = true;
+    vi.setSystemTime(LATE + 8 * 60 * MINUTE);
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await settle();
+    expect(container.textContent).toContain("The search could not be read.");
+    failing = false;
+    act(() => {
+      live.store.push(snapshot());
+      live.store.flush();
+    });
+    await settle();
+    expect(titles()).toEqual(["Task 2"]);
+    expect(container.textContent).not.toContain("Results changed");
   });
 
   test("the same day: the search is not read again", async () => {

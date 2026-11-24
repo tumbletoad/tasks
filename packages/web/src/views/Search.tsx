@@ -158,18 +158,30 @@ function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
   );
 
   // What a search finds can depend on the day (due:today, a star, created:-7d, the ranking's
-  // stars): on the page's next day it is read again, where the reader is.
+  // stars): on the page's next day it is read again, where the reader is. The answer shown is the
+  // new day's only once a read of it succeeded: one that failed is read again when the feed is
+  // back, as the service answers again.
   const { today, timeZone } = useClock(false);
   const day = `${today} ${timeZone}`;
-  const readOn = useRef(day);
-  useEffect(() => {
-    if (readOn.current === day) return;
-    readOn.current = day;
-    void open.query.refresh();
-    void done.query.refresh();
-  }, [day, open.query, done.query]);
-
+  const answered = useRef(day);
+  const asked = useRef(day);
   const ready = open.state.phase === "ready" && done.state.phase === "ready";
+  useEffect(() => {
+    if (ready) answered.current = asked.current;
+  }, [ready, open.state, done.state]);
+  useEffect(() => {
+    const catchUp = () => {
+      if (answered.current === day) return;
+      const reading = [open.query, done.query].some((q) => q.getState().phase === "loading");
+      if (asked.current === day && reading) return;
+      asked.current = day;
+      void open.query.refresh();
+      void done.query.refresh();
+    };
+    catchUp();
+    return live.onBack(catchUp);
+  }, [day, live, open.query, done.query]);
+
   const changed = open.state.changed || done.state.changed;
   const refresh = () => {
     void open.query.refresh();

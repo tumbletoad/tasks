@@ -149,16 +149,10 @@ function useFinished(clock: Clock): FinishedCounts | undefined {
         });
     };
     read();
-    const stop = live.store.onChanges(({ changes, reset }) => {
-      if (reset || changes.some((change) => affects(COMPLETED, change))) read();
+    const stop = live.onChanges(({ changes }) => {
+      if (changes.some((change) => affects(COMPLETED, change))) read();
     });
-    // A feed that resumes sends nothing it missed about finished tasks: being live again reads.
-    let wasLive = live.getState().phase === "live";
-    const unwatch = live.subscribe(() => {
-      const isLive = live.getState().phase === "live";
-      if (isLive && !wasLive) read();
-      wasLive = isLive;
-    });
+    const unwatch = live.onBack(read);
     return () => {
       alive = false;
       stop();
