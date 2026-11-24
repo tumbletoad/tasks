@@ -82,12 +82,16 @@ export interface BackupListing {
   leftovers: string[];
 }
 
-/** The folder's entries, or undefined when it is not there. */
+/**
+ * The folder's entries, or undefined when it is not there or cannot hold backups (a file in its
+ * place). Any other error is thrown: a folder that is there and cannot be read may hold the newest.
+ */
 function readFolder(folder: string): Dirent[] | undefined {
   try {
     return readdirSync(folder, { withFileTypes: true });
   } catch (error) {
-    if (errnoCode(error) === "ENOENT") return undefined;
+    const code = errnoCode(error);
+    if (code === "ENOENT" || code === "ENOTDIR") return undefined;
     throw fsError(error);
   }
 }

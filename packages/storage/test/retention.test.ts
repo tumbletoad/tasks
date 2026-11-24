@@ -1,6 +1,14 @@
 // When a daily backup is due and which backups retention keeps (A1 3.18). Pure functions of a
 // listing and a clock, tested on built listings, then applied to real files once.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, join } from "node:path";
 import fc from "fast-check";
 import { afterEach, describe, expect, test } from "vitest";
@@ -591,6 +599,41 @@ describe("[A1.5.backup.outside-home] a space's backups in two folders are one li
     );
     expect(backup).toBe(later.name);
   });
+
+  test("a file where the first folder goes holds no backups, and the other folder is still read", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const made = await backupSpace(checked, folder, { kind: "daily" });
+    const file = join(folders.make(), "sp_fixture");
+    writeFileSync(file, "not a folder");
+    const both = listBackupsIn([file, join(folder, "backups")]);
+    expect(both.present).toBe(false);
+    expect(both.backups.map((b) => b.name)).toEqual([made.name]);
+    const { backup } = await restoreLatest(
+      checked,
+      [file, join(folder, "backups")],
+      space.spaceId,
+      join(folders.make(), "copy"),
+    );
+    expect(backup).toBe(made.name);
+  });
+
+  // Folder permissions are POSIX's; root reads any folder.
+  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "a folder that is there and cannot be read stops the listing: it may hold the newest work",
+    async () => {
+      const checked = await checkedDriver();
+      const { folder } = await createFixtureSpace(folders.make());
+      await backupSpace(checked, folder, { kind: "daily" });
+      const unreadable = folders.make();
+      chmodSync(unreadable, 0o000);
+      try {
+        expect(() => listBackupsIn([unreadable, join(folder, "backups")])).toThrow(StorageError);
+      } finally {
+        chmodSync(unreadable, 0o700);
+      }
+    },
+  );
 });
 
 describe("[A1.5.backup.histories] no history's backups are judged by another's", () => {
