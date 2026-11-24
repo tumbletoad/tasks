@@ -965,6 +965,8 @@ async function submit(
     readonly answer?: Readonly<Record<string, unknown>>;
     /** False for an undo or redo: the stack's own move never joins the stack (A1 3.10.1). */
     readonly undoable?: false;
+    /** Decided as it would be written, then rolled back: a preview (WriteRequest.dry_run). */
+    readonly dryRun?: true;
     /** Hints of the refusals whose remedy differs for this entry (resultFailure). */
     readonly hints?: Readonly<Record<string, string>>;
     /** The index of complete_task's `once` wrap-up operation (resultFailure). */
@@ -1017,6 +1019,7 @@ async function submit(
       ...(typeof input["reason"] === "string" ? { reason: input["reason"] } : {}),
       ...(principal.actorKind === "human" && options.undoable !== false ? { undoable: true } : {}),
       ...(options.active === true ? { active: true } : {}),
+      ...(options.dryRun === true ? { dry_run: true } : {}),
       ...(options.warnings === undefined || options.warnings.length === 0
         ? {}
         : { warnings: [...options.warnings] }),
@@ -2516,7 +2519,8 @@ const historyAnswer: Answer = async (view, stored) => {
     commit: done.id,
     tasks: done.tasks,
     task_count: done.task_count,
-    ...(done.levels === true ? { levels: true } : {}),
+    ...(done.levels === undefined ? {} : { levels: done.levels }),
+    ...(done.lifecycles === undefined ? {} : { lifecycles: done.lifecycles }),
     ...levelsOf(done),
     ...(stored.passed === undefined ? {} : { passed_over: stored.passed }),
     ...(stored.newer === undefined ? {} : newerWorkJson(stored.newer)),
@@ -4614,6 +4618,7 @@ async function prefsSet(call: Call): Promise<unknown> {
       })),
       {
         ...(levels ? {} : { undoable: false }),
+        ...(call.input["dry_run"] === true ? { dryRun: true } : {}),
         answer: { changed: sets },
         hints: {
           conflict:

@@ -1298,6 +1298,19 @@ export class SpaceWriter {
       return refused("rejected", this.asOf(), error.problem);
     }
     const fingerprint = requestFingerprint(request);
+    if (request.dry_run === true) {
+      // Decided whole, its receipt included, then rolled back by the throw: nothing stays.
+      let decided: WriteResult | undefined;
+      try {
+        conn.transaction("immediate", () => {
+          decided = this.#decide(conn, request, fingerprint);
+          throw DRY_RUN;
+        });
+      } catch (error) {
+        if (error !== DRY_RUN) throw error;
+      }
+      return must(decided, "A dry run is decided before it is rolled back");
+    }
     const at = this.#seams.at;
     const result = conn.transaction("immediate", () => {
       const decided = this.#decide(conn, request, fingerprint);
@@ -2970,7 +2983,8 @@ export class SpaceWriter {
         continue;
       }
       const commitId = newId("op", this.#random);
-      let tasks: { tasks?: string[]; task_count?: number } = {};
+      let tasks: { tasks?: string[]; task_count?: number; lifecycles?: string[] } = {};
+      let wrote = { list: false, tasks: 0 };
       conn.exec("SAVEPOINT exec");
       try {
         // The inversions first: the rules across rows are decided on the state they make (A1 3.10).
@@ -3019,7 +3033,17 @@ export class SpaceWriter {
         });
         const changes = applied.changes.map((c) => ({ ...c, action: "set" as const }));
         insertChanges(conn, seq, changes);
-        if (request.intent !== undefined) tasks = changedTasks(conn, space.refPrefix, changes);
+        if (request.intent !== undefined) {
+          tasks = changedTasks(conn, space.refPrefix, changes);
+          // The tasks it checked off or reopened: only those are a checkbox's to undo again.
+          const turned = changes.filter((c) => c.entity === "tasks" && c.field === "lifecycle");
+          if (turned.length > 0)
+            tasks.lifecycles = changedTasks(conn, space.refPrefix, turned).tasks;
+        }
+        wrote = {
+          list: changes.some((c) => c.entity === "preferences"),
+          tasks: changes.filter((c) => c.entity === "tasks" && c.field === "effort").length,
+        };
         // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
         // its children's, a restore brings them back, a field set back rewrites its document.
         if (this.#search) indexChanges(conn, seq, changes);
@@ -3049,9 +3073,7 @@ export class SpaceWriter {
             ...tasks,
             // A change of the effort levels, undone or redone: the tasks it leaves on a size the
             // levels lack are said, never a reason to refuse.
-            ...(levels === undefined
-              ? {}
-              : { levels: true as const, ...offList(conn, space.refPrefix) }),
+            ...(levels === undefined ? {} : { levels: wrote, ...offList(conn, space.refPrefix) }),
           },
         ],
         // What a partial undo left as others set it, or why a redo passed over the steps before
@@ -3094,6 +3116,9 @@ export class SpaceWriter {
 
 // ---------------------------------------------------------------------------------------------
 // Results
+
+/** What a dry run throws to roll its transaction back. */
+const DRY_RUN = new Error("dry run");
 
 function refused(
   status: "rejected" | "conflict",

@@ -977,9 +977,35 @@
             "type": "string"
           },
           "levels": {
-            "const": true,
-            "description": "It was a change of the effort levels",
-            "type": "boolean"
+            "additionalProperties": false,
+            "description": "A change of the effort levels: what it wrote",
+            "properties": {
+              "list": {
+                "description": "It wrote the list of levels",
+                "type": "boolean"
+              },
+              "tasks": {
+                "description": "How many sizes of tasks it wrote",
+                "maximum": 9999999999,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "list",
+              "tasks"
+            ],
+            "type": "object"
+          },
+          "lifecycles": {
+            "description": "The tasks it checked off or reopened, the first 50",
+            "items": {
+              "description": "Task reference",
+              "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
           },
           "newer_work": {
             "description": "Who changed which task since, one entry per task and author",
@@ -1154,9 +1180,35 @@
             "type": "string"
           },
           "levels": {
-            "const": true,
-            "description": "It was a change of the effort levels",
-            "type": "boolean"
+            "additionalProperties": false,
+            "description": "A change of the effort levels: what it wrote",
+            "properties": {
+              "list": {
+                "description": "It wrote the list of levels",
+                "type": "boolean"
+              },
+              "tasks": {
+                "description": "How many sizes of tasks it wrote",
+                "maximum": 9999999999,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "list",
+              "tasks"
+            ],
+            "type": "object"
+          },
+          "lifecycles": {
+            "description": "The tasks it checked off or reopened, the first 50",
+            "items": {
+              "description": "Task reference",
+              "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
           },
           "newer_work": {
             "description": "Who changed which task since, one entry per task and author",
@@ -1692,6 +1744,10 @@
             "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
             "maxLength": 40,
             "type": "string"
+          },
+          "dry_run": {
+            "description": "set: decide it as it would be written, and write nothing",
+            "type": "boolean"
           },
           "keys": {
             "description": "Keys, or prefixes ending in \".*\"; default every key",
@@ -2790,9 +2846,25 @@
                       "description": "The row it acted on, or a preference's key"
                     },
                     "levels": {
-                      "const": true,
-                      "description": "An undo or redo of a change of the effort levels",
-                      "type": "boolean"
+                      "additionalProperties": false,
+                      "description": "A change of the effort levels: what it wrote",
+                      "properties": {
+                        "list": {
+                          "description": "It wrote the list of levels",
+                          "type": "boolean"
+                        },
+                        "tasks": {
+                          "description": "How many sizes of tasks it wrote",
+                          "maximum": 9999999999,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "list",
+                        "tasks"
+                      ],
+                      "type": "object"
                     },
                     "lifecycle": {
                       "description": "The matched task's lifecycle",
@@ -2803,12 +2875,74 @@
                       ],
                       "type": "string"
                     },
+                    "lifecycles": {
+                      "description": "An undo or redo: the tasks it checked off or reopened",
+                      "items": {
+                        "description": "Task reference",
+                        "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                        "type": "string"
+                      },
+                      "maxItems": 50,
+                      "type": "array"
+                    },
                     "matched_by": {
                       "description": "A task draft that matched an existing task: how",
                       "enum": [
                         "source_key"
                       ],
                       "type": "string"
+                    },
+                    "moved": {
+                      "description": "A change of the effort levels: the tasks each move moved, by state",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "active": {
+                            "description": "Open tasks",
+                            "maximum": 9999999999,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "finished": {
+                            "description": "Completed or archived tasks",
+                            "maximum": 9999999999,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "from": {
+                            "description": "The size it moved from",
+                            "maxLength": 20,
+                            "type": "string"
+                          },
+                          "to": {
+                            "anyOf": [
+                              {
+                                "maxLength": 20,
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The level it moved to, or null for no size"
+                          },
+                          "trash": {
+                            "description": "Tasks in the Trash",
+                            "maximum": 9999999999,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "from",
+                          "to",
+                          "active",
+                          "finished",
+                          "trash"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
                     },
                     "off_list": {
                       "description": "Live tasks on a size that is not a level now: give each of them a level",

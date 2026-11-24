@@ -75,6 +75,25 @@ export const OffList = z
   )
   .describe("Live tasks on a size that is not a level now: give each of them a level");
 
+/** A change of the effort levels: the tasks each move moved, by state. */
+export const Moved = z
+  .array(
+    z.strictObject({
+      from: Size.describe("The size it moved from"),
+      to: SizeOrNone.describe("The level it moved to, or null for no size"),
+      ...Counts,
+    }),
+  )
+  .describe("A change of the effort levels: the tasks each move moved, by state");
+
+/** What an undo or redo of a change of the effort levels wrote: never more than this. */
+export const LevelsWritten = z
+  .strictObject({
+    list: z.boolean().describe("It wrote the list of levels"),
+    tasks: Count.describe("How many sizes of tasks it wrote"),
+  })
+  .describe("A change of the effort levels: what it wrote");
+
 /** A stored or default value in a result: null is a default of none. */
 const PrefValueOutput = z.union([
   z.string(),
@@ -121,6 +140,10 @@ export const PrefsManageInput = z.strictObject({
     .max(10)
     .describe("set: the keys and their new values")
     .optional(),
+  dry_run: z
+    .boolean()
+    .describe("set: decide it as it would be written, and write nothing")
+    .optional(),
   base: Base.optional(),
   request_id: RequestId.optional(),
   mode: Mode,
@@ -165,16 +188,7 @@ export const PrefsManageResult = z.strictObject({
     )
     .describe("The keys a change changed")
     .optional(),
-  moved: z
-    .array(
-      z.strictObject({
-        from: Size.describe("The size it moved from"),
-        to: SizeOrNone.describe("The level it moved to, or null for no size"),
-        ...Counts,
-      }),
-    )
-    .describe("A change of the effort levels: the tasks each move moved, by state")
-    .optional(),
+  moved: Moved.optional(),
   off_list: OffList.optional(),
   proposal: ProposalId.optional(),
   replayed: Replayed.optional(),

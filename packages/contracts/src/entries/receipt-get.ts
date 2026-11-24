@@ -10,7 +10,7 @@ import { AsOf, idPattern, Lifecycle, patterns, TaskId, TaskRef, Warnings } from 
 import { AS_OF, M14, requestId } from "./fixture.ts";
 import { NewerWorkFields } from "./history-undo.ts";
 import { newerBy } from "../newer-work.ts";
-import { OffList } from "./prefs-manage.ts";
+import { LevelsWritten, Moved, OffList } from "./prefs-manage.ts";
 
 const Seq = z.int().min(0).max(999_999_999_999_999);
 const Instant = z.string().regex(patterns.instant);
@@ -58,7 +58,13 @@ const ReceiptOpResult = z.strictObject({
     .array(TaskRef)
     .describe("Several active tasks matched, the named one first")
     .optional(),
-  levels: z.literal(true).describe("An undo or redo of a change of the effort levels").optional(),
+  levels: LevelsWritten.optional(),
+  lifecycles: z
+    .array(TaskRef)
+    .max(50)
+    .describe("An undo or redo: the tasks it checked off or reopened")
+    .optional(),
+  moved: Moved.optional(),
   off_list: OffList.optional(),
 });
 
@@ -253,6 +259,8 @@ function receiptOp(stored: object): z.input<typeof ReceiptOpResult> {
     ...(has("ambiguous") ? { ambiguous: r["ambiguous"] } : {}),
     ...(has("levels") ? { levels: r["levels"] } : {}),
     ...(has("off_list") ? { off_list: r["off_list"] } : {}),
+    ...(has("lifecycles") ? { lifecycles: r["lifecycles"] } : {}),
+    ...(has("moved") ? { moved: r["moved"] } : {}),
   } as z.input<typeof ReceiptOpResult>;
 }
 

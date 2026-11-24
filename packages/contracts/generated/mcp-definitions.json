@@ -28,9 +28,9 @@
       "tokens": 854
     },
     {
-      "bytes": 767,
+      "bytes": 869,
       "name": "preferences",
-      "tokens": 384
+      "tokens": 435
     },
     {
       "bytes": 1042,
@@ -54,8 +54,8 @@
     }
   ],
   "total": {
-    "bytes": 19788,
-    "tokens": 9896,
+    "bytes": 19890,
+    "tokens": 9947,
     "tools": 10
   }
 }

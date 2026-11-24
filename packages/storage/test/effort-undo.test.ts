@@ -96,7 +96,7 @@ describe("[A1.3.10.history.effort-levels] Undo and Redo take a change of levels 
     expectStatus(change(["S", "Medium", "L"], [{ from: "M", to: "Medium" }]), "applied");
     const undone = history("undo");
     expectStatus(undone, "applied");
-    expect(undone.results[0]).toMatchObject({ levels: true });
+    expect(undone.results[0]).toMatchObject({ levels: { list: true, tasks: 2 } });
     expect(undone.results[0]?.off_list).toBeUndefined();
     expect([names(), efforts(ids)]).toEqual([
       ["S", "M", "L"],
@@ -161,7 +161,7 @@ describe("[A1.3.10.history.effort-levels] Undo and Redo take a change of levels 
     ]);
     const rest = history("undo", true);
     expectStatus(rest, "applied");
-    expect(rest.results[0]).toMatchObject({ levels: true });
+    expect(rest.results[0]).toMatchObject({ levels: { list: false, tasks: 0 } });
     expect([names(), efforts(ids)]).toEqual([["S", "Medium", "L", "XL"], ["Medium"]]);
     expect(history("undo").error?.code).toBe("NOTHING_TO_UNDO");
   });
@@ -199,13 +199,38 @@ describe("[A1.3.10.history.effort-levels] Undo and Redo take a change of levels 
     const undone = history("undo");
     expectStatus(undone, "applied");
     expect(undone.results[0]).toMatchObject({
-      levels: true,
+      levels: { list: false, tasks: 1 },
       off_list: [{ effort: "Medium", tasks: [refOf(late ?? "")], count: 1 }],
     });
     expect(efforts([late ?? ""])).toEqual(["Medium"]);
-    expect(history("redo").results[0]).toMatchObject({ levels: true });
+    expect(history("redo").results[0]).toMatchObject({ levels: { list: false, tasks: 1 } });
     expect(efforts([late ?? ""])).toEqual(["M"]);
   });
+
+  test.each([
+    [
+      "a move with the list kept",
+      ["S", "M", "L"],
+      { from: "M", to: "L" },
+      { list: false, tasks: 0 },
+    ],
+    ["a rename", ["S", "Medium", "L"], { from: "M", to: "Medium" }, { list: true, tasks: 0 }],
+  ])(
+    "Undo the rest of %s whose only task another sized since says what it wrote",
+    (_, keys, move, wrote) => {
+      start();
+      const [task] = tasks("M");
+      expectStatus(change(keys, [move]), "applied");
+      const sized = write(fx.codex, [
+        { kind: "task.patch", task: task ?? "", set: { effort: "S" } },
+      ]);
+      expectStatus(sized, "applied");
+      const rest = history("undo", true);
+      expectStatus(rest, "applied");
+      expect(rest.results[0]?.levels).toEqual(wrote);
+      expect([names(), efforts([task ?? ""])]).toEqual([["S", "M", "L"], ["S"]]);
+    },
+  );
 
   test("an undo of one task's size is no change of levels", () => {
     start();

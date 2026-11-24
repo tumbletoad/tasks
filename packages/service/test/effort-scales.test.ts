@@ -399,7 +399,9 @@ describe("[A1.3.10.history.effort-stored-rows] a change of levels over a row an 
       request_id: w.rid(),
     });
     expect((await levels()).map((l) => l.key)).toContain("Medium");
-    expect(await w.call("history.undo", { request_id: w.rid() })).toMatchObject({ levels: true });
+    expect(await w.call("history.undo", { request_id: w.rid() })).toMatchObject({
+      levels: { list: true, tasks: 1 },
+    });
     expect(await levels()).toEqual(before);
     const raw = w.fx.reader
       .prepare("SELECT value, schema_ver FROM preferences WHERE key = 'tasks.effort_scale'")

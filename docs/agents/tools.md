@@ -479,7 +479,10 @@ Redo the change you undid last, as long as nobody changed its fields since.
 | `commit` | string | yes | The change undone or redone |
 | `tasks` | string[], max 50 items | yes | The tasks it changed, the first 50 |
 | `task_count` | integer, 0 to 9999999999 | yes | How many tasks it changed |
-| `levels` | true | no | It was a change of the effort levels |
+| `levels` | object | no | A change of the effort levels: what it wrote |
+| `levels.list` | boolean | yes | It wrote the list of levels |
+| `levels.tasks` | integer, 0 to 9999999999 | yes | How many sizes of tasks it wrote |
+| `lifecycles` | string[], max 50 items | no | The tasks it checked off or reopened, the first 50 |
 | `off_list` | object[] | no | Live tasks on a size that is not a level now: give each of them a level |
 | `off_list[].effort` | string, max 20 | yes | The size |
 | `off_list[].tasks` | string[], max 10 items | yes | Their references, the first 10 |
@@ -550,7 +553,10 @@ Undo your newest change in the space, field by field as long as nobody changed i
 | `commit` | string | yes | The change undone or redone |
 | `tasks` | string[], max 50 items | yes | The tasks it changed, the first 50 |
 | `task_count` | integer, 0 to 9999999999 | yes | How many tasks it changed |
-| `levels` | true | no | It was a change of the effort levels |
+| `levels` | object | no | A change of the effort levels: what it wrote |
+| `levels.list` | boolean | yes | It wrote the list of levels |
+| `levels.tasks` | integer, 0 to 9999999999 | yes | How many sizes of tasks it wrote |
+| `lifecycles` | string[], max 50 items | no | The tasks it checked off or reopened, the first 50 |
 | `off_list` | object[] | no | Live tasks on a size that is not a level now: give each of them a level |
 | `off_list[].effort` | string, max 20 | yes | The size |
 | `off_list[].tasks` | string[], max 10 items | yes | Their references, the first 10 |
@@ -785,7 +791,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | A1 operations | `pref.set` |
 | Faces | MCP `preferences`, CLI `ttasks prefs`, UI |
 | Errors | `invalid_input`, `forbidden`, `conflict`, `space_unavailable`, `request_id_conflict`, `applied_earlier` |
-| Definition, estimated tokens | 384, reported |
+| Definition, estimated tokens | 435, reported |
 | Result budget, estimated tokens | typical 600, max 2000 |
 
 ### Input
@@ -806,6 +812,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `set[].moves` | object[], max 20 items | no | tasks.effort_scale only, set alone: the tasks on each size move with the change |
 | `set[].moves[].from` | string, max 20 | yes | A level, or a size tasks hold |
 | `set[].moves[].to` | string, max 20 \| null | yes | A level of the new list, or null for no size |
+| `dry_run` | boolean | no | set: decide it as it would be written, and write nothing |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 
@@ -1157,7 +1164,16 @@ When `found` is `true`:
 | `results[].matched_by` | "source_key" | no | A task draft that matched an existing task: how |
 | `results[].lifecycle` | "active" \| "completed" \| "archived" | no | The matched task's lifecycle |
 | `results[].ambiguous` | string[] | no | Several active tasks matched, the named one first |
-| `results[].levels` | true | no | An undo or redo of a change of the effort levels |
+| `results[].levels` | object | no | A change of the effort levels: what it wrote |
+| `results[].levels.list` | boolean | yes | It wrote the list of levels |
+| `results[].levels.tasks` | integer, 0 to 9999999999 | yes | How many sizes of tasks it wrote |
+| `results[].lifecycles` | string[], max 50 items | no | An undo or redo: the tasks it checked off or reopened |
+| `results[].moved` | object[] | no | A change of the effort levels: the tasks each move moved, by state |
+| `results[].moved[].from` | string, max 20 | yes | The size it moved from |
+| `results[].moved[].to` | string, max 20 \| null | yes | The level it moved to, or null for no size |
+| `results[].moved[].active` | integer, 0 to 9999999999 | yes | Open tasks |
+| `results[].moved[].finished` | integer, 0 to 9999999999 | yes | Completed or archived tasks |
+| `results[].moved[].trash` | integer, 0 to 9999999999 | yes | Tasks in the Trash |
 | `results[].off_list` | object[] | no | Live tasks on a size that is not a level now: give each of them a level |
 | `results[].off_list[].effort` | string, max 20 | yes | The size |
 | `results[].off_list[].tasks` | string[], max 10 items | yes | Their references, the first 10 |

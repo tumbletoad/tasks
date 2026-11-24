@@ -648,6 +648,10 @@
             ],
             "type": "string"
           },
+          "dry_run": {
+            "description": "set: decide it as it would be written, and write nothing",
+            "type": "boolean"
+          },
           "keys": {
             "description": "Keys, or prefixes ending in \".*\"; default every key",
             "items": {

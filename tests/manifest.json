@@ -4225,6 +4225,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.16.prefs.effort-dry-run",
+      "title": "A dry run of a change of levels is the write decided whole and rolled back: it answers as the write, a stale base included, and leaves no commit, task change or receipt",
+      "source": "A1 3.16",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.16.prefs.effort-off-list",
       "title": "A task on a size the list lacks stays readable: effort: search finds it, sort:effort puts it last, and the tools' text and the readable file show it",
       "source": "A1 3.16",
@@ -6084,6 +6092,22 @@
       "id": "A3.3.4.prefs.set",
       "title": "The person sets a space's scale from the command line: tasks keep their keys, a set by names keeps each staying level's time and line, every reader of the scale follows on the next call, a change that drops a key active tasks hold is refused naming them, a new level's name over the limit is refused, and scripts and agents' shells are refused",
       "source": "A1 3.16, A3 3.4.11",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.prefs.moves-said",
+      "title": "What a change of levels and its undo say is what they wrote: a dry run answers as the write and writes nothing, the write's receipt by lookup keeps its moves, an undo says whether it wrote the list and how many sizes, and names only the tasks it checked off or reopened",
+      "source": "A1 3.10.1, A3 3.4.11",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.prefs.undo-said",
+      "title": "ttasks undo says what an undo of a change of levels wrote: after a script sized the renamed level's task, a partial undo says the levels went back",
+      "source": "A3 3.4.11",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

@@ -188,6 +188,7 @@ Usage: `ttasks prefs <action> [<key>] [<value>] [flags]`
 | `<key>` | `set[].key`; `keys` for describe, get | string | A key describe lists |
 | `<value>` | `set[].value` | string | The new value, a list as keys separated by commas |
 | `--keys` | `keys` | string | Keys, or prefixes ending in ".*"; default every key (repeatable) |
+| `--dry-run` | `dry_run` | boolean | set: decide it as it would be written, and write nothing |
 | `--mode` | `mode` | "apply" | Always apply in this build |
 | `--reset` | `set[].reset` | boolean | Put the key back to its default, instead of a value |
 

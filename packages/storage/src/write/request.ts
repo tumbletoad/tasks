@@ -284,8 +284,13 @@ export interface OpResult {
    * lack after it. Reported, never refused: such a task keeps its size and every reader takes it.
    */
   off_list?: OffList[];
-  /** An undo or redo of a change of the effort levels. */
-  levels?: true;
+  /**
+   * An undo or redo of a change of the effort levels: whether it wrote the list, and how many sizes.
+   * What it says it did is this, never more.
+   */
+  levels?: { list: boolean; tasks: number };
+  /** An undo or redo: the tasks whose lifecycle it changed, by reference, the first 50. */
+  lifecycles?: string[];
   /**
    * `task.restore` that brought the task back: where it is back, as its change left it, with its
    * area's and project's names. A replay says the same, whatever changed since.
@@ -1168,6 +1173,11 @@ export interface WriteRequest {
    * request's transaction.
    */
   active?: boolean;
+  /**
+   * Decided as it would be written, then rolled back: nothing of it stays, no receipt included. A
+   * preview of the request itself, so it can tell nothing the write would not.
+   */
+  dry_run?: true;
   /** The caller's intent. Without one, the intent is the operations themselves. */
   intent?: Intent;
   /**
@@ -2444,6 +2454,7 @@ export function checkRequest(value: unknown): CheckedRequest {
     }
   }
   if (f.has("active")) request.active = f.boolean("active");
+  if (f.has("dry_run") && f.boolean("dry_run")) request.dry_run = true;
   if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
   if (f.has("answer")) {
     const answer = f.raw("answer");

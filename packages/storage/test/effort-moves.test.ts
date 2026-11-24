@@ -224,3 +224,33 @@ describe("[A1.3.16.prefs.effort-moves-same] a move to the same name moves nothin
     expect([commits(), effortOf(task ?? "")]).toEqual([before, "M"]);
   });
 });
+
+describe("[A1.3.16.prefs.effort-dry-run] a dry run of a change of levels is the write, decided and rolled back", () => {
+  test("it answers as the write would, a stale base included, and leaves nothing: no commit, no task, no receipt", () => {
+    const [task] = tasks("M");
+    const stale = fx.base();
+    const request = fx.request(
+      fx.human,
+      [setLevels(["S", "Medium", "L"], [{ from: "M", to: "Medium" }])],
+      { base: fx.base(), undoable: true, dry_run: true },
+    );
+    const before = commits();
+    const dry = fx.writer.submit(request);
+    expectStatus(dry, "applied");
+    expect(dry.results[0]?.moved).toEqual([
+      { from: "M", to: "Medium", active: 1, finished: 0, trash: 0 },
+    ]);
+    expect([commits(), names(), effortOf(task ?? "")]).toEqual([before, ["S", "M", "L"], "M"]);
+    expect(
+      fx.writer.receipt({ scope_id: fx.human.scope_id, request_id: request.request_id }),
+    ).toBeUndefined();
+    expectStatus(change(["S", "M", "L", "XL"]), "applied");
+    const late = fx.writer.submit(
+      fx.request(fx.human, [setLevels(["S", "L"], [{ from: "M", to: "M" }])], {
+        base: stale,
+        dry_run: true,
+      }),
+    );
+    expect([late.status, late.error?.code]).toEqual(["conflict", "VERSION_CONFLICT"]);
+  });
+});

@@ -7,7 +7,7 @@ import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { WriteAsOf, idPattern, patterns, Replayed, RequestId, TaskRef } from "../schemas.ts";
 import { AS_OF_NEXT, requestId } from "./fixture.ts";
-import { OffList } from "./prefs-manage.ts";
+import { LevelsWritten, OffList } from "./prefs-manage.ts";
 
 /** A commit (`op_` ID): what the feed's events and a write's receipt name. */
 export const CommitId = z.string().regex(idPattern("op")).describe("A change's commit ID");
@@ -59,7 +59,12 @@ export const HistoryResultFields = {
   tasks: z.array(TaskRef).max(50).describe("The tasks it changed, the first 50"),
   // A space never holds more tasks than its references number.
   task_count: z.int().min(0).max(9_999_999_999).describe("How many tasks it changed"),
-  levels: z.literal(true).describe("It was a change of the effort levels").optional(),
+  levels: LevelsWritten.optional(),
+  lifecycles: z
+    .array(TaskRef)
+    .max(50)
+    .describe("The tasks it checked off or reopened, the first 50")
+    .optional(),
   off_list: OffList.optional(),
   as_of: WriteAsOf,
   replayed: Replayed.optional(),
