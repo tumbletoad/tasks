@@ -645,6 +645,8 @@ test.describe("[A5.trash.e2e.agents] What an agent moved to the Trash", () => {
     test.setTimeout(300_000);
     const tag = test.info().project.name;
     const space = world.mira.id;
+    // The narrow menu is pictured at rest, not on its way in.
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await signIn(page, world, `/s/${space}/open`);
     await showsSpace(page, world.mira.name);
     // A browser that never had the Trash open counts from its first page on.
@@ -760,13 +762,15 @@ test.describe("[A5.trash.e2e.key] Delete on a focused row", () => {
     await page.keyboard.press("Delete");
     await page.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
-    // A last press on a row is the one change: the three before moved nothing.
-    await titleOf(second).focus();
+    // A last press on a row is the one change: the presses before it moved nothing, and the held
+    // key's repeats did not move the row below the first.
+    const last = next === third ? second : third;
+    const kept = last === third ? second : third;
+    await titleOf(last).focus();
     await page.keyboard.press("Delete");
-    await expect(toast(page)).toHaveText(`Moved ${second} to the Trash`);
-    await expect(rowOf(page, third)).toBeVisible();
-    await expect(rowOf(page, second)).toHaveCount(0, { timeout: SLOW_MS });
-    // The held key's repeats moved nothing either: the row below the first is still listed.
+    await expect(toast(page)).toHaveText(`Moved ${last} to the Trash`);
+    await expect(rowOf(page, last)).toHaveCount(0, { timeout: SLOW_MS });
+    await expect(rowOf(page, kept)).toBeVisible();
     await expect(rowOf(page, next)).toBeVisible();
   });
 });
