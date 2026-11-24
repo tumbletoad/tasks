@@ -68,6 +68,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The Trash's mark: tasks agents moved there since the person last opened it. */
+.count[data-mark] {
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--k-accent-soft);
+  color: var(--k-accent-ink);
+  font-weight: 600;
+}
+
 /* A counted view that holds nothing keeps its place, quieter and without a count. */
 .item[data-empty="true"]:not([aria-current="page"]):not(:hover) {
   color: var(--k-muted);

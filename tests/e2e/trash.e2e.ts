@@ -3,8 +3,9 @@
 // grouped by the change that moved tasks there, with Restore these, a Restore on each row that the
 // keyboard reaches, and Find; a link to a task in the Trash opens it there, read-only, with
 // Restore; a run working on a removed task stays on Agents after a cold reload, with Stop; the
-// words typed for a task the space does not have now stay at the foot of the Trash. Screenshots at
-// 1,440 and 390 px for review.
+// words typed for a task the space does not have now stay at the foot of the Trash; an agent's
+// removal under its name, counted in the side menu until the Trash is opened; Delete on a focused
+// row. Screenshots at 1,440 and 390 px for review.
 import { expect, type Page } from "@playwright/test";
 import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
@@ -630,5 +631,142 @@ test.describe("[A5.trash.e2e.terminal] An agent in a terminal on a removed task 
     // The person quits the agent: its end is recorded, and the task leaves the page.
     world.release(ref);
     await expect(rowOf(page, ref)).toHaveCount(0, { timeout: SLOW_MS });
+  });
+});
+
+/** The Trash's mark in the side menu: how many tasks agents moved there since it was open. */
+const trashMark = (page: Page) => page.locator('nav [data-view="trash"] [data-mark]');
+
+test.describe("[A5.trash.e2e.agents] What an agent moved to the Trash", () => {
+  test("an agent's removal is one change under its name in the Trash; the side menu counts it after a reload until the Trash is opened, and Restore these takes it back; in both themes at 1,440 and 390 px", async ({
+    page,
+    world,
+  }) => {
+    test.setTimeout(300_000);
+    const tag = test.info().project.name;
+    const space = world.mira.id;
+    await signIn(page, world, `/s/${space}/open`);
+    await showsSpace(page, world.mira.name);
+    // A browser that never had the Trash open counts from its first page on.
+    await expect(trashMark(page)).toHaveCount(0);
+    try {
+      for (const theme of themes()) {
+        await world.machine("ui.theme", theme);
+        const twins = [
+          await addTask(world, { title: `Agent duplicate (${tag}, ${theme})`, area: "home" }),
+          await addTask(world, { title: `Agent duplicate again (${tag}, ${theme})`, area: "home" }),
+        ];
+        const status = (await world.op(space, "space.status", {}, "agent")) as { as_of: string };
+        await world.op(space, "task.delete", { tasks: twins, base: status.as_of }, "agent");
+
+        await page.goto(`${world.origin}/s/${space}/open`);
+        await showsSpace(page, world.mira.name);
+        await expect(trashMark(page)).toHaveText("2", { timeout: SLOW_MS });
+        await expect(page.locator('nav [data-view="trash"]')).toHaveAttribute(
+          "aria-label",
+          "Trash, 2 tasks moved here by agents since you last looked",
+        );
+        await picture(page, `trash-mark-${theme}-1440.png`);
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.getByRole("button", { name: "Menu" }).click();
+        await expect(page.locator('[data-view="trash"] [data-mark]').last()).toHaveText("2");
+        await picture(page, `trash-mark-${theme}-390.png`);
+        await page.keyboard.press("Escape");
+        await page.setViewportSize({ width: 1440, height: 900 });
+
+        await page.locator('nav [data-view="trash"]').click();
+        const change = page
+          .locator('main [role="group"]')
+          .filter({ hasText: "2 tasks here from Agent's change" });
+        await expect(change).toBeVisible({ timeout: SLOW_MS });
+        await expect(trashMark(page)).toHaveCount(0);
+        await both(page, `trash-agent-${theme}`);
+        await page.locator('nav [data-view="open"]').click();
+        await expect(trashMark(page)).toHaveCount(0);
+        await page.locator('nav [data-view="trash"]').click();
+        await change.getByRole("button", { name: "Restore these" }).click();
+        await expect(toast(page)).toHaveText("2 tasks are back", { timeout: SLOW_MS });
+      }
+    } finally {
+      // The theme is the machine's, shared by the worker's other tests: back to the default.
+      await world.machine("ui.theme", null);
+    }
+  });
+});
+
+test.describe("[A5.trash.e2e.key] Delete on a focused row", () => {
+  test("Delete moves the focused row's task to the Trash with Undo and focus goes to the next row; a held key moves one task; the key does nothing in the top field, the composer or the shortcut sheet", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const space = world.mira.id;
+    const [first, second, third] = [
+      await addTask(world, { title: `Key first (${tag})`, area: "home" }),
+      await addTask(world, { title: `Key second (${tag})`, area: "home" }),
+      await addTask(world, { title: `Key third (${tag})`, area: "home" }),
+    ];
+    await signIn(page, world, `/s/${space}/open`);
+    await showsSpace(page, world.mira.name);
+    const rows = page.locator("main li[data-task]");
+    await expect(rowOf(page, first)).toBeVisible({ timeout: SLOW_MS });
+    const titleOf = (ref: string) => rowOf(page, ref).locator('[data-part="title"]');
+    const after = async (ref: string): Promise<string> => {
+      const order = await rows.evaluateAll((items) =>
+        items.map((item) => item.getAttribute("data-task") ?? ""),
+      );
+      return order[order.indexOf(ref) + 1] ?? "";
+    };
+
+    // The key on a row: the toast's Undo, and focus on the row below.
+    const below = await after(second);
+    await titleOf(second).focus();
+    await page.keyboard.press("Delete");
+    await expect(toast(page)).toHaveText(`Moved ${second} to the Trash`);
+    await expect(titleOf(below)).toBeFocused();
+    await expect(rowOf(page, second)).toHaveCount(0, { timeout: SLOW_MS });
+    await toast(page).hover();
+    await toastAction(page).click();
+    await expect(rowOf(page, second)).toBeVisible({ timeout: SLOW_MS });
+
+    // A held key moves one task: its repeats reach the next row and do nothing there.
+    const next = await after(first);
+    await titleOf(first).focus();
+    await page.keyboard.down("Delete");
+    await page.keyboard.down("Delete");
+    await page.keyboard.down("Delete");
+    await page.keyboard.up("Delete");
+    await expect(toast(page)).toHaveText(`Moved ${first} to the Trash`);
+    await expect(rowOf(page, first)).toHaveCount(0, { timeout: SLOW_MS });
+    await expect(titleOf(next)).toBeFocused();
+    await expect(rowOf(page, next)).toBeVisible();
+
+    // In the top field, the composer and the sheet the key is theirs.
+    await page.getByRole("textbox", { name: "New task" }).fill("Typed words");
+    await page.keyboard.press("Delete");
+    await titleOf(third).click();
+    const composer = rowOf(page, third).locator('[data-part="composer"]');
+    await composer.fill("A note");
+    await composer.press("Home");
+    await composer.press("Delete");
+    await expect(composer).toHaveValue(" note");
+    await titleOf(third).click();
+    await titleOf(third).focus();
+    await page.keyboard.press("?");
+    const sheet = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+    await expect(sheet.getByRole("group", { name: "On a task" })).toContainText(
+      "Move the task to the Trash",
+    );
+    await page.keyboard.press("Delete");
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+    // A last press on a row is the one change: the three before moved nothing.
+    await titleOf(second).focus();
+    await page.keyboard.press("Delete");
+    await expect(toast(page)).toHaveText(`Moved ${second} to the Trash`);
+    await expect(rowOf(page, third)).toBeVisible();
+    await expect(rowOf(page, second)).toHaveCount(0, { timeout: SLOW_MS });
+    // The held key's repeats moved nothing either: the row below the first is still listed.
+    await expect(rowOf(page, next)).toBeVisible();
   });
 });

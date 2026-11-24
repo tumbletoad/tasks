@@ -1,9 +1,11 @@
 // The Trash's page source and groups (trash.ts) against a fake `task.trash`: one group per change,
 // newest first, "Restore these" only for a change of several tasks, and the expanded task kept where
-// it was shown, also once restored.
+// it was shown, also once restored; the count of tasks agents moved there since it was last open.
 import { describe, expect, test } from "vitest";
 import type { TaskRow } from "../store/rows.ts";
 import {
+  agentName,
+  movedByOthers,
   trashGroups,
   trashSource,
   type Removal,
@@ -88,5 +90,35 @@ describe("[A5.trash.web] the Trash's groups and pages", () => {
       { limit: 2, q: "passport" },
       { limit: 1, cursor: "9.1", q: "passport" },
     ]);
+  });
+
+  test("the count reads newest first and stops at the last time the Trash was open, counting what agents moved", async () => {
+    const at = (iso: string, by: string, count: number): Removal => ({
+      id: `op_${iso}`,
+      at: `2026-11-24T${iso}:00.000Z`,
+      by,
+      count,
+    });
+    const pages = [
+      {
+        rows: [
+          row(1, at("14:00", "agent:claude-code", 2)),
+          row(2, at("14:00", "agent:claude-code", 2)),
+          row(3, at("13:00", "user", 1)),
+        ],
+        cursor: "7.3",
+      },
+      { rows: [row(4, at("12:00", "agent:unknown", 1)), row(5, at("10:00", "agent:x", 1))] },
+    ];
+    const read = (() => Promise.resolve(pages.shift() ?? { rows: [] })) as unknown as TrashRead;
+    expect(await movedByOthers(read, Date.parse("2026-11-24T11:00:00.000Z"))).toBe(3);
+    expect(pages).toEqual([]);
+  });
+
+  test("an agent is named as the page knows its app, else by its instance, and an unnamed one not at all", () => {
+    const instances = [{ key: "claude-code", label: "Claude Code", glyph: "C", ring: 0 }];
+    expect(agentName("agent:claude-code", instances)).toBe("Claude Code");
+    expect(agentName("agent:codex-work", instances)).toBe("codex-work");
+    expect(agentName("agent:unknown", instances)).toBeUndefined();
   });
 });
