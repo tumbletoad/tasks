@@ -67,7 +67,8 @@ The restart ends background runs, so new runs wait meanwhile and the update wait
 minutes for the running ones; then it asks whether to stop them or give the update up.
 
 At the end it waits up to 2 minutes for the spaces to open, and names each one that is not
-usable now, in the service's words, and how to go back. Then it exits 8.
+usable now, in the service's words, and how to go back. Then it exits 8. With the service not
+running, it says the spaces were not checked and what to run once it runs.
 
   --from <archive>  The release archive to update from
   --rollback        Go back to the version before the last update

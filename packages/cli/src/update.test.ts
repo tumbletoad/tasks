@@ -1,6 +1,7 @@
 // What a person reads at the end of `ttasks update`, and doctor's spaces row: a space that is not
 // usable now is named in the service's own words, which name its backup, with the way back, and
-// the update exits 8; the others get one line; a service that stopped answering is not checked.
+// the update exits 8; the others get one line; a service that stopped answering is not checked, and
+// one that is not running is named without a flag.
 import { CLI_NAME } from "@ttasks/brand";
 import { describe, expect, test } from "vitest";
 import type { SpaceAtEnd, SpaceNote, SpacesReport } from "@ttasks/service/version-update";
@@ -35,7 +36,7 @@ const report = (
 ): SpacesReport => ({
   boundMs: 120_000,
   noted: true,
-  checked: true,
+  service: "answered",
   wayBack: "0.1.0",
   spaces,
   ...more,
@@ -95,7 +96,7 @@ describe("[A2.3.12.6.update.spaces] the end of an update names each space that i
           space("Work", "usable", open, open),
           space("Big", "unsettled", { state: "opening" }, open),
         ],
-        { checked: false },
+        { service: "stopped_answering" },
       ),
     );
     expect(end.flagged).toBe(true);
@@ -105,10 +106,23 @@ describe("[A2.3.12.6.update.spaces] the end of an update names each space that i
     expect(end.commands).toEqual([`${CLI_NAME} doctor`, `${CLI_NAME} space list`]);
   });
 
+  test("a service that is not running at the end: the spaces were not checked, how to look once it runs, and nothing flagged", () => {
+    const end = spaceLines(report([], { service: "not_running", noted: false }));
+    expect(end.flagged).toBe(false);
+    expect(end.lines).toEqual([
+      `The service is not running, so the spaces were not checked. Once it runs (${CLI_NAME} service start): ${CLI_NAME} doctor and ${CLI_NAME} space list show how they opened.`,
+    ]);
+    expect(end.commands).toEqual([
+      `${CLI_NAME} service start`,
+      `${CLI_NAME} doctor`,
+      `${CLI_NAME} space list`,
+    ]);
+  });
+
   test("--json has the same facts: each verdict with the service's reason, words and backup, the bound and the commands", () => {
     const spaces = report([space("Work", "not_usable", failed, open)]);
     expect(spacesJson(spaces, spaceLines(spaces).commands)).toEqual({
-      checked: true,
+      service: "answered",
       noted: true,
       bound_ms: 120_000,
       way_back: "0.1.0",

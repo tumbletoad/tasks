@@ -218,7 +218,8 @@ const duration = (ms: number): string =>
  * bound; one line for the others; and the rollback when a space is not usable. A space the note
  * from before the switch did not hold may have been so already, except one whose migration failed,
  * which the running version tried. When the service stopped answering: what it said last, and
- * where to look again. `flagged` when anything was named; `commands`, the ones the lines name.
+ * where to look again. When it was not running: that nothing was checked, and how to look once it
+ * runs, which flags nothing. `flagged` when anything was named; `commands`, the ones the lines name.
  */
 export function spaceLines(report: SpacesReport): {
   readonly lines: string[];
@@ -231,7 +232,13 @@ export function spaceLines(report: SpacesReport): {
     if (!commands.includes(command)) commands.push(command);
     return command;
   };
-  if (!report.checked) {
+  if (report.service === "not_running") {
+    lines.push(
+      `The service is not running, so the spaces were not checked. Once it runs (${name(`${CLI_NAME} service start`)}): ${name(`${CLI_NAME} doctor`)} and ${name(`${CLI_NAME} space list`)} show how they opened.`,
+    );
+    return { lines, flagged: false, commands };
+  }
+  if (report.service === "stopped_answering") {
     const said = report.spaces.map((space) => `${space.name} ${stateWords(space.now)}`);
     lines.push(
       [
@@ -289,7 +296,7 @@ const noteJson = (note: SpaceNote) => ({
 /** The spaces in `--json`: the same facts as the lines, and the commands they name. */
 export function spacesJson(report: SpacesReport, commands: readonly string[]) {
   return {
-    checked: report.checked,
+    service: report.service,
     noted: report.noted,
     bound_ms: report.boundMs,
     ...(report.wayBack === undefined ? {} : { way_back: report.wayBack }),

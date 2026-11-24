@@ -377,7 +377,7 @@ describe("[A2.3.12.6.update.switch] the switch: self-test first, the journal bef
     expect(readInstallRecord(w.state)?.["previous"]).toBe("0.1.0");
     // So --rollback still goes back to the version before the last completed switch.
     w.control.failRestarts = false;
-    expect(await rollbackUpdate(w.options)).toEqual({
+    expect(await rollbackUpdate(w.options)).toMatchObject({
       outcome: "updated",
       from: "0.2.0",
       to: "0.1.0",
@@ -1246,7 +1246,8 @@ describe("[A2.3.12.6.update.restart-consent] the service is restarted only on th
       w.control.calls.length = 0;
       asked = 0;
     };
-    // An install cut off after its switch (its journal never restarts): declined, it runs on.
+    // An update cut off after its switch whose person was not asked (no service ran when it
+    // began): declined now, the service runs on.
     cutOff(false);
     const left = await repairUpdate({ ...w.options, agreeRestart: answer(false) });
     expect(left).toMatchObject({ outcome: "repaired", current: "0.2.0" });
@@ -1338,7 +1339,7 @@ describe("[A2.3.12.6.update.spaces] every update ends by naming each space that 
     w.control.spacesAfter = [[], settled.map((space) => ({ ...space, state: "opening" })), settled];
     const result = await updateFromArchive(release.archive, w.options);
     expect(result).toMatchObject({ outcome: "updated", from: "0.1.0", to: "0.2.0" });
-    expect(result.spaces).toMatchObject({ noted: true, checked: true, wayBack: "0.1.0" });
+    expect(result.spaces).toMatchObject({ noted: true, service: "answered", wayBack: "0.1.0" });
     expect(verdicts(result)).toEqual([
       ["Work", "not_usable", "read_only"],
       ["Home", "not_usable", "unavailable"],
@@ -1393,11 +1394,37 @@ describe("[A2.3.12.6.update.spaces] every update ends by naming each space that 
     ];
     w.control.answersAfterRestart = 1;
     const result = await updateFromArchive(release.archive, { ...w.options, settleWaitMs: 1_500 });
-    expect(result.spaces?.checked).toBe(false);
+    expect(result.spaces?.service).toBe("stopped_answering");
     expect(verdicts(result)).toEqual([
       ["Work", "usable", "open"],
       ["Big", "unsettled", "opening"],
     ]);
+  });
+
+  test("a service a repair brought back that is lost before its first answer about its spaces leaves them not checked too", async () => {
+    const w = await world("spaces-lost-first");
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    await updateFromArchive(release.archive, w.options);
+    await rollbackUpdate(w.options);
+    // Cut off right after current changed, with the person's agreement; the old service runs.
+    writeCurrent(w.root, currentFor("0.2.0", os), os);
+    writeJournal(w.state, cutJournal(w.root, true));
+    w.control.version = "0.1.0";
+    // Ready on 0.2.0 after the repair's restart, then gone before the first question.
+    w.control.answersAfterRestart = 0;
+    const repaired = await repairUpdate({ ...w.options, settleWaitMs: 500 });
+    expect(repaired).toMatchObject({ outcome: "repaired", current: "0.2.0" });
+    expect(w.control.calls).toContain("wait 0.2.0");
+    expect(repaired.spaces?.service).toBe("stopped_answering");
+  });
+
+  test("a service that is not running at the end is named: the spaces were not checked, and nothing is said to be wrong", async () => {
+    const w = await world("spaces-stopped", false);
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    const result = await updateFromArchive(release.archive, w.options);
+    expect(w.control.calls).toEqual([]);
+    expect(result.spaces).toMatchObject({ service: "not_running", spaces: [], wayBack: "0.1.0" });
+    expect((await repairUpdate(w.options)).spaces?.service).toBe("not_running");
   });
 
   test("a retry of an update cut off after its restart, and a repair, name the space its migration left read-only", async () => {
@@ -1412,7 +1439,7 @@ describe("[A2.3.12.6.update.spaces] every update ends by naming each space that 
     w.control.spacesAfter = [[failed("sp_work", "Work")]];
     const again = await updateFromArchive(release.archive, w.options);
     expect(again).toMatchObject({ outcome: "current", version: "0.2.0" });
-    expect(again.spaces).toMatchObject({ noted: false, checked: true, wayBack: "0.1.0" });
+    expect(again.spaces).toMatchObject({ noted: false, service: "answered", wayBack: "0.1.0" });
     expect(verdicts(again)).toEqual([["Work", "not_usable", "read_only"]]);
     expect(again.spaces?.spaces[0]?.now?.migration_backup).toBe("pre-migrate-fixture-b");
     const repaired = await repairUpdate(w.options);

@@ -401,8 +401,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   counts as one that did.
 - Every update ends by asking the service, for up to 2 minutes, how each space opened. It names
   each space that is not usable now in the service's own words, which name the backup of a failed
-  migration, says how to go back, and then exits 8. When the service stops answering, it says the
-  spaces could not be checked. It does not roll back by itself.
+  migration, says how to go back, and then exits 8. When the service stops answering, also before
+  its first answer, it says the spaces could not be checked, and exits 8. When the service is not
+  running, it says the spaces were not checked and what to run once it runs. It does not roll
+  back by itself.
 - An update restarts the service only once you agreed, asked before anything is stopped; without
   anyone to ask it stops before it changes anything. A repair you did not agree to restart leaves
   the service running, and the new version takes effect at its next start.

@@ -461,14 +461,20 @@ export interface SpacesReport {
   readonly boundMs: number;
   /** Whether a note from right before the switch was there to leave out what was so already. */
   readonly noted: boolean;
-  /** False when the service stopped answering while the update watched: `now` is what it said last. */
-  readonly checked: boolean;
+  /**
+   * `answered` to the end; `stopped_answering` when it stopped, or never answered once the update
+   * had seen it run the version (`now` is then what it said last); `not_running` when no service
+   * ran at the end and none was seen during the update: then nothing was checked.
+   */
+  readonly service: "answered" | "stopped_answering" | "not_running";
   /** The version `ttasks update --rollback` goes back to, when there is one. */
   readonly wayBack: string | undefined;
   readonly spaces: readonly SpaceAtEnd[];
 }
 
-/** `spaces`: undefined when no service of the current version runs, or it serves no space. */
+/**
+ * `spaces`: undefined when the service that runs is of another version, or it serves no space.
+ */
 export type UpdateResult =
   | {
       readonly outcome: "updated";
@@ -659,7 +665,7 @@ async function repairFirst(
   options: UpdateOptions,
   always: boolean,
   decision: Decision,
-): Promise<RepairOutcome> {
+): Promise<Repaired> {
   const repair = repairLocked({
     root: install.root,
     state: install.state,
@@ -667,46 +673,54 @@ async function repairFirst(
     ...repairSeams(options),
     keepJournal: true,
   });
-  if (repair.kind === "stuck") return repair;
-  const journaled = repair.kind === "rolled_forward" || repair.kind === "rolled_back";
-  const agreedThen = journaled && repair.journal.service;
+  if (repair.kind === "stuck") return { repair, seen: false };
+  const journal =
+    repair.kind === "rolled_forward" || repair.kind === "rolled_back" ? repair.journal : undefined;
+  const agreedThen = journal?.service === true;
   const supervisorChanged = supervisorReplaced(repair);
   try {
     const control = options.control;
     const current = currentVersion(install.root, install.platform);
     if (
-      control !== undefined &&
-      current !== undefined &&
-      (journaled || always || supervisorChanged)
+      control === undefined ||
+      current === undefined ||
+      !(journal !== undefined || always || supervisorChanged)
     ) {
-      const running = await control.running();
-      const due =
-        running === undefined ? agreedThen : running.version !== current || supervisorChanged;
-      if (due && running !== undefined && !agreedThen && !(await agree(options, decision))) {
-        const what = running.version === current ? `The new ${WINDOWS_LAUNCHERS[1]}` : current;
-        say(
-          options,
-          `The service was not restarted and runs ${running.version}: ${what} takes effect at its next start (${PRODUCT_ID} service restart).`,
-        );
-      } else if (due) {
-        // A service that runs may have started runs since the update was cut off: they are
-        // waited for, or stopped once the person says so, as before any restart.
-        const held = running === undefined ? undefined : await heldForRepair(options, current);
-        try {
-          await bringBack(control, options, current, supervisorChanged);
-        } finally {
-          held?.release();
-        }
-        writeInstallRecord(install.state, install.root, install.platform, { seen: [current] });
-      }
+      return { repair, seen: false };
     }
+    const running = await control.running();
+    const due =
+      running === undefined ? agreedThen : running.version !== current || supervisorChanged;
+    if (!due) return { repair, seen: running?.version === current };
+    if (running !== undefined && !agreedThen && !(await agree(options, decision))) {
+      const what = running.version === current ? `The new ${WINDOWS_LAUNCHERS[1]}` : current;
+      say(
+        options,
+        `The service was not restarted and runs ${running.version}: ${what} takes effect at its next start (${PRODUCT_ID} service restart).`,
+      );
+      return { repair, seen: running.version === current };
+    }
+    // A service that runs may have started runs since the update was cut off: they are waited
+    // for, or stopped once the person says so, as before any restart.
+    const held = running === undefined ? undefined : await heldForRepair(options, current);
+    try {
+      await bringBack(control, options, current, supervisorChanged);
+    } finally {
+      held?.release();
+    }
+    writeInstallRecord(install.state, install.root, install.platform, { seen: [current] });
+    return { repair, seen: true };
   } finally {
     // Brought back, tried, or left as the person decided: the install is complete either way.
-    if (repair.kind === "rolled_forward" || repair.kind === "rolled_back") {
-      removeJournal(install.state, repair.journal.kind);
-    }
+    if (journal !== undefined) removeJournal(install.state, journal.kind);
   }
-  return repair;
+}
+
+/** What repairFirst did, and what it saw of the service. */
+interface Repaired {
+  readonly repair: RepairOutcome;
+  /** The service answered on the version current names, when looked at or brought back. */
+  readonly seen: boolean;
 }
 
 /**
@@ -1064,15 +1078,18 @@ function judge(listed: readonly SpaceNote[], note: readonly SpaceNote[] | undefi
 /**
  * The end of every update: asks the service that runs `version` for its spaces until each one it
  * lists, and each one in the note, has opened or failed to, at most `settleWaitMs`, and judges
- * them. With a note (the update restarted the service) a service that does not answer is waited
- * for too; without one, undefined when no service of `version` runs. Also undefined when it
- * answers and serves no space.
+ * them. Once the update has seen that service run (`seen`: it restarted it, brought it back or
+ * found it; always with a note), a service that does not answer was lost, at its first answer or
+ * a later one, and is waited for too. Otherwise no service at the first look is `not_running`,
+ * and one of another version is not asked: undefined. Also undefined when the service answers
+ * and serves no space.
  */
 async function checkSpaces(
   install: Install,
   options: UpdateOptions,
   version: string,
   note: readonly SpaceNote[] | undefined,
+  seen: boolean,
 ): Promise<SpacesReport | undefined> {
   const control = options.control;
   if (control === undefined) return undefined;
@@ -1084,7 +1101,11 @@ async function checkSpaces(
     const running = await control.running().catch(() => undefined);
     const answers = running?.version === version;
     if (answers) listed = running.spaces;
-    if (listed === undefined && note === undefined) return undefined;
+    if (listed === undefined && note === undefined && !seen) {
+      if (running !== undefined) return undefined;
+      const wayBack = wayBackOf(install, version);
+      return { boundMs, noted: false, service: "not_running", wayBack, spaces: [] };
+    }
     const spaces = judge(listed ?? [], note);
     const settled = answers && spaces.every((space) => space.verdict !== "unsettled");
     if (settled || Date.now() - start >= boundMs) {
@@ -1092,7 +1113,7 @@ async function checkSpaces(
       return {
         boundMs,
         noted: note !== undefined,
-        checked: answers,
+        service: answers ? "answered" : "stopped_answering",
         wayBack: wayBackOf(install, version),
         spaces,
       };
@@ -1253,7 +1274,7 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
   removeJournal(state);
   await at(options, "done");
   cleanLaunchers(root);
-  const spaces = await checkSpaces(install, options, to, restarted ? note : undefined);
+  const spaces = await checkSpaces(install, options, to, restarted ? note : undefined, restarted);
   return { outcome: "updated", from, to, ...(spaces === undefined ? {} : { spaces }) };
 }
 
@@ -1361,7 +1382,8 @@ export async function updateFromArchive(
   const decision: Decision = {};
   try {
     await at(options, "locked");
-    sayRepair(options, await repairFirst(install, options, false, decision));
+    const repaired = await repairFirst(install, options, false, decision);
+    sayRepair(options, repaired.repair);
     const from = currentInstalled(install);
     let release: VerifiedRelease;
     try {
@@ -1378,7 +1400,7 @@ export async function updateFromArchive(
     // Already current (also what a second update finds once the first made it so): nothing to do.
     if (release.version === from) {
       say(options, `${PRODUCT_NAME} ${from} is installed and current already.`);
-      const spaces = await checkSpaces(install, options, from, undefined);
+      const spaces = await checkSpaces(install, options, from, undefined, repaired.seen);
       return { outcome: "current", version: from, ...(spaces === undefined ? {} : { spaces }) };
     }
     checkSelf(install, options, from);
@@ -1476,7 +1498,7 @@ export async function rollbackUpdate(options: UpdateOptions): Promise<UpdateResu
   const decision: Decision = {};
   try {
     await at(options, "locked");
-    sayRepair(options, await repairFirst(install, options, false, decision));
+    sayRepair(options, (await repairFirst(install, options, false, decision)).repair);
     const from = currentInstalled(install);
     checkSelf(install, options, from);
     const previous = readInstallRecord(install.state)?.["previous"];
@@ -1539,13 +1561,18 @@ export async function repairUpdate(options: UpdateOptions): Promise<UpdateResult
   const lock = await lockForUpdate(install, options);
   try {
     await at(options, "locked");
-    const repair = await repairFirst(install, options, true, {});
+    const { repair, seen } = await repairFirst(install, options, true, {});
     if (repair.kind === "stuck") sayRepair(options, repair);
     const current = currentVersion(install.root, install.platform);
     if (current === undefined) throw new InstallError("current names no installed version.", 1);
     if (repair.kind === "nothing") cleanLaunchers(install.root);
-    const spaces = await checkSpaces(install, options, current, undefined);
-    return { outcome: "repaired", repair, current, ...(spaces === undefined ? {} : { spaces }) };
+    const spaces = await checkSpaces(install, options, current, undefined, seen);
+    return {
+      outcome: "repaired",
+      repair,
+      current,
+      ...(spaces === undefined ? {} : { spaces }),
+    };
   } finally {
     lock.release();
   }
