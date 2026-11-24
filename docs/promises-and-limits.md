@@ -378,9 +378,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   other has. A restore over a space, or a claim of a copy, goes on from the backup's counter when
   the earlier space's database cannot be read at all.
 - A command repeated without its request ID is a new change: a note added twice is there twice.
-- A change saved by a build before this one, or saved just before TTasks stopped and before its
-  answer was kept, is answered again from what was saved: such an answer can name a title or a
-  group as it is now.
+- A change saved by a build before this one, saved just before TTasks stopped and before its
+  answer was kept, or whose first answer had to leave something out, is answered again from what
+  was saved: such an answer can name a title or a group as it is now.
 - A project that is moved or reordered past the place a list of areas and projects has reached,
   while that list is read page by page, can be listed twice or not at all.
 - Everything started inside a terminal agent while it runs counts as that task's session: a new
