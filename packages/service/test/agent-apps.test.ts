@@ -889,3 +889,55 @@ describe("[A7.3.12.m5-12.page-files] A home with two settings files is one row: 
     SLOW,
   );
 });
+
+describe("[A7.3.12.m5-12.page-files] A damaged record file is named by its own path, and the homes it does not concern work as if nothing were wrong", () => {
+  let w: World;
+  let space: string;
+  beforeAll(async () => {
+    w = await world("damaged");
+    const made = await call<{ id: string }>(w, "/api/v1/space/create", {
+      name: "Mira",
+      folder: join(w.home, "mira"),
+    });
+    space = made.result.id;
+  }, SLOW);
+  afterAll(async () => {
+    await w.close();
+  }, SLOW);
+
+  it(
+    "Claude Code's further record file damaged: the page names that file, and Codex turns on and off (pull request 193's first review, point 2)",
+    async () => {
+      const inner = join(w.user, ".claude", ".claude.json");
+      const further = join(stateOf(w.home), "setup", "agents-further.json");
+      writeFileSync(inner, "{}\n");
+      mkdirSync(join(stateOf(w.home), "setup"), { recursive: true });
+      writeFileSync(further, '{"format": 2, "homes": [');
+      try {
+        const look = async () =>
+          (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+        const seen = await look();
+        expect(seen.record).toMatch(/[\\/]agents-further\.json$/u);
+        const codex = row(seen, "codex");
+        expect(codex.tools).toMatchObject({ on: false, change: "add" });
+        const on = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: codex.key, part: "tools", on: true, plan: codex.tools?.plan }],
+        });
+        expect(on.result.outcomes).toMatchObject([{ result: "done" }]);
+        const shown = row(on.result.view, "codex");
+        const off = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: shown.key, part: "tools", on: false, plan: shown.tools?.plan }],
+        });
+        expect(off.result.outcomes).toMatchObject([{ result: "done" }]);
+        // The file setup made for its entry goes with it.
+        expect(existsSync(join(w.user, ".codex", "config.toml"))).toBe(false);
+      } finally {
+        rmSync(further, { force: true });
+        rmSync(inner, { force: true });
+      }
+    },
+    SLOW,
+  );
+});

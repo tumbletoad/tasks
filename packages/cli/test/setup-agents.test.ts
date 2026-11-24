@@ -756,3 +756,127 @@ describe("[A3.3.13.setup.home-files] ttasks setup agents with Claude Code's two 
     SLOW,
   );
 });
+
+describe("[A3.3.13.setup.home-files] A home is judged by its own records, and nothing is offered without the service", () => {
+  test(
+    "Claude Code's further record file damaged: Remove of Codex takes Codex's entry out as if nothing were wrong, and a Remove of Claude Code names the damaged file by its own path (pull request 193's first review, point 2)",
+    async () => {
+      const codexFile = join(user, ".codex", "config.toml");
+      const inner = join(user, ".claude", ".claude.json");
+      const further = join(stateOf(home), "setup", "agents-further.json");
+      const plan = async (argv: string[]) => {
+        const ran = await run([...argv, "--space", space, "--json"], false);
+        return (JSON.parse(ran.stdout) as { apply: string[] }).apply;
+      };
+      const codexApply = await plan(["setup", "agents", "--app", "codex"]);
+      expect((await run(codexApply.slice(1))).code).toBe(0);
+      expect(readFileSync(codexFile, "utf8")).toContain("[mcp_servers.ttasks]");
+      // Its access taken away by another program: only its entry and record are left.
+      await revokeAll();
+      writeFileSync(inner, "{}\n");
+      mkdirSync(join(stateOf(home), "setup"), { recursive: true });
+      writeFileSync(further, '{"format": 2, "homes": [');
+      try {
+        const removed = await run(["setup", "agents", "--app", "codex", "--remove", "--json"]);
+        expect(removed.code, removed.stdout).toBe(0);
+        expect(
+          (JSON.parse(removed.stdout) as { homes: { app: string; result: string }[] }).homes,
+        ).toMatchObject([{ app: "codex", result: "removed" }]);
+        expect(readFileSync(codexFile, "utf8")).not.toContain("[mcp_servers.ttasks]");
+        const claude = await run(["setup", "agents", "--app", "claude-code", "--remove"]);
+        expect(claude.stdout).toContain(`cannot read its own record ${further}`);
+        expect(claude.stdout).not.toContain("agents.json,");
+      } finally {
+        rmSync(further, { force: true });
+        rmSync(inner, { force: true });
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "with the service stopped, status says the access is not known and the preview offers no apply (point 6)",
+    async () => {
+      const codexApply = (
+        JSON.parse(
+          (await run(["setup", "agents", "--app", "codex", "--space", space, "--json"], false))
+            .stdout,
+        ) as { apply: string[] }
+      ).apply;
+      expect((await run(codexApply.slice(1))).code).toBe(0);
+      // The same install's state, from a home whose service does not run: its entry runs that
+      // home's command, so it is this install's.
+      const away = join(root, "away");
+      const codexFile = join(user, ".codex", "config.toml");
+      const installed = (at: string) => join(at, "bin", windows ? "ttasks.exe" : "ttasks");
+      const kept = readFileSync(codexFile, "utf8");
+      mkdirSync(join(stateOf(away), "setup"), { recursive: true });
+      mkdirSync(join(away, "bin"), { recursive: true });
+      writeFileSync(installed(away), "");
+      const record = JSON.parse(
+        readFileSync(join(stateOf(home), "setup", "agents.json"), "utf8"),
+      ) as { homes: { app: string; entry: Record<string, unknown> }[] };
+      writeFileSync(
+        join(stateOf(away), "setup", "agents.json"),
+        JSON.stringify({
+          ...record,
+          homes: record.homes
+            .filter((h) => h.app === "codex")
+            .map((h) => ({ ...h, entry: { ...h.entry, command: installed(away) } })),
+        }),
+      );
+      writeFileSync(
+        codexFile,
+        kept.replace(
+          `command = ${valueText(installed(home))}`,
+          `command = ${valueText(installed(away))}`,
+        ),
+      );
+      expect(readFileSync(codexFile, "utf8")).not.toBe(kept);
+      try {
+        const asAway = (argv: string[]) =>
+          runMain(argv, {
+            home: away,
+            tty: false,
+            main: {
+              agents: { env: fakes.env, home: user, systemApplications: join(user, "Apps") },
+            },
+          });
+        const status = JSON.parse(
+          (await asAway(["setup", "agents", "--app", "codex", "--status", "--json"])).stdout,
+        ) as { homes: { tools: { status: string; on?: string } }[]; service: boolean };
+        expect(status.service).toBe(false);
+        expect(status.homes[0]?.tools.status).toBe("unknown");
+        expect(status.homes[0]?.tools.on).toBeUndefined();
+        const preview = JSON.parse(
+          (await asAway(["setup", "agents", "--app", "codex", "--json"])).stdout,
+        ) as { apply?: string[] };
+        expect(preview.apply).toBeUndefined();
+      } finally {
+        rmSync(away, { recursive: true, force: true });
+        writeFileSync(codexFile, kept);
+        await run(["setup", "agents", "--app", "codex", "--remove"]);
+      }
+    },
+    SLOW,
+  );
+});
+
+/** Takes every live agent-home row away, as another program could. */
+async function revokeAll(): Promise<void> {
+  const session = await classSession(home, service.endpoint.path, "cli-interactive");
+  try {
+    const listed = (await session.call("setup/homes", {}, { timeoutMs: 30_000 })) as {
+      homes: { grant: string }[];
+    };
+    if (listed.homes.length > 0) {
+      await session.call(
+        "setup/home_revoke",
+        { grants: listed.homes.map((h) => h.grant) },
+        { timeoutMs: 30_000 },
+      );
+    }
+  } finally {
+    session.close();
+  }
+}

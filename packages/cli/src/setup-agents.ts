@@ -77,8 +77,9 @@ import {
   PRINT_APPS,
   PRINT_HOMES,
   PRINT_LABELS,
-  recordFile,
   removeFiles,
+  renews,
+  unreadableRecords,
   rowAccess,
   runCommand,
   samePath,
@@ -621,46 +622,29 @@ export async function agentsCommand(
         const access = rowAccess(rowCall(call));
         const { outcomes, notes, blocks } = await withSetupLock(input.stateDir, async () => {
           const done: Outcome[] = [];
-          let surveyed = await survey(input);
+          const live = mcp ? await withRows(input, call) : input;
+          const surveyed = await survey(live);
           const said: string[] = [];
-          const unrecorded = surveyed.some((view) => view.refusal === "record_unreadable");
-          if (mcp && unrecorded) {
-            // Without its record setup reaches a home by its live row: the access goes, and no
-            // file changes.
-            const live = await withRows(input, call);
-            surveyed = await survey(live);
-            const rowed = (view: HomeView) =>
+          if (mcp) {
+            // Each selected home by its own records: one with something of setup's, an entry of
+            // its name, or a live row. Its access first, then each of its files; a file whose
+            // record cannot be read is left as it is. Reverse order (A3 3.13.1): the latest first.
+            const rowed = (v: HomeView) =>
               (live.rows ?? []).some(
-                (row) =>
-                  row.app === view.home.app && samePath(input.platform, row.home, view.home.home),
+                (r) => r.app === v.home.app && samePath(input.platform, r.home, v.home.home),
               );
-            const homes = homeGroups(
-              input.platform,
-              surveyed.filter((v) => selected(v) && rowed(v)),
-              (v) => v.home,
-            );
-            for (const views of homes) done.push(...(await removeFiles(input, views, access)));
-            said.push(...(await revokeLeftRows(input, selected, call)));
-            said.push(recordUnreadableText(input.stateDir));
-          } else if (mcp) {
-            // Each home with something of setup's, or an entry of its name, or a live row: its
-            // access first, then each of its files. Reverse order (A3 3.13.1): the latest first.
-            const live = await withRows(input, call);
             const homes = homeGroups(input.platform, surveyed.filter(selected), (v) => v.home)
               .filter((views) =>
-                views.some(
-                  (v) =>
-                    v.record !== undefined ||
-                    v.entry !== undefined ||
-                    (live.rows ?? []).some(
-                      (r) => r.app === v.home.app && samePath(input.platform, r.home, v.home.home),
-                    ),
-                ),
+                views.some((v) => v.record !== undefined || v.entry !== undefined || rowed(v)),
               )
               .sort((a, b) => latest(b).localeCompare(latest(a)));
             for (const views of homes) done.push(...(await removeFiles(input, views, access)));
             // Under the same lock: an apply that runs right after must not lose its row to this.
             said.push(...(await revokeLeftRows(input, selected, call)));
+            // A selected home with a file whose record cannot be read is never passed over in silence.
+            if (surveyed.some((v) => selected(v) && v.refusal === "record_unreadable")) {
+              said.push(...unreadableRecords(input.stateDir).map(recordUnreadableText));
+            }
           }
           if (!block) {
             // The blocks are a part of their own: a remove of the entries says they stay.
@@ -794,7 +778,7 @@ const latest = (views: readonly HomeView[]): string =>
 const applies = (input: SetupInput, items: readonly PlanItem[]): boolean =>
   items.some(({ view, change }) => {
     const answer = toolsOf(input, view, "", typeof change === "string" ? change : undefined);
-    return answer.on !== undefined || (view.state === "registered" && answer.why === undefined);
+    return answer.on !== undefined || renews(input, view, "");
   });
 
 /**
@@ -822,6 +806,12 @@ async function revokeLeftRows(
       (v) => v.home.app === row.app && samePath(input.platform, v.home.home, row.home),
     );
     // A home that is gone is selected by its row's app, instance, home and hosts.
+    const recorded = views.some(
+      (v) =>
+        v.home.app === row.app &&
+        samePath(input.platform, v.home.home, row.home) &&
+        v.record !== undefined,
+    );
     const pick = selected(
       view ?? {
         home: {
@@ -834,7 +824,7 @@ async function revokeLeftRows(
         },
       },
     );
-    return pick && view?.record === undefined;
+    return pick && !recorded;
   });
   if (stale.length > 0) await call("setup/home_revoke", { grants: stale.map((r) => r.grant) });
   return [];
@@ -1094,8 +1084,8 @@ async function blockPlan(
 }
 
 /** What a remove says when setup's own record cannot be read: the access went, nothing else. */
-const recordUnreadableText = (stateDir: string): string =>
-  `${PRODUCT_NAME} cannot read its own record of the agent homes, ${recordFile(stateDir)}, so a remove only takes the access away and changes no file: the record and each app's entry stay as they are. ${CLI_NAME} doctor says how to clean them up.`;
+const recordUnreadableText = (file: string): string =>
+  `${PRODUCT_NAME} cannot read its own record ${file}, so where that record is needed a remove only takes the access away and changes no file: the record and the entries it covers stay as they are. ${CLI_NAME} doctor says how to clean them up.`;
 
 /** A remove of the entries leaves the blocks: they are a part of their own. */
 const BLOCKS_STAY = `The instruction blocks setup wrote stay: ${CLI_NAME} setup agents --remove --parts block takes them out.`;

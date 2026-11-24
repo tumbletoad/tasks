@@ -48,8 +48,8 @@ import {
   planChange,
   planOf,
   planToken,
-  recordFile,
   removeFiles,
+  unreadableRecords,
   rowAccess,
   runCommand,
   samePath,
@@ -316,6 +316,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     run: (argv, childEnv) => runCommand(argv, childEnv, userHome),
   };
   const views = userHome === "" ? [] : await survey(input);
+  const [damaged] = unreadableRecords(host.stateDir);
   // Claude Desktop with several settings files (a Windows app installed twice over the years): the
   // engine changes none of them on its own, and here the person picks one with its switch.
   // A change that did not finish shows what turning it on writes once it is finished.
@@ -469,9 +470,10 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
         },
       };
     }),
-    ...(views.some((v) => v.refusal === "record_unreadable")
-      ? { record: shown(recordFile(host.stateDir)) }
-      : {}),
+    // The record file that cannot be read, by its own path: the homes it does not concern work.
+    ...(damaged === undefined || !views.some((v) => v.refusal === "record_unreadable")
+      ? {}
+      : { record: shown(damaged) }),
   };
   return { view, input, items, offers: byRow, owners };
 }
