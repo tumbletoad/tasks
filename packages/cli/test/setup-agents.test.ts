@@ -686,3 +686,73 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
     SLOW,
   );
 });
+
+describe("[A3.3.13.setup.home-files] ttasks setup agents with Claude Code's two settings files", () => {
+  test(
+    "a file that cannot be read is named each time and the apply exits 10; the same command again is a stale plan (exit 4), and the fresh one names the file again; Remove names an entry of setup's name it has no record of",
+    async () => {
+      const plain = join(user, ".claude.json");
+      const inner = join(user, ".claude", ".claude.json");
+      const claude = ["setup", "agents", "--app", "claude-code"];
+      await run([...claude, "--remove"]);
+      writeFileSync(inner, '{"theme": "dark",}\n');
+      try {
+        interface Planned {
+          apply: string[];
+          homes: { file: string; state: string; reason?: string }[];
+        }
+        interface Done {
+          homes: {
+            file: string;
+            result: string;
+            reason?: string;
+            kept?: string;
+            access?: string;
+          }[];
+        }
+        const preview = async () => {
+          const ran = await run([...claude, "--space", space, "--json"], false);
+          expect(ran.code, ran.stderr).toBe(0);
+          return JSON.parse(ran.stdout) as Planned;
+        };
+        const first = await preview();
+        expect(first.homes.map((h) => [h.file, h.state, h.reason])).toEqual([
+          [plain, "not_registered", undefined],
+          [inner, "refused", "invalid_file"],
+        ]);
+        const applied = await run([...first.apply.slice(1), "--json"]);
+        expect(applied.code, applied.stdout).toBe(10);
+        expect((JSON.parse(applied.stdout) as Done).homes).toMatchObject([
+          { file: plain, result: "applied", access: "on" },
+          { file: inner, result: "left", reason: "invalid_file", access: "on" },
+        ]);
+        // The plan the person ran has been carried out in part: it is not the plan of now.
+        const again = await run([...first.apply.slice(1), "--json"]);
+        expect(again.code, again.stdout).toBe(4);
+        const second = await preview();
+        const text = await run(second.apply.slice(1));
+        expect(text.code, text.stdout).toBe(10);
+        expect(text.stdout).toContain(`${inner}: left alone: its file is not valid`);
+        expect(text.stdout).toContain("Access is on.");
+
+        // An entry of setup's name copied into the inner file by hand: Remove leaves it, and says so.
+        const entry = (
+          JSON.parse(readFileSync(plain, "utf8")) as { mcpServers: Record<string, unknown> }
+        ).mcpServers[MCP_SERVER_KEY];
+        writeFileSync(inner, JSON.stringify({ mcpServers: { [MCP_SERVER_KEY]: entry } }));
+        const removed = await run([...claude, "--remove", "--json"]);
+        expect(removed.code, removed.stdout).toBe(10);
+        expect((JSON.parse(removed.stdout) as Done).homes).toMatchObject([
+          { file: plain, result: "removed", access: "off" },
+          { file: inner, result: "left", kept: "unrecorded", access: "off" },
+        ]);
+        const said = await run([...claude, "--remove"]);
+        expect(said.stdout).toContain(`that setup did not write is still in ${inner}`);
+        expect(await rows()).toEqual([]);
+      } finally {
+        rmSync(inner, { force: true });
+      }
+    },
+    SLOW,
+  );
+});
