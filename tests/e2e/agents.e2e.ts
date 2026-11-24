@@ -91,11 +91,11 @@ test.describe("[A5.agents.e2e.none] without TTAM the Agents page is as it was, p
 });
 
 test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents page, in both themes and at both widths", () => {
-  test("looking, settling, agents and plan usage, none running, a lost service, not updating, failed, not installed and either side to update", async ({
+  test("looking, settling, agents and plan usage, reasons from TTAM, none running, a lost service, not updating, failed, not installed and either side to update", async ({
     browser,
     monitored: world,
   }) => {
-    // Ten states, two themes, two widths, and a restart of the service.
+    // Eleven states, two themes, two widths, and a restart of the service.
     test.setTimeout(600_000);
     const context = await browser.newContext({
       bypassCSP: true,
@@ -127,10 +127,10 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
       await shots(page, world, "settling");
 
       world.monitor("");
-      await expect(sessions(page)).toHaveCount(5, { timeout: SLOW_MS });
+      await expect(sessions(page)).toHaveCount(7, { timeout: SLOW_MS });
       await expect(status(page)).toHaveText("");
       await expect(sessions(page).first()).toContainText("Working");
-      await expect(page.locator('[data-part="account"]')).toHaveCount(5);
+      await expect(page.locator('[data-part="account"]')).toHaveCount(7);
       // Nothing in the monitor's parts asks for a pointer: they hold no control at all.
       await expect(
         page
@@ -138,6 +138,19 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
           .locator("a, button, input, [tabindex]"),
       ).toHaveCount(0);
       await shots(page, world, "sessions");
+
+      // TTAM says why an account has no fresh reading, and which homes share one account.
+      world.monitor("reasons");
+      await expect(usage(page)).toContainText(
+        "Grok's billing service turned the request away (a rate limit).",
+        { timeout: SLOW_MS },
+      );
+      await expect(usage(page)).toContainText(/Asks again in \d+ min/);
+      await expect(usage(page)).toContainText("Sign-in expired: start Antigravity.");
+      await expect(usage(page)).toContainText("Same account as spare");
+      await shots(page, world, "reasons");
+      world.monitor("");
+      await expect(usage(page)).not.toContainText("Same account as spare", { timeout: SLOW_MS });
 
       // A row of TTasks' own keeps its focus and its place while the monitor's parts change.
       await world.agentLog(world.mira.id, world.task.id, "Checked the fixtures");
@@ -154,7 +167,7 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
       await expect(title).toBeFocused();
       expect((await row.boundingBox())?.y).toBe(place);
       world.monitor("");
-      await expect(sessions(page)).toHaveCount(5, { timeout: SLOW_MS });
+      await expect(sessions(page)).toHaveCount(7, { timeout: SLOW_MS });
       await expect(title).toBeFocused();
       expect((await row.boundingBox())?.y).toBe(place);
       world.monitor("no_agents");
@@ -165,7 +178,7 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
 
       // The service goes away (an update, a restart): what the page shows is as it was.
       world.monitor("");
-      await expect(sessions(page)).toHaveCount(5, { timeout: SLOW_MS });
+      await expect(sessions(page)).toHaveCount(7, { timeout: SLOW_MS });
       await world.restart(async () => {
         await notCurrent(page);
         await expect(
@@ -175,7 +188,7 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
         await widths(page, "offline", theme);
       });
       await openAgents(page, world);
-      await expect(sessions(page)).toHaveCount(5, { timeout: SLOW_MS });
+      await expect(sessions(page)).toHaveCount(7, { timeout: SLOW_MS });
 
       // Not updating: an answer is held, and is soon overdue.
       world.monitor("hold");
@@ -195,7 +208,7 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
         { timeout: SLOW_MS },
       );
       await notCurrent(page);
-      await expect(sessions(page)).toHaveCount(5);
+      await expect(sessions(page)).toHaveCount(7);
       await shots(page, world, "failed");
 
       // Not installed: the next start finds no TTAM. Only the quiet line is left.
@@ -208,13 +221,13 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
       await shots(page, world, "not-installed");
 
       // Does not fit, either way: opening the page looks again.
-      world.monitor("version=9,1");
+      world.monitor("version=9,2");
       await openAgents(page, world);
       await expect(note(page)).toContainText("newer than TTasks can read. Update TTasks", {
         timeout: SLOW_MS,
       });
       await shots(page, world, "newer");
-      world.monitor("version=3,1");
+      world.monitor("version=4,1");
       await openAgents(page, world);
       await expect(note(page)).toContainText("older than TTasks can read. Update TTAM", {
         timeout: SLOW_MS,

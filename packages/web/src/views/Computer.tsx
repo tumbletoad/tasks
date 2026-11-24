@@ -355,15 +355,19 @@ function AccountItem({
   readonly current: boolean;
 }) {
   const t = useT();
+  const retry = account.retryInMs === null ? 0 : account.retryInMs - since;
   const notes = [
+    account.sameAs === null ? undefined : t("computer.sameAs", { name: account.sameAs }),
     // A check that ran then may have ended since: said only of a current picture.
     account.refreshing && current ? t("computer.refreshing") : undefined,
-    account.failed ? t("computer.checkFailed") : undefined,
-    account.unavailable
-      ? t("computer.unavailable")
-      : account.readingAgeMs === null
+    account.failed ?? undefined,
+    account.failed !== null && retry > 0
+      ? t("computer.retry", { age: spanOf(retry, t) })
+      : undefined,
+    account.unavailable ??
+      (account.readingAgeMs === null
         ? t("computer.noReading")
-        : t("computer.read", { age: spanOf(account.readingAgeMs + since, t) }),
+        : t("computer.read", { age: spanOf(account.readingAgeMs + since, t) })),
   ].filter((note) => note !== undefined);
   return (
     <li className={styles.item} data-part="account" data-limited={account.limited || undefined}>

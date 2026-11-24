@@ -80,7 +80,8 @@ function home(value: unknown): MonitorHome {
     providerName: str(h["provider"]),
     label: str(h["label"]),
     path: str(h["path"]),
-    present: bool(h["present"]),
+    // null: TTAM could not look at it.
+    present: h["present"] === null ? false : bool(h["present"]),
   };
 }
 
@@ -123,18 +124,21 @@ function usageWindow(captured: number, value: unknown): MonitorWindow {
 function account(captured: number, value: unknown): MonitorAccount {
   const a = obj(value);
   const status = obj(a["status"]);
+  const retry = intOrNull(status["retry_at_ms"]);
   return {
     provider: provider(a["provider"]),
     providerName: str(a["provider"]),
     homeId: str(a["home_id"]),
     profile: str(a["profile"]),
+    sameAccount: strOrNull(a["same_account"]),
     plan: strOrNull(a["plan"]),
     windows: list(a["windows"]).map((w) => usageWindow(captured, w)),
     readingAgeMs: ageOf(captured, intOrNull(a["observed_at_ms"])),
     refreshing: bool(status["refreshing"]),
     limited: strOrNull(status["limited"]) !== null,
-    failed: strOrNull(status["error"]) !== null,
-    unavailable: strOrNull(status["unavailable"]) !== null,
+    failed: strOrNull(status["error"]),
+    retryInMs: retry === null ? null : retry - captured,
+    unavailable: strOrNull(status["unavailable"]),
   };
 }
 

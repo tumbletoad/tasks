@@ -96,8 +96,10 @@ function account(fields: Partial<AgentsAccount> = {}): AgentsAccount {
     readingAgeMs: 2 * MIN,
     refreshing: false,
     limited: false,
-    failed: false,
-    unavailable: false,
+    sameAs: null,
+    failed: null,
+    retryInMs: null,
+    unavailable: null,
     ...fields,
   };
 }
@@ -449,8 +451,20 @@ describe("[A5.agents.web-page] the Agents page shows the monitor's every state i
             ],
           }),
           account({ key: "a3", windows: [], readingAgeMs: null, plan: null, account: "new" }),
-          account({ key: "a4", windows: [], unavailable: true, plan: null, account: "api" }),
-          account({ key: "a5", failed: true, account: "old" }),
+          account({
+            key: "a4",
+            windows: [],
+            unavailable: "An API key sign-in has no plan usage.",
+            plan: null,
+            account: "api",
+          }),
+          account({
+            key: "a5",
+            failed: "The usage service turned the request away (a rate limit).",
+            retryInMs: 5 * MIN,
+            account: "old",
+          }),
+          account({ key: "a6", sameAs: "work", account: "other" }),
         ],
       ),
       trouble: null,
@@ -462,6 +476,7 @@ describe("[A5.agents.web-page] the Agents page shows the monitor's every state i
       ["Claude Code", "new"],
       ["Claude Code", "api"],
       ["Claude Code", "old", "Max"],
+      ["Claude Code", "other", "Max"],
     ]);
     const windows = (a: Element | undefined) =>
       [...(a?.querySelectorAll('[data-part="window"]') ?? [])].map((w) =>
@@ -480,8 +495,14 @@ describe("[A5.agents.web-page] the Agents page shows the monitor's every state i
       [["Session"], [""], ["20% used", "from an earlier period"]],
     ]);
     expect(accounts[2]?.textContent).toContain("No reading yet");
-    expect(accounts[3]?.textContent).toContain("No plan usage for this sign-in");
-    expect(accounts[4]?.textContent).toContain("The last check failed");
+    const notes = (a: Element | undefined) => facts(a?.querySelector('[class*="meta"]'));
+    expect(notes(accounts[3])).toEqual(["An API key sign-in has no plan usage."]);
+    expect(notes(accounts[4])).toEqual([
+      "The usage service turned the request away (a rate limit).",
+      "Asks again in 5 min",
+      "Read 2 min ago",
+    ]);
+    expect(notes(accounts[5])).toEqual(["Same account as work", "Read 2 min ago"]);
   });
 
   test("a limit read more than a minute apart from its account says how old its own reading is", async () => {

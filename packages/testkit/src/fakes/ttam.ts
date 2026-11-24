@@ -1,9 +1,9 @@
 // A fake `ttam query`, built from one of TTAM's recorded conversations (fixtures/ttam/): it writes
 // the recording's hello, answers the n-th request it serves with the recording's n-th snapshot (the
-// last one again after that), and keeps TTAM's rules: one request served and one waiting, `busy`
-// for a further one, the recorded errors for a line that is no request, the permission the
-// recording applied in `usage`, and exit 0 when its input ends or `end` comes, with no answer to a
-// request still served. It runs as `node ttam.ts --conversation=<file> [--mode=<mode>] query`.
+// last one again after that), after the `waiting` lines the recording wrote before it, and keeps
+// TTAM's rules: one request served and one waiting, `busy` for a further one, the recorded errors
+// for a line that is no request, the permission the recording applied in `usage`, and exit 0 when
+// its input ends or `end` comes, with no answer to a request still served. It runs as `node ttam.ts --conversation=<file> [--mode=<mode>] query`.
 //
 // --mode makes it misbehave:
 //   no_query     exits 2 at once, as a build without `ttam query` does
@@ -21,6 +21,9 @@
 //   after_end    at its end writes one more answer and half a line before it exits
 //   settling     answers every request with the recording's first snapshot, which is settling
 //   no_agents    answers with snapshots that hold no agent
+//   reasons      answers with reasons on its accounts, in TTAM's own words: Grok's check turned
+//                away with the time it asks again, Antigravity's sign-in expired, and the Codex
+//                home `codex` signed in to the same account as `spare`
 //   none         TTAM taken away: exits 1 without a line, at its start or at its next request,
 //                so the next start finds no TTAM (the end-to-end world's `none`)
 //   hold         stays where it is, before its hello or before an answer, until the mode is
@@ -97,6 +100,12 @@ const written = records.flatMap((r) =>
 );
 const hello = written.find((line) => line["type"] === "hello") ?? {};
 const snapshots = written.filter((line) => line["type"] === "snapshot");
+/** Per snapshot, the `waiting` lines the recording wrote before it. */
+const waits = snapshots.map((snapshot) => {
+  const at = written.indexOf(snapshot);
+  const from = written.findLastIndex((line, i) => i < at && line["type"] === "snapshot") + 1;
+  return written.slice(from, at).filter((line) => line["type"] === "waiting");
+});
 // The recording's own configuration: usage queries off when a `live` request got `cached`.
 const asked = new Map<unknown, unknown>();
 for (const r of records) {
@@ -136,6 +145,12 @@ function added(): { homes: unknown[]; agents: unknown[] } {
   }
 }
 
+/** The `waiting` lines of the answer `answer` gives next, for request `id`. */
+function waitsFor(id: number, now = mode): Record<string, unknown>[] {
+  const index = now === "settling" ? 0 : Math.min(served, snapshots.length - 1);
+  return (waits[index] ?? []).map((line) => ({ ...line, id }));
+}
+
 function answer(id: number, usage: "cached" | "live", now = mode): Record<string, unknown> {
   const recorded =
     (now === "settling" ? snapshots[0] : snapshots[Math.min(served, snapshots.length - 1)]) ?? {};
@@ -154,8 +169,50 @@ function answer(id: number, usage: "cached" | "live", now = mode): Record<string
     line["snapshot"] = { ...(line["snapshot"] as object), agents: {} };
   } else if (now === "no_agents") {
     line["snapshot"] = { ...(line["snapshot"] as object), agents: [] };
+  } else if (now === "reasons") {
+    line["snapshot"] = withReasons(line["snapshot"] as Record<string, unknown>);
   }
   return line;
+}
+
+/** `reasons`: the snapshot with the reasons its mode names. */
+function withReasons(snapshot: Record<string, unknown>): Record<string, unknown> {
+  type Account = Record<string, unknown> & { status: Record<string, unknown> };
+  const captured = snapshot["captured_at_ms"] as number;
+  const accounts = snapshot["account_usage"] as Account[];
+  const spare = accounts.find((a) => a["profile"] === "spare")?.["home_id"] ?? null;
+  return {
+    ...snapshot,
+    account_usage: accounts.map((a): Account => {
+      if (a["provider"] === "grok") {
+        return {
+          ...a,
+          status: {
+            ...a.status,
+            error: "Grok's billing service turned the request away (a rate limit).",
+            retry_at_ms: captured + 30 * 60_000,
+          },
+        };
+      }
+      if (a["provider"] === "antigravity") {
+        return {
+          ...a,
+          windows: [],
+          observed_at_ms: null,
+          status: {
+            ...a.status,
+            unavailable:
+              "Sign-in expired: start Antigravity. Any Antigravity launch renews the saved sign-in, agy models among them, without a model turn.",
+            unusable_sign_in: "expired",
+          },
+        };
+      }
+      if (a["profile"] === "spare" || a["profile"] === "codex") {
+        return { ...a, same_account: spare };
+      }
+      return a;
+    }),
+  };
 }
 
 interface Request {
@@ -178,6 +235,7 @@ function pass(request: Request, now: string): void {
   const passMs = now.startsWith("slow=") ? Number(now.slice(5)) : 10;
   setTimeout(() => {
     if (ended) return;
+    for (const wait of waitsFor(request.id, now)) write(wait);
     const line = answer(request.id, request.usage, now);
     if (now === "garbage") process.stdout.write("this is not json\n");
     else if (now === "long") process.stdout.write(`"${"x".repeat(9 * 1024 * 1024)}"\n`);
