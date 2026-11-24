@@ -201,10 +201,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A question an agent logs on a task, or a background run ends with, waits for you under Needs you
   on the Agents page, also once the task is finished or dropped, until you write a note on the task
   after it or dismiss it. A run's question is also answered by a run you start after it that gets
-  to work; a logged one is not. A note you take back answers nothing, and a task in the Trash has
-  no waiting question until you restore it. Dismiss sets aside every question up to the newest one
-  the row shows, also those past the ten it shows; one asked after that still waits, and Undo
-  brings them back.
+  to work; a logged one is not. A note you take back answers nothing. Dismiss sets aside every
+  question up to the newest one the row shows, also those past the ten it shows; one asked after
+  that still waits, and Undo brings them back. A task in the Trash whose run asks shows there with
+  its question and no Dismiss: Restore brings it back to answer.
 - Your skills, the files in `skills/` of TTasks's folder, are your instructions to every agent that
   uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, an
   empty one, one that cannot be read or a link is not used at all, and agents and `ttasks skills`

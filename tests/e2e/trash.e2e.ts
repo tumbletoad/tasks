@@ -565,6 +565,13 @@ test.describe("[A5.trash.e2e.answer] A run on a removed task that answers afterw
     await expect(groupOf(removed)).toContainText("Needs you", { timeout: SLOW_MS });
     await expect(groupOf(live)).toContainText("Needs you", { timeout: SLOW_MS });
     await expect(rowOf(page, removed).locator('[data-part="agents-in-trash"]')).toBeVisible();
+    // Its question shows beneath its row as a live task's does; Restore, not Dismiss, is its way on.
+    const asked = rowOf(page, removed).locator('[data-part="question"]');
+    await expect(asked).toContainText(FAKE_QUESTION);
+    await expect(asked.locator('[data-part="dismiss-question"]')).toHaveCount(0);
+    await expect(
+      rowOf(page, live).locator('[data-part="question"] [data-part="dismiss-question"]'),
+    ).toBeVisible();
     await rowOf(page, removed).locator('[data-part="title"]').click();
     await expect(rowOf(page, removed).locator('[data-entry="run"]').first()).toContainText(
       FAKE_QUESTION,
@@ -583,6 +590,7 @@ test.describe("[A5.trash.e2e.answer] A run on a removed task that answers afterw
     await expect(rowOf(page, removed).locator('[data-entry="run"]').first()).toContainText(
       FAKE_QUESTION,
     );
+    await expect(rowOf(page, removed).locator('[data-part="dismiss-question"]')).toBeVisible();
   });
 });
 

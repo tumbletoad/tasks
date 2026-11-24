@@ -187,8 +187,10 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const beneath = useCallback(
     (row: TaskRow) => {
       const listed = merged.tasks.get(row.id)?.agents ?? [];
-      const asked = questionsWaiting(row) > 0;
       const removed = row.deleted_at !== undefined;
+      // A task in the Trash is here by its run, which asks: its question shows, and Restore, which
+      // changes a task in the Trash, is its way on.
+      const asked = removed ? (row.questions?.length ?? 0) > 0 : questionsWaiting(row) > 0;
       if (listed.length === 0 && !asked && !removed) return undefined;
       // A run's card has its Stop; an agent in a terminal has none here, so the line says where.
       const terminal = listed.some((agent) => agent.started === "terminal");
@@ -214,9 +216,13 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
             <Questions
               row={row}
               instances={instances}
-              onDismiss={(newest) => {
-                edits.dismissQuestions(row, newest);
-              }}
+              onDismiss={
+                removed
+                  ? undefined
+                  : (newest) => {
+                      edits.dismissQuestions(row, newest);
+                    }
+              }
             />
           ) : null}
           {listed.length === 0 ? null : <TaskAgents agents={listed} current={agents.current} />}
@@ -294,8 +300,9 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
 
 /**
  * The questions agents asked that wait for the person, newest first, each in its own words:
- * answered by a note on the task or a run after it, or set aside with Dismiss, which names the newest one shown so
- * that a question asked after it still waits.
+ * answered by a note on the task or a run after it, or set aside with Dismiss, which names the
+ * newest one shown so that a question asked after it still waits. Without `onDismiss` (a task in
+ * the Trash) there is no Dismiss.
  */
 function Questions({
   row,
@@ -304,11 +311,11 @@ function Questions({
 }: {
   readonly row: TaskRow;
   readonly instances: readonly Instance[];
-  readonly onDismiss: (newest: string) => void;
+  readonly onDismiss: ((newest: string) => void) | undefined;
 }) {
   const t = useT();
   const questions = row.questions ?? [];
-  const count = questionsWaiting(row);
+  const count = questions.length + (row.questions_more ?? 0);
   const more = count - questions.length;
   const newest = questions[0];
   if (newest === undefined) return null;
@@ -332,18 +339,20 @@ function Questions({
           <p className={styles.more}>{t("agents.questionsMore", { count: more })}</p>
         ) : null}
       </div>
-      <button
-        type="button"
-        className={styles.dismiss}
-        data-part="dismiss-question"
-        aria-label={t("agents.dismissLabel", { count, ref: row.ref })}
-        onClick={(event) => {
-          focusAfter(event.currentTarget);
-          onDismiss(newest.ref);
-        }}
-      >
-        {t("agents.dismiss")}
-      </button>
+      {onDismiss === undefined ? null : (
+        <button
+          type="button"
+          className={styles.dismiss}
+          data-part="dismiss-question"
+          aria-label={t("agents.dismissLabel", { count, ref: row.ref })}
+          onClick={(event) => {
+            focusAfter(event.currentTarget);
+            onDismiss(newest.ref);
+          }}
+        >
+          {t("agents.dismiss")}
+        </button>
+      )}
     </div>
   );
 }
