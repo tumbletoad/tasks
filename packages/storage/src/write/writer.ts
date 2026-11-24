@@ -2753,8 +2753,7 @@ export class SpaceWriter {
       });
       const pass = (): void => {
         passed.push(target.id);
-        if (plan.conflicts.length > 0)
-          held.push({ since: plan.applied, conflicts: plan.conflicts });
+        if (plan.conflicts.length > 0) held.push(plan);
         for (const c of plan.conflicts) {
           const key = `${c.entity}|${c.id}|${c.field}`;
           if (!why.has(key)) why.set(key, c);
@@ -2831,7 +2830,7 @@ export class SpaceWriter {
         throw error;
       }
       const conflicts = undo ? plan.conflicts : [...why.values()];
-      if (undo && conflicts.length > 0) held.push({ since: plan.applied, conflicts });
+      if (undo && conflicts.length > 0) held.push(plan);
       return {
         ...accepted("applied", { ...asOf, seq }),
         commit: commitId,

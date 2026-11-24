@@ -662,7 +662,12 @@ export interface InversionPlan {
   inversions: Inversion[];
   /** Each field whose guard fails, and each live child row that blocks a create's inversion. */
   conflicts: FieldConflict[];
-  /** The earliest PlanOptions.applied of the rows: who changed them since is named from it. */
+  /**
+   * For each conflict, PlanOptions.applied of the row it holds back: who changed that row since is
+   * named from there (newerWorkOf). A conflict a rule across rows names counts from `applied`.
+   */
+  since: Map<FieldConflict, number>;
+  /** The earliest PlanOptions.applied of the rows. */
   applied: number;
 }
 
@@ -753,8 +758,11 @@ export function planInversions(
   const plan: InversionPlan = {
     inversions: [],
     conflicts: [],
+    since: new Map(),
     applied: changes.reduce((first, change) => Math.min(first, options.applied(change)), Infinity),
   };
+  /** PlanOptions.applied of the row whose guards are being decided. */
+  let since = plan.applied;
   const refOf = refsOf(conn, options.refPrefix);
   const rows = new Map<string, RowState>();
   const kids = liveChildren(conn, changes);
@@ -765,13 +773,15 @@ export function planInversions(
    * its parent's. The first naming stays, completed by what a later one knows (`wrote`).
    */
   const named = new Map<string, FieldConflict>();
-  const blocked = (c: FieldConflict): void => {
+  const blocked = (c: FieldConflict, at = since): void => {
     const key = `${c.entity}|${c.id}|${c.field}`;
     const earlier = named.get(key);
     if (earlier === undefined) {
       named.set(key, c);
       plan.conflicts.push(c);
+      plan.since.set(c, at);
     } else {
+      plan.since.set(earlier, Math.min(plan.since.get(earlier) ?? at, at));
       for (const [k, v] of Object.entries(c)) {
         if (!Object.hasOwn(earlier, k)) Object.assign(earlier, { [k]: v as unknown });
       }
@@ -824,6 +834,7 @@ export function planInversions(
     const row = read(entity, id);
     const table = TABLES[entity];
     const applied = options.applied(change);
+    since = applied;
 
     if (change.action === "set") {
       const field = change.field ?? "";
@@ -943,8 +954,8 @@ export function planInversions(
     (i) => !(i.entity === "tasks" && i.field === "wrap" && kept.has(i.id)),
   );
   if (options.partial) keepTogether(plan, read);
-  keepActiveUnwrapped(plan, read, (where, version) => {
-    blocked(conflict(where, version));
+  keepActiveUnwrapped(plan, read, (where, version, at) => {
+    blocked(conflict(where, version), at);
   });
   return plan;
 }
@@ -1016,18 +1027,15 @@ function newerWork(
   return [...work.values()];
 }
 
-/** A step an undo or a redo could not take whole: what it last applied, and what held it back. */
-export interface Held {
-  /** PlanOptions.applied: others' changes after it are newer work. */
-  readonly since: number;
-  readonly conflicts: readonly FieldConflict[];
-}
+/** A step an undo or a redo could not take whole: what held it back, and since when (its plan). */
+export type Held = Pick<InversionPlan, "conflicts" | "since" | "applied">;
 
 /**
  * Who changed which task since (WriteResult.newer): for each task a held step's conflicts name,
- * every author of a change to it or to what belongs to it after the step was last applied, with the
- * time of that author's newest change there; a row of no task (an area, a project, a source) by
- * its own changes. The conflicts' own authors are named too: a key another row took counts. The
+ * every author of a change to it or to what belongs to it after the step last wrote the row a
+ * conflict holds back (the earliest of them, for a task several conflicts name), with the time of
+ * that author's newest change there; a row of no task (an area, a project, a source) by its own
+ * changes. The conflicts' own authors are named too: a key another row took counts. The
  * principal's own steps (its undoable writes, undos and redos) are no one's newer work: they hold
  * a redo back only after an earlier step of the person's was passed over, and that step's
  * conflicts say why. A run's own progress is the run's, whichever credential wrote it.
@@ -1063,17 +1071,20 @@ export function newerWorkOf(
     });
   };
   const runs = conn.prepare(TABLE_EXISTS).get({ name: "runs" }) !== undefined;
-  for (const { since, conflicts: theirs } of held) {
-    const asked = new Set<string>();
+  for (const { conflicts: theirs, since: sinceOf, applied } of held) {
+    const scopes = new Map<string, { c: FieldConflict; since: number }>();
     for (const c of theirs) {
       if (!own.has(c.version)) named(c, c.by, c.entity === "runs", c.at);
+      const key = c.task === undefined ? `${c.entity}|${c.id}` : `tasks|${c.task}`;
+      const since = sinceOf.get(c) ?? applied;
+      const earlier = scopes.get(key);
+      if (earlier === undefined || since < earlier.since) scopes.set(key, { c, since });
+    }
+    for (const { c, since } of scopes.values()) {
       const scope =
         c.task === undefined
           ? { entity: c.entity, id: c.id, task: null }
           : { entity: "tasks", id: c.task, task: c.task };
-      const key = `${scope.entity}|${scope.id}`;
-      if (asked.has(key)) continue;
-      asked.add(key);
       const sql = runs && scope.task !== null ? SQL.newerAuthorsWithRuns : SQL.newerAuthors;
       for (const row of conn.prepare(sql).all({ since, principal, ...scope })) {
         const r = new RowReader("commits", row);
@@ -1181,13 +1192,15 @@ function keepTogether(
     const held = blocking.get(`${inversion.id}|${partner}`);
     if (held === undefined) return true;
     const row = read("tasks", inversion.id);
-    plan.conflicts.push({
+    const kept: FieldConflict = {
       ...held,
       field: inversion.field,
       value: columnsValue(row.raw, TABLES.tasks.fields[inversion.field] ?? []),
       wrote: parsed(inversion.change.after),
       restore: parsed(inversion.value),
-    });
+    };
+    plan.conflicts.push(kept);
+    plan.since.set(kept, plan.since.get(held) ?? inversion.applied);
     return false;
   });
 }
@@ -1213,7 +1226,7 @@ function columnOf(json: string, column: string): unknown {
 function keepActiveUnwrapped(
   plan: InversionPlan,
   read: (entity: InvertibleEntity, id: string) => RowState,
-  name: (where: Where, version: number) => void,
+  name: (where: Where, version: number, since: number) => void,
 ): void {
   const planned = new Map<string, Restore[]>();
   for (const inversion of plan.inversions) {
@@ -1252,6 +1265,7 @@ function keepActiveUnwrapped(
           restore: parsed(restore.value),
         },
         versionOf(row, holder),
+        restore.applied,
       );
     }
   }
