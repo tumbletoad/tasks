@@ -147,64 +147,91 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
     expect(tool.events).toContainEqual({ kind: "progress", label: "tasks" });
   });
 
-  test("each request kind is answered as the permission says, while the turn goes on", async () => {
-    const requests = [
-      { method: "item/commandExecution/requestApproval", params: { itemId: "exec-1" } },
-      { method: "item/fileChange/requestApproval", params: { itemId: "exec-2" } },
-      { method: "execCommandApproval", params: { callId: "c1", command: ["echo", "hi"] } },
-      { method: "applyPatchApproval", params: { callId: "c2" } },
-      {
+  test("each approval the permission gives is accepted, while the turn goes on", async () => {
+    const requests = {
+      command: { method: "item/commandExecution/requestApproval", params: { itemId: "exec-1" } },
+      file: { method: "item/fileChange/requestApproval", params: { itemId: "exec-2" } },
+      exec: { method: "execCommandApproval", params: { callId: "c1", command: ["echo", "hi"] } },
+      patch: { method: "applyPatchApproval", params: { callId: "c2" } },
+      permissions: {
         method: "item/permissions/requestApproval",
         params: { itemId: "exec-3", permissions: { network: { enabled: true } } },
       },
-    ];
-    const denied = { denied: { rejection: "The run's permission declines it." } };
-    const expected: Record<RunPermission, unknown[]> = {
-      "full-access": [
-        { decision: "accept" },
-        { decision: "accept" },
-        { decision: "approved" },
-        { decision: "approved" },
-        { permissions: { network: { enabled: true } }, scope: "turn" },
-      ],
-      "auto-edit": [
-        { decision: "decline" },
-        { decision: "accept" },
-        { decision: denied },
-        { decision: "approved" },
-        { permissions: {}, scope: "turn" },
-      ],
-      "read-only": [
-        { decision: "decline" },
-        { decision: "decline" },
-        { decision: denied },
-        { decision: denied },
-        { permissions: {}, scope: "turn" },
-      ],
     };
-    for (const [permission, answers] of Object.entries(expected)) {
+    const given: [RunPermission, (keyof typeof requests)[], unknown[]][] = [
+      [
+        "full-access",
+        ["command", "file", "exec", "patch", "permissions"],
+        [
+          { decision: "accept" },
+          { decision: "accept" },
+          { decision: "approved" },
+          { decision: "approved" },
+          { permissions: { network: { enabled: true } }, scope: "turn" },
+        ],
+      ],
+      ["auto-edit", ["file", "patch"], [{ decision: "accept" }, { decision: "approved" }]],
+    ];
+    for (const [permission, kinds, answers] of given) {
       const { driver, fake } = bench(
-        { fixture: "windows-plain", requests },
-        { permission: permission as RunPermission },
+        { fixture: "windows-plain", requests: kinds.map((kind) => requests[kind]) },
+        { permission },
       );
       expect(await driver.settled, permission).toEqual(done({ ok: true }));
       expect(
-        requests.map((_r, n) => answerTo(fake, 100 + n)?.["result"]),
+        kinds.map((_k, n) => answerTo(fake, 100 + n)?.["result"]),
         permission,
       ).toEqual(answers);
       driver.close();
     }
   });
 
-  test("the recorded approvals: accepted with full access, declined and counted in a read-only run", async () => {
+  test("an approval the permission does not give ends the run as needing the person, with what Codex asks", async () => {
+    const asked: [RunPermission, string, Record<string, unknown>, string][] = [
+      [
+        "auto-edit",
+        "item/commandExecution/requestApproval",
+        { itemId: "exec-1", reason: "Fixture reason.", command: "echo hi" },
+        "Codex asks to run a command: Fixture reason.\n~~~\necho hi\n~~~",
+      ],
+      [
+        "read-only",
+        "execCommandApproval",
+        { callId: "c1", command: ["echo", "hi"] },
+        "Codex asks to run a command.\n~~~\necho hi\n~~~",
+      ],
+      ["read-only", "applyPatchApproval", { callId: "c2" }, "Codex asks to change files."],
+      [
+        "auto-edit",
+        "item/permissions/requestApproval",
+        { itemId: "exec-3", permissions: { network: { enabled: true } } },
+        "Codex asks for more permissions.",
+      ],
+    ];
+    for (const [permission, method, params, text] of asked) {
+      const { driver, fake } = bench(
+        { fixture: "windows-plain", requests: [{ method, params }] },
+        { permission },
+      );
+      expect(await driver.settled, method).toEqual(
+        done({ ok: false, outcome: "needs_input", text, textFinal: false }),
+      );
+      expect(answerTo(fake, 100), method).toBeUndefined();
+      driver.close();
+    }
+  });
+
+  test("the recorded approvals: accepted with full access; in a read-only run the file change needs the person", async () => {
     const full = bench({ fixture: "windows-approval-command" });
     expect(await full.driver.settled).toEqual(done({ ok: true, declined: 0 }));
     expect(answerTo(full.fake, 0)?.["result"]).toEqual({ decision: "accept" });
     const narrow = bench({ fixture: "windows-approval-file" }, { permission: "read-only" });
-    // The recording continues as its client answered; the driver's own answers are what counts.
-    await narrow.driver.settled;
-    expect(answerTo(narrow.fake, 0)?.["result"]).toEqual({ decision: "decline" });
-    expect(answerTo(narrow.fake, 1)?.["result"]).toEqual({ decision: "decline" });
+    expect(await narrow.driver.settled).toEqual(
+      done({ ok: false, outcome: "needs_input", text: "Codex asks to change files." }),
+    );
+    expect(answerTo(narrow.fake, 0)).toBeUndefined();
+    await until("the turn interrupted", () => sent(narrow.fake, "turn/interrupt").length === 1);
+    narrow.driver.close();
   });
 
   test("a blocking question ends the run as needing the person, with the question as its text, never an answer made up", async () => {

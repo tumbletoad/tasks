@@ -23,10 +23,11 @@
 //   coming waits LATE_MS for it, and a turn that said nothing leaves an earlier turn's words as
 //   the run's last message, not as its answer.
 // - The server's requests are answered as the run's permission says, while reading goes on. A
-//   question for the person is never answered for them: a blocking one interrupts the turn, one
-//   the turn ends with is kept, and the work ends as needing the person, with the question as its
-//   text. A question of an agent the run's agent started hears that no one answered. A request
-//   kind this driver does not know gets the protocol's "method not found".
+//   question for the person, or an approval the permission does not give, is never answered for
+//   them: a blocking one interrupts the turn, one the turn ends with is kept, and the work ends as
+//   needing the person, with the question as its text. A question of an agent the run's agent
+//   started hears that no one answered. A request kind this driver does not know gets the
+//   protocol's "method not found".
 // - The thread is given work only once its folder, as the server reports it, is the run's.
 // - Stop asks the server to interrupt the turn, and waits for nothing: during start-up, with no
 //   turn yet, the work ends at once.
@@ -158,6 +159,30 @@ function questionText(params: Json): string {
   const message = string(params["message"]);
   if (lines.length === 0 && message !== undefined) lines.push(message);
   return lines.join("\n").trim();
+}
+
+/** What each approval request asks, in the words the person reads. */
+const APPROVALS: Readonly<Record<string, string>> = {
+  "item/commandExecution/requestApproval": "Codex asks to run a command",
+  execCommandApproval: "Codex asks to run a command",
+  "item/fileChange/requestApproval": "Codex asks to change files",
+  applyPatchApproval: "Codex asks to change files",
+  "item/permissions/requestApproval": "Codex asks for more permissions",
+};
+
+/** Words of an approval the run's permission does not give: what Codex asks, why, and its command. */
+function approvalText(method: string, params: Json): string {
+  const reason = string(params["reason"]) ?? "";
+  const asks = `${APPROVALS[method] ?? "Codex asks for approval"}${reason === "" ? "." : `: ${reason}`}`;
+  const given = params["command"];
+  const command = Array.isArray(given)
+    ? given.map((part) => string(part) ?? "").join(" ")
+    : (string(given) ?? "");
+  if (command === "") return asks;
+  // As code, so a command's characters show as they are where the text is read as Markdown; the
+  // fence is one no line of it closes.
+  const fence = /^\s*~~~/mu.test(command) ? "```" : "~~~";
+  return `${asks}\n${fence}\n${command}\n${fence}`;
 }
 
 /**
@@ -506,30 +531,22 @@ export function codexDriver(session: CodexSession): OpenDriver {
       // An agent the run's agent started asks its own questions: no person will answer them, and
       // that agent carries on or fails by itself, as its parent's turn goes on. Approvals are
       // answered alike for every thread: all of them are the run's work, under its permission.
+      // One the permission does not give needs the person, as a question does.
       const helper = !ours(params);
       const full = session.permission === "full-access";
       const edits = full || session.permission === "auto-edit";
+      const ask = (): typeof NO_ANSWER => needsPerson(approvalText(method, params));
       switch (method) {
         case "item/commandExecution/requestApproval":
-          return { decision: full ? "accept" : "decline" };
+          return full ? { decision: "accept" } : ask();
         case "item/fileChange/requestApproval":
-          return { decision: edits ? "accept" : "decline" };
+          return edits ? { decision: "accept" } : ask();
         case "execCommandApproval":
-          return {
-            decision: full
-              ? "approved"
-              : { denied: { rejection: "The run's permission declines it." } },
-          };
+          return full ? { decision: "approved" } : ask();
         case "applyPatchApproval":
-          return {
-            decision: edits
-              ? "approved"
-              : { denied: { rejection: "The run's permission declines it." } },
-          };
+          return edits ? { decision: "approved" } : ask();
         case "item/permissions/requestApproval":
-          return full
-            ? { permissions: params["permissions"] ?? {}, scope: "turn" }
-            : { permissions: {}, scope: "turn" };
+          return full ? { permissions: params["permissions"] ?? {}, scope: "turn" } : ask();
         case "item/tool/requestUserInput":
         case "mcpServer/elicitation/request":
           return helper ? unanswered(method) : needsPerson(questionText(params));
