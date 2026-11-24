@@ -388,14 +388,21 @@ the behaviour it describes, and keep each one to a sentence or two.
   wrote. What it gives you to add or take out by hand is the file and the entry, never a command,
   which would act on whatever account the shell you paste it into selects.
 - An agent app gets TTasks's tools only once its entry is in place, and only from the change you
-  asked for: a setup that did not finish is finished later only by taking the access away. Turning
-  them off takes the access away first, also when you changed the entry or its file cannot be read
-  or written, and says what stays in the file; when TTasks's service does not confirm it, nothing
-  else changes and you are told that it could not be confirmed, with what to do.
+  asked for: a setup that did not finish is finished later only by taking its entry out, and the
+  access too when that setup was the one turning it on. Turning them off takes the access away
+  first, also when you changed the entry or its file cannot be read or written, and says what stays
+  in each file; when TTasks's service does not confirm it, nothing else changes and you are told
+  that it could not be confirmed, with what to do.
 - An agent app's tools show as on only while they can start: its entry is there, the program it
   runs is there and its access is on. Otherwise the app says which is missing, and turning it on
-  puts that back where it can be done from there. While its access may still be on, turning it off
-  is offered, whatever else is missing.
+  puts that back where it can be done from there. While its access may still be on, or an entry
+  setup wrote is still there, turning it off is offered, whatever else is missing.
+- Claude Code reads its default folder's settings from `~/.claude.json`, and from
+  `~/.claude/.claude.json` when a program starts it with that folder as its home. Setup puts its
+  entry into each of the two that is there and takes it out of each, never creating the second;
+  the app's row says which file lacks it and why.
+- Applying writes what you were shown: when a settings file, `machine.toml` or an app's access
+  changed since, nothing is written there and you see how it stands now.
 - An update is checked before it runs. A failed update returns to the version before it.
 - An install or an update that was cut off is finished or undone by the next one, or by the
   service. However often it is run again, and whatever is installed over it, `ttasks update
@@ -487,6 +494,13 @@ the behaviour it describes, and keep each one to a sentence or two.
   changes.
 - An editor that had the configuration file open while TTasks recorded a space, and saves it
   afterwards, writes its own list of spaces back, and the next start follows that list.
+- Rolled back to an earlier version, which knows one settings file per agent home, turning Claude
+  Code's tools off takes the access away and the entry out of the file that version wrote first
+  only; the entry left in the other reaches nothing while the access is off, and this version, once
+  back, offers to take it out.
+- Claude Code started with `~/.claude` as its home may read an older settings file of its own there
+  (`.config.json`) in place of `.claude.json`. Setup does not write that file, so a program that
+  starts Claude Code that way may get no tools.
 - Agent setup reads an agent app's settings file again just before it replaces it, and leaves a
   file that changed alone; a save another program makes in the instant between that read and the
   replacement is lost. For that read and the replacement setup holds Claude Code's own lock, for
