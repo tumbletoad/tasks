@@ -731,6 +731,20 @@ function readIfPresent(path: string, maxBytes?: number): Buffer | undefined | "p
   return read.kind === "bytes" ? read.bytes : "problem";
 }
 
+/**
+ * A digest of machine.toml's bytes, or of their absence, as a preview of an instance edit read
+ * them: the plan of that edit is bound to it. Undefined when the file cannot be read.
+ */
+export function machineDigest(configDir: string): string | undefined {
+  const before = readIfPresent(join(configDir, MACHINE_TOML));
+  if (before === "problem") return undefined;
+  return configDigest(before);
+}
+
+/** machine.toml's digest of `before`, the bytes an edit read; undefined is no file. */
+export const configDigest = (before: Buffer | undefined): string =>
+  before === undefined ? "missing" : createHash("sha256").update(before).digest("hex").slice(0, 32);
+
 /** Whether `dir` itself is a link (a junction on Windows too). A missing folder is none. */
 function isLinkedFolder(dir: string): boolean {
   try {
