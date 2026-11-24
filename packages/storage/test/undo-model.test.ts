@@ -918,14 +918,21 @@ class Model {
       for (const r of [...made, ...sourceBack]) out.add(r);
     }
     if (!options.redo) return out;
-    // A redo writes nothing out of sight (history.ts, ownersLive).
-    const fvOf = (entity: Entity, id: number): number =>
-      this.cell(entity, id, TOMBSTONE[entity]).fv;
+    // A redo writes nothing out of sight (history.ts, ownersLive): taken away since by the removal
+    // its tombstone holds.
+    const fpOf = (entity: Entity, id: number): number =>
+      this.cell(entity, id, TOMBSTONE[entity]).fp;
     const byRow = new Map<string, ModelChange[]>();
     for (const r of kept) {
       const k = `${r.entity}|${String(r.id)}`;
       byRow.set(k, [...(byRow.get(k) ?? []), r]);
     }
+    // An owner the redo takes away itself is the step's own removal, made with what is under it.
+    const removed = new Set(
+      kept
+        .filter((r) => r.field === TOMBSTONE[r.entity] && (r.create === true || r.before !== ""))
+        .map((r) => `${r.entity}|${String(r.id)}`),
+    );
     for (const list of byRow.values()) {
       const first = list[0];
       if (first === undefined) continue;
@@ -934,11 +941,13 @@ class Model {
       if (writes.some((r) => r.create === true || r.before !== "")) continue;
       const brings = writes.length > 0;
       const gone = (entity: Entity, id: number, owner: boolean): boolean =>
-        !live(entity, id) && ((brings && owner) || fvOf(entity, id) > options.since);
+        !live(entity, id) && ((brings && owner) || fpOf(entity, id) > options.since);
       const owners = first.entity === "tasks" ? [] : this.row(first.entity, first.id).owners;
       const away = [
         ...(gone(first.entity, first.id, false) ? [first] : []),
-        ...owners.filter((o) => gone(o.entity, o.id, true)),
+        ...owners.filter(
+          (o) => !removed.has(`${o.entity}|${String(o.id)}`) && gone(o.entity, o.id, true),
+        ),
       ];
       if (away.length > 0) {
         options.named?.push(...away.map((o) => key(o.entity, o.id, TOMBSTONE[o.entity])));

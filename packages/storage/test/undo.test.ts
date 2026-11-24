@@ -1210,6 +1210,34 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     expect(task(c)["project_id"]).toBeNull();
   });
 
+  test("Redo writes what its step wrote under a task the step moved to the Trash, and moves a task a Redo before it put back there", () => {
+    // A note and the move to the Trash in one request.
+    const a = create("Renew the passport");
+    applied(
+      write([
+        { kind: "note.add", task: a, body: "Booked for Tuesday" },
+        { kind: "task.delete", task: a },
+      ]),
+    );
+    applied(undo());
+    applied(redo());
+    expect(task(a)["deleted_at"]).not.toBeNull();
+    expect(one("SELECT count(*) FROM notes WHERE task_id = $a AND deleted_at IS NULL", { a })).toBe(
+      1,
+    );
+
+    // A task in the Trash that its project's move took along.
+    const b = newId("t");
+    applied(write([{ kind: "task.create", id: b, title: "Dig", project: fx.project }]));
+    applied(write([{ kind: "task.delete", task: b }]));
+    applied(write([{ kind: "project.move", project: fx.project, area: fx.areas.home }]));
+    applied(undo());
+    applied(undo());
+    applied(redo());
+    applied(redo());
+    expect([task(b)["area_id"], task(b)["deleted_at"] === null]).toEqual([fx.areas.home, false]);
+  });
+
   test("Undo and Redo of a step that moves several tasks give back the order of the list, not the order the rows were written in", () => {
     const [a, b, c] = ["Renew the passport", "Book the dentist", "Water the plants"].map((t) =>
       create(t),

@@ -1931,10 +1931,12 @@ function ownersOf(entity: InvertibleEntity, raw: Row): { entity: InvertibleEntit
  * area that is not there. And it never writes a row, or under an owner, that went out of sight
  * after the step was undone (Inversion.applied): a step before it passed over, or another's
  * removal, took it away. A row out of sight before that stays as the step and its undo wrote it: a
- * project's move also sets the area of its tasks in the Trash. Each row the plan writes is checked
- * on the state the plan made, unless the plan takes the row away itself; one that fails keeps the
- * plan's writes of it undone, and the row or its owner is named by its tombstone, with who took it
- * away.
+ * project's move also sets the area of its tasks in the Trash. Which removal holds a row out of
+ * sight is its tombstone's provenance, so a row a Redo of an earlier step put back in the Trash is
+ * out of sight as before the undo. Each row the plan writes is checked on the state the plan made,
+ * unless the plan takes the row away itself, and an owner the plan takes away is the step's own
+ * removal, which it made with what it wrote under that owner. One that fails keeps the plan's
+ * writes of it undone, and the row or its owner is named by its tombstone, with who took it away.
  */
 function ownersLive(conn: Connection, inversions: readonly Inversion[], broken: Broken): void {
   const rows = new Map<string, Inversion[]>();
@@ -1944,13 +1946,16 @@ function ownersLive(conn: Connection, inversions: readonly Inversion[], broken: 
     if (list === undefined) rows.set(key, [i]);
     else list.push(i);
   }
+  const removes = (i: Inversion): boolean =>
+    i.field === TABLES[i.entity].tombstone && (i.kind === "tombstone" || !isLive(parsed(i.value)));
+  const removed = new Set(inversions.filter(removes).map((i) => `${i.entity}|${i.id}`));
   for (const list of rows.values()) {
     const first = list[0];
     if (first === undefined) continue;
     const { entity, id } = first;
     const tombstone = TABLES[entity].tombstone;
     const writes = list.filter((i) => i.field === tombstone);
-    if (writes.some((i) => i.kind === "tombstone" || !isLive(parsed(i.value)))) continue;
+    if (writes.some(removes)) continue;
     const back = writes.length > 0;
     const since = Math.min(...list.map((i) => i.applied));
     const row = readRow(conn, entity, id);
@@ -1959,11 +1964,12 @@ function ownersLive(conn: Connection, inversions: readonly Inversion[], broken: 
     const gone = (state: RowState, of: InvertibleEntity, owner: boolean): boolean => {
       const field = TABLES[of].tombstone;
       if (isLive(valueIn(of, state.raw, field))) return false;
-      return (back && owner) || versionOf(state, field) > since;
+      return (back && owner) || provenanceOf(state, field) > since;
     };
     const named: Broken["named"] = [];
     if (gone(row, entity, false)) named.push({ entity, id, task: first.task, field: tombstone });
     for (const owner of ownersOf(entity, row.raw)) {
+      if (removed.has(`${owner.entity}|${owner.id}`)) continue;
       const found = readRow(conn, owner.entity, owner.id);
       if (found === undefined) throw invalidValue(entity, "owner");
       if (!gone(found, owner.entity, true)) continue;
