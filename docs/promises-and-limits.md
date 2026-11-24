@@ -47,7 +47,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   it ends, with or without the Agent Monitor.
 - Agents can move tasks to the Trash and back. Their changes are not on your Undo: the Trash shows
   each one under the agent's name with Restore, and the Trash in the sidebar counts the tasks agents
-  moved there until you open it in that browser.
+  moved there that the Trash has not shown in that browser.
 - A task's reference, such as M-14, is not given to another task when the task is deleted or its
   creation is undone, when a backup is restored over the space, or when a restored copy is claimed.
 - Adding work by a source that an open task or a recently finished one already has finds that task

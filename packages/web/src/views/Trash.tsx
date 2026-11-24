@@ -68,16 +68,6 @@ export interface TrashProps {
 
 export function TrashPage({ task, onExpand }: TrashProps) {
   const t = useT();
-  const { live } = useContext(Session);
-  const space = live.spaceId;
-  // What agents moved here is seen once the person has the Trash open, and when they leave it.
-  useEffect(() => {
-    if (space === undefined) return;
-    keepTrashSeen(space);
-    return () => {
-      keepTrashSeen(space);
-    };
-  }, [space]);
   const [typed, setTyped] = useState("");
   const [q, setQ] = useState("");
   useEffect(() => {
@@ -155,6 +145,12 @@ function TrashList({ q, task, onExpand }: TrashProps & { readonly q: string }) {
   const { instances } = useLive();
   const source = useMemo(() => trashSource((input) => api.client.task.trash(input), q), [api, q]);
   const { state, query } = usePagedQuery(QUERY, source);
+  // What the whole Trash shows is seen, also a removal that arrives while it is open.
+  const space = live.spaceId;
+  useEffect(() => {
+    if (space !== undefined && q === "" && state.phase === "ready")
+      keepTrashSeen(space, state.rows);
+  }, [space, q, state.phase, state.rows]);
   // "Restore these": the change's tasks still in the Trash, as one change with its own Undo.
   const restoreChange = useCallback(
     (removal: Removal) => {
@@ -481,9 +477,9 @@ function UnsentWords() {
 }
 
 /**
- * How many tasks agents moved to the Trash since the person last had it open in this browser: the
+ * How many tasks agents moved to the Trash that the Trash has not shown in this browser: the
  * sidebar's mark on the Trash. Read again whenever a task is removed or restored, a snapshot
- * replaces what the page knew, or another tab opens the Trash; none while it is open.
+ * replaces what the page knew, or a tab shows the Trash; none while it is open.
  */
 export function useMovedByOthers(open: boolean): number {
   const { api, live } = useContext(Session);
@@ -505,15 +501,8 @@ export function useMovedByOthers(open: boolean): number {
   }, [space]);
   useEffect(() => {
     if (space === undefined || open) return;
-    const since = trashSeen(space);
-    // A browser that never had the Trash open counts from now.
-    if (since === undefined) {
-      keepTrashSeen(space);
-      setCount(0);
-      return;
-    }
     let current = true;
-    movedByOthers((input) => api.client.task.trash(input), since).then(
+    movedByOthers((input) => api.client.task.trash(input), trashSeen(space)).then(
       (n) => {
         if (current) setCount(n);
       },

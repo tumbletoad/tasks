@@ -638,28 +638,48 @@ test.describe("[A5.trash.e2e.terminal] An agent in a terminal on a removed task 
 const trashMark = (page: Page) => page.locator('nav [data-view="trash"] [data-mark]');
 
 test.describe("[A5.trash.e2e.agents] What an agent moved to the Trash", () => {
-  test("an agent's removal is one change under its name in the Trash; the side menu counts it after a reload until the Trash is opened, and Restore these takes it back; in both themes at 1,440 and 390 px", async ({
+  test("the side menu counts what agents moved to the Trash that it has not shown, also before it was ever opened; a restore takes tasks out of the count; an agent's removal is one change under its name with Restore these; in both themes at 1,440 and 390 px", async ({
     page,
     world,
   }) => {
     test.setTimeout(300_000);
     const tag = test.info().project.name;
     const space = world.mira.id;
+    const agentRemoves = async (tasks: readonly string[]): Promise<string> => {
+      const status = (await world.op(space, "space.status", {}, "agent")) as { as_of: string };
+      const moved = (await world.op(
+        space,
+        "task.delete",
+        { tasks, base: status.as_of },
+        "agent",
+      )) as {
+        commit: string;
+      };
+      return moved.commit;
+    };
     // The narrow menu is pictured at rest, not on its way in.
     await page.emulateMedia({ reducedMotion: "reduce" });
+
+    // Asked to tidy before the person ever opened the page: the count shows it.
+    const tidied = [
+      await addTask(world, { title: `Agent tidy one (${tag})`, area: "home" }),
+      await addTask(world, { title: `Agent tidy two (${tag})`, area: "home" }),
+    ];
+    const tidy = await agentRemoves(tidied);
     await signIn(page, world, `/s/${space}/open`);
     await showsSpace(page, world.mira.name);
-    // A browser that never had the Trash open counts from its first page on.
-    await expect(trashMark(page)).toHaveCount(0);
+    await expect(trashMark(page)).toHaveText("2", { timeout: SLOW_MS });
+    // Restored elsewhere, here by the agent, the tasks leave the count.
+    await world.op(space, "task.delete", { restore: true, change: tidy }, "agent");
+    await expect(trashMark(page)).toHaveCount(0, { timeout: SLOW_MS });
+
     try {
       for (const theme of themes()) {
         await world.machine("ui.theme", theme);
-        const twins = [
+        await agentRemoves([
           await addTask(world, { title: `Agent duplicate (${tag}, ${theme})`, area: "home" }),
           await addTask(world, { title: `Agent duplicate again (${tag}, ${theme})`, area: "home" }),
-        ];
-        const status = (await world.op(space, "space.status", {}, "agent")) as { as_of: string };
-        await world.op(space, "task.delete", { tasks: twins, base: status.as_of }, "agent");
+        ]);
 
         await page.goto(`${world.origin}/s/${space}/open`);
         await showsSpace(page, world.mira.name);
@@ -693,6 +713,33 @@ test.describe("[A5.trash.e2e.agents] What an agent moved to the Trash", () => {
       // The theme is the machine's, shared by the worker's other tests: back to the default.
       await world.machine("ui.theme", null);
     }
+
+    // A removal that arrives while another tab shows the Trash is seen: this tab does not count
+    // it, also after a reload. One made once no tab shows it is the only one counted.
+    await page.locator('nav [data-view="open"]').click();
+    const other = await page.context().newPage();
+    const late = await addTask(world, { title: `Agent late removal (${tag})`, area: "home" });
+    const later = await addTask(world, { title: `Agent later removal (${tag})`, area: "home" });
+    try {
+      await other.goto(`${world.origin}/s/${space}/trash`);
+      await showsSpace(other, world.mira.name);
+      await agentRemoves([late]);
+      await expect(rowOf(other, late)).toBeVisible({ timeout: SLOW_MS });
+    } finally {
+      await other.close();
+    }
+    await page.reload();
+    await showsSpace(page, world.mira.name);
+    await agentRemoves([later]);
+    await expect(trashMark(page)).toHaveText("1", { timeout: SLOW_MS });
+    const seen = (await world.op(space, "space.status", {}, "agent")) as { as_of: string };
+    await world.op(
+      space,
+      "task.delete",
+      { tasks: [late, later], restore: true, base: seen.as_of },
+      "agent",
+    );
+    await expect(trashMark(page)).toHaveCount(0, { timeout: SLOW_MS });
   });
 });
 
