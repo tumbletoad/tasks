@@ -2374,6 +2374,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.trash.web.names",
+      "title": "An agent's change in the Trash is headed by its app's name: also for an agent TTasks started, whose label holds its session; by its instance when the page does not list it; and as an agent when it named none",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.trash.e2e.title",
       "title": "A title being typed stays through the task's removal, a page opened meanwhile (whose cleanup runs) and its restore: it is listed at the foot of the Trash with its reference, and after the restore it is back in the title's editor",
       "owner": "M5",
@@ -2403,7 +2410,7 @@
     },
     {
       "id": "A5.trash.e2e.agents",
-      "title": "What an agent moved to the Trash, in the browser: one change under its name with Restore these, and a count on the Trash in the side menu after a reload, gone once the Trash is opened; both themes at 1,440 and 390 px",
+      "title": "What an agent moved to the Trash, in the browser: the side menu counts what agents moved there that the Trash has not shown, also before it was ever opened and after a reload; a restore takes tasks out of the count; a removal another tab showed is not counted; one change under the agent's name with Restore these; both themes at 1,440 and 390 px",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
