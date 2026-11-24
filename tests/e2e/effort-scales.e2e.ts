@@ -213,7 +213,12 @@ test.describe("[A5.3.7.e2e.effort-scales] one level, ten levels and the longest 
             await tabTo(page, done);
             await expect(tooltip).toHaveText(tipOf(timed, scale));
             await expect(done).toHaveAccessibleDescription(tipOf(timed, scale));
-            await picture(page, `effort-card-finished-tip-${String(at)}-focus.png`);
+            await picture(page, `effort-card-finished-tip-${String(at)}-1440-focus.png`);
+            await page.setViewportSize({ width: 390, height: 1000 });
+            await title.focus();
+            await tabTo(page, done);
+            await expect(tooltip).toHaveText(tipOf(timed, scale));
+            await picture(page, `effort-card-finished-tip-${String(at)}-390-focus.png`);
           }
         });
       }
