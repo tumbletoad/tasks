@@ -22,8 +22,10 @@ on:
 permissions:
   contents: read
 
+# A draft's run does nothing and has a group of its own, so that it never cancels the run that
+# starts when the pull request is marked ready a moment after a push.
 concurrency:
-  group: build-${{ github.event.pull_request.number || github.ref }}
+  group: build-${{ github.event.pull_request.number || github.ref }}${{ github.event.pull_request.draft && '-draft' || '' }}
   cancel-in-progress: true
 
 jobs:
