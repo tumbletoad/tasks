@@ -822,15 +822,16 @@ export function TaskList({
             ? "pair"
             : undefined;
       if (act === undefined) return undefined;
+      const answer = act === "start" ? "row.t3Starting" : "row.t3Pairing";
       return {
         label: { id: act === "start" ? "row.t3Start" : "row.t3Pair" },
         run: () => {
           api.t3(act).then(
             ({ opened }) => {
-              say(t("row.t3Asked", { act, opened: opened === true ? "yes" : String(opened) }));
+              say(t(answer, { opened: opened === true ? "yes" : String(opened) }));
             },
             (error: unknown) => {
-              if (!live.failed(error)) say(t("row.t3Asked", { act, opened: "no" }));
+              if (!live.failed(error)) say(t(answer, { opened: "no" }));
             },
           );
         },

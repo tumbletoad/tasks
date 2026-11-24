@@ -93,6 +93,7 @@ export function readOnly(actions: RowActions): RowActions {
       current: actions.current,
       copy: actions.copy,
       folder: actions.folder,
+      openInT3: actions.openInT3,
       stop: actions.stop,
     };
     readOnlyOf.set(actions, found);
