@@ -26,6 +26,7 @@
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, describe, expect, test } from "vitest";
+import { newerBy } from "@ttasks/contracts/newer-work";
 import { newId, type Id } from "../src/ids.ts";
 import { openWriter } from "../src/open.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
@@ -46,6 +47,8 @@ const MAX_TASKS = 6;
 /** The actors by index: the two humans, each with a stack of its own, and the two agents. */
 const HUMANS = [0, 3] as const;
 const isHuman = (actor: number): boolean => (HUMANS as readonly number[]).includes(actor);
+/** Each actor as an answer's newer work names it: a person as "user", an agent by its label. */
+const NAMES = ["user", "Codex · work", "Claude Code · work", "user"] as const;
 
 /** The rows the model keeps: a task's fields, and the tombstone of each other row. */
 type Entity = "tasks" | "notes" | "areas" | "projects" | "sources" | "links";
@@ -118,6 +121,8 @@ type Patch = Partial<Record<Patchable, string>>;
 
 type Step =
   | { kind: "write"; actor: number; task: number; set: Patch }
+  /** The same patch to two tasks in one request: one commit, one step on a stack. */
+  | { kind: "pair"; actor: number; task: number; other: number; set: Patch }
   /** Completes an active task, reopens another: lifecycle and wrap-up change together. */
   | { kind: "lifecycle"; actor: number; task: number }
   /** A new task, on its creator's stack when a human made it. */
@@ -162,12 +167,16 @@ type Step =
    * both, and an agent takes the key. Then the human redoes. Or (`held`) a human removes and
    * restores a task, an agent adds a note, and the human's partial undo of the restore leaves it,
    * a redo brings nothing back, and an undo tries again. Or (`finish`) a human checks a task off or
-   * reopens it, undoes that, an agent adds a note, and the human redoes.
+   * reopens it, undoes that, an agent adds a note, and the human redoes. Or (`split`) a human
+   * edits two tasks together, an agent edits the second and Claude adds a note to the first, the
+   * human's partial undo takes back the first alone and a redo writes it again, an agent edits the
+   * first, and the human undoes: each task's newer work counts from when the step last wrote it.
+   * Or (`ran`) a human creates a task, a run starts on it, and the human undoes the create.
    */
   | {
       kind: "story";
       who: number;
-      story: "trash" | "groups" | "links" | "held" | "finish";
+      story: "trash" | "groups" | "links" | "held" | "finish" | "split" | "ran";
       task: number;
       slot: number;
     };
@@ -206,6 +215,16 @@ const step: fc.Arbitrary<Step> = fc.oneof(
   {
     arbitrary: fc.record({ kind: fc.constant("lifecycle" as const), actor, task }),
     weight: 2,
+  },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("pair" as const),
+      actor,
+      task,
+      other: task,
+      set: patch,
+    }),
+    weight: 1,
   },
   { arbitrary: fc.record({ kind: fc.constant("create" as const), actor }), weight: 3 },
   {
@@ -271,6 +290,8 @@ const step: fc.Arbitrary<Step> = fc.oneof(
         "links" as const,
         "held" as const,
         "finish" as const,
+        "split" as const,
+        "ran" as const,
       ),
       task,
       slot,
@@ -309,6 +330,30 @@ function expand(s: Step): Step[] {
         ...undo(3),
         { kind: "note", actor: 1, task: s.task },
         ...redo,
+      ];
+    }
+    if (s.story === "ran") {
+      return [
+        { kind: "create", actor: s.who },
+        { kind: "run", newest: 0, moves: 0 },
+        { kind: "undo", who: s.who, partial: false },
+      ];
+    }
+    if (s.story === "split") {
+      return [
+        {
+          kind: "pair",
+          actor: s.who,
+          task: s.task,
+          other,
+          set: { summary: "Next: compare totals" },
+        },
+        { kind: "write", actor: 1, task: other, set: { summary: "Waiting on Tomas" } },
+        { kind: "note", actor: 2, task: s.task },
+        { kind: "undo", who: s.who, partial: true },
+        { kind: "redo", who: s.who },
+        { kind: "write", actor: 1, task: s.task, set: { summary: "Waiting on Tomas" } },
+        { kind: "undo", who: s.who, partial: false },
       ];
     }
     if (s.story === "finish") {
@@ -528,27 +573,39 @@ class Model {
     owner: number | null,
     by: number,
   ): ModelCommit | undefined {
+    return this.writeAll(entity, [{ id, values }], owner, by);
+  }
+
+  /** A write of the fields of several rows in one commit. */
+  writeAll(
+    entity: Entity,
+    writes: readonly { id: number; values: Partial<Record<string, string>> }[],
+    owner: number | null,
+    by: number,
+  ): ModelCommit | undefined {
     const seq = this.lastSeq + 1;
     const rows: ModelChange[] = [];
-    const task = entity === "tasks" ? id : this.row(entity, id).task;
-    for (const [field, value] of Object.entries(values)) {
-      if (value === undefined) continue;
-      const cell = this.cell(entity, id, field);
-      if (cell.value === value) continue;
-      rows.push({
-        entity,
-        id,
-        field,
-        task,
-        before: cell.value,
-        after: value,
-        beforeProv: cell.fp,
-        afterProv: seq,
-      });
+    for (const { id, values } of writes) {
+      const task = entity === "tasks" ? id : this.row(entity, id).task;
+      for (const [field, value] of Object.entries(values)) {
+        if (value === undefined) continue;
+        const cell = this.cell(entity, id, field);
+        if (cell.value === value) continue;
+        rows.push({
+          entity,
+          id,
+          field,
+          task,
+          before: cell.value,
+          after: value,
+          beforeProv: cell.fp,
+          afterProv: seq,
+        });
+      }
     }
     if (rows.length === 0) return undefined;
     for (const row of rows) {
-      this.cells.set(key(entity, id, row.field), { value: row.after, fv: seq, fp: seq });
+      this.cells.set(key(entity, row.id, row.field), { value: row.after, fv: seq, fp: seq });
     }
     return this.#stack(seq, owner, rows, by);
   }
@@ -653,6 +710,24 @@ class Model {
     return [...this.rows.values()].filter(
       (r) => r.owners.some((o) => o.entity === entity && o.id === id) && this.live(r.entity, r.id),
     );
+  }
+
+  /**
+   * Who changed `task`, or anything of it, after `since`, by the names an answer gives them: a
+   * person as "user", an agent by its label, a run's progress as the run's. The principal's own
+   * steps are no one's newer work.
+   */
+  authors(task: number, since: number, principal: number): string[] {
+    const names = new Set<string>();
+    for (const c of this.commits.values()) {
+      if (c.seq <= since) continue;
+      if (c.by === principal && (c.owner !== null || c.kind === "undo" || c.kind === "redo")) {
+        continue;
+      }
+      if (c.runTask === task) names.add("run");
+      else if (c.rows.some((r) => r.task === task)) names.add(NAMES[c.by] ?? "");
+    }
+    return [...names].sort();
   }
 
   /** Another's change to `row` (and for a task, to anything of it) after `since` (history.ts). */
@@ -1109,6 +1184,35 @@ const property = (seen: Seen) =>
               : r.field !== "deleted"),
         );
       const sorted = (keys: readonly Named[]): Named[] => [...new Set(keys)].sort();
+      /**
+       * Who an undo's or a redo's answer says changed each task since (WriteResult.newer): for
+       * each task a row held back is of, everyone who changed it after the step last wrote such a
+       * row there. Checked when every row held back is a task's own: another row's conflict names
+       * the row it met, which the model leaves to the writer.
+       */
+      const expectNewer = (
+        result: WriteResult,
+        held: readonly { row: ModelChange; since: number }[],
+        principal: number,
+      ): void => {
+        if (held.some(({ row }) => row.entity !== "tasks")) return;
+        const cut = new Map<number, number>();
+        for (const { row, since } of held)
+          cut.set(row.id, Math.min(cut.get(row.id) ?? since, since));
+        const expected = [...cut]
+          .map(([t, at]): [number, string[]] => [t, model.authors(t, at, principal)])
+          .filter(([, names]) => names.length > 0);
+        const named = new Map<number, Set<string>>();
+        for (const w of result.newer?.work ?? []) {
+          const t = ids.tasks.indexOf(w.task as Id<"t">);
+          named.set(t, (named.get(t) ?? new Set()).add(newerBy(w.by, w.run)));
+        }
+        expect(
+          [...named].map(([t, names]) => [t, [...names].sort()]).sort(),
+          "who changed each task since",
+        ).toEqual(expected.sort());
+        if (expected.length > 0) count(seen, "newer work named");
+      };
       /** A forward write the model predicts: applied with a commit, or no change. */
       const expectWrite = (result: WriteResult, commit: ModelCommit | undefined): void => {
         expect(result.status, JSON.stringify(result.error)).toBe(
@@ -1204,6 +1308,26 @@ const property = (seen: Seen) =>
             expect(result.status, JSON.stringify(result.error)).toBe("applied");
             model.write("tasks", task, { [field]: value }, null, s.actor);
           }
+        } else if (s.kind === "pair") {
+          const pair = [s.task % ids.tasks.length, s.other % ids.tasks.length];
+          const [a = 0, b = 0] = pair;
+          if (a === b) continue;
+          const result = send(
+            s.actor,
+            pair.map((t) => patchOp(ids.tasks[t] as Id<"t">, s.set)),
+          );
+          if (model.deleted(a) || model.deleted(b)) {
+            expect(result.error?.code).toBe("DELETED");
+            continue;
+          }
+          const commit = model.writeAll(
+            "tasks",
+            pair.map((id) => ({ id, values: s.set })),
+            owner(s.actor),
+            s.actor,
+          );
+          expectWrite(result, commit);
+          if (commit !== undefined) count(seen, "two tasks in one step");
         } else if (s.kind === "write" || s.kind === "lifecycle") {
           const task = s.task % ids.tasks.length;
           const id = ids.tasks[task] ?? ids.tasks[0];
@@ -1357,6 +1481,10 @@ const property = (seen: Seen) =>
             }
             count(seen, creates ? "create kept" : "undo conflict");
             if (guard.open.size > 0) count(seen, "kept open by newer work");
+            if (guard.failed.size > 0) {
+              const held = [...guard.failed].map((row) => ({ row, since: options.since(row) }));
+              expectNewer(result, held, s.who);
+            }
             if (target.rows.some((r) => r.field === "deleted" && r.before === "")) {
               count(seen, "undo of a restore kept by newer work");
             }
@@ -1379,6 +1507,7 @@ const property = (seen: Seen) =>
             continue;
           }
           // A partial undo leaves out what breaks a rule across rows, and checks again.
+          const crossed = broken.size > 0;
           while (broken.size > 0) {
             skip = new Set([...skip, ...broken]);
             broken = model.broken(target.rows, skip, { redo: false });
@@ -1386,6 +1515,10 @@ const property = (seen: Seen) =>
           expect(result.status, JSON.stringify(result.error)).toBe("applied");
           const left = model.failing(target.rows, options);
           if (left.open.size > 0) count(seen, "kept open by newer work");
+          if (!crossed) {
+            const held = [...left.failed].map((row) => ({ row, since: options.since(row) }));
+            expectNewer(result, held, s.who);
+          }
           if (plain(target.rows) && left.open.size === 0) {
             expect(named(ids.tasks, result.conflicts)).toEqual(sorted(left.named));
           }
@@ -1430,6 +1563,9 @@ const property = (seen: Seen) =>
           const names: Named[] = [];
           /** Tasks newer work kept open: that work is named, not their fields. */
           let open = 0;
+          /** The rows that held back the steps passed over, and whether a rule across rows did. */
+          const held: { row: ModelChange; since: number }[] = [];
+          let crossed = false;
           let redone: { target: ModelCommit; undone: ModelCommit } | undefined;
           for (const target of tried) {
             const undone = model.commits.get(target.undoneBy ?? 0);
@@ -1441,17 +1577,23 @@ const property = (seen: Seen) =>
               principal: s.who,
             };
             const guard = model.failing(undone.rows, options);
-            const fails =
-              guard.failed.size > 0 ||
-              model.broken(undone.rows, new Set(), { redo: true, since: undone.seq, named: names })
-                .size > 0;
-            if (!fails) {
+            const across =
+              guard.failed.size > 0
+                ? 0
+                : model.broken(undone.rows, new Set(), {
+                    redo: true,
+                    since: undone.seq,
+                    named: names,
+                  }).size;
+            if (guard.failed.size === 0 && across === 0) {
               redone = { target, undone };
               break;
             }
             passed.push(target);
             names.push(...guard.named);
             open += guard.open.size;
+            held.push(...[...guard.failed].map((row) => ({ row, since: undone.seq })));
+            if (across > 0) crossed = true;
           }
           const all = passed.flatMap((c) => model.commits.get(c.undoneBy ?? 0)?.rows ?? []);
           if (passed.length > 0)
@@ -1469,6 +1611,7 @@ const property = (seen: Seen) =>
             count(seen, "redo of a removal kept by newer work");
           }
           expect(result.passed ?? []).toEqual(passed.map((c) => commitId(c.seq)));
+          if (!crossed) expectNewer(result, held, s.who);
           if (open > 0) count(seen, "kept open by newer work");
           if (plain(all) && open === 0) {
             expect(named(ids.tasks, result.conflicts)).toEqual(sorted(names));
@@ -1547,6 +1690,8 @@ describe("[A1.5.history.property] undo and redo against a reference model", () =
       "run",
       "create kept by a run",
       "kept open by newer work",
+      "two tasks in one step",
+      "newer work named",
     ]) {
       expect(seen[outcome] ?? 0, outcome).toBeGreaterThan(3);
     }
