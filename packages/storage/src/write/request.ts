@@ -123,8 +123,6 @@ export const WRITE_ERROR_CODES = [
   "UNDO_BEFORE_FLOOR",
   /** A preference whose declaration does not list the actor as a writer (A1 3.16, A3 3.8.3). */
   "PREFERENCE_FORBIDDEN",
-  /** Another live project holds this folder on this machine. */
-  "FOLDER_TAKEN",
 ] as const;
 
 export type WriteErrorCode = (typeof WRITE_ERROR_CODES)[number];

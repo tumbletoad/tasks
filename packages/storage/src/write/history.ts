@@ -56,15 +56,7 @@ import { misuse, StorageError } from "../errors.ts";
 import { isId, type Id } from "../ids.ts";
 import { formatTaskRef } from "../refs.ts";
 import { inRange, invalidValue, RowReader } from "../rows.ts";
-import {
-  decodeFolder,
-  FOLDER_SQL,
-  folderKey,
-  hasFolders,
-  machineOs,
-  type FolderOs,
-  type FolderRow,
-} from "./folders.ts";
+import { FOLDER_SQL, hasFolders } from "./folders.ts";
 import { CHILD_FIELDS, columnsValue, fieldJson, TASK_FIELDS } from "./fields.ts";
 import {
   RequestProblem,
@@ -468,12 +460,6 @@ const SQL = {
   folderTaken:
     "SELECT * FROM folders WHERE owner_kind = $kind AND owner_id = $owner " +
     "AND machine_id = $machine AND deleted_at IS NULL AND id <> $id",
-  /** A project's live folders while the project is live. */
-  liveFoldersOfProject:
-    "SELECT f.id AS id FROM folders f JOIN projects p ON p.id = f.owner_id " +
-    "WHERE f.owner_kind = 'project' AND f.owner_id = $id AND f.deleted_at IS NULL " +
-    "AND p.deleted_at IS NULL",
-  liveProject: "SELECT 1 AS found FROM projects WHERE id = $id AND deleted_at IS NULL",
   tasksOfProject: "SELECT * FROM tasks WHERE project_id = $id ORDER BY id",
   /** The projects that the tasks in `$tasks` are in now. */
   projectsOfTasks:
@@ -1498,18 +1484,13 @@ export interface Applied {
  *   every task the plan brought a learning back to. A task over the limit gets none of them back,
  *   and the conflict names each live learning the plan did not bring back, with who wrote it.
  *
- * - **Two live projects never share one folder on one machine.** The statement reads the live
- *   project folders of every machine whose folder the plan brought back or set back. A folder of
- *   the plan's that another live project's folder holds by the machine's case rule does not come
- *   back, and the conflict names that other folder's path, with who set it.
  * - **A group and what is in it** (groupRules): a deleted area holds no live task or project, a
  *   deleted project no live task or folder, and a task in a project is in that project's area.
  * - **A redo writes nothing out of sight** (ownersLive, with `owners`).
  *
  * When a rule breaks, the writes roll back to a savepoint, the conflicts are named on the state
- * before the plan, and a partial inversion applies the rest, checked again, since a folder left
- * where it is can meet another the plan moves. A full inversion then applies nothing and returns
- * undefined, and `plan.conflicts` says why.
+ * before the plan, and a partial inversion applies the rest, checked again. A full inversion
+ * then applies nothing and returns undefined, and `plan.conflicts` says why.
  */
 export function applyInversions(
   conn: Connection,
@@ -1529,7 +1510,6 @@ export function applyInversions(
     const broken: Broken = { undone: new Set(), named: [] };
     brokenKeys(conn, restores, broken);
     tooManyLearnings(conn, restores, broken);
-    sharedFolders(conn, plan.inversions, broken);
     groupRules(conn, plan.inversions, broken, options.seq);
     if (options.owners) ownersLive(conn, plan.inversions, broken);
     if (broken.undone.size === 0) {
@@ -1561,64 +1541,6 @@ export function applyInversions(
     conn.exec("RELEASE restores");
     if (!options.partial) return undefined;
     if (!checked(plan.inversions)) return writeInversions(conn, plan.inversions, options);
-  }
-}
-
-/**
- * Two live projects on one folder of one machine (applyInversions): each folder row the plan wrote
- * that is now a live project's live folder, compared with every other live project folder of its
- * machine by that machine's case rule. On a clash the plan's inversions of that row stay undone,
- * and the other row is named by its path.
- */
-function sharedFolders(conn: Connection, inversions: readonly Inversion[], broken: Broken): void {
-  const mine = new Map<string, Inversion[]>();
-  const add = (id: string, inversion: Inversion): void => {
-    const list = mine.get(id);
-    if (list === undefined) mine.set(id, [inversion]);
-    else list.push(inversion);
-  };
-  for (const i of inversions) {
-    if (i.entity === "folders") add(i.id, i);
-    // A project brought back brings its live folders back into the rule.
-    if (i.entity === "projects" && i.field === "deleted") {
-      for (const row of conn.prepare(SQL.liveFoldersOfProject).all({ id: i.id })) {
-        add(String(row["id"]), i);
-      }
-    }
-  }
-  if (mine.size === 0) return;
-  const machines = new Map<string, { os: FolderOs; rows: FolderRow[] }>();
-  const machineRows = (machine: string) => {
-    let found = machines.get(machine);
-    if (found === undefined) {
-      const os = machineOs(conn, machine);
-      if (os === undefined) throw invalidValue("folders", "machine_id");
-      found = {
-        os,
-        rows: conn.prepare(FOLDER_SQL.liveProjectFolders).all({ machine }).map(decodeFolder),
-      };
-      machines.set(machine, found);
-    }
-    return found;
-  };
-  for (const [id, made] of mine) {
-    const row = conn.prepare(FOLDER_SQL.folder).get({ id });
-    if (row === undefined) throw misuse("A folder the plan wrote has gone");
-    const folder = decodeFolder(row);
-    if (folder.deleted || folder.ownerKind !== "project") continue;
-    // A deleted project's folder holds no folder from anyone (groupRules keeps it from staying).
-    if (conn.prepare(SQL.liveProject).get({ id: folder.ownerId }) === undefined) continue;
-    const { os, rows } = machineRows(folder.machineId);
-    const key = folderKey(folder.path, os);
-    const other = rows.find(
-      (r) => r.id !== folder.id && r.ownerId !== folder.ownerId && folderKey(r.path, os) === key,
-    );
-    if (other === undefined) continue;
-    // The folder's own inversions stay undone, and a project's restore comes back without it. A
-    // folder that is live already keeps the project from coming back.
-    const own = made.filter((i) => i.entity === "folders");
-    for (const i of own.length > 0 ? own : made) broken.undone.add(i);
-    broken.named.push({ entity: "folders", id: other.id, task: null, field: "path" });
   }
 }
 

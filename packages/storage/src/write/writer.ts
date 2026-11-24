@@ -77,7 +77,6 @@ import {
   carriedTo,
   decodeFolder,
   FOLDER_SQL,
-  folderHolder,
   folderProblem,
   machineOs,
   type FolderOs,
@@ -4775,14 +4774,6 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         const folder = decodeFolder(row);
         const state = rowState("folders", row, CHILD_FIELDS.folders);
         if (!folder.deleted || provenanceOf(state, "deleted") !== gone) continue;
-        const os = machineOs(conn, folder.machineId);
-        if (os === undefined) throw invalidValue("folders", "machine_id");
-        // A folder another live project took meanwhile stays removed: that project's is named.
-        const holder = folderHolder(conn, folder.machineId, folder.path, os, staged.target);
-        if (holder !== undefined) {
-          run.conflicts.push(rowConflict(conn, i, "folders", holder.id, "path", null));
-          continue;
-        }
         ensureStart(conn, run, "folders", folder.id);
         conn.prepare(SQL.folderDeleted).run({ id: folder.id, at: null });
         wrote(run, i, "folders", folder.id, null, ["deleted"]);
@@ -4799,7 +4790,6 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         problem("DELETED", "The project is deleted", i, "project");
       }
       const row = conn.prepare(FOLDER_SQL.liveOf).get({ kind, owner: owner.id, machine });
-      const movedProjects: { id: string; moved: string }[] = [];
       if (row === undefined) {
         conn.prepare(SQL.insertFolder).run({
           id: staged.target,
@@ -4845,21 +4835,8 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
             conn.prepare(SQL.folderPath).run({ id: other.id, path: moved });
             wrote(run, i, "folders", other.id, task, ["path"]);
             along.push({ ...named, to: moved });
-            if (other.ownerKind === "project") movedProjects.push({ id: other.ownerId, moved });
           }
           if (along.length > 0 || left.length > 0) staged.inside = { along, left };
-        }
-      }
-      // Two live projects never share one folder on one machine, by the machine's case rule.
-      if (kind === "project") movedProjects.push({ id: owner.id, moved: op.path });
-      for (const project of movedProjects) {
-        if (folderHolder(conn, machine, project.moved, os, project.id) !== undefined) {
-          problem(
-            "FOLDER_TAKEN",
-            "Another live project has this folder on this machine",
-            i,
-            "path",
-          );
         }
       }
       return;
@@ -4992,39 +4969,6 @@ function ensureStart(
     key,
     entity === "tasks" ? decodeTask(row) : rowState(entity, row, CHILD_FIELDS[entity]),
   );
-}
-
-/** A conflict that names a row as it stands: its field's value, who wrote it and when. */
-function rowConflict(
-  conn: Connection,
-  op: number,
-  entity: "folders",
-  id: string,
-  field: string,
-  task: Id<"t"> | null,
-): FieldConflict {
-  const row = readRow(conn, entity, id);
-  const state = rowState(entity, row, CHILD_FIELDS[entity]);
-  const version = versionOf(state, field);
-  const by = conn.prepare(SQL.commitAuthor).get({ seq: version });
-  if (by === undefined) throw invalidValue(entity, "fv");
-  const r = new RowReader("commits", by);
-  return {
-    op,
-    entity,
-    id,
-    ...(task === null ? {} : { task }),
-    field,
-    value: valueOf(entity, row, field),
-    version,
-    by: {
-      actor: r.id("actor", "ac"),
-      kind: r.text("kind"),
-      label: r.text("label"),
-      origin: r.text("origin"),
-    },
-    at: r.int("at", "instant"),
-  };
 }
 
 /**
