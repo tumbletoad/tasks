@@ -408,11 +408,15 @@ const RUNS_OF_TASK =
   " OR (c.entity = 'runs' AND c.entity_id IN (SELECT id FROM runs WHERE task_id = $task))";
 
 /**
- * When the person last applied commit `seq` (an SQL expression): its newest redo, else the commit
- * itself. A script's change after it is one the person may not mean to keep behind an undo.
+ * When the person last applied commit `seq` before commit `before` (SQL expressions): its newest
+ * redo before then that wrote something again, else the commit itself. A script's change after it
+ * is one the person may not mean to keep behind an undo; the bound keeps what an undo said about
+ * it the same when the undo's answer is sent again after a later redo.
  */
-export const appliedSql = (seq: string): string =>
-  `(SELECT coalesce(max(r.seq), ${seq}) FROM commits r WHERE r.seq > ${seq} AND r.redo_of = ${seq})`;
+export const appliedSql = (seq: string, before: string): string =>
+  `(SELECT coalesce(max(r.seq), ${seq}) FROM commits r WHERE r.seq > ${seq} ` +
+  `AND r.seq < ${before} AND r.redo_of = ${seq} ` +
+  "AND EXISTS (SELECT 1 FROM changes c WHERE c.seq = r.seq))";
 
 /**
  * The step an undo of principal `$principal` takes (A1 3.10.1), with `applied`, the commit that

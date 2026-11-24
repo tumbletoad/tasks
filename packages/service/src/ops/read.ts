@@ -1472,8 +1472,8 @@ export async function readUndoTarget(
 }
 
 /**
- * The newest commit under writer scope `$scope` after the commit that last applied `$undone` (its
- * newest redo, else itself) and before `$seq`, with the first task it changed and the kind of the
+ * The newest commit under writer scope `$scope` after the commit that last applied `$undone`
+ * before `$seq` (appliedSql) and before `$seq`, with the first task it changed and the kind of the
  * operation that changed it (`commits.ops[op].op`).
  */
 const SCRIPT_CHANGE: Statement = {
@@ -1481,7 +1481,7 @@ const SCRIPT_CHANGE: Statement = {
     "SELECT k.at AS at, t.ref AS ref, json_extract(k.ops, '$[' || c.op || '].op') AS change " +
     "FROM commits k JOIN changes c ON c.seq = k.seq AND c.task_id IS NOT NULL " +
     "JOIN tasks t ON t.id = c.task_id WHERE k.scope_id = $scope AND k.seq < $seq " +
-    `AND k.seq > ${appliedSql("(SELECT seq FROM commits WHERE id = $undone)")} ` +
+    `AND k.seq > ${appliedSql("(SELECT seq FROM commits WHERE id = $undone)", "$seq")} ` +
     "ORDER BY k.seq DESC, c.n LIMIT 1",
   mode: "get",
 };
