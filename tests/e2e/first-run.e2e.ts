@@ -513,11 +513,11 @@ test.describe("[A7.3.12.m5-12.e2e.two-files] Claude Code's two settings files: t
     const original = fresh.claudeFile();
     await fresh.forgetSpaces();
     await firstStart(page, fresh);
-    await nameField(page).fill("Kiln");
+    await nameField(page).fill("Loam");
     await page.getByRole("button", { name: "Make the space" }).click();
     await expect(appsHeading(page)).toBeVisible({ timeout: SLOW_MS });
     await page.getByRole("button", { name: "Apply" }).click();
-    await showsSpace(page, "Kiln");
+    await showsSpace(page, "Loam");
     const settings = `${fresh.origin}/s/${spaceOf(page)}/settings`;
     const claude = page.locator('[data-app="claude-code"]');
     try {
