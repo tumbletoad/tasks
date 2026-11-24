@@ -44,7 +44,7 @@ import {
   type ServiceRow,
   type SetupInput,
 } from "../src/setup/index.ts";
-import { keptRows, type KeptRows } from "./setup-rows.ts";
+import { keptRows, serviceRows as rowsOf, type KeptRows } from "./setup-rows.ts";
 import { installedTasks } from "./harness.ts";
 
 const SLOW = 120_000;
@@ -182,15 +182,7 @@ async function remove(w: World, a: Adapter) {
 const recordPath = (w: World): string => join(setupDir(w.input.stateDir), SETUP_FILE);
 
 /** The test's live rows as `setup/homes` lists them. */
-const serviceRows = (w: World): ServiceRow[] =>
-  w.rows.live.map(({ grant, app, home, file, instance, space }) => ({
-    grant,
-    app,
-    home,
-    ...(file === undefined ? {} : { file }),
-    instance,
-    spaces: [space],
-  }));
+const serviceRows = (w: World): ServiceRow[] => rowsOf(w.rows);
 
 /** Whether the selected home has access: a live row of the test's grants table. */
 const accessOf = (w: World, a: Adapter, file: string): boolean =>
@@ -519,9 +511,12 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           if (event === "a save before the grant changes the entry") change();
           const restore =
             event === "the record cannot be written" ? unwritable(recordPath(w)) : null;
+          // The service says it has none: turning it on gives it back.
+          const known: SetupInput = { ...w.input, rows: [] };
+          expect(rows.live, what).toEqual([]);
           let outcome;
           try {
-            outcome = await applyHome(w.input, view, "", rows);
+            outcome = await applyHome(known, view, "", rows);
           } finally {
             restore?.();
           }
@@ -1575,6 +1570,34 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
       expect(await applyHome(input, view, other, w.rows)).toMatchObject({ result: "left" });
       expect(w.rows.live.map((r) => r.space)).toEqual([SPACE]);
       expect(readFileSync(file, "utf8")).toBe('model = "m"\n');
+    },
+    SLOW,
+  );
+
+  test(
+    "a renewal needs to know the access: a plan made while a home's access was on is not the plan of an apply that could not read the service's rows, and such an apply gives no access back",
+    async () => {
+      const w = await world();
+      const codex = ADAPTERS.find((a) => a.app === "codex") as Adapter;
+      seed(codex.file(w), 'model = "m"\n');
+      expect(await apply(w, codex)).toMatchObject({ access: "on" });
+      const tokenOf = async (input: SetupInput) => {
+        const view = (await survey(input)).find((v) => v.home.file === codex.file(w)) as HomeView;
+        return { view, token: planToken(SPACE, planOf(input, [view], SPACE)) };
+      };
+      const known = { ...w.input, rows: serviceRows(w) };
+      const shownOn = (await tokenOf(known)).token;
+      // Turned off since; the apply then cannot read the rows.
+      await w.rows.revoke((await viewOf(w, codex)).home, undefined);
+      const unread = await tokenOf(w.input);
+      expect(unread.token).not.toBe(shownOn);
+      const asked = w.rows.asked.length;
+      expect(await applyHome(w.input, unread.view, SPACE, w.rows)).toMatchObject({
+        result: "left",
+        reason: "access_unknown",
+      });
+      expect(w.rows.asked.slice(asked)).toEqual([]);
+      expect(w.rows.live).toEqual([]);
     },
     SLOW,
   );

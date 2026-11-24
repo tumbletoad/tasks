@@ -67,6 +67,7 @@ import {
   type BlockView,
   manualRemoval,
   hasAccess,
+  GrantRefused,
   HOSTS,
   isPrintApp,
   LockBusy,
@@ -88,6 +89,7 @@ import {
   snippetFor,
   survey,
   withSetupLock,
+  type Access,
   type AgentApp,
   type Host,
   type HomeView,
@@ -292,8 +294,10 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
   other_space: `it names another space: run ${CLI_NAME} setup agents --remove first`,
   grant_failed: `${PRODUCT_NAME}'s service did not confirm that it gave it access`,
   instance_taken: `another agent home is registered as this instance: run ${CLI_NAME} setup agents again for a free one, or give this home an instance of its own in machine.toml`,
+  service_outdated: `${PRODUCT_NAME}'s service runs an earlier build, which keeps one access per folder, and another settings file of this folder has it: restart the service (${CLI_NAME} service restart), then run ${CLI_NAME} setup agents again`,
   record_unreadable: `${PRODUCT_NAME} cannot read its own record of the agent homes, so it changes no file there: ${CLI_NAME} setup agents --remove still turns access off`,
   revoke_failed: `${PRODUCT_NAME}'s service did not confirm that it took its access back, so nothing else was changed`,
+  access_unknown: `${PRODUCT_NAME}'s service did not say whether it has access, so none was given back: run ${CLI_NAME} setup agents again once the service answers`,
   unwritable:
     "its file could not be written: it is read-only, another program holds it, or the disk is full",
   state_unwritable: `setup could not write its own record of it (a full disk?), so its file was left as it was: run ${CLI_NAME} setup agents --remove again once it can`,
@@ -569,7 +573,7 @@ export async function agentsCommand(
             data: { issues: [{ path: "command", message: "Not installed" }] },
           });
         }
-        const access = rowAccess(rowCall(call));
+        const access = accessThrough(call, input.platform);
         const { outcomes, blocks } = await withSetupLock(input.stateDir, async () => {
           // What a run that ended midway left is settled first, and said.
           const settled = mcp ? await settleHomes(await rowsOf(), access) : [];
@@ -606,7 +610,7 @@ export async function agentsCommand(
         return report(io, globals, "apply", outcomes, [], blocks);
       }
       case "remove": {
-        const access = rowAccess(rowCall(call));
+        const access = accessThrough(call, input.platform);
         const { outcomes, notes, blocks } = await withSetupLock(input.stateDir, async () => {
           const done: Outcome[] = mcp ? await settleHomes(input, access) : [];
           let surveyed = await survey(input);
@@ -750,6 +754,35 @@ const rowCall =
       throw new AppError(bodyOf(asAppError(error)));
     }
   };
+
+/**
+ * The homes' access through the service's row verbs. A service of an earlier build (its
+ * `setup/homes` does not say `files`) keeps one row per folder: a row there for a second settings
+ * file of a folder would take the first file's, so that grant is refused, never said to be done.
+ */
+function accessThrough(call: Call, platform: NodeJS.Platform): Access {
+  const rows = rowAccess(rowCall(call));
+  return {
+    revoke: (home, earlier) => rows.revoke(home, earlier),
+    async grant(home, space, earlier) {
+      const answer = await call("setup/homes", {}).catch(() => undefined);
+      if (answer !== undefined && answer["files"] !== true) {
+        const listed = Array.isArray(answer["homes"])
+          ? (answer["homes"] as { grant?: unknown; app?: unknown; home?: unknown }[])
+          : [];
+        const another = listed.some(
+          (row) =>
+            row.app === home.app &&
+            typeof row.home === "string" &&
+            samePath(platform, row.home, home.home) &&
+            row.grant !== earlier,
+        );
+        if (another) throw new GrantRefused("service_outdated");
+      }
+      return rows.grant(home, space, earlier);
+    },
+  };
+}
 
 /** Whether apply registers a home, so it needs the space new entries name (from the service). */
 const needsSpace = (views: readonly HomeView[]): boolean =>

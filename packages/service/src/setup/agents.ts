@@ -231,8 +231,15 @@ export type OutcomeReason =
   | "grant_failed"
   /** The service refused the row: another home's live row holds this instance (A3 3.7.8). */
   | "instance_taken"
+  /**
+   * The service runs an earlier build, which keeps one row per folder, and another settings file
+   * of this home's folder has it: a row for this one would take that one's.
+   */
+  | "service_outdated"
   /** The service did not confirm that it took the home's access back: nothing else was changed. */
   | "revoke_failed"
+  /** The service did not say whether the home has access, so none was given back. */
+  | "access_unknown"
   /** The OS refused to write the file: it is read-only, another program holds it, or the disk is full. */
   | "unwritable"
   /** The tools cannot be turned on from here (answer.ts `ToolsWhy`). */
@@ -264,8 +271,8 @@ export interface Outcome {
 /** The service refused a home's row: `instance_taken`, or `grant_failed` for any other reason. */
 export class GrantRefused extends Error {
   override readonly name = "GrantRefused";
-  readonly reason: "instance_taken" | "grant_failed";
-  constructor(reason: "instance_taken" | "grant_failed") {
+  readonly reason: "instance_taken" | "grant_failed" | "service_outdated";
+  constructor(reason: "instance_taken" | "grant_failed" | "service_outdated") {
     super(`The service refused the agent home's row: ${reason}`);
     this.reason = reason;
   }
@@ -1409,10 +1416,11 @@ export interface PlanItem {
   /** The change for a home without an entry, or why it cannot get one; undefined otherwise. */
   readonly change: Change | Refusal | undefined;
   /**
-   * `on`: the home is registered and has no access now (hasAccess), so apply gives it back. Known
-   * only when the plan was made with the service's rows.
+   * `on`: the home is registered and has no access now (hasAccess), so apply gives it back.
+   * `unknown`: it is registered and the plan was made without the service's rows, so apply gives
+   * nothing back (applyHome): a plan made while its access was on is not this one.
    */
-  readonly access?: "on";
+  readonly access?: "on" | "unknown";
 }
 
 /** Whether a file is there, a link or one setup refuses to read included. */
@@ -1449,7 +1457,11 @@ export function planOf(input: SetupInput, views: readonly HomeView[], space: str
         : view.home.app === "claude-desktop" && desktops.length > 1
           ? "ambiguous"
           : planChange(input, view, space),
-    ...(gives(view) ? { access: "on" as const } : {}),
+    ...(gives(view)
+      ? { access: "on" as const }
+      : view.state === "registered" && input.rows === undefined
+        ? { access: "unknown" as const }
+        : {}),
   }));
 }
 
@@ -1734,6 +1746,9 @@ export async function applyHome(
       if (view.state !== "registered" || record === undefined || answer.why !== undefined) {
         return left();
       }
+      // Its row is renewed only while the service says it has one: else a plan made while its
+      // access was on would give back what was turned off since.
+      if (input.rows === undefined) return { home, result: "left", reason: "access_unknown" };
       return giveAccess(input, home, record, record.space, access, view.earlier);
   }
 }
@@ -1790,8 +1805,10 @@ async function giveAccess(
     grant = await access.grant(home, space, earlier);
   } catch (error) {
     if (registered) return { home, result: "failed", reason: grantReason(error) };
-    // A row the service made before its answer was lost is taken back too.
-    return undo(input, home, record, access, earlier, grantReason(error));
+    // A row the service made before its answer was lost is taken back too; a grant never asked
+    // for made none, and a service of an earlier build would take back the folder's other file.
+    const asked = grantReason(error) !== "service_outdated";
+    return undo(input, home, record, access, earlier, grantReason(error), { given: asked });
   }
   const after = entryNow(home, record);
   if (after.whose !== "own") {

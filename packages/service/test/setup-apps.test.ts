@@ -42,7 +42,7 @@ import {
   type HomeView,
   type SetupInput,
 } from "../src/setup/index.ts";
-import { keptRows } from "./setup-rows.ts";
+import { keptRows, serviceRows } from "./setup-rows.ts";
 import { installedTasks } from "./harness.ts";
 
 const SLOW = 180_000;
@@ -219,7 +219,8 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
 
       const registered = only(await survey(input), "claude-desktop");
       expect(registered.state).toBe("registered");
-      expect((await applyHome(input, registered, SPACE, ROWS)).result).toBe("unchanged");
+      const known = { ...input, rows: serviceRows(ROWS) };
+      expect((await applyHome(known, registered, SPACE, ROWS)).result).toBe("unchanged");
       expect(await removeHome(input, registered, ROWS)).toMatchObject({ result: "removed" });
       expect(readFileSync(file)).toEqual(before);
       expect(readRecords(w.state)).toEqual([]);

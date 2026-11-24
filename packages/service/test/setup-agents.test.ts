@@ -37,7 +37,7 @@ import {
   type HomeView,
   type SetupInput,
 } from "../src/setup/index.ts";
-import { keptRows } from "./setup-rows.ts";
+import { keptRows, serviceRows } from "./setup-rows.ts";
 import { installedTasks } from "./harness.ts";
 
 const SLOW = 180_000;
@@ -296,9 +296,10 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
       expect(existsSync(join(w.root, "elsewhere-claude"))).toBe(false);
       expect(existsSync(join(w.root, "elsewhere-codex"))).toBe(false);
 
-      // Applying again changes nothing.
+      // Applying again changes nothing, once the service says each has its access.
+      const known = { ...input, rows: serviceRows(ROWS) };
       for (const view of afterApply) {
-        expect((await applyHome(input, view, SPACE, ROWS)).result).toBe("unchanged");
+        expect((await applyHome(known, view, SPACE, ROWS)).result).toBe("unchanged");
       }
 
       // Remove: every file as it was, byte for byte; the file setup created is gone again.

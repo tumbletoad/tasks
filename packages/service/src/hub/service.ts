@@ -723,6 +723,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     } catch {
       personHome = undefined;
     }
+    // The account whose agent apps setup and Settings change.
+    const setupHome = options.agentApps?.home ?? personHome;
     // A home's rows, found by the file its click recorded (binding/decide.ts).
     const rowsHost = {
       grants: grantsOf,
@@ -895,6 +897,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         grants: grantsOf,
         spaces: () => made.spaces?.served() ?? [],
         seen: new SeenCalls(),
+        ...(setupHome === undefined ? {} : { userHome: setupHome }),
       },
       spaces: {
         machine,

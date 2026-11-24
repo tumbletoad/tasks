@@ -21,13 +21,18 @@
 // stand in for the run. Instance IDs, app words and times only; never a call's content, and a
 // folder only as an answer to the caller's own.
 import { AppError } from "@ttasks/contracts";
+import { posix, win32 } from "node:path";
+import { CLI_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { hasControl, INSTANCE_ID, MANUAL_INSTANCE } from "@ttasks/launch";
 import { isId } from "@ttasks/storage";
 import { isLive, type ConnectionClass, type Grant, type GrantStore } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
-import { HOSTS, samePath } from "../setup/agents.ts";
-import { AGENT_APPS, isAgentApp } from "../setup/state.ts";
+import { folderFile, HOSTS, samePath } from "../setup/agents.ts";
+import { AGENT_APPS, isAgentApp, type AgentApp } from "../setup/state.ts";
+
+/** Claude Code's settings file in a home folder. */
+const CLAUDE = ".claude.json";
 import type { Logger } from "./log.ts";
 
 export interface AgentHomesHost {
@@ -39,6 +44,8 @@ export interface AgentHomesHost {
   readonly platform: NodeJS.Platform;
   /** The MCP calls this start saw, by instance (`setup/seen`). */
   readonly seen?: SeenCalls;
+  /** The account's home folder, where Claude Code's default settings file is. */
+  readonly userHome?: string;
 }
 
 /** At most this many instances are remembered; the oldest goes first. */
@@ -192,7 +199,8 @@ function text(params: JsonObject, key: string, max: number): string {
 
 /**
  * The settings file a verb names: its app, folder and file, and the row an earlier build made for
- * that file (`grant`), which names the folder only (setup/agents.ts rowFile).
+ * that file (`grant`), which names the folder only (setup/agents.ts rowFile). A command line of an
+ * earlier build names no file.
  */
 function fileParams(params: JsonObject) {
   const app = params["app"];
@@ -208,7 +216,7 @@ function fileParams(params: JsonObject) {
   return {
     app,
     home: text(params, "home", 4096),
-    file: text(params, "file", 4096),
+    file: params["file"] === undefined ? undefined : text(params, "file", 4096),
     earlier: typeof earlier === "string" ? earlier : undefined,
   };
 }
@@ -223,18 +231,56 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
     await host.grants().flush?.();
   };
 
-  /** The live rows of the file a verb names. */
-  const ofFile = (named: ReturnType<typeof fileParams>) =>
-    live().filter((grant) => {
-      if (attr(grant, "app") !== named.app) return false;
-      const file = attr(grant, "file");
-      return file === ""
-        ? grant.grant_id === named.earlier
-        : samePath(host.platform, file, named.file);
-    });
+  const { platform } = host;
+  /** The file an earlier build gave a folder, which its rows name by the folder only. */
+  const earlierFile = (app: AgentApp, folder: string) =>
+    folderFile({ platform, userHome: host.userHome ?? "" }, app, folder);
+
+  /**
+   * The file a verb names and that file's live rows. A command line of an earlier build names a
+   * folder only: it means the folder's one file, and turning off means the file of the folder's
+   * live rows. Claude Code's default folder can mean two files (the default one in the account's
+   * home, and one inside it): such a request is refused once two can be meant.
+   */
+  const resolved = (named: ReturnType<typeof fileParams>, verb: "grant" | "revoke") => {
+    const ofApp = live().filter((grant) => attr(grant, "app") === named.app);
+    if (named.file !== undefined) {
+      const { file } = named;
+      const rows = ofApp.filter((grant) => {
+        const own = attr(grant, "file");
+        return own === "" ? grant.grant_id === named.earlier : samePath(platform, own, file);
+      });
+      return { file, rows };
+    }
+    const rows = ofApp.filter((grant) => samePath(platform, attr(grant, "home"), named.home));
+    const own = earlierFile(named.app, named.home);
+    const files: string[] = [];
+    for (const grant of rows) {
+      const file = attr(grant, "file") || own;
+      if (!files.some((f) => samePath(platform, f, file))) files.push(file);
+    }
+    const two =
+      named.app === "claude-code" &&
+      !samePath(platform, own, (platform === "win32" ? win32 : posix).join(named.home, CLAUDE));
+    if (files.length > 1 || (verb === "grant" && two)) {
+      throw new AppError({
+        code: "invalid_input",
+        message:
+          "Two settings files in this agent home's folder can have access, and the request names neither.",
+        hint: `Update ${CLI_NAME}, then run ${CLI_NAME} setup agents again.`,
+        data: {
+          reason: "ambiguous",
+          issues: [{ path: "file", message: "Expected a settings file" }],
+        },
+      });
+    }
+    return { file: files[0] ?? own, rows };
+  };
 
   return {
-    "setup/homes": () => Promise.resolve({ homes: live().map(rowOf) }),
+    // `files`: this service keeps a row per settings file, which a command line of this build
+    // needs to give two files of one folder their own access.
+    "setup/homes": () => Promise.resolve({ homes: live().map(rowOf), files: true }),
 
     "setup/seen": (params) => {
       const given = params["folders"];
@@ -253,7 +299,7 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
     "setup/home_grant": async (params, cls) => {
       userOnly(cls);
       const named = fileParams(params);
-      const { app, home, file } = named;
+      const { app, home } = named;
       const given = params["hosts"];
       if (
         given !== undefined &&
@@ -285,7 +331,7 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
       }
       // One live row per file: the same answer keeps it, another one replaces it. A row an earlier
       // build made has no file, and is replaced by one that has.
-      const ofHome = ofFile(named);
+      const { file, rows: ofHome } = resolved(named, "grant");
       // One file per live instance: an actor name stands for one home at a time, and the
       // gate finds a connection's row by it (hub/home-gate.ts). The person frees the instance by
       // turning the other home off, or gives this one its own instance in machine.toml.
@@ -339,7 +385,7 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
       let ids = params["grants"];
       if (ids === undefined) {
         // A file's every live row, whatever its instance or space: turning a home off.
-        ids = ofFile(fileParams(params)).map((grant) => grant.grant_id);
+        ids = resolved(fileParams(params), "revoke").rows.map((grant) => grant.grant_id);
       }
       if (
         !Array.isArray(ids) ||

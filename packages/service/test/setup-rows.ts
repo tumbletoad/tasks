@@ -13,6 +13,7 @@ import {
   rowAccess,
   type Access,
   type AgentHome,
+  type ServiceRow,
 } from "../src/setup/index.ts";
 
 export interface KeptRow {
@@ -115,3 +116,14 @@ export function keptRows(before?: (verb: "grant" | "revoke", home: AgentHome) =>
   };
   return rows;
 }
+
+/** The live rows as the service's `setup/homes` lists them. */
+export const serviceRows = (rows: KeptRows): ServiceRow[] =>
+  rows.live.map(({ grant, app, home, file, instance, space }) => ({
+    grant,
+    app,
+    home,
+    ...(file === undefined ? {} : { file }),
+    instance,
+    spaces: [space],
+  }));

@@ -9,8 +9,10 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
+import { testEnv } from "@ttasks/testkit";
 import { renderError } from "../src/mcp/index.ts";
 import { homeGate } from "../src/hub/home-gate.ts";
+import { homeFolder, hostFacts } from "../src/hub/paths.ts";
 import type { Grant } from "../src/local/index.ts";
 import { grantRefused, MANUAL_INSTANCE, opCall } from "../src/ops/index.ts";
 import {
@@ -978,6 +980,75 @@ describe("[A3.3.7.binding.worlds] a world launch is what a click and setup leave
       const elsewhere = await w.launch("M-1", { home: "other-space" });
       expect(recorded(elsewhere)).toMatchObject({ space: w.space, app: "codex" });
       expect(await rowsOf(elsewhere)).toEqual([expect.objectContaining({ spaces: [life] })]);
+    },
+  );
+});
+
+describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every connection of its home", () => {
+  test(
+    "a command line of an earlier build names a folder only: the folder's one file is meant, turning off takes the file of the folder's rows, and a folder two files share is refused once two can be meant",
+    { timeout: LONG },
+    async () => {
+      // This test's rows: their instances start with `earlier-`.
+      const listed = async () =>
+        (
+          (await asUser("setup/homes", {}))["homes"] as {
+            grant: string;
+            instance: string;
+            file?: string;
+          }[]
+        ).filter((h) => h.instance.startsWith("earlier-"));
+      const refusal = async (method: string, params: Json) => {
+        try {
+          await asUser(method, params);
+        } catch (error) {
+          return errorOf(error);
+        }
+        return undefined;
+      };
+      const row = { account: "", space: w.space };
+
+      // A Codex home: one file, so the folder names it.
+      const codex = join(w.home, "agent-homes", "earlier-cli");
+      await asUser("setup/home_grant", {
+        app: "codex",
+        home: codex,
+        instance: "earlier-cli",
+        ...row,
+      });
+      expect(await listed()).toMatchObject([{ file: join(codex, "config.toml") }]);
+      expect(await asUser("setup/home_revoke", { app: "codex", home: codex })).toEqual({
+        revoked: 1,
+      });
+
+      // Claude Code's default folder: the default file in the account's home, and one inside it.
+      const user = homeFolder(hostFacts(testEnv(), process.platform));
+      const folder = join(user, ".claude");
+      const plain = { app: "claude-code", home: folder, file: join(user, ".claude.json") };
+      const named = { app: "claude-code", home: folder, file: join(folder, ".claude.json") };
+      const folderOnly = { app: "claude-code", home: folder, instance: "earlier-claude", ...row };
+      expect(await refusal("setup/home_grant", folderOnly)).toMatchObject({
+        code: "invalid_input",
+        data: { reason: "ambiguous" },
+      });
+      await asUser("setup/home_grant", { ...plain, instance: "earlier-claude", ...row });
+      expect(await asUser("setup/home_revoke", { app: "claude-code", home: folder })).toEqual({
+        revoked: 1,
+      });
+      await asUser("setup/home_grant", { ...plain, instance: "earlier-claude", ...row });
+      await asUser("setup/home_grant", { ...named, instance: "earlier-claude-2", ...row });
+      expect(
+        await refusal("setup/home_revoke", { app: "claude-code", home: folder }),
+      ).toMatchObject({ code: "invalid_input", data: { reason: "ambiguous" } });
+      const both = await listed();
+      expect(both).toHaveLength(2);
+      expect(
+        await revokeHome(
+          w.home,
+          w.path,
+          both.map((h) => h.grant),
+        ),
+      ).toBe(2);
     },
   );
 });
