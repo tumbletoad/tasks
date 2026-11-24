@@ -491,6 +491,61 @@
       "title": "Complete a task"
     },
     {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Move tasks to the Trash, where the person can restore them. Only for tasks you know are mistakes or duplicates: 'clean up' means organise, not remove. For work that will not be done, use complete_task with dropped. restore: true brings tasks back.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "change": {
+            "description": "With restore: bring back what this change moved to the Trash and is still there",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why, for the history",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "restore": {
+            "description": "Bring the tasks back from the Trash",
+            "type": "boolean"
+          },
+          "tasks": {
+            "description": "The tasks",
+            "items": {
+              "description": "Task ref (M-14) or ID",
+              "maxLength": 40,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "name": "delete_tasks",
+      "title": "Move tasks to the Trash"
+    },
+    {
       "_meta": {
         "anthropic/alwaysLoad": true
       },

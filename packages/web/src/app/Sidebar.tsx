@@ -25,6 +25,7 @@ import { ChevronIcon, PlusIcon, SettingsIcon, ViewIcon } from "./Icons.tsx";
 import { useLive } from "../store/hooks.ts";
 import css from "./Sidebar.module.css";
 import { SpaceSwitcher } from "./SpaceSwitcher.tsx";
+import { useMovedByOthers } from "../views/Trash.tsx";
 import { useFolds } from "./folds.ts";
 import { groupCounts, sidebarEntries, VIEW_LABEL, viewCounts } from "./views.ts";
 import { classes } from "./css.ts";
@@ -329,6 +330,7 @@ export function Sidebar({
   // A folded area holding the project on screen is marked as the way to it.
   const shownProject = "project" in here ? here.project : undefined;
   const shownArea = "area" in here ? here.area : undefined;
+  const moved = useMovedByOthers("view" in here && here.view === "trash");
 
   return (
     <div className={styles.sidebar}>
@@ -336,6 +338,8 @@ export function Sidebar({
       <ul className={styles.list}>
         {[...entries].map(([view, { count, empty }]) => {
           const label = t(VIEW_LABEL[view]);
+          // The Trash counts only what agents moved there since the person last had it open.
+          const mark = view === "trash" && moved > 0 ? moved : undefined;
           return (
             <li key={view}>
               <Link
@@ -346,15 +350,22 @@ export function Sidebar({
                 activeOptions={IGNORE_TASK}
                 data-view={view}
                 data-empty={empty || undefined}
-                {...(count === undefined
-                  ? {}
-                  : { "aria-label": t("nav.counted", { view: label, count }) })}
+                {...(mark !== undefined
+                  ? { "aria-label": t("nav.trashMoved", { view: label, count: mark }) }
+                  : count === undefined
+                    ? {}
+                    : { "aria-label": t("nav.counted", { view: label, count }) })}
               >
                 <ViewIcon view={view} />
                 <span className={styles.label}>{label}</span>
                 {count === undefined || empty ? null : (
                   <span className={styles.count} aria-hidden="true">
                     {intl.formatNumber(count)}
+                  </span>
+                )}
+                {mark === undefined ? null : (
+                  <span className={styles.count} data-mark aria-hidden="true">
+                    {intl.formatNumber(mark)}
                   </span>
                 )}
               </Link>

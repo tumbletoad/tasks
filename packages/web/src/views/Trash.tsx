@@ -8,6 +8,7 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { localDate } from "@ttasks/contracts/day";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
+import type { Instance } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { Session } from "../context.ts";
@@ -20,9 +21,20 @@ import { useClock } from "../row/useClock.ts";
 import { useLive, usePagedQuery } from "../store/hooks.ts";
 import { affects } from "../store/queries.ts";
 import type { TaskRow } from "../store/rows.ts";
+import { onKept } from "../kept.ts";
+import { agentName } from "./agent-name.ts";
 import { letGo, useUnsent } from "../unsent.ts";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
-import { trashGroups, trashSource, type Removal, type TrashedRow } from "./trash.ts";
+import {
+  keepTrashSeen,
+  movedByOthers,
+  seenName,
+  trashGroups,
+  trashSeen,
+  trashSource,
+  type Removal,
+  type TrashedRow,
+} from "./trash.ts";
 import css from "./Trash.module.css";
 import listCss from "./TaskList.module.css";
 
@@ -96,10 +108,18 @@ function whenOf(at: string, clock: Clock): string {
 }
 
 /** A change's heading: who moved how many tasks there, when, and why when it was given. */
-function changeTitle(removal: Removal, clock: Clock, t: Translate): string {
+function changeTitle(
+  removal: Removal,
+  clock: Clock,
+  t: Translate,
+  instances: readonly Instance[],
+): string {
   const values = {
     who: removal.by === "user" ? "user" : "other",
-    by: removal.by,
+    by:
+      removal.by === "user" || removal.by === "import"
+        ? removal.by
+        : (agentName(removal.by, instances) ?? t("thread.agent")),
     count: removal.count,
     when: whenOf(removal.at, clock),
   };
@@ -122,8 +142,15 @@ function TrashList({ q, task, onExpand }: TrashProps & { readonly q: string }) {
   const { api, live } = useContext(Session);
   const edits = useEdits();
   const clock = useClock(false);
+  const { instances } = useLive();
   const source = useMemo(() => trashSource((input) => api.client.task.trash(input), q), [api, q]);
   const { state, query } = usePagedQuery(QUERY, source);
+  // What the whole Trash shows is seen, also a removal that arrives while it is open.
+  const space = live.spaceId;
+  useEffect(() => {
+    if (space !== undefined && q === "" && state.phase === "ready")
+      keepTrashSeen(space, state.rows);
+  }, [space, q, state.phase, state.rows]);
   // "Restore these": the change's tasks still in the Trash, as one change with its own Undo.
   const restoreChange = useCallback(
     (removal: Removal) => {
@@ -168,7 +195,7 @@ function TrashList({ q, task, onExpand }: TrashProps & { readonly q: string }) {
   );
   const face = useMemo(
     () => ({
-      title: (removal: Removal) => changeTitle(removal, clock, t),
+      title: (removal: Removal) => changeTitle(removal, clock, t, instances),
       restore: (removal: Removal) => ({
         label: t("trash.restoreThese", { count: removal.count }),
         run: () => {
@@ -176,7 +203,7 @@ function TrashList({ q, task, onExpand }: TrashProps & { readonly q: string }) {
         },
       }),
     }),
-    [clock, t, restoreChange],
+    [clock, t, restoreChange, instances],
   );
   const groups = useCallback<GroupsOf>(
     (_tasks, held) => trashGroups(state.rows, face, held),
@@ -447,4 +474,45 @@ function UnsentWords() {
       </ul>
     </section>
   );
+}
+
+/**
+ * How many tasks agents moved to the Trash that the Trash has not shown in this browser: the
+ * sidebar's mark on the Trash. Read again whenever a task is removed or restored, a snapshot
+ * replaces what the page knew, or a tab shows the Trash; none while it is open.
+ */
+export function useMovedByOthers(open: boolean): number {
+  const { api, live } = useContext(Session);
+  const space = live.spaceId;
+  const [count, setCount] = useState(0);
+  const [round, setRound] = useState(0);
+  useEffect(
+    () =>
+      live.onChanges(({ changes, reset }) => {
+        if (reset || changes.some((change) => affects(QUERY, change))) setRound((n) => n + 1);
+      }),
+    [live],
+  );
+  useEffect(() => {
+    if (space === undefined) return;
+    return onKept(seenName(space), () => {
+      setRound((n) => n + 1);
+    });
+  }, [space]);
+  useEffect(() => {
+    if (space === undefined || open) return;
+    let current = true;
+    movedByOthers((input) => api.client.task.trash(input), trashSeen(space)).then(
+      (n) => {
+        if (current) setCount(n);
+      },
+      (error: unknown) => {
+        live.failed(error);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [api, live, space, open, round]);
+  return open ? 0 : count;
 }

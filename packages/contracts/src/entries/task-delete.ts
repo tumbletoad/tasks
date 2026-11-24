@@ -1,8 +1,8 @@
 // task.delete: move tasks to the Trash, or bring them back. Nothing is deleted for good: every row
 // and its history stay, and nothing empties the Trash. A restore brings a task back as it was,
 // except a link whose key another active task took meanwhile, which stays there, and a project or
-// area that is gone, for which it lands in the area or the Inbox. For the person only: agents
-// remove nothing yet.
+// area that is gone, for which it lands in the area or the Inbox. An agent's removal is no step on
+// the person's Undo: the Trash names who made each change, and Restore takes it back.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeText } from "../safe-text.ts";
@@ -91,7 +91,7 @@ export const taskDelete = defineEntry({
   name: "task.delete",
   summary: "Move tasks to the Trash, or restore them. Nothing is deleted for good.",
   kind: "write",
-  actors: "user",
+  actors: "agent",
   scope: "space:write",
   remote: "write",
   audience: "caller",
@@ -104,7 +104,16 @@ export const taskDelete = defineEntry({
       { verb: "delete", positional: ["tasks"], exclude: ["restore", "change"] },
       { verb: "restore", positional: ["tasks"], fixed: { restore: true } },
     ],
+    mcp: {
+      tool: "delete_tasks",
+      title: "Move tasks to the Trash",
+      description:
+        "Move tasks to the Trash, where the person can restore them. Only for tasks you know are " +
+        "mistakes or duplicates: 'clean up' means organise, not remove. For work that will not be " +
+        "done, use complete_task with dropped. restore: true brings tasks back.",
+    },
   },
+  budget: { typical: 40, max: 1500 },
   errors: [
     "invalid_input",
     "not_found",

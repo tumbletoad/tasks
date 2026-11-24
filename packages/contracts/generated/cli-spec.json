@@ -427,7 +427,7 @@
       "verb": "brief"
     },
     {
-      "actors": "user",
+      "actors": "agent",
       "auto": [
         "base",
         "request_id"
@@ -897,7 +897,7 @@
       "verb": "reopen"
     },
     {
-      "actors": "user",
+      "actors": "agent",
       "auto": [
         "base",
         "request_id"

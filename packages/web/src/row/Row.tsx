@@ -707,6 +707,12 @@ function RowView({
                   if (is(event.nativeEvent, "rename")) {
                     event.preventDefault();
                     edit();
+                  } else if (is(event.nativeEvent, "trash")) {
+                    event.preventDefault();
+                    // A held key moves one task: its repeats reach the next row's title.
+                    if (event.repeat || still) return;
+                    focusAfter(event.currentTarget);
+                    edits.trash(task);
                   }
                 }}
               >
