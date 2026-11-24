@@ -7,7 +7,7 @@
 // 1,440 and 390 px. Fixture data only.
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { openTask, picture, showsSpace, signIn, spaceSwitcher } from "./page.ts";
+import { openTask, picture, showsSpace, signIn, spaceSwitcher, threadDrawn } from "./page.ts";
 import { CODEX_INSTANCE, SLOW_MS } from "./world.ts";
 
 const toast = (page: Page) => page.locator('[data-part="toast-text"]');
@@ -145,6 +145,7 @@ test.describe("[A2.3.10.5.copies.e2e] a person looks inside a backup on the page
     // The Trash takes no change there either: Move to Trash, a row's Restore and Restore these
     // each say why, and nothing moves.
     const refused = "Not saved: this is a restored copy";
+    await threadDrawn(row);
     await row.locator('[data-part="move-to-trash"]').click();
     await expect(toast(page)).toHaveText(refused, { timeout: SLOW_MS });
     await expect(row.locator('[data-part="in-trash"]')).toHaveCount(0);
