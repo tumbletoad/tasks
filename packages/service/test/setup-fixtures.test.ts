@@ -28,6 +28,7 @@ import { withAppLock } from "../src/setup/app-lock.ts";
 import {
   applyHome,
   planOf,
+  planToken,
   readRecords,
   removeHome,
   setupDir,
@@ -1347,6 +1348,154 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           expect(readFileSync(file, "utf8")).toBe(bare);
           expect(readRecords(w.input.stateDir)).toEqual([]);
         }
+      }
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings file for each way it is started: the entry goes into each that a program reads, and comes out of each", () => {
+  /** The default folder's two files: plain Claude Code's, and the one Claude Code reads when its home is set to the folder. */
+  const filesOf = (w: World) => ({
+    folder: join(w.home, ".claude"),
+    plain: join(w.home, ".claude.json"),
+    explicit: join(w.home, ".claude", ".claude.json"),
+  });
+  const claude = ADAPTERS[0] as Adapter;
+  const defaultView = async (w: World, input: SetupInput = w.input): Promise<HomeView> => {
+    const found = (await survey(input)).find(
+      (v) => v.home.app === "claude-code" && v.home.home === filesOf(w).folder,
+    );
+    if (found === undefined) throw new Error("no default Claude Code home");
+    return found;
+  };
+  const applyDefault = async (w: World, input: SetupInput = w.input) => {
+    const view = await defaultView(w, input);
+    const [item] = planOf(input, [view], SPACE);
+    return applyHome(input, view, SPACE, w.rows, item?.change);
+  };
+
+  test(
+    "both files there: apply writes the same entry into each and gives one access; remove takes both out byte for byte",
+    async () => {
+      const w = await world();
+      const { plain, explicit } = filesOf(w);
+      seed(plain, '{\n  "numStartups": 3\n}\n');
+      seed(explicit, '{"theme":"dark"}');
+      const before = [bytesOf(plain), bytesOf(explicit)];
+      expect(await applyDefault(w)).toMatchObject({ result: "applied", access: "on" });
+      const instance = (await defaultView(w)).home.instance;
+      expect(entryIn(claude, plain)).toEqual(expectedEntry(w, claude, instance));
+      expect(entryIn(claude, explicit)).toEqual(expectedEntry(w, claude, instance));
+      expect(w.rows.live).toHaveLength(1);
+      expect(await removeHome(w.input, await defaultView(w), w.rows)).toMatchObject({
+        result: "removed",
+        access: "off",
+      });
+      expect([bytesOf(plain), bytesOf(explicit)]).toEqual(before);
+      expect(readRecords(w.input.stateDir)).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "T3 Code starts Claude Code with its home set to the folder: that file gets the entry too, though it is not there yet",
+    async () => {
+      const w = await world();
+      const { folder, plain, explicit } = filesOf(w);
+      seed(plain, "{}\n");
+      const t3 = join(w.home, ".t3", "userdata");
+      mkdirSync(t3, { recursive: true, mode: 0o700 });
+      writeFileSync(
+        join(t3, "settings.json"),
+        JSON.stringify({
+          providerInstances: {
+            claudeAgent: { driver: "claudeAgent", config: { homePath: folder } },
+          },
+        }),
+        { mode: 0o600 },
+      );
+      expect((await defaultView(w)).home.hosts).toEqual(["t3"]);
+      expect(await applyDefault(w)).toMatchObject({ result: "applied", access: "on" });
+      const instance = (await defaultView(w)).home.instance;
+      expect(entryIn(claude, plain)).toEqual(expectedEntry(w, claude, instance));
+      expect(entryIn(claude, explicit)).toEqual(expectedEntry(w, claude, instance));
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.plan-bound] A plan is bound to what its apply writes and gives: each file as read, and the access", () => {
+  const tokenOf = async (w: World, a: Adapter, input: SetupInput = w.input) => {
+    const view = (await survey(input)).find(
+      (v) => v.home.app === a.app && (a.folder === undefined || v.home.home.endsWith(a.folder)),
+    );
+    if (view === undefined) throw new Error(`no ${a.app} home`);
+    return planToken(SPACE, planOf(input, [view], SPACE));
+  };
+
+  test(
+    "an edit of a selected file changes the plan, for turning on and for turning off; Claude Code's own saves outside its servers do not",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        const file = a.file(w);
+        const base =
+          a.format === "json" ? '{"theme": "dark", "mcpServers": {}}\n' : 'model = "m"\n';
+        seed(file, base);
+        const other =
+          a.format === "json"
+            ? '{"theme": "dark", "mcpServers": {"other": {"command": "x"}}}\n'
+            : 'model = "m"\n\n[mcp_servers.other]\ncommand = "x"\n';
+        const adding = await tokenOf(w, a);
+        seed(file, other);
+        expect(await tokenOf(w, a), `${a.app}: another server, before it is turned on`).not.toBe(
+          adding,
+        );
+        seed(file, base);
+        expect(await apply(w, a)).toMatchObject({ result: "applied" });
+        const withRows = { ...w.input, rows: w.rows.live };
+        const removing = await tokenOf(w, a, withRows);
+        const text = readFileSync(file, "utf8");
+        seed(
+          file,
+          a.format === "json"
+            ? text.replace('"theme": "dark"', '"theme": "light"')
+            : text.replace('model = "m"', 'model = "n"'),
+        );
+        const edited = await tokenOf(w, a, withRows);
+        if (a.app === "claude-code") {
+          // Claude Code saves its own state into this file while a session runs.
+          expect(edited, `${a.app}: its own save, before it is turned off`).toBe(removing);
+        } else {
+          expect(edited, `${a.app}: an edit, before it is turned off`).not.toBe(removing);
+        }
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "the access an apply gives back is part of its plan: on, off and unknown are three plans, and an apply that cannot read the access gives none back",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        seed(a.file(w), a.format === "json" ? "{}\n" : "");
+        expect(await apply(w, a)).toMatchObject({ result: "applied", access: "on" });
+        const on = await tokenOf(w, a, { ...w.input, rows: w.rows.live });
+        const off = await tokenOf(w, a, { ...w.input, rows: [] });
+        const unknown = await tokenOf(w, a, { ...w.input, rows: undefined });
+        expect(new Set([on, off, unknown]).size, a.app).toBe(3);
+        // The service did not say: a renewal asks for no access.
+        await w.rows.revoke((await viewOf(w, a)).home);
+        w.rows.asked.length = 0;
+        const view = await viewOf(w, a);
+        expect(
+          await applyHome({ ...w.input, rows: undefined }, view, SPACE, w.rows),
+          a.app,
+        ).toMatchObject({ result: "left", reason: "access_unknown" });
+        expect(w.rows.asked, a.app).toEqual([]);
+        expect(w.rows.live, a.app).toEqual([]);
       }
     },
     SLOW,

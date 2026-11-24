@@ -382,6 +382,96 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
   );
 
   it(
+    "turning off is bound to the file as shown: an edit of it since gives the new view and takes nothing out",
+    async () => {
+      const codexFile = join(w.user, ".codex", "config.toml");
+      const look = async () => (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+      const first = row(await look(), "codex");
+      if (first.tools?.on !== true) {
+        await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: first.key, part: "tools", on: true, plan: first.tools?.plan }],
+        });
+      }
+      const shown = row(await look(), "codex");
+      expect(shown.tools).toMatchObject({ on: true, change: "remove" });
+      appendFileSync(codexFile, "\n# the person's note\n");
+      const stale = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+        space,
+        changes: [{ key: shown.key, part: "tools", on: false, plan: shown.tools?.plan }],
+      });
+      expect(stale.result.applied).toBe(false);
+      expect(readFileSync(codexFile, "utf8")).toContain("[mcp_servers.ttasks]");
+      const fresh = row(stale.result.view, "codex");
+      const off = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+        space,
+        changes: [{ key: fresh.key, part: "tools", on: false, plan: fresh.tools?.plan }],
+      });
+      expect(off.result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(readFileSync(codexFile, "utf8")).toContain("# the person's note");
+    },
+    SLOW,
+  );
+
+  it(
+    "a setup that ended midway is finished first, and a switch that would then write other than it showed writes nothing",
+    async () => {
+      const recordPath = join(stateOf(w.home), "setup", "agents.json");
+      const look = async () => (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+      const claude = row(await look(), "claude-code");
+      expect(claude.tools).toMatchObject({ on: false, change: "add" });
+      // A run that stopped before it wrote its entry, under an instance this home is no longer offered.
+      const kept = existsSync(recordPath) ? readFileSync(recordPath, "utf8") : undefined;
+      const argv = [
+        join(w.home, "bin", process.platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME),
+        "mcp",
+        "--space",
+        space,
+        "--instance",
+        "claude-before",
+        "--app",
+        "claude-code",
+      ];
+      mkdirSync(join(stateOf(w.home), "setup"), { recursive: true });
+      writeFileSync(
+        recordPath,
+        JSON.stringify({
+          format: 2,
+          homes: [
+            {
+              app: "claude-code",
+              home: join(w.user, ".claude"),
+              file: join(w.user, ".claude.json"),
+              is_default: true,
+              instance: "claude-before",
+              account: "",
+              space,
+              state: "applying",
+              entry: { command: argv[0], args: argv.slice(1) },
+              also: [],
+              made: { file: false, parent: true, spacing: null },
+              grant: null,
+              at: "2026-11-01T00:00:00.000Z",
+            },
+            ...(kept === undefined ? [] : (JSON.parse(kept) as { homes: unknown[] }).homes),
+          ],
+        }),
+      );
+      const shown = row(await look(), "claude-code");
+      expect(shown.tools?.detail.join("\n")).toContain("claude-before");
+      const applied = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+        space,
+        changes: [{ key: shown.key, part: "tools", on: true, plan: shown.tools?.plan }],
+      });
+      expect(applied.result.applied).toBe(false);
+      expect(claudeEntry(w.user)).toBeUndefined();
+      const fresh = row(applied.result.view, "claude-code");
+      expect(fresh.tools?.detail.join("\n")).not.toContain("claude-before");
+    },
+    SLOW,
+  );
+
+  it(
     "refuses a space this service does not serve, and a switch named twice",
     async () => {
       expect(
