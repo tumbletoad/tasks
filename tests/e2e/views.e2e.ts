@@ -236,7 +236,12 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
     await expect(row(page, report)).toBeVisible({ timeout: SLOW_MS });
     await expect(checked.locator(`li[data-task="${report}"]`)).toHaveCount(0);
     await row(page, report).locator('[data-part="title"]').click();
-    await page.locator('[data-part="reopen"]').click();
+    // The toast and the row show the reopening before the service has saved it: the base read
+    // below must be the task's after that save, or the finish built on it meets the reopening.
+    await Promise.all([
+      page.waitForResponse("**/api/v1/op/task.reopen"),
+      page.locator('[data-part="reopen"]').click(),
+    ]);
     await expect(page.getByRole("status").filter({ hasText: "Reopened" })).toBeVisible({
       timeout: SLOW_MS,
     });
