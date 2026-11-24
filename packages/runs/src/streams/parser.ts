@@ -2,14 +2,14 @@
 // out. Pure: no I/O, no clock, no logging. The CLI-specific part is a `CliReader` (claude-print.ts)
 // that reads one parsed JSON object at a time.
 //
-// Tolerant by construction: a line is split in bounded memory (lines.ts), decoded leniently,
-// parsed inside a try, and read through checked accessors (values.ts). A line handler that still
+// Tolerant by construction: a line is split in bounded memory and parsed inside a try
+// (json-lines.ts), decoded leniently, and read through checked accessors (values.ts). A line handler that still
 // throws is a defect; it is caught, counted in `handlerFaults` and the line is skipped, so even a
 // defect never ends a run. Nothing of a skipped line is kept or logged: only its count.
 import { createHash } from "node:crypto";
 import {
   ANSWER_CAP_BYTES,
-  LINE_CAP_BYTES,
+  LONG_LINE_CAP_BYTES,
   emptyCounts,
   type AppToolsState,
   type OutcomeReason,
@@ -21,7 +21,7 @@ import {
   type StreamKind,
   type Usage,
 } from "./events.ts";
-import { LineSplitter, type Line, type LineResult } from "./lines.ts";
+import { JsonLines, readJsonLine, type JsonLine } from "./json-lines.ts";
 import { capText, isRecord, type Json } from "./values.ts";
 
 /** What a CLI reader may do while it reads one event. */
@@ -139,6 +139,8 @@ export interface StreamParser {
   push(chunk: Uint8Array | string): RunEvent[];
   /** Feeds one complete line, without its line break (A4 3.11.1 `parse(line)`). */
   line(text: string): RunEvent[];
+  /** Feeds one line its driver read already: the parser reads it as the driver does. */
+  read(line: JsonLine): RunEvent[];
   /**
    * Ends the stream after the process exited: parses an unterminated rest, then returns the
    * `finished` event and the outcome. Calling it again returns the same outcome and no events.
@@ -159,48 +161,39 @@ const encoder = new TextEncoder();
 
 export function createParser(kind: StreamKind, reader: CliReader): StreamParser {
   const ctx = new ReadContext();
-  const splitter = new LineSplitter(LINE_CAP_BYTES);
+  const lines = new JsonLines();
   let finished: RunOutcome | null = null;
 
-  const readLine = (line: Line): void => {
+  const readLine = (line: JsonLine): void => {
     const c = ctx.counts;
     c.lines += 1;
-    if (line.invalidUtf8) c.invalidUtf8 += 1;
-    if (line.text.trim() === "") {
-      c.blank += 1;
+    if (line.kind === "lost") {
+      c.oversized += 1;
+      ctx.answerUnsure = true;
       return;
     }
-    let value: unknown;
-    try {
-      value = JSON.parse(line.text);
-    } catch {
-      if (line.partial) c.truncatedTail = 1;
+    if (line.invalidUtf8) c.invalidUtf8 += 1;
+    if (line.kind === "text") {
+      if (line.blank) c.blank += 1;
+      else if (line.partial) c.truncatedTail = 1;
       else c.notJson += 1;
       return;
     }
-    if (!isRecord(value)) {
+    if (!isRecord(line.value)) {
       c.notJson += 1;
       return;
     }
     try {
-      if (reader.read(value, ctx)) c.events += 1;
+      if (reader.read(line.value, ctx)) c.events += 1;
       else c.unknownEvents += 1;
     } catch {
       c.handlerFaults += 1;
     }
   };
 
-  const take = (results: readonly LineResult[]): RunEvent[] => {
+  const take = (read: readonly JsonLine[]): RunEvent[] => {
     ctx.out = [];
-    for (const r of results) {
-      if (r.kind === "oversized") {
-        ctx.counts.oversized += 1;
-        ctx.counts.lines += 1;
-        ctx.answerUnsure = true;
-      } else {
-        readLine(r.line);
-      }
-    }
+    for (const line of read) readLine(line);
     return ctx.out;
   };
 
@@ -208,25 +201,28 @@ export function createParser(kind: StreamKind, reader: CliReader): StreamParser 
     kind,
     push(chunk) {
       if (finished) return [];
-      return take(splitter.push(typeof chunk === "string" ? encoder.encode(chunk) : chunk));
+      return take(lines.push(typeof chunk === "string" ? encoder.encode(chunk) : chunk));
     },
     line(text) {
       if (finished) return [];
-      // A line handed over whole still obeys the cap. Each UTF-16 unit is at least one UTF-8
-      // byte, so a longer string is over it without encoding.
+      // A line handed over whole still obeys the caps. Each UTF-16 unit is at least one UTF-8
+      // byte, so a longer string is over them without encoding.
       // A BOM at the start is dropped, as the UTF-8 decoder drops it from a pushed line.
       const unmarked = text.startsWith("﻿") ? text.slice(1) : text;
       const body = unmarked.endsWith("\r") ? unmarked.slice(0, -1) : unmarked;
-      if (body.length > LINE_CAP_BYTES || encoder.encode(body).length > LINE_CAP_BYTES) {
-        return take([{ kind: "oversized" }]);
-      }
+      const bytes = body.length > LONG_LINE_CAP_BYTES ? body.length : encoder.encode(body).length;
+      if (bytes > LONG_LINE_CAP_BYTES) return take([{ kind: "lost" }]);
       const invalidUtf8 = !body.isWellFormed();
-      const line = { text: invalidUtf8 ? body.toWellFormed() : body, invalidUtf8, partial: false };
-      return take([{ kind: "line", line }]);
+      const whole = invalidUtf8 ? body.toWellFormed() : body;
+      return take([readJsonLine({ text: whole, bytes, invalidUtf8, partial: false })]);
+    },
+    read(line) {
+      if (finished) return [];
+      return take([line]);
     },
     end(exit) {
       if (finished) return { events: [], outcome: finished };
-      const events = take(splitter.end());
+      const events = take(lines.end());
       const clean: ProcessExit = {
         code: typeof exit.code === "number" && Number.isInteger(exit.code) ? exit.code : null,
         signal:
@@ -260,8 +256,8 @@ export function createParser(kind: StreamKind, reader: CliReader): StreamParser 
     held: () => {
       const kept = reader.retained();
       return {
-        bufferedBytes: splitter.buffered,
-        bufferCapacity: splitter.capacity,
+        bufferedBytes: lines.held.bytes,
+        bufferCapacity: lines.held.capacity,
         retained: kept.keys,
         retainedChars: kept.chars,
       };
