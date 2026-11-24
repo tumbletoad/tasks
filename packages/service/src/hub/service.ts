@@ -123,7 +123,7 @@ import { runsWith } from "../runs/drivers.ts";
 import { RunService, type RunOptions } from "../runs/service.ts";
 import { Bridges, sessionPort, type BindingEvent } from "../binding/index.ts";
 import {
-  noteWorking,
+  noteWorkingUntilDone,
   repairIfIdle,
   supervisorReplaced,
   type RepairOutcome,
@@ -1465,24 +1465,17 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     });
 
     // Ready, this version is seen working, which keeps it the way back after a later switch
-    // (install.json `seen_working`). While an update holds update.lock, the next 10 s check tries
-    // again. From source there is no version to note.
+    // (install.json `seen_working`). While an update holds update.lock, or after a write that
+    // failed, the next 10 s check tries again. From source there is no version to note.
     const built: string = BUILD.build;
-    let noted = built === "source";
-    const noteSeen = (): void => {
-      if (noted) return;
-      noted = true;
-      void noteWorking({ ...updateRepair, version: BUILD.version }).then(
-        (done) => {
-          noted = done;
-        },
-        (error: unknown) => {
-          const code = errorCode(error);
-          log.log("update.repair_failed", code === undefined ? {} : { code });
-        },
-      );
-    };
-    noteSeen();
+    const noteSeen =
+      built === "source"
+        ? () => Promise.resolve()
+        : noteWorkingUntilDone({ ...updateRepair, version: BUILD.version }, (error) => {
+            const code = errorCode(error);
+            log.log("update.repair_failed", code === undefined ? {} : { code });
+          });
+    void noteSeen();
 
     // While it runs, an update journal whose updater is gone is finished or rolled back within
     // 10 s (A2 3.12.6). A live updater holds update.lock, and then nothing is done. An update
@@ -1492,7 +1485,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     let reported: string | undefined;
     update.timer = setInterval(() => {
       if (repairing || draining !== undefined || aborted) return;
-      noteSeen();
+      void noteSeen();
       repairing = true;
       void repairIfIdle(updateRepair)
         .then(

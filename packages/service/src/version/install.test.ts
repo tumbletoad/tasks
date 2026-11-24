@@ -5,6 +5,7 @@
 import { fork, spawn } from "node:child_process";
 import { once } from "node:events";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   lstatSync,
@@ -26,7 +27,7 @@ import { PRODUCT_ID } from "@ttasks/brand";
 import { canonicalStatePath, installId, type HostFacts } from "../hub/paths.ts";
 import { writeVersionManifest } from "./folder.ts";
 import { finishInstall, InstallError, installTarget, type InstallRecord } from "./install.ts";
-import { noteWorking } from "./repair.ts";
+import { noteWorking, noteWorkingUntilDone } from "./repair.ts";
 import { currentFor, writeCurrent } from "./switch.ts";
 import { repairUpdate, rollbackUpdate } from "./update.ts";
 
@@ -516,6 +517,39 @@ describe("[A2.3.12.6.update.way-back] an install cut off and run again keeps the
     const d = addVersion(root, "0.4.0", "launcher four");
     await finishInstall({ versionFolder: d, facts: facts(root) });
     expect(record(root).previous).toBe("0.1.0");
+  });
+
+  test("a note of a version seen working that could not be written is written at a later check", async () => {
+    const { root, folder } = install();
+    await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+    const b = addVersion(root, "0.2.0", "launcher two");
+    await finishInstall({ versionFolder: b, facts: facts(root) });
+    const state = join(root, "state");
+    const receipt = join(state, "install.json");
+    const failures: unknown[] = [];
+    const note = noteWorkingUntilDone(
+      { root, state, platform: process.platform, version: "0.2.0" },
+      (error) => failures.push(error),
+    );
+    // B's service is ready while the receipt cannot be written.
+    chmodSync(receipt, 0o444);
+    if (!windows) chmodSync(state, 0o500);
+    try {
+      await note();
+      await note();
+    } finally {
+      if (!windows) chmodSync(state, 0o700);
+      chmodSync(receipt, 0o600);
+    }
+    expect(failures, "told of the first failure only").toHaveLength(1);
+    expect(record(root).seen_working ?? []).not.toContain("0.2.0");
+    // The next check, with the receipt writable again.
+    await note();
+    expect(record(root).seen_working).toContain("0.2.0");
+    // So C installed over B keeps B, which worked, as the way back.
+    const c = addVersion(root, "0.3.0", "launcher three");
+    await finishInstall({ versionFolder: c, facts: facts(root) });
+    expect(record(root).previous).toBe("0.2.0");
   });
 });
 

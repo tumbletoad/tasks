@@ -124,6 +124,31 @@ export async function noteWorking(options: {
   }
 }
 
+/**
+ * noteWorking until it is done, for a service that calls the result once it is ready and again at
+ * each regular check: a call while one runs, or once it is done, does nothing; a note that found
+ * update.lock held or failed to write is tried again at the next call. `failed` hears of the first
+ * failure only.
+ */
+export function noteWorkingUntilDone(
+  options: Parameters<typeof noteWorking>[0],
+  failed: (error: unknown) => void,
+): () => Promise<void> {
+  let state: "pending" | "writing" | "done" = "pending";
+  let told = false;
+  return async () => {
+    if (state !== "pending") return;
+    state = "writing";
+    try {
+      state = (await noteWorking(options)) ? "done" : "pending";
+    } catch (error) {
+      state = "pending";
+      if (!told) failed(error);
+      told = true;
+    }
+  };
+}
+
 /** Where a repair can be cut off, for the crash tests (tests/update/). Off in the product. */
 export type RepairPoint =
   "repair:decided" | "repair:current" | "repair:launchers" | "repair:record" | "repair:done";
