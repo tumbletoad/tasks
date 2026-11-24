@@ -44,6 +44,8 @@ export interface RowActions {
   readonly copy: (task: TaskRow, pack?: boolean, text?: string) => Promise<boolean>;
   /** Shows the task's folder in the file manager of the computer the service runs on. */
   readonly folder: (task: TaskRow) => void;
+  /** Brings a T3 Code launch's thread up in T3 Code. */
+  readonly openInT3: (launch: string) => void;
   /**
    * Run: `instance` works on the task in the background, with the composer's `text` as its
    * request. The run the service queued, or undefined when it queued none (it said why).
@@ -63,7 +65,7 @@ export interface RowActions {
 }
 
 /** The actions that only read the task or stop its work: all a task in the Trash keeps. */
-type Reading = "toggle" | "expand" | "current" | "copy" | "folder" | "stop";
+type Reading = "toggle" | "expand" | "current" | "copy" | "folder" | "openInT3" | "stop";
 
 /**
  * Every other action, for a task in the Trash: nothing happens. The type makes an action added

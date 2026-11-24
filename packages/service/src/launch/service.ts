@@ -273,6 +273,8 @@ export interface LaunchOptions {
   readonly recordsWait?: (ms: number) => void;
   /** Shows a resolved folder in the file manager. Default: the OS's (openFolder). */
   readonly showFolder?: (folder: string) => Promise<OpenResult>;
+  /** Opens a link of an app such as T3 Code's: true when it opened. Default: the OS's opener. */
+  readonly openLink?: (url: string) => Promise<boolean>;
 }
 
 export interface LaunchServiceOptions extends LaunchOptions {
@@ -953,7 +955,7 @@ export class LaunchService {
       throw refuse(running ? available.state : "not_running");
     }
     // T3 takes a provider instance only with its model: without one the account could be another.
-    if (instance.t3?.providerInstance !== undefined && (instance.t3.model ?? "") === "") {
+    if (instance.t3?.providerInstance !== undefined && instance.t3.model === "") {
       throw refuse("model_required");
     }
     const { task, requestId } = request;
@@ -1072,6 +1074,7 @@ export class LaunchService {
 
   /** Opens a URL with the OS's opener (A4 3.6.5): true when the opener took it. */
   async openLink(url: string): Promise<boolean> {
+    if (this.#options.openLink !== undefined) return this.#options.openLink(url);
     const opened = await openUrl(url, await this.#openerOptions());
     this.#options.log.log("launch.opener", { opener: opened.opener, result: opened.result });
     return opened.result === "opened";
