@@ -13,7 +13,6 @@
 // over to the bridge before it loads this module at all (mcp.ts); this route is the same verb for
 // callers of main().
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
-import type { ServiceContext } from "@ttasks/service/install";
 import { splitGlobals, takesFolder, UsageError, verbSpec, type Globals } from "./args.ts";
 import { briefCommand, type BriefOptions } from "./brief.ts";
 import { folderVerb } from "./folders.ts";
@@ -49,8 +48,6 @@ export interface MainOptions extends DoctorOptions, OpenOptions, SetupOptions, B
    * (entry.ts). Absent when the CLI runs from source. doctor checks it (integrity, runtime gate).
    */
   readonly versionFolder?: string;
-  /** Tests only: the service install's stand-ins, so `ttasks service` reaches no real service. */
-  readonly serviceContext?: () => ServiceContext;
 }
 
 type Command = (

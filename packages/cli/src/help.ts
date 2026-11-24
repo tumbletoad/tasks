@@ -28,11 +28,13 @@ export interface LocalCommand {
   readonly input?: true;
 }
 
-const OPEN_HELP = `Usage: ${CLI_NAME} open [--space <id or name>] [--task <ref>] [--print-url]
+const OPEN_HELP = `Usage: ${CLI_NAME} open [<space>] [--task <ref>] [--print-url]
 
 Opens the UI in the browser, signed in. Starts the service first when it is not running.
 
-  --space <id or name>  The space to show
+  <space>               The space to show: an ID, a name or a folder. Without one: --space,
+                        TTASKS_SPACE, else the default space. A name two spaces share, or one
+                        no space has, opens nothing and lists the spaces
   --task <ref>          The task to show (M-14)
   --print-url           Print the link instead of opening it. It holds a one-time sign-in code.
 `;

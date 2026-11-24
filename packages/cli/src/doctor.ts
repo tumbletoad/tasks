@@ -17,6 +17,7 @@
 //   spaces     each space's state and the holder of a lock held elsewhere
 //   requests   the request path end to end: op/list names every verb's entry, and space.status
 //              answers through op/call for each served space
+//   autostart  whether the OS starts the service by itself, as `ttasks service status` says it
 //   crashes    crash files of the last 7 days, by event
 //   logs       errors and warnings of the last 24 hours, by event name
 //   accounts   other interactive user accounts on the machine (agent sandbox accounts left out)
@@ -31,13 +32,12 @@
 //
 // Every check is non-interactive. `--self-test` (A2 3.13: the subset for CI, install and updates)
 // adds the candidate's checks, which write temporary files; `ttasks install --finish` runs integrity,
-// runtime and those before it switches current. The other rows of A2 3.13 arrive with their steps:
-// autostart with `ttasks service install` (M1.12), the Windows ACL check of the state folder, and the agent-side checks of A3 3.14. They are listed as
-// skipped. Run from source there is no version folder, so integrity, runtime and the candidate's
-// checks are skipped too: the build runs them in every version folder it makes.
+// runtime and those before it switches current. Run from source there is no version folder, so
+// integrity, runtime and the candidate's checks are skipped: the build runs them in every version
+// folder it makes.
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
+import { CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { PROTOCOL } from "@ttasks/bridge/protocol";
 import { LATER_PREFERENCES } from "@ttasks/contracts";
 import {
@@ -62,6 +62,7 @@ import {
   unsafeMessage,
   type UnsafeThing,
 } from "@ttasks/service/permissions";
+import type { ServiceContext } from "@ttasks/service/install";
 import type { GateFacts } from "@ttasks/service/runtime-gate";
 import type { VersionManifest } from "@ttasks/service/version-folder";
 import { CLI_SPEC, type Globals } from "./args.ts";
@@ -82,7 +83,8 @@ import { bodyOf, printUsage, RESTART_HINT } from "./output.ts";
 import type { AgentsSetupOptions } from "./setup-agents.ts";
 import { asAppError } from "./verbs.ts";
 
-export type CheckStatus = "ok" | "warn" | "fail" | "skip";
+/** `info`: what is so, nothing to fix: a choice the person made, or something never set up. */
+export type CheckStatus = "ok" | "warn" | "fail" | "skip" | "info";
 
 export interface Check {
   readonly id: string;
@@ -739,11 +741,35 @@ export async function candidateRows(
   });
 }
 
-const SKIPPED: readonly Check[] = [
-  { id: "autostart", status: "skip", detail: "Arrives with ttasks service install." },
-];
+/**
+ * Whether the service starts by itself, as `ttasks service status` says it (autostartStatus). Only
+ * an autostart that was asked for and will not happen is a warning: off by choice, or never set
+ * up, is what the person has.
+ */
+async function autostartCheck(io: Io, connect: DoctorOptions): Promise<Check> {
+  const install = await import("@ttasks/service/install");
+  try {
+    const ctx = (
+      connect.serviceContext ?? (() => install.defaultServiceContext({ env: io.env }))
+    )();
+    const { starts } = await install.autostartStatus(ctx);
+    return {
+      id: "autostart",
+      status: starts.on === true ? "ok" : starts.on === false && starts.broken ? "warn" : "info",
+      detail: install.autostartLine(starts),
+    };
+  } catch {
+    return {
+      id: "autostart",
+      status: "warn",
+      detail: `Whether the service starts by itself could not be read. Run: ${CLI_NAME} service status`,
+    };
+  }
+}
 
 export interface DoctorOptions extends ConnectOptions {
+  /** Tests only: the service install's stand-ins, so `ttasks service` and doctor reach no real entry. */
+  readonly serviceContext?: () => ServiceContext;
   /** The machine's accounts. Tests inject them: the real read is accounts.ts readAccounts. */
   readonly accounts?: () => AccountFacts | undefined;
   /** Tests only: the agent environment and home the agent checks read (doctor-agents.ts). */
@@ -782,7 +808,7 @@ export async function doctor(
     ...(await (
       await import("./doctor-agents.ts")
     ).agentChecks(io, state, args.includes("--live"), connect)),
-    ...SKIPPED,
+    await autostartCheck(io, connect),
   ];
   const checks = [...before, accountsCheck(await accounts), ...after];
   const failed = checks.some((c) => c.status === "fail");

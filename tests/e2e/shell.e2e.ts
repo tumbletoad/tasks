@@ -474,6 +474,36 @@ test.describe("[A5.3.3.e2e.not-open] A space that is not open says why and what 
     await expect(page.getByText(`${CLI_NAME} space create`)).toHaveCount(0);
     await picture(page, "landing-needs-recovery.png");
   });
+
+  test("a link to a space the machine does not have says so, and never lands on the default", async ({
+    page,
+    world,
+  }) => {
+    // A name where the ID goes, as an older command line wrote it, with any character a name
+    // may hold: the page offers the spaces and chooses none, also after the sign-in.
+    for (const name of ["Shared List", "Café"]) {
+      await signIn(page, world, `/s/${name}/task/M-1`);
+      await expect(page.locator('[data-part="unknown-space"]')).toHaveText(
+        "This link names a space this machine does not have, so no space was opened.",
+      );
+      await expect(page).toHaveURL(/\/s\/unknown$/);
+    }
+    await signIn(page, world, "/s/Mira/task/M-1");
+    await expect(page.locator('[data-part="unknown-space"]')).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "New task" })).toHaveCount(0);
+    await picture(page, "landing-unknown-space.png");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await picture(page, "landing-unknown-space-390.png");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.getByRole("link", { name: world.mira.name }).click();
+    await showsSpace(page, world.mira.name);
+    // An ID of no space here: its page says the space is not open.
+    await signIn(page, world, `/s/sp_${"0".repeat(26)}`);
+    await expect(
+      page.getByText(`This space is not open on this machine. ${CLI_NAME} space list`),
+    ).toBeVisible();
+    await expect(page).toHaveURL(/\/s\/sp_0{26}/);
+  });
 });
 
 test.describe("[A5.3.3.e2e.backup-trouble] A space whose backups fail says so calmly in the switcher", () => {
