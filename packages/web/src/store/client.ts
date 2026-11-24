@@ -21,7 +21,7 @@
 // Each tab has its own socket and subscription, to the space its route names. Two tabs on two
 // spaces never share one.
 import type { Api } from "../api.ts";
-import { isReplaced, SignedOut, StaleBuild } from "../api.ts";
+import { copyGoneWhy, SignedOut, StaleBuild } from "../api.ts";
 import type { PageRoute } from "../route.ts";
 import { AgentsFeed } from "./agents.ts";
 import { browserAttention, type Attention } from "./browser-attention.ts";
@@ -223,11 +223,9 @@ export class Live {
       this.#stale();
       return true;
     }
-    if (isReplaced(error)) {
-      this.store.gone({ why: "replaced" });
-      return true;
-    }
-    return false;
+    const why = copyGoneWhy(error);
+    if (why !== undefined) this.store.gone({ why });
+    return why !== undefined;
   }
 
   /** The copy the tab loaded is gone: nothing more is asked of the service, and no feed. */

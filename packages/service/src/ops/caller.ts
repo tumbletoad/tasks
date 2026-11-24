@@ -19,7 +19,7 @@ export interface Caller {
   /**
    * The copy of its space the call was made for (ServedSpace `copy`): the one a page loaded, or
    * the one a click's note was checked against. A call is refused when the space is served from
-   * another copy now (ops/copies.ts spaceChanged).
+   * another copy now (ops/copies.ts copyGone).
    */
   readonly copy?: string;
   /**

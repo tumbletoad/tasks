@@ -115,16 +115,31 @@ export function onlySpace<S extends Copy>(spaces: readonly S[]): S | "several" |
 }
 
 /**
- * A page's call for a copy of its space that is not the one served now: the space was closed,
- * restored in place, claimed, or another folder of it opened since the page loaded it. Nothing of
- * the call is done, and nothing the page sends is written into a copy it did not show.
+ * A page's call for a copy of its space that is not the one served now, answered by what is true
+ * of the space `ref` names among `spaces`: it was closed (no copy of it is served), another copy
+ * serves it (closed and opened from another folder, restored in place, claimed), or it is being
+ * opened or closed this moment, which settles soon and says nothing yet. Nothing of the call is
+ * done, and nothing the page sends is written into a copy it did not show.
  */
-export function spaceChanged(): AppError {
+export function copyGone(spaces: readonly Copy[], ref: string): AppError {
+  const found = findSpace(spaces, ref);
+  const now = isAmbiguity(found) ? undefined : found;
+  if (now?.state === "opening" || now?.state === "closing") {
+    return new AppError({
+      code: "space_unavailable",
+      message: "This space is being opened or closed.",
+      hint: "Try again in a moment.",
+      data: { reason: now.state, retryable: true },
+    });
+  }
+  const closed = now === undefined || !isServed(now);
   return new AppError({
     code: "space_unavailable",
-    message: "This space was closed, restored or claimed since this page loaded it.",
+    message: closed
+      ? "This space was closed since this page loaded it."
+      : "This space was closed, restored or claimed since this page loaded it.",
     hint: "Load it again to see it as it is now. No more changes are saved to this space from this page.",
-    data: { reason: "replaced", retryable: false },
+    data: { reason: closed ? "closed" : "replaced", retryable: false },
   });
 }
 
