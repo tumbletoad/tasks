@@ -2,12 +2,13 @@
   display: flex;
   flex-direction: column;
   gap: 28px;
-  max-width: 560px;
+  max-width: 880px;
   padding-block: 16px 32px;
 }
 
 /* Where the settings are kept: said once, quietly. */
 .where {
+  max-width: 560px;
   margin: 0;
   color: var(--k-muted);
   font-size: 0.8125rem;
@@ -15,6 +16,7 @@
 }
 
 .section {
+  max-width: 560px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
