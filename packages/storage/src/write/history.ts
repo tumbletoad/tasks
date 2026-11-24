@@ -68,6 +68,7 @@ import {
   type FieldConflict,
   type NewerWork,
 } from "./request.ts";
+import { isPosition, positionBetween } from "./positions.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "./row-state.ts";
 
 /** The tables whose rows an inversion writes. */
@@ -1297,6 +1298,52 @@ function columnValues(columns: readonly string[], json: string): Record<string, 
   return Object.fromEntries(columns.map((c) => [c, sql(record[c] ?? null)]));
 }
 
+/** A list's rows: a task's by its project, or by its area outside a project; a project's by its area. */
+const LIST: Readonly<Record<"tasks" | "projects", string>> = {
+  tasks: "project_id IS $project AND (project_id IS NOT NULL OR area_id IS $area)",
+  projects: "area_id IS $area",
+};
+
+/**
+ * A grouping an inversion writes back: its old place, unless another row of that list holds the
+ * position now (a move or a new row since took it). Then right after that row, before the next one,
+ * so no two rows of a list share a position and a row placed next to either stands where it asks.
+ */
+function placedBack(
+  conn: Connection,
+  entity: "tasks" | "projects",
+  id: string,
+  value: string,
+): string {
+  const grouping = parsed(value);
+  if (typeof grouping !== "object" || grouping === null || Array.isArray(grouping)) {
+    throw invalidValue("changes", "before");
+  }
+  const { position, project_id: project, area_id: area } = grouping as Record<string, unknown>;
+  if (typeof position !== "string") throw invalidValue("changes", "before");
+  const list = {
+    area: typeof area === "string" ? area : null,
+    ...(entity === "tasks" ? { project: typeof project === "string" ? project : null } : {}),
+  };
+  const taken = conn
+    .prepare(
+      `SELECT 1 AS found FROM ${entity} WHERE ${LIST[entity]} AND position = $position ` +
+        "AND id <> $id",
+    )
+    .get({ ...list, position, id });
+  if (taken === undefined) return value;
+  // The next position of the list counts the row itself, so its new one is never its current one.
+  const next = conn
+    .prepare(
+      `SELECT min(position) AS p FROM ${entity} WHERE ${LIST[entity]} AND position > $position`,
+    )
+    .get({ ...list, position })?.["p"];
+  if (next !== null && next !== undefined && !isPosition(next)) {
+    throw invalidValue(entity, "position");
+  }
+  return fieldJson({ ...grouping, position: positionBetween(position, next ?? undefined) });
+}
+
 /** A tombstone's value: when, and for a task who (A1 3.4 `deleted_at`, `deleted_by`). */
 function tombstoneJson(entity: InvertibleEntity, at: number, principal: Id<"ac">): string {
   return entity === "tasks" ? fieldJson({ deleted_at: at, deleted_by: principal }) : fieldJson(at);
@@ -1912,15 +1959,19 @@ function writeInversions(
       }
       const before = fieldJson(valueIn(entity, row.raw, field));
       const after =
-        inversion.kind === "restore"
-          ? inversion.value
-          : tombstoneJson(entity, commit.at, commit.principal);
+        inversion.kind === "tombstone"
+          ? tombstoneJson(entity, commit.at, commit.principal)
+          : field === "grouping" && (entity === "tasks" || entity === "projects")
+            ? placedBack(conn, entity, id, inversion.value)
+            : inversion.value;
       // The guard found the write the inverted row made; its value is never the one restored.
       if (before === after) {
         throw new StorageError("SPACE_INVALID", "A field does not hold the write it names");
       }
       Object.assign(values, columnValues(table.fields[field] ?? [], after));
-      const prov = inversion.kind === "restore" ? inversion.prov : commit.seq;
+      // A value set back holds the write it came from; a new place is this commit's own write.
+      const prov =
+        inversion.kind === "restore" && after === inversion.value ? inversion.prov : commit.seq;
       changes.push({
         op: commit.op,
         entity,
