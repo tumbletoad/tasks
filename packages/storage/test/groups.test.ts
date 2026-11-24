@@ -301,6 +301,34 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     ).toEqual({ area_id: null, project_id: project });
   });
 
+  test("Undo and Redo of a project's move take along its tasks out of sight, as the move does", () => {
+    const areaOf = (id: string): unknown =>
+      fx.reader.prepare("SELECT area_id FROM tasks WHERE id = $id").get({ id })?.["area_id"];
+    // A task made in the project after the move, whose creation is undone first.
+    expectStatus(
+      submit([{ kind: "project.move", project: fx.project, area: fx.areas.home }]),
+      "applied",
+    );
+    const later = created(submit([{ kind: "task.create", title: "Dig", project: fx.project }]));
+    expectStatus(undo(), "applied");
+    expectStatus(undo(), "applied");
+    expect(areaOf(later)).toBe(fx.areas.lumen);
+    expectStatus(redo(), "applied");
+    expectStatus(redo(), "applied");
+    expect(areaOf(later)).toBe(fx.areas.home);
+    // A task made in the project by the request that moves it.
+    const id = newId("t");
+    expectStatus(
+      submit([
+        { kind: "task.create", id, title: "Rake", project: fx.project },
+        { kind: "project.move", project: fx.project, area: fx.areas.lumen },
+      ]),
+      "applied",
+    );
+    expectStatus(undo(), "applied");
+    expect(areaOf(id)).toBe(fx.areas.home);
+  });
+
   test("one request that restores a project and makes another of the same name gives the new one a slug of its own", () => {
     const beds = created(submit([{ kind: "project.create", title: "Beds" }]));
     expectStatus(submit([{ kind: "project.delete", project: beds }]), "applied");

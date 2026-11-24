@@ -446,6 +446,7 @@ const SQL = {
     "WHERE f.owner_kind = 'project' AND f.owner_id = $id AND f.deleted_at IS NULL " +
     "AND p.deleted_at IS NULL",
   liveProject: "SELECT 1 AS found FROM projects WHERE id = $id AND deleted_at IS NULL",
+  tasksOfProject: "SELECT * FROM tasks WHERE project_id = $id ORDER BY id",
   /** The projects that the tasks in `$tasks` are in now. */
   projectsOfTasks:
     "SELECT id, project_id AS project FROM tasks WHERE id IN (SELECT value FROM json_each($tasks)) " +
@@ -638,7 +639,22 @@ export interface Tombstone {
   applied: number;
 }
 
-export type Inversion = Restore | Tombstone;
+/**
+ * A task out of sight in a project an inversion moves to another area, set to that area as a move
+ * of the project sets it (carryAlong). It inverts no change row: it is the inverting commit's own.
+ */
+export interface Carry {
+  kind: "carry";
+  entity: "tasks";
+  id: string;
+  task: Id<"t">;
+  field: "grouping";
+  value: string;
+  /** Inversion.applied of the project's move. */
+  applied: number;
+}
+
+export type Inversion = Restore | Tombstone | Carry;
 
 export interface InversionPlan {
   /** What passes its guard, in the order of the rows it inverts. */
@@ -940,7 +956,44 @@ export function planInversions(
   keepActiveUnwrapped(plan, read, (where, version, at) => {
     blocked(conflict(where, version), at);
   });
+  carryAlong(conn, plan);
   return plan;
+}
+
+/**
+ * A project an inversion moves to another area takes along its tasks out of sight after it (in the
+ * Trash, or whose creation was or is being undone) that the step did not move itself, as a move of
+ * the project does (writer.ts: moveProject), so a task in a project stays in its area. A task in
+ * sight that was filed into the project since is newer work, which the group rules name.
+ */
+function carryAlong(conn: Connection, plan: InversionPlan): void {
+  const own = new Set(
+    plan.inversions.filter((i) => i.entity === "tasks" && i.field === "grouping").map((i) => i.id),
+  );
+  const uncreated = new Set(
+    plan.inversions.filter((i) => i.entity === "tasks" && i.kind === "tombstone").map((i) => i.id),
+  );
+  for (const move of [...plan.inversions]) {
+    if (move.kind !== "restore" || move.entity !== "projects" || move.field !== "grouping")
+      continue;
+    const { area } = placeOf("projects", move.value).list;
+    for (const row of conn.prepare(SQL.tasksOfProject).all({ id: move.id })) {
+      const r = new RowReader("tasks", row);
+      const id = r.id("id", "t");
+      if (row["deleted_at"] === null && !uncreated.has(id)) continue;
+      if (own.has(id) || (row["area_id"] ?? null) === area) continue;
+      const grouping = columnsValue(row, TASK_FIELDS.grouping) as Record<string, unknown>;
+      plan.inversions.push({
+        kind: "carry",
+        entity: "tasks",
+        id,
+        task: id,
+        field: "grouping",
+        value: fieldJson({ ...grouping, area_id: area }),
+        applied: move.applied,
+      });
+    }
+  }
 }
 
 /**
