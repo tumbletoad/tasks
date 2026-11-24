@@ -35,8 +35,10 @@ import {
   SETUP_FILE,
   settleHomes,
   survey,
+  toolsOf,
   writeRecords,
   type AgentApp,
+  type HomeRecord,
   type HomeView,
   type SetupInput,
 } from "../src/setup/index.ts";
@@ -1421,6 +1423,204 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
       const instance = (await defaultView(w)).home.instance;
       expect(entryIn(claude, plain)).toEqual(expectedEntry(w, claude, instance));
       expect(entryIn(claude, explicit)).toEqual(expectedEntry(w, claude, instance));
+    },
+    SLOW,
+  );
+
+  // What earlier builds left, made by each build's own `ttasks setup agents` through its service
+  // with fake agent commands: five agent homes and Claude Desktop, their files and setup's record,
+  // paths as {{user}}, {{desktop}}, {{root}} and {{tasks}}.
+  const EARLIER = ["42d05231", "491a6d74", "2f09505f", "11ebfa74"] as const;
+
+  interface Earlier {
+    readonly record: { readonly format: number; readonly homes: Record<string, unknown>[] };
+    readonly after: Readonly<Record<string, string | null>>;
+  }
+
+  /** A fixture's text with each placeholder as this world's path, escaped as its place needs. */
+  function placed(w: World, text: string, escape: (path: string) => string): string {
+    const paths: Record<string, string> = {
+      user: w.home,
+      desktop: w.desktop,
+      root: w.dir,
+      tasks: w.input.tasks,
+    };
+    return text.replace(
+      /\{\{(user|desktop|root|tasks)\}\}((?:\/[^"'\s,\]]*)?)/gu,
+      (_m, token: string, rest: string) =>
+        escape(join(paths[token] ?? "", ...rest.split("/").filter((s) => s !== ""))),
+    );
+  }
+  const raw = (path: string) => path;
+  const escaped = (path: string) => JSON.stringify(path).slice(1, -1);
+
+  test.each(EARLIER)(
+    "an install the build %s set up keeps its access and shows on; a second file of Claude Code's folder shows without its entry, and one apply writes it; each home then turns off and comes out",
+    async (build) => {
+      const fixture = JSON.parse(
+        readFileSync(
+          join(import.meta.dirname, "fixtures", "setup-earlier", `${build}.json`),
+          "utf8",
+        ),
+      ) as Earlier;
+      const w = await world();
+      mkdirSync(join(w.home, ".claude-two"));
+      const input: SetupInput = {
+        ...w.input,
+        detection: await detect(nodeDetectHost({ env: w.input.env, home: w.home })),
+      };
+      const files: Record<string, string> = {};
+      for (const [key, text] of Object.entries(fixture.after)) {
+        const file = placed(w, key, raw);
+        files[key] = file;
+        // A TOML literal string holds the path as it is, every other string escaped.
+        seed(
+          file,
+          text === null
+            ? null
+            : placed(w, text.replaceAll("'{{tasks}}'", `'${w.input.tasks}'`), escaped),
+        );
+      }
+      mkdirSync(setupDir(w.input.stateDir), { recursive: true });
+      writeFileSync(recordPath(w), placed(w, JSON.stringify(fixture.record), escaped));
+      for (const r of fixture.record.homes) {
+        w.rows.live.push({
+          app: r["app"] as string,
+          home: placed(w, r["home"] as string, raw),
+          instance: r["instance"] as string,
+          space: r["space"] as string,
+          grant: r["grant"] as string,
+        });
+      }
+      const live = () => ({ ...input, rows: w.rows.live });
+      const bytes = () => Object.values(files).map(bytesOf);
+      const written = bytes();
+
+      // After the update: each home on, with nothing to say and nothing written.
+      const views = await survey(live());
+      expect(views.map((v) => v.home.instance).sort(), build).toEqual(
+        ["claude", "claude-desktop", "claude-two", "claude-work", "codex", "codex-work"].sort(),
+      );
+      for (const view of views) {
+        expect(view.state, `${build}: ${view.home.instance}`).toBe("registered");
+        expect(toolsOf(live(), view, ""), `${build}: ${view.home.instance}`).toEqual({
+          status: "on",
+          off: true,
+        });
+      }
+      expect(bytes(), build).toEqual(written);
+
+      // Claude Code started with its home set to the folder makes its own file: no entry yet.
+      const { explicit } = filesOf(w);
+      seed(explicit, '{"numStartups": 1}\n');
+      const lacking = await defaultView(w, live());
+      expect(toolsOf(live(), lacking, ""), build).toEqual({
+        status: "on",
+        why: "file_lacks",
+        file: explicit,
+        on: "add",
+        off: true,
+      });
+      expect(bytes(), `${build}: nothing is written before an apply`).toEqual(written);
+      // From the space its record names, as the command line applies a registered home.
+      const [item] = planOf(live(), [lacking], "");
+      expect(await applyHome(live(), lacking, "", w.rows, item?.change), build).toMatchObject({
+        result: "unchanged",
+        access: "on",
+      });
+      const instance = lacking.home.instance;
+      const space = (
+        fixture.record.homes.find((h) => h["instance"] === instance) as {
+          space: string;
+        }
+      ).space;
+      expect(entryIn(claude, explicit), build).toEqual({
+        command: w.input.tasks,
+        args: ["mcp", "--space", space, "--instance", instance, "--app", "claude-code"],
+      });
+      expect(toolsOf(live(), await defaultView(w, live()), ""), build).toEqual({
+        status: "on",
+        off: true,
+      });
+
+      // Each turns off and comes out of every file.
+      for (const view of await survey(live())) {
+        expect(
+          await removeHome(live(), view, w.rows),
+          `${build}: ${view.home.instance}`,
+        ).toMatchObject({
+          result: "removed",
+          access: "off",
+        });
+        const adapter = ADAPTERS.find((a) => a.app === view.home.app) as Adapter;
+        for (const file of view.home.files) {
+          if (existsSync(file)) expect(entryIn(adapter, file), file).toBeUndefined();
+        }
+      }
+      expect(w.rows.live, build).toEqual([]);
+      expect(readRecords(w.input.stateDir), build).toEqual([]);
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.fixtures] A live grant is a fact of its home: listed when nothing else accounts for it, and its space is the home's", () => {
+  const OTHER = "sp_0other0space0000000000000a";
+
+  test(
+    "a live grant whose folder is gone and whose record was lost is listed, can be turned off, and offers nothing to turn on",
+    async () => {
+      const w = await world();
+      const gone = join(w.home, ".codex-renamed");
+      const row = { app: "codex", home: gone, instance: "codex-renamed", space: SPACE };
+      const input = { ...w.input, rows: [row] };
+      const view = (await survey(input)).find((v) => v.home.home === gone);
+      if (view === undefined) throw new Error("the grant's home is not listed");
+      expect(view.home.instance).toBe("codex-renamed");
+      expect(toolsOf(input, view, SPACE)).toMatchObject({ off: true });
+      expect(toolsOf(input, view, SPACE).on).toBeUndefined();
+      w.rows.live.push({ ...row, grant: "gr_00000000000000000000000001" });
+      expect(await removeHome(input, view, w.rows)).toMatchObject({ access: "off" });
+      expect(w.rows.live).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a repair from another space never moves the access there: a lost record, and a removal that stopped half-way",
+    async () => {
+      for (const a of ADAPTERS.filter((x) => x.app !== "claude-desktop")) {
+        const w = await world();
+        const bare = a.format === "json" ? "{}\n" : "";
+        seed(a.file(w), bare);
+        expect(await apply(w, a)).toMatchObject({ result: "applied" });
+        const live = { ...w.input, rows: w.rows.live };
+        // Setup's record lost and its entry gone: the grant for SPACE is what is left.
+        rmSync(recordPath(w));
+        seed(a.file(w), bare);
+        const lost = await viewOf(w, a);
+        expect(toolsOf(live, lost, OTHER), a.app).toMatchObject({
+          why: "other_space",
+          off: true,
+        });
+        expect(toolsOf(live, lost, OTHER).on, a.app).toBeUndefined();
+        expect(toolsOf(live, lost, SPACE).on, a.app).toBe("add");
+        expect(await applyHome(live, lost, OTHER, w.rows), a.app).toMatchObject({ result: "left" });
+        expect(
+          w.rows.live.map((r) => r.space),
+          a.app,
+        ).toEqual([SPACE]);
+        // A removal for SPACE that stopped before its revoke: finishing it is offered, not a move.
+        seed(a.file(w), bare);
+        expect(await apply(w, a)).toMatchObject({ result: "applied" });
+        const [record] = readRecords(w.input.stateDir);
+        writeRecords(w.input.stateDir, [{ ...(record as HomeRecord), state: "removing" }]);
+        const half = await viewOf(w, a);
+        const known = { ...w.input, rows: w.rows.live };
+        expect(half.state, a.app).toBe("interrupted");
+        expect(toolsOf(known, half, OTHER), a.app).toMatchObject({ why: "other_space", off: true });
+        expect(toolsOf(known, half, OTHER).on, a.app).toBeUndefined();
+      }
     },
     SLOW,
   );
