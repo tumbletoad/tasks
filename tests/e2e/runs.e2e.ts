@@ -10,7 +10,7 @@
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, type Locator, type Page, type Route } from "@playwright/test";
 import { FOLDER_MARKER } from "../../packages/brand/src/index.ts";
 import { FAKE_QUESTION, FAKE_SIGNED_OUT } from "./codex-cases.ts";
 import { test } from "./fixture.ts";
@@ -323,13 +323,17 @@ test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a sec
     const queued = runsOf(page, ref).nth(1);
     await expect(stateOf(queued)).toContainText("Waiting to start", { timeout: SLOW_MS });
 
-    // The Stop is held on its way: the run says it is stopping, never that it stopped.
+    // The Stop is held on its way: the run says it is stopping, never that it stopped. A read of
+    // the runs meanwhile would show the run as the service still has it, queued with its Stop, so
+    // the reads are held with it: the working run's own events start one at any moment.
     let release: () => void = () => undefined;
     const held = new Promise<void>((resolve) => (release = resolve));
-    await page.route("**/api/v1/launch/stop", async (route) => {
+    const hold = async (route: Route): Promise<void> => {
       await held;
       await route.continue();
-    });
+    };
+    await page.route("**/api/v1/launch/stop", hold);
+    await page.route("**/api/v1/launch/runs", hold);
     await queued.getByRole("button", { name: /^Stop/u }).click();
     await expect(stateOf(queued)).toHaveText("Stopping.");
     await expect(queued.getByRole("button", { name: /^Stop/u })).toHaveCount(0);
@@ -337,6 +341,7 @@ test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a sec
     release();
     await expect(stateOf(queued)).toHaveText("Stopped before it started.", { timeout: SLOW_MS });
     await page.unroute("**/api/v1/launch/stop");
+    await page.unroute("**/api/v1/launch/runs");
 
     // A read of the runs that fails: the thread says so, and shows no run it cannot vouch for.
     await page.route("**/api/v1/launch/runs", (route) => route.abort());
