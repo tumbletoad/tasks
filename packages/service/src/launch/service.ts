@@ -16,6 +16,7 @@ import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
 import {
+  agentSetup,
   checkPlan,
   CLAIM_WINDOW_MS,
   PREPARED_TTL_MS,
@@ -56,6 +57,7 @@ import {
   renderContextPack,
   resolveLaunchFolder,
   routeOf,
+  servesSpace,
   sanitiseComposer,
   instanceHome,
   isOpenLaunch,
@@ -106,10 +108,12 @@ import type { ServedSpace } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
 import { readRestoredLaunches, type TaskFolder } from "../ops/read.ts";
+import { runsWith } from "../runs/drivers.ts";
 import { agentHomeOf, homeDigest, physicalHome } from "../setup/agents.ts";
 import {
   briefNames,
   chooseRoute,
+  leftOutEvidence,
   codexEntryOf,
   codexHomeOf,
   COPY,
@@ -145,7 +149,8 @@ export interface LaunchInstance {
   readonly glyph: string;
   /** One of the eight ring slots of A5 3.19. */
   readonly ring: number;
-  readonly route: Route;
+  /** How Open opens it here; absent when it cannot, and it only runs in the background. */
+  readonly route?: Route;
 }
 
 /**
@@ -634,24 +639,27 @@ export class LaunchService {
   }
 
   /**
-   * The instances Open can open a task in on this machine (A5 3.6's tiles), in machine.toml's
-   * order: enabled ones whose target has a route here now. Copy is not an instance.
+   * The instances that can do something for a task of `space` on this machine (A5 3.6's tiles), in
+   * machine.toml's order: the ones for the space (servesSpace) that Open has a route for here now
+   * (chooseRoute), or that can run in the background. Copy is not an instance.
    */
-  instances(): LaunchInstance[] {
+  instances(space: string): LaunchInstance[] {
     const out: LaunchInstance[] = [];
     for (const instance of this.#instances()) {
-      let choice: Choice;
+      if (!instance.enabled || !servesSpace(instance, this.#spaceOf(space))) continue;
+      let route: Route | undefined;
       try {
-        choice = this.#route(instance);
+        route = this.#route(instance, space).route;
       } catch {
-        continue;
+        route = undefined;
       }
+      if (route === undefined && !runsWith(instance)) continue;
       out.push({
         key: instance.id,
         label: instance.label,
         glyph: glyphOf(instance),
         ring: (out.length % 8) + 1,
-        route: choice.route,
+        ...(route === undefined ? {} : { route }),
       });
     }
     return out;
@@ -726,7 +734,7 @@ export class LaunchService {
       instance = this.#instances().find((i) => i.id === request.instance);
       if (instance === undefined) throw this.#unavailable("not_set_up");
       try {
-        choice = this.#route(instance);
+        choice = await this.#routeNow(instance, space);
       } catch (error) {
         if (error instanceof LaunchUnavailable) this.#log("launch.unavailable", error.reason);
         throw error;
@@ -737,13 +745,13 @@ export class LaunchService {
       throw this.#unavailable("other_machine");
     }
     // Copy starts nothing: its brief says where the task opens (#briefOf).
-    const folder = choice.route === "clipboard" ? null : this.#planFolder(task.folder);
+    const set = choice.route === "clipboard" ? null : this.#planFolder(task.folder);
     // A link opens the folder resolved now (and again at its dispatch); a UNC one cannot.
     if (choice.route === "link") {
-      const where = await this.resolveFolder(space, folder);
+      const where = await this.resolveFolder(space, set);
       if (where.status === "failed") {
         this.#options.log.log("launch.folder_refused", { stage: "open", reason: where.reason });
-        throw new LaunchFolderUnavailable(where.reason, folder?.stored);
+        throw new LaunchFolderUnavailable(where.reason, set?.stored);
       }
       if (isUncPath(where.folder)) throw this.#unavailable("unc");
     }
@@ -763,9 +771,12 @@ export class LaunchService {
         );
       }
     }
-    if (choice.route !== "clipboard") {
-      await this.#checkMarker(space, task.folder, request.markFolder === true);
-    }
+    // The directory whose marker was checked: the dispatch opens nothing in another.
+    const at =
+      choice.route === "clipboard"
+        ? undefined
+        : await this.#checkMarker(space, task.folder, request.markFolder === true);
+    const folder: PlanFolder | null = set === null || at === undefined ? set : { ...set, at };
 
     const brief = await this.#briefOf(space, request, choice);
     // Decided on a reference of the real one's length: the real brief has the same length, so
@@ -800,6 +811,7 @@ export class LaunchService {
           : undefined;
       const entry = codexHome === undefined ? undefined : codexEntryOf(codexHome);
       const toolEnv = entry?.kind === "lacks_env_vars" ? codexToolEnv(entry.names) : [];
+      const setup = agentSetup(chosen, this.#options.home, platform);
       const title = sanitiseTitle(task.title);
       planFor = (reference) => {
         const text = brief(reference);
@@ -813,7 +825,8 @@ export class LaunchService {
         return {
           argv: built.argv,
           folder,
-          env: chosen.env,
+          env: setup.env,
+          ...(setup.ownHome === undefined ? {} : { ownHome: setup.ownHome }),
           title: `${task.ref} ${title}`,
           afterExit: this.terminals.settings.afterExit,
           ...(chosen.viaLoginShell && platform !== "win32" ? { loginShell: true } : {}),
@@ -831,8 +844,10 @@ export class LaunchService {
     // The person's words are on the task before the launch is recorded, so a launch that fails, a
     // service that stops, or a page that closes never loses them.
     const note = await this.#saveWords(request, probe);
+    const leftOut = leftOutEvidence(choice.leftOut);
     const evidence = {
       ...(session === undefined ? {} : { preset: session }),
+      ...(leftOut === undefined ? {} : { left_out: leftOut }),
       ...(sessionHome === undefined
         ? {}
         : { home: homeDigest(platform, await physicalHome(platform, sessionHome)) }),
@@ -1053,18 +1068,23 @@ ${instance}`;
   /**
    * The look at the folder's marker just before an agent starts (marker.ts): a folder whose
    * marker names other owners only, or whose marker this machine wrote and is gone, throws
-   * LaunchFolderUnmarked. With `mark`, the person chose to use it: it is marked and opens.
+   * LaunchFolderUnmarked. With `mark`, the person chose to use it: it is marked and opens. Gives
+   * the directory it looked at (identityKey), when there was one.
    */
-  async #checkMarker(space: string, folder: TaskFolder, mark: boolean): Promise<void> {
+  async #checkMarker(
+    space: string,
+    folder: TaskFolder,
+    mark: boolean,
+  ): Promise<string | undefined> {
     const markers = this.#options.markers;
-    if (markers === undefined || (folder.kind !== "task" && folder.kind !== "project")) return;
-    const owner = { space, kind: folder.kind, id: folder.owner };
-    if (mark) {
-      await markers.use(owner, folder.path);
-      return;
+    if (markers === undefined || (folder.kind !== "task" && folder.kind !== "project")) {
+      return undefined;
     }
-    const found = await markers.check(owner, folder.path);
-    if (found.kind === "ok") return;
+    const owner = { space, kind: folder.kind, id: folder.owner };
+    const found = await (mark
+      ? markers.use(owner, folder.path)
+      : markers.check(owner, folder.path));
+    if (found.kind === "ok") return found.at;
     const reason = found.kind === "missing" ? "marker_missing" : "marker_other";
     this.#options.log.log("launch.folder_unmarked", { reason });
     throw new LaunchFolderUnmarked(
@@ -1075,13 +1095,31 @@ ${instance}`;
     );
   }
 
-  /** The route an instance takes here now (chooseRoute). Throws LaunchUnavailable. */
-  #route(instance: Instance): Choice {
+  /** The route an instance takes for a task of `space` here now (chooseRoute). */
+  #route(instance: Instance, space: string, terminal = this.#terminalReady()): Choice {
     return chooseRoute(instance, {
-      terminal: this.#terminalReady(),
+      terminal,
       home: this.#options.home,
       platform: this.#options.platform,
+      space: this.#spaceOf(space),
     });
+  }
+
+  /**
+   * The route an Open takes: #route, where a terminal counts only when one of the launch's chain
+   * can start here now. The tiles do not look, since that reads the desktop.
+   */
+  async #routeNow(instance: Instance, space: string): Promise<Choice> {
+    const choice = this.#route(instance, space);
+    if (choice.route !== "terminal" || this.#options.terminal !== undefined) return choice;
+    const session = await this.environment.session().catch(() => ({}));
+    const found = await this.terminals.startable(session).catch(() => false);
+    return found ? choice : this.#route(instance, space, false);
+  }
+
+  /** The space as an instance's `spaces` name it: its ID, and its name when it is served. */
+  #spaceOf(space: string): { readonly id: string; readonly name: string | undefined } {
+    return { id: space, name: this.#options.spaces().find((s) => s.id === space)?.name };
   }
 
   /**
@@ -1178,7 +1216,7 @@ ${instance}`;
     if (request.instance !== undefined) {
       const instance = this.#instances().find((i) => i.id === request.instance);
       try {
-        choice = instance === undefined ? undefined : this.#route(instance);
+        choice = instance === undefined ? undefined : await this.#routeNow(instance, space);
       } catch {
         choice = undefined;
       }
@@ -1706,7 +1744,10 @@ ${instance}`;
     this.#links.delete(intent.id);
     // The click's brief is gone (a restart between the click and its dispatch): nothing opens.
     if (pending === undefined) return { kind: "refused", reason: "cancelled" };
-    const where = await this.resolveFolder(pending.space, pending.folder);
+    const where = this.#checked(
+      pending.folder,
+      await this.resolveFolder(pending.space, pending.folder),
+    );
     if (where.status === "failed") {
       this.#options.log.log("launch.folder_refused", { stage: "dispatch", reason: where.reason });
       return { kind: "refused", reason: where.reason };
@@ -1732,10 +1773,24 @@ ${instance}`;
     }
   }
 
+  /**
+   * A dispatch's resolution, failed as `folder_changed` when it found another directory than the
+   * one whose marker the click checked: it was replaced at its path in between.
+   */
+  #checked(folder: PlanFolder | null, where: FolderResolution): FolderResolution {
+    if (where.status !== "ok" || folder?.at === undefined) return where;
+    return identityKey(where.identity) === folder.at
+      ? where
+      : { status: "failed", reason: "folder_changed" };
+  }
+
   async #dispatchTerminal(intent: LaunchIntent): Promise<DispatchOutcome> {
     const record = this.host.record(intent.id);
     if (record === undefined) return { kind: "refused" };
-    const where = await this.resolveFolder(record.space, record.plan.folder);
+    const where = this.#checked(
+      record.plan.folder,
+      await this.resolveFolder(record.space, record.plan.folder),
+    );
     if (where.status === "failed") {
       this.#options.log.log("launch.folder_refused", { stage: "dispatch", reason: where.reason });
       // No ticket was issued and nothing started: nothing more can come from its machine state.

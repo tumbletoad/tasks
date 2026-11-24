@@ -1699,7 +1699,7 @@
     },
     {
       "id": "A4.3.11.run.door",
-      "title": "ttasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of TTasks's tools binds to the run's session and is recorded with the run's ID, only the run's own calls may use its space without the home's registration and only until the run ends, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, also with the ID a start hands out, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, a missing task is refused, and a --wait whose space is then served from a restored copy stops at the run's record there",
+      "title": "ttasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of TTasks's tools binds to the run's session and is recorded with the run's ID, only the run's own calls may use its space without the home's registration and only until the run ends, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, also with the ID a start hands out, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, a missing task is refused, a --wait whose space is then served from a restored copy stops at the run's record there, and an instance set up for other spaces is refused by name, is not taken when none is named, and a run queued before its spaces changed fails as not_for_space",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2066,7 +2066,7 @@
     },
     {
       "id": "A4.5.routes.golden-argv",
-      "title": "Golden argv per target, route and OS compared as arrays: Claude Code's terminal route with --session-id, -n, the permission and the brief after --; Codex's with -C filled at the claim, --no-daemon, its env_vars override and the brief after --; Codex's assisted open without a prompt; the claude-cli:// link's values decoded back exactly; hostile values stay one element; refused routes",
+      "title": "Golden argv per target, route and OS compared as arrays: Claude Code's terminal route with --session-id, -n, the permission and the brief after --; Codex's with -C filled at the claim, --no-daemon, its env_vars override and the brief after --; the assisted open of Codex and Claude Code without a prompt; the claude-cli:// link's values decoded back exactly; hostile values stay one element; refused routes",
       "source": "A4 3.4.2, A4 3.4.3, A4 3.6.4, A4 5.1, A7 3.9 M2.10",
       "owner": "M2",
       "kind": "ci",
@@ -2129,6 +2129,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.routes.chosen",
+      "title": "Open starts the agent as its instance is set up: the first usable route that carries its permission, arguments, environment and home, so a prefill instance with any of them opens in a terminal with the brief to paste; without one it opens on a route that leaves the prompt unsent and the receipt names what it left out, recorded with the launch so every later answer about it says it, and no route that sends a prompt leaves anything out; a terminal counts only where one of its chain can start; a TTASKS_* variable is no setting to carry; where no terminal opens, an instance keeps its tile for what it can do; an instance for some spaces is offered and opened only there; a home of its own opens only on a route that carries it, never in the default account, and gets no account variable of the person's, by prefix, while its own env wins and the program is told its home; a folder replaced after its marker check opens nothing",
+      "source": "A4 3.4, A4 3.8, A4 3.3",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.routes.codex-match",
       "title": "Codex's reference match in fake session folders: another folder, the same folder without the reference, a compressed file, a file from before the launch, a link and two launches in one folder; only the exact match is accepted, a file whose prompt is still to come is read again, and only the first 64 KB is read",
       "source": "A4 3.4.3, A4 5.1, A7 3.9 M2.10",
@@ -2146,7 +2154,7 @@
     },
     {
       "id": "A4.5.environment.scrub",
-      "title": "A4 3.8's scrub after merging (agent sessions' variables, NODE_OPTIONS, ELECTRON_RUN_AS_NODE, every TTASKS_*), the home variables before the instance's env, the person's own base taken whole and the service's through the allow-list, the executable's folder in front of PATH; a terminal's environment keeps only the install's home of the product's variables; no service variable the plan scrubs and no product secret reaches the agent",
+      "title": "A4 3.8's scrub of the base (agent sessions' variables, NODE_OPTIONS, ELECTRON_RUN_AS_NODE) with the home variables before the instance's env, which wins, and every TTASKS_* after it; as a table of variable, default home and own home: what says which Claude Code account or endpoint (ANTHROPIC_*, CLAUDE_CODE_USE_*, CLAUDE_CODE_OAUTH_*) kept for the default home and taken from the base for a home of the instance's own, whose home variable is set to it, and Codex keeping everything; the person's own base taken whole and the service's through the allow-list, the executable's folder in front of PATH; a terminal's environment keeps only the install's home of the product's variables; no service variable the plan scrubs and no product secret reaches the agent",
       "source": "A4 3.8, A7 3.9 M2.09",
       "owner": "M2",
       "kind": "ci",
@@ -2761,7 +2769,7 @@
     },
     {
       "id": "M6.page.run-once",
-      "title": "One press of Run is one run: the second click of a double click and a held key start nothing more, and a Run that got no answer, pressed again with the same words, also after a reload, carries the same request ID; a refusal forgets it",
+      "title": "One press of Run is one run: the second click of a double click and a held key start nothing more, and a Run that got no answer, pressed again with the same words, also after a reload, carries the same request ID; a refusal forgets it; an instance that can only run here offers Run and no Open",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5394,7 +5402,7 @@
     },
     {
       "id": "A5.3.8.web.open-once",
-      "title": "An Open on its way or without an answer, pressed again with the same words (also after the task was collapsed and expanded), carries the same request ID until the service answers it, so the words are saved once, and the page says the agent may be opening; the service's refusal forgets it; a second click that got the first click's launch keeps its words as a note and says so last",
+      "title": "An Open on its way or without an answer, pressed again with the same words (also after the task was collapsed and expanded), carries the same request ID until the service answers it, so the words are saved once, and the page says the agent may be opening; the service's refusal forgets it; a second click that got the first click's launch keeps its words as a note and says so last; an Open whose receipt names what it left out says so in its toast",
       "source": "A5 3.8, A1 3.8",
       "owner": "M5",
       "kind": "ci",
@@ -5421,6 +5429,14 @@
       "title": "In Chromium and Firefox against the real service, Open without text and a launch that is not recorded in Chromium only: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line, clears once it is on the task and shows in the session's thread entry; Open without text sends the brief alone; while a session runs the strip says so and opens a second one, with the words as its request, only when asked; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
       "source": "A5 3.8, A7 3.12 M5.07",
       "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.launch.e2e.left-out",
+      "title": "In Chromium and Firefox against the real service: an Open whose receipt names a setting its way of opening could not carry says so in the toast, naming the permission and that a terminal carries it, at 1,440 and 390 px without sideways scroll (the screenshots in Chromium only)",
+      "source": "A4 3.4, A5 3.8",
+      "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     },

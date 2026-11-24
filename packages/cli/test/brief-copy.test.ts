@@ -6,6 +6,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { CopyResult } from "@ttasks/launch";
 import { contractWorld, type ContractWorld } from "@ttasks/service/test/contract";
+import { CLI_NAME } from "@ttasks/brand";
 import { runMain, type Ran } from "./cli-harness.ts";
 
 let w: ContractWorld & { root: string };
@@ -18,10 +19,14 @@ afterAll(async () => {
   await w.close();
 }, LONG);
 
-/** `ttasks <args>` from a terminal, with a clipboard that answers `answer` and records the text. */
+/**
+ * `ttasks <args>` from a terminal, with a clipboard that answers `answer` and records the text.
+ * `leftOut`: the service's answer to the Open names these as left out, as an instance's would.
+ */
 async function tasks(
   args: readonly string[],
   answer?: CopyResult,
+  leftOut?: readonly string[],
 ): Promise<Ran & { copied: string[] }> {
   const copied: string[] = [];
   const ran = await runMain(args, {
@@ -32,10 +37,28 @@ async function tasks(
         copied.push(text);
         return Promise.resolve(answer ?? { status: "copied", tool: "xclip" });
       },
+      ...(leftOut === undefined
+        ? {}
+        : {
+            wrap: (session) => ({
+              bound: session.bound,
+              close: () => {
+                session.close();
+              },
+              call: async (...call: Parameters<typeof session.call>) => {
+                const answered = (await session.call(...call)) as { launch?: object };
+                return answered.launch === undefined
+                  ? answered
+                  : { ...answered, launch: { ...answered.launch, left_out: leftOut } };
+              },
+            }),
+          }),
     },
   });
   return { ...ran, copied };
 }
+
+const WITHOUT = `Opened without your read-only setting and the account you chose for it, which this way of opening cannot carry. A terminal can, where one is set up: see ${CLI_NAME} doctor.`;
 
 describe("[A4.5.brief.copy-cli] ttasks brief --copy and --pack", () => {
   test(
@@ -94,6 +117,25 @@ describe("[A4.5.brief.copy-cli] ttasks brief --copy and --pack", () => {
         reason: "no_session",
       });
       expect(session.stderr).toContain("no desktop session");
+    },
+    LONG,
+  );
+
+  test(
+    "what an Open left out is said beside the copy's outcome, whether the copy worked or not",
+    async () => {
+      expect((await tasks(["add", "Fixture task left out"])).code).toBe(0);
+      const left = ["read-only", "home"];
+      const copied = await tasks(["brief", "M-1", "--copy"], undefined, left);
+      const [said, ...rest] = copied.stdout.split("\n");
+      expect(said).toMatch(/^Brief copied to the clipboard \(launch L[0-9A-Z]{5}\)\.$/u);
+      expect(rest).toEqual([WITHOUT, ""]);
+      const failed = await tasks(
+        ["brief", "M-1", "--copy"],
+        { status: "failed", reason: "no_tool" },
+        left,
+      );
+      expect(failed.stdout.endsWith(`${WITHOUT}\n`)).toBe(true);
     },
     LONG,
   );

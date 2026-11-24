@@ -35,7 +35,7 @@ import { CopyIcon, RunIcon } from "../row/icons.tsx";
 import { sayMsg } from "../row/say.ts";
 import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { runners } from "./runs.ts";
-import { tileState, type BusyOf } from "../row/launch.ts";
+import { openers, tileState, type BusyOf } from "../row/launch.ts";
 import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 import { typingIn } from "../kept.ts";
 import {
@@ -417,7 +417,8 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const noteKeys = keysOf("note", singleKeys);
   const openKeys = keysOf("open-first", singleKeys);
   const runKeys = keysOf("run-first", singleKeys);
-  const first = instances[0];
+  const opens = openers(instances);
+  const first = opens[0];
   const [runner, ...others] = runners(instances);
   const finished = task.lifecycle !== "active";
   /** Run's key on a finished task: Reopen, the step before any run. */
@@ -498,7 +499,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
           )}
         </button>
 
-        {instances.map((instance, i) => {
+        {opens.map((instance, i) => {
           const why = held(instance);
           const state = tileState(busy, instance.key);
           const second = another(instance);

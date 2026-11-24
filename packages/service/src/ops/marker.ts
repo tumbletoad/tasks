@@ -26,6 +26,7 @@ import {
   makeDir,
   makeDirAsync,
 } from "@ttasks/files";
+import { identityKey, identityOf } from "@ttasks/launch";
 import { folderKey } from "@ttasks/storage";
 import { bounded, openPath, osOf } from "./folders.ts";
 
@@ -322,8 +323,12 @@ export class FolderMarks {
 
 /** What a launch's look at its folder's marker found (FolderMarkers.check). */
 export type MarkerCheck =
-  /** The marker names this owner, the folder took a marker just now, or it takes none. */
-  | { readonly kind: "ok" }
+  /**
+   * The marker names this owner, the folder took a marker just now, or it takes none. `at` is the
+   * folder it looked at (identityKey), when it was there and has an identity: a launch opens
+   * nothing in another.
+   */
+  | { readonly kind: "ok"; readonly at?: string }
   /** This machine marked the folder for this owner, and the marker is gone. */
   | { readonly kind: "missing" }
   /** This machine marked the folder for this owner, and another folder there names others only. */
@@ -369,50 +374,65 @@ export class FolderMarkers {
     return mine;
   }
 
-  /** Whether the stored folder is a folder here now, where it opens, and its identity. */
-  async #folder(stored: string): Promise<{ open: string; identity?: string } | undefined> {
+  /**
+   * Whether the stored folder is a folder here now, where it opens, what identifies it as marked
+   * (identityFrom) and the directory it is (identityKey).
+   */
+  async #folder(stored: string): Promise<Looked | undefined> {
     const found = await this.#look(stored);
     return found === "not_answering" ? undefined : found;
   }
 
-  async #look(
-    stored: string,
-  ): Promise<{ open: string; identity?: string } | undefined | "not_answering"> {
+  async #look(stored: string): Promise<Looked | undefined | "not_answering"> {
     const open = openPath(stored, this.#home, this.#platform);
     if (open === undefined) return undefined;
     const found = await bounded(async () => {
       try {
         const folder = await stat(open, { bigint: true });
-        return folder.isDirectory() ? (identityFrom(folder) ?? true) : false;
+        return folder.isDirectory() ? folder : false;
       } catch {
         return false;
       }
     }, MARKER_MS);
     if (found === false) return undefined;
     if (found === "not_answering") return found;
-    return found === true ? { open } : { open, identity: found };
+    const identity = identityFrom(found);
+    const at = identityOf(found);
+    return {
+      open,
+      ...(identity === undefined ? {} : { identity }),
+      ...(at === undefined ? {} : { at: identityKey(at) }),
+    };
   }
 
   /** Marks the folder `stored` as `owner`'s: it was set. False when it takes no marker. */
-  mark(owner: MarkerOwner, stored: string): Promise<boolean> {
-    return this.#mark(owner, stored, false);
+  async mark(owner: MarkerOwner, stored: string): Promise<boolean> {
+    return (await this.#mark(owner, stored, false)).written;
   }
 
   /**
    * Marks the folder `stored` as `owner`'s because the person chose to use it as it is now: that
-   * is remembered by its identity also when it takes no marker. False when it takes none.
+   * is remembered by its identity also when it takes no marker. Gives the folder it marked
+   * (identityKey), as the launch check's `at`.
    */
-  use(owner: MarkerOwner, stored: string): Promise<boolean> {
-    return this.#mark(owner, stored, true);
+  async use(owner: MarkerOwner, stored: string): Promise<MarkerCheck> {
+    const { at } = await this.#mark(owner, stored, true);
+    return at === undefined ? { kind: "ok" } : { kind: "ok", at };
   }
 
-  #mark(owner: MarkerOwner, stored: string, chosen: boolean): Promise<boolean> {
+  #mark(
+    owner: MarkerOwner,
+    stored: string,
+    chosen: boolean,
+  ): Promise<{ readonly written: boolean; readonly at?: string }> {
     return this.#turn(async () => {
       const folder = await this.#folder(stored);
-      if (folder === undefined) return false;
-      const { open, identity } = folder;
+      if (folder === undefined) return { written: false };
+      const { open, identity, at } = folder;
       const before = await bounded(() => readMarker(open), MARKER_MS);
-      return this.#write(this.#key(owner, stored), open, owner, before, identity, chosen);
+      const key = this.#key(owner, stored);
+      const written = await this.#write(key, open, owner, before, identity, chosen);
+      return at === undefined ? { written } : { written, at };
     });
   }
 
@@ -515,13 +535,14 @@ export class FolderMarkers {
     return this.#turn(async (): Promise<MarkerCheck> => {
       const folder = await this.#folder(stored);
       if (folder === undefined) return { kind: "ok" };
-      const { open, identity } = folder;
+      const { open, identity, at } = folder;
+      const ok: MarkerCheck = at === undefined ? { kind: "ok" } : { kind: "ok", at };
       const read = await bounded(() => readMarker(open), MARKER_MS);
-      if (read === "not_answering" || read.state === "unreadable") return { kind: "ok" };
+      if (read === "not_answering" || read.state === "unreadable") return ok;
       const key = this.#key(owner, stored);
       if (read.state === "owners" && read.owners.some((o) => same(o, owner))) {
         this.#marks.set(key, true, identity);
-        return { kind: "ok" };
+        return ok;
       }
       const unchanged = identity !== undefined && this.#marks.identity(key) === identity;
       if (this.#marks.has(key) && !unchanged) {
@@ -529,7 +550,16 @@ export class FolderMarkers {
         return { kind: "other", owners: read.state === "owners" ? read.owners : [] };
       }
       await this.#write(key, open, owner, read, identity);
-      return { kind: "ok" };
+      return ok;
     });
   }
+}
+
+/** A folder as a marker's look found it. */
+interface Looked {
+  readonly open: string;
+  /** What identifies it as marked (identityFrom). */
+  readonly identity?: string;
+  /** The directory it is (identityKey), as a launch's resolution names it. */
+  readonly at?: string;
 }

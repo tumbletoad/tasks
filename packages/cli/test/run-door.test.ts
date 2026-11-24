@@ -41,6 +41,8 @@ let cleanup = (): void => undefined;
 let spaceId = "";
 let task = "";
 let log = "";
+/** Writes machine.toml with the `codex` instance set up for these spaces (none: every space). */
+let setUp: (spaces: readonly string[]) => void = () => undefined;
 let service: RunningService | undefined;
 
 /**
@@ -111,18 +113,26 @@ beforeAll(async () => {
     log,
     callTool: { calls: RUN_CALLS, home },
   };
-  registerSpaces(
-    home,
-    [seeded.folder],
+  // Two instances that can run, one of them set up for another space only: a run in this space
+  // with no instance named takes the one for it.
+  const codex = (id: string, spaces: readonly string[]) =>
     instanceToml({
-      id: "codex",
+      id,
       target: "codex-cli",
-      label: "Codex",
+      label: id,
       exec: process.execPath,
       args_prefix: [SERVER],
+      spaces,
       env: { FAKE_CODEX_SCENARIO: JSON.stringify(scenario) },
-    }),
-  );
+    });
+  setUp = (spaces) => {
+    registerSpaces(
+      home,
+      [seeded.folder],
+      codex("codex", spaces) + codex("codex-research", ["Research"]),
+    );
+  };
+  setUp([]);
   service = await start();
   const s = await classSession(home, service.endpoint.path, "cli-script");
   try {
@@ -465,5 +475,53 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
     });
     const listed = await user(["run", "list", placed, "--json"]);
     expect((JSON.parse(listed.stdout) as { runs: unknown[] }).runs).toEqual([]);
+  });
+
+  test("an instance set up for other spaces runs nothing here: named, it is refused; set so after its run was queued, the run does not start", async () => {
+    const before = (
+      JSON.parse((await user(["run", "list", task, "--json"])).stdout) as {
+        runs: unknown[];
+      }
+    ).runs.length;
+    const refused = await user(["run", task, "--instance", "codex-research", "--json"]);
+    expect(refused.code).not.toBe(0);
+    expect(JSON.parse(refused.stdout)).toMatchObject({
+      error: {
+        code: "invalid_input",
+        message: "This instance is set up for other spaces only. Nothing was started.",
+        data: { reason: "not_for_space" },
+      },
+    });
+    const listed = await user(["run", "list", task, "--json"]);
+    expect((JSON.parse(listed.stdout) as { runs: unknown[] }).runs).toHaveLength(before);
+
+    // Queued with the one instance for this space, which is set up for another before it starts.
+    const hold = service?.runs.hold();
+    const queued = await user(["run", task, "--json", "Before the change."]);
+    expect(JSON.parse(queued.stdout)).toMatchObject({ state: "queued", instance: "codex" });
+    const id = (JSON.parse(queued.stdout) as { id: string }).id;
+    hold?.release();
+    await stop();
+    setUp(["Research"]);
+    try {
+      service = await start();
+      await waitFor(
+        async () => {
+          const shown = JSON.parse((await user(["run", "show", id, "--json"])).stdout) as {
+            state: string;
+            reason: string | null;
+          };
+          return FINAL.has(shown.state) ? shown : undefined;
+        },
+        90_000,
+        "the queued run settled",
+      ).then((shown) => {
+        expect(shown).toMatchObject({ state: "failed", reason: "not_for_space" });
+      });
+    } finally {
+      await stop();
+      setUp([]);
+      service = await start();
+    }
   });
 });

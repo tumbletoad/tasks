@@ -15,6 +15,7 @@ import {
   pictures,
   showsSpace,
   signIn,
+  stopClock,
   themes,
   violations,
   watchViolations,
@@ -49,20 +50,6 @@ const read = async (world: World, ref: string): Promise<Digest> =>
 async function agentSets(world: World, ref: string, set: Record<string, unknown>): Promise<void> {
   const { as_of } = await read(world, ref);
   await world.op(world.mira.id, "task.update", { task: ref, set, base: as_of }, "agent");
-}
-
-/** Stops the page's clock, installed before, where it is now: its timers wait for `resume`. */
-async function stopClock(page: Page): Promise<void> {
-  for (;;) {
-    const now = await page.evaluate(() => Date.now());
-    try {
-      await page.clock.pauseAt(now + 1);
-      return;
-    } catch (error) {
-      // The clock moved on between the read and the pause: read it again.
-      if (!String(error).includes("past")) throw error;
-    }
-  }
 }
 
 const rowOf = (page: Page, ref: string) => page.locator(`main li[data-task="${ref}"]`);

@@ -305,6 +305,8 @@ export const RUN_REASONS = {
     "task_closed",
     /** A queued run whose agent instance left machine.toml before it could start. Nothing ran. */
     "instance_gone",
+    /** A queued run whose instance was set up for other spaces before it could start. Nothing ran. */
+    "not_for_space",
     /** A queued run whose folder can no longer be found or used. Nothing ran. */
     "folder_gone",
     /** The agent could not be started in its container. Nothing ran. */

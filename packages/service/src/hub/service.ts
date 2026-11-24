@@ -117,7 +117,7 @@ import {
   type LaunchOptions,
   type OpenTaskRequest,
 } from "../launch/index.ts";
-import { runsWith } from "../runs/agent.ts";
+import { runsWith } from "../runs/drivers.ts";
 import { RunService, type RunOptions } from "../runs/service.ts";
 import { Bridges, sessionPort, type BindingEvent } from "../binding/index.ts";
 import { repairIfIdle, supervisorReplaced, type RepairOutcome } from "../version/repair.ts";
