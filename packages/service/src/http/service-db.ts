@@ -49,12 +49,16 @@ CREATE INDEX IF NOT EXISTS port_holders_port ON port_holders(port);
  */
 export class NewerServiceDb extends Error {
   override readonly name = "NewerServiceDb";
+  readonly format: number;
   constructor(format: number) {
-    super(
-      `${PRODUCT_NAME}'s service.sqlite is in format ${String(format)}, which a newer version of ${PRODUCT_NAME} wrote; this version knows format ${String(SERVICE_DB_VERSION)}, so the service does not start. Run that version again, or a newer one: after a rollback, ${CLI_NAME} update --rollback goes back to it.`,
-    );
+    super(newerFormatMessage(format, SERVICE_DB_VERSION));
+    this.format = format;
   }
 }
+
+/** Why a build that knows format `knows` does not start on a service.sqlite in `format`. */
+export const newerFormatMessage = (format: number, knows: number): string =>
+  `${PRODUCT_NAME}'s service.sqlite is in format ${String(format)}, which a newer version of ${PRODUCT_NAME} wrote; this version knows format ${String(knows)}, so the service does not start, and starting it again does not help. Run that version again, or a newer one: after a rollback, ${CLI_NAME} update --rollback goes back to it.`;
 
 /** How often a service.sqlite that goes away between its creation and the open is made again. */
 const GONE_TRIES = 3;

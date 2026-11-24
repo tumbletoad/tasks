@@ -36,6 +36,7 @@ import {
 import { configRefusal, unsafeConfigMessage } from "../config/messages.ts";
 import {
   NewerServiceDb,
+  SERVICE_DB_VERSION,
   openGrants,
   startHttp,
   type DurableGrants,
@@ -969,7 +970,12 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         grantsDb = await openGrants(layout.state, httpLog);
       } catch (error) {
         if (!(error instanceof NewerServiceDb)) throw error;
-        log.log("service.refused", { reason: "newer_format" });
+        // Both formats in the log, so doctor can name the refusal after the service exited.
+        log.log("service.refused", {
+          reason: "newer_format",
+          format: error.format,
+          knows: SERVICE_DB_VERSION,
+        });
         throw refuse(say, "newer_format", error.message);
       }
     }

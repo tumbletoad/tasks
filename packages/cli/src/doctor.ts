@@ -475,6 +475,26 @@ async function socketBlocked(
   }
 }
 
+/**
+ * Why the service's last start stopped, when no start was ready after it and another start would
+ * meet the same: a service.sqlite a newer version wrote, with both formats, in the service's words.
+ */
+async function refusedStart(layout: Layout): Promise<string | undefined> {
+  const events = readJsonLines(join(layout.logs, "service.log"));
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (event?.["ev"] === "service.ready") return undefined;
+    if (event?.["ev"] !== "service.refused") continue;
+    const { reason, format, knows } = event;
+    if (reason !== "newer_format" || typeof format !== "number" || typeof knows !== "number") {
+      return undefined;
+    }
+    const { newerFormatMessage } = await import("@ttasks/service/http");
+    return newerFormatMessage(format, knows);
+  }
+  return undefined;
+}
+
 /** The checks that talk to the service. */
 async function serviceChecks(
   io: Io,
@@ -487,15 +507,18 @@ async function serviceChecks(
   const launch = await import("./doctor-launch.ts");
   const record = readServiceRecord(state);
   if (record === undefined) {
-    const blocked = await socketBlocked(io, layout, state);
+    const refused = await refusedStart(layout);
+    const blocked = refused === undefined ? await socketBlocked(io, layout, state) : undefined;
     return [
       {
         id: "service",
         status: "fail",
         detail:
-          blocked === undefined
-            ? "Not running. Start it with: ttasks service start"
-            : `Not running. ${blocked}`,
+          refused !== undefined
+            ? `Not running: it refused to start. ${refused}`
+            : blocked === undefined
+              ? "Not running. Start it with: ttasks service start"
+              : `Not running. ${blocked}`,
       },
       { id: "endpoint", status: "skip", detail: "No service to reach." },
       { id: "spaces", status: "skip", detail: "No service to ask." },

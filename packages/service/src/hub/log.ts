@@ -160,7 +160,11 @@ export const EVENTS = {
     c: "hub",
     fields: { manager: MANAGERS, version: "version", build: "build", separate: "bool" },
   },
-  "service.refused": { lvl: "error", c: "hub", fields: { reason: REFUSALS } },
+  "service.refused": {
+    lvl: "error",
+    c: "hub",
+    fields: { reason: REFUSALS, format: "int", knows: "int" },
+  },
   "service.locked": { lvl: "warn", c: "hub", fields: { holder: "int" } },
   "service.lock_failed": { lvl: "error", c: "hub", fields: { code: STORAGE_ERROR_CODES } },
   "service.lock_acquired": { lvl: "debug", c: "hub", fields: { ms: "int" } },
