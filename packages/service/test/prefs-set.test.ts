@@ -4,7 +4,15 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { AppError, PrefsManageResult, TaskAddResult, type ErrorBody } from "@ttasks/contracts";
+import {
+  AppError,
+  EFFORT_ABOUT_MAX,
+  EFFORT_LEVELS,
+  EFFORT_NAME_MAX,
+  PrefsManageResult,
+  TaskAddResult,
+  type ErrorBody,
+} from "@ttasks/contracts";
 import type { ReceiptLookup, SpaceWriterHandle, WriteRequest } from "@ttasks/storage";
 import { MACHINE, writeFixture, type Fixture } from "@ttasks/storage/write-helpers";
 import type { Caller } from "../src/ops/caller.ts";
@@ -94,45 +102,82 @@ const effortOf = async (ref: string): Promise<unknown> =>
   ((await call(person, "task.get", { task: ref }))["task"] as Json)["effort"];
 
 describe("[A3.3.4.prefs.set] the person changes a space's settings, and everything follows", () => {
-  test("adding sizes keeps every task's size, and each reader of the scale uses it on the next call", async () => {
+  test("adding a level by name keeps every task's level and every level's time and line, and each reader uses it on the next call", async () => {
     const refs = await add([
       { title: "Fixture small", effort: "S" },
       { title: "Fixture medium", effort: "M" },
       { title: "Fixture large", effort: "L" },
     ]);
-    const changed = await set(person, "tasks.effort_scale", "XS, S, M, L, XL");
+    const before = [...EFFORT_LEVELS];
+    const after = [...EFFORT_LEVELS, { key: "Two weeks" }];
+    const changed = await set(person, "tasks.effort_scale", "XS, S, M, L, XL, Two weeks");
     expect(changed).toMatchObject({
       action: "set",
       result: "updated",
-      changed: [
-        { key: "tasks.effort_scale", from: ["S", "M", "L"], to: ["XS", "S", "M", "L", "XL"] },
-      ],
-      prefs: [{ key: "tasks.effort_scale", value: ["XS", "S", "M", "L", "XL"], is_default: false }],
+      changed: [{ key: "tasks.effort_scale", from: before, to: after }],
+      prefs: [{ key: "tasks.effort_scale", value: after, is_default: false }],
     });
-    expect(await get("tasks.effort_scale")).toEqual(["XS", "S", "M", "L", "XL"]);
+    expect(await get("tasks.effort_scale")).toEqual(after);
     expect(await Promise.all(refs.map((ref) => effortOf(ref ?? "")))).toEqual(["S", "M", "L"]);
+    // A reorder by name keeps each level whole.
+    await set(person, "tasks.effort_scale", "S, XS, M, L, XL, Two weeks");
+    expect(await get("tasks.effort_scale")).toEqual([after[1], after[0], ...after.slice(2)]);
 
-    // The writer's check of a size an agent sends, and its hint.
-    const [tiny] = await add([{ title: "Fixture tiny", effort: "XS" }]);
-    expect(await effortOf(tiny ?? "")).toBe("XS");
+    // The writer's check of a level an agent sends, and its hint.
+    const [long] = await add([{ title: "Fixture long", effort: "Two weeks" }]);
+    expect(await effortOf(long ?? "")).toBe("Two weeks");
     const wrong = await refusal(add([{ title: "Fixture huge", effort: "XXL" }]));
     expect(wrong.hint).toBe(
-      "Use one of the space's efforts: XS, S, M, L, XL. Put another estimate in context.",
+      "Use one of the space's efforts: S, XS, M, L, XL, Two weeks. Put another estimate in context.",
     );
     // Search's effort: filter.
-    const found = (await call(script, "task.search", { q: "effort:XS" }))["rows"] as Json[];
-    expect(found.map((row) => row["ref"])).toEqual([tiny]);
-    // Undo of a change to a new size.
+    const found = (await call(script, "task.search", { q: 'effort:"Two weeks"' }))[
+      "rows"
+    ] as Json[];
+    expect(found.map((row) => row["ref"])).toEqual([long]);
+    // Undo of a change to a new level.
     const large = refs[2] ?? "";
     await call(person, "task.update", {
       task: large,
-      set: { effort: "XL" },
+      set: { effort: "Two weeks" },
       base: await asOf(),
       request_id: rid(),
     });
-    expect(await effortOf(large)).toBe("XL");
+    expect(await effortOf(large)).toBe("Two weeks");
     await call(person, "history.undo", { request_id: rid() });
     expect(await effortOf(large)).toBe("L");
+  });
+
+  test("the whole value goes in with its base: a change made in between is refused, not overwritten", async () => {
+    const read = PrefsManageResult.parse(
+      await call(person, "prefs.manage", { action: "get", keys: ["tasks.effort_scale"] }),
+    );
+    const levels = [
+      { key: "Quick", time: { amount: 15, unit: "minutes" }, about: "A call; a reply" },
+      { key: "Day", time: { amount: 1, unit: "days" } },
+      ...EFFORT_LEVELS,
+    ];
+    const edited = (value: unknown) =>
+      call(person, "prefs.manage", {
+        action: "set",
+        set: [{ key: "tasks.effort_scale", value }],
+        base: read.as_of,
+        request_id: rid(),
+      });
+    expect(PrefsManageResult.parse(await edited(levels)).result).toBe("updated");
+    expect(await get("tasks.effort_scale")).toEqual(levels);
+    expect(await refusal(edited(EFFORT_LEVELS))).toMatchObject({ code: "conflict" });
+    expect(await get("tasks.effort_scale")).toEqual(levels);
+    // A time or a line the shape refuses is refused whole.
+    for (const [wrong, code] of [
+      [[{ key: "Quick", time: { amount: 0, unit: "minutes" } }], "invalid_input"],
+      [[{ key: "Quick", time: { amount: 1, unit: "fortnights" } }], "invalid_input"],
+      [[{ key: "Quick", about: "x".repeat(EFFORT_ABOUT_MAX + 1) }], "too_large"],
+      [[{ key: "Quick", about: "Two\nlines" }], "invalid_input"],
+    ] as const) {
+      expect(await refusal(set(person, "tasks.effort_scale", wrong))).toMatchObject({ code });
+    }
+    expect(await get("tasks.effort_scale")).toEqual(levels);
   });
 
   test("the statuses are fixed in this build: the refusal and the read say so, and nothing is written", async () => {
@@ -159,21 +204,27 @@ describe("[A3.3.4.prefs.set] the person changes a space's settings, and everythi
       message: `Active tasks hold an effort this change removes: ${large ?? ""} (L). Nothing was changed.`,
       data: { tasks: [large], task_count: 1 },
     });
-    expect(await get("tasks.effort_scale")).toEqual(["S", "M", "L"]);
+    expect(await get("tasks.effort_scale")).toEqual(EFFORT_LEVELS);
   });
 
   test("a size the scale takes is one every task input takes, and no two differ only in case", async () => {
-    const longest = "X".repeat(20);
+    const longest = "X".repeat(EFFORT_NAME_MAX);
     await set(person, "tasks.effort_scale", `S,M,L,${longest}`);
     const [sized] = await add([{ title: "Fixture longest size", effort: longest }]);
     expect(await effortOf(sized ?? "")).toBe(longest);
     expect(
-      await refusal(set(person, "tasks.effort_scale", `S,M,L,${longest},${longest}X`)),
-    ).toMatchObject({ code: "invalid_input", hint: "It takes a list of 1 to 10 keys." });
+      await refusal(set(person, "tasks.effort_scale", `S,M,L,${longest},Y${longest}`)),
+    ).toMatchObject({
+      code: "invalid_input",
+      message: `A new level's name has at most ${String(EFFORT_NAME_MAX)} characters.`,
+    });
     expect(await refusal(set(person, "tasks.effort_scale", "S,M,L,l"))).toMatchObject({
       code: "invalid_input",
     });
-    expect(await get("tasks.effort_scale")).toEqual(["S", "M", "L", longest]);
+    expect(await get("tasks.effort_scale")).toEqual([
+      ...EFFORT_LEVELS.slice(1, 4),
+      { key: longest },
+    ]);
   });
 
   test("the same value again changes nothing, and says so", async () => {
@@ -217,6 +268,6 @@ describe("[A3.3.4.prefs.set] the person changes a space's settings, and everythi
       });
     }
     expect(await asOf()).toBe(before);
-    expect(await get("tasks.effort_scale")).toEqual(["S", "M", "L"]);
+    expect(await get("tasks.effort_scale")).toEqual(EFFORT_LEVELS);
   });
 });

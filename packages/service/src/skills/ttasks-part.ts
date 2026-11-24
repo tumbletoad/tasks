@@ -3,20 +3,18 @@
 // so an edited skill never breaks a call and a renamed tool never leaves an old call in a file.
 // Tool names come from the registry, so a rename changes them here too.
 import { PRODUCT_NAME } from "@ttasks/brand";
-import { AGENT_LIMITS, findEntry, readPreference } from "@ttasks/contracts";
-
-/**
- * One effort size of a space. A size is a key today; a time and a description of what belongs on
- * it can join it here, and the sizing part then says them.
- */
-export interface Size {
-  readonly key: string;
-}
+import {
+  AGENT_LIMITS,
+  effortTimeText,
+  findEntry,
+  readPreference,
+  type EffortLevel,
+} from "@ttasks/contracts";
 
 /** What a TTasks part may say about the space it is served in. */
 export interface SpaceFacts {
-  /** The space's effort sizes, smallest first. */
-  readonly sizes: readonly Size[];
+  /** The space's effort levels, smallest first. */
+  readonly sizes: readonly EffortLevel[];
 }
 
 /** What an agent is handed of one default: TTasks' lines, then the person's part. */
@@ -84,35 +82,49 @@ const PRIORITY = [
   `- Set focus only when the user asks.`,
 ];
 
-/** A `## <name>` section of a body: its heading's name, and its text with the heading. */
-const sectionsOf = (body: string) => {
-  const [head = "", ...rest] = body.split(/^(?=## )/mu);
-  return {
-    head,
-    sections: rest.map((text) => ({ name: (text.split("\n")[0] ?? "").slice(3).trim(), text })),
-  };
-};
+/** One level as the sizing part says it: "- M, about 4 hours: One long focused sitting." */
+function levelLine(level: EffortLevel): string {
+  const time = level.time === undefined ? "" : `, about ${effortTimeText(level.time)}`;
+  const about =
+    level.about === undefined ? "" : `: ${level.about}${/[.!?]$/u.test(level.about) ? "" : "."}`;
+  return `- ${level.key}${time}${about}`;
+}
 
 /**
- * The default's examples, which are grouped under the sizes they show (`## M`), for this space: the
- * groups of sizes it has, and a line for the sizes no example shows. A person's copy is served as
- * written, whatever its headings mean.
+ * The space's levels, written from its list each time the skill is read, so the list is the one
+ * place they are said. A person's copy follows whole, whatever its headings: a size it names
+ * differently is settled by the last line here.
  */
-const sizing: TtasksPart = ({ sizes }, body, edited) => {
-  const keys = sizes.map((size) => size.key);
-  const scale = `This space's sizes, smallest first: ${keys.join(", ")}. effort takes exactly one of them, in ${addTasks} or in ${updateTask}'s set (with base); ${updateTask} with clear ["effort"] empties it. Send no other value and no time: a task you cannot place stays without a size.`;
-  if (edited) return { ttasks: [scale], body };
-  const { head, sections } = sectionsOf(body);
-  const kept = sections.filter((section) => keys.includes(section.name));
-  const shown = new Set(kept.map((section) => section.name));
-  const bare = keys.filter((key) => !shown.has(key));
-  const lines = [scale];
-  if (bare.length > 0) {
-    lines.push(
-      `${kept.length === 0 ? "No example below shows a size of this space" : `No example below shows ${bare.join(", ")}`}: for a task you cannot place by the examples, ask the user which size it is, or leave it without one and say why.`,
-    );
+const sizing: TtasksPart = ({ sizes }, body) => {
+  const mechanics = `effort takes exactly one size's name, in ${addTasks} or in ${updateTask}'s set (with base); ${updateTask} with clear ["effort"] empties it. Send no other value and no time: a task you cannot place stays without a size.`;
+  const own =
+    "A size is the user's own active time, the way they usually work: getting ready, doing it and checking it. It is not how long an agent works.";
+  const timed = sizes.some((size) => size.time !== undefined);
+  const described = sizes.some((size) => size.about !== undefined);
+  if (!timed && !described) {
+    const names = sizes.map((size) => size.key).join(", ");
+    return {
+      ttasks: [mechanics, "", `This space's sizes, smallest first: ${names}. ${own}`],
+      body,
+    };
   }
-  return { ttasks: lines, body: [head, ...kept.map((section) => section.text)].join("").trimEnd() };
+  const closing = [
+    described
+      ? "Match the work to the closest description."
+      : "Match the work to the closest size.",
+    timed ? "The times are reference points for the user's own work." : "",
+    "If torn, choose the larger size. Send its name, never a time. Where the text below gives a size another time or meaning, these lines win.",
+  ];
+  return {
+    ttasks: [
+      mechanics,
+      "",
+      `This space's sizes, smallest first. ${own}${described ? " The lines below are the user's own examples." : ""}`,
+      ...sizes.map(levelLine),
+      closing.filter((line) => line !== "").join(" "),
+    ],
+    body,
+  };
 };
 
 const fixed =

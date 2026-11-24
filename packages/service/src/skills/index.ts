@@ -18,7 +18,7 @@ import { isSkillName, kib, parseSkill, SKILL_BYTES, SKILL_FILE } from "./format.
 import { TTASKS_PARTS, type SpaceFacts } from "./ttasks-part.ts";
 
 export { decodeSkill, isSkillName, SKILL_BYTES, SKILL_FILE } from "./format.ts";
-export type { Size, SpaceFacts } from "./ttasks-part.ts";
+export type { SpaceFacts } from "./ttasks-part.ts";
 
 /** How long reading the person's skills may take before an answer goes on without them. */
 export const SKILLS_WITHIN_MS = 2_000;

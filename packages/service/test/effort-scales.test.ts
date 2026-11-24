@@ -1,7 +1,7 @@
-// The effort scale as every reader takes it: the names of any stored list of sizes, whatever its
+// The effort scale as every reader takes it: the levels of any stored list, whatever its
 // version or the fields of its items, a size of the longest name through every input, and search
 // that tells two sizes apart that differ only in case. Fixture text only.
-import { EFFORT_KEY_MAX } from "@ttasks/contracts";
+import { EFFORT_KEY_MAX, EFFORT_LEVELS, EFFORT_NAME_MAX } from "@ttasks/contracts";
 import { afterAll, describe, expect, test } from "vitest";
 import { readSnapshot } from "../src/http/feed.ts";
 import { effortSpaces, type EffortWorld, type Json } from "./effort-world.ts";
@@ -24,7 +24,7 @@ async function readers(w: EffortWorld, names: readonly string[]) {
       request_id: w.rid(),
     });
     expect(text, effort).not.toMatch(/^error/u);
-    const rows = (await w.call("task.search", { q: `effort:${effort}` }))["rows"] as Json[];
+    const rows = (await w.call("task.search", { q: `effort:"${effort}"` }))["rows"] as Json[];
     added.push(...rows.map((row) => String(row["effort"])));
   }
   const wrong = await w.tool("add_tasks", {
@@ -34,48 +34,53 @@ async function readers(w: EffortWorld, names: readonly string[]) {
   return { scale, added, wrong };
 }
 
+const level = (key: string) => EFFORT_LEVELS.find((known) => known.key === key) ?? { key };
+
 describe("[A1.3.16.prefs.effort-any] every reader takes the names of any stored list of sizes", () => {
-  test("a list whose sizes carry fields this build does not know offers exactly its names", async () => {
+  test("a list of names an earlier build stored: a default level's name means that level, another stays a name", async () => {
     const w = await spaces.next();
-    await w.store(
-      JSON.stringify([
-        { key: "XS", time: { amount: 10, unit: "minutes" } },
-        { key: "S" },
-        { key: "XL", about: "Too big to plan as one piece" },
-      ]),
-      1,
-    );
-    const { scale, added, wrong } = await readers(w, ["XS", "S", "XL"]);
+    await w.store(JSON.stringify([{ key: "XS" }, { key: "S" }, { key: "Q" }]), 1);
+    const { scale, added, wrong } = await readers(w, ["XS", "S", "Q"]);
     expect(scale).toEqual({
       key: "tasks.effort_scale",
-      value: [{ key: "XS" }, { key: "S" }, { key: "XL" }],
+      value: [level("XS"), level("S"), { key: "Q" }],
       state: "set",
     });
-    expect(added).toEqual(["XS", "S", "XL"]);
-    expect(wrong).toContain(hintFor(["XS", "S", "XL"]));
-    // M is not a size of this space, though the fallback has it.
+    expect(added).toEqual(["XS", "S", "Q"]);
+    expect(wrong).toContain(hintFor(["XS", "S", "Q"]));
+    // M is not a level of this space, though the defaults have it.
     expect(
       await w.refusal("task.add", {
         tasks: [{ title: "Fixture M", effort: "M" }],
         request_id: w.rid(),
       }),
-    ).toMatchObject({ hint: hintFor(["XS", "S", "XL"]) });
+    ).toMatchObject({ hint: hintFor(["XS", "S", "Q"]) });
+    // What the tasks hold never changes by the reading; a set by names writes what was read.
+    await w.setScale(["XS", "S", "Q", "XL"]);
+    const shown = (await w.call("prefs.manage", { action: "get", keys: ["tasks.effort_scale"] }))[
+      "prefs"
+    ] as Json[];
+    expect(shown[0]?.["value"]).toEqual([level("XS"), level("S"), { key: "Q" }, { key: "XL" }]);
   });
 
   test("a newer build's list offers its names, and stays the newer build's to change", async () => {
     const w = await spaces.next();
     await w.store(
       JSON.stringify([
-        { key: "XS", time: { amount: 10, unit: "minutes" } },
-        { key: "S" },
-        { key: "Half a day" },
+        { key: "XS", time: { amount: 10, unit: "minutes" }, colour: "teal" },
+        { key: "S", time: { amount: 1, unit: "fortnights" } },
+        { key: "Half a day", about: "One sitting" },
       ]),
-      2,
+      3,
     );
     const { scale, added, wrong } = await readers(w, ["XS", "S"]);
     expect(scale).toEqual({
       key: "tasks.effort_scale",
-      value: [{ key: "XS" }, { key: "S" }, { key: "Half a day" }],
+      value: [
+        { key: "XS", time: { amount: 10, unit: "minutes" } },
+        { key: "S" },
+        { key: "Half a day", about: "One sitting" },
+      ],
       state: "newer",
     });
     expect(added).toEqual(["XS", "S"]);
@@ -104,90 +109,115 @@ describe("[A1.3.16.prefs.effort-any] every reader takes the names of any stored 
     expect((await readSnapshot(readerOf(w.fx.reader))).preferences).toContainEqual(scale);
   });
 
-  test("a space that never set its sizes, or reset them, offers the fallback S, M and L", async () => {
+  test("a space that never set its levels, or reset them, has the five default levels", async () => {
     const w = await spaces.next();
-    const missing = await readers(w, ["S", "M", "L"]);
+    const names = EFFORT_LEVELS.map((known) => known.key);
+    const missing = await readers(w, names);
     expect(missing.scale).toEqual({
       key: "tasks.effort_scale",
-      value: [{ key: "S" }, { key: "M" }, { key: "L" }],
+      value: EFFORT_LEVELS,
       state: "default",
     });
-    expect(missing.wrong).toContain(hintFor(["S", "M", "L"]));
+    expect(missing.wrong).toContain(hintFor(names));
+    await w.setScale([...names, "XXL"]);
     await w.call("prefs.manage", {
       action: "set",
       set: [{ key: "tasks.effort_scale", reset: true }],
       base: await w.base(),
       request_id: w.rid(),
     });
-    const reset = await readers(w, ["S", "M", "L"]);
+    const reset = await readers(w, names);
     expect(reset.scale).toEqual(missing.scale);
-    expect(reset.wrong).toContain(hintFor(["S", "M", "L"]));
+    expect(reset.wrong).toContain(hintFor(names));
   });
 
-  test("a list the person set offers its names; a value that is no list of sizes reads as the fallback", async () => {
+  test("a list the person set offers its levels; a value that is no list of levels reads as the defaults", async () => {
     const w = await spaces.next();
-    await w.setScale(["XS", "S", "M", "L", "XL"]);
-    const own = await readers(w, ["XS", "XL"]);
-    expect(own.scale).toMatchObject({
-      value: [{ key: "XS" }, { key: "S" }, { key: "M" }, { key: "L" }, { key: "XL" }],
+    await w.setScale(["S", "M", "Half a day"]);
+    const own = await readers(w, ["S", "Half a day"]);
+    expect(own.scale).toEqual({
+      key: "tasks.effort_scale",
+      value: [level("S"), level("M"), { key: "Half a day" }],
       state: "set",
     });
-    expect(own.wrong).toContain(hintFor(["XS", "S", "M", "L", "XL"]));
+    expect(own.wrong).toContain(hintFor(["S", "M", "Half a day"]));
     for (const junk of [["XS", "S"], [{ name: "XS" }], { key: "XS" }, [], [{ key: "" }]]) {
       await w.store(JSON.stringify(junk), 2);
       const snapshot = await readSnapshot(readerOf(w.fx.reader));
       expect(
         snapshot.preferences.find((p) => p.key === "tasks.effort_scale")?.value,
         JSON.stringify(junk),
-      ).toEqual([{ key: "S" }, { key: "M" }, { key: "L" }]);
+      ).toEqual(EFFORT_LEVELS);
     }
   });
 });
 
 describe("[A1.3.16.prefs.effort-longest] a size of the longest name goes through every input", () => {
-  test("add_tasks, update_task and a follow-up of complete_task take it, and each answer shows it", async () => {
-    const w = await spaces.next();
-    const longest = "Deep-work_2.0".padEnd(EFFORT_KEY_MAX, "x");
-    expect(longest).toHaveLength(EFFORT_KEY_MAX);
-    await w.setScale(["S", longest]);
-    const added = await w.tool("add_tasks", {
-      tasks: [
-        { title: "Fixture added", effort: longest },
-        { title: "Fixture updated", effort: "S" },
-      ],
-      request_id: w.rid(),
-    });
-    expect(added).not.toMatch(/^error/u);
-    const refsOf = async (q: string) =>
-      ((await w.call("task.search", { q }))["rows"] as Json[]).map((r) => String(r["ref"]));
-    const [small] = await refsOf("effort:S");
-    const [large] = await refsOf(`effort:${longest}`);
-    const updated = await w.tool("update_task", {
-      task: small ?? "",
-      set: { effort: longest },
-      base: await w.base(),
-      request_id: w.rid(),
-    });
-    expect(updated).not.toMatch(/^error/u);
-    const finished = await w.tool("complete_task", {
-      task: large ?? "",
-      outcome: "Fixture outcome with the evidence",
-      follow_ups: [{ title: "Fixture follow-up", effort: longest }],
-      base: await w.base(),
-      request_id: w.rid(),
-    });
-    expect(finished).not.toMatch(/^error/u);
-    // The updated task and the follow-up are open on it; the finished one keeps it.
-    const refs = await refsOf(`effort:${longest}`);
-    expect(refs).toHaveLength(2);
-    expect(refs).toContain(small);
-    const found = await w.tool("search", { q: `effort:${longest}` });
-    for (const ref of refs) expect(found).toContain(`${ref} · open · P4 · ${longest} ·`);
-    for (const ref of [...refs, large ?? ""]) {
-      expect(await w.tool("get_task", { task: ref })).toContain(`Effort: ${longest}`);
-      expect(w.file(ref)).toContain(longest);
-    }
-  });
+  test.each([
+    ["a name the person sets", "Half a day"],
+    [
+      "a longer name an earlier build let the person set",
+      "Deep-work_2.0".padEnd(EFFORT_KEY_MAX, "x"),
+    ],
+  ])(
+    "add_tasks, update_task and a follow-up of complete_task take %s, and each answer shows it",
+    async (_, longest) => {
+      const w = await spaces.next();
+      expect([EFFORT_NAME_MAX, EFFORT_KEY_MAX]).toContain(longest.length);
+      if (longest.length > EFFORT_NAME_MAX) {
+        await w.store(JSON.stringify([{ key: "S" }, { key: longest }]), 1);
+        // It stays while the person changes the levels around it, and cannot be set anew.
+        await w.setScale(["XS", "S", longest]);
+        const anew = await w.refusal("prefs.manage", {
+          action: "set",
+          set: [{ key: "tasks.effort_scale", value: `XS,S,${longest},${longest.slice(0, -1)}` }],
+          base: await w.base(),
+          request_id: w.rid(),
+        });
+        expect(anew).toMatchObject({
+          code: "invalid_input",
+          message: `A new level's name has at most ${String(EFFORT_NAME_MAX)} characters.`,
+        });
+      } else await w.setScale(["S", longest]);
+      const added = await w.tool("add_tasks", {
+        tasks: [
+          { title: "Fixture added", effort: longest },
+          { title: "Fixture updated", effort: "S" },
+        ],
+        request_id: w.rid(),
+      });
+      expect(added).not.toMatch(/^error/u);
+      const refsOf = async (q: string) =>
+        ((await w.call("task.search", { q }))["rows"] as Json[]).map((r) => String(r["ref"]));
+      const [small] = await refsOf("effort:S");
+      const [large] = await refsOf(`effort:"${longest}"`);
+      const updated = await w.tool("update_task", {
+        task: small ?? "",
+        set: { effort: longest },
+        base: await w.base(),
+        request_id: w.rid(),
+      });
+      expect(updated).not.toMatch(/^error/u);
+      const finished = await w.tool("complete_task", {
+        task: large ?? "",
+        outcome: "Fixture outcome with the evidence",
+        follow_ups: [{ title: "Fixture follow-up", effort: longest }],
+        base: await w.base(),
+        request_id: w.rid(),
+      });
+      expect(finished).not.toMatch(/^error/u);
+      // The updated task and the follow-up are open on it; the finished one keeps it.
+      const refs = await refsOf(`effort:"${longest}"`);
+      expect(refs).toHaveLength(2);
+      expect(refs).toContain(small);
+      const found = await w.tool("search", { q: `effort:"${longest}"` });
+      for (const ref of refs) expect(found).toContain(`${ref} · open · P4 · ${longest} ·`);
+      for (const ref of [...refs, large ?? ""]) {
+        expect(await w.tool("get_task", { task: ref })).toContain(`Effort: ${longest}`);
+        expect(w.file(ref)).toContain(longest);
+      }
+    },
+  );
 });
 
 describe("[A3.5.search.effort-exact] search tells apart two sizes that differ only in case", () => {
