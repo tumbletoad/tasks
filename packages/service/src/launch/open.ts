@@ -114,13 +114,13 @@ export class LaunchFolderUnmarked extends Error {
 }
 
 /**
- * The space the agent home a terminal click records is registered for, when its live registration
- * names another space than `space`: a session there could not use TTasks. Undefined when the home
- * may use `space`, has no live registration, or its registrations could not be read.
+ * The space the agent home a terminal click records (its app, folder and settings file) is
+ * registered for, when its live registration names another space than `space`: a session there
+ * could not use TTasks. Undefined when the home may use `space`, has no live registration, or its
+ * registrations could not be read.
  */
 export type RegisteredElsewhere = (
-  app: string,
-  home: string | undefined,
+  agent: { readonly app: string; readonly home?: string; readonly file?: string },
   space: string,
 ) => string | undefined;
 

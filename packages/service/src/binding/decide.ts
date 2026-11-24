@@ -14,15 +14,15 @@
 // What a session may do is decided again at every call (`standing`), never who it is.
 import { INSTANCE_ID, MANUAL_INSTANCE } from "@ttasks/launch";
 import type { Named, Live } from "../hub/named.ts";
-import type { HomeRows } from "../hub/home-rows.ts";
+import type { ClickHome, HomeRows } from "../hub/home-rows.ts";
 import type { BoundBy, Decision, Presented, Session, SessionHome, Standing } from "../ops/index.ts";
 
 /** What the rule reads, each a port so the bind, a shell call and the model test share it. */
 export interface DecideSources {
   /** The live launch or run the values name (hub/named.ts), from the records in memory. */
   named(values: { readonly ticket?: string; readonly preset?: string }): Named;
-  /** The rows of a home (hub/home-rows.ts), revoked ones included, newest first. */
-  rows(app: string, home: string): HomeRows;
+  /** The rows of the settings file a click recorded (hub/home-rows.ts), revoked ones included, newest first. */
+  rows(click: ClickHome): HomeRows;
   /** Whether a run of `instance` may use `space` now: while it runs, its own space only. */
   runAllows(instance: string, space: string, run: string): boolean;
   /** The space a hand-made entry may use: the machine's default, else the one space. */
@@ -50,7 +50,12 @@ function sessionOf(live: Live): Session | undefined {
     session: live.session,
     space: live.space,
     task: live.task,
-    home: { of: "launch", app: live.app, home: live.home },
+    home: {
+      of: "launch",
+      app: live.app,
+      home: live.home,
+      ...(live.file === undefined ? {} : { file: live.file }),
+    },
     ...copy,
   };
 }
@@ -69,11 +74,18 @@ function namedSession(named: Named): { session: Session; by: BoundBy } | undefin
   return preset === undefined ? undefined : { session: preset, by: "preset" };
 }
 
-/** The rows of the home the click recorded; a click that recorded no folder has none. */
-const rowsOf = (sources: DecideSources, home: { app: string; home: string | undefined }) =>
+/** The rows of the file the click recorded; a click that recorded no folder has none. */
+const rowsOf = (
+  sources: DecideSources,
+  home: { app: string; home: string | undefined; file?: string },
+) =>
   home.home === undefined
     ? ({ kind: "rows", rows: [] } as const)
-    : sources.rows(home.app, home.home);
+    : sources.rows({
+        app: home.app,
+        home: home.home,
+        ...(home.file === undefined ? {} : { file: home.file }),
+      });
 
 /** The rule: who the connection that presented `presented` is. */
 export function decide(sources: DecideSources, presented: Presented): Decision {

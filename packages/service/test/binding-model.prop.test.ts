@@ -320,7 +320,7 @@ async function run(initial: DefaultSpace, events: readonly Event[]): Promise<str
     const sessions = sessionPort({
       named: (values) =>
         namedBy({ launches: () => shim, runs: { liveByTicket: () => undefined } }, values),
-      rows: (app, home) => homeRows({ grants: () => grants, platform: "linux" }, app, home),
+      rows: (click) => homeRows({ grants: () => grants, platform: "linux" }, click),
       runAllows: () => false,
       machineDefault: () => gate.machineDefault(),
       live: () => new Map(),

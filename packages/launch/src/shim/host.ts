@@ -129,9 +129,10 @@ export interface LiveLaunch {
   /** Null for a routine's launch. */
   readonly task: string | null;
   readonly session: string;
-  /** The agent's app and home folder as the click recorded them; a launch can lack either. */
+  /** The agent's app, home folder and settings file as the click recorded them; a launch can lack each. */
   readonly app?: string;
   readonly home?: string;
+  readonly file?: string;
   /** The copy of the space the click was made in: its session writes there only. */
   readonly copy?: string;
 }
@@ -617,6 +618,7 @@ export class ShimHost {
       session: sessionOf({ id: record.launch, session: record.session ?? null }),
       ...(record.app === undefined ? {} : { app: record.app }),
       ...(record.home === undefined ? {} : { home: record.home }),
+      ...(record.file === undefined ? {} : { file: record.file }),
       ...(record.copy === undefined ? {} : { copy: record.copy }),
     };
   }

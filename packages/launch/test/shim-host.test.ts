@@ -70,10 +70,11 @@ const FOLDER = {
     gitRemote: "git@example.test:lumen/portal.git",
   },
 };
-/** What the click knows of the agent: its app, its home and the session ID it preset. */
+/** What the click knows of the agent: its app, its home, its settings file and the session ID it preset. */
 const GIVEN: ClickGiven = {
   app: "codex",
   home: "/home/mira/.codex-work",
+  file: "/home/mira/.codex-work/config.toml",
   preset: "6f1c2a4e-9b3d-4c7e-8a5f-0d2e4b6c8a1f",
 };
 const SHIM_PID = 4242;
@@ -1278,7 +1279,7 @@ describe("[A4.5.shim.attach] what the click records of the agent it starts", () 
     return root;
   }
 
-  test("the app, the home, the preset and the session the launch is, read back after a restart", async () => {
+  test("the app, the home, its file, the preset and the session the launch is, read back after a restart", async () => {
     const root = folderRecords();
     const { id } = await dispatched();
     const want = { ...GIVEN, session: `se_${id.slice("la_".length)}` };
@@ -1300,6 +1301,7 @@ describe("[A4.5.shim.attach] what the click records of the agent it starts", () 
     expect(back?.plan).toEqual(PLAN);
     expect(back).not.toHaveProperty("app");
     expect(back).not.toHaveProperty("home");
+    expect(back).not.toHaveProperty("file");
     expect(back).not.toHaveProperty("preset");
     expect(back?.session).toBe(`se_${id.slice("la_".length)}`);
   });

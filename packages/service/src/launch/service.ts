@@ -762,7 +762,7 @@ export class LaunchService {
       const elsewhere =
         agent === undefined
           ? undefined
-          : this.#options.registeredElsewhere?.(agent.app, agent.home, space);
+          : this.#options.registeredElsewhere?.(agent, space);
       if (elsewhere !== undefined) {
         this.#log("launch.unavailable", "other_space");
         throw new LaunchUnavailable(
@@ -803,6 +803,7 @@ export class LaunchService {
       given = {
         ...(agent === undefined ? {} : { app: agent.app }),
         ...(agent?.home === undefined ? {} : { home: agent.home }),
+        ...(agent?.file === undefined ? {} : { file: agent.file }),
         ...(session === undefined ? {} : { preset: session }),
       };
       const codexHome =

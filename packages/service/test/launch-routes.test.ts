@@ -37,6 +37,7 @@ import {
 } from "@ttasks/launch";
 import { FAKE_CLI_AGENT, testEnv, type CliAgentReport } from "@ttasks/testkit";
 import type { Logger } from "../src/hub/log.ts";
+import { homeFolder, hostFacts } from "../src/hub/paths.ts";
 import { briefNames, chooseRoute, codexEntryOf, LaunchUnavailable } from "../src/launch/open.ts";
 import { LaunchService } from "../src/launch/service.ts";
 import { homeDigest, physicalHome } from "../src/setup/agents.ts";
@@ -924,6 +925,57 @@ describe("[A3.3.7.grant.space] Open says at the click when its agent's home is r
       for (const name of ["claude", "codex"]) {
         expect((await reportAt(r.report(name))).argv.length, name).toBeGreaterThan(0);
       }
+    },
+  );
+});
+
+describe("[A3.3.7.grant.space] Open says at the click when its agent's home is registered for another space", () => {
+  test(
+    "two settings files of one folder: Open checks the file its instance reads, not the newest row of the folder",
+    { timeout: 300_000 },
+    async () => {
+      // Plain Claude Code reads ~/.claude.json; an instance naming ~/.claude by its variable reads
+      // ~/.claude/.claude.json. Nothing is written to either: only the service's rows name them.
+      const user = homeFolder(hostFacts(testEnv(), process.platform));
+      const folder = join(user, ".claude");
+      const r = await rig("home-file", 0, {
+        instances: [{ id: "claude-named", env: { CLAUDE_CONFIG_DIR: folder } }],
+      });
+      const task = await addTask(r, "Fixture task for two files");
+      const life = (
+        (await r.user.call(
+          "space/create",
+          { name: "Life", path: join(r.lab.root, "spaces", "life"), ref_prefix: "L" },
+          { timeoutMs: 60_000 },
+        )) as { space: { id: string } }
+      ).space.id;
+      const register = (file: string, instance: string, space: string) =>
+        r.user.call(
+          "setup/home_grant",
+          { app: "claude-code", home: folder, file, instance, account: "", space },
+          { timeoutMs: 60_000 },
+        );
+      await register(join(user, ".claude.json"), "claude", r.lab.spaceId);
+      // The newer row of the folder is the other file's, for another space.
+      await register(join(folder, ".claude.json"), "claude-named", life);
+      const { result } = await open(r, { task: task.ref, instance: "claude" });
+      expect(result.launch.route).toBe("terminal");
+      expect((await reportAt(r.report("claude"))).argv.length).toBeGreaterThan(0);
+      let refused;
+      try {
+        await open(r, { task: task.ref, instance: "claude-named" });
+      } catch (error) {
+        refused = errorOf(error);
+      }
+      expect(refused).toMatchObject({ data: { reason: "other_space", space: "Life" } });
+      const listed = (await r.user.call("setup/homes", {}, { timeoutMs: 60_000 })) as {
+        homes: { grant: string }[];
+      };
+      await r.user.call(
+        "setup/home_revoke",
+        { grants: listed.homes.map((h) => h.grant) },
+        { timeoutMs: 60_000 },
+      );
     },
   );
 });

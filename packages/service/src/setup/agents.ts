@@ -414,7 +414,7 @@ export function hasAccess(
  * The file an earlier build gave a folder: it kept one home per folder, and the app's default
  * folder was its default home, whose Claude Code file is the account's `~/.claude.json`.
  */
-function folderFile(
+export function folderFile(
   input: Pick<SetupInput, "platform" | "userHome">,
   app: AgentApp,
   folder: string,
@@ -490,20 +490,22 @@ export const agentAppOf = (target: string): AgentApp | undefined =>
   AGENT_APPS.find((a) => a !== "claude-desktop" && APPS[a].target === target);
 
 /**
- * The app and the home an instance's agent is started on, as setup names that home (agentHomes):
- * launch's rule, and for Codex the shared home a shadow home reads. No home when nothing names
- * one; undefined for an instance whose agent reads no entry of setup's.
+ * The app, the home and the settings file an instance's agent is started on, as setup names that
+ * home (agentHomes): launch's rule, and for Codex the shared home a shadow home reads. No home when
+ * nothing names one; undefined for an instance whose agent reads no entry of setup's.
  */
 export function agentHomeOf(
   instance: Pick<Instance, "target" | "env" | "configHome">,
   userHome: string | undefined,
   platform: NodeJS.Platform,
-): { readonly app: AgentApp; readonly home?: string } | undefined {
+): { readonly app: AgentApp; readonly home?: string; readonly file?: string } | undefined {
   const app = agentAppOf(instance.target);
   if (app === undefined) return undefined;
-  const path = instanceHome(instance, userHome, platform)?.path;
-  if (path === undefined) return { app };
-  return { app, home: (app === "codex" ? codexSharedHome(platform, path) : undefined) ?? path };
+  const home = instanceHome(instance, userHome, platform);
+  if (home?.path === undefined) return { app };
+  const folder = (app === "codex" ? codexSharedHome(platform, home.path) : undefined) ?? home.path;
+  const file = fileOf({ platform, userHome: userHome ?? "" }, app, folder, home.isDefault);
+  return { app, home: folder, file };
 }
 
 /** The file of an app's entry in a home. */

@@ -716,6 +716,19 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         ...config.spaces.filter((space) => space.enabled && !has.has(space.id)).map(openingEntry),
       ];
     };
+    // What `~` means in a folder here, and TTasks's own data, where no folder is bound.
+    let personHome: string | undefined;
+    try {
+      personHome = homeFolder(facts);
+    } catch {
+      personHome = undefined;
+    }
+    // A home's rows, found by the file its click recorded (binding/decide.ts).
+    const rowsHost = {
+      grants: grantsOf,
+      platform,
+      ...(personHome === undefined ? {} : { userHome: personHome }),
+    };
     // The grant gate: an agent home's calls reach only the spaces its live agent-home rows name,
     // read from the grants table at each call.
     const homes = homeGate({
@@ -727,7 +740,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // and the runs this start holds, and its home's rows. No space has to be open.
     const sessions = sessionPort({
       named: (values) => namedBy({ launches: () => launching.service?.host, runs }, values),
-      rows: (app, home) => homeRows({ grants: grantsOf, platform }, app, home),
+      rows: (click) => homeRows(rowsHost, click),
       runAllows: (instance, space, run) => runs.allows(instance, space, run),
       machineDefault: () => homes.machineDefault(),
       live: (space, copy) => {
@@ -747,13 +760,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       spaces: knownSpaces,
       defaultSpace: () => defaults.get(),
     });
-    // What `~` means in a folder here, and TTasks's own data, where no folder is bound.
-    let personHome: string | undefined;
-    try {
-      personHome = homeFolder(facts);
-    } catch {
-      personHome = undefined;
-    }
     // The markers in projects' and tasks' folders, which the writes leave and a launch checks.
     const markers = new FolderMarkers({
       file: join(layout.state, MARKS_FILE),
@@ -1006,9 +1012,9 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       ...(accountHome === undefined ? {} : { home: accountHome }),
       // The grant gate's rule for the session the click starts: its home's live row names its
       // space (binding/decide.ts standing).
-      registeredElsewhere: (app, home, space) => {
+      registeredElsewhere: ({ app, home, file }, space) => {
         if (home === undefined) return undefined;
-        const rows = homeRows({ grants: grantsOf, platform }, app, home);
+        const rows = homeRows(rowsHost, { app, home, ...(file === undefined ? {} : { file }) });
         const live = rows.kind === "rows" ? rows.rows.find((row) => row.live) : undefined;
         return live === undefined || live.spaces.includes(space) ? undefined : live.spaces[0];
       },

@@ -7,9 +7,11 @@
 export type SessionHome =
   | {
       readonly of: "launch";
-      /** The agent app and home folder the click recorded. A click may record no folder. */
+      /** The agent app, home folder and settings file the click recorded. A click may record no folder. */
       readonly app: string;
       readonly home: string | undefined;
+      /** Absent in a launch an earlier build recorded. */
+      readonly file?: string;
       /** A bridge's: the instance it bound with, its actor's for its life. A shell has none. */
       readonly instance?: string;
     }

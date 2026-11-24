@@ -127,6 +127,8 @@ export interface LaunchFile {
   readonly app?: string;
   /** The home folder the agent is started on, as setup names that home. */
   readonly home?: string;
+  /** The settings file the agent reads its entry from; absent in a record an earlier build wrote. */
+  readonly file?: string;
   /** The session this launch is (`ShimHost.prepare`). */
   readonly session?: string;
   /** The session ID the click preset for the agent (Claude Code's `--session-id`). */
@@ -324,27 +326,30 @@ export const COPY_TOKEN = /^[0-9a-f]{24}$/;
 export interface ClickGiven {
   readonly app?: string;
   readonly home?: string;
+  readonly file?: string;
   readonly preset?: string;
   readonly copy?: string;
 }
 
 /** Each of the click's values a launch file's reader takes, so none makes the file unreadable. */
 export function keptGiven(given: ClickGiven): ClickGiven {
-  const { app, home, preset, copy } = given;
+  const { app, home, file, preset, copy } = given;
   return {
     ...(app !== undefined && APP_NAME.test(app) ? { app } : {}),
     ...(home !== undefined && isFolderText(home) ? { home } : {}),
+    ...(file !== undefined && isFolderText(file) ? { file } : {}),
     ...(preset !== undefined && SESSION_UUID.test(preset) ? { preset } : {}),
     ...(copy !== undefined && COPY_TOKEN.test(copy) ? { copy } : {}),
   };
 }
 
-/** The home, session, preset and copy a launch record holds, each when present. */
+/** The home, file, session, preset and copy a launch record holds, each when present. */
 function checkGiven(
   value: Record<string, unknown>,
-): Pick<LaunchFile, "home" | "session" | "preset" | "copy"> | undefined {
-  const { home, session, preset, copy } = value;
+): Pick<LaunchFile, "home" | "file" | "session" | "preset" | "copy"> | undefined {
+  const { home, file, session, preset, copy } = value;
   if (home !== undefined && !isFolderText(home)) return undefined;
+  if (file !== undefined && !isFolderText(file)) return undefined;
   if (session !== undefined && (typeof session !== "string" || !SESSION_ID.test(session))) {
     return undefined;
   }
@@ -354,6 +359,7 @@ function checkGiven(
   if (copy !== undefined && (typeof copy !== "string" || !COPY_TOKEN.test(copy))) return undefined;
   return {
     ...(home === undefined ? {} : { home }),
+    ...(file === undefined ? {} : { file }),
     ...(session === undefined ? {} : { session }),
     ...(preset === undefined ? {} : { preset }),
     ...(copy === undefined ? {} : { copy }),
