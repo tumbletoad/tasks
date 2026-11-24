@@ -100,6 +100,11 @@ test.describe("[M6.e2e.open-choice] One Open button names its agent; the others 
         .poll(() => world.terminal().length, { timeout: SLOW_MS })
         .toBeGreaterThanOrEqual(1);
 
+      // While an agent opens it is off in the menu, which the keyboard then passes over.
+      await expect(openOf(page, ref)).toHaveAttribute("aria-disabled", "false", {
+        timeout: SLOW_MS,
+      });
+
       // Another one from the keyboard: Down opens the menu, the arrows move, Enter opens.
       await menuButton(page, ref).focus();
       await page.keyboard.press("ArrowDown");
@@ -112,8 +117,12 @@ test.describe("[M6.e2e.open-choice] One Open button names its agent; the others 
         /Codex · home$/u,
         /Codex · studio$/u,
       ]);
+      const item = (n: number) => menu(page).getByRole("menuitemradio").nth(n);
+      await expect(item(0)).toBeFocused();
       await page.keyboard.press("ArrowDown");
+      await expect(item(1)).toBeFocused();
       await page.keyboard.press("ArrowDown");
+      await expect(item(2)).toBeFocused();
       const picked = await opensWith(page, () => page.keyboard.press("Enter"));
       expect(picked).toBe("claude-lab");
       await expect(menu(page)).toBeHidden();
