@@ -71,7 +71,11 @@ export function levelMsg(level: EffortLevel): Msg {
     id: "effort.level",
     values: {
       name: level.key,
-      ...timeValues(level),
+      timed: level.time === undefined ? "no" : "yes",
+      time:
+        level.time === undefined
+          ? ""
+          : { id: "effort.time", values: { amount: level.time.amount, unit: level.time.unit } },
       described: level.about === undefined ? "no" : "yes",
       about: level.about ?? "",
     },
@@ -86,14 +90,6 @@ export const effortLevelOf = (
   effort === undefined || effort === ""
     ? undefined
     : (efforts.find((level) => level.key === effort) ?? { key: effort });
-
-const timeValues = (level: EffortLevel): MsgValues => ({
-  timed: level.time === undefined ? "no" : "yes",
-  time:
-    level.time === undefined
-      ? ""
-      : { id: "effort.time", values: { amount: level.time.amount, unit: level.time.unit } },
-});
 
 /** The status a view lists, which its rows therefore never repeat. */
 const VIEW_STATUS: Readonly<Partial<Record<RowView, string>>> = {
@@ -567,9 +563,7 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
     sized === undefined
       ? undefined
       : { key: sized.key, tip: msg("row.effortTip", { level: levelMsg(sized) }) };
-  if (sized !== undefined) {
-    description.push(msg("row.desc.effort", { name: sized.key, ...timeValues(sized) }));
-  }
+  if (sized !== undefined) description.push(msg("row.desc.effort", { level: levelMsg(sized) }));
 
   const age = finished ? undefined : ageOf(row, ctx);
   if (age !== undefined) description.push(age.describe);

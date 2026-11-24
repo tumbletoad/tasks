@@ -31,6 +31,17 @@ const SCALES: readonly Scales[] = [
 
 const tipOf = (key: string, scale: Scales): string => levelTip(key, levelsOf(scale));
 
+/** Presses Tab until `target` has focus, at most 30 times. */
+async function tabTo(page: Page, target: Locator): Promise<void> {
+  for (let i = 0; i < 30; i += 1) {
+    if (await target.evaluate((e) => e === document.activeElement)) return;
+    await page.keyboard.press("Tab");
+  }
+  await expect(target).toBeFocused();
+}
+
+const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+
 /** How far the page scrolls sideways: none is wanted. */
 const sideways = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -183,6 +194,26 @@ test.describe("[A5.3.7.e2e.effort-scales] one level, ten levels and the longest 
             await expect(tooltip).toHaveText(`Effort ${tipOf(timed, scale)}`);
             await picture(page, `effort-row-tip-${String(at)}-timed-1440.png`);
             await page.mouse.move(0, 0);
+            // By keyboard: Tab from the title reaches the mark, whose tip shows on focus, and the
+            // row's description says the level's time and line as the tip does.
+            await title.focus();
+            await tabTo(page, mark);
+            await expect(tooltip).toHaveText(`Effort ${tipOf(timed, scale)}`);
+            await expect(title).toHaveAccessibleDescription(
+              new RegExp(escaped(`effort ${tipOf(timed, scale)}`), "u"),
+            );
+            await picture(page, `effort-row-tip-${String(at)}-timed-focus.png`);
+            // Finished, the card's mark says the same on focus.
+            const read = (await world.op(space.id, "task.get", { task: ref })) as { as_of: string };
+            await world.op(space.id, "task.finish", { task: ref, base: read.as_of });
+            await page.goto(`${world.origin}${to}`);
+            const done = facts.locator('[data-part="effort"]');
+            await expect(done).toHaveText(timed, { timeout: SLOW_MS });
+            await title.focus();
+            await tabTo(page, done);
+            await expect(tooltip).toHaveText(tipOf(timed, scale));
+            await expect(done).toHaveAccessibleDescription(tipOf(timed, scale));
+            await picture(page, `effort-card-finished-tip-${String(at)}-focus.png`);
           }
         });
       }

@@ -477,6 +477,8 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
                 data-tip={say(levelMsg(sized))}
                 data-long={sized.key.length > EFFORT_NAME_MAX ? "" : undefined}
                 aria-description={say(levelMsg(sized))}
+                // Focusable, so the keyboard brings up what the level means as the mouse does.
+                tabIndex={0}
               >
                 {sized.key}
               </span>

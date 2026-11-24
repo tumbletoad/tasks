@@ -449,8 +449,13 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
     expect(say(m.effort?.tip)).toBe(
       "Effort M, about 4 hours. One long focused sitting: a summary of a few sources; a meeting prepared with its papers",
     );
+    // A screen reader hears what the tip shows: the name, its time and what belongs on it.
     const described = m.description.map(say);
-    expect(described.indexOf("effort M, about 4 hours")).toBe(described.indexOf("priority 2") + 1);
+    expect(
+      described.indexOf(
+        "effort M, about 4 hours. One long focused sitting: a summary of a few sources; a meeting prepared with its papers",
+      ),
+    ).toBe(described.indexOf("priority 2") + 1);
     // The tip says what the level has: a time, a line, either or neither.
     const tip = (efforts: readonly EffortLevel[]) =>
       say(

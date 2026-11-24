@@ -285,7 +285,7 @@
   "row.desc.lateToday": "late, due today at {time}",
   "row.desc.planned": "planned for {date}",
   "row.desc.priority": "priority {level}",
-  "row.desc.effort": "effort {name}{timed, select, yes {, about {time}} other {}}",
+  "row.desc.effort": "effort {level}",
   "row.desc.created": "created {date}",
   "row.desc.waitingSince": "waiting since {date}",
   "row.desc.starred": "starred",
