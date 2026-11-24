@@ -387,6 +387,11 @@ export const EVENTS = {
     c: "space",
     fields: { entry: "int", space: "space", code: "error_code" },
   },
+  "space.defaults_not_stored": {
+    lvl: "warn",
+    c: "space",
+    fields: { entry: "int", space: "space", code: "error_code" },
+  },
   // The projection (A1 3.13): counts, the watermark and codes, never a path (a file's name holds a
   // task's title).
   "space.projection_started": {

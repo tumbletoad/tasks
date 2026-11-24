@@ -194,6 +194,8 @@ export interface Calls {
   };
   /** Writes this machine's record on the space's first open on it. Whether it wrote one. */
   registerMachine: { args: { handle: number }; result: boolean };
+  /** Stores the preferences a space always holds where it has none (`SpaceWriter.storeDefaults`). */
+  storeDefaults: { args: { handle: number }; result: boolean };
   /** The actor a connection writes as, added on its first act (`SpaceWriter.actor`). */
   actor: {
     args: { handle: number; actorKind: "human" | "agent"; label: string };

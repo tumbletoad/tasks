@@ -1,10 +1,10 @@
 // Any list of sizes the person sets works through the real path: generated lists of 1 to 10 names
-// (one character, the longest, a digit first, `.`, `-` and `_`, mixed case) are set as the person,
-// every size is given to a task through an agent's add_tasks, one is changed with update_task, and
-// search, its order, the tools' text, the readable file and the refusal of a wrong size all follow
-// the list. Fixture text only.
+// (one character, the longest, a digit first, `.`, `-` and `_`, a space inside, mixed case) are set
+// as the person, every size is given to a task through an agent's add_tasks, one is changed with
+// update_task, and search, its order, the tools' text, the readable file and the refusal of a wrong
+// size all follow the list. Fixture text only.
 import fc from "fast-check";
-import { EFFORT_KEY_MAX, EFFORT_SCALE_MAX } from "@ttasks/contracts";
+import { EFFORT_NAME_MAX, EFFORT_SCALE_MAX } from "@ttasks/contracts";
 import { afterAll, describe, expect, test } from "vitest";
 import { effortSpaces, type Json } from "./effort-world.ts";
 
@@ -16,10 +16,11 @@ const REST = `${FIRST}_.-`;
 /** A size name as the scale takes it, with the edges drawn often. */
 const name = fc.oneof(
   fc.stringMatching(new RegExp(`^[${FIRST}]$`, "u")),
-  fc.stringMatching(new RegExp(`^[${FIRST}][${REST}]{${String(EFFORT_KEY_MAX - 1)}}$`, "u")),
-  fc.stringMatching(new RegExp(`^[0-9][${REST}]{0,${String(EFFORT_KEY_MAX - 1)}}$`, "u")),
-  fc.stringMatching(new RegExp(`^[${FIRST}][${REST}]{0,${String(EFFORT_KEY_MAX - 1)}}$`, "u")),
-  fc.constantFrom("a", "Z", "9", "2h", "1.5", "v1.2-rc_3", "Deep-work", "XS", "xl"),
+  fc.stringMatching(new RegExp(`^[${FIRST}][${REST}]{${String(EFFORT_NAME_MAX - 1)}}$`, "u")),
+  fc.stringMatching(new RegExp(`^[0-9][${REST}]{0,${String(EFFORT_NAME_MAX - 1)}}$`, "u")),
+  fc.stringMatching(new RegExp(`^[${FIRST}][${REST}]{0,${String(EFFORT_NAME_MAX - 1)}}$`, "u")),
+  fc.stringMatching(new RegExp(`^[${FIRST}][${REST}]{0,3} [${REST}]{1,4}$`, "u")),
+  fc.constantFrom("a", "Z", "9", "2h", "1.5", "v1.2-rc_3", "Deep-work", "XS", "xl", "Half a day"),
 );
 const lists = fc.uniqueArray(name, {
   minLength: 1,
@@ -70,9 +71,10 @@ describe("[A1.3.16.prefs.effort-lists] any list of sizes works through the real 
 
         for (const size of names) {
           const want = [...sized].filter(([, e]) => e === size).map(([ref]) => ref);
-          const found = await all(`effort:${size}`);
+          const query = `effort:"${size}"`;
+          const found = await all(query);
           expect(found.map((r) => r["ref"]).sort(), size).toEqual([...want].sort());
-          const text = await w.tool("search", { q: `effort:${size}` });
+          const text = await w.tool("search", { q: query });
           for (const ref of want) expect(text).toContain(`${ref} · open · P4 · ${size} · `);
         }
 

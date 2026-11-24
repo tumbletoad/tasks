@@ -9,6 +9,8 @@
 // and newline removed) before any limit is checked, so the limit holds for the stored text. The
 // registry's SafeText (A3 3.10) normalises more at the boundary, and normalising again is harmless.
 import {
+  EFFORT_KEY,
+  EFFORT_KEY_MAX,
   fitsShape,
   PREFERENCE_KEY,
   PREFERENCE_KEY_MAX,
@@ -1379,6 +1381,19 @@ class Fields {
     return value;
   }
 
+  /** An effort level's name: a key that may hold single spaces ("Half a day"). */
+  level(key: string): string {
+    const value = this.raw(key);
+    if (typeof value !== "string" || value.length > EFFORT_KEY_MAX || !EFFORT_KEY.test(value)) {
+      return this.fail(
+        "VALIDATION_FAILED",
+        "Expected a level's name of letters, digits, spaces, _, . and -",
+        key,
+      );
+    }
+    return value;
+  }
+
   id<P extends "t" | "ac" | "m" | "se" | "ru" | "ro" | "sp" | "la" | "op" | "s">(
     key: string,
     prefix: P,
@@ -1495,7 +1510,7 @@ function taskValues(f: Fields): TaskValues {
   if (f.has("status")) values.status = f.key("status");
   if (f.has("inbox")) values.inbox = f.boolean("inbox");
   if (f.has("priority")) values.priority = f.int("priority", 1, 4);
-  if (f.has("effort")) values.effort = f.raw("effort") === null ? null : f.key("effort");
+  if (f.has("effort")) values.effort = f.raw("effort") === null ? null : f.level("effort");
   if (f.has("planned_for")) values.planned_for = f.dateOrNull("planned_for");
   if (f.has("focus")) values.focus = f.dateOrNull("focus");
   const owner = f.nullableText("owner", line);

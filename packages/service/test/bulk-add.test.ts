@@ -394,7 +394,7 @@ describe("[A3.bulk.refusals] a refusal says what to change", () => {
       request_id: rid(),
     });
     expect(effort.split("\n")).toEqual([
-      "error invalid_input: Not an effort of this space. Use one of the space's efforts: S, M, L. Put another estimate in context.",
+      "error invalid_input: Not an effort of this space. Use one of the space's efforts: XS, S, M, L, XL. Put another estimate in context.",
       "- tasks.1.effort: Not an effort of this space",
     ]);
     const status = await tool("add_tasks", {

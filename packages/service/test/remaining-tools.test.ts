@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   AppError,
+  EFFORT_LEVELS,
   GROUP_PAGE,
   GroupListResult,
   opSpec,
@@ -923,7 +924,7 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
     );
     expect(got.prefs.map((p) => [p.key, p.value, p.is_default, p.writable])).toEqual([
       ["tasks.dedupe_window_days", 30, true, true],
-      ["tasks.effort_scale", ["S", "M", "L"], true, true],
+      ["tasks.effort_scale", EFFORT_LEVELS, true, true],
       ["tasks.statuses", ["open", "waiting", "review", "backlog"], true, false],
     ]);
     // An agent is not shown a key nothing reads; a person's command still reads what is stored.
@@ -980,7 +981,8 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       );
     // A key with a space in it, and one twice: no list of statuses.
     await store("tasks.statuses", JSON.stringify(["open", "has space", "open"]));
-    // Objects with a key are the list's other stored form.
+    // Objects with a key are the list's other stored form; a default level's name, stored by an
+    // earlier build with nothing more, means that level.
     await store("tasks.effort_scale", JSON.stringify([{ key: "S" }, { key: "XL" }]));
     await store("tasks.dedupe_window_days", "9999");
     const got = PrefsReadResult.parse(
@@ -988,7 +990,7 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
     );
     expect(got.prefs.map((p) => [p.key, p.value, p.is_default])).toEqual([
       ["tasks.dedupe_window_days", 30, true],
-      ["tasks.effort_scale", ["S", "XL"], false],
+      ["tasks.effort_scale", [EFFORT_LEVELS[1], EFFORT_LEVELS[4]], false],
       ["tasks.statuses", ["open", "waiting", "review", "backlog"], true],
     ]);
   });

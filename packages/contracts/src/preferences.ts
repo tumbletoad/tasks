@@ -41,8 +41,12 @@ export type ValueShape =
        */
       readonly unique?: "self" | "key";
     }
-  /** Exactly these fields, each required. */
-  | { readonly type: "object"; readonly fields: Readonly<Record<string, ValueShape>> }
+  /** These fields and no others, each required unless `optional` names it. */
+  | {
+      readonly type: "object";
+      readonly fields: Readonly<Record<string, ValueShape>>;
+      readonly optional?: readonly string[];
+    }
   | {
       readonly type: "map";
       readonly key: RegExp;
@@ -66,6 +70,13 @@ export interface PreferenceSpec {
    * shape; undefined when nothing can be taken and the default is read.
    */
   readonly salvage?: (value: unknown) => PrefValue | undefined;
+  /** A value an older version of the shape wrote, as this version reads it. */
+  readonly upgrade?: (value: PrefValue, schemaVer: number) => PrefValue;
+  /**
+   * A space always holds a value of its own: the service stores the default in a space that has
+   * none, and a reset stores the default again. So a build whose default differs reads the same.
+   */
+  readonly stored?: true;
   /** One line for `describe` (A3 3.4.11). */
   readonly summary: string;
   /** A feature flag (A1 3.16). A graduated flag stays readable and is ignored. */
@@ -78,22 +89,78 @@ export const PREFERENCE_KEY_MAX = 64;
 /** The largest stored value, as JSON. Every shape stays far below it. */
 export const PREFERENCE_VALUE_BYTES = 16 * 1024;
 
-/** A status or effort key, as the writer checks `tasks.status` and `tasks.effort` (A1 3.6). */
+/** A status key, as the writer checks `tasks.status` (A1 3.6). */
 const STATUS_KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
-/** The longest effort key: the scale's and every task input's, so each size can be used. */
-export const EFFORT_KEY_MAX = 20;
-/** Never `null`: a person who types it to mean "back to the default" must not get that size. */
-const EFFORT_KEY = new RegExp(
-  `^(?!null$)[A-Za-z0-9][A-Za-z0-9_.-]{0,${String(EFFORT_KEY_MAX - 1)}}$`,
-  "i",
-);
-/** The most sizes a space has. */
-export const EFFORT_SCALE_MAX = 10;
 /**
- * The sizes of a space that stores none. Never changed: an older build on the same space reads
- * the same sizes.
+ * The longest level name a space holds, and so the longest a task's effort takes. An earlier build
+ * let a person set names this long and a space keeps them; a name set anew is EFFORT_NAME_MAX.
  */
-export const EFFORT_FALLBACK: readonly string[] = ["S", "M", "L"];
+export const EFFORT_KEY_MAX = 20;
+/** The longest name a person gives a level, so that it fits where the page shows it. */
+export const EFFORT_NAME_MAX = 10;
+/**
+ * A level's name: letters, digits, `_ . -` and single spaces inside ("Half a day"). Never `null`:
+ * a person who types it to mean "back to the default" must not get that level.
+ */
+export const EFFORT_KEY = /^(?!null$)[A-Za-z0-9](?:[A-Za-z0-9_.-]| (?=[A-Za-z0-9_.-]))*$/i;
+/** The most levels a space has. */
+export const EFFORT_SCALE_MAX = 10;
+/** The longest line on what belongs on a level. */
+export const EFFORT_ABOUT_MAX = 280;
+export const EFFORT_UNITS = ["minutes", "hours", "days", "weeks"] as const;
+export type EffortUnit = (typeof EFFORT_UNITS)[number];
+
+/**
+ * One effort level of a space: the name a task holds, and optionally a typical amount of the
+ * person's own time and one line on what belongs on it. Both are advice to whoever sizes a task.
+ */
+export type EffortLevel = {
+  readonly key: string;
+  readonly time?: EffortTime;
+  readonly about?: string;
+};
+export type EffortTime = { readonly amount: number; readonly unit: EffortUnit };
+
+/** The levels a space has until its person changes them. */
+export const EFFORT_LEVELS: readonly EffortLevel[] = [
+  {
+    key: "XS",
+    time: { amount: 10, unit: "minutes" },
+    about: "A quick reply, a payment or a booking, with everything at hand",
+  },
+  {
+    key: "S",
+    time: { amount: 1, unit: "hours" },
+    about:
+      "A reply that needs some reading first; a small, clear fix; checking an agent's short change",
+  },
+  {
+    key: "M",
+    time: { amount: 4, unit: "hours" },
+    about:
+      "One long focused sitting: a summary of a few sources; a meeting prepared with its papers",
+  },
+  {
+    key: "L",
+    time: { amount: 2, unit: "days" },
+    about:
+      "Work over several sittings: a first draft of a report; a design for a feature; a tax return",
+  },
+  {
+    key: "XL",
+    time: { amount: 1, unit: "weeks" },
+    about: "A week or more: too big to plan as one piece, a signal to split it",
+  },
+];
+
+const EFFORT_TIME: ValueShape = {
+  type: "object",
+  fields: {
+    amount: { type: "integer", min: 1, max: 999 },
+    unit: { type: "enum", values: EFFORT_UNITS },
+  },
+};
+const EFFORT_ABOUT: ValueShape = { type: "text", max: EFFORT_ABOUT_MAX };
 /** An instance's key in machine.toml (A4 3.2). */
 const INSTANCE_KEY = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 /** An area's or project's slug (A1 3.3). */
@@ -156,21 +223,31 @@ export const PREFERENCES: readonly PreferenceSpec[] = [
     writers: ["human", "agent"],
     summary: "The status keys a task may take, in their order",
   }),
+  // Version 1 held names only; version 2 adds each level's time and what belongs on it.
   pref("tasks.effort_scale", {
     scope: "space",
     shape: {
       type: "list",
       item: {
         type: "object",
-        fields: { key: { type: "text", max: EFFORT_KEY_MAX, pattern: EFFORT_KEY } },
+        fields: {
+          key: { type: "text", max: EFFORT_KEY_MAX, pattern: EFFORT_KEY },
+          time: EFFORT_TIME,
+          about: EFFORT_ABOUT,
+        },
+        optional: ["time", "about"],
       },
       min: 1,
       max: EFFORT_SCALE_MAX,
       unique: "key",
     },
-    default: EFFORT_FALLBACK.map((key) => ({ key })),
-    summary: "The effort keys a task may take, smallest first",
-    salvage: (value) => effortKeys(value)?.map((key) => ({ key })),
+    default: EFFORT_LEVELS,
+    stored: true,
+    schemaVer: 2,
+    summary: "The effort levels a task may take, smallest first, each with a time and a line",
+    salvage: effortLevels,
+    upgrade: (value, schemaVer) =>
+      schemaVer >= 2 ? value : withDefaultMeanings(value as readonly EffortLevel[]),
   }),
   pref("tasks.dedupe_window_days", {
     scope: "space",
@@ -283,21 +360,60 @@ function isLine(value: unknown, max: number): value is string {
 }
 
 /**
- * The size names of a stored effort scale of any version: a list of 1 to EFFORT_SCALE_MAX objects
+ * The level names of a stored effort scale of any version: a list of 1 to EFFORT_SCALE_MAX objects
  * that each have a `key` of one line, whatever their other fields, each name once. Undefined for
- * anything else. A name a later version allows (a space inside) is taken too, so this build offers
- * the sizes the space has rather than ones it removed.
+ * anything else. A name a later version allows is taken too, so this build offers the levels the
+ * space has rather than ones it removed.
  */
 export function effortKeys(value: unknown): string[] | undefined {
+  return effortLevels(value)?.map((level) => level.key);
+}
+
+/**
+ * The levels of a stored effort scale of any version, named as effortKeys names them: each with
+ * its time and its line when they fit this version's shape, without them when not.
+ */
+export function effortLevels(value: unknown): EffortLevel[] | undefined {
   if (!Array.isArray(value) || value.length < 1 || value.length > EFFORT_SCALE_MAX)
     return undefined;
-  const keys: string[] = [];
+  const levels: EffortLevel[] = [];
   for (const item of value) {
-    const key = isRecord(item) ? item["key"] : undefined;
+    if (!isRecord(item)) return undefined;
+    const key = item["key"];
     if (!isLine(key, EFFORT_KEY_MAX) || key.trim() !== key) return undefined;
-    if (!keys.includes(key)) keys.push(key);
+    if (levels.some((level) => level.key === key)) continue;
+    const time = item["time"];
+    const about = item["about"];
+    levels.push({
+      key,
+      ...(fitsShape(EFFORT_TIME, time) ? { time: time as EffortTime } : {}),
+      ...(fitsShape(EFFORT_ABOUT, about) ? { about: about as string } : {}),
+    });
   }
-  return keys;
+  return levels;
+}
+
+/**
+ * Version 1's levels, which were names only: a default level's name means what that level says,
+ * since nothing else was ever said about it. Other names stay names.
+ */
+const withDefaultMeanings = (levels: readonly EffortLevel[]): EffortLevel[] =>
+  levels.map((level) =>
+    level.time === undefined && level.about === undefined
+      ? (EFFORT_LEVELS.find((known) => known.key === level.key) ?? level)
+      : level,
+  );
+
+/**
+ * Whether a person may set the level names `next` where the space holds `held`: a name longer
+ * than EFFORT_NAME_MAX stays only if the space holds it already.
+ */
+export const effortNamesFit = (next: readonly string[], held: readonly string[]): boolean =>
+  next.every((name) => name.length <= EFFORT_NAME_MAX || held.includes(name));
+
+/** A level's time in words: "10 minutes", "1 hour". */
+export function effortTimeText(time: EffortTime): string {
+  return `${String(time.amount)} ${time.amount === 1 ? time.unit.slice(0, -1) : time.unit}`;
 }
 
 const PATH_MAX = 1_024;
@@ -334,13 +450,12 @@ export function fitsShape(shape: ValueShape, value: unknown): boolean {
     }
     case "object": {
       if (!isRecord(value)) return false;
-      const names = Object.keys(shape.fields);
+      const optional = shape.optional ?? [];
       return (
-        Object.keys(value).length === names.length &&
-        names.every((name) => {
-          const field = shape.fields[name];
-          return field !== undefined && Object.hasOwn(value, name) && fitsShape(field, value[name]);
-        })
+        Object.keys(value).every((name) => Object.hasOwn(shape.fields, name)) &&
+        Object.entries(shape.fields).every(([name, field]) =>
+          Object.hasOwn(value, name) ? fitsShape(field, value[name]) : optional.includes(name),
+        )
       );
     }
     case "map": {
@@ -354,13 +469,40 @@ export function fitsShape(shape: ValueShape, value: unknown): boolean {
   }
 }
 
-/** A list of objects with one field `key`, such as `tasks.effort_scale`: a list of keys to a reader. */
+/**
+ * Whether two values are the same: lists item by item in their order, objects field by field in
+ * any order, since storage keeps an object's fields sorted.
+ */
+export function samePrefValue(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, i) => samePrefValue(item, b[i]))
+    );
+  }
+  if (isRecord(a) || isRecord(b)) {
+    if (!isRecord(a) || !isRecord(b)) return false;
+    const names = Object.keys(a);
+    return (
+      names.length === Object.keys(b).length &&
+      names.every((name) => Object.hasOwn(b, name) && samePrefValue(a[name], b[name]))
+    );
+  }
+  return a === b;
+}
+
+/**
+ * A list of objects named by their `key`, every other field optional, such as `tasks.effort_scale`:
+ * a person may give it as names only.
+ */
 export function isKeyList(shape: ValueShape): boolean {
+  if (shape.type !== "list" || shape.item.type !== "object") return false;
+  const { fields, optional = [] } = shape.item;
   return (
-    shape.type === "list" &&
-    shape.item.type === "object" &&
-    Object.keys(shape.item.fields).length === 1 &&
-    Object.hasOwn(shape.item.fields, "key")
+    Object.hasOwn(fields, "key") &&
+    Object.keys(fields).every((name) => name === "key" || optional.includes(name))
   );
 }
 
@@ -377,10 +519,15 @@ export function shapeText(shape: ValueShape): string {
       return `one line of up to ${String(shape.max)} characters`;
     case "path":
       return "an absolute path";
-    case "list":
-      return shape.item.type === "text" || isKeyList(shape)
-        ? `a list of ${String(shape.min)} to ${String(shape.max)} keys`
-        : `a list of ${String(shape.min)} to ${String(shape.max)} items`;
+    case "list": {
+      const span = `a list of ${String(shape.min)} to ${String(shape.max)}`;
+      if (shape.item.type === "text") return `${span} keys`;
+      if (shape.item.type !== "object" || !isKeyList(shape)) return `${span} items`;
+      const more = Object.keys(shape.item.fields).filter((name) => name !== "key");
+      return more.length === 0
+        ? `${span} keys`
+        : `${span} keys, each with an optional ${more.join(" and ")}`;
+    }
     case "object":
       return `the fields ${Object.keys(shape.fields).join(", ")}`;
     case "map":
@@ -441,12 +588,14 @@ export function preferenceValue(
   }
   const newer = stored.schemaVer > spec.schemaVer;
   if (value === null && !newer) return fallback("default");
+  const taken = (read: PrefValue): PrefValue =>
+    newer || spec.upgrade === undefined ? read : spec.upgrade(read, stored.schemaVer);
   if (!newer && fitsShape(spec.shape, value)) {
-    return { key: spec.key, value: value as PrefValue, state: "set" };
+    return { key: spec.key, value: taken(value as PrefValue), state: "set" };
   }
   const salvaged = spec.salvage?.(value);
   if (salvaged === undefined) return fallback(newer ? "newer" : "invalid");
-  return { key: spec.key, value: salvaged, state: newer ? "newer" : "set" };
+  return { key: spec.key, value: taken(salvaged), state: newer ? "newer" : "set" };
 }
 
 /**

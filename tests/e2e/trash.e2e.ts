@@ -68,6 +68,9 @@ test.describe("[A5.trash.e2e] A task taken away and brought back in the page", (
     const card = rowOf(page, one);
     await card.locator('[data-part="move-to-trash"]').click();
     await expect(toast(page)).toHaveText(`Moved ${one} to the Trash`);
+    // The toast goes by itself after a few seconds; the pointer resting on it keeps it until its
+    // Undo is pressed below, however long the service takes to answer.
+    await toast(page).hover();
     await expect(card.locator('[data-part="in-trash"]')).toBeVisible({ timeout: SLOW_MS });
     // Focus goes to the Restore that takes the button's place, not to the page.
     await expect(card.locator('dd [data-part="restore"]')).toBeFocused();
