@@ -11,13 +11,8 @@
 // - the folder exists and is a folder (a link to one counts);
 // - it is not inside TTasks's own data: the TTasks home or a space folder this machine registers, or
 //   one of those folders itself. Judged by what the folders are on disk: each folder from the
-//   candidate's real path up to its root is compared by identity with each of them;
-// - it is not another live project's folder on this machine, compared by identity, so two
-//   spellings of one folder (case, a short name, a link) are one; a project's folder that is
-//   missing now or does not answer is compared by its stored path, with the machine's case
-//   rule, so a share that is away keeps no other folder from binding.
-// The writer keeps the last rule again by the stored text in its transaction, for an undo, a redo
-// and a restore, which it decides without the disk.
+//   candidate's real path up to its root is compared by identity with each of them.
+// Any number of projects may share a folder: `sharers` finds the others, so an answer can say so.
 //
 // Every look is bounded: a folder on a share that does not answer is `not_answering` after 2 s,
 // never a hung call. The look itself runs in Node's file system threads, which a share that never
@@ -26,14 +21,7 @@ import { realpath, stat } from "node:fs/promises";
 import { posix, win32 } from "node:path";
 import { PRODUCT_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
-import {
-  carriedTo,
-  FOLDER_PATH_MAX,
-  folderKey,
-  rebased,
-  segmentsOf,
-  type FolderOs,
-} from "@ttasks/storage";
+import { carriedTo, FOLDER_PATH_MAX, rebased, segmentsOf, type FolderOs } from "@ttasks/storage";
 
 /** Why a folder is not bound. */
 export type FolderReason =
@@ -44,7 +32,6 @@ export type FolderReason =
   | "not_a_directory"
   | "folder_unreadable"
   | "folder_reserved"
-  | "folder_taken"
   | "not_answering";
 
 /** How long one look at a folder may take. */
@@ -58,7 +45,6 @@ const SENTENCES: Readonly<Record<FolderReason, string>> = {
   not_a_directory: "Not a folder",
   folder_unreadable: "The folder could not be read",
   folder_reserved: `A folder inside ${PRODUCT_NAME}'s own data: an agent working there would change it`,
-  folder_taken: "Another project has this folder on this machine",
   not_answering: "The folder did not answer in time",
 };
 
@@ -67,30 +53,27 @@ const HINTS: Partial<Record<FolderReason, string>> = {
   not_absolute: "Give an absolute path, or one that starts with ~.",
   folder_missing: "Make the folder first, then name it.",
   folder_reserved: `Choose a folder outside the ${PRODUCT_NAME} home and the space folders.`,
-  folder_taken: "Open that project, or choose another folder.",
   not_answering: "Check that its drive or share is connected, then try again.",
 };
 
 /**
- * The refusal of a folder at input path `at`: `invalid_input` with the reason, and for a taken
- * folder the project that has it. Never the path itself: the caller sent it.
+ * The refusal of a folder at input path `at`: `invalid_input` with the reason. Never the path
+ * itself: the caller sent it.
  */
 export function folderRefused(
   at: string,
   reason: FolderReason,
-  extra: { project?: { id: string; name: string }; task?: string } = {},
+  extra: { task?: string } = {},
 ): AppError {
   const message = SENTENCES[reason];
   const hint = HINTS[reason];
   return new AppError({
-    code: reason === "folder_taken" ? "conflict" : "invalid_input",
+    code: "invalid_input",
     message: `${message}.`,
     ...(hint === undefined ? {} : { hint }),
     data: {
       issues: [{ path: at, message }],
       reason,
-      ...(reason === "folder_taken" ? { cause: "FOLDER_TAKEN" } : {}),
-      ...(extra.project === undefined ? {} : { project: extra.project }),
       ...(extra.task === undefined ? {} : { task: extra.task }),
     },
   });
@@ -266,7 +249,7 @@ function ancestors(real: string, platform: NodeJS.Platform): string[] {
   return list;
 }
 
-/** A live project's folder on this machine, as the same-folder check compares it. */
+/** A live project's folder on this machine. */
 export interface ProjectFolder {
   readonly project: string;
   readonly name: string;
@@ -278,19 +261,16 @@ export interface BindFacts {
   readonly platform: NodeJS.Platform;
   /** TTasks's own data: the TTasks home and the folder of each space this machine registers. */
   readonly reserved: readonly string[];
-  /** The live projects' folders on this machine, but the one the folder is bound to. */
-  readonly projects?: readonly ProjectFolder[];
 }
 
 /**
  * The checks at bind (the module header) on a folder in stored form: undefined when it may be
- * bound, else the reason, with the project that has it for `folder_taken`.
+ * bound, else the reason.
  */
 export async function checkFolder(
   folder: Folder,
   facts: BindFacts,
-): Promise<{ reason: FolderReason; project?: ProjectFolder } | undefined> {
-  const { platform } = facts;
+): Promise<FolderReason | undefined> {
   const looked = await bounded(async () => {
     try {
       const found = await stat(folder.absolute);
@@ -300,41 +280,24 @@ export async function checkFolder(
       return code === "ENOENT" || code === "ENOTDIR" ? "folder_missing" : "folder_unreadable";
     }
   });
-  if (looked !== "ok") return { reason: looked };
-  const reserved = await reservedBy(folder.absolute, facts);
-  if (reserved !== undefined) return { reason: reserved };
-  const projects = facts.projects ?? [];
-  if (projects.length === 0) return undefined;
-  const os = osOf(platform);
-  const mine = await bounded(() => identityOf(folder.absolute, platform));
-  if (mine === "not_answering") return { reason: "not_answering" };
-  const same = await Promise.all(
-    projects.map(async (project) => {
-      const theirs = await bounded(() =>
-        identityOf(expanded(project.stored, facts.home, platform), platform),
-      );
-      return mine === undefined || theirs === undefined || theirs === "not_answering"
-        ? folderKey(project.stored, os) === folderKey(folder.stored, os)
-        : theirs === mine;
-    }),
-  );
-  const taken = projects.find((_, k) => same[k] === true);
-  return taken === undefined ? undefined : { reason: "folder_taken", project: taken };
+  if (looked !== "ok") return looked;
+  return reservedBy(folder.absolute, facts);
 }
 
 /**
- * The project whose folder holds `folder` most closely: the folder itself, or the deepest of the
- * project folders it lies in. A project folder holds it by its stored text with the machine's case
- * rule, or by identity, so a folder reached through a link still belongs to its project. A project
- * folder that does not answer is judged by its text alone. `exact`: the folder is the project's.
- * `looks` keeps the project folders' identities for the next folder of the same call.
+ * The projects whose folder holds `folder` most closely: the folder itself, or the deepest of the
+ * project folders it lies in, every project that has that folder. A project folder holds it by its
+ * stored text with the machine's case rule, or by identity, so a folder reached through a link
+ * still belongs to its project. A project folder that does not answer is judged by its text alone.
+ * `exact`: the folder is theirs. `looks` keeps the project folders' identities for the next folder
+ * of the same call.
  */
 export async function deepestProject<P extends ProjectFolder>(
   folder: Folder,
   projects: readonly P[],
   facts: Pick<BindFacts, "home" | "platform">,
   looks: Map<string, Promise<string | undefined>> = new Map(),
-): Promise<{ project: P; exact: boolean } | undefined> {
+): Promise<{ projects: P[]; exact: boolean } | undefined> {
   if (projects.length === 0) return undefined;
   const { platform } = facts;
   const os = osOf(platform);
@@ -369,14 +332,23 @@ export async function deepestProject<P extends ProjectFolder>(
       return k === -1 ? undefined : k;
     }),
   );
-  let best: { project: P; distance: number } | undefined;
-  projects.forEach((project, k) => {
+  const distances = projects.map((_, k) => {
     const found = [byText[k], byIdentity[k]].filter((d): d is number => d !== undefined);
-    if (found.length === 0) return;
-    const distance = Math.min(...found);
-    if (best === undefined || distance < best.distance) best = { project, distance };
+    return found.length === 0 ? Infinity : Math.min(...found);
   });
-  return best === undefined ? undefined : { project: best.project, exact: best.distance === 0 };
+  const best = Math.min(...distances);
+  if (best === Infinity) return undefined;
+  return { projects: projects.filter((_, k) => distances[k] === best), exact: best === 0 };
+}
+
+/** The projects of `projects` whose folder is `folder` itself (deepestProject's `exact`). */
+export async function sharers<P extends ProjectFolder>(
+  folder: Folder,
+  projects: readonly P[],
+  facts: Pick<BindFacts, "home" | "platform">,
+): Promise<P[]> {
+  const found = await deepestProject(folder, projects, facts);
+  return found?.exact === true ? found.projects : [];
 }
 
 /** A folder inside the one that changed, and where it goes. */

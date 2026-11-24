@@ -755,7 +755,7 @@ async function run(steps: readonly Step[]): Promise<void> {
 }
 
 describe("[A1.5.write.folders-model] random folder operations, deletes, restores, undos and redos on two machines", () => {
-  test("one folder per owner and machine, never two live projects on one folder, a moved folder carries exactly every folder inside it, and undo gives back what was", async () => {
+  test("one folder per owner and machine, any number of projects on one folder, a moved folder carries exactly every folder inside it, and undo gives back what was", async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(step, { minLength: 5, maxLength: 40 }), async (steps) => {
         await run(steps);

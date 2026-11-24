@@ -182,11 +182,6 @@ export const FOLDER_SQL = {
   removedOn:
     "SELECT * FROM folders WHERE owner_kind = $kind AND owner_id = $owner " +
     "AND machine_id = $machine AND deleted_at IS NOT NULL ORDER BY id",
-  /** The live folders of live projects on a machine: the same-folder rule's rows. */
-  liveProjectFolders:
-    "SELECT f.* FROM folders f JOIN projects p ON p.id = f.owner_id " +
-    "WHERE f.machine_id = $machine AND f.owner_kind = 'project' AND f.deleted_at IS NULL " +
-    "AND p.deleted_at IS NULL ORDER BY f.created_seq, f.id",
   /** Every live folder on a machine, a project's or a task's, whatever its owner's state. */
   liveOn: "SELECT * FROM folders WHERE machine_id = $machine AND deleted_at IS NULL ORDER BY id",
   machineOs: "SELECT os FROM machines WHERE id = $id",
@@ -203,25 +198,6 @@ export function hasFolders(conn: Connection): boolean {
 export function machineOs(conn: Connection, machine: string): FolderOs | undefined {
   const os = conn.prepare(FOLDER_SQL.machineOs).get({ id: machine })?.["os"];
   return os === "linux" || os === "windows" || os === "macos" ? os : undefined;
-}
-
-/**
- * The live project, other than `except`, whose live folder on `machine` is `path` by the machine's
- * case rule: the same-folder rule's holder. Undefined when none is.
- */
-export function folderHolder(
-  conn: Connection,
-  machine: string,
-  path: string,
-  os: FolderOs,
-  except?: string,
-): FolderRow | undefined {
-  const key = folderKey(path, os);
-  for (const row of conn.prepare(FOLDER_SQL.liveProjectFolders).all({ machine })) {
-    const folder = decodeFolder(row);
-    if (folder.ownerId !== except && folderKey(folder.path, os) === key) return folder;
-  }
-  return undefined;
 }
 
 /** A folder as a read shows it: the row, its machine and the path as stored. */

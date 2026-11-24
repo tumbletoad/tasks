@@ -159,19 +159,21 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 ## Projects and folders
 
-- A project has at most one folder on each machine, and a task may have its own. Two projects
-  that are not deleted never share one folder on one machine: adding a folder that a project has
-  answers with that project instead of making a second one.
+- A project has at most one folder on each machine, and a task may have its own. Any number of
+  projects may share one folder: setting it tells you which others have it, and an agent working
+  there sees the tasks of all of them, each with its project.
 - A new task that an agent files from its working folder, with no project named, joins the project
-  whose folder holds that folder most closely. In an archived project's folder it joins no project,
-  and the agent is told.
+  whose folder holds that folder most closely. When several projects share that folder, it joins
+  the project of the agent's own task, else it goes to the Inbox and the agent is told which
+  projects it could join. In an archived project's folder it joins no project, and the agent is
+  told.
 - When you move a folder on disk and then give its project or task the new folder, every folder
   TTasks knows inside the old one that is there in the new one moves along, other projects' and
   tasks' included, as one undo step on that machine. TTasks takes it as a move only when the old
   folder is gone and the new one is it: the same folder, or a copy whose marker names the owner and
   that was not already there as the owner's earlier folder. Otherwise nothing else moves, and you
   are told which folders stayed and why. TTasks itself never moves files.
-- An archived project keeps its folder, and a deleted one frees it.
+- An archived project keeps its folder, and a deleted one leaves it to the others.
 - Archiving an area or a project keeps its tasks open and in your views. The page then lists it
   under Archived in the sidebar, with its open tasks counted, and offers it for no new work; its
   own page brings it back with Unarchive. A new project whose area turns out to be archived is
@@ -179,8 +181,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A project made for a folder is named after it unless you name it. The Git repository in a
   project's folder is shown by name only, never by its address.
 - TTasks leaves a small `.ttasks-marker` folder in each project's and task's folder, holding only
-  which space and project or task it belongs to, and ignored by Git. Clearing the folder in TTasks
-  removes it.
+  which space and projects or tasks it belongs to, and ignored by Git. Clearing the folder in
+  TTasks removes it. Limit: it can keep naming a project that left the folder another way, such as
+  by a delete or an undo; TTasks's own record says who has the folder now.
 - TTasks never makes a folder for an agent. At the command line, `--create` makes it when you ask,
   and in the page's folder chooser "Make the folder" does; an undo leaves it on disk.
 - The page's folder chooser lists the names of folders on this machine to you alone, never to an

@@ -168,6 +168,7 @@ function statusParts(result: Status): Part[] {
       units: result.here.map((row) => [
         `  ${join(
           rowLine(row),
+          group(row),
           row.match,
           row.live_sessions > 0 &&
             `${String(row.live_sessions)} live session${row.live_sessions === 1 ? "" : "s"}`,
@@ -719,6 +720,21 @@ function draftLine(row: Added, path: string): string {
   return `${path}: ${what.trimEnd()}`;
 }
 
+/**
+ * The project each draft's task is in now, or the projects that share its folder when it joined
+ * none of them, by the draft's path: stored names, so data.
+ */
+function projectLines(rows: readonly Added[], path: string): string[][] {
+  return rows.flatMap((row, k) => {
+    const at = `${path}.${String(k)}`;
+    const names = (row.folder_of ?? []).map((name) => clip(name, 120));
+    return [
+      ...(row.project === undefined ? [] : [[`${at}: in ${clip(row.project, 120)}`]]),
+      ...(names.length === 0 ? [] : [[`${at}: its folder is the folder of ${names.join(", ")}`]]),
+    ];
+  });
+}
+
 /** What to do with a log entry this request added to no task: a matched one may hold it already. */
 function leftOutLog(rows: readonly Added[]): string[] {
   return rows.some((row) => row.log_left_out === true)
@@ -771,6 +787,7 @@ function addRendered(result: OutputOf<"task.add">, getTask: string): Rendered {
         ...result.tasks.map((row, k) => draftLine(row, `tasks.${String(k)}`)),
         ...leftOutLog(result.tasks),
       ),
+      { data: true, units: projectLines(result.tasks, "tasks") },
       { units: result.warnings.map((w) => [`warning: ${w}`]) },
       { units: heldLines(result.tasks, "tasks") },
     ],
@@ -846,6 +863,9 @@ function groupsRendered(result: Groups, organize: string): Rendered {
       {
         data: true,
         units: [
+          ...(result.also === undefined
+            ? []
+            : [[`Also the folder of ${result.also.map((p) => clip(p.name, 120)).join(", ")}`]]),
           ...insideLines,
           ...areas.flatMap((area) => [
             [`${area.name} (${String(area.active)}${facts(area)})`],
@@ -1004,6 +1024,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
           ...leftOutLog(result.follow_ups),
           ...(result.warnings ?? []).map((w) => `warning: ${w}`),
         ),
+        { data: true, units: projectLines(result.follow_ups, "follow_ups") },
         { units: heldLines(result.follow_ups, "follow_ups") },
       ],
       more: `Read them with ${getTask}.`,
@@ -1190,7 +1211,7 @@ export function renderError(body: ErrorBody, random?: Random): string {
     parts.push({
       data: true,
       title: () => "Candidates",
-      units: candidates.slice(0, 3).map((row) => [`- ${rowLine(row)}`]),
+      units: candidates.slice(0, 3).map((row) => [`- ${join(rowLine(row), group(row))}`]),
     });
   }
   // Close names from the space (A3 3.5: stored values only in data.suggestions), as data.

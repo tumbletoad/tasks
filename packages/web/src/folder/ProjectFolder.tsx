@@ -157,8 +157,8 @@ export function ProjectFolder({ project }: { readonly project: string }) {
           onClose={() => {
             setChoosing(false);
           }}
-          onChoose={async (folder, base) => {
-            await writes.setProject(project, folder, base);
+          onChoose={async (folder, base, told) => {
+            await writes.setProject(project, folder, base, told);
             load();
           }}
         />

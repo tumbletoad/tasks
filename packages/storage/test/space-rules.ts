@@ -3,7 +3,7 @@
 // every step (checkSpace), so the next inversion that breaks one is found by a test, not a person.
 import { expect } from "vitest";
 import type { Connection } from "../src/driver.ts";
-import { folderKey, hasFolders, machineOs } from "../src/write/folders.ts";
+import { hasFolders } from "../src/write/folders.ts";
 import { WRITE_LIMITS, type WriteRequest, type WriteResult } from "../src/write/request.ts";
 
 /** The space as a step found it: what a rule about the step compares with. */
@@ -51,11 +51,6 @@ const FOLDERS_OF_ONE_OWNER =
   "SELECT owner_kind || ' ' || owner_id || ' ' || machine_id AS id FROM folders " +
   "WHERE deleted_at IS NULL GROUP BY owner_kind, owner_id, machine_id HAVING count(*) > 1";
 
-const LIVE_PROJECT_FOLDERS =
-  "SELECT f.machine_id AS machine, f.path AS path FROM folders f " +
-  "JOIN projects p ON p.id = f.owner_id WHERE f.owner_kind = 'project' " +
-  "AND f.deleted_at IS NULL AND p.deleted_at IS NULL";
-
 const HOLDERS =
   "SELECT s.source_key AS key, t.id AS task, ts.version AS link FROM sources s " +
   "JOIN task_sources ts ON ts.source_id = s.id JOIN tasks t ON t.id = ts.task_id " +
@@ -72,8 +67,7 @@ const KINDS_SINCE = "SELECT DISTINCT kind FROM commits WHERE seq > $seq";
  * - A task in a project is in that project's area, in the Trash too.
  * - A live task or project never has an area or a project that is deleted, so a deleted project
  *   holds no live task, and no live folder either.
- * - An owner has at most one live folder on a machine, and two live projects never share one
- *   folder on one machine, by that machine's case rule.
+ * - An owner has at most one live folder on a machine.
  * - An active task has no wrap-up, and a task has at most 20 live learnings.
  * - A source key gains another open holder only by a task the step made active again (a reopen,
  *   or an undo of a check-off, which repeats it) or by a link an ordinary write made to a task that
@@ -90,15 +84,6 @@ export function checkSpace(conn: Connection, before?: SpaceState): SpaceState {
   if (hasFolders(conn)) {
     expect(ids(conn, GROUPS.folderOfGoneProject), "a deleted project holds no folder").toEqual([]);
     expect(ids(conn, FOLDERS_OF_ONE_OWNER), "one live folder per owner and machine").toEqual([]);
-    const seen = new Set<string>();
-    for (const row of conn.prepare(LIVE_PROJECT_FOLDERS).all()) {
-      const machine = String(row["machine"]);
-      const os = machineOs(conn, machine);
-      if (os === undefined) throw new Error("a folder's machine has no record");
-      const key = `${machine}|${folderKey(String(row["path"]), os)}`;
-      expect(seen.has(key), `two live projects on one folder: ${key}`).toBe(false);
-      seen.add(key);
-    }
   }
 
   const lastSeq = Number(conn.prepare("SELECT last_seq FROM space").get()?.["last_seq"]);

@@ -84,15 +84,16 @@ export function pageFolderVerbs(host: PageFoldersHost): {
     );
     return isAmbiguity(found) ? undefined : found;
   };
-  /** The tab's space's projects with a folder here: a listed folder says which project has it. */
+  /**
+   * The tab's space's projects with a folder here, archived ones too, which keep their folders: the
+   * folder typed says which projects have it, as a write's answer does.
+   */
   const projectsOf = async (ref: string | undefined): Promise<KnownProject[]> => {
     const reader = served(ref)?.reader;
     if (reader === undefined) return [];
     try {
       const rows = await readProjectFolders(reader, host.ops.machine.id);
-      return rows
-        .filter((r) => !r.archived)
-        .map((r) => ({ id: r.project, name: r.name, stored: r.stored }));
+      return rows.map((r) => ({ id: r.project, name: r.name, stored: r.stored }));
     } catch {
       return [];
     }
