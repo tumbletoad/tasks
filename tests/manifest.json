@@ -5186,6 +5186,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.2.3.service-db.newer",
+      "title": "A service.sqlite that a newer version marked with a format this build does not know is refused before anything is written, with a reason that names both formats; a file of its own format opens again with what it holds",
+      "source": "A2 3.2.3",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.spaces",
+      "title": "Every update, a retry, a rollback and a repair too, ends by asking the service of the current version, up to its stated bound, how each space opened, and names each that is not usable now in the service's own words, with the backup the service names for a failed migration and the rollback, and exits 8; the note taken right before the switch only leaves out a space that was so already; a space with two folders is judged by the one that serves it; a service that stops answering, also before its first answer once the update saw it run, leaves the spaces not checked and exits 8; a service that is not running is named, with what to run once it runs, and flags nothing; the others get one summary line",
+      "source": "A2 3.12.6",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.restart-consent",
+      "title": "An update restarts the service only on the person's decision, asked once and before anything is held or stopped: declined, or with nobody to ask, the update stops with nothing changed and no version folder left; a service that comes and goes is never restarted without that agreement; agreed, its runs are held and waited for before the restart; a repair restarts a running service only on that agreement, and a running service restarts itself after a repair only when the journal records it; --json of a repair that left the service on another version names that version and a deferred restart",
+      "source": "A2 3.12.6",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.way-back",
+      "title": "However often an update or an install cut off at any of its steps is run again, and whatever is installed over it, install.json keeps the version that was current before it as the one --rollback goes back to, passing over a version whose build notes when its service is ready and never did (a version from before that note counts as one that worked), with a note that failed to write tried again at the next check, and --rollback goes there",
+      "source": "A2 3.12.6, A2 3.2.3",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.12.6.update.verify",
       "title": "ttasks update verifies a release with the installed version's own keys before anything of it is unpacked or run: no trusted key, another key, a swapped archive, a rewritten or missing SHA256SUMS signature, another name or platform, and signed archives with entries that leave the folder, links, device names or files the manifest does not list are refused with the install unchanged and no self-test run",
       "source": "A2 3.12.4, A2 3.12.5, A2 3.12.6, SL-13, A7 3.13 M6.12",
@@ -5219,7 +5251,7 @@
     },
     {
       "id": "A2.3.12.6.update.repair",
-      "title": "A repair finishes or rolls back every state a cut-off update leaves (by what current names and whether the new version is intact), brings each Windows launcher to its side from an aside copy or a version folder, removes the named staging folder and the journal, is finished by the next repair when cut off at any of its own steps, keeps current's version for an unreadable journal, and runs before an install's finish switches",
+      "title": "A repair finishes or rolls back every state a cut-off update leaves (by what current names and whether the new version is intact), brings each Windows launcher to its side from an aside copy or a version folder, removes the named staging folder and the journal, is finished by the next repair when cut off at any of its own steps, keeps current's version for an unreadable journal, and runs before an install's finish switches; an install's journal is kept where a service of an older version never reads it, and one an older version's update switched past is dropped",
       "source": "A2 3.12.6, SL-08, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",

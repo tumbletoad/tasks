@@ -5,6 +5,7 @@
 import { fork, spawn } from "node:child_process";
 import { once } from "node:events";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   lstatSync,
@@ -26,6 +27,9 @@ import { PRODUCT_ID } from "@ttasks/brand";
 import { canonicalStatePath, installId, type HostFacts } from "../hub/paths.ts";
 import { writeVersionManifest } from "./folder.ts";
 import { finishInstall, InstallError, installTarget, type InstallRecord } from "./install.ts";
+import { noteWorking, noteWorkingUntilDone } from "./repair.ts";
+import { currentFor, writeCurrent } from "./switch.ts";
+import { repairUpdate, rollbackUpdate } from "./update.ts";
 
 const windows = process.platform === "win32";
 const RACER = fileURLToPath(new URL("../../test/lock-racer.ts", import.meta.url));
@@ -413,3 +417,194 @@ describe("[A2.3.12.6.install.finish] ttasks install --finish switches current on
     expect(currentOf(root)).toBe(windows ? "0.1.0" : "versions/0.1.0");
   });
 });
+
+const CUT = fileURLToPath(new URL("../../test/finish-cut.ts", import.meta.url));
+
+/** Runs the switch in a child that ends at `cut`, as a closed terminal ends an install there. */
+async function cutFinish(root: string, versionFolder: string, cut: "switch" | number) {
+  const child = fork(CUT, [], { stdio: ["ignore", "ignore", "pipe", "ipc"] });
+  const code = await new Promise<number | null>((resolve) => {
+    child.once("exit", resolve);
+    child.send({ versionFolder, facts: facts(root), cut });
+  });
+  expect(code, "the child ended at its cut").toBe(9);
+}
+
+describe("[A2.3.12.6.update.way-back] an install cut off and run again keeps the way back", () => {
+  // Windows: also after the first of its two launchers.
+  const cuts: ("switch" | number)[] = windows ? [1, "switch"] : ["switch"];
+
+  test.each(cuts)(
+    "cut off at %s, then run again twice, the version before it stays the one --rollback goes back to",
+    async (cut) => {
+      const { root, folder } = install();
+      await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+      const next = addVersion(root, "0.2.0", "launcher two");
+      await cutFinish(root, next, cut);
+      expect(currentOf(root)).toBe(windows ? "0.2.0" : "versions/0.2.0");
+      // update.json is what a service of a version from before the install's journal reads, and
+      // restarts after: an install cut off leaves nothing there.
+      expect(existsSync(join(root, "state", "update.json"))).toBe(false);
+      for (const run of [1, 2]) {
+        await finishInstall({ versionFolder: next, facts: facts(root) });
+        expect(record(root).previous, `run ${String(run)}`).toBe("0.1.0");
+      }
+      expect(record(root).versions).toEqual(["0.1.0", "0.2.0"]);
+      const back = await rollbackUpdate({
+        facts: facts(root),
+        keys: [],
+        selfTest: () => Promise.resolve({ ok: true, failed: [] }),
+      });
+      expect(back).toMatchObject({ outcome: "updated", from: "0.2.0", to: "0.1.0" });
+      expect(currentOf(root)).toBe(windows ? "0.1.0" : "versions/0.1.0");
+    },
+  );
+
+  test("the version a service was seen working on stays the way back through an install cut off and another installed over it", async () => {
+    const { root, folder } = install();
+    await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+    // A's service, once ready, notes that A works.
+    const state = join(root, "state");
+    expect(await noteWorking({ root, state, platform: process.platform, version: "0.1.0" })).toBe(
+      true,
+    );
+    // B's finish is cut off after its first launcher, or its switch; B never runs.
+    const b = addVersion(root, "0.2.0", "launcher two");
+    await cutFinish(root, b, windows ? 1 : "switch");
+    // C is installed over it: the repair finishes B, then C switches.
+    const c = addVersion(root, "0.3.0", "launcher three");
+    await finishInstall({ versionFolder: c, facts: facts(root) });
+    expect(currentOf(root)).toBe(windows ? "0.3.0" : "versions/0.3.0");
+    expect(record(root).previous).toBe("0.1.0");
+    const back = await rollbackUpdate({
+      facts: facts(root),
+      keys: [],
+      selfTest: () => Promise.resolve({ ok: true, failed: [] }),
+    });
+    expect(back).toMatchObject({ outcome: "updated", from: "0.3.0", to: "0.1.0" });
+    // And an install that found the service running notes that version too.
+    const d = addVersion(root, "0.4.0", "launcher four");
+    await finishInstall({ versionFolder: d, facts: facts(root), seen: "0.1.0" });
+    expect(record(root).seen_working).toEqual(["0.1.0"]);
+    expect(record(root).previous).toBe("0.1.0");
+  });
+
+  test("a version that can note it was seen working and never did is passed over; one from before that note is the way back", async () => {
+    // A is from before the note: it served, but cannot say so.
+    const { root, folder } = install();
+    fromBeforeTheNote(folder);
+    await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+    // A's own switch to B: A is the way back, and nothing is noted as seen.
+    const b = addVersion(root, "0.2.0", "launcher two");
+    await finishInstall({ versionFolder: b, facts: facts(root) });
+    expect(record(root).previous).toBe("0.1.0");
+    expect(record(root).seen_working).toBeUndefined();
+    // B's service exits at every start, so B never notes itself. C is installed over it.
+    const c = addVersion(root, "0.3.0", "launcher three");
+    await finishInstall({ versionFolder: c, facts: facts(root) });
+    expect(record(root).previous).toBe("0.1.0");
+
+    // C works and is noted; the person goes back to A, which serves again and cannot note it.
+    const state = join(root, "state");
+    await noteWorking({ root, state, platform: process.platform, version: "0.3.0" });
+    await rollbackUpdate({
+      facts: facts(root),
+      keys: [],
+      selfTest: () => Promise.resolve({ ok: true, failed: [] }),
+    });
+    expect(record(root).previous).toBe("0.3.0");
+    // D is installed over A: A, which the person used, is the way back.
+    const d = addVersion(root, "0.4.0", "launcher four");
+    await finishInstall({ versionFolder: d, facts: facts(root) });
+    expect(record(root).previous).toBe("0.1.0");
+  });
+
+  test("a version whose manifest cannot be read just then is not taken for one that worked: the way back stays", async () => {
+    const { root, folder } = install();
+    fromBeforeTheNote(folder);
+    await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+    const b = addVersion(root, "0.2.0", "launcher two");
+    await finishInstall({ versionFolder: b, facts: facts(root) });
+    expect(record(root).previous).toBe("0.1.0");
+    // B never ran. While C is installed its manifest does not read (another program holds it).
+    const manifest = join(b, "manifest.json");
+    const text = readFileSync(manifest, "utf8");
+    rmSync(manifest);
+    writeFileSync(manifest, "{");
+    const c = addVersion(root, "0.3.0", "launcher three");
+    try {
+      await finishInstall({ versionFolder: c, facts: facts(root) });
+    } finally {
+      rmSync(manifest);
+      writeFileSync(manifest, text);
+    }
+    expect(record(root).previous).toBe("0.1.0");
+  });
+
+  test("a note of a version seen working that could not be written is written at a later check", async () => {
+    const { root, folder } = install();
+    await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+    const b = addVersion(root, "0.2.0", "launcher two");
+    await finishInstall({ versionFolder: b, facts: facts(root) });
+    const state = join(root, "state");
+    const receipt = join(state, "install.json");
+    const failures: unknown[] = [];
+    const note = noteWorkingUntilDone(
+      { root, state, platform: process.platform, version: "0.2.0" },
+      (error) => failures.push(error),
+    );
+    // B's service is ready while the receipt cannot be written.
+    chmodSync(receipt, 0o444);
+    if (!windows) chmodSync(state, 0o500);
+    try {
+      await note();
+      await note();
+    } finally {
+      if (!windows) chmodSync(state, 0o700);
+      chmodSync(receipt, 0o600);
+    }
+    expect(failures, "told of the first failure only").toHaveLength(1);
+    expect(record(root).seen_working ?? []).not.toContain("0.2.0");
+    // The next check, with the receipt writable again.
+    await note();
+    expect(record(root).seen_working).toContain("0.2.0");
+    // So C installed over B keeps B, which worked, as the way back.
+    const c = addVersion(root, "0.3.0", "launcher three");
+    await finishInstall({ versionFolder: c, facts: facts(root) });
+    expect(record(root).previous).toBe("0.2.0");
+  });
+});
+
+describe("[A2.3.12.6.update.repair] an install's journal is finished by the next install, and never undoes what an older version did since", () => {
+  test("an install cut off and then switched past by an older version's own update is left as that update left it", async () => {
+    const { root, folder } = install();
+    await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+    // C's install is cut off after its switch; the person then updates with A's own command,
+    // which knows nothing of an install's journal, to D.
+    const c = addVersion(root, "0.3.0", "launcher three");
+    await cutFinish(root, c, windows ? 1 : "switch");
+    addVersion(root, "0.4.0", "launcher four");
+    writeCurrent(root, currentFor("0.4.0", process.platform), process.platform);
+    // D's repair, at its start or in its first update, changes nothing of that.
+    const repaired = await repairUpdate({
+      facts: facts(root),
+      keys: [],
+      selfTest: () => Promise.resolve({ ok: true, failed: [] }),
+    });
+    expect(repaired).toMatchObject({ repair: { kind: "nothing" }, current: "0.4.0" });
+    expect(currentOf(root)).toBe(windows ? "0.4.0" : "versions/0.4.0");
+    expect(readdirSync(join(root, "state")).filter((name) => name.endsWith(".json"))).toEqual([
+      "install.json",
+    ]);
+  });
+});
+
+/** The manifest of `folder` as a build from before `notes_seen_working` writes it. */
+function fromBeforeTheNote(folder: string): void {
+  const file = join(folder, "manifest.json");
+  const text = readFileSync(file, "utf8");
+  const before = text.replace('  "notes_seen_working": true,\n', "");
+  expect(before).not.toBe(text);
+  rmSync(file);
+  writeFileSync(file, before);
+}

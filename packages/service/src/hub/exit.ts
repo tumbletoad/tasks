@@ -27,6 +27,8 @@ export const REFUSALS = [
   /** A umask that takes away the person's own access to new files (A2 3.2.2 rule 5). */
   "unsafe_umask",
   "invalid_config",
+  /** service.sqlite is in a format a newer version wrote (http/service-db.ts NewerServiceDb). */
+  "newer_format",
 ] as const;
 export type Refusal = (typeof REFUSALS)[number];
 

@@ -29,9 +29,9 @@ import { join } from "node:path";
 import { acquireLock, LockBusy } from "../hub/lock.ts";
 import { checkVersionFolder } from "./folder.ts";
 import {
+  journalPresent,
   readJournal,
   removeJournal,
-  UPDATE_JOURNAL,
   writeJournal,
   type Journal,
 } from "./journal.ts";
@@ -44,8 +44,10 @@ import {
   ensureLauncher,
   exists,
   isInstalled,
+  readInstallRecord,
   removePlaced,
   stagedPath,
+  strings,
   UPDATE_LOCK,
   VERSIONS,
   WINDOWS_LAUNCHERS,
@@ -64,8 +66,7 @@ import {
 export async function repairIfIdle(
   options: RepairOptions & { readonly clean?: boolean },
 ): Promise<RepairOutcome | undefined> {
-  if (!options.clean && !existsSync(join(options.state, UPDATE_JOURNAL)))
-    return { kind: "nothing" };
+  if (!options.clean && !journalPresent(options.state)) return { kind: "nothing" };
   if (!existsSync(join(options.root, VERSIONS))) return { kind: "nothing" };
   let lock;
   try {
@@ -81,6 +82,71 @@ export async function repairIfIdle(
   } finally {
     lock.release();
   }
+}
+
+/**
+ * The service's note that its own version works (install.json `seen_working`), once it is ready:
+ * the way back after a later switch is a version seen working (switch.ts writeInstallRecord). It
+ * takes update.lock without waiting, so nothing is written under an update in progress. False
+ * when the lock was held, to be tried again; true once nothing is left to note.
+ */
+export async function noteWorking(options: {
+  readonly root: string;
+  readonly state: string;
+  readonly platform: NodeJS.Platform;
+  readonly version: string;
+}): Promise<boolean> {
+  const noted = () => {
+    const record = readInstallRecord(options.state);
+    return (
+      record?.["method"] !== "script" ||
+      !isInstalled(options.root, options.version) ||
+      strings(record["seen_working"]).includes(options.version)
+    );
+  };
+  if (noted()) return true;
+  let lock;
+  try {
+    lock = await acquireLock(join(options.state, UPDATE_LOCK));
+  } catch (error) {
+    if (error instanceof LockBusy) return false;
+    throw error;
+  }
+  try {
+    if (!noted()) {
+      writeInstallRecord(options.state, options.root, options.platform, {
+        seen: [options.version],
+      });
+    }
+    return true;
+  } finally {
+    lock.release();
+  }
+}
+
+/**
+ * noteWorking until it is done, for a service that calls the result once it is ready and again at
+ * each regular check: a call while one runs, or once it is done, does nothing; a note that found
+ * update.lock held or failed to write is tried again at the next call. `failed` hears of the first
+ * failure only.
+ */
+export function noteWorkingUntilDone(
+  options: Parameters<typeof noteWorking>[0],
+  failed: (error: unknown) => void,
+): () => Promise<void> {
+  let state: "pending" | "writing" | "done" = "pending";
+  let told = false;
+  return async () => {
+    if (state !== "pending") return;
+    state = "writing";
+    try {
+      state = (await noteWorking(options)) ? "done" : "pending";
+    } catch (error) {
+      state = "pending";
+      if (!told) failed(error);
+      told = true;
+    }
+  };
 }
 
 /** Where a repair can be cut off, for the crash tests (tests/update/). Off in the product. */
@@ -189,7 +255,7 @@ export function repairLocked(options: RepairOptions): RepairOutcome {
     }
     const problems = launchersOf(root, current, platform);
     if (problems.length > 0) return { kind: "stuck", problems };
-    removeJournal(state);
+    removeJournal(state, read.of);
     return {
       kind: "kept",
       current,
@@ -198,6 +264,17 @@ export function repairLocked(options: RepairOptions): RepairOutcome {
   }
   let journal = read.journal;
   const named = currentVersion(root, platform);
+  // An older version's updater, which never reads an install's journal, has switched to a third
+  // version since that install was cut off: the journal is no longer the install's state.
+  if (
+    journal.kind === "install" &&
+    named !== undefined &&
+    named !== journal.from &&
+    named !== journal.to
+  ) {
+    removeJournal(state, "install");
+    return { kind: "nothing" };
+  }
   const toIntact = intact(root, journal.to);
   let forward = journal.phase !== "rolling_back" && named === journal.to && toIntact;
   // The old version is gone or no longer matches its manifest: going back would leave current
@@ -243,16 +320,21 @@ export function repairLocked(options: RepairOptions): RepairOutcome {
     }
     at("repair:launchers");
     if (problems.length > 0) return { kind: "stuck", problems };
+    // `last_update` is an update's or a rollback's, which doctor names: an install never sets it.
     writeInstallRecord(state, root, platform, {
       installed: journal.to,
-      previous: journal.from,
-      lastUpdate: {
-        kind: journal.kind,
-        outcome: "completed",
-        from: journal.from,
-        to: journal.to,
-        at: now(),
-      },
+      switched: { from: journal.from, to: journal.to },
+      ...(journal.kind === "install"
+        ? {}
+        : {
+            lastUpdate: {
+              kind: journal.kind,
+              outcome: "completed",
+              from: journal.from,
+              to: journal.to,
+              at: now(),
+            },
+          }),
     });
   } else {
     if (journal.phase !== "rolling_back") {
@@ -279,16 +361,18 @@ export function repairLocked(options: RepairOptions): RepairOutcome {
     }
     at("repair:launchers");
     if (problems.length > 0) return { kind: "stuck", problems };
-    writeInstallRecord(state, root, platform, {
-      lastUpdate: {
-        kind: journal.kind,
-        outcome: "reverted",
-        from: journal.from,
-        to: journal.to,
-        at: now(),
-        reason: options.reason ?? "interrupted",
-      },
-    });
+    if (journal.kind !== "install") {
+      writeInstallRecord(state, root, platform, {
+        lastUpdate: {
+          kind: journal.kind,
+          outcome: "reverted",
+          from: journal.from,
+          to: journal.to,
+          at: now(),
+          reason: options.reason ?? "interrupted",
+        },
+      });
+    }
   }
   at("repair:record");
   // The staged launchers are done with either way (A2 3.12.6 step 14: none is named once the
@@ -308,7 +392,7 @@ export function repairLocked(options: RepairOptions): RepairOutcome {
       retryDelay: 100,
     });
   }
-  if (options.keepJournal !== true) removeJournal(state);
+  if (options.keepJournal !== true) removeJournal(state, journal.kind);
   at("repair:done");
   return {
     kind: forward ? "rolled_forward" : "rolled_back",

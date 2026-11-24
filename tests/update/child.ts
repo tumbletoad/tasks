@@ -127,7 +127,14 @@ try {
     task.task === "update"
       ? await updateFromArchive(task.archive ?? "", options)
       : await repairUpdate(options);
-  line({ done: result.outcome });
+  line({
+    done: result.outcome,
+    ...(result.outcome !== "updated" || result.spaces === undefined
+      ? {}
+      : result.spaces.service === "not_running"
+        ? { service: "not_running" }
+        : { spaces: result.spaces.spaces.map((space) => [space.name, space.verdict]) }),
+  });
   process.exit(0);
 } catch (error) {
   line({

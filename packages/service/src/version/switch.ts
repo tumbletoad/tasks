@@ -34,7 +34,8 @@ import { basename, dirname, join } from "node:path";
 import { PRODUCT_ID } from "@ttasks/brand";
 import { atomicWrite, createFile, makeDir, removeStaleTemps } from "../hub/files.ts";
 import { canonicalStatePath, HOME_MARKER, installId } from "../hub/paths.ts";
-import { isVersionName, MANIFEST_FILE, sha256File } from "./folder.ts";
+import { isVersionName, MANIFEST_FILE, readVersionManifest, sha256File } from "./folder.ts";
+import type { LauncherChange } from "./journal.ts";
 
 /** The file in a TTASKS_HOME install's root: one constant, the layout's (hub/paths.ts). */
 export { HOME_MARKER };
@@ -505,6 +506,23 @@ export function placeStable(
   return created;
 }
 
+/** The launchers the switch to `target` changes (Windows), with their old and new SHA-256. */
+export function launcherChanges(
+  root: string,
+  target: string,
+  platform: NodeJS.Platform,
+): LauncherChange[] {
+  if (platform !== "win32") return [];
+  const changes: LauncherChange[] = [];
+  for (const name of WINDOWS_LAUNCHERS) {
+    const next = digestOf(join(target, "bin", name));
+    if (next === null) throw new InstallError(`The new version has no bin/${name}.`, 1);
+    const old = digestOf(join(root, "bin", name));
+    if (old !== next) changes.push({ name, old, new: next });
+  }
+  return changes;
+}
+
 /** The SHA-256 of a file, or null when there is none. */
 export function digestOf(path: string): string | null {
   try {
@@ -616,8 +634,19 @@ export interface InstallRecord {
    * that an uninstall removes only when empty. Never something that was there before.
    */
   readonly created: readonly string[];
-  /** The version `current` named before the last switch: `ttasks update --rollback`'s target. */
+  /**
+   * `ttasks update --rollback`'s target: the version `current` named before the last switch, when
+   * it is known to have worked; otherwise the target before that switch is kept, so a version that
+   * never ran (an install cut off, then installed over; a service that exits at every start) is
+   * never the way back.
+   */
   readonly previous?: string;
+  /**
+   * The versions a service of this install was seen ready on: recorded by the service at its
+   * start, and by an install or update that found it running or brought it back. A version whose
+   * build does not record it (its manifest has no `notes_seen_working`) counts as seen.
+   */
+  readonly seen_working?: readonly string[];
   readonly last_update?: LastUpdate;
 }
 
@@ -658,9 +687,41 @@ export interface RecordChange {
   readonly installed?: string;
   /** What this run created, merged into `created`. */
   readonly created?: readonly string[];
-  /** The version current named before this switch (when it named another). */
-  readonly previous?: string;
+  /** A switch that completed, from the version current named to another: `previous` follows. */
+  readonly switched?: { readonly from: string; readonly to: string };
+  /** Versions a service of this install was seen ready on: added to `seen_working`. */
+  readonly seen?: readonly (string | undefined)[];
   readonly lastUpdate?: LastUpdate;
+}
+
+/**
+ * The way back after a switch from `from` to `to`: `from` when a service of it was seen working,
+ * or when its build does not note that (a version from before the note, which the person was
+ * using). Otherwise `from` never ran, and the way back stays the one it had, while that is
+ * installed and is not `to`.
+ */
+function wayBack(
+  root: string,
+  from: string,
+  to: string,
+  seen: readonly string[],
+  had: string | undefined,
+): string {
+  if (seen.includes(from) || !notesSeen(root, from)) return from;
+  return had !== undefined && had !== to && isInstalled(root, had) ? had : from;
+}
+
+/**
+ * Whether the build of `version`, by its own manifest, notes when it is seen working. A manifest
+ * that does not read says nothing: the version is not taken for one from before the note, so a
+ * way back that is known to work is not given up for it.
+ */
+function notesSeen(root: string, version: string): boolean {
+  try {
+    return readVersionManifest(join(root, VERSIONS, version)).notes_seen_working === true;
+  } catch {
+    return true;
+  }
 }
 
 /** Writes install.json (atomic replace, 0600) with `change` applied to what it held. */
@@ -673,8 +734,18 @@ export function writeInstallRecord(
   const before = readInstallRecord(state);
   const id = installId(canonicalStatePath(realpathSync.native(state), platform));
   const versions = strings(before?.["versions"]);
+  const had = typeof before?.["previous"] === "string" ? before["previous"] : undefined;
+  const newly = (change.seen ?? []).filter(
+    (v): v is string => v !== undefined && isInstalled(root, v),
+  );
+  const seen =
+    Array.isArray(before?.["seen_working"]) || newly.length > 0
+      ? [...new Set([...strings(before?.["seen_working"]), ...newly])]
+      : undefined;
   const previous =
-    change.previous ?? (typeof before?.["previous"] === "string" ? before["previous"] : undefined);
+    change.switched === undefined
+      ? had
+      : wayBack(root, change.switched.from, change.switched.to, seen ?? [], had);
   const lastUpdate = change.lastUpdate ?? lastUpdateOf(before?.["last_update"]);
   const record: InstallRecord = {
     format: INSTALL_FORMAT,
@@ -687,6 +758,7 @@ export function writeInstallRecord(
     ],
     created: [...new Set([...strings(before?.["created"]), ...(change.created ?? [])])].sort(),
     ...(previous === undefined ? {} : { previous }),
+    ...(seen === undefined ? {} : { seen_working: seen }),
     ...(lastUpdate === undefined ? {} : { last_update: lastUpdate }),
   };
   atomicWrite(join(state, INSTALL_FILE), `${JSON.stringify(record, null, 2)}\n`, 0o600);

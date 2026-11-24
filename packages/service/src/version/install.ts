@@ -7,12 +7,14 @@
 //      once: the second stops with nothing changed,
 //   2. finishes or rolls back an update that was interrupted (repair.ts), so an install never
 //      switches under a journal that would later undo it,
-//   3. points `current` at the version (switch.ts),
-//   4. puts the stable command in place: `<root>/bin/ttasks` (Linux, macOS), or copies of the
+//   3. over another version, writes an install's journal (journal.ts), so a cut from here on is
+//      finished like a cut-off update and keeps the version before it as the way back,
+//   4. points `current` at the version (switch.ts),
+//   5. puts the stable command in place: `<root>/bin/ttasks` (Linux, macOS), or copies of the
 //      version's `ttasks.exe` and `ttasksw.exe` in `<root>\bin\` (Windows),
-//   5. writes `<state>/install.json` (A2 3.2.3): the method, the root, the install ID, the versions
+//   6. writes `<state>/install.json` (A2 3.2.3): the method, the root, the install ID, the versions
 //      installed, the version current named before, and what the installer created, so an
-//      uninstall can remove exactly that.
+//      uninstall can remove exactly that; then the journal goes.
 // M1.14 makes separate installs only (A2 3.2.2 rule 3): the launcher's TTASKS_HOME must be this
 // version's install root, which holds home.marker. Nothing is written outside the root.
 import { existsSync, realpathSync } from "node:fs";
@@ -29,14 +31,15 @@ import {
   type HostFacts,
   type Layout,
 } from "../hub/paths.ts";
-import { readVersionManifest, type VersionManifest } from "./folder.ts";
-import { removeJournal } from "./journal.ts";
+import { isVersionName, readVersionManifest, type VersionManifest } from "./folder.ts";
+import { JOURNAL_FORMAT, removeJournal, writeJournal, type Journal } from "./journal.ts";
 import { repairLocked } from "./repair.ts";
 import {
   checkStable,
   currentFor,
   HOME_MARKER,
   InstallError,
+  launcherChanges,
   placeStable,
   readCurrent,
   stableFiles,
@@ -172,6 +175,11 @@ export interface FinishOptions {
    */
   readonly stateCreated?: boolean;
   /**
+   * The version this install's service answered with before the finish, if one runs: recorded as
+   * seen working, so a later switch keeps it as the way back (switch.ts writeInstallRecord).
+   */
+  readonly seen?: string;
+  /**
    * Tests only: runs once current and the stable command have changed, before install.json is
    * written, as a client starting the new stable command at that moment would.
    */
@@ -252,8 +260,42 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
     const plan = stablePlan(target.root, options.versionFolder, platform);
     checkStable(plan);
     const before = readCurrent(target.root, platform);
-    // Before the switch: a launcher that appears after it was put there by a stable launcher's
-    // sibling repair (launcher.c), from the version this install switches to.
+    const previous =
+      before.kind === "value"
+        ? platform === "win32"
+          ? before.value
+          : basename(before.value)
+        : undefined;
+    // An install over another version is journalled like an update before current changes:
+    // wherever it is cut off from here, whoever of this version or later takes update.lock next
+    // (this installer run again, an update, the running service) finishes it, and install.json
+    // then names the version before it as the way back. A service of a version from before this
+    // journal never reads it, so it keeps serving and is not restarted unasked. A first install
+    // has no way back to keep, and a journal no repair could finish stays as it is.
+    const journal: Journal | undefined =
+      previous !== undefined &&
+      previous !== target.version &&
+      isVersionName(previous) &&
+      repair.kind !== "stuck"
+        ? {
+            format: JOURNAL_FORMAT,
+            kind: "install",
+            from: previous,
+            to: target.version,
+            phase: "staged",
+            pid: process.pid,
+            started_at: new Date().toISOString(),
+            staging: null,
+            // An install never restarts the service.
+            service: false,
+            tested: true,
+            launchers: launcherChanges(target.root, options.versionFolder, platform),
+          }
+        : undefined;
+    if (journal !== undefined) writeJournal(state, journal);
+    // Right before the switch: a launcher that appears after it was put there by a stable
+    // launcher's sibling repair (launcher.c, while a stuck update's journal is there), from the
+    // version this install switches to.
     const stableBefore = stableFiles(plan);
     // From the switch on, all or nothing: a failure puts back current and the stable command, so
     // the install script can remove the new version and leave the previous install working.
@@ -274,12 +316,6 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
         ...(options.afterStep === undefined ? {} : { afterStep: options.afterStep }),
       });
       await options.afterSwitch?.();
-      const previous =
-        before.kind === "value"
-          ? platform === "win32"
-            ? before.value
-            : basename(before.value)
-          : undefined;
       const record = writeInstallRecord(state, target.root, platform, {
         installed: target.version,
         created: [
@@ -288,8 +324,14 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
           ...(before.kind === "none" ? ["current"] : []),
           ...placed,
         ],
-        ...(previous !== undefined && previous !== target.version ? { previous } : {}),
+        seen: [options.seen],
+        ...(previous !== undefined && previous !== target.version
+          ? { switched: { from: previous, to: target.version } }
+          : {}),
       });
+      // Complete: an install's journal this run wrote, or one left by an install an older version
+      // then switched past, and a journal no repair could finish, are all done with.
+      removeJournal(state, "install");
       if (repair.kind === "stuck") removeJournal(state);
       return {
         root: target.root,
@@ -309,6 +351,9 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
           left.push(`${step.what}: ${(undoError as NodeJS.ErrnoException).code ?? "an error"}`);
         }
       }
+      // All put back: nothing is left to finish. Otherwise the journal stays, and the next run
+      // takes the install the rest of the way back.
+      if (journal !== undefined && left.length === 0) removeJournal(state, "install");
       const why =
         error instanceof InstallError ? error.message : (error as Error).message || "an error";
       throw new InstallError(
