@@ -40,7 +40,7 @@ import type {
   WriteResult,
 } from "../src/write/request.ts";
 import { checkedDriver, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
-import { checkSpace } from "./space-rules.ts";
+import { ruled } from "./space-rules.ts";
 import { checkHistory, expectStatus, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("undo-dedupe");
@@ -1483,9 +1483,11 @@ const property = (seen: Record<string, number>) =>
       const lastSeq = (): number =>
         Number(conn.prepare("SELECT last_seq FROM space").get()?.["last_seq"]);
       const sent: { request: WriteRequest; result: WriteResult }[] = [];
+      // Every write is checked against the rules on the space it leaves.
+      const write = ruled(conn, (request) => space.writer.submit(request));
       const submit = (request: WriteRequest): WriteResult => {
         // A constraint error or any other storage failure throws here and fails the run.
-        const result = space.writer.submit(request);
+        const result = write(request);
         sent.push({ request, result });
         return result;
       };
@@ -1522,9 +1524,7 @@ const property = (seen: Record<string, number>) =>
         return pool[((p.at % Math.max(pool.length, 1)) + pool.length) % Math.max(pool.length, 1)];
       };
 
-      let rules = checkSpace(conn);
       for (const s of steps) {
-        rules = checkSpace(conn, rules);
         const before = fieldsOf(conn);
         const keysBefore = keyHolders(conn);
         const seqBefore = lastSeq();
@@ -1546,7 +1546,7 @@ const property = (seen: Record<string, number>) =>
           const earlier = sent[s.pick % Math.max(sent.length, 1)];
           if (earlier === undefined) continue;
           // The stored answer, whatever undo, redo and dedupe did since (A1 3.8).
-          expect(space.writer.submit(earlier.request)).toEqual(replayOf(earlier.result));
+          expect(write(earlier.request)).toEqual(replayOf(earlier.result));
           expect(lastSeq()).toBe(seqBefore);
           count("replayed");
           continue;
@@ -1895,7 +1895,6 @@ const property = (seen: Record<string, number>) =>
           }
         }
       }
-      checkSpace(conn, rules);
       checkHistory(conn);
       // The index equals a fresh rebuild, undone and redone tasks and entries included.
       const { docs, stray } = storedDocuments(conn);

@@ -21,7 +21,7 @@ import {
   type WriteResult,
 } from "../src/write/request.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
-import { checkSpace } from "./space-rules.ts";
+import { ruled } from "./space-rules.ts";
 import {
   checkHistory,
   expectStatus,
@@ -1069,9 +1069,9 @@ const sessionsProperty = (seen: Record<string, number>) =>
       };
       // A reopen is the user's act and may leave two active tasks with one key; dedupe never does.
       let reopened = false;
-      let rules = checkSpace(space.reader);
+      // Every write is checked against the rules on the space it leaves.
+      const write = ruled(space.reader, (r) => space.writer.submit(r));
       for (const s of steps) {
-        rules = checkSpace(space.reader, rules);
         if (s.kind === "jump") {
           now += (DEDUPE_WINDOW_DAYS + 1) * DAY;
           model.window += 1;
@@ -1087,7 +1087,7 @@ const sessionsProperty = (seen: Record<string, number>) =>
             task: id,
           };
           const base = space.base();
-          expectStatus(space.writer.submit(space.request(space.human, [op], { base })), "applied");
+          expectStatus(write(space.request(space.human, [op], { base })), "applied");
           if (s.kind === "complete") model.complete(id);
           else model.reopen(id);
           reopened ||= s.kind === "reopen";
@@ -1098,7 +1098,7 @@ const sessionsProperty = (seen: Record<string, number>) =>
           // The stored result, whatever happened to the tasks and keys since (A1 3.8), also after
           // the window: an `existing` replays `existing`, and the space still matches the model,
           // so nothing was created.
-          expect(space.writer.submit(earlier.request)).toEqual({
+          expect(write(earlier.request)).toEqual({
             ...earlier.result,
             replayed: true,
           });
@@ -1137,7 +1137,7 @@ const sessionsProperty = (seen: Record<string, number>) =>
           const actor = sessions[s.session];
           if (actor === undefined) throw new Error("no session");
           const request = space.request(actor, ops);
-          const result = space.writer.submit(request);
+          const result = write(request);
           sent.push({ request, result, window: model.window });
           expect(result.status, JSON.stringify(result.error)).toBe(predicted.status);
           expect(result.results.map((r) => `${r.status} ${r.task ?? r.id}`)).toEqual(
@@ -1162,7 +1162,6 @@ const sessionsProperty = (seen: Record<string, number>) =>
           for (const key of KEYS) expect(model.active(key), key).toBeLessThanOrEqual(1);
         }
       }
-      checkSpace(space.reader, rules);
       checkHistory(space.reader);
     } finally {
       space.close();

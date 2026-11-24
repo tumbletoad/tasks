@@ -4,6 +4,7 @@
 import { expect } from "vitest";
 import type { Connection } from "../src/driver.ts";
 import { folderKey, hasFolders, machineOs } from "../src/write/folders.ts";
+import { WRITE_LIMITS, type WriteRequest, type WriteResult } from "../src/write/request.ts";
 
 /** The space as a step found it: what a rule about the step compares with. */
 export interface SpaceState {
@@ -37,6 +38,18 @@ const GROUPS = {
     "SELECT f.id AS id FROM folders f JOIN projects p ON p.id = f.owner_id " +
     "WHERE f.owner_kind = 'project' AND f.deleted_at IS NULL AND p.deleted_at IS NOT NULL",
 } as const;
+
+const TASKS = {
+  activeWrapped: "SELECT id FROM tasks WHERE lifecycle = 'active' AND wrap_state IS NOT NULL",
+  learnings:
+    "SELECT task_id AS id FROM learnings WHERE deleted_at IS NULL GROUP BY task_id " +
+    `HAVING count(*) > ${String(WRITE_LIMITS.learnings)}`,
+} as const;
+
+/** Owners with two live folders on one machine. */
+const FOLDERS_OF_ONE_OWNER =
+  "SELECT owner_kind || ' ' || owner_id || ' ' || machine_id AS id FROM folders " +
+  "WHERE deleted_at IS NULL GROUP BY owner_kind, owner_id, machine_id HAVING count(*) > 1";
 
 /**
  * Positions that two rows of one list share. Placement counts every row of a list, those in the
@@ -76,10 +89,13 @@ const KINDS_SINCE = "SELECT DISTINCT kind FROM commits WHERE seq > $seq";
  * - No two rows of one list share a position: tasks of one project, or of one area outside a
  *   project, projects of one area, areas. So a row placed "before X" sorts before X and after
  *   what was before X (expectBeside).
- * - Two live projects never share one folder on one machine, by that machine's case rule.
+ * - An owner has at most one live folder on a machine, and two live projects never share one
+ *   folder on one machine, by that machine's case rule.
+ * - An active task has no wrap-up, and a task has at most 20 live learnings.
  * - A source key gains another open holder only by a task the step made active again (a reopen,
- *   or an undo of a check-off, which repeats it) or by a link an ordinary write made: dedupe gives
- *   new work and a restored task none, and neither Undo nor Redo brings one back.
+ *   or an undo of a check-off, which repeats it) or by a link an ordinary write made to a task that
+ *   was there before it: dedupe gives new work and a restored task none, and neither Undo nor Redo
+ *   brings one back. Checked per write: `before` is the space as the write found it.
  */
 export function checkSpace(conn: Connection, before?: SpaceState): SpaceState {
   expect(ids(conn, GROUPS.stray), "a task in a project is in its area").toEqual([]);
@@ -89,8 +105,11 @@ export function checkSpace(conn: Connection, before?: SpaceState): SpaceState {
   for (const [list, sql] of Object.entries(SHARED_POSITIONS)) {
     expect(ids(conn, sql), `two ${list} of one list share a position`).toEqual([]);
   }
+  expect(ids(conn, TASKS.activeWrapped), "an active task has no wrap-up").toEqual([]);
+  expect(ids(conn, TASKS.learnings), "a task has at most 20 live learnings").toEqual([]);
   if (hasFolders(conn)) {
     expect(ids(conn, GROUPS.folderOfGoneProject), "a deleted project holds no folder").toEqual([]);
+    expect(ids(conn, FOLDERS_OF_ONE_OWNER), "one live folder per owner and machine").toEqual([]);
     const seen = new Set<string>();
     for (const row of conn.prepare(LIVE_PROJECT_FOLDERS).all()) {
       const machine = String(row["machine"]);
@@ -127,12 +146,31 @@ export function checkSpace(conn: Connection, before?: SpaceState): SpaceState {
       for (const task of holders) {
         if (before.open.get(key)?.has(task) === true) continue;
         const reopened = (before.lifecycles.get(task) ?? "active") !== "active";
-        const linked = forward && (links.get(`${key}|${task}`) ?? 0) > before.lastSeq;
+        const linked =
+          forward &&
+          before.lifecycles.has(task) &&
+          (links.get(`${key}|${task}`) ?? 0) > before.lastSeq;
         expect(reopened || linked, `${key}: ${task} is another open holder`).toBe(true);
       }
     }
   }
   return { lastSeq, lifecycles, open };
+}
+
+/**
+ * `submit`, with the rules checked on the space each write leaves (checkSpace), the space as the
+ * write found it as `before`: a step that sends several writes is checked after each of them.
+ */
+export function ruled(
+  conn: Connection,
+  submit: (request: WriteRequest) => WriteResult,
+): (request: WriteRequest) => WriteResult {
+  let state = checkSpace(conn);
+  return (request) => {
+    const result = submit(request);
+    state = checkSpace(conn, state);
+    return result;
+  };
 }
 
 /**

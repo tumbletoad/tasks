@@ -666,6 +666,12 @@ describe("[A1.5.write.wrap-up-additive] wrap-up never changes context, notes, lo
             planned: true,
           };
           let rules = checkSpace(fx.reader);
+          /** A write, and the rules on the space it leaves. */
+          const write = (ops: Operation[], extra?: Parameters<typeof submit>[1]): WriteResult => {
+            const result = submit(ops, extra);
+            rules = checkSpace(fx.reader, rules);
+            return result;
+          };
           for (const given of steps) {
             const s =
               given.kind === "again"
@@ -690,7 +696,7 @@ describe("[A1.5.write.wrap-up-additive] wrap-up never changes context, notes, lo
                       task: id,
                       if_active: true,
                     };
-              expectStatus(submit([op]), s.kind === "reopen" || active ? "applied" : "unchanged");
+              expectStatus(write([op]), s.kind === "reopen" || active ? "applied" : "unchanged");
               if (s.kind === "reopen") Object.assign(model, { lifecycle: "active", wrap: null });
               else if (active) {
                 model.lifecycle = s.kind === "complete" ? "completed" : "archived";
@@ -706,7 +712,7 @@ describe("[A1.5.write.wrap-up-additive] wrap-up never changes context, notes, lo
             ];
             const removed = remove.map((n) => ids[n] as Id<"lr">);
             const before = untouched(id, s.clear);
-            const result = submit(
+            const result = write(
               [
                 {
                   kind: "task.wrap_up",
@@ -753,7 +759,6 @@ describe("[A1.5.write.wrap-up-additive] wrap-up never changes context, notes, lo
               planned_for: model.planned ? "2026-11-20" : null,
             });
             expect(live(id)).toEqual(model.learnings);
-            rules = checkSpace(fx.reader, rules);
           }
         }),
         { numRuns: 60, seed: 20261114 },
@@ -809,6 +814,13 @@ describe("[A1.5.write.tombstone] a deleted task keeps every row and its history,
       fc.assert(
         fc.property(before, fc.boolean(), (kinds, agent) => {
           const id = fullTask();
+          let rules = checkSpace(fx.reader);
+          /** A write, and the rules on the space it leaves. */
+          const write = (ops: Operation[], extra?: Parameters<typeof submit>[1]): WriteResult => {
+            const result = submit(ops, extra);
+            rules = checkSpace(fx.reader, rules);
+            return result;
+          };
           for (const kind of kinds) {
             const finished = task(id)["lifecycle"] !== "active";
             const op: Operation[] =
@@ -839,18 +851,18 @@ describe("[A1.5.write.tombstone] a deleted task keeps every row and its history,
                           ? [{ kind: "task.reopen", task: id }]
                           : []
                         : [{ kind: "place.clear", task: id }];
-            if (op.length > 0) expect(["applied", "unchanged"]).toContain(submit(op).status);
+            if (op.length > 0) expect(["applied", "unchanged"]).toContain(write(op).status);
           }
           const was = state(id);
           const past = history(id);
           const actor: Actor = agent ? "codex" : "human";
-          const deleted = submit([{ kind: "task.delete", task: id }], { actor });
+          const deleted = write([{ kind: "task.delete", task: id }], { actor });
           expectStatus(deleted, "applied");
           // Deleted: every row stays, and history only grows.
           expect(state(id)).toEqual(was);
           expect(history(id).slice(0, past.length)).toEqual(past);
           expect(task(id)["deleted_by"]).toBe(fx[actor].principal_id);
-          const restored = submit([{ kind: "task.restore", task: id }], { actor });
+          const restored = write([{ kind: "task.restore", task: id }], { actor });
           expectStatus(restored, "applied");
           expect(state(id)).toEqual(was);
           expect(task(id)).toMatchObject({ deleted_at: null, deleted_by: null });
@@ -863,7 +875,7 @@ describe("[A1.5.write.tombstone] a deleted task keeps every row and its history,
             [restored.seq, "deleted", true],
           ]);
           // The restored task takes changes again.
-          expectStatus(submit([{ kind: "log.add", task: id, body: "Back." }]), "applied");
+          expectStatus(write([{ kind: "log.add", task: id, body: "Back." }]), "applied");
         }),
         { numRuns: 25, seed: 20261114 },
       );

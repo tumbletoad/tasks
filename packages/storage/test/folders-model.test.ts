@@ -5,8 +5,8 @@
 // undoes and redoes; an agent does most of these too, and adds notes, in between, on no undo stack.
 // Paths come from small sets per machine, so two projects often reach for one folder, by the same
 // spelling or, on Windows, another case, and one project's folder is often inside another's. After
-// every step, the rules every write keeps (space-rules.ts: checkSpace), and:
-// - an owner has at most one live folder per machine;
+// every step, the rules every write keeps (space-rules.ts: checkSpace), one live folder per owner
+// and machine among them, and:
 // - a folder change that names the owners whose folders moved with it (`carry`) moved each of
 //   their folders on that machine that is the old one or inside it, projects' and tasks' alike, to
 //   the same place inside the new one, unless the new folder is around or inside the old one, and
@@ -450,16 +450,6 @@ function snapshot(w: World): Snapshot {
   };
 }
 
-/** An owner has at most one live folder per machine. */
-function checkFolders(w: World): void {
-  const owners = new Set<string>();
-  for (const f of folders(w).filter((f) => f.live)) {
-    const key = `${f.kind}|${f.owner}|${f.machine}`;
-    expect(owners.has(key), `one live folder per owner and machine: ${key}`).toBe(false);
-    owners.add(key);
-  }
-}
-
 /**
  * Where a folder lands when the folder `from` was moved to `to`, worked out here apart from the
  * writer's code: inside the old folder it moves, unless one of the two folders is the other or
@@ -724,7 +714,6 @@ async function run(steps: readonly Step[]): Promise<void> {
       }
       expect(["applied", "unchanged", "conflict", "rejected"]).toContain(result.status);
       space = checkSpace(w.fx.reader, space);
-      checkFolders(w);
       if (s.kind === "beside" && result.status === "applied" && sibling !== undefined) {
         expectBeside(w.fx.reader, nth(w.tasks, s.t), nth(w.tasks, s.s), s.side, sibling.list);
       }

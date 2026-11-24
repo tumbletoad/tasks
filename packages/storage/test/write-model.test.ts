@@ -40,7 +40,7 @@ type TaskOperation = Extract<
   { kind: "task.create" | "task.patch" | "task.move" | "task.complete" | "task.reopen" }
 >;
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
-import { checkSpace } from "./space-rules.ts";
+import { ruled } from "./space-rules.ts";
 import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("write-model");
@@ -654,6 +654,8 @@ const property = (seen: Seen) =>
       const seeded = fx.writer.submit(seedRequest);
       expect(seeded.status).toBe("applied");
       model.commit(first);
+      // Every write from here on is checked against the rules on the space it leaves.
+      const submit = ruled(fx.reader, (r) => fx.writer.submit(r));
       /** Every request sent so far, with its result: what a retry sends again. */
       const sent: { request: WriteRequest; result: WriteResult }[] = [
         { request: seedRequest, result: seeded },
@@ -670,9 +672,7 @@ const property = (seen: Seen) =>
         return asOf;
       };
 
-      let space = checkSpace(fx.reader);
       for (const s of steps) {
-        space = checkSpace(fx.reader, space);
         if (s.kind === "authority") {
           const moved = await moveAuthority(fx, s.change);
           model.epoch = moved.epoch;
@@ -700,7 +700,7 @@ const property = (seen: Seen) =>
             : s.fresh
               ? { ...earlier.request, base: formatAsOf(fx.writer.asOf()) }
               : earlier.request;
-          const result = fx.writer.submit(again);
+          const result = submit(again);
           if (s.reuse) {
             expect(result.status).toBe("rejected");
             expect(result.error?.code).toBe("REQUEST_ID_REUSED");
@@ -723,7 +723,7 @@ const property = (seen: Seen) =>
         const actor = actors[s.actor];
         if (actor === undefined) throw new Error("no actor");
         const request = fx.request(actor, ops, base === undefined ? {} : { base: base.sent });
-        const result = fx.writer.submit(request);
+        const result = submit(request);
         sent.push({ request, result });
         if (last !== undefined && expected.status === "rejected") {
           // Which way the base was stale, so the runs must reach each on its own.
@@ -760,7 +760,6 @@ const property = (seen: Seen) =>
         expect([result.epoch, result.incarnation]).toEqual([model.epoch, model.incarnation]);
         expectModel(fx, model);
       }
-      checkSpace(fx.reader, space);
       checkHistory(fx.reader);
     } finally {
       fx.close();

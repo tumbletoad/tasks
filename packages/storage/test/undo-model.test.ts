@@ -20,7 +20,7 @@
 // the prediction, each undo and redo is checked against the space itself: the only task fields it
 // changes are rows of the inverted commit whose provenance was the guard; a redo brings back
 // exactly the after-values and the provenance of the commit it redoes; and no field's fv ever
-// moves back. After every step, the rules every write keeps (space-rules.ts), and each run ends
+// moves back. After every write, the rules every write keeps (space-rules.ts), and each run ends
 // with A1's history invariants (write-helpers.ts: checkHistory), among them that every field holds
 // the value its provenance commit wrote.
 import { join } from "node:path";
@@ -32,7 +32,7 @@ import { appliedSql } from "../src/write/history.ts";
 import { openWriter } from "../src/open.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
-import { checkSpace, listsOf } from "./space-rules.ts";
+import { listsOf, ruled } from "./space-rules.ts";
 import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("undo-model");
@@ -1191,11 +1191,13 @@ const property = (seen: Seen) =>
       const model = new Model(made.seq - 1);
       model.create(START_TASKS, null, 1);
       expect(model.lastSeq).toBe(made.seq);
+      // Every write from here on is checked against the rules on the space it leaves.
+      const submit = ruled(fx.reader, (r) => fx.writer.submit(r));
       const commitId = (seq: number): unknown =>
         fx.reader.prepare("SELECT id FROM commits WHERE seq = $seq").get({ seq })?.["id"];
       /** A forward request of `who`: a human's joins its stack. */
       const send = (who: number, ops: Operation[], based = true): WriteResult =>
-        fx.writer.submit(
+        submit(
           fx.request(as(who), ops, {
             ...(based ? { base: fx.base() } : {}),
             ...(isHuman(who) ? { undoable: true } : {}),
@@ -1257,9 +1259,7 @@ const property = (seen: Seen) =>
         if (commit !== undefined) expect(result.seq).toBe(commit.seq);
       };
 
-      let space = checkSpace(fx.reader);
       for (const s of steps) {
-        space = checkSpace(fx.reader, space);
         // Every task stays in the Inbox where it was made, in the Trash and undone too.
         expect(
           listsOf(fx.reader)["the Inbox"],
@@ -1281,7 +1281,7 @@ const property = (seen: Seen) =>
           // The execution store's requests: the person's, never undoable (A1 3.6).
           const task = Math.max(0, ids.tasks.length - 1 - s.newest);
           const id = ids.tasks[task] as Id<"t">;
-          const created = fx.writer.submit(
+          const created = submit(
             fx.request(fx.human, [
               {
                 kind: "run.create",
@@ -1311,7 +1311,7 @@ const property = (seen: Seen) =>
                   "version"
                 ],
               );
-              const moved = fx.writer.submit(
+              const moved = submit(
                 fx.request(fx.human, [
                   {
                     kind: "run.transition",
@@ -1495,7 +1495,7 @@ const property = (seen: Seen) =>
           count(seen, s.kind);
         } else if (s.kind === "undo") {
           const target = model.undoTarget(s.who);
-          const result = fx.writer.submit(
+          const result = submit(
             fx.request(as(s.who), [{ kind: "undo", ...(s.partial ? { partial: true } : {}) }]),
           );
           if (target === undefined) {
@@ -1594,7 +1594,7 @@ const property = (seen: Seen) =>
           }
         } else if (s.kind === "redo") {
           const tried = model.redoSteps(s.who);
-          const result = fx.writer.submit(fx.request(as(s.who), [{ kind: "redo" }]));
+          const result = submit(fx.request(as(s.who), [{ kind: "redo" }]));
           if (tried.length === 0) {
             expect(result.error?.code).toBe("NOTHING_TO_REDO");
             count(seen, "NOTHING_TO_REDO");
@@ -1701,7 +1701,6 @@ const property = (seen: Seen) =>
           );
         }
       }
-      checkSpace(fx.reader, space);
       checkHistory(fx.reader);
     } finally {
       fx.close();
