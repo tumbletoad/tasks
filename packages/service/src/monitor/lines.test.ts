@@ -47,6 +47,18 @@ describe("[A5.agents.monitor-lines] TTAM's lines read into TTasks's snapshot", (
     }
   });
 
+  test("a build of the same schema version from before a field was added within it reads whole", () => {
+    const first = recorded(TTAM_CONVERSATIONS.first);
+    expect(first.length).toBeGreaterThan(2);
+    for (const line of first) {
+      const read = readSnapshot(line, V);
+      expect(read.accounts.map((a) => a.homeId)).toEqual(accountsOf(line).map((a) => a["home_id"]));
+      for (const account of read.accounts) {
+        expect(account).toMatchObject({ sameAccount: null, retryInMs: null });
+      }
+    }
+  });
+
   test("a provider TTasks does not know is shown by its name, with its home and account", () => {
     const read = readSnapshot(LAST, V);
     const agent = read.agents.find((a) => a.providerName === "example");
