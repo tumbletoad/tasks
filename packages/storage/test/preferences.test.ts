@@ -399,6 +399,31 @@ describe("[A1.3.16.prefs.read] the writer reads preferences through the registry
     );
   });
 
+  test("[A1.3.16.prefs.effort-levels] levels keep their time and line; a new name is short; a task takes a name with spaces", () => {
+    const levels = [
+      { key: "XS", time: { amount: 10, unit: "minutes" } },
+      { key: "Half a day", time: { amount: 4, unit: "hours" }, about: "One long sitting" },
+    ];
+    expectStatus(submit([set("tasks.effort_scale", levels)]), "applied");
+    expect(read("tasks.effort_scale")).toEqual({
+      key: "tasks.effort_scale",
+      value: levels,
+      state: "set",
+    });
+    expect(one("SELECT schema_ver FROM preferences WHERE key = 'tasks.effort_scale'")).toBe(2);
+    const long = submit([set("tasks.effort_scale", [...levels, { key: "Half a week" }])]);
+    expect(long.error).toMatchObject({ code: "VALIDATION_FAILED", op: 0, field: "value" });
+    expect(read("tasks.effort_scale").value).toEqual(levels);
+    const id = newId("t");
+    expectStatus(
+      submit([{ kind: "task.create", id, title: "Plan", effort: "Half a day" }]),
+      "applied",
+    );
+    expect(one("SELECT effort FROM tasks WHERE id = $id", { id })).toBe("Half a day");
+    const doubled = submit([{ kind: "task.create", title: "Plan", effort: "Half  a day" }]);
+    expect(doubled.error).toMatchObject({ code: "VALIDATION_FAILED", field: "ops[0].effort" });
+  });
+
   test("a scale that drops a key an active task holds is refused, and nothing changes", () => {
     const sized = newId("t");
     const waiting = newId("t");

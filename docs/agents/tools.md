@@ -785,7 +785,12 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `keys` | (string, max 64)[], max 20 items | no | Keys, or prefixes ending in ".*"; default every key |
 | `set` | object[], 1 to 10 items | no | set: the keys and their new values |
 | `set[].key` | string, max 64 | yes | A key describe lists |
-| `set[].value` | string, max 1024 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64)[], max 20 items | no | The new value, a list as keys separated by commas |
+| `set[].value` | string, max 1024 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64 \| object)[], max 20 items | no | The new value, a list as keys separated by commas |
+| `set[].value[].key` | string, max 64 | yes | The level's name, which a task's effort holds |
+| `set[].value[].time` | object | no | A typical amount of the user's own time on it |
+| `set[].value[].time.amount` | integer, 1 to 999 | yes | How many units |
+| `set[].value[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
+| `set[].value[].about` | string, max 280 | no | One line on what belongs on it, in the user's words |
 | `set[].reset` | boolean | no | Put the key back to its default, instead of a value |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
@@ -800,18 +805,43 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `prefs[].key` | string | yes | The key |
 | `prefs[].summary` | string | no | What it sets (describe) |
 | `prefs[].shape` | string | no | Its values, in words (describe) |
-| `prefs[].value` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | no | Its value now (get) |
-| `prefs[].default` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | yes | Its default |
+| `prefs[].value` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| object[] \| null | no | Its value now (get) |
+| `prefs[].value[].key` | string, max 64 | yes | The level's name, which a task's effort holds |
+| `prefs[].value[].time` | object | no | A typical amount of the user's own time on it |
+| `prefs[].value[].time.amount` | integer, 1 to 999 | yes | How many units |
+| `prefs[].value[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
+| `prefs[].value[].about` | string, max 280 | no | One line on what belongs on it, in the user's words |
+| `prefs[].default` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| object[] \| null | yes | Its default |
+| `prefs[].default[].key` | string, max 64 | yes | The level's name, which a task's effort holds |
+| `prefs[].default[].time` | object | no | A typical amount of the user's own time on it |
+| `prefs[].default[].time.amount` | integer, 1 to 999 | yes | How many units |
+| `prefs[].default[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
+| `prefs[].default[].about` | string, max 280 | no | One line on what belongs on it, in the user's words |
 | `prefs[].is_default` | boolean | no | The value is the default (get) |
 | `prefs[].writable` | boolean | yes | Whether this caller may change it |
 | `prefs[].policy` | true | no | Policy: the user's own (A3 3.8) |
 | `prefs[].fixed` | true | no | Fixed in this build: nobody changes it |
-| `prefs[].in_force` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | no | What this build does whatever the key says: it does not act on the key yet |
+| `prefs[].in_force` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| object[] \| null | no | What this build does whatever the key says: it does not act on the key yet |
+| `prefs[].in_force[].key` | string, max 64 | yes | The level's name, which a task's effort holds |
+| `prefs[].in_force[].time` | object | no | A typical amount of the user's own time on it |
+| `prefs[].in_force[].time.amount` | integer, 1 to 999 | yes | How many units |
+| `prefs[].in_force[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
+| `prefs[].in_force[].about` | string, max 280 | no | One line on what belongs on it, in the user's words |
 | `result` | "updated" \| "no_change" | no | What a change did |
 | `changed` | object[] | no | The keys a change changed |
 | `changed[].key` | string | yes | The key |
-| `changed[].from` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | yes | Its value before |
-| `changed[].to` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | yes | Its value now |
+| `changed[].from` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| object[] \| null | yes | Its value before |
+| `changed[].from[].key` | string, max 64 | yes | The level's name, which a task's effort holds |
+| `changed[].from[].time` | object | no | A typical amount of the user's own time on it |
+| `changed[].from[].time.amount` | integer, 1 to 999 | yes | How many units |
+| `changed[].from[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
+| `changed[].from[].about` | string, max 280 | no | One line on what belongs on it, in the user's words |
+| `changed[].to` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| object[] \| null | yes | Its value now |
+| `changed[].to[].key` | string, max 64 | yes | The level's name, which a task's effort holds |
+| `changed[].to[].time` | object | no | A typical amount of the user's own time on it |
+| `changed[].to[].time.amount` | integer, 1 to 999 | yes | How many units |
+| `changed[].to[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
+| `changed[].to[].about` | string, max 280 | no | One line on what belongs on it, in the user's words |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 
 ### Examples
@@ -858,7 +888,7 @@ Result:
 }
 ```
 
-#### The user adds sizes
+#### The user keeps three effort levels by name, each with its time and line
 
 Called by the user.
 
@@ -869,11 +899,9 @@ Called by the user.
     {
       "key": "tasks.effort_scale",
       "value": [
-        "XS",
         "S",
         "M",
-        "L",
-        "XL"
+        "L"
       ]
     }
   ],
@@ -892,16 +920,72 @@ Result:
     {
       "key": "tasks.effort_scale",
       "value": [
-        "XS",
-        "S",
-        "M",
-        "L",
-        "XL"
+        {
+          "key": "S",
+          "time": {
+            "amount": 1,
+            "unit": "hours"
+          },
+          "about": "A reply that needs some reading first; a small, clear fix; checking an agent's short change"
+        },
+        {
+          "key": "M",
+          "time": {
+            "amount": 4,
+            "unit": "hours"
+          },
+          "about": "One long focused sitting: a summary of a few sources; a meeting prepared with its papers"
+        },
+        {
+          "key": "L",
+          "time": {
+            "amount": 2,
+            "unit": "days"
+          },
+          "about": "Work over several sittings: a first draft of a report; a design for a feature; a tax return"
+        }
       ],
       "default": [
-        "S",
-        "M",
-        "L"
+        {
+          "key": "XS",
+          "time": {
+            "amount": 10,
+            "unit": "minutes"
+          },
+          "about": "A quick reply, a payment or a booking, with everything at hand"
+        },
+        {
+          "key": "S",
+          "time": {
+            "amount": 1,
+            "unit": "hours"
+          },
+          "about": "A reply that needs some reading first; a small, clear fix; checking an agent's short change"
+        },
+        {
+          "key": "M",
+          "time": {
+            "amount": 4,
+            "unit": "hours"
+          },
+          "about": "One long focused sitting: a summary of a few sources; a meeting prepared with its papers"
+        },
+        {
+          "key": "L",
+          "time": {
+            "amount": 2,
+            "unit": "days"
+          },
+          "about": "Work over several sittings: a first draft of a report; a design for a feature; a tax return"
+        },
+        {
+          "key": "XL",
+          "time": {
+            "amount": 1,
+            "unit": "weeks"
+          },
+          "about": "A week or more: too big to plan as one piece, a signal to split it"
+        }
       ],
       "is_default": false,
       "writable": true
@@ -912,16 +996,72 @@ Result:
     {
       "key": "tasks.effort_scale",
       "from": [
-        "S",
-        "M",
-        "L"
+        {
+          "key": "XS",
+          "time": {
+            "amount": 10,
+            "unit": "minutes"
+          },
+          "about": "A quick reply, a payment or a booking, with everything at hand"
+        },
+        {
+          "key": "S",
+          "time": {
+            "amount": 1,
+            "unit": "hours"
+          },
+          "about": "A reply that needs some reading first; a small, clear fix; checking an agent's short change"
+        },
+        {
+          "key": "M",
+          "time": {
+            "amount": 4,
+            "unit": "hours"
+          },
+          "about": "One long focused sitting: a summary of a few sources; a meeting prepared with its papers"
+        },
+        {
+          "key": "L",
+          "time": {
+            "amount": 2,
+            "unit": "days"
+          },
+          "about": "Work over several sittings: a first draft of a report; a design for a feature; a tax return"
+        },
+        {
+          "key": "XL",
+          "time": {
+            "amount": 1,
+            "unit": "weeks"
+          },
+          "about": "A week or more: too big to plan as one piece, a signal to split it"
+        }
       ],
       "to": [
-        "XS",
-        "S",
-        "M",
-        "L",
-        "XL"
+        {
+          "key": "S",
+          "time": {
+            "amount": 1,
+            "unit": "hours"
+          },
+          "about": "A reply that needs some reading first; a small, clear fix; checking an agent's short change"
+        },
+        {
+          "key": "M",
+          "time": {
+            "amount": 4,
+            "unit": "hours"
+          },
+          "about": "One long focused sitting: a summary of a few sources; a meeting prepared with its papers"
+        },
+        {
+          "key": "L",
+          "time": {
+            "amount": 2,
+            "unit": "days"
+          },
+          "about": "Work over several sittings: a first draft of a report; a design for a feature; a tax return"
+        }
       ]
     }
   ]
@@ -1452,7 +1592,7 @@ Result:
     {
       "name": "sizing-effort",
       "when": "Use before you give a task a size, when you add tasks or change a task's effort.",
-      "text": "TTasks's part: how its tools do this.\nThis space's sizes, smallest first: S, M, L. ...\n\nThe user's part: how they want it done, within the rules above.\n\n# Sizing effort\n\nPut a task on the size whose examples it is closest to, and on the larger one when in doubt. ..."
+      "text": "TTasks's part: how its tools do this.\neffort takes exactly one size's name ...\n\nThis space's sizes, smallest first. ...\n- XS, about 10 minutes: A quick reply, ...\n...\n\nThe user's part: how they want it done, within the rules above.\n\n# Sizing effort\n\nCompare the task with what each size says belongs on it ..."
     }
   ]
 }

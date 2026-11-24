@@ -3,6 +3,7 @@
 // (later.ts). The keys and their value schemas are contracts' declarations (preferences.ts).
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
+import { EFFORT_ABOUT_MAX, EFFORT_LEVELS, EFFORT_UNITS } from "../preferences.ts";
 import { AsOf, Base, Mode, ProposalId, Replayed, RequestId } from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 
@@ -11,6 +12,23 @@ const STRING_MAX = 64;
 const LIST_MAX = 20;
 /** A list sent as one text of keys and commas: room for the longest list any key takes. */
 const LIST_TEXT_MAX = 1_024;
+
+/** An effort level whole (`tasks.effort_scale`): its name, and its time and line when it has them. */
+const Level = z.strictObject({
+  key: z.string().max(STRING_MAX).describe("The level's name, which a task's effort holds"),
+  time: z
+    .strictObject({
+      amount: z.int().min(1).max(999).describe("How many units"),
+      unit: z.enum(EFFORT_UNITS).describe("The unit"),
+    })
+    .describe("A typical amount of the user's own time on it")
+    .optional(),
+  about: z
+    .string()
+    .max(EFFORT_ABOUT_MAX)
+    .describe("One line on what belongs on it, in the user's words")
+    .optional(),
+});
 
 /**
  * A preference value in the tool's input: one option per JSON type the tool's keys take. The
@@ -22,7 +40,7 @@ const PrefValue = z.union([
   z.string().max(LIST_TEXT_MAX),
   z.int().min(-1_000_000).max(1_000_000),
   z.boolean(),
-  z.array(z.string().max(STRING_MAX)).max(LIST_MAX),
+  z.array(z.union([z.string().max(STRING_MAX), Level])).max(LIST_MAX),
 ]);
 
 /** A stored or default value in a result: null is a default of none. */
@@ -31,6 +49,7 @@ const PrefValueOutput = z.union([
   z.int().min(-1_000_000).max(1_000_000),
   z.boolean(),
   z.array(z.string()),
+  z.array(Level),
   z.null(),
 ]);
 
@@ -147,11 +166,11 @@ export const prefsManage = defineEntry({
       },
     },
     {
-      title: "The user adds sizes",
+      title: "The user keeps three effort levels by name, each with its time and line",
       actor: "user",
       input: {
         action: "set",
-        set: [{ key: "tasks.effort_scale", value: ["XS", "S", "M", "L", "XL"] }],
+        set: [{ key: "tasks.effort_scale", value: ["S", "M", "L"] }],
         base: AS_OF,
         request_id: requestId(15),
       },
@@ -161,8 +180,8 @@ export const prefsManage = defineEntry({
         prefs: [
           {
             key: "tasks.effort_scale",
-            value: ["XS", "S", "M", "L", "XL"],
-            default: ["S", "M", "L"],
+            value: EFFORT_LEVELS.slice(1, 4),
+            default: [...EFFORT_LEVELS],
             is_default: false,
             writable: true,
           },
@@ -171,8 +190,8 @@ export const prefsManage = defineEntry({
         changed: [
           {
             key: "tasks.effort_scale",
-            from: ["S", "M", "L"],
-            to: ["XS", "S", "M", "L", "XL"],
+            from: [...EFFORT_LEVELS],
+            to: EFFORT_LEVELS.slice(1, 4),
           },
         ],
       },

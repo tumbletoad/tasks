@@ -26,7 +26,12 @@
 // that reach SQL text are the column names of fields.ts, so no request can run SQL of its own
 // (A1 3.7). The writer runs where its connection lives: in a storage worker in
 // the service, or in-thread in tests and the sample generator. It is synchronous.
-import { mayWrite, preferenceSpec } from "@ttasks/contracts/preferences";
+import {
+  EFFORT_NAME_MAX,
+  effortNamesFit,
+  mayWrite,
+  preferenceSpec,
+} from "@ttasks/contracts/preferences";
 import type { Connection, Row, SqlValue } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
 import { isId, newId, osRandom, type Id, type RandomSource } from "../ids.ts";
@@ -2285,8 +2290,18 @@ export class SpaceWriter {
           // A task keeps its status and effort whatever the scale says, so a scale never drops a
           // key an active task holds: the person moves those tasks first and loses nothing.
           if (isScaleKey(op.key)) {
-            const kept = new Set(scaleKeys(op.value ?? spec.default));
-            const removed = listPreference(conn, op.key).filter((key) => !kept.has(key));
+            const next = scaleKeys(op.value ?? spec.default);
+            const kept = new Set(next);
+            const held = listPreference(conn, op.key);
+            if (op.key === "tasks.effort_scale" && !effortNamesFit(next, held)) {
+              problem(
+                "VALIDATION_FAILED",
+                `A new level's name has at most ${String(EFFORT_NAME_MAX)} characters`,
+                i,
+                "value",
+              );
+            }
+            const removed = held.filter((key) => !kept.has(key));
             const inUse = op.key === "tasks.statuses" ? SQL.statusInUse : SQL.effortInUse;
             if (
               removed.length > 0 &&
