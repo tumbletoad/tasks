@@ -1,8 +1,8 @@
 // A run's files in machine state, `<state>/runs/<run id>/`, which the space never holds:
 // - `answer.json`: the agent's last answer, replaced whole (temporary file and rename) as each
-//   one comes, so a crash of the service keeps the last one whose write ended; and once the work
-//   settled, the work's result with it, before anything of the run is closed. The next start
-//   copies it into the run's record.
+//   one comes, so a crash of the service keeps the last one whose write ended; with it the time
+//   limit that ended the work, from the moment it fired; and once the work settled, the work's
+//   result, before anything of the run is closed. The next start copies it into the run's record.
 // - `stdout.jsonl` and `stderr.log`: the agent's raw output for diagnosis, up to their caps. It is
 //   task text, like the answer, and goes with the folder.
 // - `tools.json`: TTasks's tools for an agent that takes them from a file (Claude Code), with the
@@ -16,9 +16,13 @@ import { atomicWrite, createFile, makeDir, removeStaleTemps, writeAll } from "@t
 import {
   ANSWER_CAP_BYTES,
   OUTCOME_REASONS,
+  RUN_REASONS,
   TEXT_CAP_BYTES,
   type OutcomeReason,
 } from "@ttasks/contracts/runs";
+
+/** The run's time limit that ended its work: its wall time, or its time without output. */
+export type TimeLimit = (typeof RUN_REASONS.timed_out)[number];
 
 /** The folder under `<state>` that holds one folder per run. */
 export const RUNS_FOLDER = "runs";
@@ -45,7 +49,16 @@ export interface SavedAnswer {
   readonly outcome?: OutcomeReason;
   /** The agent's own words about what went wrong, once the work settled. */
   readonly error?: string | null;
+  /** The time limit that ended the work, from the moment it fired. */
+  readonly limit?: TimeLimit;
 }
+
+/** What a run's folder holds of its answer. */
+export type HeldAnswer =
+  | { readonly kind: "none" }
+  /** A file is there, but it is not an answer this module wrote, or it could not be read. */
+  | { readonly kind: "unreadable" }
+  | { readonly kind: "saved"; readonly answer: SavedAnswer };
 
 /** A run's raw output files, written as the output comes, each up to its cap. */
 export interface RunLogs {
@@ -130,6 +143,7 @@ export class RunFiles implements RunFolders {
       cut: answer.cut,
       text: answer.text,
       ...(answer.outcome === undefined ? {} : { outcome: answer.outcome, error: answer.error }),
+      ...(answer.limit === undefined ? {} : { limit: answer.limit }),
     });
     atomicWrite(join(this.folder(id), ANSWER_FILE), text, 0o600);
   }
@@ -142,7 +156,7 @@ export class RunFiles implements RunFolders {
       return undefined;
     }
     if (typeof value !== "object" || value === null) return undefined;
-    const { text, final, cut, outcome, error } = value as Record<string, unknown>;
+    const { text, final, cut, outcome, error, limit } = value as Record<string, unknown>;
     if (
       (typeof text !== "string" && text !== null) ||
       typeof final !== "boolean" ||
@@ -152,7 +166,11 @@ export class RunFiles implements RunFolders {
     }
     // Written by this module within the caps; a longer one was changed by something else.
     if (text !== null && Buffer.byteLength(text, "utf8") > ANSWER_CAP_BYTES) return undefined;
-    if (outcome === undefined) return { text, final, cut };
+    if (limit !== undefined && !(RUN_REASONS.timed_out as readonly unknown[]).includes(limit)) {
+      return undefined;
+    }
+    const timed = limit === undefined ? {} : { limit: limit as TimeLimit };
+    if (outcome === undefined) return { text, final, cut, ...timed };
     if (!(OUTCOME_REASONS as readonly unknown[]).includes(outcome)) return undefined;
     if (
       error !== null &&
@@ -160,7 +178,7 @@ export class RunFiles implements RunFolders {
     ) {
       return undefined;
     }
-    return { text, final, cut, outcome: outcome as OutcomeReason, error };
+    return { text, final, cut, outcome: outcome as OutcomeReason, error, ...timed };
   }
 
   removeTemps(id: string): void {
@@ -177,14 +195,17 @@ export class RunFiles implements RunFolders {
     return path;
   }
 
-  /** Whether the run's answer file is there, or could not be told (any error but its absence). */
-  hasAnswer(id: string): boolean {
+  /** What the run's folder holds of its answer: none, one that cannot be read, or the saved one. */
+  heldAnswer(id: string): HeldAnswer {
     try {
       lstatSync(join(this.folder(id), ANSWER_FILE));
-      return true;
     } catch (error) {
-      return (error as NodeJS.ErrnoException).code !== "ENOENT";
+      return (error as NodeJS.ErrnoException).code === "ENOENT"
+        ? { kind: "none" }
+        : { kind: "unreadable" };
     }
+    const answer = this.readAnswer(id);
+    return answer === undefined ? { kind: "unreadable" } : { kind: "saved", answer };
   }
 
   /** The run folders there are, each with when it last changed (ms), in no order. */

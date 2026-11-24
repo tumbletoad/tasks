@@ -83,7 +83,7 @@ export function described(run: Shown): string {
   if (cleanup !== undefined) out.push(cleanup);
   if (run["state"] === "unknown") {
     out.push(
-      `Not all of what it started was confirmed ended. End it with: ${CLI_NAME} run stop ${String(run["id"])}`,
+      `It could not be stopped: the agent, or something it started, may still be running. Try again with: ${CLI_NAME} run stop ${String(run["id"])}`,
     );
   }
   if (run["state"] === "recorded") {

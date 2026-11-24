@@ -31,6 +31,7 @@ import {
   DEFAULT_RECOVER_WAIT_MS,
   type AgentExit,
   type ConfirmOptions,
+  type ContainerKind,
   type Confirmation,
   type Contained,
   type Containers,
@@ -114,6 +115,10 @@ export class LinuxContainers implements Containers {
     this.unitDelegate = options.unitDelegate ?? askDelegate;
     this.uid = options.uid ?? process.getuid?.() ?? -1;
     this.sh = options.sh ?? "/bin/sh";
+  }
+
+  kind(): Promise<ContainerKind> {
+    return Promise.resolve("cgroup");
   }
 
   async probe(): Promise<ProbeResult> {

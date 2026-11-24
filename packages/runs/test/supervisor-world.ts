@@ -23,6 +23,7 @@ import {
   type Contained,
   type Containers,
   type ContainerSpec,
+  type HeldAnswer,
   type Hold,
   type Lane,
   type QueueLimits,
@@ -31,6 +32,16 @@ import {
   type SavedAnswer,
   type Slot,
 } from "../src/index.ts";
+
+/** What a folder holds of a run's answer, as RunFiles would read it. */
+export const held = (answer: SavedAnswer | undefined): HeldAnswer =>
+  answer === undefined ? { kind: "none" } : { kind: "saved", answer };
+
+/** Whether removing a folder that holds `answer` loses what its run's record does not keep. */
+const lostWith = (answer: SavedAnswer | undefined, run: RunRecord): boolean =>
+  answer !== undefined &&
+  typeof run.result?.text !== "string" &&
+  (answer.text !== null || run.result === null);
 
 export const MACHINE = "m_3q7k9d2xw8f4r6t1c5v0b2n8a7";
 export const SPACES = ["sp_0000000000000000000000000a", "sp_0000000000000000000000000b"];
@@ -199,6 +210,7 @@ export class SupervisorWorld {
     };
     return {
       probe: () => Promise.resolve({ available: true, kind: "job" }),
+      kind: () => Promise.resolve("job" as const),
       start: (spec: ContainerSpec): Promise<Contained> => {
         const name = spec.name;
         const run = this.record(name);
@@ -295,7 +307,7 @@ export class SupervisorWorld {
         this.folders.set(id, { changedAt: this.now, answer });
       },
       readAnswer: (id) => this.folders.get(id)?.answer,
-      hasAnswer: (id) => this.folders.get(id)?.answer !== undefined,
+      heldAnswer: (id) => held(this.folders.get(id)?.answer),
       logs: () => ({
         stdout: () => undefined,
         stderr: () => undefined,
@@ -310,10 +322,7 @@ export class SupervisorWorld {
           this.broken.push(`the folder of a ${run.state} run went`);
         } else if (this.#lanes.some((lane) => lane.host.hosted().includes(id))) {
           this.broken.push("the folder of a run its host still works on went");
-        } else if (
-          this.folders.get(id)?.answer !== undefined &&
-          typeof run.result?.text !== "string"
-        ) {
+        } else if (lostWith(this.folders.get(id)?.answer, run)) {
           this.broken.push("the folder of a run whose answer is not saved went");
         }
         this.folders.delete(id);

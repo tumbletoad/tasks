@@ -35,6 +35,7 @@ afterEach(async () => {
 /** Containers that never held a run: nothing starts, and every container is empty. */
 const empty: Containers = {
   probe: () => Promise.resolve({ available: true, kind: "job" }),
+  kind: () => Promise.resolve("job" as const),
   start: () => Promise.reject(new Error("no run starts in this test")),
   interrupt: () => Promise.resolve(false),
   kill: () => Promise.resolve(),
