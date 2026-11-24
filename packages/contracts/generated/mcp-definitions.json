@@ -8,14 +8,14 @@
       "tokens": 708
     },
     {
-      "bytes": 3258,
+      "bytes": 3296,
       "name": "add_tasks",
-      "tokens": 1629
+      "tokens": 1648
     },
     {
-      "bytes": 4052,
+      "bytes": 4090,
       "name": "complete_task",
-      "tokens": 2026
+      "tokens": 2045
     },
     {
       "bytes": 1302,
@@ -48,14 +48,14 @@
       "tokens": 619
     },
     {
-      "bytes": 3813,
+      "bytes": 3851,
       "name": "update_task",
-      "tokens": 1907
+      "tokens": 1926
     }
   ],
   "total": {
-    "bytes": 19674,
-    "tokens": 9839,
+    "bytes": 19788,
+    "tokens": 9896,
     "tools": 10
   }
 }

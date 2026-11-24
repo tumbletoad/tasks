@@ -80,6 +80,19 @@ function offsetAt(ms: number, timeZone: string): number {
 }
 
 /**
+ * When a source was sent, as an instant: an ISO date, at its UTC midnight, or an instant with its
+ * offset, each on a day the calendar has. Undefined for anything else, such as February 30, which a
+ * plain parse would take as a day in March. A source may be dated ahead, as a meeting is.
+ */
+export function sourceInstant(text: string): number | undefined {
+  const value = text.trim();
+  if (!isCalendarDate(value.slice(0, 10))) return undefined;
+  if (value.length !== 10 && !INSTANT.test(value)) return undefined;
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? undefined : at;
+}
+
+/**
  * When something happened before it was added here, as an instant: an instant with its offset as
  * given, or a date at nine in the morning in `timeZone` (no later than `now`), as the planning
  * import dates an added day. Undefined for anything else; `future` for a time after `now`.

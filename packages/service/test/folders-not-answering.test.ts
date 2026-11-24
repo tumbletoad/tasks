@@ -6,7 +6,7 @@
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { GroupManageResult } from "@ttasks/contracts";
+import { GroupListResult } from "@ttasks/contracts";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 
 const gate = vi.hoisted(() => ({
@@ -113,7 +113,7 @@ describe("[A1.3.15.folders.request-path] a project's folder that does not answer
         );
       await entered;
       // Another call that decides on names goes on while the folder still does not answer.
-      const other = GroupManageResult.parse(
+      const other = GroupListResult.parse(
         await second.call(
           "op/call",
           {
@@ -133,7 +133,7 @@ describe("[A1.3.15.folders.request-path] a project's folder that does not answer
     }
     // The late look has come back: the refused call still wrote nothing.
     await finished;
-    const listed = GroupManageResult.parse(
+    const listed = GroupListResult.parse(
       await second.call("op/call", { op: "group.manage", input: { action: "list" } }),
     );
     expect(JSON.stringify(listed)).not.toContain("Stuck");

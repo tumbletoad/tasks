@@ -1,7 +1,14 @@
 // The compact text of every tool (A3 3.3, 3.4, 3.5, 3.9.6): within each result budget for every
 // example and for worst cases at the field limits (A3 3.2.5's result budget test), with stored
 // text and editable names only inside the data block (A3 3.10, X14).
-import { findEntry, registry, REQUEST_CHARS, resultTokens, type AnyEntry } from "@ttasks/contracts";
+import {
+  findEntry,
+  outputJsonSchema,
+  registry,
+  REQUEST_CHARS,
+  resultTokens,
+  type AnyEntry,
+} from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import { SKILL_LINE_BYTES, SKILL_LIST_BYTES, SKILL_LIST_ROWS } from "../skills/index.ts";
 import { DIGEST_TOKENS, ERROR_TOKENS, hasRenderer, renderError, renderResult } from "./render.ts";
@@ -703,6 +710,28 @@ describe("[A3.3.10.mcp.framing] stored text and editable names appear only insid
     for (const line of split(error).outside) expect(line).not.toContain(INJECTION);
   });
 
+  test("a task's folder change names the folders inside it only inside the block, with its counts outside", () => {
+    const inside = (at: string) => [
+      { kind: "project", name: INJECTION, folder: `~/${at}/nested` },
+      { kind: "task", ref: "M-20", folder: `~/${at}/inner` },
+    ];
+    const update = {
+      ...example("task.update", 0),
+      fields: ["folder"],
+      moved: 2,
+      followed: inside("new"),
+      stayed: 2,
+      stayed_because: "not_in_new_folder",
+      kept: inside("old"),
+    };
+    expect(entry("task.update").output.safeParse(update).success).toBe(true);
+    const { inside: data, outside } = split(renderResult("task.update", update));
+    expect(data.join("\n")).toContain(INJECTION);
+    for (const line of outside) expect(line).not.toContain(INJECTION);
+    expect(outside).toContain("Moved along with the old folder: 2");
+    expect(outside).toContain("Stayed where they are, because they are not in the new folder: 2");
+  });
+
   test("only a note the user wrote for agents stands outside the block, as an instruction", () => {
     const digest = example("task.get", 0);
     const task = digest["task"] as Json;
@@ -719,5 +748,31 @@ describe("[A3.3.10.mcp.framing] stored text and editable names appear only insid
     expect(outside.join("\n")).not.toContain("From an agent.");
     expect(inside.join("\n")).toContain("From an agent.");
     expect(inside.join("\n")).toContain("For the user.");
+  });
+});
+
+describe("[A3.answers.absent] a write's answer renders without any field it may leave out", () => {
+  /** `value` without every field its JSON schema does not require, at every depth. */
+  function bare(schema: Json, value: unknown): unknown {
+    if (Array.isArray(value)) return value.map((v) => bare((schema["items"] ?? {}) as Json, v));
+    const properties = schema["properties"] as Record<string, Json> | undefined;
+    if (typeof value !== "object" || value === null || properties === undefined) return value;
+    const required = new Set((schema["required"] ?? []) as string[]);
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => required.has(key))
+        .map(([key, v]) => [key, bare(properties[key] ?? {}, v)]),
+    );
+  }
+
+  test("every write's example answer, with every field it may leave out left out, renders", () => {
+    for (const tool of tools.filter((t) => t.kind === "write")) {
+      tool.examples.forEach((ex, i) => {
+        const key = `${tool.name} ${String(i)}`;
+        const answer = bare(outputJsonSchema(tool), ex.output);
+        expect(tool.output.safeParse(answer).success, key).toBe(true);
+        expect(() => renderResult(tool.name, answer), key).not.toThrow();
+      });
+    }
   });
 });

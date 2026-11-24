@@ -44,6 +44,11 @@ export const ERROR_CODES = {
   forbidden: { class: "forbidden", http: 403, when: "User-only, policy, grant or limit rule" },
   not_permitted: { class: "forbidden", http: 403, when: "The session does not allow this tool" },
   request_id_conflict: { class: "conflict", http: 409, when: "Same request_id, different intent" },
+  applied_earlier: {
+    class: "conflict",
+    http: 409,
+    when: "Another version applied this request_id: nothing written now",
+  },
   too_large: { class: "usage", http: 413, when: "Over a field, item or request limit" },
   cursor_expired: { class: "not_found", http: 404, when: "Search cursor no longer valid" },
   space_unavailable: { class: "space", http: 503, when: "The space cannot answer now" },

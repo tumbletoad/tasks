@@ -229,8 +229,8 @@ export const TaskSections = z.strictObject({
     .optional(),
   history: z
     .array(HistoryRow)
-    .max(20)
-    .describe("The last 20 operations on the task, newest first")
+    .max(64)
+    .describe("The task's own changes, newest first: before reads the older ones")
     .optional(),
 });
 

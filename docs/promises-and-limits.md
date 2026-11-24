@@ -11,9 +11,12 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Changes sent together are saved together, or not at all.
 - A change that was reported as saved survives a crash of TTasks.
 - A change sent again with the same request ID after a lost reply is applied once: for an agent,
-  through the same connection, or through the tools and the shell of one agent TTasks opened. The
-  page and the agent tools resend that way by themselves. At the command line, repeat the command
-  with the `--request-id` that the failed command named.
+  through the same connection, or through the tools and the shell of one agent TTasks opened. Its
+  answer says what that change did, also when it changed nothing or the space changed since, and
+  is dated by that change, so an edit based on that date still meets every change that came after.
+  The names and lists in it are as they are now. The page and the agent tools resend that way by
+  themselves. At the command line, repeat the command with the `--request-id` that the failed
+  command named. A change that was refused saved nothing: sent again, it is decided again.
 - Every change keeps what changed and who made it: you, an agent, or a script.
 - Undo and redo never replace someone else's work that came in between, also when that work set a
   value and set it back. Redo passes over a change of yours it cannot bring back and redoes the
@@ -41,8 +44,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A task's reference, such as M-14, is not given to another task when the task is deleted or its
   creation is undone, when a backup is restored over the space, or when a restored copy is claimed.
 - Adding work by a source that an open task or a recently finished one already has finds that task
-  and keeps its fields. A task finished longer ago or a deleted one does not stand in the way of
-  new work.
+  and keeps its fields, and makes none of the areas or projects the work named. A task finished
+  longer ago or a deleted one does not stand in the way of new work.
 - A log entry given with such work, a finished task's follow-up included, goes on the one open task
   it found. When it found a finished task or several open ones, that request adds the entry to none
   of them, and the answer names the tasks it found and says so.
@@ -419,6 +422,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   other has. A restore over a space, or a claim of a copy, goes on from the backup's counter when
   the earlier space's database cannot be read at all.
 - A command repeated without its request ID is a new change: a note added twice is there twice.
+- A change that another version of TTasks saved, sent again with its request ID, is answered only
+  as already applied, with the tasks and rows it made or changed: it writes nothing, whatever tool
+  or body it is sent with, and the answer does not say what the change did to them.
 - A project that is moved or reordered past the place a list of areas and projects has reached,
   while that list is read page by page, can be listed twice or not at all.
 - Everything started inside a terminal agent while it runs counts as that task's session: a new

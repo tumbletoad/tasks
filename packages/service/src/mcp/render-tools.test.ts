@@ -295,8 +295,14 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       }
     });
     expect(text).not.toContain(CJK.slice(0, 4));
-    // The warnings went from the end, and the text says so.
-    expect(lines.at(-1)).toMatch(/^\+\d+ more lines? not shown\. Send fewer tasks per call/u);
+    // The warnings went from the end, and the text says so. The tasks were added all the same, so
+    // it says that and how to read them, never to send them again: an unkeyed draft sent again is
+    // a new task.
+    const footer = lines.at(-1) ?? "";
+    expect(footer).toMatch(/^\+\d+ more lines? not shown\./u);
+    expect(footer).toContain("added");
+    expect(footer).toContain("get_task");
+    expect(footer).not.toMatch(/fewer|smaller|send (?!none)/iu);
 
     const finished = {
       ...example("task.finish", 0),

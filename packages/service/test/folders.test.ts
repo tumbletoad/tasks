@@ -532,9 +532,11 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
         request_id: rid(),
       }),
     );
-    expect(updated.warnings).toContain(
-      `1 folder inside the old one stays where it is, because the old folder is still there: ${inner?.ref ?? ""}.`,
-    );
+    expect(updated).toMatchObject({
+      stayed: 1,
+      stayed_because: "old_folder_there",
+      kept: [{ kind: "task", ref: inner?.ref }],
+    });
   });
 
   test("a project's list names the repository in its folder, never its address", async () => {
@@ -590,7 +592,7 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
     expect(await asOf(user)).toBe(before);
   });
 
-  test("a retry of a folder set replays after the project was renamed in between", async () => {
+  test("a retry of a folder set after the project was renamed says what it did and names the project as it is now", async () => {
     const user = await session("cli-interactive");
     const made = FolderManageResult.parse(
       await call(user, "folder.manage", {
@@ -617,12 +619,13 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
       base: await asOf(user),
       request_id: rid(),
     });
+    // The retry is told what the write did, dated by its commit, and names the project as it is
+    // now.
     const retry = FolderManageResult.parse(await call(user, "folder.manage", input));
-    expect(retry).toMatchObject({
-      result: "set",
+    expect(retry).toEqual({
+      ...first,
+      owner: { ...first.owner, name: "Renamed" },
       replayed: true,
-      owner: { kind: "project", id: made.owner.id, name: "Renamed" },
-      folder: first.folder,
     });
   });
 

@@ -318,7 +318,7 @@ describe("[A3.3.4.finish.lifecycle] complete_task: done, dropped, learnings and 
   );
 
   test(
-    "a follow-up of the task's own ticket after a wrap-up is new work, and a replay answers as the first call did",
+    "a follow-up of the task's own ticket after a wrap-up is new work, and a replay says what the first call did",
     async () => {
       const ticket = { key: "jira:LUM-901", kind: "ticket", title: "Export times" };
       const task = await add("Fixture task with a ticket", { sources: [ticket] });
@@ -348,6 +348,7 @@ describe("[A3.3.4.finish.lifecycle] complete_task: done, dropped, learnings and 
         request_id: rid(),
       });
       await finish({ task }, USER);
+      // What the call did, again, dated by its commit; its follow-up's title is read now.
       expect(TaskFinishResult.parse(await call("task.finish", input))).toEqual({
         ...first,
         replayed: true,

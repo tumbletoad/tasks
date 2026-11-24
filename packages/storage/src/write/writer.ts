@@ -114,6 +114,7 @@ import {
   type RunState,
 } from "./runs.ts";
 import {
+  forgetRefusal,
   readReceipt,
   requestFingerprint,
   writeReceipt,
@@ -141,6 +142,7 @@ import {
   type ConflictEntity,
   type Due,
   type FieldConflict,
+  type InsideFolder,
   type HistoryOperation,
   type OpResult,
   type Operation,
@@ -152,6 +154,7 @@ import {
   type WriteErrorCode,
   type WriteProblem,
   type WriteResult,
+  type WriteStatus,
 } from "./request.ts";
 
 export { SYSTEM_SCOPE };
@@ -409,14 +412,17 @@ interface StagedOp {
   learnings?: Id<"lr">[];
   /**
    * No write: `task.wrap_up` with `once` on a task wrapped already that it would not change, a
-   * matched draft's `log.add` whose entry the task has already, or a `task.delete` or
-   * `task.restore` that finds the task as it asks.
+   * matched draft's `log.add` whose entry the task has already, a `task.delete` or
+   * `task.restore` that finds the task as it asks, or a group create left out as unused
+   * (leaveOutUnusedGroups).
    */
   skip?: true;
   /** A skipped `task.restore` of a change: the task is in the Trash from a later change. */
   later?: true;
   /** A folder operation: the request's machine and its OS, whose case rule compares paths. */
   folder?: { machine: Id<"m">; os: FolderOs };
+  /** A folder set that moved the folder: what it did to the folders inside (OpResult.inside). */
+  inside?: { along: InsideFolder[]; left: InsideFolder[] };
   /** `area.create` and `project.create`: the slug the new group takes. */
   slug?: string;
   /** `project.move`: the project's new area. */
@@ -1194,10 +1200,14 @@ export class SpaceWriter {
       return refused("rejected", asOf, error.problem);
     }
     // The receipt, before staging and expansion (A1 3.7, 3.8).
-    const prior = readReceipt(conn, {
-      scope_id: request.actor.scope_id,
-      request_id: request.request_id,
-    });
+    const lookup = { scope_id: request.actor.scope_id, request_id: request.request_id };
+    let prior = readReceipt(conn, lookup);
+    // A registry entry's refusal wrote nothing: one an earlier build kept is decided again.
+    const entry = request.intent !== undefined;
+    if (entry && prior !== undefined && !isAccepted(prior.status)) {
+      forgetRefusal(conn, lookup);
+      prior = undefined;
+    }
     if (prior?.fingerprint === fingerprint) return prior.result;
     if (prior !== undefined) {
       return refused("rejected", asOf, {
@@ -1210,15 +1220,19 @@ export class SpaceWriter {
     const { at, wall } = this.#clock();
     const judged = this.#judge(conn, request, space, asOf, at, wall);
     // What the caller found before the writer goes with an accepted result and into its receipt,
-    // so a replay says what this answer says (WriteRequest.warnings).
-    const result =
-      request.warnings === undefined ||
-      request.warnings.length === 0 ||
-      (judged.status !== "applied" && judged.status !== "unchanged")
-        ? judged
-        : { ...judged, warnings: [...judged.warnings, ...request.warnings] };
+    // so a replay is answered from the same record (WriteRequest.warnings, WriteRequest.answer).
+    const taken = isAccepted(judged.status);
+    const result: WriteResult = !taken
+      ? judged
+      : {
+          ...judged,
+          ...(request.warnings === undefined || request.warnings.length === 0
+            ? {}
+            : { warnings: [...judged.warnings, ...request.warnings] }),
+          ...(request.answer === undefined ? {} : { answer: request.answer }),
+        };
     // In the request's own transaction: the receipt exists exactly when its commit does.
-    writeReceipt(conn, { request, fingerprint, result, at });
+    if (taken || !entry) writeReceipt(conn, { request, fingerprint, result, at });
     return result;
   }
 
@@ -1325,11 +1339,26 @@ export class SpaceWriter {
      */
     const changedFolders = new Set<string>();
 
+    /** The operations that name each area or project the request creates, by the group's ID. */
+    const users = new Map<string, Set<number>>();
+    const uses = (group: string, i: number) => {
+      const named = users.get(group);
+      if (named === undefined) users.set(group, new Set([i]));
+      else named.add(i);
+    };
+
     const ops = request.ops.map((op, i): StagedOp => {
       /** An area or project by ID or slug: first those the request creates, then the space's. */
-      const areaOf = (ref: string): Id<"a"> => draftAreas.get(ref) ?? resolveArea(conn, ref, i);
+      const areaOf = (ref: string): Id<"a"> => {
+        const drafted = draftAreas.get(ref);
+        if (drafted === undefined) return resolveArea(conn, ref, i);
+        uses(drafted, i);
+        return drafted;
+      };
       const projectOf = (ref: string): { id: Id<"p">; areaId: Id<"a"> | null } => {
-        const found = draftProjects.get(ref) ?? resolveProject(conn, ref, i);
+        const drafted = draftProjects.get(ref);
+        if (drafted !== undefined) uses(drafted.id, i);
+        const found = drafted ?? resolveProject(conn, ref, i);
         const moved = movedProjects.get(found.id);
         return moved === undefined ? found : { id: found.id, areaId: moved };
       };
@@ -2546,6 +2575,7 @@ export class SpaceWriter {
           throw misuse("An undo or redo is never staged");
       }
     });
+    leaveOutUnusedGroups(ops, users);
     return {
       ops,
       tasks,
@@ -2735,6 +2765,7 @@ export class SpaceWriter {
         continue;
       }
       const commitId = newId("op", this.#random);
+      let tasks: { tasks?: string[]; task_count?: number } = {};
       conn.exec("SAVEPOINT exec");
       try {
         // The inversions first: the rules across rows are decided on the state they make (A1 3.10).
@@ -2783,6 +2814,7 @@ export class SpaceWriter {
         });
         const changes = applied.changes.map((c) => ({ ...c, action: "set" as const }));
         insertChanges(conn, seq, changes);
+        if (request.intent !== undefined) tasks = changedTasks(conn, space.refPrefix, changes);
         // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
         // its children's, a restore brings them back, a field set back rewrites its document.
         if (this.#search) indexChanges(conn, seq, changes);
@@ -2803,7 +2835,7 @@ export class SpaceWriter {
       return {
         ...accepted("applied", { ...asOf, seq }),
         commit: commitId,
-        results: [{ i: 0, status: "updated", id: target.id, version: seq }],
+        results: [{ i: 0, status: "updated", id: target.id, version: seq, ...tasks }],
         // What a partial undo left as others set it, or why a redo passed over the steps before
         // the one it redid (WriteResult.conflicts).
         conflicts,
@@ -2857,11 +2889,40 @@ function accepted(status: "applied" | "unchanged", asOf: AsOf): WriteResult {
   return { status, as_of: formatAsOf(asOf), ...asOf, results: [], conflicts: [], warnings: [] };
 }
 
+const isAccepted = (status: WriteStatus): boolean => status === "applied" || status === "unchanged";
+
+/**
+ * An area or project the request creates for its other operations is left out when every one of
+ * them is: the drafts that name it all matched a task by key, so an import that adds nothing
+ * leaves no empty group behind. A group no operation names was asked for itself and stays. A
+ * project left out leaves its area unused too, so the projects are decided first.
+ */
+function leaveOutUnusedGroups(ops: StagedOp[], users: ReadonlyMap<string, ReadonlySet<number>>) {
+  const leftOut = (staged: StagedOp): boolean =>
+    staged.existing !== undefined || (isGroupCreate(staged.op) && staged.skip === true);
+  for (const staged of [...ops].reverse()) {
+    if (!isGroupCreate(staged.op)) continue;
+    const named = [...(users.get(staged.target) ?? [])].filter((i) => i !== staged.i);
+    if (named.length > 0 && named.every((i) => ops[i] !== undefined && leftOut(ops[i]))) {
+      // The commit keeps it in its place, without the text of a group nobody sees.
+      staged.skip = true;
+      staged.record = { unused: true };
+    }
+  }
+}
+
+const isGroupCreate = (op: Operation): boolean =>
+  op.kind === "area.create" || op.kind === "project.create";
+
 /**
  * One result per operation: created (it created its row), updated (it wrote a row the request
  * created, or a field of an existing row that changed) or unchanged.
  */
 function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow[]): OpResult[] {
+  // What a registry entry builds its answer from (OpResult's lifecycle, status_key, wrap_state,
+  // learnings and fields): an A1 request's caller reads the rows itself, and its receipts stay as
+  // earlier builds stored them.
+  const answering = run.request.intent !== undefined;
   const changed = new Set(
     changes.map((c) => `${rowKey(c.entity as Entity, c.entityId)}|${c.field ?? ""}`),
   );
@@ -3080,6 +3141,8 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
       case "project.unarchive":
       case "project.delete":
       case "project.restore": {
+        // A group left out as unused (leaveOutUnusedGroups) has no row.
+        if (staged.skip === true) return { i, status, id: staged.target, version: 0 };
         const entity = op.kind.startsWith("area.") ? "areas" : "projects";
         const row = readRow(conn, entity, staged.target);
         return {
@@ -3109,37 +3172,124 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
                   "version",
                   "seq",
                 );
+        const { inside } = staged;
         return {
           i,
           status,
           id: staged.target,
           ...(task === null ? {} : { task, ref: refOf(task) }),
           version,
+          ...(inside === undefined
+            ? {}
+            : {
+                inside: {
+                  moved: inside.along.length,
+                  along: inside.along,
+                  stayed: inside.left.length,
+                  left: inside.left,
+                },
+              }),
         };
       }
       case "task.wrap_up": {
         // Its target is the task: the learnings it adds change the task, they are not the result.
         const task = readTask(conn, staged.target as Id<"t">);
+        const learnings = changes.filter(
+          (c) => c.op === i && c.entity === "learnings" && c.action === "create",
+        ).length;
         return {
           i,
           status: status === "created" ? "updated" : status,
           id: task.id,
           ref: formatTaskRef(run.plan.refPrefix, task.ref),
           version: task.version,
+          ...(learnings === 0 || !answering ? {} : { learnings }),
         };
       }
-      default: {
+      case "task.complete":
+      case "task.archive":
+      case "task.reopen": {
+        // The task as the request left it, which the answer says: never read again later.
         const task = readTask(conn, staged.target as Id<"t">);
+        if (!answering) {
+          return {
+            i,
+            status,
+            id: task.id,
+            ref: formatTaskRef(run.plan.refPrefix, task.ref),
+            version: task.version,
+          };
+        }
+        const wrap = task.raw["wrap_state"];
         return {
           i,
           status,
           id: task.id,
           ref: formatTaskRef(run.plan.refPrefix, task.ref),
           version: task.version,
+          lifecycle: task.lifecycle,
+          ...(op.kind === "task.reopen" ? { status_key: String(task.raw["status"]) } : {}),
+          ...(op.kind !== "task.reopen" && (wrap === "pending" || wrap === "wrapped")
+            ? { wrap_state: wrap }
+            : {}),
+        };
+      }
+      default: {
+        const task = readTask(conn, staged.target as Id<"t">);
+        const fields =
+          answering &&
+          (op.kind === "task.patch" || op.kind === "task.move" || op.kind === "task.context_append")
+            ? taskFields(changes, i, task.id)
+            : [];
+        return {
+          i,
+          status,
+          id: task.id,
+          ref: formatTaskRef(run.plan.refPrefix, task.ref),
+          version: task.version,
+          ...(fields.length === 0 ? {} : { fields }),
         };
       }
     }
   });
+}
+
+/** The tasks an undo's or a redo's commit changed, in the order it changed them (OpResult.tasks). */
+function changedTasks(
+  conn: Connection,
+  prefix: string,
+  changes: readonly { readonly taskId: string | null }[],
+): { tasks: string[]; task_count: number } {
+  const ids = [...new Set(changes.flatMap((c) => (c.taskId === null ? [] : [c.taskId])))];
+  const refs = ids.slice(0, 50).flatMap((id) => {
+    const row = conn.prepare(SQL.task).get({ id });
+    return row === undefined ? [] : [formatTaskRef(prefix, decodeTask(row).ref)];
+  });
+  return { tasks: refs, task_count: ids.length };
+}
+
+/**
+ * The logical fields of task `id` that operation `i` changed (OpResult.fields), a change of its
+ * grouping as `area` and `project`, the columns that moved: a new position alone moves neither.
+ */
+function taskFields(changes: readonly ChangeRow[], i: number, id: string): string[] {
+  const fields: string[] = [];
+  for (const c of changes) {
+    if (c.op !== i || c.entity !== "tasks" || c.entityId !== id || c.field === null) continue;
+    if (c.field !== "grouping") {
+      fields.push(c.field);
+      continue;
+    }
+    const column = (value: string | null, name: string): unknown => {
+      const parsed: unknown = value === null ? null : JSON.parse(value);
+      return typeof parsed === "object" && parsed !== null
+        ? ((parsed as Record<string, unknown>)[name] ?? null)
+        : null;
+    };
+    if (column(c.before, "area_id") !== column(c.after, "area_id")) fields.push("area");
+    if (column(c.before, "project_id") !== column(c.after, "project_id")) fields.push("project");
+  }
+  return fields;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -4240,6 +4390,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       return;
     }
     case "area.create": {
+      if (staged.skip === true) return;
       const last = conn.prepare(SQL.lastArea).get()?.["p"] ?? undefined;
       if (last !== undefined && !isPosition(last)) throw invalidValue("areas", "position");
       conn.prepare(SQL.insertAreaWith).run({
@@ -4257,6 +4408,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       return;
     }
     case "project.create": {
+      if (staged.skip === true) return;
       const area = staged.area ?? null;
       const last = conn.prepare(SQL.lastProject).get({ area })?.["p"] ?? undefined;
       if (last !== undefined && !isPosition(last)) throw invalidValue("projects", "position");
@@ -4404,21 +4556,36 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
           conn.prepare(SQL.folderPath).run({ id: found.id, path: op.path });
           wrote(run, i, "folders", found.id, staged.task, ["path"]);
           // A moved folder takes the folders inside it that moved with it along, the rest of each
-          // path as it is: one change, one undo.
-          if (op.carry !== undefined && op.carry.length > 0) {
-            const carried = new Set(op.carry);
-            for (const inside of conn.prepare(FOLDER_SQL.liveOn).all({ machine })) {
-              const other = decodeFolder(inside);
-              if (other.id === found.id || !carried.has(other.ownerId)) continue;
-              const moved = carriedTo(other.path, found.path, op.path, os);
-              if (moved === undefined || moved === other.path) continue;
-              ensureStart(conn, run, "folders", other.id);
-              conn.prepare(SQL.folderPath).run({ id: other.id, path: moved });
-              const task = other.ownerKind === "task" ? (other.ownerId as Id<"t">) : null;
-              wrote(run, i, "folders", other.id, task, ["path"]);
-              if (other.ownerKind === "project") movedProjects.push({ id: other.ownerId, moved });
+          // path as it is: one change, one undo. The others inside it stay, and the answer says
+          // which did which as this transaction found them, whatever the caller expected.
+          const carried = new Set(op.carry ?? []);
+          const along: InsideFolder[] = [];
+          const left: InsideFolder[] = [];
+          for (const inside of conn.prepare(FOLDER_SQL.liveOn).all({ machine })) {
+            const other = decodeFolder(inside);
+            if (other.id === found.id) continue;
+            const moved = carriedTo(other.path, found.path, op.path, os);
+            if (moved === undefined || moved === other.path) continue;
+            const task = other.ownerKind === "task" ? (other.ownerId as Id<"t">) : null;
+            const named = {
+              kind: other.ownerKind,
+              owner: other.ownerId,
+              ...(task === null
+                ? {}
+                : { ref: formatTaskRef(run.plan.refPrefix, readTask(conn, task).ref) }),
+              from: other.path,
+            };
+            if (!carried.has(other.ownerId)) {
+              left.push({ ...named, to: other.path });
+              continue;
             }
+            ensureStart(conn, run, "folders", other.id);
+            conn.prepare(SQL.folderPath).run({ id: other.id, path: moved });
+            wrote(run, i, "folders", other.id, task, ["path"]);
+            along.push({ ...named, to: moved });
+            if (other.ownerKind === "project") movedProjects.push({ id: other.ownerId, moved });
           }
+          if (along.length > 0 || left.length > 0) staged.inside = { along, left };
         }
       }
       // Two live projects never share one folder on one machine, by the machine's case rule.

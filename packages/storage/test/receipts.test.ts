@@ -165,6 +165,46 @@ describe("[A1.5.write.receipts] a repeated request ID returns the stored result"
     }
   });
 
+  test("what the caller decided before the writer replays with the result, also for a request that changes nothing", () => {
+    const answer = { moved: 1, followed: [{ kind: "task", ref: "M-1", folder: "~/work/new/a" }] };
+    const request = fresh([{ kind: "task.create", title: "Fix the export" }], { answer });
+    const first = fx.writer.submit(request);
+    expectStatus(first, "applied");
+    expect(first.answer).toEqual(answer);
+    // A retry that decided otherwise, or nothing, is the same intent: it gets the first answer.
+    expect(fx.writer.submit({ ...request, answer: { moved: 0 } })).toEqual(replayOf(first));
+    // A request with no operation is kept when it is an entry's: the caller found nothing to do.
+    const intent = { entry: "group.manage", input: { action: "create", path: "Garden" } };
+    const found = { group: { kind: "area", id: newId("a"), name: "Garden" } };
+    const seq = lastSeq();
+    const none = fresh([], { intent, answer: found });
+    const noop = fx.writer.submit(none);
+    expectStatus(noop, "unchanged");
+    expect([noop.results, noop.answer, lastSeq()]).toEqual([[], found, seq]);
+    expect(fx.writer.submit({ ...none, answer: { group: { kind: "area" } } })).toEqual(
+      replayOf(noop),
+    );
+    // Without an intent, a request of no operation is a shape error, decided nowhere.
+    expect(fx.writer.submit(fresh([], { answer: found })).error).toMatchObject({
+      code: "VALIDATION_FAILED",
+      field: "ops",
+    });
+    // A refusal wrote nothing, and carries none.
+    const refused = fresh([{ kind: "task.patch", task: newId("t"), set: { title: "Gone" } }], {
+      answer,
+    });
+    const refusal = fx.writer.submit(refused);
+    expectStatus(refusal, "rejected");
+    expect(refusal.answer).toBeUndefined();
+    for (const bad of [[1], "moved", null]) {
+      const shaped = { ...fresh([{ kind: "task.create", title: "Bad" }]), answer: bad };
+      expect(fx.writer.submit(shaped).error).toMatchObject({
+        code: "VALIDATION_FAILED",
+        field: "answer",
+      });
+    }
+  });
+
   test("a no-op retried after the state changed replays the no-op", () => {
     const task = create();
     const noop = fresh([{ kind: "task.patch", task, set: { title: "Fix the export" } }]);
@@ -277,6 +317,64 @@ describe("[A1.5.write.receipts] one receipt per decided request, in its own tran
     expect(fx.writer.submit({ ...again, base: fx.base() })).toEqual(replayOf(first));
     expect(lastSeq()).toBe(seq);
     expect(one("SELECT lifecycle FROM tasks WHERE id = $id", { id: task })).toBe("active");
+  });
+
+  test("a registry entry's refusal keeps no receipt: sent again, it is decided again", async () => {
+    const task = create();
+    const finish = (): WriteRequest =>
+      fresh([{ kind: "task.complete", task }], {
+        intent: { entry: "task.finish", input: { task } },
+      });
+    expectStatus(fx.writer.submit(fresh([{ kind: "task.complete", task }])), "applied");
+    const again = finish();
+    const count = receipts();
+    expectStatus(fx.writer.submit(again), "rejected");
+    expect(receipts()).toBe(count);
+    // The task is active again: the same request now applies, once.
+    expectStatus(fx.writer.submit(fresh([{ kind: "task.reopen", task }])), "applied");
+    const decided = fx.writer.submit({ ...again, base: fx.base() });
+    expectStatus(decided, "applied");
+    expect(decided.replayed).toBeUndefined();
+    expect(fx.writer.submit(again)).toEqual(replayOf(decided));
+    // A refusal an earlier build kept for such a request is decided again, and replaced.
+    const kept = finish();
+    expectStatus(fx.writer.submit(kept), "rejected");
+    fx.writer.close();
+    const conn = openSpace(await checkedDriver(), fx.folder, { role: "writer" }).conn;
+    try {
+      const refusal = {
+        ...decided,
+        status: "rejected",
+        results: [],
+        error: { code: "INVALID_TRANSITION", message: "Refused" },
+      };
+      conn
+        .prepare(
+          "INSERT INTO receipts (scope_id, request_id, fingerprint, status, seq, epoch, incarnation, result, at) " +
+            "SELECT scope_id, $request, $fingerprint, 'rejected', NULL, epoch, incarnation, $result, at " +
+            "FROM receipts WHERE request_id = $first",
+        )
+        .run({
+          request: kept.request_id,
+          fingerprint: intentFingerprint({
+            space_id: kept.space_id,
+            entry: "task.finish",
+            input: { task },
+            reason: null,
+          }),
+          result: JSON.stringify(refusal),
+          first: again.request_id,
+        });
+    } finally {
+      conn.close();
+    }
+    fx.reopen();
+    expectStatus(fx.writer.submit(fresh([{ kind: "task.reopen", task }])), "applied");
+    const retried = fx.writer.submit({ ...kept, base: fx.base() });
+    expectStatus(retried, "applied");
+    expect(retried.replayed).toBeUndefined();
+    const lookup = { scope_id: kept.actor.scope_id, request_id: kept.request_id };
+    expect(readReceipt(fx.reader, lookup)?.status).toBe("applied");
   });
 
   test("an undecided request stores nothing: a retry with the same ID runs normally", () => {

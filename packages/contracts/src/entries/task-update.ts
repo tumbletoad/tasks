@@ -5,11 +5,12 @@ import { EFFORT_KEY_MAX } from "../preferences.ts";
 import { safeLine, safeText } from "../safe-text.ts";
 import {
   AGENT_LIMITS,
-  AsOf,
+  WriteAsOf,
   Base,
   ContextInput,
   Cwd,
   FolderInput,
+  InsideFolders,
   Mode,
   Priority,
   ProposalId,
@@ -99,8 +100,9 @@ export const TaskUpdateResult = z.strictObject({
   task: TaskRef,
   fields: z.array(z.string()).describe("The fields the call changed"),
   context: z.enum(["appended", "replaced"]).describe("How it changed the context").optional(),
-  as_of: AsOf,
+  as_of: WriteAsOf,
   proposal: ProposalId.optional(),
+  ...InsideFolders,
   warnings: Warnings,
   replayed: Replayed.optional(),
 });
@@ -166,6 +168,7 @@ export const taskUpdate = defineEntry({
     "forbidden",
     "wrong_tool",
     "request_id_conflict",
+    "applied_earlier",
     "ambiguous",
   ],
   examples: [

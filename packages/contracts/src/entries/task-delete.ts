@@ -7,7 +7,7 @@ import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeText } from "../safe-text.ts";
 import {
-  AsOf,
+  WriteAsOf,
   Base,
   Replayed,
   RequestId,
@@ -83,7 +83,7 @@ export const TaskDeleteResult = z.strictObject({
     .optional(),
   restored: z.array(RestoredTask).max(DELETE_MAX).describe("Where each is back").optional(),
   commit: CommitId.describe("The change, which Undo names").optional(),
-  as_of: AsOf,
+  as_of: WriteAsOf,
   replayed: Replayed.optional(),
 });
 
@@ -105,7 +105,14 @@ export const taskDelete = defineEntry({
       { verb: "restore", positional: ["tasks"], fixed: { restore: true } },
     ],
   },
-  errors: ["invalid_input", "not_found", "conflict", "forbidden", "request_id_conflict"],
+  errors: [
+    "invalid_input",
+    "not_found",
+    "conflict",
+    "forbidden",
+    "request_id_conflict",
+    "applied_earlier",
+  ],
   examples: [
     {
       title: "Move two duplicates to the Trash",
