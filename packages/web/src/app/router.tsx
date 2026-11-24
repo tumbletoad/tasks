@@ -29,6 +29,7 @@ import {
   Outlet,
   useRouterState,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { searchQueryOf, SPACE_ID, SEGMENT } from "../route.ts";
 import { Landing } from "./Landing.tsx";
 import { AreaPage, ProjectPage, SearchPage, TaskPage, ViewPage } from "./pages.tsx";
@@ -141,8 +142,19 @@ const searchRoute = createRoute({
   path: "search",
   validateSearch: searchSearch,
   component: function SearchRoute() {
-    const { task } = searchRoute.useSearch();
+    const { q: linked, task } = searchRoute.useSearch();
     const q = useRouterState({ select: (s) => searchQueryOf(s.location) });
+    const navigate = searchRoute.useNavigate();
+    // A link's words (an older bookmark, Today's numbers) move into the tab's entry on arrival, so
+    // the address that is copied or kept in the history from here holds none of them.
+    useEffect(() => {
+      if (linked === undefined) return;
+      void navigate({
+        search: task === undefined ? {} : { task },
+        state: (kept) => ({ ...kept, q }),
+        replace: true,
+      });
+    }, [linked, task, q, navigate]);
     return <SearchPage q={q} task={task} />;
   },
 });

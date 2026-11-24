@@ -55,8 +55,8 @@ const QUERY_MAX = 500;
  * The search a history entry of the search route holds. What the person types is the person's
  * words, so the page keeps it in the tab's history entry (a reload, Back and Forward bring it
  * back) and never in the address, where a copied link, the browser's history and anything that
- * syncs addresses would hold it. A `?q=` in the address is still read: the page's own links to a
- * filter (Today's numbers) and older links use it.
+ * syncs addresses would hold it. A `?q=` in the address is read too: the page's own links to a
+ * filter (Today's numbers) and older links use it, and the search route moves it into the entry.
  */
 export function searchQueryOf(location: {
   readonly state: unknown;

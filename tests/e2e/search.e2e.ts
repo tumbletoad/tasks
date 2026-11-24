@@ -539,6 +539,38 @@ test.describe("[A5.3.13.e2e.search-address] What the person types in the top fie
     await expect(titles(page, "To do")).toHaveCount(2);
     expect(page.url()).not.toContain(word);
   });
+
+  test("an older link with words in ?q= opens its search and the words leave the address; Today's Late link works in a new tab", async ({
+    page,
+    world,
+  }) => {
+    const word = wordOf("quince");
+    const [first] = await addTasks(world, [
+      { title: `Poach the ${word} halves`, area: "home", priority: 1 },
+    ]);
+    const address = new RegExp(`/s/${world.mira.id}/search$`);
+    await openSearch(page, world, word);
+    await expect(searching(page)).toHaveValue(word);
+    await expect(titles(page, "To do")).toHaveText([`Poach the ${word} halves`]);
+    await expect(page).toHaveURL(address);
+    const title = page.locator(`main li[data-task="${first ?? ""}"] [data-part="title"]`);
+    await title.click();
+    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/search\\?task=${first ?? ""}$`));
+    await page.reload();
+    await showsSpace(page, world.mira.name);
+    await expect(searching(page)).toHaveValue(word);
+
+    await page.goto(`${world.origin}/s/${world.mira.id}/today`);
+    const late = page.getByRole("link", { name: /^Late: / });
+    const href = (await late.getAttribute("href")) ?? "";
+    expect(href).toMatch(/\/search\?q=is%3Aoverdue$/);
+    const tab = await page.context().newPage();
+    await tab.goto(`${world.origin}${href}`);
+    await showsSpace(tab, world.mira.name);
+    await expect(searching(tab)).toHaveValue("is:overdue");
+    await expect(tab).toHaveURL(address);
+    await tab.close();
+  });
 });
 
 test.describe("[A5.3.13.e2e.search-day] A search left open is read again on the page's next day", () => {
