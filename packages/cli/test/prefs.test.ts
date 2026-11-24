@@ -268,6 +268,10 @@ describe("[A3.3.4.prefs.move] ttasks prefs set --move", () => {
     expect(moved.code).toBe(0);
     expect(moved.stdout).toContain("1 task moved from Later to Soon.\n");
     expect((await tasks(["find", "effort:Soon"])).stdout).toContain(ref);
+    const undone = await tasks(["undo"]);
+    expect(undone.stdout).toMatch(/^Undid your change to the effort levels and 1 task in /u);
+    expect(await levels()).toEqual(before);
+    expect((await tasks(["redo"])).code).toBe(0);
     const dropped = before.filter((name) => name !== "Later").join(",");
     const off = await tasks(["prefs", "set", "tasks.effort_scale", dropped, "--move", "Soon="]);
     expect(off.code).toBe(0);

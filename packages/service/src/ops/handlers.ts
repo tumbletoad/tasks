@@ -2514,6 +2514,8 @@ const historyAnswer: Answer = async (view, stored) => {
     commit: done.id,
     tasks: done.tasks,
     task_count: done.task_count,
+    ...(done.levels === true ? { levels: true } : {}),
+    ...levelsOf(done),
     ...(stored.passed === undefined ? {} : { passed_over: stored.passed }),
     ...(stored.newer === undefined ? {} : newerWorkJson(stored.newer)),
     ...(word === "partial"

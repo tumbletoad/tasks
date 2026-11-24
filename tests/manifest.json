@@ -4177,6 +4177,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.10.history.effort-levels",
+      "title": "Undo and Redo of a change of the effort levels invert the rows its commit recorded: the list and every moved task go back, a task that reached a size the old levels lack keeps it and is named, a moved task changed since keeps its size under Undo the rest, and while someone else's change holds the list none of the step comes back",
+      "source": "A1 3.10.1, A1 3.16",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.10.history.effort-first",
+      "title": "The first change of levels on a space that never stored them needs a base, records the levels it read, and its Undo stores those, which reopening the space keeps, so Redo applies after a reopen; of two people who read no stored levels the second conflicts",
+      "source": "A1 3.10.1, A1 3.16",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.16.prefs.undo-other",
+      "title": "A change of a preference other than the effort levels is no step on the undo stack: Undo after it takes back the step before it",
+      "source": "A1 3.10.1, A1 3.16",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.16.prefs.effort-off-list",
       "title": "A task on a size the list lacks stays readable: effort: search finds it, sort:effort puts it last, and the tools' text and the readable file show it",
       "source": "A1 3.16",

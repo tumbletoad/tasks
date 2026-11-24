@@ -86,7 +86,8 @@ export type InvertibleEntity =
   | "places"
   | "areas"
   | "projects"
-  | "folders";
+  | "folders"
+  | "preferences";
 
 interface Table {
   readonly fields: Readonly<Record<string, readonly string[]>>;
@@ -113,6 +114,9 @@ const TABLES: Readonly<Record<InvertibleEntity, Table>> = {
   areas: { fields: CHILD_FIELDS.areas, tombstone: "deleted", where: BY_ID },
   projects: { fields: CHILD_FIELDS.projects, tombstone: "deleted", where: BY_ID },
   folders: { fields: CHILD_FIELDS.folders, tombstone: "deleted", where: BY_ID },
+  // Only the effort levels' step is ever on a stack, and it never creates the row (writer.ts:
+  // changeLevels), so no inversion tombstones one: the row has no such field.
+  preferences: { fields: CHILD_FIELDS.preferences, tombstone: "deleted", where: "key = $id" },
 };
 
 /**
@@ -974,6 +978,14 @@ export function planInversions(
   plan.inversions = plan.inversions.filter(
     (i) => !(i.entity === "tasks" && i.field === "wrap" && keptOpen.has(i.id)),
   );
+  // A change of the effort levels moves its tasks with its list: while the list cannot go back,
+  // its tasks stay where it moved them, and the list's conflict says why.
+  const levels = changes.some((c) => c.entity === "preferences");
+  if (levels && !plan.inversions.some((i) => i.entity === "preferences")) {
+    plan.inversions = plan.inversions.filter(
+      (i) => !(i.entity === "tasks" && i.field === "effort"),
+    );
+  }
   if (options.partial) keepTogether(plan, read);
   keepActiveUnwrapped(plan, read, (where, version, at) => {
     blocked(conflict(where, version), at);
@@ -1858,6 +1870,7 @@ function ownersOf(entity: InvertibleEntity, raw: Row): { entity: InvertibleEntit
     }
     case "sources":
     case "areas":
+    case "preferences":
       return [];
   }
 }

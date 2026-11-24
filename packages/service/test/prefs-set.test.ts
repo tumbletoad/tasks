@@ -326,6 +326,19 @@ describe("[A3.3.4.prefs.moves] a change of the effort levels moves its tasks, an
       "Medium",
       "Medium",
     ]);
+    // The change is a step: Undo puts the levels and its tasks back, and says so; Redo again.
+    expect(await call(person, "history.undo", { request_id: rid() })).toMatchObject({
+      result: "undone",
+      levels: true,
+      task_count: 2,
+    });
+    expect(await get("tasks.effort_scale")).toEqual(EFFORT_LEVELS);
+    expect(await effortOf(first ?? "")).toBe("M");
+    expect(await call(person, "history.redo", { request_id: rid() })).toMatchObject({
+      result: "redone",
+      levels: true,
+    });
+    expect(await effortOf(first ?? "")).toBe("Medium");
     const merged = PrefsManageResult.parse(
       await levels(await asOf(), "XS,S,L,XL", [{ from: "Medium", to: "L" }]),
     );

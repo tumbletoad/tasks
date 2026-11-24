@@ -590,7 +590,12 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       const tasks = ((result["tasks"] as unknown[] | undefined) ?? []).map(str);
       const count = typeof result["task_count"] === "number" ? result["task_count"] : tasks.length;
       const more = count > tasks.length ? ` and ${String(count - tasks.length)} more` : "";
-      const which = tasks.length === 0 ? "" : ` to ${tasks.join(", ")}${more}`;
+      const which =
+        result["levels"] === true
+          ? ` to the effort levels${count > 0 ? ` and ${tasksText(count)}` : ""}`
+          : tasks.length === 0
+            ? ""
+            : ` to ${tasks.join(", ")}${more}`;
       const done =
         result["result"] === "redone"
           ? "Redid your change"
@@ -599,7 +604,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
             : tasks.length > 0 || result["tasks"] === undefined
               ? "Undid part of your change"
               : "Nothing of your change was left to undo";
-      lines.push(`${done}${which} in ${space}${replay(result)}`);
+      lines.push(`${done}${which} in ${space}${replay(result)}`, ...levelsReport(result));
       const kept = (result["unresolved"] as Result[] | undefined) ?? [];
       // What a partial undo left, or the older changes a redo passed over: who changed what since.
       const newer = newerOf(result);

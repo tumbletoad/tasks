@@ -2952,7 +2952,8 @@ export class SpaceWriter {
       if (inverted < space.undoFloorSeq) {
         problem("UNDO_BEFORE_FLOOR", "The change is older than the space's last format change", 0);
       }
-      const plan = planInversions(conn, readChanges(conn, inverted), {
+      const inverting = readChanges(conn, inverted);
+      const plan = planInversions(conn, inverting, {
         creating: new Set([target.seq]),
         refPrefix: space.refPrefix,
         partial,
@@ -3045,7 +3046,20 @@ export class SpaceWriter {
       return {
         ...accepted("applied", { ...asOf, seq }),
         commit: commitId,
-        results: [{ i: 0, status: "updated", id: target.id, version: seq, ...tasks }],
+        results: [
+          {
+            i: 0,
+            status: "updated",
+            id: target.id,
+            version: seq,
+            ...tasks,
+            // A change of the effort levels, undone or redone: the tasks it leaves on a size the
+            // levels lack are said, never a reason to refuse.
+            ...(inverting.some((c) => c.entity === "preferences")
+              ? { levels: true as const, ...offList(conn, space.refPrefix) }
+              : {}),
+          },
+        ],
         // What a partial undo left as others set it, or why a redo passed over the steps before
         // the one it redid (WriteResult.conflicts).
         conflicts,
