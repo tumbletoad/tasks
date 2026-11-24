@@ -422,10 +422,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   other has. A restore over a space, or a claim of a copy, goes on from the backup's counter when
   the earlier space's database cannot be read at all.
 - A command repeated without its request ID is a new change: a note added twice is there twice.
-- A change saved by a build before this one and sent again in a form this build no longer takes is
-  answered with what it did, marked as not compared, when it went to the same tool: TTasks cannot
-  tell it from another change of that tool under the same request ID. Such a retry's answer can
-  leave out a detail that build did not keep.
+- A change that another version of TTasks saved, sent again with its request ID, is answered only
+  as already applied, with the tasks and rows it made or changed: it writes nothing, whatever tool
+  or body it is sent with, and the answer does not say what the change did to them.
 - A project that is moved or reordered past the place a list of areas and projects has reached,
   while that list is read page by page, can be listed twice or not at all.
 - Everything started inside a terminal agent while it runs counts as that task's session: a new
