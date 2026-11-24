@@ -15,6 +15,7 @@ import {
   pictures,
   showsSpace,
   signIn,
+  stopClock,
   themes,
   violations,
   watchViolations,
@@ -446,6 +447,7 @@ test.describe("[A7.3.12.launch.e2e.left-out] An Open that could not carry what i
     const tag = test.info().project.name;
     const ref = await addTask(world, { title: `Plan the garden (${tag})`, area: "home" });
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.clock.install();
     await openTask(page, world, ref);
     // The service's answer as a route that cannot carry the permission gives it: the launch is
     // the real one, its receipt names what was left out.
@@ -465,6 +467,8 @@ test.describe("[A7.3.12.launch.e2e.left-out] An Open that could not carry what i
     const before = world.terminal().length;
     await open.click();
     await expect(toast(page)).toHaveText(said, { timeout: SLOW_MS });
+    // The toast goes by itself; the page's clock stands still while it is looked at twice.
+    await stopClock(page);
     // The launch is the real one: it reaches the terminal, and no later test counts it.
     await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
     await picture(page, "left-out-1440.png");
