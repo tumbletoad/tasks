@@ -1,18 +1,19 @@
-// The space's effort levels in Settings: a small grid in which a person adds, renames, times,
-// describes, reorders and removes levels. Each change saves at once through `prefs.manage`, with
-// the moves that carry its tasks along, shows at once as an overlay, and its toast offers Undo. The
-// one question is where the tasks of a removed level go. A text field saves on Enter or when it is
-// left, never per keystroke.
+// The space's effort levels in Settings. Each change saves at once through `prefs.manage` with the
+// moves that carry its tasks along, shows at once as an overlay, and its toast offers Undo. The one
+// question is where the tasks of a removed level go.
 import {
   useCallback,
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import { Button, Heading, Menu, MenuItem, MenuTrigger, Popover } from "react-aria-components";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
 import {
   checkEffortMoves,
   EFFORT_ABOUT_MAX,
@@ -28,7 +29,7 @@ import { Session } from "../context.ts";
 import type { WriteReceipt } from "../edit/edits.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
-import { useT, type Translate } from "../i18n/intl.tsx";
+import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import type { TaskRow } from "../live.ts";
 import type { Msg } from "../row/model.ts";
 import { useLive } from "../store/hooks.ts";
@@ -82,9 +83,10 @@ const KEY = "tasks.effort_scale";
 const ABOUT_COUNT_FROM = 240;
 /** The move question's "No size": no level is ever called this. */
 const NO_SIZE = "";
+const AMOUNT = /^[0-9]{1,3}$/u;
 
-/** How a save ended: the cells keep their text unless it was saved. */
 type Outcome = "saved" | "same" | "asked" | "conflict" | "failed";
+type SetAnswer = Awaited<ReturnType<Client["prefs"]["manage"]>>;
 
 const PROBLEMS: Readonly<Record<NameProblem, (t: Translate, name: string) => string>> = {
   empty: (t) => t("levels.empty"),
@@ -111,26 +113,12 @@ function overlayOf(write: LevelsWrite, tasks: ReadonlyMap<string, TaskRow>): Ove
   return { tasks: rows, efforts: write.value };
 }
 
-interface SetAnswer {
-  readonly as_of?: string;
-  readonly result?: unknown;
-  readonly moved?:
-    | readonly { readonly active: number; readonly finished: number; readonly trash: number }[]
-    | undefined;
-  readonly off_list?:
-    readonly { readonly tasks: readonly string[]; readonly count: number }[] | undefined;
-}
-
 /** The toast of a saved change: what it did, and the tasks it moved or left off the levels. */
-function savedMsg(
-  edit: LevelEdit,
-  now: readonly EffortLevel[],
-  result: SetAnswer | WriteReceipt,
-): Msg {
-  const answer: SetAnswer = "receipt" in result ? {} : result;
-  const moved = (answer.moved ?? []).reduce((n, m) => n + m.active + m.finished + m.trash, 0);
-  const off = answer.off_list ?? [];
-  const was = edit.kind === "add" ? "" : (now[edit.at]?.key ?? "");
+function savedMsg(edit: LevelEdit, result: SetAnswer | WriteReceipt): Msg {
+  const answer = "receipt" in result ? undefined : result;
+  const moved = (answer?.moved ?? []).reduce((n, m) => n + m.active + m.finished + m.trash, 0);
+  const off = answer?.off_list ?? [];
+  const was = edit.kind === "add" ? "" : edit.key;
   const to = edit.kind === "remove" ? edit.to : undefined;
   return {
     id: "levels.saved",
@@ -183,32 +171,52 @@ export function EffortLevels({ headingClass }: { readonly headingClass: string }
   const [held, readHeld] = useHeld(api, levels);
   /** The level whose removal asks where its tasks go. */
   const [asking, setAsking] = useState<string | undefined>(undefined);
-  /** A new level being named; `sent` once its name is on its way. */
-  const [adding, setAdding] = useState<{ readonly sent?: string } | undefined>(undefined);
+  const [adding, setAdding] = useState(false);
+  /**
+   * Each level's row by an identity that follows it through a rename and a move, so what is typed
+   * in a field stays with its level and keeps the focus. A new level takes the row it was named in.
+   */
+  const ids = useRef(new Map<string, number>());
+  const nextId = useRef(0);
+  const addId = useRef(-1);
   const names = useRef(new Map<number, HTMLInputElement>());
+  /** The row whose name takes the focus once the screen shows the change. */
+  const focusTo = useRef<number | undefined>(undefined);
 
-  const focusName = (at: number) => {
-    names.current.get(Math.max(0, at))?.focus();
+  useLayoutEffect(() => {
+    if (focusTo.current === undefined) return;
+    names.current.get(focusTo.current)?.focus();
+    focusTo.current = undefined;
+  });
+
+  const idOf = (key: string): number => {
+    let id = ids.current.get(key);
+    if (id === undefined) {
+      id = nextId.current++;
+      ids.current.set(key, id);
+    }
+    return id;
   };
 
-  /**
-   * Saves `edit` against the levels on screen now, own changes on their way included. `inline`: a
-   * text field says a refusal under itself; anything else says it in a toast.
-   */
+  /** Saves `edit` against the levels on screen now. `inline`: a field says a refusal, else a toast. */
   const save = (edit: LevelEdit, inline: boolean): Promise<Outcome> => {
     const now = live.getState().scales.efforts;
     const write = levelsWrite(now, edit);
-    if (write === undefined) return Promise.resolve("same");
+    if (write === undefined || live.getState().scales.effortsFixed !== undefined) {
+      return Promise.resolve("same");
+    }
     const keys = (list: readonly EffortLevel[]) => list.map((level) => level.key);
     const problem = checkEffortMoves(keys(now), keys(write.value), held ?? [], write.moves);
     if (problem !== undefined) {
       if (problem.holders !== undefined && edit.kind === "remove") {
-        setAsking(now[edit.at]?.key);
+        setAsking(edit.key);
         return Promise.resolve("asked");
       }
       if (!inline) say(problem.message);
       return Promise.resolve("failed");
     }
+    if (edit.kind === "rename") ids.current.set(edit.name, idOf(edit.key));
+    if (edit.kind === "add") ids.current.set(edit.name, addId.current);
     return edits
       .write(
         (request, sent) =>
@@ -225,7 +233,7 @@ export function EffortLevels({ headingClass }: { readonly headingClass: string }
             request_id: request,
             mode: "apply",
           }),
-        (result) => savedMsg(edit, now, result),
+        (result) => savedMsg(edit, result),
         { overlay: overlayOf(write, live.getState().tasks) },
       )
       .then(
@@ -253,33 +261,40 @@ export function EffortLevels({ headingClass }: { readonly headingClass: string }
     void save(edit, false);
   };
 
-  const move = (at: number, kind: "up" | "down") => {
-    const to = at + (kind === "up" ? -1 : 1);
-    if (to < 0 || to >= live.getState().scales.efforts.length) return;
-    act({ kind, at });
-    focusName(to);
+  const move = (key: string, kind: "up" | "down") => {
+    focusTo.current = ids.current.get(key);
+    act({ kind, key });
   };
 
-  const remove = (at: number, to?: string | null) => {
-    const count = live.getState().scales.efforts.length;
-    void save(to === undefined ? { kind: "remove", at } : { kind: "remove", at, to }, false);
-    // Gone at once, as its overlay shows: the focus goes to the level that took its place.
-    if (live.getState().scales.efforts.length < count) focusName(Math.min(at, count - 2));
+  const remove = (key: string, to?: string | null) => {
+    const now = live.getState().scales.efforts;
+    const at = now.findIndex((level) => level.key === key);
+    const next = now[at + 1]?.key ?? now[at - 1]?.key;
+    act(to === undefined ? { kind: "remove", key } : { kind: "remove", key, to });
+    // Gone at once when it was sent: the focus goes to the level that took its place.
+    if (next !== undefined && !live.getState().scales.efforts.some((l) => l.key === key)) {
+      focusTo.current = ids.current.get(next);
+    }
   };
 
-  const add = (name: string): Promise<Outcome> => {
-    setAdding({ sent: name });
-    return save({ kind: "add", name }, true).then((outcome) => {
-      setAdding(outcome === "saved" || outcome === "same" ? undefined : {});
+  const add = (name: string): Promise<Outcome> =>
+    save({ kind: "add", name }, true).then((outcome) => {
+      if (outcome === "saved") setAdding(false);
       return outcome;
     });
-  };
 
-  const draft =
-    adding !== undefined &&
-    !(adding.sent !== undefined && levels.some((l) => l.key === adding.sent));
-  const rows: (EffortLevel | undefined)[] = draft ? [...levels, undefined] : [...levels];
   const readOnly = fixed !== undefined;
+  const used = new Set<number>();
+  const rows: { id: number; level: EffortLevel | undefined }[] = levels.map((level) => {
+    let id = idOf(level.key);
+    if (used.has(id)) {
+      id = nextId.current++;
+      ids.current.set(level.key, id);
+    }
+    used.add(id);
+    return { id, level };
+  });
+  if (adding && !used.has(addId.current)) rows.push({ id: addId.current, level: undefined });
 
   return (
     <section className={styles.levels}>
@@ -298,10 +313,9 @@ export function EffortLevels({ headingClass }: { readonly headingClass: string }
         <span>{t("levels.about")}</span>
       </div>
       <ol className={styles.list} aria-label={t("levels.list", { space: state.space?.name ?? "" })}>
-        {rows.map((level, at) => (
+        {rows.map(({ id, level }, at) => (
           <LevelRow
-            // By place, so a field keeps focus while the level in it moves or is renamed.
-            key={at}
+            key={id}
             at={at}
             level={level}
             levels={levels}
@@ -309,25 +323,26 @@ export function EffortLevels({ headingClass }: { readonly headingClass: string }
             readOnly={readOnly}
             asking={level !== undefined && level.key === asking}
             nameRef={(element) => {
-              if (element === null) names.current.delete(at);
-              else names.current.set(at, element);
+              if (element === null) names.current.delete(id);
+              else names.current.set(id, element);
             }}
             save={(edit) => save(edit, true)}
             act={act}
             add={add}
             drop={() => {
-              setAdding(undefined);
+              setAdding(false);
             }}
-            move={(kind) => {
-              move(at, kind);
+            move={(kind, named) => {
+              if (level !== undefined) move(named ?? level.key, kind);
             }}
             remove={() => {
-              remove(at);
+              if (level !== undefined) remove(level.key);
             }}
             answer={(to) => {
               setAsking(undefined);
-              if (to === undefined) focusName(at);
-              else remove(at, to);
+              if (level === undefined) return;
+              if (to === undefined) focusTo.current = id;
+              else remove(level.key, to);
             }}
           />
         ))}
@@ -337,9 +352,10 @@ export function EffortLevels({ headingClass }: { readonly headingClass: string }
           <Button
             className={styles.add}
             data-part="level-add"
-            isDisabled={levels.length >= EFFORT_SCALE_MAX || adding !== undefined}
+            isDisabled={levels.length >= EFFORT_SCALE_MAX || adding}
             onPress={() => {
-              setAdding({});
+              addId.current = nextId.current++;
+              setAdding(true);
             }}
           >
             <PlusIcon />
@@ -363,15 +379,16 @@ interface RowProps {
   readonly readOnly: boolean;
   readonly asking: boolean;
   readonly nameRef: (element: HTMLInputElement | null) => void;
-  /** Saves a field's change: the field says a refusal. */
+  /** A field's change: the field says a refusal. */
   readonly save: (edit: LevelEdit) => Promise<Outcome>;
-  /** Saves any other change: a toast says a refusal. */
+  /** Any other change: a toast says a refusal. */
   readonly act: (edit: LevelEdit) => void;
   readonly add: (name: string) => Promise<Outcome>;
   readonly drop: () => void;
-  readonly move: (kind: "up" | "down") => void;
+  /** `named`: what the level is called now, when a rename was just sent. */
+  readonly move: (kind: "up" | "down", named?: string) => void;
   readonly remove: () => void;
-  /** The move question's answer: where the tasks go, or undefined to keep the level. */
+  /** Where the tasks of a removed level go, or undefined to keep the level. */
   readonly answer: (to: string | null | undefined) => void;
 }
 
@@ -379,45 +396,76 @@ function LevelRow(props: RowProps) {
   const { at, level, levels, readOnly } = props;
   const t = useT();
   const n = at + 1;
+  const key = level?.key ?? "";
   const name = level?.key ?? t("levels.newLevel");
   const [unit, setUnit] = useState<EffortUnit>(level?.time?.unit ?? "hours");
   const shownUnit = level?.time?.unit ?? unit;
-  const count = level === undefined ? 0 : heldCount(heldBy(props.held ?? [], level.key));
-  const first = at === 0;
-  const last = at >= levels.length - 1;
-  const only = levels.length <= 1;
+  const count = level === undefined ? 0 : heldCount(heldBy(props.held ?? [], key));
   const fresh = level === undefined;
+  const actions: readonly {
+    readonly id: "up" | "down" | "remove";
+    readonly icon: ReactNode;
+    readonly label: MessageId;
+    readonly off: boolean;
+    readonly run: () => void;
+  }[] = [
+    {
+      id: "up",
+      label: "levels.up",
+      icon: <UpIcon />,
+      off: at === 0,
+      run: () => {
+        props.move("up");
+      },
+    },
+    {
+      id: "down",
+      label: "levels.down",
+      icon: <DownIcon />,
+      off: at >= levels.length - 1,
+      run: () => {
+        props.move("down");
+      },
+    },
+    {
+      id: "remove",
+      label: "levels.remove",
+      icon: <CrossIcon />,
+      off: levels.length <= 1,
+      run: props.remove,
+    },
+  ];
 
   return (
-    <li className={styles.level} data-level={level?.key ?? ""}>
+    <li className={styles.level} data-level={key}>
       <div className={`${styles.cell} ${styles.name}`}>
         <Cell
           part="level-name"
           label={t("levels.nameOf", { n })}
-          value={level?.key ?? ""}
-          maxLength={Math.max(EFFORT_NAME_MAX, level?.key.length ?? 0)}
+          value={key}
+          maxLength={Math.max(EFFORT_NAME_MAX, key.length)}
           readOnly={readOnly}
           autoFocus={fresh}
-          tip={level !== undefined && level.key.length > EFFORT_NAME_MAX ? level.key : undefined}
+          tip={key.length > EFFORT_NAME_MAX ? key : undefined}
           inputRef={props.nameRef}
           problem={(text) => {
-            const problem = nameProblem(levels, at, oneLine(text));
+            const problem = nameProblem(levels, level?.key, oneLine(text));
             return problem === undefined ? undefined : PROBLEMS[problem](t, oneLine(text));
           }}
           hint={(text) =>
-            count > 0 && oneLine(text) !== level?.key ? t("levels.moveWith", { count }) : undefined
+            count > 0 && oneLine(text) !== key ? t("levels.moveWith", { count }) : undefined
           }
           commit={(text) =>
-            level === undefined
+            fresh
               ? props.add(oneLine(text))
-              : props.save({ kind: "rename", at, name: oneLine(text) })
+              : props.save({ kind: "rename", key, name: oneLine(text) })
           }
           onKey={(event, settle) => {
-            if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown") || fresh)
-              return;
+            const up = event.key === "ArrowUp";
+            if (!event.altKey || (!up && event.key !== "ArrowDown") || fresh || readOnly) return;
             event.preventDefault();
             event.stopPropagation();
-            if (settle()) props.move(event.key === "ArrowUp" ? "up" : "down");
+            if (settle()) props.move(up ? "up" : "down", oneLine(event.currentTarget.value));
           }}
           {...(fresh ? { drop: props.drop } : {})}
         />
@@ -431,11 +479,13 @@ function LevelRow(props: RowProps) {
           numeric
           readOnly={readOnly}
           disabled={fresh}
-          problem={(text) => (text !== "" && Number(text) < 1 ? t("levels.amount") : undefined)}
+          problem={(text) =>
+            text !== "" && (!AMOUNT.test(text) || Number(text) < 1) ? t("levels.amount") : undefined
+          }
           commit={(text) =>
             props.save({
               kind: "time",
-              at,
+              key,
               time: text === "" ? undefined : { amount: Number(text), unit: shownUnit },
             })
           }
@@ -450,7 +500,7 @@ function LevelRow(props: RowProps) {
             const next = event.target.value as EffortUnit;
             setUnit(next);
             if (level?.time !== undefined) {
-              props.act({ kind: "time", at, time: { amount: level.time.amount, unit: next } });
+              props.act({ kind: "time", key, time: { amount: level.time.amount, unit: next } });
             }
           }}
         >
@@ -472,46 +522,25 @@ function LevelRow(props: RowProps) {
           counter
           commit={(text) => {
             const about = oneLine(text);
-            return props.save({ kind: "about", at, about: about === "" ? undefined : about });
+            return props.save({ kind: "about", key, about: about === "" ? undefined : about });
           }}
         />
       </div>
       {readOnly || fresh ? null : (
         <div className={styles.actions}>
-          <Button
-            className={styles.act}
-            data-part="level-up"
-            aria-label={t("levels.up", { name })}
-            data-tip={t("levels.up", { name })}
-            isDisabled={first}
-            onPress={() => {
-              props.move("up");
-            }}
-          >
-            <UpIcon />
-          </Button>
-          <Button
-            className={styles.act}
-            data-part="level-down"
-            aria-label={t("levels.down", { name })}
-            data-tip={t("levels.down", { name })}
-            isDisabled={last}
-            onPress={() => {
-              props.move("down");
-            }}
-          >
-            <DownIcon />
-          </Button>
-          <Button
-            className={styles.act}
-            data-part="level-remove"
-            aria-label={t("levels.remove", { name })}
-            data-tip={t("levels.remove", { name })}
-            isDisabled={only}
-            onPress={props.remove}
-          >
-            <CrossIcon />
-          </Button>
+          {actions.map((action) => (
+            <Button
+              key={action.id}
+              className={styles.act}
+              data-part={`level-${action.id}`}
+              aria-label={t(action.label, { name })}
+              data-tip={t(action.label, { name })}
+              isDisabled={action.off}
+              onPress={action.run}
+            >
+              {action.icon}
+            </Button>
+          ))}
           <MenuTrigger>
             <Button
               className={styles.more}
@@ -523,25 +552,16 @@ function LevelRow(props: RowProps) {
             <Popover className={styles.menu} placement="bottom end" offset={4}>
               <Menu
                 aria-label={t("levels.more", { name })}
-                disabledKeys={[
-                  ...(first ? ["up"] : []),
-                  ...(last ? ["down"] : []),
-                  ...(only ? ["remove"] : []),
-                ]}
-                onAction={(key) => {
-                  if (key === "remove") props.remove();
-                  else if (key === "up" || key === "down") props.move(key);
+                disabledKeys={actions.filter((action) => action.off).map((action) => action.id)}
+                onAction={(id) => {
+                  actions.find((action) => action.id === id)?.run();
                 }}
               >
-                <MenuItem id="up" className={styles.item}>
-                  {t("levels.up", { name })}
-                </MenuItem>
-                <MenuItem id="down" className={styles.item}>
-                  {t("levels.down", { name })}
-                </MenuItem>
-                <MenuItem id="remove" className={styles.item}>
-                  {t("levels.remove", { name })}
-                </MenuItem>
+                {actions.map((action) => (
+                  <MenuItem key={action.id} id={action.id} className={styles.item}>
+                    {t(action.label, { name })}
+                  </MenuItem>
+                ))}
               </Menu>
             </Popover>
           </MenuTrigger>
@@ -549,10 +569,9 @@ function LevelRow(props: RowProps) {
       )}
       {props.asking && level !== undefined ? (
         <Question
-          at={at}
           level={level}
           levels={levels}
-          held={heldBy(props.held ?? [], level.key)}
+          held={heldBy(props.held ?? [], key)}
           answer={props.answer}
         />
       ) : null}
@@ -560,15 +579,12 @@ function LevelRow(props: RowProps) {
   );
 }
 
-/** Where the tasks of a removed level go: the next bigger level chosen, "No size" offered. */
 function Question({
-  at,
   level,
   levels,
   held,
   answer,
 }: {
-  readonly at: number;
   readonly level: EffortLevel;
   readonly levels: readonly EffortLevel[];
   readonly held: EffortHeld;
@@ -577,7 +593,7 @@ function Question({
   const t = useT();
   const id = useId();
   const select = useRef<HTMLSelectElement>(null);
-  const [to, setTo] = useState(() => moveTarget(levels, at) ?? NO_SIZE);
+  const [to, setTo] = useState(() => moveTarget(levels, level.key) ?? NO_SIZE);
   useEffect(() => {
     select.current?.focus();
   }, []);
@@ -645,7 +661,6 @@ function Question({
 interface CellProps {
   readonly part: string;
   readonly label: string;
-  /** What the level holds now. */
   readonly value: string;
   readonly maxLength: number;
   readonly readOnly: boolean;
@@ -655,11 +670,9 @@ interface CellProps {
   /** The whole value, for a name the field shows cut. */
   readonly tip?: string | undefined;
   readonly inputRef?: (element: HTMLInputElement | null) => void;
-  /** What keeps the text from being saved. */
   readonly problem?: (text: string) => string | undefined;
   /** A line under a good text that differs from the value. */
   readonly hint?: (text: string) => string | undefined;
-  /** Says how much room is left once the text is long. */
   readonly counter?: boolean;
   readonly commit: (text: string) => Promise<Outcome>;
   /** A key the field does not take itself. `settle` saves the text, false when it cannot. */
@@ -684,6 +697,11 @@ function Cell(props: CellProps) {
   const settle = (): boolean => {
     if (draft === undefined) return true;
     if (problem !== undefined) return false;
+    // Saved already, as a shortcut's save is when the focus it moves leaves the field.
+    if (draft === props.value) {
+      setDraft(undefined);
+      return true;
+    }
     const sent = draft;
     void props.commit(sent).then((outcome) => {
       const kept = outcome === "conflict" || outcome === "failed";
@@ -720,14 +738,11 @@ function Cell(props: CellProps) {
         readOnly={props.readOnly}
         disabled={props.disabled}
         inputMode={props.numeric === true ? "numeric" : undefined}
-        // A new level's name is where the person goes to type it.
         autoFocus={props.autoFocus}
         spellCheck={false}
         autoComplete="off"
         onChange={(event) => {
-          const typed =
-            props.numeric === true ? event.target.value.replace(/\D/gu, "") : event.target.value;
-          setDraft(typed);
+          setDraft(event.target.value);
           setFailed(false);
         }}
         onKeyDown={(event) => {

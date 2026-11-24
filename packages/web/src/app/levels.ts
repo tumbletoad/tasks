@@ -15,14 +15,17 @@ export interface Move {
   readonly to: string | null;
 }
 
-/** One change a person makes in the grid. `at` is the level's place, smallest first. */
+/**
+ * One change a person makes in the grid. A level is named by its `key`, never by its place, so a
+ * change made while other levels move or go still reaches the level it was made on.
+ */
 export type LevelEdit =
   | { readonly kind: "add"; readonly name: string }
-  | { readonly kind: "rename"; readonly at: number; readonly name: string }
-  | { readonly kind: "time"; readonly at: number; readonly time: EffortTime | undefined }
-  | { readonly kind: "about"; readonly at: number; readonly about: string | undefined }
-  | { readonly kind: "up" | "down"; readonly at: number }
-  | { readonly kind: "remove"; readonly at: number; readonly to?: string | null };
+  | { readonly kind: "rename"; readonly key: string; readonly name: string }
+  | { readonly kind: "time"; readonly key: string; readonly time: EffortTime | undefined }
+  | { readonly kind: "about"; readonly key: string; readonly about: string | undefined }
+  | { readonly kind: "up" | "down"; readonly key: string }
+  | { readonly kind: "remove"; readonly key: string; readonly to?: string | null };
 
 export interface LevelsWrite {
   readonly value: EffortLevel[];
@@ -48,49 +51,52 @@ export function levelsWrite(
   edit: LevelEdit,
 ): LevelsWrite | undefined {
   if (edit.kind === "add") return { value: [...levels, { key: edit.name }], moves: [] };
-  const level = levels[edit.at];
+  const at = levels.findIndex((level) => level.key === edit.key);
+  const level = levels[at];
   if (level === undefined) return undefined;
   const value = [...levels];
   switch (edit.kind) {
     case "rename":
       if (edit.name === level.key) return undefined;
-      value[edit.at] = { ...level, key: edit.name };
+      value[at] = { ...level, key: edit.name };
       return { value, moves: [{ from: level.key, to: edit.name }] };
     case "time":
-      value[edit.at] = levelOf(level.key, edit.time, level.about);
+      value[at] = levelOf(level.key, edit.time, level.about);
       break;
     case "about":
-      value[edit.at] = levelOf(level.key, level.time, edit.about);
+      value[at] = levelOf(level.key, level.time, edit.about);
       break;
     case "up":
     case "down": {
-      const to = edit.at + (edit.kind === "up" ? -1 : 1);
+      const to = at + (edit.kind === "up" ? -1 : 1);
       const other = levels[to];
       if (other === undefined) return undefined;
       value[to] = level;
-      value[edit.at] = other;
+      value[at] = other;
       return { value, moves: [] };
     }
     case "remove":
       if (levels.length === 1) return undefined;
-      value.splice(edit.at, 1);
+      value.splice(at, 1);
       return { value, moves: edit.to === undefined ? [] : [{ from: level.key, to: edit.to }] };
   }
-  return samePrefValue(value[edit.at], level) ? undefined : { value, moves: [] };
+  return samePrefValue(value[at], level) ? undefined : { value, moves: [] };
 }
 
 export type NameProblem = "empty" | "characters" | "taken" | "long";
 
-/** What keeps `name` from being the name of the level at `at` (levels.length: a new one). */
+/** What keeps `name` from being the name of the level now called `own` (undefined: a new one). */
 export function nameProblem(
   levels: readonly EffortLevel[],
-  at: number,
+  own: string | undefined,
   name: string,
 ): NameProblem | undefined {
   if (name === "") return "empty";
   if (!EFFORT_KEY.test(name)) return "characters";
   const folded = name.toLowerCase();
-  if (levels.some((level, i) => i !== at && level.key.toLowerCase() === folded)) return "taken";
+  if (levels.some((level) => level.key !== own && level.key.toLowerCase() === folded)) {
+    return "taken";
+  }
   if (
     !effortNamesFit(
       [name],
@@ -109,8 +115,12 @@ export function heldBy(held: readonly EffortHeld[], effort: string): EffortHeld 
 export const heldCount = ({ active, finished, trash }: EffortHeld): number =>
   active + finished + trash;
 
-/** Where the tasks of a removed level go unless the person says otherwise: the next bigger level. */
-export function moveTarget(levels: readonly EffortLevel[], at: number): string | null {
+/**
+ * Where the tasks of a removed level go unless the person says otherwise: the next bigger level,
+ * the next smaller when the largest goes.
+ */
+export function moveTarget(levels: readonly EffortLevel[], key: string): string | null {
+  const at = levels.findIndex((level) => level.key === key);
   return levels[at + 1]?.key ?? levels[at - 1]?.key ?? null;
 }
 

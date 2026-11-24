@@ -19,64 +19,67 @@ describe("[A5.3.7.web.levels-write] the write each change of the grid makes", ()
       moves: [],
     });
     // A rename keeps the level's time and line and carries its tasks along.
-    expect(levelsWrite(L, { kind: "rename", at: 1, name: "Medium" })).toEqual({
+    expect(levelsWrite(L, { kind: "rename", key: "M", name: "Medium" })).toEqual({
       value: [L[0], { key: "Medium", time: { amount: 4, unit: "hours" } }, L[2]],
       moves: [{ from: "M", to: "Medium" }],
     });
     expect(
-      levelsWrite(L, { kind: "time", at: 2, time: { amount: 2, unit: "days" } })?.value[2],
+      levelsWrite(L, { kind: "time", key: "L", time: { amount: 2, unit: "days" } })?.value[2],
     ).toEqual({ key: "L", time: { amount: 2, unit: "days" } });
-    expect(levelsWrite(L, { kind: "time", at: 0, time: undefined })?.value[0]).toEqual({
+    expect(levelsWrite(L, { kind: "time", key: "S", time: undefined })?.value[0]).toEqual({
       key: "S",
       about: "Small",
     });
-    expect(levelsWrite(L, { kind: "about", at: 0, about: undefined })?.value[0]).toEqual({
+    expect(levelsWrite(L, { kind: "about", key: "S", about: undefined })?.value[0]).toEqual({
       key: "S",
       time: { amount: 1, unit: "hours" },
     });
-    expect(keys(levelsWrite(L, { kind: "up", at: 1 })?.value)).toEqual(["M", "S", "L"]);
-    expect(keys(levelsWrite(L, { kind: "down", at: 1 })?.value)).toEqual(["S", "L", "M"]);
-    expect(levelsWrite(L, { kind: "up", at: 1 })?.moves).toEqual([]);
-    expect(levelsWrite(L, { kind: "remove", at: 1 })).toEqual({ value: [L[0], L[2]], moves: [] });
-    expect(levelsWrite(L, { kind: "remove", at: 1, to: "L" })?.moves).toEqual([
+    expect(keys(levelsWrite(L, { kind: "up", key: "M" })?.value)).toEqual(["M", "S", "L"]);
+    expect(keys(levelsWrite(L, { kind: "down", key: "M" })?.value)).toEqual(["S", "L", "M"]);
+    expect(levelsWrite(L, { kind: "up", key: "M" })?.moves).toEqual([]);
+    expect(levelsWrite(L, { kind: "remove", key: "M" })).toEqual({
+      value: [L[0], L[2]],
+      moves: [],
+    });
+    expect(levelsWrite(L, { kind: "remove", key: "M", to: "L" })?.moves).toEqual([
       { from: "M", to: "L" },
     ]);
-    expect(levelsWrite(L, { kind: "remove", at: 1, to: null })?.moves).toEqual([
+    expect(levelsWrite(L, { kind: "remove", key: "M", to: null })?.moves).toEqual([
       { from: "M", to: null },
     ]);
   });
 
   test("a change to nothing writes nothing, and the bounds hold", () => {
-    expect(levelsWrite(L, { kind: "rename", at: 1, name: "M" })).toBeUndefined();
+    expect(levelsWrite(L, { kind: "rename", key: "M", name: "M" })).toBeUndefined();
     expect(
-      levelsWrite(L, { kind: "time", at: 1, time: { amount: 4, unit: "hours" } }),
+      levelsWrite(L, { kind: "time", key: "M", time: { amount: 4, unit: "hours" } }),
     ).toBeUndefined();
-    expect(levelsWrite(L, { kind: "about", at: 2, about: undefined })).toBeUndefined();
-    expect(levelsWrite(L, { kind: "up", at: 0 })).toBeUndefined();
-    expect(levelsWrite(L, { kind: "down", at: 2 })).toBeUndefined();
-    expect(levelsWrite([{ key: "M" }], { kind: "remove", at: 0 })).toBeUndefined();
+    expect(levelsWrite(L, { kind: "about", key: "L", about: undefined })).toBeUndefined();
+    expect(levelsWrite(L, { kind: "up", key: "S" })).toBeUndefined();
+    expect(levelsWrite(L, { kind: "down", key: "L" })).toBeUndefined();
+    expect(levelsWrite([{ key: "M" }], { kind: "remove", key: "M" })).toBeUndefined();
   });
 
   test("a name used twice, ignoring case, a character a name cannot have, or too long is a problem", () => {
-    expect(nameProblem(L, 1, "Medium")).toBeUndefined();
-    expect(nameProblem(L, 1, "m")).toBeUndefined();
-    expect(nameProblem(L, 1, "s")).toBe("taken");
-    expect(nameProblem(L, L.length, "l")).toBe("taken");
-    expect(nameProblem(L, 1, "")).toBe("empty");
-    expect(nameProblem(L, 1, "M/L")).toBe("characters");
-    expect(nameProblem(L, 1, "Half  day")).toBe("characters");
-    expect(nameProblem(L, 1, "Half a day")).toBeUndefined();
-    expect(nameProblem(L, 1, "Half a day!")).toBe("characters");
-    expect(nameProblem(L, 1, "Half a days")).toBe("long");
+    expect(nameProblem(L, "M", "Medium")).toBeUndefined();
+    expect(nameProblem(L, "M", "m")).toBeUndefined();
+    expect(nameProblem(L, "M", "s")).toBe("taken");
+    expect(nameProblem(L, undefined, "l")).toBe("taken");
+    expect(nameProblem(L, "M", "")).toBe("empty");
+    expect(nameProblem(L, "M", "M/L")).toBe("characters");
+    expect(nameProblem(L, "M", "Half  day")).toBe("characters");
+    expect(nameProblem(L, "M", "Half a day")).toBeUndefined();
+    expect(nameProblem(L, "M", "Half a day!")).toBe("characters");
+    expect(nameProblem(L, "M", "Half a days")).toBe("long");
     // A longer name the space holds already stays.
     const held = [{ key: "Deep-work-sessions" }, { key: "M" }];
-    expect(nameProblem(held, 0, "Deep-work-sessions")).toBeUndefined();
+    expect(nameProblem(held, "Deep-work-sessions", "Deep-work-sessions")).toBeUndefined();
     expect(oneLine("  a\tquick\nreply ")).toBe("a quick reply");
   });
 
   test("a removed level's tasks go to the next bigger level, or the next smaller when the largest goes", () => {
-    expect(moveTarget(EFFORT_LEVELS, 2)).toBe("L");
-    expect(moveTarget(EFFORT_LEVELS, 0)).toBe("S");
-    expect(moveTarget(EFFORT_LEVELS, 4)).toBe("L");
+    expect(moveTarget(EFFORT_LEVELS, "M")).toBe("L");
+    expect(moveTarget(EFFORT_LEVELS, "XS")).toBe("S");
+    expect(moveTarget(EFFORT_LEVELS, "XL")).toBe("L");
   });
 });

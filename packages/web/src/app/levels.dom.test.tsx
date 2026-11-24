@@ -319,7 +319,7 @@ describe("[A5.3.7.web.levels-grid] the effort levels' grid in Settings", () => {
     expect(about.maxLength).toBe(280);
     key(about, "Escape");
     type(field("level-amount", 0), "0");
-    expect(lineOf(field("level-amount", 0))).toBe("A time is 1 to 999");
+    expect(lineOf(field("level-amount", 0))).toBe("A time is a whole number from 1 to 999");
     key(field("level-amount", 0), "Escape");
     expect(sets).toHaveLength(0);
 
@@ -391,5 +391,67 @@ describe("[A5.3.7.web.levels-grid] the effort levels' grid in Settings", () => {
     expect(container.querySelector('[data-part="levels-fixed"]')?.textContent).toContain(
       "prefs set tasks.effort_scale --reset",
     );
+  });
+
+  test("what is typed in a name stays with its level when another level goes", async () => {
+    show({ efforts: [{ key: "S" }, { key: "M" }, { key: "L" }] });
+    await settle();
+    const m = field("level-name", 1);
+    type(m, "S");
+    // Pressing Remove leaves the field: the name is taken, so nothing is saved yet.
+    press(button("level-remove", 0));
+    await settle();
+    expect(sent()).toEqual({ names: ["M", "L"], moves: [] });
+    await answer();
+    const typed = container.querySelector<HTMLInputElement>(
+      'li[data-level="M"] [data-part="level-name"]',
+    );
+    expect(typed?.value).toBe("S");
+    if (typed === null) throw new Error("M's name field is gone");
+    key(typed, "Enter");
+    await settle();
+    expect(sent()).toEqual({ names: ["S", "L"], moves: [{ from: "M", to: "S" }] });
+  });
+
+  test("a time that is not a whole number is kept as typed and not saved", async () => {
+    show({});
+    await settle();
+    const amount = field("level-amount", 0);
+    type(amount, "1.5");
+    expect(amount.value).toBe("1.5");
+    expect(lineOf(amount)).toBe("A time is a whole number from 1 to 999");
+    key(amount, "Enter");
+    await settle();
+    expect(sets).toHaveLength(0);
+  });
+
+  test("Alt+Up on a name being typed saves the name once, then moves the level", async () => {
+    show({});
+    await settle();
+    const m = field("level-name", 2);
+    type(m, "Medium");
+    key(m, "ArrowUp", { altKey: true });
+    await settle();
+    await answer();
+    await answer();
+    await answer();
+    expect(sets.map((s) => s.input.set[0]?.value.map((l) => l.key))).toEqual([
+      ["XS", "S", "Medium", "L", "XL"],
+      ["XS", "Medium", "S", "L", "XL"],
+    ]);
+    expect(document.activeElement).toBe(field("level-name", 1));
+  });
+
+  test("Alt+Up and Alt+Down change nothing when the levels are read-only", async () => {
+    show({ effortsFixed: "unreadable" });
+    await settle();
+    const m = field("level-name", 2);
+    act(() => {
+      m.focus();
+    });
+    key(m, "ArrowUp", { altKey: true });
+    key(m, "ArrowDown", { altKey: true });
+    await settle();
+    expect(sets).toHaveLength(0);
   });
 });

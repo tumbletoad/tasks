@@ -494,7 +494,7 @@
   "levels.characters": "Names use letters, digits, spaces, - _ and .",
   "levels.taken": "Another level is called {name}",
   "levels.long": "A name has at most {max} characters",
-  "levels.amount": "A time is 1 to 999",
+  "levels.amount": "A time is a whole number from 1 to 999",
   "levels.moveWith": "{count, plural, one {# task moves with it} other {# tasks move with it}}",
   "levels.ask": "{count, plural, one {# task is {name}} other {# tasks are {name}}}{finished, plural, =0 {} other {, # of them finished}}{trash, plural, =0 {} other {, # in the Trash}}. Move them to:",
   "levels.moveTo": "Move the tasks of {name} to",
