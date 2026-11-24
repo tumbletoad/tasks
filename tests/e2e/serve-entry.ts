@@ -1,7 +1,6 @@
 // The end-to-end tests' `ttasks serve`: the real runServe() in a child process, as
-// packages/service/test/serve-entry.ts runs it, with the page's built folder (E2E_UI), a
-// terminal that records the command line it is given and runs that shim (E2E_TERMINAL, the file it
-// records into), a file manager that records the folders it is asked to show (E2E_FOLDERS), an
+// packages/service/test/serve-entry.ts runs it, with the page's built folder (E2E_UI), the
+// world's fake terminal over IPC, a file manager that records the folders it is asked to show (E2E_FOLDERS), an
 // app link opener that records the links it is given (E2E_LINKS, for T3 Code), and,
 // with E2E_MONITOR, the test kit's fake `ttam` steered by that file: `none` is no TTAM at all,
 // another word is the fake's mode (packages/testkit/src/fakes/ttam.ts), and the file beside it
@@ -20,14 +19,14 @@ import { packageIdentity } from "../../packages/service/src/hub/identity.ts";
 import { runServe } from "../../packages/service/src/hub/serve.ts";
 import { twoTerminalsHost } from "../../packages/service/test/harness.ts";
 import { fakeTtam } from "../../packages/testkit/src/index.ts";
-import { fakeTerminal } from "./fake-terminal.ts";
+import type { TerminalReply, TerminalRequest } from "./fake-terminal.ts";
 
 const ui = process.env["E2E_UI"];
-const record = process.env["E2E_TERMINAL"];
+const send = process.send?.bind(process);
 const folders = process.env["E2E_FOLDERS"];
 const links = process.env["E2E_LINKS"];
-if (ui === undefined || record === undefined || folders === undefined) {
-  process.stderr.write("E2E_UI, E2E_TERMINAL and E2E_FOLDERS must be set\n");
+if (ui === undefined || send === undefined || folders === undefined) {
+  process.stderr.write("the test service needs E2E_UI, E2E_FOLDERS and IPC\n");
   process.exit(64);
 }
 
@@ -47,6 +46,12 @@ mkdirSync(agentHome, { recursive: true });
 const agentEnv = process.env["E2E_AGENT_ENV"];
 const monitor = process.env["E2E_MONITOR"];
 
+const pending = new Map<string, (reply: TerminalReply) => void>();
+process.on("message", (reply: TerminalReply) => {
+  pending.get(reply.launch)?.(reply);
+  pending.delete(reply.launch);
+});
+
 const code = await runServe({
   identity: () => ({ root: false, elevated: false, package: packageIdentity(process.env) }),
   // A worker's tests sign in by code many times a minute. The service's own limit of 10 a minute
@@ -54,7 +59,16 @@ const code = await runServe({
   http: { ports: [0], persist: false, ui, limits: { redeemPerMinute: 10_000 } },
   // Settings lists the terminals detection finds: the same two on every OS the tests run on.
   launch: {
-    terminal: fakeTerminal(record),
+    terminal: ({ intent, ticket, folder }) =>
+      new Promise((resolve) => {
+        pending.set(intent.id, resolve);
+        send({
+          launch: intent.id,
+          task: intent.task,
+          ticket,
+          folder,
+        } satisfies TerminalRequest);
+      }),
     terminals: { host: twoTerminalsHost },
     // A killed shim is noticed at the next PID check: soon, so its tests do not wait on the clock.
     checkMs: 2_000,
