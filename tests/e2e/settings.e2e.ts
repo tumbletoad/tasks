@@ -277,7 +277,9 @@ test.describe("[A7.3.12.m5-11.e2e.keys] The keys: each where it works, never whe
       await expect(addField(page)).toHaveAttribute("aria-keyshortcuts", /^(Control|Meta)\+K$/u);
       await rest(page);
       for (const key of ["n", "/", "?", "j"]) await page.keyboard.press(key);
-      await expect(page.locator("main")).toBeFocused();
+      // Nothing of the page's took a key: no field, no row, no sheet. Where the focus is now is the
+      // browser's: "/" is its own again, and Firefox's quick find moves to a link that matches.
+      await expect(page.locator("header :focus, main :focus")).toHaveCount(0);
       await expect(page).toHaveURL(/\/inbox$/u);
       await expect(sheet(page)).toHaveCount(0);
       await page.keyboard.press(`${mod}+k`);
