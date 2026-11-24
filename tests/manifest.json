@@ -4177,6 +4177,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.12.web.undo-levels",
+      "title": "The page's Undo of a change of the effort levels says the levels were put back and names tasks left off them, leaves a checked row checked, and a refused one offers Undo the rest also when the page did not make the change",
+      "source": "A5 3.12",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.10.history.effort-levels",
       "title": "Undo and Redo of a change of the effort levels invert the rows its commit recorded: the list and every moved task go back, a task that reached a size the old levels lack keeps it and is named, a moved task changed since keeps its size under Undo the rest, and while someone else's change holds the list none of the step comes back",
       "source": "A1 3.10.1, A1 3.16",

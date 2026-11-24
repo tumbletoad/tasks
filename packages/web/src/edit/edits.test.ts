@@ -1524,6 +1524,66 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
   });
 });
 
+describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made in this tab or elsewhere", () => {
+  test("its toast says the levels were put back and names tasks off them; a checked row stays checked", async () => {
+    const w = new World([task(1), task(2)]);
+    w.edits.hold(task(1), undefined, 0);
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: "op_l",
+      tasks: ["M-1", "M-2"],
+      task_count: 2,
+      levels: true,
+      off_list: [{ effort: "Medium", tasks: ["M-2"], count: 1 }],
+      as_of: w.asOf(12),
+    }));
+    await w.edits.undo();
+    expect(w.lastToast()?.text).toEqual({
+      id: "toast.levels",
+      values: { kind: "undo", count: 1, tasks: "M-2" },
+    });
+    expect(w.edits.getState().leaving.get("t_00001")).toMatchObject({ done: true });
+  });
+
+  test("a refused one offers Undo the rest from a page that did not make it", async () => {
+    const w = new World([task(1)]);
+    const step = `op_${"12".padStart(26, "0")}`;
+    w.answer("history.undo", () => {
+      throw appError("conflict", {
+        cause: "UNDO_CONFLICT",
+        commit: step,
+        conflicts: [
+          {
+            entity: "preferences",
+            id: "tasks.effort_scale",
+            field: "value",
+            version: 13,
+            by: "user",
+            at: "2026-11-12T10:42:00.000Z",
+          },
+        ],
+      });
+    });
+    await w.edits.undo();
+    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.undoRest" });
+    w.answer("history.undo", () => ({
+      result: "partial",
+      commit: step,
+      tasks: [],
+      task_count: 0,
+      levels: true,
+      as_of: w.asOf(14),
+      unresolved: [],
+    }));
+    w.lastToast()?.action?.run();
+    await flush();
+    expect(w.calls.at(-1)).toMatchObject({
+      name: "history.undo",
+      input: { partial: true, commit: step },
+    });
+  });
+});
+
 describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", () => {
   const never = () => new Promise(() => undefined);
   const undone = (w: World, seq: number, commit = "op_c") => ({

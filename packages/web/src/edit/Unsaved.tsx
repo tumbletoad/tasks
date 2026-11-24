@@ -5,7 +5,8 @@
 // until it is reopened: "<value> Not saved: the task is finished · Copy · Discard", and on one in
 // the Trash "… the task is in the Trash". An edit made against a history the space no longer has
 // (restored since) is not sent again: "<value> Not saved: the space was restored since · Copy ·
-// Discard". In a space that takes no change (a restored copy, one another machine owns), nothing
+// Discard"; nor a size chosen from effort levels that changed since, which may mean something else
+// now. In a space that takes no change (a restored copy, one another machine owns), nothing
 // can be saved until that changes: "<value> Not saved: this is a restored copy · Copy · Discard";
 // nor from a tab whose copy of the space was closed or replaced since it loaded. The line stays
 // until the person chooses, whatever the feed brings.
@@ -21,7 +22,7 @@ import { Session } from "../context.ts";
 import { sayMsg } from "../row/say.ts";
 import { useLive } from "../store/hooks.ts";
 import { letGo, useKeptEdits } from "../unsent.ts";
-import type { Field } from "./change.ts";
+import { levelsKey, type Field } from "./change.ts";
 import { fieldWords, keyOf, whoOf, type Unsaved as Line } from "./edits.ts";
 import { readOnlyWhy } from "./read-only.ts";
 import css from "./Unsaved.module.css";
@@ -41,6 +42,7 @@ const WHY = {
   "other-tab": "edit.otherTab",
   gone: "edit.notSavedGone",
   restored: "edit.notSavedRestored",
+  levels: "edit.notSavedLevels",
 } as const satisfies Record<string, MessageId>;
 
 /** A kept edit as its line shows it: this tab's own, or another's with its value as kept. */
@@ -120,7 +122,12 @@ function UnsavedLine({
           : readOnly !== undefined
             ? "read_only"
             : undefined;
-  const why = blocked ?? (edits.restored(unsaved) ? "restored" : undefined);
+  const { source } = unsaved.change;
+  const relevelled =
+    source?.kind === "effort" &&
+    source.levels !== undefined &&
+    source.levels !== levelsKey(state.scales.efforts);
+  const why = blocked ?? (edits.restored(unsaved) ? "restored" : relevelled ? "levels" : undefined);
   const sendable = why === undefined;
   return (
     <span

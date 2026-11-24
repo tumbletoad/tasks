@@ -446,6 +446,18 @@ function listText({ shown, more }: ShortList, name: (item: string) => string | M
   return { id: "toast.list", values: { count: shown.length + more, a, b, c, rest: more } };
 }
 
+/** The toast of a change of the effort levels undone or redone, with the tasks it left off them. */
+function levelsText(
+  kind: "undo" | "redo",
+  off: readonly { readonly tasks: readonly string[]; readonly count: number }[] = [],
+): Msg {
+  const tasks = off.flatMap((o) => o.tasks).join(", ");
+  return {
+    id: "toast.levels",
+    values: { kind, count: off.reduce((n, o) => n + o.count, 0), tasks },
+  };
+}
+
 /**
  * Who changed which tasks since, as the toast of a refused undo or redo, or of a redo that passed
  * over older changes, says it (A5 3.12): the tasks by their numbers and the authors by their names,
@@ -1102,10 +1114,14 @@ export class Edits {
         return;
       }
       const result = decision.value;
-      this.#undone(result.tasks, true);
+      // A change of the levels changes no task's lifecycle: no checked row comes back.
+      if (result.levels !== true) this.#undone(result.tasks, true);
       say({
         kind: "undo",
-        text: { id: result.result === "partial" ? "toast.undoneRest" : "toast.undone" },
+        text:
+          result.levels === true
+            ? levelsText("undo", result.off_list)
+            : { id: result.result === "partial" ? "toast.undoneRest" : "toast.undone" },
         action: {
           label: { id: "toast.redo" },
           run: () => {
@@ -1125,7 +1141,7 @@ export class Edits {
       }
       const result = decision.value;
       for (const ref of result.tasks) this.#redone.set(ref, result.commit);
-      this.#undone(result.tasks, false);
+      if (result.levels !== true) this.#undone(result.tasks, false);
       // Older changes it passed over stay for the next Redo: who changed which tasks since.
       const passed = (result as { passed_over?: readonly string[] }).passed_over ?? [];
       const newer = newerValues(newerOf(result.newer_work));
@@ -1133,7 +1149,9 @@ export class Edits {
         kind: "undo",
         text:
           passed.length === 0
-            ? { id: "toast.redone" }
+            ? result.levels === true
+              ? levelsText("redo", result.off_list)
+              : { id: "toast.redone" }
             : newer === undefined
               ? { id: "toast.redonePassedOwn" }
               : { id: "toast.redonePassed", values: newer },
@@ -1474,10 +1492,19 @@ export class Edits {
         : { id: "toast.notDone", values: { kind, ...newer } };
     // Undo the rest only where the page knows the step has a field that does not conflict: its
     // own step's fields. The service then undoes the fields that pass when it is asked, and keeps
-    // the others as they are; a page that does not know the step offers nothing.
+    // the others as they are; a page that does not know the step offers nothing, but for a change
+    // of the effort levels, made anywhere: its rest is the list and the tasks nobody changed, or,
+    // when the list itself was changed since, nothing, and the step leaves the stack.
     const fields = new Set(conflicts.map((c) => c.field));
     const known = commit === undefined ? undefined : this.#fieldsOf.get(commit);
-    if (kind !== "undo" || commit === undefined || !known?.some((f) => !fields.has(f))) {
+    const levels =
+      known === undefined &&
+      (fields.has("effort") || conflicts.some((c) => c.entity === "preferences"));
+    if (
+      kind !== "undo" ||
+      commit === undefined ||
+      !(levels || known?.some((f) => !fields.has(f)))
+    ) {
       say({ kind: "error", text });
       return;
     }
