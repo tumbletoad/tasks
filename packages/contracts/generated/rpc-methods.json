@@ -1677,8 +1677,8 @@
                                 "type": "string"
                               },
                               "key": {
-                                "description": "The level's name, which a task's effort holds",
-                                "maxLength": 64,
+                                "description": "The level's name, at most 10 characters; a longer one the space holds stays",
+                                "maxLength": 20,
                                 "type": "string"
                               },
                               "time": {
@@ -1794,8 +1794,8 @@
                             "type": "string"
                           },
                           "key": {
-                            "description": "The level's name, which a task's effort holds",
-                            "maxLength": 64,
+                            "description": "The level's name, at most 10 characters; a longer one the space holds stays",
+                            "maxLength": 20,
                             "type": "string"
                           },
                           "time": {
@@ -1872,8 +1872,8 @@
                             "type": "string"
                           },
                           "key": {
-                            "description": "The level's name, which a task's effort holds",
-                            "maxLength": 64,
+                            "description": "The level's name, at most 10 characters; a longer one the space holds stays",
+                            "maxLength": 20,
                             "type": "string"
                           },
                           "time": {
@@ -1961,8 +1961,8 @@
                             "type": "string"
                           },
                           "key": {
-                            "description": "The level's name, which a task's effort holds",
-                            "maxLength": 64,
+                            "description": "The level's name, at most 10 characters; a longer one the space holds stays",
+                            "maxLength": 20,
                             "type": "string"
                           },
                           "time": {
@@ -2040,8 +2040,8 @@
                             "type": "string"
                           },
                           "key": {
-                            "description": "The level's name, which a task's effort holds",
-                            "maxLength": 64,
+                            "description": "The level's name, at most 10 characters; a longer one the space holds stays",
+                            "maxLength": 20,
                             "type": "string"
                           },
                           "time": {
@@ -2135,8 +2135,8 @@
                             "type": "string"
                           },
                           "key": {
-                            "description": "The level's name, which a task's effort holds",
-                            "maxLength": 64,
+                            "description": "The level's name, at most 10 characters; a longer one the space holds stays",
+                            "maxLength": 20,
                             "type": "string"
                           },
                           "time": {

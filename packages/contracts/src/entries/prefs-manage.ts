@@ -3,7 +3,13 @@
 // (later.ts). The keys and their value schemas are contracts' declarations (preferences.ts).
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { EFFORT_ABOUT_MAX, EFFORT_LEVELS, EFFORT_UNITS } from "../preferences.ts";
+import {
+  EFFORT_ABOUT_MAX,
+  EFFORT_KEY_MAX,
+  EFFORT_LEVELS,
+  EFFORT_NAME_MAX,
+  EFFORT_UNITS,
+} from "../preferences.ts";
 import { AsOf, Base, Mode, ProposalId, Replayed, RequestId } from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 
@@ -15,7 +21,12 @@ const LIST_TEXT_MAX = 1_024;
 
 /** An effort level whole (`tasks.effort_scale`): its name, and its time and line when it has them. */
 const Level = z.strictObject({
-  key: z.string().max(STRING_MAX).describe("The level's name, which a task's effort holds"),
+  key: z
+    .string()
+    .max(EFFORT_KEY_MAX)
+    .describe(
+      `The level's name, at most ${String(EFFORT_NAME_MAX)} characters; a longer one the space holds stays`,
+    ),
   time: z
     .strictObject({
       amount: z.int().min(1).max(999).describe("How many units"),

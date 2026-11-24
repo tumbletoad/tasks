@@ -786,7 +786,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `set` | object[], 1 to 10 items | no | set: the keys and their new values |
 | `set[].key` | string, max 64 | yes | A key describe lists |
 | `set[].value` | string, max 1024 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64 \| object)[], max 20 items | no | The new value, a list as keys separated by commas |
-| `set[].value[].key` | string, max 64 | yes | The level's name, which a task's effort holds |
+| `set[].value[].key` | string, max 20 | yes | The level's name, at most 10 characters; a longer one the space holds stays |
 | `set[].value[].time` | object | no | A typical amount of the user's own time on it |
 | `set[].value[].time.amount` | integer, 1 to 999 | yes | How many units |
 | `set[].value[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
@@ -806,13 +806,13 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `prefs[].summary` | string | no | What it sets (describe) |
 | `prefs[].shape` | string | no | Its values, in words (describe) |
 | `prefs[].value` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| object[] \| null | no | Its value now (get) |
-| `prefs[].value[].key` | string, max 64 | yes | The level's name, which a task's effort holds |
+| `prefs[].value[].key` | string, max 20 | yes | The level's name, at most 10 characters; a longer one the space holds stays |
 | `prefs[].value[].time` | object | no | A typical amount of the user's own time on it |
 | `prefs[].value[].time.amount` | integer, 1 to 999 | yes | How many units |
 | `prefs[].value[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
 | `prefs[].value[].about` | string, max 280 | no | One line on what belongs on it, in the user's words |
 | `prefs[].default` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| object[] \| null | yes | Its default |
-| `prefs[].default[].key` | string, max 64 | yes | The level's name, which a task's effort holds |
+| `prefs[].default[].key` | string, max 20 | yes | The level's name, at most 10 characters; a longer one the space holds stays |
 | `prefs[].default[].time` | object | no | A typical amount of the user's own time on it |
 | `prefs[].default[].time.amount` | integer, 1 to 999 | yes | How many units |
 | `prefs[].default[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
@@ -822,7 +822,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `prefs[].policy` | true | no | Policy: the user's own (A3 3.8) |
 | `prefs[].fixed` | true | no | Fixed in this build: nobody changes it |
 | `prefs[].in_force` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| object[] \| null | no | What this build does whatever the key says: it does not act on the key yet |
-| `prefs[].in_force[].key` | string, max 64 | yes | The level's name, which a task's effort holds |
+| `prefs[].in_force[].key` | string, max 20 | yes | The level's name, at most 10 characters; a longer one the space holds stays |
 | `prefs[].in_force[].time` | object | no | A typical amount of the user's own time on it |
 | `prefs[].in_force[].time.amount` | integer, 1 to 999 | yes | How many units |
 | `prefs[].in_force[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
@@ -831,13 +831,13 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `changed` | object[] | no | The keys a change changed |
 | `changed[].key` | string | yes | The key |
 | `changed[].from` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| object[] \| null | yes | Its value before |
-| `changed[].from[].key` | string, max 64 | yes | The level's name, which a task's effort holds |
+| `changed[].from[].key` | string, max 20 | yes | The level's name, at most 10 characters; a longer one the space holds stays |
 | `changed[].from[].time` | object | no | A typical amount of the user's own time on it |
 | `changed[].from[].time.amount` | integer, 1 to 999 | yes | How many units |
 | `changed[].from[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
 | `changed[].from[].about` | string, max 280 | no | One line on what belongs on it, in the user's words |
 | `changed[].to` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| object[] \| null | yes | Its value now |
-| `changed[].to[].key` | string, max 64 | yes | The level's name, which a task's effort holds |
+| `changed[].to[].key` | string, max 20 | yes | The level's name, at most 10 characters; a longer one the space holds stays |
 | `changed[].to[].time` | object | no | A typical amount of the user's own time on it |
 | `changed[].to[].time.amount` | integer, 1 to 999 | yes | How many units |
 | `changed[].to[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
