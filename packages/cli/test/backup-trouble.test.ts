@@ -2,11 +2,12 @@
 // report goes once a backup succeeds again: through a running service, `ttasks doctor` and
 // `ttasks space list`. Fixture spaces only.
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { CLI_NAME } from "@ttasks/brand";
 import { startService, type RunningService } from "@ttasks/service/hub";
 import {
+  backupsOf,
   registerSpaces,
   removeRuntimeDir,
   serviceEnv,
@@ -57,13 +58,14 @@ describe("[A1.5.backup.failure-shown] a failed daily backup is shown until a bac
     );
     const folder = join(root, "spaces", "mira");
     mkdirSync(join(root, "spaces"));
-    createSpace(await checkedDriver(), folder, {
+    const created = createSpace(await checkedDriver(), folder, {
       name: "Mira",
       ownerLabel: "Mira Okafor",
       machineId: machine,
     });
     // A file where the backups folder goes: the daily backup cannot be written.
-    const blocker = join(folder, "backups");
+    const blocker = backupsOf(home, created.space.spaceId);
+    mkdirSync(dirname(blocker));
     writeFileSync(blocker, "not a folder");
     registerSpaces(home, [folder]);
     const service = await startService({

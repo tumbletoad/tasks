@@ -20,13 +20,14 @@ import {
 } from "../../packages/service/src/version/update.ts";
 import { currentVersion } from "../../packages/service/src/version/switch.ts";
 import {
+  backupsOf,
   registerSpaces,
   removeRuntimeDir,
   serviceEnv,
   stateOf,
 } from "../../packages/service/test/harness.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
-import { backupsFolder, listBackups } from "../../packages/storage/src/index.ts";
+import { listBackups } from "../../packages/storage/src/index.ts";
 import { FIXTURE_MACHINE } from "../../packages/storage/test/fixture-requests.ts";
 import { createSpaceAt, STEPS_0_4 } from "../../packages/storage/test/revisions.ts";
 import { checkedDriver } from "../../packages/storage/test/space-helpers.ts";
@@ -112,7 +113,7 @@ class HubControl implements ServiceControl {
 
 /** The space's barrier backups that are complete, oldest first, with their tasks counted. */
 const barriers = (folder: string) =>
-  listBackups(backupsFolder(folder))
+  listBackups(folder)
     .backups.filter((b) => b.state === "ok" && b.sidecar?.kind === "pre-migrate")
     .map((b) => ({ name: b.name, tasks: b.sidecar?.counts["tasks"] ?? -1 }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -143,13 +144,14 @@ describe("[A2.3.12.6.update.spaces] an update whose migration fails names its ow
       );
       const folder = join(made.dir, "spaces", "work");
       mkdirSync(join(made.dir, "spaces"));
-      createSpaceAt(
+      const created = createSpaceAt(
         await checkedDriver(),
         folder,
         { name: "Work", ownerLabel: "Fixture Owner", machineId: FIXTURE_MACHINE.id },
         STEPS_0_4,
       );
       registerSpaces(home, [folder]);
+      const backups = backupsOf(home, created.space.spaceId);
       const control = new HubControl(home, root);
       cleanups.push(() => control.stop());
 
@@ -157,7 +159,7 @@ describe("[A2.3.12.6.update.spaces] an update whose migration fails names its ow
       const first = await control.start("0.1.0");
       await first.spacesSettled;
       expect(control.hub?.status().spaces[0]).toMatchObject({ state: "open" });
-      const [fromA] = barriers(folder);
+      const [fromA] = barriers(backups);
       if (fromA === undefined) throw new Error("A took no barrier backup");
 
       // A task is added through an operation.
@@ -184,7 +186,7 @@ describe("[A2.3.12.6.update.spaces] an update whose migration fails names its ow
         settleWaitMs: 120_000,
       });
       expect(updated).toMatchObject({ outcome: "updated", from: "0.1.0", to: "0.2.0" });
-      const fromB = barriers(folder).find((b) => b.name !== fromA.name);
+      const fromB = barriers(backups).find((b) => b.name !== fromA.name);
       if (fromB === undefined) throw new Error("B took no barrier backup");
       expect(fromB.tasks).toBe(fromA.tasks + 1);
       const report = updated.spaces;

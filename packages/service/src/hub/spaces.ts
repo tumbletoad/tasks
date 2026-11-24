@@ -130,6 +130,8 @@ import {
   recordSeen,
   recordSyncedConfirmed,
   recordWriterFolder,
+  backupsFolderOf,
+  readyBackupsFolder,
   type BuildIdentity,
   type FailedMigration,
   type LastMigration,
@@ -234,6 +236,8 @@ export interface SpaceView {
    * whether that backup is still in the space's backups folder: in described(), for people.
    */
   readonly migrated?: LastMigration & { readonly backup_listed?: boolean };
+  /** Where the space's backups are written: in described(), for people. */
+  readonly backups_folder?: string;
   /** An open space whose backups are not working: what happened and what to do. */
   readonly backup?: BackupTroubleView;
   /** A restored copy that is not claimed: its own record, whatever its state's reason. */
@@ -255,6 +259,8 @@ export interface SpaceManagerOptions {
   readonly stateDir: string;
   /** The state folder, for the machine-local space settings (space-settings.ts). */
   readonly settingsDir: string;
+  /** The spaces' backups folder beside the TTasks home (paths.ts Layout.backups). */
+  readonly backups: string;
   readonly log: Logger;
   readonly startWorker?: () => Promise<StorageWorker>;
   readonly openTimeoutMs?: number;
@@ -445,8 +451,8 @@ class Hosted {
    * (storage's backupHistories).
    */
   incarnation: Id<"ai"> | undefined;
-  /** The space's machine-local backup folder, when one is set. */
-  backupDir: string | undefined;
+  /** Where the space's backups are written (space-settings.ts backupsFolderOf), once it opens. */
+  backupFolder: { readonly dir: string; readonly set: boolean } | undefined;
   /** The projection's worker while the space is open as this machine's. */
   projection: ProjectionRunner | undefined;
   /** The hourly check whether the next daily backup is due. */
@@ -690,20 +696,32 @@ export class SpaceManager {
     return this.#spaces.map((space) => {
       const settings = readSpaceSettings(this.#options.settingsDir, space.id ?? space.registered);
       const last = settings.lastMigration;
+      const backups = backupsFolderOf(settings, this.#options.backups, space.registered);
       // The backup from before it is sent to only while it is there: a build before this one
-      // removed it after 30 days, and a person may have since. It is in the folder its record
-      // names when the one set for the space was away at the upgrade.
-      const dir = last?.backup_folder ?? settings.backupDir ?? backupsFolder(space.folder);
+      // removed it after 30 days, and a person may have since. A record from before folders were
+      // recorded is in the backups folder or the space's own, where backups went before.
+      const folders =
+        last?.backup_folder === undefined
+          ? [backups.dir, backupsFolder(space.folder)]
+          : [last.backup_folder];
+      const found = folders.find(
+        (dir) => last?.backup !== undefined && existsSync(join(dir, `${last.backup}.db.gz`)),
+      );
       const migrated =
         last?.backup === undefined
           ? last
-          : { ...last, backup_listed: existsSync(join(dir, `${last.backup}.db.gz`)) };
+          : {
+              ...last,
+              backup_listed: found !== undefined,
+              ...(found === undefined ? {} : { backup_folder: found }),
+            };
       return {
         ...space.view(),
         registered: space.registered,
         ...(space.name === undefined ? {} : { name: space.name }),
         ...(space.refPrefix === undefined ? {} : { ref_prefix: space.refPrefix }),
         ...(migrated === undefined ? {} : { migrated }),
+        backups_folder: backups.dir,
       };
     });
   }
@@ -1289,7 +1307,7 @@ export class SpaceManager {
     }
     // By the space the entry names: the folder's space.json may be gone (it is written again).
     const settings = this.#settingsFor(space.registered);
-    space.backupDir = settings.backupDir;
+    space.backupFolder = backupsFolderOf(settings, this.#options.backups, space.registered);
 
     // A1 3.2: the folder and every folder above it, at every open. A network file system is never
     // written; a synced folder is read-only until the person confirmed it is excluded from sync,
@@ -1335,7 +1353,9 @@ export class SpaceManager {
         // Another space in the folder is refused before anything is claimed, locked or written.
         spaceId: space.registered,
         holder: this.#holderFacts,
-        ...(settings.backupDir === undefined ? {} : { backupDir: settings.backupDir }),
+        backupDir: readyBackupsFolder(
+          backupsFolderOf(settings, this.#options.backups, space.registered),
+        ),
         onLock: (lock) => {
           this.#watch(space, worker, lock);
         },
@@ -1384,10 +1404,7 @@ export class SpaceManager {
           from: encodeRevision(writer.migration.from),
           to: encodeRevision(writer.migration.to),
           backup: writer.migration.backup.name,
-          // The folder set for the space was away: the list says where the backup went.
-          ...(writer.migration.setFolderAway === true
-            ? { backupFolder: dirname(writer.migration.backup.file) }
-            : {}),
+          backupFolder: dirname(writer.migration.backup.file),
         });
       } catch {
         // Only what the space list says about the migration: the migration itself is done.
@@ -1917,8 +1934,15 @@ export class SpaceManager {
   #maintain(space: Hosted, atStart: boolean): void {
     const { maintenance, log } = this.#options;
     const spaceId = space.id;
-    const { incarnation } = space;
-    if (maintenance === undefined || spaceId === undefined || incarnation === undefined) return;
+    const { incarnation, backupFolder } = space;
+    if (
+      maintenance === undefined ||
+      spaceId === undefined ||
+      incarnation === undefined ||
+      backupFolder === undefined
+    ) {
+      return;
+    }
     const now = (this.#options.now?.() ?? new Date()).getTime();
     const t0 = performance.now();
     const begun = space.backups.begin();
@@ -1927,10 +1951,10 @@ export class SpaceManager {
         folder: space.folder,
         spaceId,
         incarnation,
-        ...(space.backupDir === undefined ? {} : { backupDir: space.backupDir }),
-        // Only the space's own backups folder, which this service alone writes while it holds
-        // the space's writer.lock (maintenance.ts).
-        cleanup: space.backupDir === undefined,
+        backupDir: readyBackupsFolder(backupFolder),
+        // Only the default folder, which this service alone writes while it holds the space's
+        // writer.lock (maintenance.ts).
+        cleanup: !backupFolder.set,
         atStart,
         now,
         utcOffsetMinutes: -new Date(now).getTimezoneOffset(),

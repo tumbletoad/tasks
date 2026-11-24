@@ -210,6 +210,9 @@ export interface ServiceJson {
 
 export const stateOf = (home: string): string => join(home, "state");
 export const configOf = (home: string): string => join(home, "config");
+/** Where a space's backups go in the test install at `home` (paths.ts Layout.backups). */
+export const backupsOf = (home: string, spaceId: string): string =>
+  join(`${home}-backups`, spaceId);
 
 /**
  * Registers `spaces` as the spaces of `home`'s service: machine.toml's `[[spaces]]`, written

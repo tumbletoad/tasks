@@ -6,7 +6,6 @@ import {
   applyRetention,
   backupHistories,
   backupSpace,
-  backupsFolder,
   CheckedDriver,
   compareInHistory,
   dailyBackupDue,
@@ -24,12 +23,13 @@ const reply = (message: MaintenanceReply): void => {
 
 async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
   const checked = await CheckedDriver.check(await loadDriver(DEFAULT_DRIVER));
-  const dir = job.backupDir ?? backupsFolder(job.folder);
+  const dir = job.backupDir;
   const clock = { now: job.now, utcOffsetMinutes: job.utcOffsetMinutes };
   let listing = listBackups(dir);
   // A backups folder this machine set for the space that is not there may be on a drive that is
-  // not connected: no backup goes to a new folder in its place, where nobody looks for it.
-  if (job.backupDir !== undefined && !listing.present) {
+  // not connected: no backup goes to a new folder in its place, where nobody looks for it. The
+  // default one is made before the run, so it is missing only when it could not be made.
+  if (!listing.present) {
     return { leftovers: 0, backup: "away", removed: 0, unverified: 0 };
   }
   // Only in a backups folder this service alone writes: see maintenance.ts.
@@ -44,10 +44,7 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
   let searchIndexDamaged = false;
   let after = clock;
   if (due) {
-    const taken = await backupSpace(checked, job.folder, {
-      kind: "daily",
-      ...(job.backupDir === undefined ? {} : { backupDir: job.backupDir }),
-    });
+    const taken = await backupSpace(checked, job.folder, { kind: "daily", backupDir: dir });
     searchIndexDamaged = taken.searchIndexRemade === true;
     listing = listBackups(dir);
     // The backup is dated after the job's `now`, and retention leaves out a backup from its
@@ -73,10 +70,10 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
   // Backups of this copy's history newer than the one that restores, or than the one whose trial
   // could not run, whose files are no longer whole (data missing or of another size): retention
   // passes them over, and they do not restore either. A `.db.gz` whose sidecar is missing or does
-  // not read names no history: in the space's own folder, one of this copy's epoch is this copy's
-  // (each claim here takes a new epoch), in a backup.dir that other spaces and copies may share it
-  // is nobody's known.
-  const ownFolder = job.backupDir === undefined;
+  // not read names no history. In the default folder, which only this machine's writer of the
+  // space writes, one of this copy's epoch is this copy's (each claim and each restore in place
+  // here takes a new epoch); in a backup.dir that other spaces and machines may share it is nobody's
+  // known.
   const epoch = own?.backups[0]?.sidecar?.epoch;
   const newestKnown = verified ?? named(retention?.unchecked?.name);
   const broken =
@@ -85,7 +82,7 @@ async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
       : [
           ...(own?.backups ?? []),
           ...listing.backups.filter(
-            (b) => b.sidecar === undefined && ownFolder && b.epoch === epoch,
+            (b) => b.sidecar === undefined && job.cleanup && b.epoch === epoch,
           ),
         ].filter(
           (b) =>

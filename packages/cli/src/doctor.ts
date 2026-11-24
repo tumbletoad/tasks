@@ -211,7 +211,7 @@ function localChecks(io: Io, layout: Layout, now: number): Check[] {
   const checks: Check[] = [];
   const state = layout.state;
   // The data folder is hidden (`~/.ttasks`), so the row says where it is (A2 3.13).
-  const where = `Data and configuration are in ${layout.data}.`;
+  const where = `Data and configuration are in ${layout.data}, the spaces' backups in ${layout.backups}.`;
   if (!existsSync(state)) {
     checks.push({
       id: "paths",
