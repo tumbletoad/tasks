@@ -431,23 +431,26 @@ describe("[A2.3.12.6.update.way-back] an install cut off and run again keeps the
   // Windows: also after the first of its two launchers.
   const cuts: ("switch" | number)[] = windows ? [1, "switch"] : ["switch"];
 
-  test.each(cuts)("cut off at %s, then run again twice, the version before it stays the one --rollback goes back to", async (cut) => {
-    const { root, folder } = install();
-    await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
-    const next = addVersion(root, "0.2.0", "launcher two");
-    await cutFinish(root, next, cut);
-    expect(currentOf(root)).toBe(windows ? "0.2.0" : "versions/0.2.0");
-    for (const run of [1, 2]) {
-      await finishInstall({ versionFolder: next, facts: facts(root) });
-      expect(record(root).previous, `run ${String(run)}`).toBe("0.1.0");
-    }
-    expect(record(root).versions).toEqual(["0.1.0", "0.2.0"]);
-    const back = await rollbackUpdate({
-      facts: facts(root),
-      keys: [],
-      selfTest: () => Promise.resolve({ ok: true, failed: [] }),
-    });
-    expect(back).toMatchObject({ outcome: "updated", from: "0.2.0", to: "0.1.0" });
-    expect(currentOf(root)).toBe(windows ? "0.1.0" : "versions/0.1.0");
-  });
+  test.each(cuts)(
+    "cut off at %s, then run again twice, the version before it stays the one --rollback goes back to",
+    async (cut) => {
+      const { root, folder } = install();
+      await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+      const next = addVersion(root, "0.2.0", "launcher two");
+      await cutFinish(root, next, cut);
+      expect(currentOf(root)).toBe(windows ? "0.2.0" : "versions/0.2.0");
+      for (const run of [1, 2]) {
+        await finishInstall({ versionFolder: next, facts: facts(root) });
+        expect(record(root).previous, `run ${String(run)}`).toBe("0.1.0");
+      }
+      expect(record(root).versions).toEqual(["0.1.0", "0.2.0"]);
+      const back = await rollbackUpdate({
+        facts: facts(root),
+        keys: [],
+        selfTest: () => Promise.resolve({ ok: true, failed: [] }),
+      });
+      expect(back).toMatchObject({ outcome: "updated", from: "0.2.0", to: "0.1.0" });
+      expect(currentOf(root)).toBe(windows ? "0.1.0" : "versions/0.1.0");
+    },
+  );
 });
