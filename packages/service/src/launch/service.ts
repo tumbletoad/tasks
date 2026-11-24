@@ -674,12 +674,16 @@ export class LaunchService {
       if (route === undefined && !runsWith(instance)) continue;
       shown.push({ instance, route });
     }
-    const apps = shown.map(({ instance }) => ({ ...instance, app: appName(instance) }));
-    const names = instanceNames(apps);
+    // Named among every instance set up here, as Settings names it, whichever space it serves.
+    const named = this.#instances()
+      .filter((instance) => instance.enabled)
+      .map((instance) => ({ ...instance, app: appName(instance) }));
+    const names = instanceNames(named);
+    const nameOf = (id: string) => names[named.findIndex((n) => n.id === id)];
     return shown.map(({ instance, route }, i) => ({
       key: instance.id,
-      app: apps[i]?.app ?? "",
-      label: names[i] ?? instance.label,
+      app: appName(instance),
+      label: nameOf(instance.id) ?? instance.label,
       glyph: glyphOf(instance),
       ring: (i % 8) + 1,
       ...(route === undefined ? {} : { route }),

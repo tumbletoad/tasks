@@ -627,6 +627,12 @@ describe("[A7.3.12.m5-12.page-status] The tools switch is on only while the tool
           ],
         });
         expect(applied.result.outcomes.map((o) => o.result)).toEqual(["done", "done"]);
+        // Settings names each the way Open names it, also beside a Claude Code home not set up.
+        const on = await look();
+        const opens = w.service.launches.instances(space).map((i) => i.label);
+        for (const set of [on.rows.find((r) => r.home?.endsWith(suffix)), row(on, "codex")]) {
+          expect(opens).toContain(set?.label);
+        }
         // The person renames Codex's tile in machine.toml: alone of its app, it is still its app.
         const toml = join(configOf(w.home), "machine.toml");
         writeFileSync(
