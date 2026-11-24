@@ -5,6 +5,7 @@ import {
   inTrashSql,
   OPEN_RUN,
   removalSeqSql,
+  RUN_WAITS,
   type Row,
   type WorkerConnection,
 } from "@ttasks/storage";
@@ -21,8 +22,8 @@ export interface TrashRequest {
   readonly prefix?: string | undefined;
   /**
    * The tasks the Agents page places as it places a live task: with `working`, those whose row
-   * shows a run (one that may hold processes: a question in the Trash waits for no one) and those
-   * with an agent in a terminal TTasks started on this machine and holds open; with `tasks`, these, which
+   * shows a run (one that may hold processes, or a newest that asks the person) and those with an
+   * agent in a terminal TTasks started on this machine and holds open; with `tasks`, these, which
    * the Agent Monitor links an agent to. Both: either.
    */
   readonly working?: boolean | undefined;
@@ -81,7 +82,10 @@ function trashSql(request: TrashRequest, folders: boolean): string {
   // The rule of a row's `run` (task-rows.ts runOf). Without the runs table (a space served at an
   // older revision) no run works on any of them.
   if (request.working === true && folders) {
-    agents.push(`EXISTS (SELECT 1 FROM runs r WHERE r.task_id = t.id AND ${OPEN_RUN})`);
+    agents.push(
+      `EXISTS (SELECT 1 FROM runs r WHERE r.task_id = t.id AND ${OPEN_RUN})`,
+      `EXISTS (SELECT 1 FROM runs r WHERE ${RUN_WAITS})`,
+    );
   }
   // An agent in a terminal shows on no other page: the record of its launch says it goes on.
   if (request.working === true) agents.push(`EXISTS (${HELD_TERMINALS("t")})`);
