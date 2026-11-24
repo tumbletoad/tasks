@@ -53,6 +53,7 @@ import {
   type Outcome,
   type RefusalCode,
   type RunExpected,
+  type RunMover,
 } from "./store.ts";
 
 type MaybePromise<T> = T | Promise<T>;
@@ -122,6 +123,8 @@ export interface SpaceCredential {
   actor_kind: string;
   machine_id: string;
   origin: string;
+  /** The run that writes, for a run's own move. */
+  run_id?: string;
 }
 
 /** The space's writer, as this store needs it. */
@@ -326,18 +329,23 @@ export class SpaceExecutionStore implements ExecutionStore {
     expect: RunExpected,
     next: RunState,
     patch?: RunPatch,
+    by: RunMover = "run",
   ): Promise<RunRecord> {
     const change = checkRunTransition(id, expect, next, patch);
-    const result = await this.#submit(transitionRequestId(), {
-      kind: "run.transition",
-      run: change.id,
-      expect: change.expect.state,
-      expect_version: change.expect.version,
-      next: change.next,
-      ...(change.reason === undefined ? {} : { reason: change.reason }),
-      ...(Object.keys(change.evidence).length === 0 ? {} : { evidence: change.evidence }),
-      ...(change.result === undefined ? {} : { result: resultRow(change.result) }),
-    });
+    const result = await this.#submit(
+      transitionRequestId(),
+      {
+        kind: "run.transition",
+        run: change.id,
+        expect: change.expect.state,
+        expect_version: change.expect.version,
+        next: change.next,
+        ...(change.reason === undefined ? {} : { reason: change.reason }),
+        ...(Object.keys(change.evidence).length === 0 ? {} : { evidence: change.evidence }),
+        ...(change.result === undefined ? {} : { result: resultRow(change.result) }),
+      },
+      by === "run" ? { ...this.#credential, run_id: change.id } : this.#credential,
+    );
     if (result.error === undefined) return this.#readRunOrThrow(change.id);
     const refused = runRefusal(result);
     if (refused.code === "stale" || refused.code === "evidence") {
@@ -365,11 +373,15 @@ export class SpaceExecutionStore implements ExecutionStore {
     return intent;
   }
 
-  async #submit(requestId: string, op: Record<string, unknown>): Promise<SpaceWriteResult> {
+  async #submit(
+    requestId: string,
+    op: Record<string, unknown>,
+    actor: SpaceCredential = this.#credential,
+  ): Promise<SpaceWriteResult> {
     return this.#writer.submit({
       space_id: this.#spaceId,
       request_id: requestId,
-      actor: this.#credential,
+      actor,
       ops: [op],
     });
   }

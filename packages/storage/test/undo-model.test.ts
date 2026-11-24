@@ -1312,7 +1312,8 @@ const property = (seen: Seen) =>
                 ],
               );
               const moved = submit(
-                fx.request(fx.human, [
+                // The run's own move: the run machine writes it as the run.
+                fx.request({ ...fx.human, run_id: run }, [
                   {
                     kind: "run.transition",
                     run,

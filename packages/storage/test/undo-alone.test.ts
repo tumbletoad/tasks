@@ -1,13 +1,13 @@
 // A person working alone can always undo everything they did, one step at a time, and redo it
 // (A1 3.10.1). One person creates tasks, files them into areas and projects, moves and reorders
 // them, checks them off, reopens and archives them, moves them to the Trash and back, adds notes,
-// folders and tickets, makes areas and projects and moves and removes them, often several of these
-// in one request. In between, and between their undos and redos, they queue runs and open
-// sessions, which are no steps on their stack. No one else writes. Then they undo until nothing is
-// left and redo until nothing is left: every Undo and Redo applies whole, each Undo gives back the
-// space before the step it took back and each Redo the space after it, every position and the
-// order of every list included. The rules every write keeps (space-rules.ts) are checked after
-// every write. A run keeps its task's create (undo-runs.test.ts), so runs go on the tasks that
+// folders and tickets, makes areas and projects and moves and removes them, often several of
+// these in one request. In between, and between their undos and redos, they queue runs, stop
+// them and open sessions, which are no steps on their stack. No one else writes. Then they undo
+// until nothing is left and redo until nothing is left: every Undo and Redo applies whole, each
+// Undo gives back the space before the step it took back and each Redo the space after it, every
+// position and the order of every list included. The rules every write keeps (space-rules.ts) are
+// checked after every write. A run keeps its task's create (undo-runs.test.ts), so runs go on the tasks that
 // were there before the first step. Each ticket goes to one task: while two tasks hold one key,
 // an Undo or Redo never brings a link of it back, also when the person linked both, a limit for
 // now. Fixture text and paths only.
@@ -44,12 +44,13 @@ type Forward =
   | { kind: "regroup"; p: number; a: number }
   | { kind: "project_delete" | "project_restore"; p: number };
 
-/** What the person does that is on no stack. */
-type Aside = { kind: "run" | "session"; t: number };
+/** On no stack: the person queues a run, stops the newest queued one, opens a session. */
+type Aside = { kind: "run" | "stop" | "session"; t: number };
 
 type Step = Forward | { kind: "batch"; steps: readonly Forward[] } | Aside;
 
-const isAside = (s: Step): s is Aside => s.kind === "run" || s.kind === "session";
+const isAside = (s: Step): s is Aside =>
+  s.kind === "run" || s.kind === "stop" || s.kind === "session";
 
 const n = fc.nat({ max: 40 });
 const forward: fc.Arbitrary<Forward> = fc.oneof(
@@ -115,7 +116,7 @@ const forward: fc.Arbitrary<Forward> = fc.oneof(
   },
 );
 const aside: fc.Arbitrary<Aside> = fc.record({
-  kind: fc.constantFrom("run" as const, "session" as const),
+  kind: fc.constantFrom("run" as const, "stop" as const, "session" as const),
   t: n,
 });
 const step: fc.Arbitrary<Step> = fc.oneof(
@@ -164,6 +165,24 @@ const CASES: readonly Plan[] = [
   },
   // Archived, the archive undone, a run queued, the archive redone.
   { steps: [{ kind: "archive", t: 1 }], between: [{ at: 1, aside: { kind: "run", t: 1 } }] },
+  // The same with the run stopped while still queued: the person's Stop is theirs.
+  {
+    steps: [
+      { kind: "complete", t: 0 },
+      { kind: "reopen", t: 0 },
+      { kind: "run", t: 0 },
+      { kind: "stop", t: 0 },
+    ],
+    between: [],
+  },
+  // Archived, the archive undone, a run queued and stopped, the archive redone.
+  {
+    steps: [{ kind: "archive", t: 1 }],
+    between: [
+      { at: 1, aside: { kind: "run", t: 1 } },
+      { at: 1, aside: { kind: "stop", t: 1 } },
+    ],
+  },
   // Moved to the Trash, the move undone, a session opened, the move redone.
   { steps: [{ kind: "delete", t: 2 }], between: [{ at: 1, aside: { kind: "session", t: 2 } }] },
   // A step that moves several tasks while one takes another's old place: Undo and Redo give
@@ -421,8 +440,25 @@ function opsOf(w: World, s: Forward): Operation[] {
   }
 }
 
+/** The newest queued run: the one the person's Stop cancels, as the run machine writes it. */
+const QUEUED =
+  "SELECT id, version FROM runs WHERE state = 'queued' ORDER BY queued_at DESC, id DESC LIMIT 1";
+
 function asideOps(w: World, s: Aside): Operation[] {
   const task = nth(w.tasks.slice(0, w.first), s.t);
+  if (s.kind === "stop") {
+    const run = w.fx.reader.prepare(QUEUED).get();
+    if (run === undefined) return [];
+    return [
+      {
+        kind: "run.transition",
+        run: String(run["id"]) as Id<"ru">,
+        expect: "queued",
+        expect_version: Number(run["version"]),
+        next: "cancelled",
+      },
+    ];
+  }
   return s.kind === "run"
     ? [
         {
@@ -536,7 +572,8 @@ async function run({ steps, between }: Plan): Promise<void> {
     return result;
   };
   const asideOf = (s: Aside): void => {
-    submit(w.ui, asideOps(w, s), false);
+    const ops = asideOps(w, s);
+    if (ops.length > 0) submit(w.ui, ops, false);
   };
   try {
     /** The space before and after each step that applied, in order. */

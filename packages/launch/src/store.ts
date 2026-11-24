@@ -169,6 +169,13 @@ export const seenRun = (run: RunRecord): RunExpected => ({
   version: run.version,
 });
 
+/**
+ * Who moves a run: the run itself, by its start, progress and end, or the person, by their Stop.
+ * The space records the run's own moves as the run's, so the person's Undo tells them apart from
+ * what the person did: queueing a run and stopping it are theirs.
+ */
+export type RunMover = "run" | "person";
+
 /** The run part of the execution store (A4 3.16.1): what the run machine needs. */
 export interface RunStore {
   /**
@@ -187,13 +194,14 @@ export interface RunStore {
    * One atomic compare-and-set transition: the record must be at `expect`, or the call is refused
    * with `stale` and the current record, and moves nothing. `expect.state → next` must be an edge
    * of A4's machine. Evidence only grows, and a result goes in once, entering a final state.
-   * Returns the record as it is after the call.
+   * Returns the record as it is after the call. `by` is who moves it: the run, unless said.
    */
   transitionRun(
     id: string,
     expect: RunExpected,
     next: RunState,
     patch?: RunPatch,
+    by?: RunMover,
   ): Promise<RunRecord>;
   /** The run as it is now, or undefined. */
   readRun(id: string): Promise<RunRecord | undefined>;

@@ -6,6 +6,9 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
+import { RUN_LIMITS } from "@ttasks/contracts/runs";
+import { SpaceExecutionStore } from "@ttasks/launch";
+import { RunMachine } from "@ttasks/runs";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
@@ -371,7 +374,7 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
   );
 });
 
-describe("[A1.5.history.runs] a run keeps its task's create, through the request path", () => {
+describe("[A1.5.history.runs] runs beside Undo, through the request path", () => {
   test(
     "the conflict, the same request sent again and a partial undo's unresolved name the run",
     async () => {
@@ -441,6 +444,71 @@ describe("[A1.5.history.runs] a run keeps its task's create, through the request
         unresolved: [{ entity: "runs", id: run, task, field: "state", by: "user" }],
       });
       expect((await show(task))["ref"]).toBe(task);
+    },
+    LONG,
+  );
+
+  test(
+    "a run the person queued and stopped is theirs and keeps no Undo from checking the task off again; a run that started does, named as the run",
+    async () => {
+      const served = w.service.ops.spaces().find((s) => s.writer !== undefined);
+      const writer = served?.writer;
+      if (writer === undefined) throw new Error("no writer");
+      const machineId = w.service.ops.machine.id;
+      // The run machine over the store the service gives it: the person, in the runs' own scope.
+      const machine = new RunMachine({
+        machine: machineId,
+        store: new SpaceExecutionStore({
+          writer,
+          spaceId: w.space,
+          credential: {
+            scope_id: `runs:${machineId}`,
+            principal_id: await writer.actor("human", "user"),
+            actor_kind: "human",
+            machine_id: machineId,
+            origin: "ui",
+          },
+        }),
+      });
+      /** A task checked off and reopened, with a run queued on it. */
+      const queuedOn = async (title: string) => {
+        const task = await add(title);
+        await call("task.finish", { task, base: await asOf(), request_id: rid() });
+        await call("task.reopen", { task, base: await asOf(), request_id: rid() });
+        const run = await machine.queue(
+          {
+            task: String((await show(task))["id"]),
+            routine: null,
+            instance: "codex-work",
+            adapter: "codex",
+            place: null,
+            request: "Fixture instruction.",
+            briefHash: "a1b2c3d4".repeat(8),
+            permission: "full-access",
+            limits: RUN_LIMITS.task,
+          },
+          rid(),
+        );
+        return { task, run: run.id };
+      };
+      // No round of the service's runs takes these records while the test moves them.
+      const hold = w.service.runs.hold();
+      try {
+        const stopped = await queuedOn("Fixture task whose run the user stops");
+        expect((await machine.cancel(stopped.run)).run?.state).toBe("cancelled");
+        await call("history.undo", { request_id: rid() });
+        expect((await show(stopped.task))["lifecycle"]).toBe("completed");
+
+        const started = await queuedOn("Fixture task whose run starts");
+        expect((await machine.begin(started.run)).began).toBe(true);
+        expect(await refusal("history.undo", { request_id: rid() })).toMatchObject({
+          code: "conflict",
+          data: { cause: "UNDO_CONFLICT", newer_work: [{ task: started.task, by: "run" }] },
+        });
+        expect((await show(started.task))["lifecycle"]).toBe("active");
+      } finally {
+        hold.release();
+      }
     },
     LONG,
   );

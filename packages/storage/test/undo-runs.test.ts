@@ -97,9 +97,22 @@ function startRun(taskId: Id<"t">, place: Id<"pl"> | null = null): WriteResult {
   );
 }
 
+/** A run's own move, which the run machine writes as the run: its start, progress and end. */
 const move = (run: string, expect: RunState, next: RunState, more: Row = {}): WriteResult =>
-  applied(
-    submitRun([
+  applied(transition(run, expect, next, more, { ...ui, run_id: run as Id<"ru"> }));
+
+/** The person's Stop of a queued run, which the run machine writes as the person. */
+const stop = (run: string): WriteResult => applied(transition(run, "queued", "cancelled", {}, ui));
+
+const transition = (
+  run: string,
+  expect: RunState,
+  next: RunState,
+  more: Row,
+  by: Credential,
+): WriteResult =>
+  fx.writer.submit(
+    fx.request(by, [
       {
         kind: "run.transition",
         run: run as Id<"ru">,
@@ -268,8 +281,26 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
     // A run cancelled in the queue holds the person's request too.
     const other = create();
     const queued = String(startRun(other).results[0]?.id);
-    move(queued, "queued", "cancelled");
+    stop(queued);
     expect(undo().conflicts).toEqual([expect.objectContaining({ entity: "runs", id: queued })]);
+  });
+
+  test("a run the person queued and stopped is theirs: it keeps no Undo or Redo from closing the task", () => {
+    // Checked off, reopened, a run queued and stopped while queued, and the reopen undone.
+    const done = create();
+    applied(write([{ kind: "task.complete", task: done }]));
+    applied(write([{ kind: "task.reopen", task: done }]));
+    stop(String(startRun(done).results[0]?.id));
+    expect(applied(undo()).newer).toBeUndefined();
+    expect(task(done)["lifecycle"]).toBe("completed");
+
+    // Archived, the archive undone, a run queued and stopped, and the archive redone.
+    const archived = create();
+    applied(write([{ kind: "task.archive", task: archived }]));
+    applied(undo());
+    stop(String(startRun(archived).results[0]?.id));
+    applied(redo());
+    expect(task(archived)["lifecycle"]).toBe("archived");
   });
 
   test("a run the person queued is their own: it keeps no Undo or Redo from closing the task or putting it in the Trash", () => {
@@ -408,7 +439,7 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
       expect(changesAt(seq).filter((c) => c["entity"] === "runs")).toEqual([]);
     }
     // The detached run still settles.
-    move(run, "queued", "cancelled");
+    stop(run);
     expect(runRow(run)).toMatchObject({ task_id: null, place_id: null, state: "cancelled" });
   });
 

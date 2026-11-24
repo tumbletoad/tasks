@@ -2234,7 +2234,7 @@
     },
     {
       "id": "A1.5.history.alone",
-      "title": "Property test of one person working alone: they create, file, move and reorder tasks, check them off, reopen, archive, move them to the Trash and back, add notes, folders and tickets, make, move and remove areas and projects, often several in one request, and queue runs and open sessions in between and between their undos and redos; then they undo until nothing is left and redo until nothing is left. Every Undo and Redo applies whole, each Undo gives back the space before the step it took back and each Redo the space after it, every position and the order of every list included, the rules every write keeps hold after every write, and every way this once failed runs first as a fixed case",
+      "title": "Property test of one person working alone: they create, file, move and reorder tasks, check them off, reopen, archive, move them to the Trash and back, add notes, folders and tickets, make, move and remove areas and projects, often several in one request, and queue runs, stop them while queued and open sessions in between and between their undos and redos; then they undo until nothing is left and redo until nothing is left. Every Undo and Redo applies whole, each Undo gives back the space before the step it took back and each Redo the space after it, every position and the order of every list included, the rules every write keeps hold after every write, and every way this once failed runs first as a fixed case",
       "source": "A1 3.10, A1 3.10.1",
       "owner": "M3",
       "kind": "ci",
@@ -2432,7 +2432,7 @@
     },
     {
       "id": "A1.5.history.runs",
-      "title": "Undo and redo beside run records: a run's commits are never on an undo stack, an undo or redo that names one is INVALID_TRANSITION with its receipt, a run commit between an undo and its redo keeps the redo, no request holds a run operation beside a task operation or an undo, and the history engine refuses a run's change rows whole; a run of the task in any state keeps its create from being undone, named by its table and state with who created it, and a partial undo keeps the task with its run; a task its create's undo tombstoned takes no run; an undo and a redo never write a run, so a run redaction detached stays detached; a session bound to the task keeps no create; a space at 0.2 without the runs table undoes and redoes as before",
+      "title": "Undo and redo beside run records: a run's commits are never on an undo stack, an undo or redo that names one is INVALID_TRANSITION with its receipt, a run commit between an undo and its redo keeps the redo, no request holds a run operation beside a task operation or an undo, and the history engine refuses a run's change rows whole; a run of the task in any state keeps its create from being undone, named by its table and state with who created it, and a partial undo keeps the task with its run; a task its create's undo tombstoned takes no run; an undo and a redo never write a run, so a run redaction detached stays detached; the person's own queue and Stop of a run are theirs and keep no Undo or Redo from closing the task, while what the run machine wrote as the run (its start, progress and end) does, named as the run, also through the run machine and the request path; a session bound to the task keeps no create; a space at 0.2 without the runs table undoes and redoes as before",
       "source": "A1 3.6, A1 3.10, A1 3.10.1, A1 3.11.4, A4 3.11, A7 3.13 M6.01",
       "owner": "M6",
       "kind": "ci",

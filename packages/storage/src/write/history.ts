@@ -29,8 +29,8 @@
 //   writes only what that undo took back), and for a task to anything on it (a field, a note, a
 //   log entry, a link, a run, a folder), keeps it in sight, as a conflict that names the newest
 //   such change; a task kept open keeps its wrap-up too. The principal's own changes (its writes,
-//   undos and redos, and the runs it queues) do not count: the person made them. A run's progress
-//   is the run's, whichever credential wrote it.
+//   undos and redos, and the runs it queues and stops) do not count: the person made them. What a
+//   run wrote as the run (the commit names it: its start, progress and end) is the run's.
 // - Clearing a tombstone (a redo of a create's undo, or the undo of a delete) brings a row back. A
 //   source whose key, or a place whose owner and machine, another live row holds now stays
 //   tombstoned, and that row is the conflict: the unique indexes allow one live row each.
@@ -352,13 +352,13 @@ const COMMIT_COLUMNS = "seq, id, undo_status, undone_by";
 
 /**
  * Changes after `$since` of row `$entity` `$id`, and of everything of task `$task`, by others: not
- * the principal's own (the header), but a run's progress, which its queueing is not.
+ * the principal's own (the header): what the principal wrote and no run did.
  */
 function newerWhere(runs: string): string {
   return (
     "WHERE c.seq > $since " +
     `AND (c.task_id = $task OR (c.entity = $entity AND c.entity_id = $id)${runs}) ` +
-    "AND NOT (k.principal_id = $principal AND NOT (c.entity = 'runs' AND c.action = 'set'))"
+    "AND NOT (k.principal_id = $principal AND k.run_id IS NULL)"
   );
 }
 
@@ -1072,8 +1072,8 @@ export type Held = Pick<InversionPlan, "conflicts" | "since" | "applied">;
  * that author's newest change there; a row of no task (an area, a project, a source) by its own
  * changes. The conflicts' own authors are named too: a key another row took counts. The
  * principal's own changes are no one's newer work: they hold a redo back only after an earlier
- * step of the person's was passed over, and that step's conflicts say why. A run is the run's,
- * whichever credential wrote it: one that keeps a task is named as a run.
+ * step of the person's was passed over, and that step's conflicts say why. What a run wrote is
+ * the run's: one that keeps a task is named as a run.
  */
 export function newerWorkOf(
   conn: Connection,
