@@ -178,7 +178,12 @@ describe("[A1.3.16.prefs.effort-moves-refused] a change of levels that would str
       setLevels(["S", "M", "L", "XL"]),
       { kind: "pref.set", key: "tasks.statuses", value: ["open", "waiting"] },
     ];
-    expect(write(fx.human, both, { undoable: true }).error?.code).toBe("VALIDATION_FAILED");
+    expect(write(fx.human, both, { undoable: true }).error).toMatchObject({
+      code: "VALIDATION_FAILED",
+      message: "Set the effort levels in a request of their own: only they join the undo stack",
+    });
+    // Off the stack, as a script or a test helper sends it, the two go in one request.
+    expectStatus(write(fx.human, both), "applied");
     const alone: Operation = { kind: "pref.set", key: "tasks.statuses", value: ["open"] };
     expect(write(fx.human, [alone], { undoable: true }).error?.code).toBe("VALIDATION_FAILED");
   });

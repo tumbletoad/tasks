@@ -4578,7 +4578,11 @@ async function prefsSet(call: Call): Promise<unknown> {
   });
   const levels = changes.some(({ p }) => p.key === EFFORT_SCALE_KEY);
   if (levels && changes.length > 1) {
-    throw invalid("set", "Set the effort levels in a call of their own");
+    throw invalid(
+      "set",
+      "Set the effort levels in a call of their own",
+      "Send tasks.effort_scale alone, then the other keys in a second call: only the levels go on your undo stack.",
+    );
   }
   for (const { p, path } of changes) {
     if (before.reads.get(p.key)?.state === "newer") {

@@ -2475,7 +2475,14 @@ export function checkRequest(value: unknown): CheckedRequest {
   const [first] = request.ops;
   const levels = prefs === 1 && first?.kind === "pref.set" && first.key === EFFORT_SCALE;
   if (prefs > 0 && request.undoable === true && !levels) {
-    f.fail("VALIDATION_FAILED", "A preference change is not undoable: set it again", "undoable");
+    const mixed = request.ops.some((op) => op.kind === "pref.set" && op.key === EFFORT_SCALE);
+    f.fail(
+      "VALIDATION_FAILED",
+      mixed
+        ? "Set the effort levels in a request of their own: only they join the undo stack"
+        : "A preference change is not undoable: set it again",
+      "undoable",
+    );
   }
   checkMatchableDrafts(request.ops);
   f.done();

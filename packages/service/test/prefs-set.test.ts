@@ -368,6 +368,7 @@ describe("[A3.3.4.prefs.moves] a change of the effort levels moves its tasks, an
     ).toMatchObject({
       code: "invalid_input",
       message: "Set the effort levels in a call of their own.",
+      hint: "Send tasks.effort_scale alone, then the other keys in a second call: only the levels go on your undo stack.",
     });
     expect(
       await refusal(
