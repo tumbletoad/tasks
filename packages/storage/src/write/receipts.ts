@@ -214,7 +214,7 @@ export function keepGiven(
   if (!conn.inTransaction) throw misuse("An answer is kept in a transaction");
   const plain = (value: unknown) =>
     typeof value === "object" && value !== null && !Array.isArray(value);
-  const kept = "result" in given ? given.result : given.error;
+  const kept = given.result;
   if (!FINGERPRINT.test(given.sent) || !FINGERPRINT.test(lookup.fingerprint) || !plain(kept)) {
     throw misuse("An answer is kept as an object, under the fingerprints of its intent");
   }

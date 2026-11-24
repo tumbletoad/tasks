@@ -356,7 +356,7 @@ export interface WriteResult {
   /** Why, for `rejected` and `conflict`. */
   error?: WriteProblem;
   warnings: string[];
-  /** The request's `answer`, for `applied` and `unchanged`: from the receipt on a replay. */
+  /** The request's `answer`, for every decided result: from the receipt on a replay. */
   answer?: Record<string, unknown>;
   /** The answer the caller was given, once the service kept it with the receipt (`Given`). */
   given?: Given;
@@ -366,14 +366,15 @@ export interface WriteResult {
 
 /**
  * The answer a caller was given for a request, kept with its receipt after the service built it
- * (SpaceWriter.keep): the entry's result, or the body of its refusal. A retry is given it again as
- * it was, whatever changed in the space since. `sent` is the fingerprint of the input as the
- * caller sent it, before the service's own rules read it, so a retry sent as it was is known
+ * (SpaceWriter.keep): the entry's result for a request the writer accepted. A retry is given it
+ * again as it was, whatever changed in the space since. `sent` is the fingerprint of the input as
+ * the caller sent it, before the service's own rules read it, so a retry sent as it was is known
  * before any rule of a later build looks at it.
  */
-export type Given =
-  | { readonly sent: string; readonly result: Record<string, unknown> }
-  | { readonly sent: string; readonly error: Record<string, unknown> };
+export interface Given {
+  readonly sent: string;
+  readonly result: Record<string, unknown>;
+}
 
 // ---------------------------------------------------------------------------------------------
 // The request
@@ -1133,10 +1134,10 @@ export interface WriteRequest {
    */
   warnings?: string[];
   /**
-   * The part of the caller's answer that it decided before the writer, such as the folders a move
-   * carries along or the group a create found: an applied or unchanged result carries it and its
-   * receipt keeps it, so a replay answers what the first call answered, also for a request that
-   * changed nothing. JSON; not part of the intent's fingerprint; never task text.
+   * The part of the caller's answer that it decided before the writer, such as the group a create
+   * found or how many operations it put ahead of its own: every decided result carries it and its
+   * receipt keeps it, so a replay answers, or is refused, as the first call was, also for a request
+   * that changed nothing. JSON; not part of the intent's fingerprint.
    */
   answer?: Record<string, unknown>;
   /**

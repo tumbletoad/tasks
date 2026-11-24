@@ -377,7 +377,7 @@ export function resultFailure(
   });
 }
 
-export function withReplay(body: ErrorBody): ErrorBody {
+function withReplay(body: ErrorBody): ErrorBody {
   return { ...body, data: { ...body.data, replayed: true } };
 }
 

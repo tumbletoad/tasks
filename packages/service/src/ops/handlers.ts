@@ -39,7 +39,6 @@ import {
   registry,
   shapeText,
   type AnyEntry,
-  type ErrorBody,
   type PreferenceRead,
   type PreferenceSpec,
   type PrefValue,
@@ -134,7 +133,6 @@ import {
   spaceUnavailable,
   refuseLater,
   storageFailure,
-  withReplay,
   type PathOf,
 } from "./errors.ts";
 import type { FolderMarkers } from "./marker.ts";
@@ -318,6 +316,8 @@ interface Call {
   readonly replay: boolean;
   /** What the writer decided for this call's request, once `submit` has its result. */
   decided?: WriteResult["status"];
+  /** A read that completes the answer failed (`afterWrite`): the answer leaves something out. */
+  incomplete?: true;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -421,10 +421,9 @@ function checkActionFields(entry: AnyEntry, input: Record<string, unknown>): voi
 }
 
 /**
- * `opCall` as `principal`. A write with a request ID goes one at a time with any other call of
- * that request (a retry while the first call still runs waits for its answer), and a request that
- * was answered is answered again from its receipt: as it was, before any rule reads the input, so
- * neither a write since nor a rule a later build tightened changes what a retry is told.
+ * `opCall` as `principal`. A write whose request was answered is answered again from its receipt:
+ * as it was, before any rule reads the input, so neither a write since nor a rule a later build
+ * tightened changes what a retry is told.
  */
 async function callWith(
   host: OpsHost,
@@ -468,22 +467,21 @@ async function callWith(
   ) {
     return decideCall(host, caller, entry, principal, picked, input, undefined);
   }
-  const here = space;
-  return oneAtATime(`${here.id}\n${principal.scope}\n${requestId}`, async () => {
-    const receipt = await receiptOf(host, caller, here, principal, requestId);
-    const kept = receipt?.result.given;
-    if (kept !== undefined && kept.sent === intentPrint(here.id, entry.name, input)) {
-      return givenAgain(kept);
-    }
-    return decideCall(host, caller, entry, principal, picked, input, receipt);
-  });
+  const receipt = await receiptOf(host, caller, space, principal, requestId);
+  const kept = receipt?.result.given;
+  if (kept !== undefined && kept.sent === intentPrint(space.id, entry.name, input)) {
+    return givenAgain(kept);
+  }
+  return decideCall(host, caller, entry, principal, picked, input, receipt);
 }
 
 /**
  * The call after its receipt was looked up: the input's rules, then the handler. A receipt of the
  * call's intent answers it as it was kept; one that keeps no answer leaves it to the writer to
- * replay. The answer to a request the writer decided is kept with its receipt, and so is the
- * refusal of one the writer refused.
+ * replay. The answer to a request the writer accepted is kept with its receipt, unless a read it
+ * needed failed: its retry can then say what it left out. A refusal is not kept: the writer's
+ * stored refusal is told again in a retry's words (a conflict as it was when decided), mapped to
+ * the caller's drafts as the first time (`submit`).
  */
 async function decideCall(
   host: OpsHost,
@@ -517,22 +515,15 @@ async function decideCall(
   };
   const handler = HANDLERS[entry.name];
   if (handler === undefined) throw opUnknown();
-  const sent = intentPrint(space.id, entry.name, input);
-  let result: unknown;
-  try {
-    // A call that binds a folder or may create a group by name decides on what it read of the
-    // space: such calls go one at a time per space, from that read to the writer's answer, so two
-    // never both create one name or bind one folder by two spellings.
-    result = await (decidesOnNames(entry.name, call.input)
-      ? oneAtATime(space.id, () => handler(call))
-      : handler(call));
-  } catch (error) {
-    if (error instanceof AppError && (call.decided === "rejected" || call.decided === "conflict")) {
-      await keepAnswer(call, intent, { sent, error: keptRefusal(error.toBody()) });
-    }
-    throw error;
-  }
-  if (call.decided !== undefined && isRecord(result)) {
+  // A call that binds a folder or may create a group by name decides on what it read of the
+  // space: such calls go one at a time per space, from that read to the writer's answer, so two
+  // never both create one name or bind one folder by two spellings.
+  const result = await (decidesOnNames(entry.name, call.input)
+    ? oneAtATime(space.id, () => handler(call))
+    : handler(call));
+  const accepted = call.decided === "applied" || call.decided === "unchanged";
+  if (accepted && call.incomplete !== true && isRecord(result)) {
+    const sent = intentPrint(space.id, entry.name, input);
     await keepAnswer(call, intent, { sent, result: unmarked(result) });
   }
   const checked = entry.output.safeParse(result);
@@ -588,41 +579,11 @@ function intentPrint(space: string, entry: string, input: Record<string, unknown
 }
 
 /** The answer a request was given, again: marked as a replay, whatever changed since. */
-function givenAgain(kept: Given): Record<string, unknown> {
-  if ("error" in kept) throw new AppError(withReplay(kept.error as unknown as ErrorBody));
-  return { ...kept.result, replayed: true };
-}
+const givenAgain = (kept: Given): Record<string, unknown> => ({ ...kept.result, replayed: true });
 
 /** An answer without the mark of a replay: as a receipt keeps it. */
 function unmarked(answer: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(answer).filter(([key]) => key !== "replayed"));
-}
-
-/**
- * A refusal as its receipt keeps it: without a conflicting field's values, which were read when
- * the request was decided and are no fact of it (receipts.ts), and without the mark of a replay.
- */
-function keptRefusal(body: ErrorBody): Record<string, unknown> {
-  const data = unmarked(body.data ?? {});
-  const conflicts = data["conflicts"];
-  return {
-    ...body,
-    ...(body.data === undefined ? {} : { data }),
-    ...(Array.isArray(conflicts)
-      ? {
-          data: {
-            ...data,
-            conflicts: conflicts.map((c: unknown) =>
-              isRecord(c)
-                ? Object.fromEntries(
-                    Object.entries(c).filter(([k]) => !["value", "wrote", "restore"].includes(k)),
-                  )
-                : c,
-            ),
-          },
-        }
-      : {}),
-  };
 }
 
 /**
@@ -979,7 +940,8 @@ async function submit(
     readonly wrapUp?: number;
     /**
      * The groups a call creates by name, `count` operations put at `at` ahead of the handler's own:
-     * a refusal's `op` counts the handler's own operations, as its results do (`ownResults`).
+     * a refusal's `op` counts the handler's own operations, as its results do (`ownResults`). The
+     * count goes with the request, so a retry, which creates none, maps its refusal the same way.
      */
     readonly inserted?: { readonly at: number; readonly count: number };
     /** The input path of the caller's own operation `i`, with the field a refusal names. */
@@ -1028,7 +990,14 @@ async function submit(
       ...(options.warnings === undefined || options.warnings.length === 0
         ? {}
         : { warnings: [...options.warnings] }),
-      ...(options.answer === undefined ? {} : { answer: { ...options.answer } }),
+      ...(options.answer === undefined && options.inserted === undefined
+        ? {}
+        : {
+            answer: {
+              ...options.answer,
+              ...(options.inserted === undefined ? {} : { inserted: options.inserted.count }),
+            },
+          }),
       intent: { entry: call.entry.name, input: intentInput(input) },
       ops,
     };
@@ -1041,12 +1010,15 @@ async function submit(
   }
   call.decided = result.status;
   if (result.status === "conflict" || result.status === "rejected") {
+    // The groups the first call put ahead, as its request kept them: a retry resolves no names.
     const { inserted } = options;
+    const kept = result.answer?.["inserted"];
+    const count = typeof kept === "number" ? kept : (inserted?.count ?? 0);
     const own =
       inserted === undefined
         ? undefined
         : (i: number): number | undefined =>
-            i < inserted.at ? i : i < inserted.at + inserted.count ? undefined : i - inserted.count;
+            i < inserted.at ? i : i < inserted.at + count ? undefined : i - count;
     const field = result.error?.field;
     const keyed = field === "status" || field === "effort" ? field : undefined;
     let hints = options.hints;
@@ -1348,7 +1320,7 @@ const refOf = (op: OpResult): string => {
  * A read that completes the answer to a write that has applied. It never turns that answer into an
  * error: the caller would take an applied change for a failed one and send it again, and a second
  * plain undo would take back an older, unrelated change. On a failed read the answer leaves out
- * what the read would add.
+ * what the read would add, and it is not kept: a retry can say it.
  */
 async function afterWrite<T>(
   call: Call,
@@ -1357,6 +1329,7 @@ async function afterWrite<T>(
   try {
     return await read(readerOf(call.space));
   } catch {
+    call.incomplete = true;
     return undefined;
   }
 }

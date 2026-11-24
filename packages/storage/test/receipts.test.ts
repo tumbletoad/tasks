@@ -189,12 +189,15 @@ describe("[A1.5.write.receipts] a repeated request ID returns the stored result"
       code: "VALIDATION_FAILED",
       field: "ops",
     });
-    // A refusal says no answer: nothing happened that the caller's answer could be about.
-    const refusal = fx.writer.submit(
-      fresh([{ kind: "task.patch", task: newId("t"), set: { title: "Gone" } }], { answer }),
-    );
+    // A refusal keeps it too, and its retry gets it: what the caller decided maps the refusal
+    // back to its own input.
+    const refused = fresh([{ kind: "task.patch", task: newId("t"), set: { title: "Gone" } }], {
+      answer,
+    });
+    const refusal = fx.writer.submit(refused);
     expectStatus(refusal, "rejected");
-    expect(refusal.answer).toBeUndefined();
+    expect(refusal.answer).toEqual(answer);
+    expect(fx.writer.submit({ ...refused, answer: { moved: 0 } })).toEqual(replayOf(refusal));
     for (const bad of [[1], "moved", null]) {
       const shaped = { ...fresh([{ kind: "task.create", title: "Bad" }]), answer: bad };
       expect(fx.writer.submit(shaped).error).toMatchObject({
