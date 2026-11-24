@@ -41,7 +41,7 @@ const spacesRow = async (home: string) => {
 };
 
 describe("[A1.5.backup.failure-shown] a failed daily backup is shown until a backup succeeds", () => {
-  test("doctor and the space list name the failure and what to run; a backup made then clears it", async () => {
+  test("doctor and the space list name the trouble and what to run; a backup made then clears it", async () => {
     const { root, cleanup } = tempRoot("bt");
     cleanups.push(cleanup);
     const home = join(root, "h");
@@ -63,11 +63,10 @@ describe("[A1.5.backup.failure-shown] a failed daily backup is shown until a bac
       ownerLabel: "Mira Okafor",
       machineId: machine,
     });
-    // A file where the backups folder goes, and where the space's own would take its place: the
-    // daily backup cannot be written.
-    const blockers = [backupsOf(home, created.space.spaceId), join(folder, "backups")];
-    mkdirSync(dirname(blockers[0] ?? ""));
-    for (const blocker of blockers) writeFileSync(blocker, "not a folder");
+    // A file where the space's backups folder goes: no daily backup can be made.
+    const blocker = backupsOf(home, created.space.spaceId);
+    mkdirSync(dirname(blocker));
+    writeFileSync(blocker, "not a folder");
     registerSpaces(home, [folder]);
     const service = await startService({
       env: serviceEnv(home),
@@ -85,24 +84,24 @@ describe("[A1.5.backup.failure-shown] a failed daily backup is shown until a bac
 
     const failed = await spacesRow(home);
     expect(failed?.status).toBe("warn");
-    expect(failed?.detail).toContain("Mira: open. The daily backup failed");
-    expect(failed?.detail).toContain(`${CLI_NAME} space backup <folder>`);
+    expect(failed?.detail).toContain(
+      "Mira: open. The backups folder for this space is not there, so no daily backup was made.",
+    );
+    expect(failed?.detail).toContain(`${CLI_NAME} space backups <folder>`);
     expect(failed?.detail).toContain(`Run ${CLI_NAME} space list to see each space's folder.`);
     expect(failed?.detail).not.toContain(folder);
     const listed = await runMain(["space", "list"], { home });
-    expect(listed.stdout).toMatch(
-      /^ {2}The daily backup failed \([A-Z_]+\)\. Check that the disk/m,
-    );
+    expect(listed.stdout).toMatch(/^ {2}The backups folder for this space is not there/m);
 
     // The person frees the folder and makes a backup now: it passes its trial restore, and the
     // report is gone.
-    for (const blocker of blockers) rmSync(blocker);
+    rmSync(blocker);
     const made = await runMain(["space", "backup", folder], { home, tty: true });
     expect(made.code, made.stderr).toBe(0);
     expect(service.spaces()[0]?.backup).toBeUndefined();
     const fine = await spacesRow(home);
     expect(fine?.status).toBe("ok");
     expect(fine?.detail).not.toContain("backup");
-    expect((await runMain(["space", "list"], { home })).stdout).not.toContain("backup failed");
+    expect((await runMain(["space", "list"], { home })).stdout).not.toContain("is not there");
   }, 120_000);
 });

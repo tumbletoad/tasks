@@ -3,8 +3,16 @@
 // place takes only a backup of the space the entry names, a failed one leaves a closed space
 // closed, and the daily backup goes to the folder this machine set for the space also when its
 // space.json is gone. Services run in this process on temporary homes; fixture spaces only.
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import {
   backupSpace,
@@ -288,6 +296,7 @@ describe("[A1.5.backup.newest-work] the newest backup is the one that holds the 
           folder: work.folder,
           spaceId: work.space.spaceId,
           incarnation: work.space.authority.incarnation,
+          backupDir: backupsFolder(work.folder),
           cleanup: true,
           atStart: true,
           now,
@@ -558,6 +567,64 @@ describe("[A1.5.backup.outside-home] a space's backups go beside the TTasks home
         expect.objectContaining({ name: daily[0]?.name, folder: outside }),
         expect.objectContaining({ name: earlier.name, folder: own }),
       ]);
+    },
+    SLOW,
+  );
+});
+
+describe("[A1.5.backup.outside-home] a backups folder beside the home that cannot be made", () => {
+  test(
+    "makes no backup elsewhere and cleans nothing: nine earlier dailies stay byte for byte, listed, and restore as latest",
+    async () => {
+      const machine = newId("m");
+      const { home, spaces } = setUp("outside-blocked", machine);
+      const work = await fixtureSpace(join(spaces, "work"), machine);
+      const checked = await checkedDriver();
+      // Nine daily backups from before the update, eight days old and more: a clean-up here
+      // would remove some of them.
+      const nine = [];
+      for (let i = 0; i < 9; i += 1) {
+        nine.push(
+          await backupSpace(checked, work.folder, {
+            kind: "daily",
+            now: () => Date.now() - (8 + i) * 24 * HOUR,
+          }),
+        );
+      }
+      const own = backupsFolder(work.folder);
+      const files = () =>
+        Object.fromEntries(
+          readdirSync(own).map((name) => [name, readFileSync(join(own, name)).toString("base64")]),
+        );
+      const before = files();
+      // A file where the space's folder beside the home goes.
+      const blocked = backupsOf(home, work.space.spaceId);
+      mkdirSync(dirname(blocked));
+      writeFileSync(blocked, "not a folder");
+
+      const { user } = await start(home, [work.folder], true);
+      const upkeep = await waitFor(
+        () => readLog(home).find((e) => e["ev"] === "space.maintained"),
+        READY_MS,
+        "the upkeep",
+      );
+      expect(upkeep).toMatchObject({ backup: "away", removed: 0, leftovers: 0 });
+      const now = await refused(call(user, "space/backup", { space: work.folder }));
+      expect(now).toMatchObject({ data: { reason: "backups_folder_missing", folder: blocked } });
+      expect(files()).toEqual(before);
+
+      const listed = (await call(user, "space/backups", { space: work.folder }))["backups"];
+      expect(listed).toEqual(
+        nine.map((b): unknown =>
+          expect.objectContaining({ name: b.name, folder: own, state: "ok" }),
+        ),
+      );
+      const latest = await call(user, "space/restore", {
+        backup: "latest",
+        of: work.folder,
+        to: join(spaces, "latest"),
+      });
+      expect(latest["backup"]).toBe(nine[0]?.name);
     },
     SLOW,
   );

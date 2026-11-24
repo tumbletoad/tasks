@@ -140,8 +140,8 @@ export function backupsFolderOf(
 /**
  * The folder a backup is about to be written to. The default is made here with each new folder's
  * entry synced in its parent, so a power loss cannot keep an upgrade and lose the folder of the
- * backup from before it. When that fails: undefined, and the backup goes to the space's own
- * `backups/`, as an upgrade's does when a set folder is away.
+ * backup from before it. When that fails: undefined, and the backups folder is not there. Only an
+ * upgrade then goes on, behind a backup in the space's own `backups/` (storage's migrate runner).
  */
 export function readyBackupsFolder(
   folder: { readonly dir: string; readonly set: boolean },

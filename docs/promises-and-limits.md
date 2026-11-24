@@ -95,10 +95,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   when it ended.
 - Within a copy's backups, the newest is the one that holds your latest saved work, also after the
   clock was set back. Clean-up never removes it, nor the newest backup that restores.
-- A backups folder you set for a space that is not there, such as one on a drive that is not
-  connected, is said as not there, with its path. No backup goes to a new folder in its place. An
-  upgrade does not wait for it: its backup goes to the space's own backups folder, and
-  `ttasks space list` says where.
+- A space's backups folder that is not there, such as one you set on a drive that is not
+  connected, or one TTasks cannot make, is said as not there, with its path. No backup goes to
+  another folder in its place, and nothing is cleaned up. An upgrade does not wait for it: its
+  backup goes to the space's own backups folder, and `ttasks space list` says where.
 - Making a backup or an export never overwrites an existing file.
 - A restore checks the backup first. A backup that is broken or too new leaves nothing half
   restored.

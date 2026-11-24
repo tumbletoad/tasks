@@ -115,7 +115,7 @@ import {
 import type { Reconciled } from "@ttasks/projection";
 import type { Logger, SpaceReason } from "./log.ts";
 import { BackupWatch, type BackupTroubleView } from "./backup-health.ts";
-import { MaintenanceFailed, type Maintenance } from "./maintenance.ts";
+import { MaintenanceFailed, type Maintenance, type MaintenanceReport } from "./maintenance.ts";
 import { BUILD } from "./build.ts";
 import { ProjectionRunner } from "./projection.ts";
 import {
@@ -420,10 +420,6 @@ const codeOf = (error: unknown): string | undefined => {
 
 /** Whether the space closes. A function, so a check after an await reads the field again. */
 const closing = (space: { readonly stopping: boolean }): boolean => space.stopping;
-
-/** A storage call's `backupDir`, when there is one: without, the space's own `backups/`. */
-const backupDirOf = (dir: string | undefined): { backupDir?: string } =>
-  dir === undefined ? {} : { backupDir: dir };
 
 const isDirectory = (path: string): boolean => {
   try {
@@ -1352,14 +1348,17 @@ export class SpaceManager {
       space.worker = worker;
       if (await this.#stopped(space)) return;
       const progress = { migrating: false };
+      const backupDir = readyBackupsFolder(
+        backupsFolderOf(settings, this.#options.backups, space.registered),
+      );
       const opening = worker.openSpaceWriter(space.folder, {
         machine,
         // Another space in the folder is refused before anything is claimed, locked or written.
         spaceId: space.registered,
         holder: this.#holderFacts,
-        ...backupDirOf(
-          readyBackupsFolder(backupsFolderOf(settings, this.#options.backups, space.registered)),
-        ),
+        // An upgrade does not wait for a backups folder that cannot be used: without one, its
+        // backup goes to the space's own `backups/`, and its record says so.
+        ...(backupDir === undefined ? {} : { backupDir }),
         onLock: (lock) => {
           this.#watch(space, worker, lock);
         },
@@ -1950,19 +1949,25 @@ export class SpaceManager {
     const now = (this.#options.now?.() ?? new Date()).getTime();
     const t0 = performance.now();
     const begun = space.backups.begin();
-    space.maintaining = maintenance
-      .run({
-        folder: space.folder,
-        spaceId,
-        incarnation,
-        ...backupDirOf(readyBackupsFolder(backupFolder)),
-        // Only the default folder, which this service alone writes while it holds the space's
-        // writer.lock (maintenance.ts).
-        cleanup: !backupFolder.set,
-        atStart,
-        now,
-        utcOffsetMinutes: -new Date(now).getTimezoneOffset(),
-      })
+    const dir = readyBackupsFolder(backupFolder);
+    // A default folder that cannot be made is not there: no daily backup goes elsewhere, and
+    // nothing is cleaned anywhere.
+    const run: Promise<MaintenanceReport> =
+      dir === undefined
+        ? Promise.resolve({ leftovers: 0, backup: "away", removed: 0, unverified: 0 })
+        : maintenance.run({
+            folder: space.folder,
+            spaceId,
+            incarnation,
+            backupDir: dir,
+            // Only the default folder, which this service alone writes while it holds the
+            // space's writer.lock (maintenance.ts).
+            cleanup: !backupFolder.set,
+            atStart,
+            now,
+            utcOffsetMinutes: -new Date(now).getTimezoneOffset(),
+          });
+    space.maintaining = run
       .then(
         (report) => {
           log.log("space.maintained", {

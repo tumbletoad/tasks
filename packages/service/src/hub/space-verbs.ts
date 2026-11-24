@@ -191,7 +191,7 @@ function userOnly(cls: ConnectionClass): void {
 function backupsAway(folder: string): AppError {
   return new AppError({
     code: "not_found",
-    message: `The backups folder set for this space is not there: ${folder}`,
+    message: `The backups folder for this space is not there: ${folder}`,
     hint: "If it is on a drive that is not connected, connect it. Otherwise create the folder.",
     data: { reason: "backups_folder_missing", folder },
   });
@@ -719,10 +719,9 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
         });
       }
       const folder = backupsOf(view);
-      // As for the daily backup: none goes to a new folder in place of one that is not there.
-      if (folder.set && !existsSync(folder.dir)) throw backupsAway(folder.dir);
-      // A default folder that cannot be made durably: the space's own, as for an upgrade.
-      const dir = readyBackupsFolder(folder) ?? folder.folders[1];
+      const dir = readyBackupsFolder(folder);
+      // As for the daily backup: none goes to another folder in place of one that is not there.
+      if (dir === undefined || !existsSync(dir)) throw backupsAway(folder.dir);
       try {
         const done = await runAdmin({
           kind: "backup",
