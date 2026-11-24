@@ -56,6 +56,7 @@ export interface HomeRecord {
     readonly file: boolean;
     readonly parent: boolean;
     readonly spacing: string | null;
+    readonly ended?: string;
   };
   /** The agent-home row in the service's grants table (A2 3.2.5), when the service made one. */
   readonly grant: string | null;
@@ -122,7 +123,8 @@ function isRecord(value: unknown): value is HomeRecord {
     isObject(made) &&
     typeof made["file"] === "boolean" &&
     typeof made["parent"] === "boolean" &&
-    (made["spacing"] === null || text(made["spacing"]))
+    (made["spacing"] === null || text(made["spacing"])) &&
+    (made["ended"] === undefined || text(made["ended"]))
   );
 }
 

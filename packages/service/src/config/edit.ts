@@ -62,6 +62,12 @@ export type Edit =
       readonly op: "remove_table";
       readonly table: readonly string[];
       readonly before: string | null;
+      /**
+       * When add_table met a text without a final line break (`before` is then two breaks):
+       * `textDigest` of that text. Both breaks are the add's only while what stands before them
+       * is still that text; otherwise the first ends a line someone wrote, and stays.
+       */
+      readonly ended?: string;
     }
   /**
    * Takes out the one element `[[array]]` that is still exactly as `append` wrote `entries` in
@@ -541,12 +547,19 @@ function tableRemoval(
     const rest = before.slice(0, before.length - added.length);
     // One break is a blank line only when a line break comes right before it: otherwise it now ends
     // a line someone wrote there. Two are the break that ended the file's last line and a blank one.
-    if (rest === "" || rest.endsWith("\n") || /^(?:\r?\n){2}$/u.test(added)) before = rest;
+    const two = /^(?:\r?\n){2}$/u.test(added);
+    if (rest === "" || rest.endsWith("\n")) before = rest;
+    else if (two && (edit.ended === undefined || textDigest(rest) === edit.ended)) before = rest;
+    else if (two) before = rest + added.slice(0, added.indexOf("\n") + 1);
   }
   // What stays after the table starts a line of its own.
   if (after !== "" && before !== "" && !before.endsWith("\n")) before += eol;
   return before + after;
 }
+
+/** A short digest of a text, which says whether it is still the same without holding it. */
+export const textDigest = (text: string): string =>
+  createHash("sha256").update(text).digest("hex").slice(0, 32);
 
 /** The last line of `text` that ends with its line break, without it; "" when none. */
 function lastLine(text: string): string {

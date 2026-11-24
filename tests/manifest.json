@@ -3494,6 +3494,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.13.setup.tools-table",
+      "title": "One answer for each home's tools, as a table for Claude Code, Codex and Claude Desktop: every combination of the entry (setup's, changed by hand, gone), the program it names, the access and the space, read through the page and the command line's status JSON on one scratch state; turning off is offered whenever the access is live, and every action offered is carried out",
+      "source": "A3 3.13.1, A3 3.14",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.13.setup.free-instance",
       "title": "A detected home whose proposed instance another home's live row holds is offered a free one (<id>-2), which its entry and row carry and its record keeps; an instance machine.toml names that another home holds is kept and its refusal is named instance_taken, with the home left as it was; an entry added by hand is left and the preview says how to take it out with the app's own mcp remove",
       "source": "A3 3.7.8, A3 3.13.1, A7 3.11 M4.05b",
@@ -3511,7 +3519,7 @@
     },
     {
       "id": "A3.3.13.setup.fixtures",
-      "title": "Agent setup's fixture table, run through the production planner, writer and grants for Claude Code, Codex and Claude Desktop with the raw bytes, the access and the other home compared after each action: add then remove gives back every byte (a byte order mark, CRLF, four spaces, tabs, one line, unknown keys, an empty servers object with spaces inside, comments, no final newline, an empty file, no file, which setup creates and deletes again except Claude Desktop's); access is given once the entry is in place and taken back before it comes out; a file setup does not accept stays as it was; an entry changed by hand, a comment in or above its table included, and a change made while setup gives the access stay and lose their access; a file changed since the plan is not written while Claude Code's file takes the entry as it is then; a Claude Code session that saves during setup keeps its save under its own lock, one that keeps the lock leaves nothing written, and a left lock is taken over; a file that cannot be written gives no access and its entry comes out at the next setup; a run that ended midway is finished or undone once; a refused row takes the entry back and a failed revoke is done again; a read that fails right after the write keeps the record to take the entry out; giving a registered home its access back checks its entry as a new install does; with setup's own record unreadable every home with access still turns off and nothing turns on; a volume without hard links still gets a new file; an earlier build's records are read in place",
+      "title": "Agent setup's fixture table, run through the production planner, writer and grants for Claude Code, Codex and Claude Desktop with the raw bytes, the access and the other home compared after each action: add then remove gives back every byte (a byte order mark, CRLF, four spaces, tabs, one line, unknown keys, an empty servers object with spaces inside, comments, no final newline, an empty file, no file, which setup creates and deletes again except Claude Desktop's); access is given once the entry is in place and taken back before it comes out; a file setup does not accept stays as it was; an entry changed by hand, a comment in or above its table included, and a change made while setup gives the access stay and lose their access; a file changed since the plan is not written while Claude Code's file takes the entry as it is then; a Claude Code session that saves during setup keeps its save under its own lock, one that keeps the lock leaves nothing written, and a left lock is taken over; a file that cannot be written gives no access and its entry comes out at the next setup; a run that ended midway is finished or undone once; a refused row takes the entry back and a failed revoke is done again, the entry kept until one is confirmed; a read that fails right after the write keeps the record to take the entry out; giving a registered home its access back checks its entry as a new install does; with setup's own record unreadable every home with access still turns off and nothing turns on; a volume without hard links still gets a new file; an earlier build's records are read in place",
       "source": "A3 3.13.1, A3 3.7.4",
       "owner": "M4",
       "kind": "ci",
@@ -4969,7 +4977,7 @@
     },
     {
       "id": "A7.3.12.m5-12.web-apps",
-      "title": "The page's agent apps: the first start proposes every switch that can be on, Settings shows them as they stand, Apply sends only switches that can be turned over, and a newer view keeps the person's choices that can still be made",
+      "title": "The page's agent apps: the first start proposes every switch that can be on except in a folder found by its name alone or with something to know first, Settings shows them as they stand, Apply sends only switches that can be turned over, and a newer view keeps the person's choices that can still be made and takes every other switch as it stands now",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5012,6 +5020,13 @@
     {
       "id": "A7.3.12.m5-12.page-apps",
       "title": "Over HTTP as the page calls them: a space from a name alone, each app's two switches with what they write, one click that adds and one that takes out again, a home that changed since the view written nowhere with the new view returned, and a space not served or a switch named twice refused",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.page-status",
+      "title": "Over HTTP as the page calls them: the tools switch is on only while the entry is there, the program it runs is there and its access is live, says which is missing, and turning it on mends it (the entry written again with the present command, the access given again); a folder found by its name alone is marked so the first start leaves it off; each home has one label within the bound the instance verb takes, the same in every batch, a saved one as saved, and each Open entry goes in on its own so one the service refuses is named with its field",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

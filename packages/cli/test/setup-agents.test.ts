@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { CLI_NAME, MCP_SERVER_KEY } from "@ttasks/brand";
+import { valueText } from "@ttasks/service/config";
 import { startService, type RunningService } from "@ttasks/service/hub";
 import {
   configOf,
@@ -236,7 +237,7 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
       expect((await rows()).map((r) => r.app)).toEqual(["claude-code"]);
       const off = await run(["setup", "agents"], false);
       expect(off.stdout).toContain(
-        "registered, and its access is off: apply gives it its access again.",
+        "registered, and its access is off, so its tools do not start: apply gives it its access again.",
       );
       expect(off.stdout).toContain("To make this change, run:");
       const back = JSON.parse((await run(["setup", "agents", "--json"], false)).stdout) as {
@@ -250,6 +251,52 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
       ]);
       expect((await run([...back.apply.slice(1), "--json"])).code).toBe(0);
       expect((await rows()).map((r) => r.app).sort()).toEqual(["claude-code", "codex"]);
+
+      // The install moved: Codex's entry, and setup's record of it, name the old command, in the
+      // quoting the TOML writer gives each. Status says its tools do not start, and the apply
+      // writes it again with the command there now.
+      const present = join(home, "bin", windows ? "ttasks.exe" : "ttasks");
+      const old = join(home, "old", windows ? "ttasks.exe" : "ttasks");
+      const toml = join(user, ".codex", "config.toml");
+      const as = { toml: readFileSync(toml, "utf8"), record: readFileSync(recordFile(), "utf8") };
+      try {
+        const seeded = as.toml.replace(
+          `command = ${valueText(present)}`,
+          `command = ${valueText(old)}`,
+        );
+        expect(seeded).not.toBe(as.toml);
+        writeFileSync(toml, seeded);
+        const record = JSON.parse(as.record) as {
+          homes: { app: string; entry: { command: string } }[];
+        };
+        for (const h of record.homes) if (h.app === "codex") h.entry.command = old;
+        writeFileSync(recordFile(), JSON.stringify(record));
+        const moved = JSON.parse(
+          (await run(["setup", "agents", "--status", "--json"], false)).stdout,
+        ) as { homes: { app: string; tools: { status: string; why?: string; on?: string } }[] };
+        expect(moved.homes.map((h) => [h.app, h.tools])).toEqual([
+          ["claude-code", { status: "on", off: true }],
+          ["codex", { status: "off", why: "moved", on: "repair", off: true }],
+        ]);
+        const repair = await run(["setup", "agents"], false);
+        expect(repair.stdout).toContain("where it was installed before, so its tools do not start");
+        expect(repair.stdout).toContain(`- command = ${valueText(old)}`);
+        expect(repair.stdout).toContain(`+ command = ${valueText(present)}`);
+        const repaired = JSON.parse((await run(["setup", "agents", "--json"], false)).stdout) as {
+          apply: string[];
+        };
+        const fixed = await run([...repaired.apply.slice(1), "--json"]);
+        expect(
+          (JSON.parse(fixed.stdout) as { homes: { result: string }[] }).homes.map((h) => h.result),
+        ).toEqual(["unchanged", "applied"]);
+        expect(readFileSync(toml, "utf8")).toContain(valueText(present));
+        expect((await rows()).map((r) => r.app).sort()).toEqual(["claude-code", "codex"]);
+      } catch (error) {
+        // What later tests meet is the registered home, not this one's half-made fixture.
+        writeFileSync(toml, as.toml);
+        writeFileSync(recordFile(), as.record);
+        throw error;
+      }
 
       // Remove: refused for a script, then the user's takes back entries and rows.
       expect((await run(["setup", "agents", "--remove", "--json"], false)).code).toBe(5);

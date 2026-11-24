@@ -2,7 +2,16 @@
 // TTASKS_HOME with no space and no machine.toml, and a scratch home with a Claude Code and a Codex
 // home, whose commands are testkit's fakes (fake-agents.ts): they refuse any file outside that home.
 // Sign-in goes the way `ttasks open` goes. Tests only.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CLI_NAME } from "../../packages/brand/src/index.ts";
@@ -52,6 +61,10 @@ export interface FreshWorld {
   writeCodex(text: string): void;
   /** Setup's record of the agent homes is damaged; the call gives back how to put it back. */
   damageRecord(): () => void;
+  /** An empty `.codex-backup` beside the Codex home, found by its name alone; the call takes it away. */
+  backupFolder(): () => void;
+  /** Codex's settings file made one setup cannot replace; the call undoes it. */
+  readOnlyCodex(): () => void;
   /** machine.toml's text, or "" when there is none. */
   machineToml(): string;
   close(): Promise<void>;
@@ -163,6 +176,24 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
         writeFileSync(file, '{"format": 2, "homes": [');
         return () => {
           writeFileSync(file, kept);
+        };
+      },
+      backupFolder: () => {
+        const folder = join(agentHome, ".codex-backup");
+        mkdirSync(folder);
+        return () => {
+          rmSync(folder, { recursive: true });
+        };
+      },
+      readOnlyCodex: () => {
+        // Windows refuses to replace a read-only file; elsewhere the folder decides.
+        const windows = process.platform === "win32";
+        const folder = join(agentHome, ".codex");
+        const target = windows ? join(folder, "config.toml") : folder;
+        const mode = statSync(target).mode & 0o777;
+        chmodSync(target, windows ? 0o444 : 0o555);
+        return () => {
+          chmodSync(target, mode);
         };
       },
       machineToml: () => read(join(configOf(home), "machine.toml")),

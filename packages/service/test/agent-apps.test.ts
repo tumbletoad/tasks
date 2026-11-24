@@ -2,7 +2,14 @@
 // page calls them: only the person may call them, a switch is applied only as the person saw it,
 // and what one click adds the next one takes out again. Scratch homes and fake agent commands
 // only (testkit's fake-agents.ts): no real agent home is read or written.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CLI_NAME, MCP_SERVER_KEY } from "@ttasks/brand";
@@ -395,6 +402,232 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
   );
 });
 
+describe("[A7.3.12.m5-12.page-status] The tools switch is on only while the tools start, and the first start proposes only what a person would choose", () => {
+  let w: World;
+  let space: string;
+  const look = async () => (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+  const turn = async (app: string, on: boolean) => {
+    const found = row(await look(), app);
+    return call<Applied>(w, "/api/v1/machine/apps_apply", {
+      space,
+      changes: [{ key: found.key, part: "tools", on, plan: found.tools?.plan }],
+    });
+  };
+  beforeAll(async () => {
+    w = await world("status");
+    space = (await call<{ id: string }>(w, "/api/v1/space/create", { name: "Mira" })).result.id;
+  }, SLOW);
+  afterAll(async () => {
+    await w.close();
+  }, SLOW);
+
+  it(
+    "a folder found by its name only is listed with nothing proposed, and the usual home beside it is",
+    async () => {
+      mkdirSync(join(w.user, ".codex-backup"));
+      try {
+        const seen = await look();
+        const backup = seen.rows.find((r) => r.app === "codex" && r.home?.endsWith("backup"));
+        expect(backup).toMatchObject({ byName: true, tools: { on: false, change: "add" } });
+        expect(row(seen, "codex")).not.toHaveProperty("byName");
+        expect(row(seen, "claude-code")).not.toHaveProperty("byName");
+      } finally {
+        rmSync(join(w.user, ".codex-backup"), { recursive: true });
+      }
+    },
+    SLOW,
+  );
+
+  it(
+    "a home whose access went shows off with why, and turning it on gives the access back",
+    async () => {
+      expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      const session = await classSession(w.home, w.service.endpoint.path, "cli-interactive");
+      try {
+        await session.call("setup/home_revoke", {
+          app: "claude-code",
+          home: join(w.user, ".claude"),
+          file: join(w.user, ".claude.json"),
+        });
+      } finally {
+        session.close();
+      }
+      expect(row(await look(), "claude-code").tools).toMatchObject({
+        on: false,
+        change: "add",
+        why: "access_off",
+      });
+      expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(row(await look(), "claude-code").tools).toMatchObject({ on: true, change: "remove" });
+      await turn("claude-code", false);
+    },
+    SLOW,
+  );
+
+  it(
+    "an entry that runs a program that is gone shows off, and turning it on writes it again with the present one",
+    async () => {
+      expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      const present = join(
+        w.home,
+        "bin",
+        process.platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME,
+      );
+      const gone = join(w.home, "old", process.platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME);
+      // The install moved: the entry and setup's record of it name the old place.
+      const moved = (file: string) => {
+        const text = readFileSync(file, "utf8");
+        writeFileSync(
+          file,
+          text.replaceAll(JSON.stringify(present).slice(1, -1), JSON.stringify(gone).slice(1, -1)),
+        );
+      };
+      moved(join(w.user, ".claude.json"));
+      moved(join(stateOf(w.home), "setup", "agents.json"));
+      const seen = row(await look(), "claude-code").tools;
+      expect(seen).toMatchObject({ on: false, change: "add", why: "moved" });
+      expect(seen?.detail.join("\n")).toContain("-");
+      expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(row(await look(), "claude-code").tools).toMatchObject({ on: true, change: "remove" });
+      expect((claudeEntry(w.user) as { command?: string } | undefined)?.command).toBe(present);
+      await turn("claude-code", false);
+    },
+    SLOW,
+  );
+  it(
+    "each home has one label within the bound, the same alone and beside others, and a saved one as saved",
+    async () => {
+      const suffix = "a".repeat(30);
+      mkdirSync(join(w.user, `.claude-${suffix}`));
+      try {
+        const seen = await look();
+        const long = seen.rows.find((r) => r.home?.endsWith(suffix));
+        const codex = row(seen, "codex");
+        expect(long?.label.length).toBeLessThanOrEqual(40);
+        expect(codex.label).toBe("Codex");
+        const applied = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [
+            { key: long?.key, part: "open", on: true, plan: long?.open?.plan },
+            { key: codex.key, part: "open", on: true, plan: codex.open?.plan },
+          ],
+        });
+        expect(applied.result.outcomes.map((o) => o.result)).toEqual(["done", "done"]);
+        // The person renames Codex's tile in machine.toml: the row says it as saved.
+        const toml = join(configOf(w.home), "machine.toml");
+        writeFileSync(
+          toml,
+          readFileSync(toml, "utf8").replace('label = "Codex"', 'label = "Mine"'),
+        );
+        expect(row(await look(), "codex").label).toBe("Mine");
+        const back = await look();
+        const off = [back.rows.find((r) => r.home?.endsWith(suffix)), row(back, "codex")];
+        await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: off.map((r) => ({ key: r?.key, part: "open", on: false, plan: r?.open?.plan })),
+        });
+      } finally {
+        rmSync(join(w.user, `.claude-${suffix}`), { recursive: true });
+      }
+    },
+    SLOW,
+  );
+
+  it(
+    "an Open row whose ID a broken entry in machine.toml holds fails with its field, and the others go in",
+    async () => {
+      const toml = join(configOf(w.home), "machine.toml");
+      const before = existsSync(toml) ? readFileSync(toml, "utf8") : undefined;
+      // A third Codex home of its own, whose proposed ID an entry the reader drops (it names no
+      // target) holds in the file.
+      const third = join(w.user, ".codex-third");
+      mkdirSync(third);
+      writeFileSync(join(third, "config.toml"), "");
+      appendFileSync(toml, '\n[[instance]]\nid = "codex-third"\nlabel = "Broken"\n');
+      try {
+        const seen = await look();
+        const claude = row(seen, "claude-code");
+        const codex = seen.rows.find((r) => r.app === "codex" && r.home?.endsWith("third"));
+        if (codex === undefined) throw new Error("no third Codex row");
+        expect([claude.open?.change, codex.open?.change]).toEqual(["add", "add"]);
+        const applied = await call<Applied & { outcomes: { field?: string; reason?: string }[] }>(
+          w,
+          "/api/v1/machine/apps_apply",
+          {
+            space,
+            changes: [claude, codex].map((r) => ({
+              key: r.key,
+              part: "open",
+              on: true,
+              plan: r.open?.plan,
+            })),
+          },
+        );
+        expect(applied.result.outcomes).toMatchObject([
+          { result: "done" },
+          { result: "failed", reason: "invalid_input", field: "id" },
+        ]);
+      } finally {
+        if (before === undefined) rmSync(toml, { force: true });
+        else writeFileSync(toml, before);
+        rmSync(third, { recursive: true });
+      }
+      const back = row(await look(), "claude-code");
+      await call(w, "/api/v1/machine/apps_apply", {
+        space,
+        changes: [{ key: back.key, part: "open", on: false, plan: back.open?.plan }],
+      });
+    },
+    SLOW,
+  );
+
+  it(
+    "an entry someone took out shows off even while its access is live, and turning it on writes it again",
+    async () => {
+      expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      const file = join(w.user, ".claude.json");
+      const doc = JSON.parse(readFileSync(file, "utf8")) as { mcpServers: Record<string, unknown> };
+      Reflect.deleteProperty(doc.mcpServers, MCP_SERVER_KEY);
+      writeFileSync(file, JSON.stringify(doc));
+      expect(row(await look(), "claude-code").tools).toMatchObject({
+        on: false,
+        change: "add",
+        why: "missing",
+      });
+      expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(row(await look(), "claude-code").tools).toMatchObject({ on: true, change: "remove" });
+      expect(claudeEntry(w.user)).toBeDefined();
+      await turn("claude-code", false);
+    },
+    SLOW,
+  );
+});
+
+describe("[A7.3.12.m5-12.page-status] A home the person's environment selects is one they use", () => {
+  it(
+    "CODEX_HOME naming a second home with no settings file yet: it is not found by its name alone",
+    async () => {
+      const w = await world("selected", (root) => ({
+        CODEX_HOME: join(root, "u", ".codex-active"),
+      }));
+      try {
+        mkdirSync(join(w.user, ".codex-active"));
+        mkdirSync(join(w.user, ".codex-backup"));
+        const space = (await call<{ id: string }>(w, "/api/v1/space/create", { name: "Mira" }))
+          .result.id;
+        const seen = (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+        const of = (end: string) =>
+          seen.rows.find((r) => r.app === "codex" && r.home?.endsWith(end));
+        expect(of("active")).not.toHaveProperty("byName");
+        expect(of("backup")).toMatchObject({ byName: true });
+      } finally {
+        await w.close();
+      }
+    },
+    SLOW,
+  );
+});
+
 describe("[A7.3.12.m5-12.page-desktop] Several Claude Desktop files: the person picks one with its switch", () => {
   it.skipIf(process.platform !== "win32")(
     "each file can take the tools, none is proposed, and moving them is one apply",
@@ -485,7 +718,6 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
         platform: process.platform,
         configDir: config,
         stateDir: state,
-        root: dirname(tasks),
         tasks,
         userHome: user,
         env: () => Promise.resolve({}),

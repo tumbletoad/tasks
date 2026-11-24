@@ -18,7 +18,14 @@
 //   the shared file, so the shared home is the one with the entry (codexSharedHome).
 import { lstatSync, readdirSync, readlinkSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
-import { envValue, INSTANCE_ID, targetDef, type Env, type Proposal } from "@ttasks/launch";
+import {
+  envValue,
+  INSTANCE_ID,
+  instanceLabel,
+  targetDef,
+  type Env,
+  type Proposal,
+} from "@ttasks/launch";
 import type { AgentApp } from "./state.ts";
 
 const pathOf = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
@@ -477,15 +484,16 @@ export function t3Proposals(
   for (const instance of settings.instances) {
     const own = settings.defaultModel?.instance === instance.id ? settings.defaultModel.model : "";
     const model = own !== "" ? own : (models[instance.driver] ?? "");
-    const name = instance.displayName ?? (instance.driver === "codex" ? "Codex" : "Claude");
+    // Without a display name, a provider instance other than the driver's own is told apart by
+    // its key, which stays as long as T3's settings keep it.
+    const driver = instance.driver === "codex" ? "Codex" : "Claude";
+    const builtIn = instance.id === "codex" || instance.id === "claudeAgent";
+    const name = instance.displayName ?? (builtIn ? driver : `${driver} (${instance.id})`);
     proposals.push({
       id: t3ProposalId(instance),
       target: "t3",
-      // A label holds at most 40 characters (A4 3.2), never half a surrogate pair.
-      label: name
-        .slice(0, 40)
-        .replace(/[\uD800-\uDBFF]$/u, "")
-        .trim(),
+      // T3 Code's own, so never the same as the label of the app's home beside it.
+      label: instanceLabel(name, targetDef("t3").label),
       account: homeAccount(instance.home, platform),
       source: "app",
       ...(base.exec === undefined ? {} : { exec: base.exec }),
