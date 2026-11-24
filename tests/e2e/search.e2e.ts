@@ -513,6 +513,18 @@ test.describe("[A5.3.13.e2e.search-address] What the person types in the top fie
     await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/search\\?task=${first ?? ""}$`));
     expect(page.url()).not.toContain(word);
 
+    // The skip link takes the keyboard to the list without leaving the search's entry.
+    const skip = page.getByRole("link", { name: "Skip to the list" });
+    await skip.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("main#main")).toBeFocused();
+    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/search\\?task=${first ?? ""}$`));
+    expect(await page.evaluate(() => history.length)).toBe(entries);
+    // An entry with a fragment (an older build's skip link) keeps its search on reload too.
+    await page.evaluate(() => {
+      history.replaceState(history.state, "", `${location.pathname}${location.search}#main`);
+    });
+
     await page.reload();
     await showsSpace(page, world.mira.name);
     await expect(searching(page)).toHaveValue(word);
