@@ -208,6 +208,7 @@ export {
   backupHistories,
   compareInHistory,
   listBackups,
+  listBackupsIn,
   removeBackupLeftovers,
   verifyBackup,
   type BackupHistory,

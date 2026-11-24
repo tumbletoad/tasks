@@ -95,7 +95,10 @@ export { BACKUP_TEMP_PREFIX };
 
 export interface SpaceBackupOptions {
   kind: BackupKind;
-  /** The backups folder. Default: `<space>/backups` (machine-local `backup.dir` moves it). */
+  /**
+   * The backups folder, which must be there. Default: `<space>/backups`, made when missing. The
+   * service passes a served space's (hub/space-settings.ts backupsFolderOf).
+   */
   backupDir?: string;
   appVersion?: string;
   /** Milliseconds since 1970. Default: Date.now. */

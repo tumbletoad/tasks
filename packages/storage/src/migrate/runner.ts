@@ -63,9 +63,9 @@ export interface MigrateOptions {
   appVersion?: string;
   busyTimeoutMs?: number;
   /**
-   * The backups folder this machine set for the space, where the barrier backup goes. When it is not
-   * there (a drive away), the upgrade does not wait for it: the barrier goes to the space's own
-   * backups folder, and the outcome says so. Default: the space's own backups folder.
+   * The space's backups folder, where the barrier backup goes. When it is not there (a drive away,
+   * or a folder that could not be made), the upgrade does not wait for it: the barrier goes to the
+   * space's own backups folder, and its file says where. Default: the space's own backups folder.
    */
   backupDir?: string;
   /** Milliseconds since 1970. Default: Date.now. */
@@ -105,11 +105,6 @@ export type MigrationOutcome =
       seqs: number[];
       /** False when space.json could not be rewritten: the next writer's open does it. */
       manifestWritten: boolean;
-      /**
-       * The backups folder set for the space (`backupDir`) was not there, so the barrier backup is in
-       * the space's own backups folder.
-       */
-      setFolderAway?: true;
     }
   | {
       state: "failed";
@@ -224,8 +219,8 @@ export async function migrateOpened(
       { ...seams.backup, steps },
     );
   let backup: BackupRecord;
-  // The folder set for the space's backups is away (a drive not connected): the person keeps
-  // working, behind a barrier in the space's own backups folder (MigrateOptions.backupDir).
+  // The space's backups folder is away (a drive not connected): the person keeps working, behind a
+  // barrier in the space's own backups folder (MigrateOptions.backupDir).
   let setFolderAway = false;
   try {
     try {
@@ -295,7 +290,6 @@ export async function migrateOpened(
     backup,
     seqs,
     manifestWritten,
-    ...(setFolderAway ? { setFolderAway: true as const } : {}),
   };
 }
 
