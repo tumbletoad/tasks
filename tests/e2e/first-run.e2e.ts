@@ -501,6 +501,89 @@ test.describe("[A7.3.12.m5-12.e2e.two-files] Claude Code's two settings files: t
     }
     await fresh.forgetSpaces();
   });
+
+  test("a file the page cannot read is named before Apply and after it, each file's reason is said, and Off names every entry that stayed @one-browser", async ({
+    page,
+    fresh,
+  }) => {
+    const inside = /~[\\/]\.claude[\\/]\.claude\.json/u;
+    const plain = /~[\\/]\.claude\.json/u;
+    const cannotRead = `${PRODUCT_NAME} cannot read`;
+    const broken = '{"theme": "dark",}\n';
+    const original = fresh.claudeFile();
+    await fresh.forgetSpaces();
+    await firstStart(page, fresh);
+    await nameField(page).fill("Kiln");
+    await page.getByRole("button", { name: "Make the space" }).click();
+    await expect(appsHeading(page)).toBeVisible({ timeout: SLOW_MS });
+    await page.getByRole("button", { name: "Apply" }).click();
+    await showsSpace(page, "Kiln");
+    const settings = `${fresh.origin}/s/${spaceOf(page)}/settings`;
+    const claude = page.locator('[data-app="claude-code"]');
+    try {
+      await page.goto(settings);
+      await flip(page, toolsFor("Claude Code"), false);
+      await page.getByRole("button", { name: "Apply" }).click();
+      await expect(page.getByRole("status")).toContainText("Done");
+
+      // The folder's own file, which setup cannot read: named on the row before anything is written.
+      fresh.insideClaude(broken);
+      await page.goto(settings);
+      await expect(appsHeading(page)).toBeVisible();
+      await expect(claude.locator('[data-part="files"]')).toContainText(inside);
+      await expect(claude).toContainText(cannotRead);
+      await widths(page, "two-files-unreadable");
+      await flip(page, toolsFor("Claude Code"), true);
+      await page.getByRole("button", { name: "Apply" }).click();
+      // Set up in the file it can write; the answer names the one that got nothing.
+      const lacking = page.locator('[data-part="lacking"]');
+      await expect(lacking).toContainText(inside);
+      await expect(lacking).toContainText(cannotRead);
+      expect(fresh.claudeEntry()).toBeDefined();
+      await widths(page, "two-files-unreadable-done");
+      expect(await violations(page)).toEqual([]);
+
+      // Mended by the person: Add writes the entry there too.
+      fresh.insideClaude('{"theme": "dark"}\n');
+      await page.goto(settings);
+      await expect(appsHeading(page)).toBeVisible();
+      await claude.locator('[data-part="add-file"]').click();
+      await page.getByRole("button", { name: "Apply" }).click();
+      await expect(page.getByRole("status")).toContainText("Done");
+      const entry = fresh.insideClaudeEntry();
+      expect(entry).toBeDefined();
+
+      // The entry changed by hand in one file, the other unreadable again: the row says both.
+      const doc = JSON.parse(fresh.claudeFile()) as {
+        mcpServers: Record<string, Record<string, unknown>>;
+      };
+      (doc.mcpServers["ttasks"] as Record<string, unknown>)["cwd"] = "/work";
+      fresh.writeClaudeFile(JSON.stringify(doc, null, 2));
+      fresh.insideClaude(`${JSON.stringify({ theme: "dark", mcpServers: { ttasks: entry } })},\n`);
+      await page.goto(settings);
+      await expect(appsHeading(page)).toBeVisible();
+      await expect(toggle(page, toolsFor("Claude Code"))).toBeChecked();
+      const reasons = claude.locator('[data-part="file-why"]');
+      await expect(claude).toContainText("Changed by hand since");
+      await expect(reasons).toHaveCount(1);
+      await expect(reasons).toContainText(cannotRead);
+      await widths(page, "two-files-reasons");
+
+      // Off: the access goes, and every entry that stayed is named with its file.
+      await flip(page, toolsFor("Claude Code"), false);
+      await page.getByRole("button", { name: "Apply" }).click();
+      const kept = page.locator('[data-part="kept"]');
+      await expect(kept).toHaveCount(2);
+      await expect(kept.filter({ hasText: plain })).toHaveCount(1);
+      await expect(kept.filter({ hasText: inside })).toHaveCount(1);
+      await widths(page, "two-files-kept");
+      expect(await violations(page)).toEqual([]);
+    } finally {
+      fresh.insideClaude(null);
+      fresh.writeClaudeFile(original === "" ? null : original);
+    }
+    await fresh.forgetSpaces();
+  });
 });
 
 async function sideScroll(page: Page): Promise<number> {

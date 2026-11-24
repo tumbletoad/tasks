@@ -51,6 +51,10 @@ export interface FreshWorld {
   forgetSpaces(): Promise<void>;
   /** TTasks's entry in the scratch Claude Code home, or undefined. */
   claudeEntry(): unknown;
+  /** The scratch `~/.claude.json` as it is, or "" when there is none. */
+  claudeFile(): string;
+  /** The person writes the scratch `~/.claude.json`: `text`, or none. */
+  writeClaudeFile(text: string | null): void;
   /**
    * Claude Code started with its home set to the scratch `.claude` folder makes its own settings
    * file there: `text`, or none.
@@ -162,6 +166,12 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
         if (text === "") return undefined;
         const doc = JSON.parse(text) as { mcpServers?: Record<string, unknown> };
         return doc.mcpServers?.["ttasks"];
+      },
+      claudeFile: () => read(join(agentHome, ".claude.json")),
+      writeClaudeFile: (text) => {
+        const file = join(agentHome, ".claude.json");
+        if (text === null) rmSync(file, { force: true });
+        else writeFileSync(file, text);
       },
       insideClaude: (text) => {
         const file = join(agentHome, ".claude", ".claude.json");
