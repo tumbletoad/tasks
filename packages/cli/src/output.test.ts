@@ -6,7 +6,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { CLI_NAME } from "@ttasks/brand";
-import { ERROR_CODES, EXIT_CODES, messageWithHint, type ErrorCode } from "@ttasks/contracts";
+import {
+  ERROR_CODES,
+  EXIT_CODES,
+  messageWithHint,
+  outputJsonSchema,
+  registry,
+  type ErrorCode,
+} from "@ttasks/contracts";
 import { RpcError, LocalError } from "@ttasks/bridge/protocol";
 import { SLOTS, main, type Io } from "./main.ts";
 import { bodyOf, exitCodeOf, printError, render } from "./output.ts";
@@ -820,6 +827,57 @@ describe("[A3.3.5.error-text] a message and its hint, each said once", () => {
     });
     expect(io.err).toBe(
       "error conflict: A field changed after the base: read again. Read the task again, then send the change with a new request ID.\n",
+    );
+  });
+});
+
+describe("[A3.answers.absent] a write's answer prints without any field it may leave out", () => {
+  /**
+   * `value` without every field its JSON schema does not require, at every depth, but a draft's
+   * reference: only a proposal's draft has none, and it is not added.
+   */
+  function bare(schema: Record<string, unknown>, value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((v) => bare((schema["items"] ?? {}) as Record<string, unknown>, v));
+    }
+    const properties = schema["properties"] as Record<string, Record<string, unknown>> | undefined;
+    if (typeof value !== "object" || value === null || properties === undefined) return value;
+    const required = new Set([...((schema["required"] ?? []) as string[]), "ref"]);
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => required.has(key))
+        .map(([key, v]) => [key, bare(properties[key] ?? {}, v)]),
+    );
+  }
+
+  test("every write's example answer, with every field it may leave out left out, prints", () => {
+    for (const entry of registry.filter((e) => e.kind === "write" && e.faces.cli !== undefined)) {
+      entry.examples.forEach((ex, i) => {
+        const key = `${entry.name} ${String(i)}`;
+        const answer = bare(outputJsonSchema(entry), ex.output) as Record<string, unknown>;
+        expect(entry.output.safeParse(answer).success, key).toBe(true);
+        expect(render(entry.name, answer, "Mira"), key).not.toContain("undefined");
+      });
+    }
+  });
+
+  test("a retry that could not read what its change did says so, never that it did nothing", () => {
+    const updated = { result: "updated", task: "M-14", as_of: "1.1047.5n0w8k3q", warnings: [] };
+    expect(render("task.update", updated, "Mira")).toBe(
+      "Updated M-14 in Mira (which fields could not be read)\n",
+    );
+    expect(render("task.update", { ...updated, replayed: true, compared: false }, "Mira")).toBe(
+      "Updated M-14 in Mira (which fields could not be read) (replayed, not compared: an earlier version saved it, and this one cannot compare the command with it)\n",
+    );
+    const finished = {
+      result: "completed",
+      task: "M-14",
+      follow_ups: [],
+      as_of: "1.1047.5n0w8k3q",
+    };
+    expect(render("task.finish", finished, "Mira")).toBe("Finished M-14 in Mira\n");
+    expect(render("receipt.get", { found: false }, "Mira")).toBe(
+      "No receipt for that request ID in this writer scope: nothing was written under it, and the request can be sent again.\n",
     );
   });
 });

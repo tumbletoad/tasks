@@ -124,7 +124,12 @@ export function printUsage(io: Io, json: boolean, message: string): number {
 
 type Result = Record<string, unknown>;
 
-const replay = (r: Result) => (r["replayed"] === true ? " (replayed)" : "");
+const replay = (r: Result) =>
+  r["replayed"] !== true
+    ? ""
+    : r["compared"] === false
+      ? " (replayed, not compared: an earlier version saved it, and this one cannot compare the command with it)"
+      : " (replayed)";
 
 /**
  * A finished task's state as a person says it: completed, or dropped for an archived one.
@@ -479,11 +484,14 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       }
       break;
     case "task.update": {
-      const fields = (result["fields"] as string[] | undefined) ?? [];
+      // A retry that could not read which fields its change changed says so, never that none did.
+      const fields = result["fields"] as string[] | undefined;
+      const which =
+        fields === undefined ? " (which fields could not be read)" : `: ${fields.join(", ")}`;
       lines.push(
         result["result"] === "no_change"
           ? `No change to ${String(result["task"])} in ${space}${replay(result)}`
-          : `Updated ${String(result["task"])} in ${space}: ${fields.join(", ")}${replay(result)}`,
+          : `Updated ${String(result["task"])} in ${space}${which}${replay(result)}`,
       );
       lines.push(...insideLines(result));
       break;
@@ -507,11 +515,12 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       break;
     }
     case "task.finish": {
-      const dropped = result["lifecycle"] === "archived";
+      // A retry that could not read the task's lifecycle says only that it is finished.
+      const state = finished(result["lifecycle"]) ?? "finished";
       lines.push(
         result["result"] === "no_change"
-          ? `${String(result["task"])} is already ${dropped ? "dropped" : "completed"} in ${space}${replay(result)}`
-          : `${dropped ? "Dropped" : "Completed"} ${String(result["task"])} in ${space}${replay(result)}`,
+          ? `${String(result["task"])} is already ${state} in ${space}${replay(result)}`
+          : `${state.charAt(0).toUpperCase()}${state.slice(1)} ${String(result["task"])} in ${space}${replay(result)}`,
       );
       for (const f of (result["follow_ups"] as Result[] | undefined) ?? []) {
         lines.push(draftLine(f, space, "a follow-up's"), ...heldLines(f));
@@ -725,7 +734,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       lines.push(
         result["found"] === true
           ? `${String(result["status"])} at ${String(result["decided_at"])}, as of ${String(result["as_of"])}`
-          : "No receipt for that request ID in this writer scope.",
+          : "No receipt for that request ID in this writer scope: nothing was written under it, and the request can be sent again.",
       );
       break;
     case "task.search":
@@ -738,7 +747,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       if (typeof result["result"] === "string" && group !== undefined) {
         const done = GROUP_DONE[str(result["result"])] ?? str(result["result"]);
         const folder = typeof group["folder"] === "string" ? `: ${group["folder"]}` : "";
-        lines.push(`${done} ${str(group["kind"])} ${str(group["name"])}${folder}`);
+        lines.push(`${done} ${str(group["kind"])} ${str(group["name"] ?? group["id"])}${folder}`);
         lines.push(...insideLines(result));
       }
       // A project a line, with the repository in its folder and the folder on this machine. A
