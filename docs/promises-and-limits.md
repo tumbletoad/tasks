@@ -395,8 +395,13 @@ the behaviour it describes, and keep each one to a sentence or two.
   that it could not be confirmed, with what to do.
 - An agent app's tools show as on only while they can start: its entry is there, the program it
   runs is there and its access is on. Otherwise the app says which is missing, and turning it on
-  puts that back where it can be done from there. While its access may still be on, or an entry
-  setup wrote is still there, turning it off is offered, whatever else is missing.
+  puts that back where it can be done from there; while a setup that did not finish may still take
+  the access back, only turning it off is offered, which finishes it. While its access may still
+  be on, or an entry setup wrote is still there, turning it off is offered, whatever else is
+  missing.
+- When setup cannot read its own record of an agent home, it changes no file that record covers:
+  turning the tools off still takes the access away, and names each time the file whose entry stays
+  and the record it cannot read. `ttasks doctor` says how to clean up.
 - Claude Code reads its default folder's settings from `~/.claude.json`, and from
   `~/.claude/.claude.json` when a program starts it with that folder as its home. Setup puts its
   entry into each of the two that is there and takes it out of each, never creating the second;
