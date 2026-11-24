@@ -11,7 +11,6 @@
 import {
   EFFORT_KEY,
   EFFORT_KEY_MAX,
-  effortKeys,
   fitsShape,
   PREFERENCE_KEY,
   PREFERENCE_KEY_MAX,
@@ -370,6 +369,8 @@ export interface WriteResult {
    * (Ctrl+Z) can name it in what it does next (A1 3.10.1).
    */
   target?: Id<"op">;
+  /** With `target`: that commit is a change of the effort levels. */
+  levels?: true;
   /**
    * A redo's: the undone steps it tried and could not redo, oldest first. They stay undone, and
    * the next redo tries them again; `conflicts` says why.
@@ -2191,17 +2192,11 @@ function prefSet(f: Fields, i: number): PrefSet {
   if (!Array.isArray(raw) || raw.length > EFFORT_MOVES_MAX) {
     return f.fail("VALIDATION_FAILED", "Expected a list of moves", "moves");
   }
-  const levels = new Set(effortKeys(set.value ?? preferenceSpec(EFFORT_SCALE)?.default));
-  const from = new Set<string>();
+  // What the moves mean against the lists is the writer's to judge, after the base (stageMoves).
   const moves = raw.map((item: unknown, k): EffortMove => {
     const m = fields(item, `ops[${String(i)}].moves[${String(k)}]`, i);
     const move = { from: m.level("from"), to: m.raw("to") === null ? null : m.level("to") };
     m.done();
-    if (from.has(move.from)) m.fail("VALIDATION_FAILED", "A size moves once", "from");
-    if (move.to !== null && !levels.has(move.to)) {
-      m.fail("VALIDATION_FAILED", "A move goes to a level of the new list, or to no size", "to");
-    }
-    from.add(move.from);
     return move;
   });
   return { ...set, moves };

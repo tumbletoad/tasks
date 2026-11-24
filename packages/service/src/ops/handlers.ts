@@ -29,6 +29,8 @@ import {
   isKeyList,
   effortKeys,
   effortNamesFit,
+  sizesHeldText,
+  type EffortHeld,
   EFFORT_NAME_MAX,
   samePrefValue,
   laterIn,
@@ -4632,21 +4634,9 @@ async function prefsSet(call: Call): Promise<unknown> {
 function sizesHeld(error: unknown): AppError | undefined {
   const held = error instanceof AppError ? error.data["holders"] : undefined;
   if (!(error instanceof AppError) || !Array.isArray(held) || held.length === 0) return undefined;
-  const counts = held as { effort: string; active: number; finished: number; trash: number }[];
-  const named = counts.map(({ effort, active, finished, trash }) => {
-    const parts = [
-      active > 0 ? `${String(active)} active` : "",
-      finished > 0 ? `${String(finished)} finished` : "",
-      trash > 0 ? `${String(trash)} in the Trash` : "",
-    ];
-    return `${effort} (${parts.filter((part) => part !== "").join(", ")})`;
-  });
-  const first = counts[0]?.effort ?? "";
-  const arg = (text: string) => (text.includes(" ") ? `"${text}"` : text);
   return new AppError({
     code: "invalid_input",
-    message: `Tasks hold a size this change removes: ${named.join(", ")}. Nothing was changed.`,
-    hint: `Move their tasks with the change: --move ${arg(`${first}=<level>`)}, or --move ${arg(`${first}=`)} to take the size off.`,
+    ...sizesHeldText(held as EffortHeld[]),
     data: error.data,
   });
 }

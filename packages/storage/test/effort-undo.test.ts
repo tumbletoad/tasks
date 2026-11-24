@@ -165,6 +165,60 @@ describe("[A1.3.10.history.effort-levels] Undo and Redo take a change of levels 
     expect([names(), efforts(ids)]).toEqual([["S", "Medium", "L", "XL"], ["Medium"]]);
     expect(history("undo").error?.code).toBe("NOTHING_TO_UNDO");
   });
+
+  test("a swap that keeps the list is a change of levels too: someone else's change of the list since holds it, and the refusal says what step it is", async () => {
+    start();
+    const ids = tasks("M", "L");
+    expectStatus(
+      change(
+        ["S", "M", "L"],
+        [
+          { from: "M", to: "L" },
+          { from: "L", to: "M" },
+        ],
+      ),
+      "applied",
+    );
+    expectStatus(write(await partner(), [setLevels(["L", "M", "S"])]), "applied");
+    const full = history("undo");
+    expect([
+      full.status,
+      full.levels,
+      full.conflicts.map((c) => [c.entity, c.id, c.field]),
+    ]).toEqual(["conflict", true, [["preferences", SCALE, "value"]]]);
+    expectStatus(history("undo", true), "applied");
+    expect(efforts(ids)).toEqual(["L", "M"]);
+  });
+
+  test("a repair from a size the list lacks, the list kept, is undone with the report of what is off the levels", () => {
+    start();
+    expectStatus(change(["S", "Medium", "L"], [{ from: "M", to: "Medium" }]), "applied");
+    const [late] = tasks("Medium");
+    expectStatus(history("undo"), "applied");
+    expectStatus(change(["S", "M", "L"], [{ from: "Medium", to: "M" }]), "applied");
+    const undone = history("undo");
+    expectStatus(undone, "applied");
+    expect(undone.results[0]).toMatchObject({
+      levels: true,
+      off_list: [{ effort: "Medium", tasks: [refOf(late ?? "")], count: 1 }],
+    });
+    expect(efforts([late ?? ""])).toEqual(["Medium"]);
+    expect(history("redo").results[0]).toMatchObject({ levels: true });
+    expect(efforts([late ?? ""])).toEqual(["M"]);
+  });
+
+  test("an undo of one task's size is no change of levels", () => {
+    start();
+    const [task] = tasks("M");
+    const ops: Operation[] = [{ kind: "task.patch", task: task ?? "", set: { effort: "L" } }];
+    expectStatus(write(fx.human, ops, { undoable: true }), "applied");
+    expectStatus(
+      write(fx.codex, [{ kind: "task.patch", task: task ?? "", set: { effort: "S" } }]),
+      "applied",
+    );
+    const refused = history("undo");
+    expect([refused.status, refused.levels]).toEqual(["conflict", undefined]);
+  });
 });
 
 describe("[A1.3.10.history.effort-first] the first change of levels a space stores comes back as the levels it read", () => {

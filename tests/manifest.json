@@ -4217,6 +4217,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.16.prefs.effort-moves-same",
+      "title": "A move of a size to the same name moves no task: alone it is no step, and the answer counts none moved",
+      "source": "A1 3.16",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.16.prefs.effort-off-list",
       "title": "A task on a size the list lacks stays readable: effort: search finds it, sort:effort puts it last, and the tools' text and the readable file show it",
       "source": "A1 3.16",

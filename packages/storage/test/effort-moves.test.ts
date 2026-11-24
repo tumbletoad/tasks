@@ -188,16 +188,39 @@ describe("[A1.3.16.prefs.effort-moves-refused] a change of levels that would str
     expect(write(fx.human, [alone], { undoable: true }).error?.code).toBe("VALIDATION_FAILED");
   });
 
-  test("a base older than the list's last change is a conflict, before its moves are checked", () => {
-    tasks("M");
-    const stale = fx.base();
-    expectStatus(change(["S", "M", "L", "XL"]), "applied");
-    const result = fx.writer.submit(
-      fx.request(fx.human, [setLevels(["S", "L"], [{ from: "Q", to: "S" }])], {
-        base: stale,
-        undoable: true,
-      }),
-    );
-    expect([result.status, result.error?.code]).toEqual(["conflict", "VERSION_CONFLICT"]);
+  test.each([
+    ["a size nobody has", [{ from: "Q", to: "S" }]],
+    ["a target outside the new list", [{ from: "M", to: "XL" }]],
+    [
+      "a size moved twice",
+      [
+        { from: "M", to: "S" },
+        { from: "M", to: "L" },
+      ],
+    ],
+  ])(
+    "a base older than the list's last change is a conflict, before a move from or to %s is judged",
+    (_, moves) => {
+      tasks("M");
+      const stale = fx.base();
+      expectStatus(change(["S", "M", "L", "XL"]), "applied");
+      const result = fx.writer.submit(
+        fx.request(fx.human, [setLevels(["S", "L"], moves)], { base: stale, undoable: true }),
+      );
+      expect([result.status, result.error?.code]).toEqual(["conflict", "VERSION_CONFLICT"]);
+    },
+  );
+});
+
+describe("[A1.3.16.prefs.effort-moves-same] a move to the same name moves nothing", () => {
+  test("it is no step on its own, and the answer says no task moved", () => {
+    const [task] = tasks("M");
+    const before = commits();
+    const same = change(["S", "M", "L"], [{ from: "M", to: "M" }]);
+    expect(same.status).toBe("unchanged");
+    expect(same.results[0]?.moved).toEqual([
+      { from: "M", to: "M", active: 0, finished: 0, trash: 0 },
+    ]);
+    expect([commits(), effortOf(task ?? "")]).toEqual([before, "M"]);
   });
 });
