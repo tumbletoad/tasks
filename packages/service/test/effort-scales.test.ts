@@ -203,6 +203,10 @@ describe("[A1.3.16.prefs.effort-stored] a space holds its levels, so every build
     expect(w.fx.writer.storeDefaults()).toBe(true);
     expect(stored(w)).toMatchObject({ ver: 2, actor: "system" });
     expect(JSON.parse(String(stored(w)?.["value"]))).toEqual(EFFORT_LEVELS);
+    // A reset a NEWER build left is that build's: this one leaves it, and the open goes on.
+    await w.store("null", 3);
+    expect(w.fx.writer.storeDefaults()).toBe(false);
+    expect(stored(w)).toMatchObject({ value: "null", ver: 3 });
   });
 
   test("a list of names stays as it is at an open; its untouched export saved back changes nothing", async () => {

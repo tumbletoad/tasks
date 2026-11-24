@@ -1041,7 +1041,12 @@ export class SpaceWriter {
       missing: PREFERENCES.filter((p) => {
         if (p.scope !== "space" || p.stored !== true) return false;
         const row = conn.prepare(SQL.preferenceRow).get({ id: p.key });
-        return row === undefined || row["value"] === "null";
+        if (row === undefined) return true;
+        // A newer build's row is read-only here, its reset included: that build fills it.
+        return (
+          row["value"] === "null" &&
+          new RowReader("preferences", row).int("schema_ver", "count") <= p.schemaVer
+        );
       }),
       space: decodeSpaceRow(conn.prepare(SQL.space).get()),
       system: conn.prepare(SQL.systemActor).get()?.["id"],
