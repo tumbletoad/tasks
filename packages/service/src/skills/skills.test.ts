@@ -201,7 +201,21 @@ describe("[A3.3.6.mcp.skills] sizing-effort in a space", () => {
     const names = served(["small", "big"]);
     expect(levelLines(names)).toEqual([]);
     expect(names).toContain("This space's sizes, smallest first: small, big.");
-    expect(names).not.toContain("these lines win");
+    // Every list, bare or with times and lines, one level or ten: send a listed name as written,
+    // and these lines win over a copy that names or describes a size otherwise.
+    const ten = Array.from({ length: EFFORT_SCALE_MAX }, (_, i) => ({ key: `L${String(i)}` }));
+    for (const text of [
+      names,
+      served(["Q"]),
+      mixed,
+      timed,
+      servedLevels(EFFORT_LEVELS),
+      servedLevels(ten),
+    ]) {
+      expect(text).toContain(
+        "Send one size's name exactly as written here, never a time. Where the text below gives a size another name, time or meaning, these lines win.",
+      );
+    }
   });
 
   test("[A3.3.6.mcp.skills.levels] ten levels with the longest lines in any script are served whole, beside a copy near its limit", () => {

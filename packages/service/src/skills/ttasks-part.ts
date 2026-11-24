@@ -99,12 +99,16 @@ const sizing: TtasksPart = ({ sizes }, body) => {
   const mechanics = `effort takes exactly one size's name, in ${addTasks} or in ${updateTask}'s set (with base); ${updateTask} with clear ["effort"] empties it. Send no other value and no time: a task you cannot place stays without a size.`;
   const own =
     "A size is the user's own active time, the way they usually work: getting ready, doing it and checking it. It is not how long an agent works.";
+  // For every list: the names here are the only ones to send, and they settle a person's copy
+  // that names or describes a size otherwise.
+  const send =
+    "Send one size's name exactly as written here, never a time. Where the text below gives a size another name, time or meaning, these lines win.";
   const timed = sizes.some((size) => size.time !== undefined);
   const described = sizes.some((size) => size.about !== undefined);
   if (!timed && !described) {
     const names = sizes.map((size) => size.key).join(", ");
     return {
-      ttasks: [mechanics, "", `This space's sizes, smallest first: ${names}. ${own}`],
+      ttasks: [mechanics, "", `This space's sizes, smallest first: ${names}. ${own}`, send],
       body,
     };
   }
@@ -113,7 +117,8 @@ const sizing: TtasksPart = ({ sizes }, body) => {
       ? "Match the work to the closest description."
       : "Match the work to the closest size.",
     timed ? "The times are reference points for the user's own work." : "",
-    "If torn, choose the larger size. Send its name, never a time. Where the text below gives a size another time or meaning, these lines win.",
+    "If torn, choose the larger size.",
+    send,
   ];
   return {
     ttasks: [
