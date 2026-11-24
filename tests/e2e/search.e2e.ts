@@ -480,6 +480,39 @@ test.describe("[A5.3.13.e2e.search-now] A search result changes the task as it s
   });
 });
 
+test.describe("[A5.3.13.e2e.search-day] A search left open is read again on the page's next day", () => {
+  test("over midnight and when shown again on a later day, without a refresh offer, the field and its focus kept", async ({
+    page,
+    world,
+  }) => {
+    const word = wordOf("sloe");
+    await addTasks(world, [{ title: `Steep the ${word} gin`, area: "home", priority: 1 }]);
+    const first = day(0);
+    let reads = 0;
+    page.on("request", (request) => {
+      if (request.url().endsWith("/api/v1/op/task.search")) reads += 1;
+    });
+    await page.clock.install({ time: first.start + 23 * 3_600_000 + 58 * 60_000 });
+    await open(page, world, "/today");
+    await page.keyboard.press("/");
+    await searching(page).pressSequentially(word);
+    await expect(titles(page, "To do")).toHaveText([`Steep the ${word} gin`]);
+    const before = reads;
+
+    await page.clock.runFor(3 * 60_000);
+    await expect.poll(() => reads).toBeGreaterThan(before);
+    const overnight = reads;
+    await page.clock.setSystemTime(day(2, first.start).start + 7 * 3_600_000);
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect.poll(() => reads).toBeGreaterThan(overnight);
+
+    await expect(titles(page, "To do")).toHaveText([`Steep the ${word} gin`]);
+    await expect(page.getByRole("status").filter({ hasText: "Results changed." })).toHaveCount(0);
+    await expect(searching(page)).toHaveValue(word);
+    await expect(searching(page)).toBeFocused();
+  });
+});
+
 test.describe("[A7.3.12.m5-10.e2e.keyboard] Both modes by keyboard alone", () => {
   test("/ and typing, Enter to the first result, arrows and Enter in the list, / back, Escape out; the lens carries the draft", async ({
     page,

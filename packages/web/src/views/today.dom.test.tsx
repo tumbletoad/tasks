@@ -406,6 +406,20 @@ describe("[A5.3.4.web.today-page] Today's date, numbers and sections in a DOM", 
     expect(container.querySelector('[data-part="date"]')?.textContent).toBe("Friday 13 November");
     expect(sections()[1]).toEqual(["This week", ["Sign the lease", "Pay the deposit"]]);
   });
+
+  test("a tab that wakes on a later day and was never hidden moves on to it at the next minute", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"], now: NOW });
+    await mount(<TodayPage onExpand={() => undefined} />);
+    apply(snapshot([...TASKS, task(6, { title: "Pay the deposit", due_date: "2026-11-19" })]));
+    expect(container.querySelector('[data-part="date"]')?.textContent).toBe("Thursday 12 November");
+    // The machine slept past midnight with the tab in front: no timer saw the night go by.
+    vi.setSystemTime(NOW + 86_400_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(61_000);
+    });
+    expect(container.querySelector('[data-part="date"]')?.textContent).toBe("Friday 13 November");
+    expect(sections()[1]).toEqual(["This week", ["Sign the lease", "Pay the deposit"]]);
+  });
   test("an agent's update leaves the expanded task where it is until it is collapsed", async () => {
     const onExpand = vi.fn<(task: TaskRow | undefined) => void>();
     await mount(<TodayPage onExpand={onExpand} />);

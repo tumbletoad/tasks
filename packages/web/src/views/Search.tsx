@@ -9,6 +9,7 @@ import { classes } from "../app/css.ts";
 import { useTitle } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
+import { useClock } from "../row/useClock.ts";
 import { useLive, usePagedQuery } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
 import {
@@ -155,6 +156,18 @@ function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
     },
     [open.query, done.query],
   );
+
+  // What a search finds can depend on the day (due:today, a star, created:-7d, the ranking's
+  // stars): on the page's next day it is read again, where the reader is.
+  const { today, timeZone } = useClock(false);
+  const day = `${today} ${timeZone}`;
+  const readOn = useRef(day);
+  useEffect(() => {
+    if (readOn.current === day) return;
+    readOn.current = day;
+    void open.query.refresh();
+    void done.query.refresh();
+  }, [day, open.query, done.query]);
 
   const ready = open.state.phase === "ready" && done.state.phase === "ready";
   const changed = open.state.changed || done.state.changed;

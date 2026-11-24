@@ -93,6 +93,10 @@ const countIn = async (link: Locator): Promise<number> =>
 
 const dateOf = (page: Page) => page.locator('[data-part="date"]');
 
+const SECOND = 1_000;
+const MINUTE = 60 * SECOND;
+const HOUR = 60 * MINUTE;
+
 async function finish(world: World, ref: string): Promise<void> {
   await world.op(world.mira.id, "task.finish", { task: ref, base: await asOf(world, ref) });
 }
@@ -103,6 +107,54 @@ async function addTask(world: World, draft: Record<string, unknown>): Promise<st
   if (ref === undefined) throw new Error("the task was not added");
   return ref;
 }
+
+test.describe("[A5.3.4.e2e.new-day] A page left open into the next day shows that day without a reload", () => {
+  test("over midnight, after a sleep no timer saw, and when shown again: the date and the sections move on, and the draft, its focus and the open card stay", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    // The page's clock is its own: the service's day does not enter Today's sections.
+    const first = day(0);
+    const on = (days: number) => day(days, first.start);
+    const water = await addTask(world, { title: `Water the ferns (${tag})`, due: on(1).iso });
+    const books = await addTask(world, { title: `Return the books (${tag})`, due: on(2).iso });
+    const gutters = await addTask(world, { title: `Clear the gutters (${tag})`, due: on(5).iso });
+    const inSection = (name: string, ref: string) =>
+      section(page, name).locator(`li[data-task="${ref}"]`);
+    await page.clock.install({ time: first.start + 23 * HOUR + 58 * MINUTE });
+    await openToday(page, world);
+    await expect(dateOf(page)).toHaveText(first.full);
+    await expect(inSection("This week", water)).toHaveCount(1, { timeout: SLOW_MS });
+    const title = inSection("This week", gutters).locator('[data-part="title"]');
+    await title.click();
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+    const field = page.getByRole("textbox", { name: "New task" });
+    await field.fill(`Half a thought (${tag})`);
+
+    // Midnight passes while the page is open.
+    await page.clock.runFor(3 * MINUTE);
+    await expect(dateOf(page)).toHaveText(on(1).full);
+    await expect(inSection("Focus", water)).toHaveCount(1);
+    await expect(inSection("This week", books)).toHaveCount(1);
+
+    // The machine sleeps through the next night with the tab in front: the clock jumps and no
+    // timer fires until the machine is awake again.
+    await page.clock.setSystemTime(on(2).start + 7 * HOUR);
+    await page.clock.runFor(MINUTE + SECOND);
+    await expect(dateOf(page)).toHaveText(on(2).full);
+    await expect(inSection("Focus", books)).toHaveCount(1);
+
+    // Another night, and the tab is shown again before any timer fires.
+    await page.clock.setSystemTime(on(3).start + 7 * HOUR);
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(dateOf(page)).toHaveText(on(3).full);
+
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+    await expect(field).toHaveValue(`Half a thought (${tag})`);
+    await expect(field).toBeFocused();
+  });
+});
 
 test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its sections", () => {
   test("no task in two sections, the date once, the numbers live and linked, the expanded task held, Changes", async ({

@@ -4873,6 +4873,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.13.e2e.search-day",
+      "title": "In Chromium and Firefox against the real service: a search left open is read again over midnight and when the page is shown again on a later day, with no Results changed offer, its rows in place and the field and its focus kept",
+      "source": "A5 3.13",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-10.e2e.keyboard",
       "title": "In Chromium and Firefox: both modes by keyboard alone (/ and typing, Enter to the first result, the list's arrows and Enter and Escape, / back to the field, Escape out to add mode), the lens and the plus switching with the text carried, and Tab taking the area type-ahead's first suggestion",
       "source": "A5 3.13, A7 3.12 M5.10",
@@ -5359,6 +5367,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.13.web.search-day",
+      "title": "A search left open reads again on the page's next day: over midnight while the page is open with the open card kept open and no Results changed, when a page that slept past midnight is shown again, and at the next minute when it was never hidden; on the same day it is not read again",
+      "source": "A5 3.13",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.13.web.search-finished",
       "title": "A search's Completed group draws its rows as Completed does: when each task was completed or dropped, and no priority, effort or age; its To do rows keep theirs",
       "source": "A5 3.13, A5 3.5",
@@ -5687,8 +5703,16 @@
     },
     {
       "id": "A5.3.4.web.today-page",
-      "title": "Today in a DOM with the real live store: today's date shows once with the day's numbers, each a link to the search or view it counts, done this week from the service's finished tasks (a dash until it answers, read again when a task is finished and only then, dropped tasks left out), a tab shown again on a later day moves on to it, the sections are section elements under their headings with no view heading, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
+      "title": "Today in a DOM with the real live store: today's date shows once with the day's numbers, each a link to the search or view it counts, done this week from the service's finished tasks (a dash until it answers, read again when a task is finished and only then, dropped tasks left out), a tab shown again on a later day moves on to it, and so does one that was never hidden at the next minute, the sections are section elements under their headings with no view heading, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
       "source": "A5 3.4, A5 3.15, A5 3.22, A7 3.12 M5.04",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.4.e2e.new-day",
+      "title": "In Chromium and Firefox against the real service: a page left open over midnight, through a sleep no timer saw, and shown again on a later day shows that day's date and sections without a reload, with the draft in the top field, its focus and the open card kept",
+      "source": "A5 3.4",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

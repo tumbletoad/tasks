@@ -194,6 +194,19 @@ const noDeadButton = [
     message: 'A button needs an action: onClick, or type="submit" in a form.',
   },
 ];
+// The page has one clock (row/useClock.ts), so everything that depends on the day moves to the next
+// one together; a reading of today or of the time zone anywhere else would stay on yesterday.
+const DAY_MESSAGE = "Read the day from useClock (row/useClock.ts), the page's one clock.";
+const noOwnDay = [
+  { selector: "NewExpression[callee.name='Date'][arguments.length=0]", message: DAY_MESSAGE },
+  { selector: "CallExpression[callee.property.name='toDateString']", message: DAY_MESSAGE },
+  { selector: "MemberExpression[property.name='resolvedOptions']", message: DAY_MESSAGE },
+  {
+    selector:
+      "CallExpression[callee.name='localDate'] > CallExpression.arguments[callee.object.name='Date'][callee.property.name='now']",
+    message: DAY_MESSAGE,
+  },
+];
 const stdoutImports = ["process", "node:process"].map((name) => ({
   name,
   importNames: ["stdout"],
@@ -334,6 +347,21 @@ export default defineConfig([
       "packages/web/src/theme/tokens.ts",
       "packages/web/src/theme/themes.ts",
     ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...noShell,
+        ...noTmpdir,
+        ...noAppData,
+        ...noUiProse,
+        ...noDeadButton,
+        ...noOwnDay,
+      ],
+    },
+  },
+  {
+    // The clock itself reads the day.
+    files: ["packages/web/src/row/useClock.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
