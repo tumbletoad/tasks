@@ -10,7 +10,7 @@
 // tasks of their own, so the assertions name this test's tasks and the rules, never a whole list.
 // Dates are relative to the day the test runs, as the service's star is (it stars for its today).
 import { expect, type Locator, type Page } from "@playwright/test";
-import { day, onOneDay } from "./days.ts";
+import { beforeMidnight, day, onOneDay } from "./days.ts";
 import { test } from "./fixture.ts";
 import {
   axeFound,
@@ -122,7 +122,7 @@ test.describe("[A5.3.4.e2e.new-day] A page left open into the next day shows tha
     const gutters = await addTask(world, { title: `Clear the gutters (${tag})`, due: on(5).iso });
     const inSection = (name: string, ref: string) =>
       section(page, name).locator(`li[data-task="${ref}"]`);
-    await page.clock.install({ time: first.start + 23 * HOUR + 58 * MINUTE });
+    await page.clock.install({ time: beforeMidnight(first) });
     await openToday(page, world);
     await expect(dateOf(page)).toHaveText(first.full);
     await expect(inSection("This week", water)).toHaveCount(1, { timeout: SLOW_MS });

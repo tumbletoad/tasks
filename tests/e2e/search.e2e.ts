@@ -5,7 +5,7 @@
 // both modes, a space without the word index, and the screenshots in both themes at 1,440 and
 // 390 px. Each test makes tasks with words of its own: the tests of one worker share its world.
 import { expect, type Page } from "@playwright/test";
-import { day, onOneDay } from "./days.ts";
+import { beforeMidnight, day, onOneDay } from "./days.ts";
 import { test } from "./fixture.ts";
 import { axeFound, picture, pictures, showsSpace, signIn, themes } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
@@ -553,7 +553,7 @@ test.describe("[A5.3.13.e2e.search-day] A search left open is read again on the 
     page.on("request", (request) => {
       if (request.url().endsWith("/api/v1/op/task.search")) reads += 1;
     });
-    await page.clock.install({ time: first.start + 23 * 3_600_000 + 58 * 60_000 });
+    await page.clock.install({ time: beforeMidnight(first) });
     await open(page, world, "/today");
     await page.keyboard.press("/");
     await searching(page).pressSequentially(word);
