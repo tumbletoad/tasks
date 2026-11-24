@@ -52,7 +52,7 @@ export const SETUP_HELP = `Usage: ${CLI_NAME} setup <app> [options] [--json]
   instances --remove  Take out every entry it added that is still exactly as it wrote it
     [--instance <id>]
   t3 [--no-browser]   Pair with T3 Code: approve ${PRODUCT_NAME} on T3's page in your browser
-  t3 --status         Whether T3 Code can be used: paired, running, or Reconnect T3
+  t3 --status         Whether T3 Code can be used: paired, running, or to pair again
 
 Setup changes only ${PRODUCT_NAME}'s own entry, never trust, approval or other servers' settings:
 --parts approve-tools shows the approval change for you to make by hand. T3 Code's own settings are

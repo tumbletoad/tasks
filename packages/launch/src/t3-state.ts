@@ -1,5 +1,5 @@
-// T3's machine state (A4 3.16 "T3 state"): the pairing (the client registration, its tokens and
-// the current grant ID), the "Not now" answers per place, and each T3 launch's plan. Machine state
+// T3's machine state (A4 3.16 "T3 state"): the pairing (the client registration, its token and
+// the current grant ID) and each T3 launch's plan. Machine state
 // only: never machine.toml, never a space, never a log. The service keeps these as files in a
 // user-only folder of `<state>`, written atomically with mode 0600 (hub/t3.ts); this module reads
 // and writes them through that port and checks every field it reads back, so a damaged file is
@@ -7,15 +7,13 @@
 //
 // The grant ID (A4 3.1, 3.4.1 "Grant identity"): a local random ID per successful authorization.
 // Every T3 intent records the grant it was dispatched under, and the one repeat A4 allows (L14) is
-// sent only while the pairing still holds that grant. A refresh of the token also starts a new
-// grant until the lab shows that T3 keeps its request namespace across a refresh (M0-L05): the
-// safe side, since a repeat under a namespace that changed would make a second thread.
+// sent only while the pairing still holds that grant.
 import { randomBytes } from "node:crypto";
 import { EVIDENCE_ID } from "./intents.ts";
 import type { Grant } from "./t3-oauth.ts";
 
 /** The files of T3's machine state, by name: `<name>.json` in the T3 state folder. */
-export const T3_FILES = ["pairing", "answers", "plans"] as const;
+export const T3_FILES = ["pairing", "plans"] as const;
 export type T3FileName = (typeof T3_FILES)[number];
 
 /**
@@ -48,12 +46,6 @@ export interface T3Pairing extends Grant {
   /** T3's environment ID, read once after pairing, for thread links. */
   readonly environment?: string;
 }
-
-/** Whether a refresh keeps the grant ID. False until M0-L05 shows T3 keeps its namespace. */
-export const REFRESH_KEEPS_GRANT: boolean = false;
-
-/** "Not now" is remembered per place for 30 days (A4 3.4.1 step 4). */
-export const NOT_NOW_MS = 30 * 24 * 60 * 60_000;
 
 /** A plan is kept this long after it was written, then dropped. */
 export const PLAN_KEEP_MS = 7 * 24 * 60 * 60_000;
@@ -88,16 +80,17 @@ function parse(text: string | undefined): Record<string, unknown> | undefined {
 export function readPairing(files: T3Files): T3Pairing | undefined {
   const value = parse(files.read("pairing"));
   if (value === undefined) return undefined;
-  const { grant, pairedAt, clientId, clientSecret, accessToken, refreshToken, expiresAt } = value;
+  const { grant, pairedAt, clientId, clientSecret, accessToken, expiresAt } = value;
   const { reconnect, environment } = value;
   if (typeof grant !== "string" || !EVIDENCE_ID.test(grant)) return undefined;
   if (!isInstant(pairedAt) || typeof reconnect !== "boolean") return undefined;
   if (typeof clientId !== "string" || !CLIENT_ID.test(clientId)) return undefined;
   if (typeof accessToken !== "string" || !TOKEN.test(accessToken)) return undefined;
-  for (const optional of [clientSecret, refreshToken]) {
-    if (optional !== undefined && (typeof optional !== "string" || !TOKEN.test(optional))) {
-      return undefined;
-    }
+  if (
+    clientSecret !== undefined &&
+    (typeof clientSecret !== "string" || !TOKEN.test(clientSecret))
+  ) {
+    return undefined;
   }
   if (expiresAt !== undefined && !isInstant(expiresAt)) return undefined;
   if (
@@ -113,7 +106,6 @@ export function readPairing(files: T3Files): T3Pairing | undefined {
     clientId,
     accessToken,
     ...(typeof clientSecret === "string" ? { clientSecret } : {}),
-    ...(typeof refreshToken === "string" ? { refreshToken } : {}),
     ...(expiresAt === undefined ? {} : { expiresAt }),
     ...(typeof environment === "string" ? { environment } : {}),
   };
@@ -121,24 +113,6 @@ export function readPairing(files: T3Files): T3Pairing | undefined {
 
 export function writePairing(files: T3Files, pairing: T3Pairing): void {
   files.write("pairing", `${JSON.stringify({ format: 1, ...pairing })}\n`);
-}
-
-/** A place's "Not now" answer, or none. `key` is the place's ID (or `work:<space>`). */
-export function notNowUntil(files: T3Files, key: string): number | undefined {
-  const value = parse(files.read("answers"));
-  const entry = value?.[`not_now:${key}`];
-  return isInstant(entry) ? entry : undefined;
-}
-
-/** Remembers "Not now" for `key` until `until`, and drops answers that have run out. */
-export function rememberNotNow(files: T3Files, key: string, until: number, now: number): void {
-  const value = parse(files.read("answers")) ?? {};
-  const kept: Record<string, unknown> = { format: 1 };
-  for (const [k, v] of Object.entries(value)) {
-    if (k.startsWith("not_now:") && isInstant(v) && v > now) kept[k] = v;
-  }
-  kept[`not_now:${key}`] = until;
-  files.write("answers", `${JSON.stringify(kept)}\n`);
 }
 
 /** Where a thread runs in T3 (A4 3.4.1 steps 2 and 3). */

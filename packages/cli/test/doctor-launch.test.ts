@@ -139,48 +139,34 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     expect(environmentCheck(null, NOW).status).toBe("skip");
   });
 
-  test("launch.t3: a pairing that renews passes; one that cannot warns 5 days before it runs out", () => {
+  test("launch.t3: a pairing warns 5 days before its token runs out, and after", () => {
     const paired = (extra: Record<string, unknown>) => ({ state: "ready", ...extra });
-    expect(t3PairingCheck(paired({ renews: true, expires_at: iso(NOW + HOUR) }), NOW).status).toBe(
-      "ok",
-    );
-    expect(t3PairingCheck(paired({ renews: false }), NOW).status).toBe("ok");
+    expect(t3PairingCheck(paired({}), NOW).status).toBe("ok");
     // An expiry the service gave but no one can read is not a pass.
     for (const broken of ["broken", "", 12, { at: 1 }]) {
-      expect([
+      expect([broken, t3PairingCheck(paired({ expires_at: broken }), NOW).status]).toEqual([
         broken,
-        t3PairingCheck(paired({ renews: false, expires_at: broken }), NOW).status,
-      ]).toEqual([broken, "skip"]);
+        "skip",
+      ]);
     }
-    // Without `renews` the pairing is judged as one that cannot renew itself.
-    expect(t3PairingCheck(paired({ expires_at: iso(NOW + DAY) }), NOW).status).toBe("warn");
-    const later = t3PairingCheck(paired({ renews: false, expires_at: iso(NOW + 30 * DAY) }), NOW);
+    const later = t3PairingCheck(paired({ expires_at: iso(NOW + 30 * DAY) }), NOW);
     expect(later).toMatchObject({ status: "ok" });
     expect(later.detail).toContain("until 2026-12-14");
     // Within the window: a warning with the date, the days left and the fix.
-    const soon = t3PairingCheck(
-      paired({ renews: false, expires_at: iso(NOW + T3_WARN_MS - HOUR) }),
-      NOW,
-    );
+    const soon = t3PairingCheck(paired({ expires_at: iso(NOW + T3_WARN_MS - HOUR) }), NOW);
     expect(soon.status).toBe("warn");
     expect(soon.detail).toContain("in 5 days");
     expect(soon.detail).toContain("setup t3");
-    expect(
-      t3PairingCheck(paired({ renews: false, expires_at: iso(NOW + T3_WARN_MS + HOUR) }), NOW)
-        .status,
-    ).toBe("ok");
-    const gone = t3PairingCheck(paired({ renews: false, expires_at: iso(NOW - DAY) }), NOW);
+    expect(t3PairingCheck(paired({ expires_at: iso(NOW + T3_WARN_MS + HOUR) }), NOW).status).toBe(
+      "ok",
+    );
+    const gone = t3PairingCheck(paired({ expires_at: iso(NOW - DAY) }), NOW);
     expect(gone.status).toBe("warn");
     expect(gone.detail).toContain("ran out on 2026-11-13");
     // T3 not running: the pairing is still judged, and the row says T3 is not running.
-    const closed = t3PairingCheck(
-      { state: "not_running", renews: false, expires_at: iso(NOW + DAY) },
-      NOW,
-    );
+    const closed = t3PairingCheck({ state: "not_running", expires_at: iso(NOW + DAY) }, NOW);
     expect(closed.status).toBe("warn");
-    expect(t3PairingCheck({ state: "not_running", renews: true }, NOW).detail).toContain(
-      "not running",
-    );
+    expect(t3PairingCheck({ state: "not_running" }, NOW).detail).toContain("not running");
     expect(t3PairingCheck({ state: "reconnect" }, NOW).status).toBe("warn");
     expect(t3PairingCheck({ state: "not_paired" }, NOW).status).toBe("skip");
     expect(t3PairingCheck(undefined, NOW).status).toBe("skip");

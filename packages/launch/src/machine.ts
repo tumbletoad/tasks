@@ -458,9 +458,9 @@ export class LaunchMachine {
         case "link":
         case "t3-cli": {
           // A link that was accepted stays Dispatched: the session may well exist (A4 3.9.2).
-          // The T3 CLI sends a message and cannot be repeated; after a restart nothing completes
-          // its folder check, so an accepted call is Unknown too (A4 3.9.3). A call that ended
-          // in Dispatching cannot be told apart from one that opened.
+          // `t3-cli` is a route no longer made, kept so its launches recorded earlier settle: its
+          // message cannot be repeated and nothing checks its folder now, so it is Unknown. A
+          // call that ended in Dispatching cannot be told apart from one that opened.
           const keep =
             intent.state === "dispatched" && (intent.route === "link" || when === "sweep");
           if (keep) return intent;
