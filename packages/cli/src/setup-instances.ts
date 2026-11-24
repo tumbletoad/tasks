@@ -44,7 +44,6 @@ import { loadMachineConfig, prepareEdit } from "@ttasks/service/config";
 import { homeFolder, hostFacts, resolveLayout } from "@ttasks/service/paths";
 import {
   blockOf,
-  distinctLabels,
   readRecords,
   samePath,
   t3Proposals,
@@ -184,8 +183,6 @@ async function surveyOf(
   }
   const taken = new Set(existing.map((i) => i.id));
   const offers: Offer[] = [];
-  /** Each offer's agent home, which tells two offers of one app apart. */
-  const homes = new Map<string, string>();
   const left: Left[] = [];
   // T3 Code (A4 3.2): one complete instance per enabled provider instance its settings name, read
   // through setup's reader. One whose provider instance a T3 instance of machine.toml names is
@@ -237,11 +234,10 @@ async function surveyOf(
       entry: made.entry,
       ...(proposal.t3 === undefined ? {} : { modelFrom: proposal.t3.modelFrom }),
     });
-    if (proposal.configHome !== undefined) homes.set(proposal.id, proposal.configHome);
   }
   return {
     detection,
-    offers: distinctLabels(offers, homes, io.platform),
+    offers,
     left,
     configured: machine.instances.map((i) => ({ id: i.id, target: i.target })),
     platform: io.platform,

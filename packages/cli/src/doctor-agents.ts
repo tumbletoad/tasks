@@ -36,7 +36,7 @@
 // its app and instance, never by its path; no entry content, prompt, model answer or token is
 // printed or logged. The headless run's prompt goes on stdin, never in argv.
 import { randomBytes } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { uptime } from "node:os";
 import { basename, join, win32 } from "node:path";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
@@ -68,6 +68,7 @@ import {
   samePath,
   SetupStateInvalid,
   survey,
+  toolsOf,
   t3Homes,
   t3SettingsOf,
   type HomeRecord,
@@ -433,6 +434,12 @@ async function mcpCheck(
   const fix = `${CLI_NAME} setup agents --remove, then ${CLI_NAME} setup agents and the apply it prints`;
   const record = view.record;
   if (record === undefined) return { id, status: "skip", detail: "Not registered by setup." };
+  // Whether its tools start: the answer Settings and setup agents give (toolsOf).
+  const answer = toolsOf(
+    row === undefined ? input : { ...input, rows: row === null ? [] : [row] },
+    view,
+    "",
+  );
   switch (view.state) {
     case "refused":
       return {
@@ -453,6 +460,13 @@ async function mcpCheck(
         detail: `${name(view)}: ${PRODUCT_NAME}'s entry is gone, so this app cannot reach ${PRODUCT_NAME}. Run: ${fix}`,
       };
     case "edited":
+      if (answer.why === "edited_gone") {
+        return {
+          id,
+          status: "fail",
+          detail: `${name(view)}: the entry was changed by hand and runs a program that is not there, so this app cannot reach ${PRODUCT_NAME}. Fix the entry, or take it out by hand and run: ${CLI_NAME} setup agents`,
+        };
+      }
       return {
         id,
         status: "warn",
@@ -479,7 +493,7 @@ async function mcpCheck(
   }
   const argv = recordArgv(record);
   const command = argv[0] ?? "";
-  if (!isFile(command)) {
+  if (answer.why === "moved" || answer.why === "not_installed") {
     return {
       id,
       status: "fail",
@@ -493,7 +507,7 @@ async function mcpCheck(
       detail: `${name(view)}: the entry runs another ${CLI_NAME} than this install's stable command. Run: ${fix}`,
     };
   }
-  if (row === null) {
+  if (answer.why === "access_off") {
     return {
       id,
       status: "fail",
@@ -502,6 +516,7 @@ async function mcpCheck(
   }
   if (
     row !== undefined &&
+    row !== null &&
     (row.spaces[0] !== argAfter(argv, "--space") || row.instance !== argAfter(argv, "--instance"))
   ) {
     return {
@@ -587,14 +602,6 @@ function realFolder(path: string): string {
     return realpathSync.native(path);
   } catch {
     return path;
-  }
-}
-
-function isFile(path: string): boolean {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
   }
 }
 

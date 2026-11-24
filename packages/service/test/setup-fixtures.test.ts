@@ -40,6 +40,7 @@ import {
   type SetupInput,
 } from "../src/setup/index.ts";
 import { keptRows, type KeptRows } from "./setup-rows.ts";
+import { installedTasks } from "./harness.ts";
 
 const SLOW = 120_000;
 const SPACE = "sp_3z8sm956jp8dajmtsar5kx026c";
@@ -135,7 +136,7 @@ async function world(wait?: (ms: number) => Promise<void>): Promise<World> {
       userHome: home,
       env,
       stateDir: join(dir, "state"),
-      tasks: join(dir, "install", "bin", windows ? "ttasks.exe" : "ttasks"),
+      tasks: installedTasks(dir),
       detection: await detect(nodeDetectHost({ env, home, timeoutMs: 30_000 })),
       instances: [],
       systemApplications: join(dir, "Applications"),
@@ -807,13 +808,44 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
         const before = readFileSync(file);
         w.rows.refuse.grant = "instance_taken";
+        // The outcome says what the cleanup did: the entry was taken out again.
         expect(await apply(w, a), a.app).toMatchObject({
           result: "failed",
           reason: "instance_taken",
           access: "off",
+          notes: ["undone"],
         });
         expect(readFileSync(file)).toEqual(before);
         expect(readRecords(w.input.stateDir)).toEqual([]);
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "a refused row whose revoke fails too: the entry stays until a revoke is confirmed, the access is said as not confirmed, and the next run takes both out",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        const file = a.file(w);
+        seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
+        const before = readFileSync(file);
+        w.rows.refuse = { grant: "grant_failed", revoke: true };
+        // Nothing claims the entry went: it stays, and the outcome says so.
+        expect(await apply(w, a), a.app).toMatchObject({
+          result: "failed",
+          reason: "grant_failed",
+          access: "unknown",
+          notes: ["undo_failed"],
+        });
+        expect(entryIn(a, file), a.app).toBeDefined();
+        expect(readRecords(w.input.stateDir), a.app).toMatchObject([{ state: "removing" }]);
+        w.rows.refuse = {};
+        expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
+          { result: "removed", access: "off" },
+        ]);
+        expect(readFileSync(file), a.app).toEqual(before);
+        expect(readRecords(w.input.stateDir), a.app).toEqual([]);
       }
     },
     SLOW,
@@ -866,7 +898,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
-    "turning off asks for the revoke first and alone: one that fails changes nothing and says the access is still on; a record that cannot be written never stops it",
+    "turning off asks for the revoke first and alone: one that fails changes nothing and says the access could not be confirmed off; a record that cannot be written never stops it",
     async () => {
       for (const a of ADAPTERS) {
         const w = await world();
@@ -881,7 +913,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         expect(await remove(w, a), a.app).toMatchObject({
           result: "failed",
           reason: "revoke_failed",
-          access: "on",
+          access: "unknown",
         });
         expect(readFileSync(file)).toEqual(withEntry);
         expect(readFileSync(recordPath(w))).toEqual(recorded);
@@ -1128,6 +1160,16 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             t.replace(
               `[mcp_servers.${MCP_SERVER_KEY}]`,
               `[mcp_servers.y]\ncommand = "y"\n[mcp_servers.${MCP_SERVER_KEY}]`,
+            ),
+          'model="m"\n\n[mcp_servers.y]\ncommand = "y"\n',
+        ],
+        [
+          "a table ending in a blank line inserted right before the entry, no final newline before",
+          'model="m"',
+          (t) =>
+            t.replace(
+              `[mcp_servers.${MCP_SERVER_KEY}]`,
+              `[mcp_servers.y]\ncommand = "y"\n\n[mcp_servers.${MCP_SERVER_KEY}]`,
             ),
           'model="m"\n\n[mcp_servers.y]\ncommand = "y"\n',
         ],

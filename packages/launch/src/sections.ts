@@ -140,6 +140,40 @@ export const INSTANCE_ID = /^[a-z0-9][a-z0-9-]{0,39}$/u;
  * actor, writer scope, sessions and grant rows would be the hand-made entry's.
  */
 export const MANUAL_INSTANCE = "manual";
+
+/** The most characters an instance's label holds (A4 3.2). */
+export const LABEL_MAX = 40;
+
+/**
+ * An instance's label within LABEL_MAX: `head`, or `head · tail`. What is too long is shortened in
+ * its middle, so its start and its end stay (two homes whose names differ at their ends keep
+ * labels apart), and the tail keeps room beside a long head. Never cut inside a surrogate pair.
+ * The same head and tail give the same label wherever it is made.
+ */
+export function instanceLabel(head: string, tail = ""): string {
+  const name = head.trim();
+  const rest = tail.trim();
+  if (rest === "") return shorten(name, LABEL_MAX);
+  const room = LABEL_MAX - " · ".length;
+  if (name.length + rest.length <= room) return `${name} · ${rest}`;
+  // Each part keeps at least half the room, and a short one gives the other what it leaves.
+  const half = Math.floor(room / 2);
+  const headRoom = Math.max(half, room - rest.length);
+  const short = shorten(name, Math.min(name.length, headRoom));
+  return `${short} · ${shorten(rest, room - short.length)}`;
+}
+
+/** `text` within `max` UTF-16 units: its start and end around `…`, no surrogate pair split. */
+function shorten(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const keep = max - 1;
+  let start = text.slice(0, Math.ceil(keep / 2));
+  let end = text.slice(text.length - Math.floor(keep / 2));
+  start = start.replace(/[\uD800-\uDBFF]$/u, "");
+  end = end.replace(/^[\uDC00-\uDFFF]/u, "");
+  return `${start.trimEnd()}…${end.trimStart()}`;
+}
+
 /** An environment variable name an instance may add. */
 export const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 
@@ -276,7 +310,7 @@ function readInstance(
       target = targetText as TargetId;
     } else r.error("target", "unknown_target");
   }
-  const label = r.string("label", { required: true, nonEmpty: true, max: 40 });
+  const label = r.string("label", { required: true, nonEmpty: true, max: LABEL_MAX });
   const account = r.string("account", { max: 40 }) ?? "";
   const spaces = r.strings("spaces", { nonEmpty: true, max: 200 }) ?? [];
   const exec = r.path("exec", platform);
