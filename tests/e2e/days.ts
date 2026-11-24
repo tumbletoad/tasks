@@ -27,6 +27,11 @@ export function day(days: number, from: number = Date.now()): Day {
   };
 }
 
+/** Two minutes before the midnight that ends `of`: a day of a clock change has 23 or 25 hours. */
+export function beforeMidnight(of: Day): number {
+  return day(1, of.start).start - 2 * 60_000;
+}
+
 /** The first moment of the week `of` is in: Monday, as the page counts weeks. */
 export function weekOf(of: Day): number {
   const monday = new Date(of.start);

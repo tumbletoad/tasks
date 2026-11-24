@@ -308,6 +308,7 @@ export async function runSearch(
     scope,
     parsed: printQuery(query),
     audience: env.audience,
+    timeZone: env.timeZone,
     match: plan.match,
     limit: input.limit ?? DEFAULT_LIMIT,
     items,
@@ -358,7 +359,7 @@ async function page(
     rows(snippetRows).map((row) => [Number(row["doc"]), row] as const),
   );
   const out = entries.map((entry, i) =>
-    rowOf(entry, items[i] as FrozenItem, snippets, search, space.refPrefix, env.timeZone),
+    rowOf(entry, items[i] as FrozenItem, snippets, search, space.refPrefix, search.timeZone),
   );
   const head = {
     as_of: formatAsOf({

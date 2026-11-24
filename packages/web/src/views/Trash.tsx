@@ -6,6 +6,7 @@
 // words of tasks in the Trash or that this space does not have now, with Copy and Discard, and
 // what the Trash promises.
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { localDate } from "@ttasks/contracts/day";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
@@ -90,13 +91,7 @@ export function TrashPage({ task, onExpand }: TrashProps) {
 function whenOf(at: string, clock: Clock): string {
   const ms = Date.parse(at);
   const time = formatInstant(ms, clock, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const day = formatInstant(ms, clock, { year: "numeric", month: "2-digit", day: "2-digit" });
-  const today = formatInstant(Date.now(), clock, {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  if (day === today) return time;
+  if (localDate(ms, clock.timeZone) === clock.today) return time;
   return `${formatInstant(ms, clock, { day: "numeric", month: "short" })}, ${time}`;
 }
 

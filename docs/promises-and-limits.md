@@ -356,12 +356,21 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A title you are typing and have not saved comes back in its editor after a reload or a crash of
   the tab, in that tab, and is saved only when you save it. Another tab shows it as typed there
   and does not erase it; on a task finished meanwhile it stays with Copy and Discard.
+- A page left open moves on to a new day by itself: at midnight, within a minute of the computer
+  waking, and when the tab is shown again, its views, a search and its dates follow the new day,
+  and what you are typing, an open card and your place stay. The page counts days on the
+  browser's calendar, its searches included; the command line and agents count them on the
+  service machine's.
 - Today's Changes and the Agents page list the tasks agents changed in the last seven days, read
   from the space when the page opens: a reload or another tab shows the same.
 - Task text cannot run scripts or load remote images.
 - A website you visit cannot read or change your tasks through the page.
 - Logs hold no task text, and there is no telemetry. Task text leaves TTasks only where you send it:
   what you copy, and what an agent reads through its connection.
+- What you type in the top field, a search included, stays out of the page's address, so a copied
+  link and the browser's history list hold the search page but not your words. A reload, Back and
+  Forward bring the search back in that tab; the search's link opened in another tab is an empty
+  search.
 - The generated folder of readable files is not where tasks are stored. A file you edit or add
   there is kept or moved to a rescue folder, never deleted. A generated file that goes missing,
   removed by hand or by a sync, is written again within seconds while TTasks runs.

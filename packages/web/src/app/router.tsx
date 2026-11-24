@@ -10,7 +10,8 @@
 //   /s/:space/area/:area                    an area
 //   /s/:space/area/:area/project/:project   a project of it
 //   /s/:space/project/:project              a project without an area
-//   /s/:space/search?q=                     search results of the top field (`?task=` too)
+//   /s/:space/search                        search results of the top field (`?task=` too); the
+//                                           query is in the history entry (route.ts)
 //   /s/:space/task/:id                      a task link: resolved to its host view (host.ts)
 //   /s/:space/settings                    Settings (an older `settings/:section` link lands there)
 //
@@ -26,8 +27,10 @@ import {
   createRouter,
   Navigate,
   Outlet,
+  useRouterState,
 } from "@tanstack/react-router";
-import { SPACE_ID, SEGMENT } from "../route.ts";
+import { useEffect } from "react";
+import { searchQueryOf, SPACE_ID, SEGMENT } from "../route.ts";
 import { Landing } from "./Landing.tsx";
 import { AreaPage, ProjectPage, SearchPage, TaskPage, ViewPage } from "./pages.tsx";
 import { SettingsPage } from "./Settings.tsx";
@@ -128,7 +131,7 @@ const looseProjectRoute = createRoute({
   },
 });
 
-/** The search's text (at most what the field takes) and its expanded result. */
+/** A link's search text (at most what the field takes) and its expanded result. */
 export function searchSearch(search: Record<string, unknown>): { q?: string; task?: string } {
   const q = search["q"];
   return { ...(typeof q === "string" && q.length <= 500 ? { q } : {}), ...taskSearch(search) };
@@ -139,7 +142,19 @@ const searchRoute = createRoute({
   path: "search",
   validateSearch: searchSearch,
   component: function SearchRoute() {
-    const { q, task } = searchRoute.useSearch();
+    const { q: linked, task } = searchRoute.useSearch();
+    const q = useRouterState({ select: (s) => searchQueryOf(s.location) });
+    const navigate = searchRoute.useNavigate();
+    // A link's words (an older bookmark, Today's numbers) move into the tab's entry on arrival, so
+    // the address that is copied or kept in the history from here holds none of them.
+    useEffect(() => {
+      if (linked === undefined) return;
+      void navigate({
+        search: task === undefined ? {} : { task },
+        state: (kept) => ({ ...kept, q }),
+        replace: true,
+      });
+    }, [linked, task, q, navigate]);
     return <SearchPage q={q} task={task} />;
   },
 });
@@ -188,5 +203,9 @@ export const router = createRouter({ routeTree, defaultPreload: false });
 declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router;
+  }
+  // The search route's history entry holds its query (route.ts).
+  interface HistoryState {
+    q?: string;
   }
 }

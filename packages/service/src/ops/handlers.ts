@@ -39,7 +39,7 @@ import {
   type PreferenceSpec,
   type PrefValue,
 } from "@ttasks/contracts";
-import { localDate } from "@ttasks/contracts/day";
+import { isTimeZone, localDate } from "@ttasks/contracts/day";
 import {
   folderKey,
   freeSlug,
@@ -3138,6 +3138,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { host } = call;
     const space = call.space.id ?? "";
     const boundTask = sessionIn(call)?.task;
+    const named = call.input["time_zone"];
+    if (named !== undefined && !isTimeZone(named)) {
+      throw invalid("time_zone", "Not a time zone this service knows", "Name an IANA time zone.");
+    }
+    const timeZone = named ?? (host.timeZone ?? localTimeZone)();
+    const now = (host.now ?? Date.now)();
     try {
       // The input passed the entry's schema (TaskSearchInput) and its SafeText.
       const input: SearchInput = call.input;
@@ -3147,9 +3153,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         owner: call.principal.scope,
         space,
         audience: call.principal.audience,
-        today: call.today,
-        now: (host.now ?? Date.now)(),
-        timeZone: (host.timeZone ?? localTimeZone)(),
+        today: localDate(now, timeZone),
+        now,
+        timeZone,
         machine: host.machine.id,
         ...(boundTask === undefined ? {} : { boundTask }),
         updateFailed: call.space.state === "read_only" && call.space.reason === "migration_failed",
