@@ -179,7 +179,8 @@ describe("[A2.3.12.6.update.installed] ttasks update through the installed stabl
           expect(currentVersion(w.root, process.platform)).toBe(from);
         },
       });
-      expect(first.lines.at(-1)).toEqual({ done: "updated" });
+      // No service runs here: the end says the spaces were not checked.
+      expect(first.lines.at(-1)).toEqual({ done: "updated", service: "not_running" });
       expect(await exited, out).toBe(0);
       expect(out).toMatch(
         new RegExp(`${to.replaceAll(".", "\\.")} is installed and current already`),
