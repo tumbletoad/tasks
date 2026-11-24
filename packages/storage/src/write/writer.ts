@@ -2984,7 +2984,7 @@ export class SpaceWriter {
       }
       const commitId = newId("op", this.#random);
       let tasks: { tasks?: string[]; task_count?: number; lifecycles?: string[] } = {};
-      let wrote = { list: false, tasks: 0 };
+      const wrote = { list: false, tasks: 0 };
       conn.exec("SAVEPOINT exec");
       try {
         // The inversions first: the rules across rows are decided on the state they make (A1 3.10).
@@ -3040,10 +3040,8 @@ export class SpaceWriter {
           if (turned.length > 0)
             tasks.lifecycles = changedTasks(conn, space.refPrefix, turned).tasks;
         }
-        wrote = {
-          list: changes.some((c) => c.entity === "preferences"),
-          tasks: changes.filter((c) => c.entity === "tasks" && c.field === "effort").length,
-        };
+        wrote.list = changes.some((c) => c.entity === "preferences");
+        wrote.tasks = changes.filter((c) => c.entity === "tasks" && c.field === "effort").length;
         // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
         // its children's, a restore brings them back, a field set back rewrites its document.
         if (this.#search) indexChanges(conn, seq, changes);

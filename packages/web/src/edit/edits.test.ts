@@ -1800,7 +1800,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     await flush();
     expect(w.toasts.map((t) => t?.text)).toContainEqual({
       id: "toast.levels",
-      values: { kind: "undo", list: "yes", kept: 0, count: 1, tasks: "M-1" },
+      values: { kind: "undo", list: "yes", newer: 0, count: 1, tasks: "M-1" },
     });
   });
 

@@ -132,6 +132,8 @@ const SAMPLE = {
   c: "Ana Reyes",
   rest: 2,
   tasks: "LUM-212 and LUM-214",
+  list: "yes",
+  newer: 1,
   home: "~/.codex",
   timed: "yes",
   described: "yes",

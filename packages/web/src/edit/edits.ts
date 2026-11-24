@@ -487,16 +487,16 @@ function levelsToast(
   if (list !== undefined) {
     return { kind: "error", text: { id: "toast.levelsNotUndone", values: whoOf(list.by) } };
   }
-  const kept = unresolved.filter((u) => u.field === "effort").length;
+  const newer = unresolved.filter((u) => u.field === "effort").length;
   const { levels } = result;
   if (levels === undefined || (!levels.list && levels.tasks === 0)) {
-    return { kind: "info", text: { id: "toast.levelsNothing", values: { kind, kept } } };
+    return { kind: "info", text: { id: "toast.levelsNothing", values: { kind, newer } } };
   }
   const off = result.off_list ?? [];
   const values = {
     kind,
     list: levels.list ? "yes" : "no",
-    kept,
+    newer,
     count: off.reduce((n, o) => n + o.count, 0),
     tasks: off.flatMap((o) => o.tasks).join(", "),
   };
