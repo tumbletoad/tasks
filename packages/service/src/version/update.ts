@@ -693,6 +693,7 @@ async function repairFirst(
         } finally {
           held?.release();
         }
+        writeInstallRecord(install.state, install.root, install.platform, { seen: [current] });
       }
     }
   } finally {
@@ -969,12 +970,15 @@ interface Switch {
  * that decision, and the spaces of the service it restarts, noted after every wait: the report
  * leaves out a space that was so already.
  */
-async function decideAtSwitch(
-  run: Switch,
-): Promise<{ journal: Journal; note: readonly SpaceNote[] | undefined }> {
+async function decideAtSwitch(run: Switch): Promise<{
+  journal: Journal;
+  note: readonly SpaceNote[] | undefined;
+  /** The version the service that runs answered with. */
+  seen: string | undefined;
+}> {
   const { options } = run;
   const running = await options.control?.running();
-  if (running === undefined) return { journal: run.journal, note: undefined };
+  if (running === undefined) return { journal: run.journal, note: undefined, seen: undefined };
   if (!run.journal.service && !(await agree(options, run.decision))) {
     throw new InstallError(NOT_AGREED, 2);
   }
@@ -985,7 +989,11 @@ async function decideAtSwitch(
   }
   run.held ??= await waitForRuns(options);
   const noted = await options.control?.running();
-  return { journal: { ...run.journal, service: true }, note: noted?.spaces };
+  return {
+    journal: { ...run.journal, service: true },
+    note: noted?.spaces,
+    seen: running.version,
+  };
 }
 
 const duration = (ms: number): string =>
@@ -1125,6 +1133,7 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
   const plan = stablePlan(root, target, platform);
   let launchers: LauncherChange[] = [];
   let note: readonly SpaceNote[] | undefined;
+  let seen: string | undefined;
   try {
     // A stable command that is not what an install writes stops the update before current
     // changes.
@@ -1149,6 +1158,7 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
     await at(options, "staged");
     const decided = await decideAtSwitch(run);
     note = decided.note;
+    seen = decided.seen;
     if (decided.journal.service !== run.journal.service) write(decided.journal);
   } catch (error) {
     for (const launcher of launchers) {
@@ -1221,8 +1231,11 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
   } catch (error) {
     return await rollBack(run, error, restarted);
   }
+  // The service ran `from` at the switch, and answered on `to` after its restart: both are seen
+  // working, and the way back follows (switch.ts writeInstallRecord).
   writeInstallRecord(state, root, platform, {
-    previous: from,
+    switched: { from, to },
+    seen: [seen, restarted ? to : undefined],
     lastUpdate: {
       kind: run.journal.kind,
       outcome: "completed",

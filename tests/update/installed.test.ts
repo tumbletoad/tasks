@@ -228,7 +228,7 @@ describe("[A2.3.12.6.update.installed] ttasks update through the installed stabl
 
 describe("[A2.3.12.6.update.spaces] an update reads how the real service's spaces came through its restart", () => {
   test(
-    "a space the restarted service opens again for changes is usable",
+    "the real service notes that its version works; a space the restarted service opens again for changes is usable",
     async () => {
       const w = install();
       const spaceDir = join(w.work, "spaces", "report");
@@ -250,6 +250,15 @@ describe("[A2.3.12.6.update.spaces] an update reads how the real service's space
         await w.stopService();
         await w.startService();
         const from = currentVersion(w.root, process.platform) ?? "";
+        // Once ready, the service notes that its version works: the way back keeps it.
+        const noted = () => {
+          const seen = readInstallRecord(w.state)?.["seen_working"];
+          return Array.isArray(seen) && seen.includes(from);
+        };
+        for (const end = Date.now() + 30_000; !noted() && Date.now() < end;) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        expect(noted(), "the service noted its version").toBe(true);
         const run = await w.runChild("update", {
           archive: w.archiveOf(w.other(from)),
           selfTest: "pass",

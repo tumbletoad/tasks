@@ -28,7 +28,7 @@ import {
   writeJournal,
   type Journal,
 } from "../../packages/service/src/version/journal.ts";
-import { repairLocked } from "../../packages/service/src/version/repair.ts";
+import { noteWorking, repairLocked } from "../../packages/service/src/version/repair.ts";
 import { RELEASE_KEY_PLACEHOLDER } from "../../packages/service/src/version/release-keys.ts";
 import {
   readInstallRecord,
@@ -285,6 +285,8 @@ describe("[A2.3.12.6.update.switch] the switch: self-test first, the journal bef
     const record = readInstallRecord(w.state);
     expect(record?.["versions"]).toEqual(["0.1.0", "0.2.0"]);
     expect(record?.["previous"]).toBe("0.1.0");
+    // The service ran 0.1.0 at the switch and answered on 0.2.0 after it: both seen working.
+    expect(record?.["seen_working"]).toEqual(["0.1.0", "0.2.0"]);
     expect(record?.["last_update"]).toMatchObject({
       kind: "update",
       outcome: "completed",
@@ -965,8 +967,12 @@ describe("[A2.3.12.6.update.repair] a repair finishes or rolls back whatever an 
         },
       }),
     ).rejects.toBeDefined();
-    // The updater's own rollback ran (a thrown step is a failure, not a kill): back on 0.1.0.
+    // The updater's own rollback ran (a thrown step is a failure, not a kill): back on 0.1.0,
+    // whose service notes that it works.
     expect(currentOf(w.root, os)).toBe("0.1.0");
+    expect(
+      await noteWorking({ root: w.root, state: w.state, platform: os, version: "0.1.0" }),
+    ).toBe(true);
     writeJournal(w.state, {
       format: 1,
       kind: "update",
@@ -985,7 +991,9 @@ describe("[A2.3.12.6.update.repair] a repair finishes or rolls back whatever an 
     writeFolder(third, "0.3.0", os, fixtureFiles("0.3.0", os));
     await finishInstall({ versionFolder: third, facts: w.options.facts });
     expect(currentOf(w.root, os)).toBe("0.3.0");
-    expect(readInstallRecord(w.state)?.["previous"]).toBe("0.2.0");
+    // 0.2.0 never ran: the way back stays 0.1.0, which was seen working.
+    expect(readInstallRecord(w.state)?.["seen_working"]).toEqual(["0.1.0"]);
+    expect(readInstallRecord(w.state)?.["previous"]).toBe("0.1.0");
     expect(existsSync(join(w.state, UPDATE_JOURNAL))).toBe(false);
   });
 });

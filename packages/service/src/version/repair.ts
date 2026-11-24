@@ -44,8 +44,10 @@ import {
   ensureLauncher,
   exists,
   isInstalled,
+  readInstallRecord,
   removePlaced,
   stagedPath,
+  strings,
   UPDATE_LOCK,
   VERSIONS,
   WINDOWS_LAUNCHERS,
@@ -78,6 +80,46 @@ export async function repairIfIdle(
     const outcome = repairLocked(options);
     if (options.clean === true && outcome.kind === "nothing") cleanLaunchers(options.root);
     return outcome;
+  } finally {
+    lock.release();
+  }
+}
+
+/**
+ * The service's note that its own version works (install.json `seen_working`), once it is ready:
+ * the way back after a later switch is a version seen working (switch.ts writeInstallRecord). It
+ * takes update.lock without waiting, so nothing is written under an update in progress. False
+ * when the lock was held, to be tried again; true once nothing is left to note.
+ */
+export async function noteWorking(options: {
+  readonly root: string;
+  readonly state: string;
+  readonly platform: NodeJS.Platform;
+  readonly version: string;
+}): Promise<boolean> {
+  const noted = () => {
+    const record = readInstallRecord(options.state);
+    return (
+      record?.["method"] !== "script" ||
+      !isInstalled(options.root, options.version) ||
+      strings(record["seen_working"]).includes(options.version)
+    );
+  };
+  if (noted()) return true;
+  let lock;
+  try {
+    lock = await acquireLock(join(options.state, UPDATE_LOCK));
+  } catch (error) {
+    if (error instanceof LockBusy) return false;
+    throw error;
+  }
+  try {
+    if (!noted()) {
+      writeInstallRecord(options.state, options.root, options.platform, {
+        seen: [options.version],
+      });
+    }
+    return true;
   } finally {
     lock.release();
   }
@@ -245,7 +287,7 @@ export function repairLocked(options: RepairOptions): RepairOutcome {
     if (problems.length > 0) return { kind: "stuck", problems };
     writeInstallRecord(state, root, platform, {
       installed: journal.to,
-      previous: journal.from,
+      switched: { from: journal.from, to: journal.to },
       lastUpdate: {
         kind: journal.kind,
         outcome: "completed",

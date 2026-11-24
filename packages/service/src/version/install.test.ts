@@ -26,6 +26,7 @@ import { PRODUCT_ID } from "@ttasks/brand";
 import { canonicalStatePath, installId, type HostFacts } from "../hub/paths.ts";
 import { writeVersionManifest } from "./folder.ts";
 import { finishInstall, InstallError, installTarget, type InstallRecord } from "./install.ts";
+import { noteWorking } from "./repair.ts";
 import { rollbackUpdate } from "./update.ts";
 
 const windows = process.platform === "win32";
@@ -453,4 +454,33 @@ describe("[A2.3.12.6.update.way-back] an install cut off and run again keeps the
       expect(currentOf(root)).toBe(windows ? "0.1.0" : "versions/0.1.0");
     },
   );
+
+  test("the version a service was seen working on stays the way back through an install cut off and another installed over it", async () => {
+    const { root, folder } = install();
+    await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+    // A's service, once ready, notes that A works.
+    const state = join(root, "state");
+    expect(await noteWorking({ root, state, platform: process.platform, version: "0.1.0" })).toBe(
+      true,
+    );
+    // B's finish is cut off after its first launcher, or its switch; B never runs.
+    const b = addVersion(root, "0.2.0", "launcher two");
+    await cutFinish(root, b, windows ? 1 : "switch");
+    // C is installed over it: the repair finishes B, then C switches.
+    const c = addVersion(root, "0.3.0", "launcher three");
+    await finishInstall({ versionFolder: c, facts: facts(root) });
+    expect(currentOf(root)).toBe(windows ? "0.3.0" : "versions/0.3.0");
+    expect(record(root).previous).toBe("0.1.0");
+    const back = await rollbackUpdate({
+      facts: facts(root),
+      keys: [],
+      selfTest: () => Promise.resolve({ ok: true, failed: [] }),
+    });
+    expect(back).toMatchObject({ outcome: "updated", from: "0.3.0", to: "0.1.0" });
+    // And an install that found the service running notes that version too.
+    const d = addVersion(root, "0.4.0", "launcher four");
+    await finishInstall({ versionFolder: d, facts: facts(root), seen: "0.1.0" });
+    expect(record(root).seen_working).toEqual(["0.1.0"]);
+    expect(record(root).previous).toBe("0.1.0");
+  });
 });

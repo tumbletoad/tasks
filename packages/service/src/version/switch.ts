@@ -634,8 +634,18 @@ export interface InstallRecord {
    * that an uninstall removes only when empty. Never something that was there before.
    */
   readonly created: readonly string[];
-  /** The version `current` named before the last switch: `ttasks update --rollback`'s target. */
+  /**
+   * `ttasks update --rollback`'s target: the version `current` named before the last switch, when
+   * a service of it was seen working; otherwise the target before that switch is kept, so a
+   * version that never ran (an install cut off, then installed over) is never the way back.
+   */
   readonly previous?: string;
+  /**
+   * The versions a service of this install was seen ready on: recorded by the service at its
+   * start, and by an install or update that found it running or brought it back. Absent in an
+   * install no build of this kind has recorded in: then every version counts as seen.
+   */
+  readonly seen_working?: readonly string[];
   readonly last_update?: LastUpdate;
 }
 
@@ -676,9 +686,27 @@ export interface RecordChange {
   readonly installed?: string;
   /** What this run created, merged into `created`. */
   readonly created?: readonly string[];
-  /** The version current named before this switch (when it named another). */
-  readonly previous?: string;
+  /** A switch that completed, from the version current named to another: `previous` follows. */
+  readonly switched?: { readonly from: string; readonly to: string };
+  /** Versions a service of this install was seen ready on: added to `seen_working`. */
+  readonly seen?: readonly (string | undefined)[];
   readonly lastUpdate?: LastUpdate;
+}
+
+/**
+ * The way back after a switch from `from` to `to`: `from` once a service of it was seen working,
+ * or when the install records nothing seen yet; otherwise the way back it had, while that is
+ * installed and is not `to`.
+ */
+function wayBack(
+  root: string,
+  from: string,
+  to: string,
+  seen: readonly string[] | undefined,
+  had: string | undefined,
+): string {
+  if (seen === undefined || seen.includes(from)) return from;
+  return had !== undefined && had !== to && isInstalled(root, had) ? had : from;
 }
 
 /** Writes install.json (atomic replace, 0600) with `change` applied to what it held. */
@@ -691,8 +719,18 @@ export function writeInstallRecord(
   const before = readInstallRecord(state);
   const id = installId(canonicalStatePath(realpathSync.native(state), platform));
   const versions = strings(before?.["versions"]);
+  const had = typeof before?.["previous"] === "string" ? before["previous"] : undefined;
+  const newly = (change.seen ?? []).filter(
+    (v): v is string => v !== undefined && isInstalled(root, v),
+  );
+  const seen =
+    Array.isArray(before?.["seen_working"]) || newly.length > 0
+      ? [...new Set([...strings(before?.["seen_working"]), ...newly])]
+      : undefined;
   const previous =
-    change.previous ?? (typeof before?.["previous"] === "string" ? before["previous"] : undefined);
+    change.switched === undefined
+      ? had
+      : wayBack(root, change.switched.from, change.switched.to, seen, had);
   const lastUpdate = change.lastUpdate ?? lastUpdateOf(before?.["last_update"]);
   const record: InstallRecord = {
     format: INSTALL_FORMAT,
@@ -705,6 +743,7 @@ export function writeInstallRecord(
     ],
     created: [...new Set([...strings(before?.["created"]), ...(change.created ?? [])])].sort(),
     ...(previous === undefined ? {} : { previous }),
+    ...(seen === undefined ? {} : { seen_working: seen }),
     ...(lastUpdate === undefined ? {} : { last_update: lastUpdate }),
   };
   atomicWrite(join(state, INSTALL_FILE), `${JSON.stringify(record, null, 2)}\n`, 0o600);

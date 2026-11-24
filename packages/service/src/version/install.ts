@@ -175,6 +175,11 @@ export interface FinishOptions {
    */
   readonly stateCreated?: boolean;
   /**
+   * The version this install's service answered with before the finish, if one runs: recorded as
+   * seen working, so a later switch keeps it as the way back (switch.ts writeInstallRecord).
+   */
+  readonly seen?: string;
+  /**
    * Tests only: runs once current and the stable command have changed, before install.json is
    * written, as a client starting the new stable command at that moment would.
    */
@@ -319,7 +324,10 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
           ...(before.kind === "none" ? ["current"] : []),
           ...placed,
         ],
-        ...(previous !== undefined && previous !== target.version ? { previous } : {}),
+        seen: [options.seen],
+        ...(previous !== undefined && previous !== target.version
+          ? { switched: { from: previous, to: target.version } }
+          : {}),
       });
       if (journal !== undefined || repair.kind === "stuck") removeJournal(state);
       return {

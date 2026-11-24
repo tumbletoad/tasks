@@ -5103,7 +5103,7 @@
     },
     {
       "id": "A2.3.12.6.update.way-back",
-      "title": "However often an update or an install cut off at any of its steps is run again, install.json keeps the version that was current before it as the one --rollback goes back to, and --rollback goes there",
+      "title": "However often an update or an install cut off at any of its steps is run again, and whatever is installed over it, install.json keeps the version that was current before it as the one --rollback goes back to, passing over any version no service was seen working on, and --rollback goes there",
       "source": "A2 3.12.6, A2 3.2.3",
       "owner": "M6",
       "kind": "ci",

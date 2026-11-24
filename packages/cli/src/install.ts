@@ -136,6 +136,10 @@ export async function installCommand(
     return 1;
   }
 
+  // A service of this install that answers now is seen working on its version: a later switch
+  // keeps that version as the way back.
+  const service = await installedService(io);
+  const before = await service?.running();
   let finished: Awaited<ReturnType<typeof install.finishInstall>>;
   try {
     finished = await install.finishInstall({
@@ -143,6 +147,7 @@ export async function installCommand(
       facts,
       created: parsed.created,
       stateCreated: !stateExisted,
+      ...(typeof before === "string" ? { seen: before } : {}),
     });
   } catch (error) {
     if (error instanceof install.InstallError) {
@@ -152,7 +157,6 @@ export async function installCommand(
     }
     throw error;
   }
-  const service = await installedService(io);
   const running = await service?.running();
   const pending = running !== undefined && running !== finished.version;
   if (globals.json) {
