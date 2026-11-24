@@ -632,6 +632,7 @@ Open a task in an agent app on this machine, or Copy its pointer brief.
 | `launch.route` | "terminal" \| "link" \| "t3-mcp" \| "t3-cli" \| "clipboard" | yes | How it opens |
 | `launch.state` | "prepared" \| "dispatching" \| "dispatched" \| "confirmed" \| "failed" \| "unknown" | yes | A4 3.9's state |
 | `launch.reason` | string, max 40 | no | Why it failed or is unknown: a fixed code |
+| `launch.left_out` | ("full-access" \| "auto-edit" \| "read-only" \| "arguments" \| "environment" \| "home")[], max 4 items | no | What this way of opening could not carry: a permission by name, args, env, home |
 | `launch.at` | object | yes | When it entered each state |
 | `launch.at.prepared` | integer, 0 to 253402300799999 | no | When it was recorded, in ms since 1970 |
 | `launch.at.dispatching` | integer, 0 to 253402300799999 | no | When its external step began |
@@ -1914,8 +1915,9 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].run.state` | "working" \| "needs_you" \| "recorded" | yes | It works, ended asking the person, or was open when this copy's backup was made |
 | `rows[].run.instance` | string | yes | The run's agent instance |
 | `rows[].questions` | object[], max 10 items | no | Questions agents asked that wait for the person, newest first |
-| `rows[].questions[].ref` | string | yes | The log entry, such as l3 |
+| `rows[].questions[].ref` | string | yes | The log entry, such as l3, or the run that ended with it |
 | `rows[].questions[].by` | string | yes | The agent that asked |
+| `rows[].questions[].instance` | string | no | The instance of the run that asked |
 | `rows[].questions[].text` | string, max 300 | yes | Its first 300 characters |
 | `rows[].questions[].at` | integer, -8640000000000000 to 8640000000000000 | yes | When it was asked |
 | `rows[].questions_more` | integer, 0 to 9007199254740991 | no | How many more questions wait |
@@ -2847,8 +2849,9 @@ What is in the Trash, newest change first, a page at a time.
 | `rows[].run.state` | "working" \| "needs_you" \| "recorded" | yes | It works, ended asking the person, or was open when this copy's backup was made |
 | `rows[].run.instance` | string | yes | The run's agent instance |
 | `rows[].questions` | object[], max 10 items | no | Questions agents asked that wait for the person, newest first |
-| `rows[].questions[].ref` | string | yes | The log entry, such as l3 |
+| `rows[].questions[].ref` | string | yes | The log entry, such as l3, or the run that ended with it |
 | `rows[].questions[].by` | string | yes | The agent that asked |
+| `rows[].questions[].instance` | string | no | The instance of the run that asked |
 | `rows[].questions[].text` | string, max 300 | yes | Its first 300 characters |
 | `rows[].questions[].at` | integer, -8640000000000000 to 8640000000000000 | yes | When it was asked |
 | `rows[].questions_more` | integer, 0 to 9007199254740991 | no | How many more questions wait |
@@ -2937,7 +2940,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `set.project` | string, max 120 | no | Project name or slug |
 | `set.folder` | string, 1 to 4096 | no | "cwd", an absolute folder or one under ~ |
 | `set.focus` | boolean | no | Star it: on Today until cleared. Only when the user asks |
-| `set.reviewed` | string, max 10 | no, user only | Newest agent question the user read, such as l4: it and earlier ones are done |
+| `set.reviewed` | string, max 29 | no, user only | Newest agent question the user read, l4 or a run ID: it and earlier are done |
 | `clear` | ("summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus")[], max 7 items | no | Fields to clear |
 | `context` | object | no | Change the context |
 | `context.mode` | "append" \| "replace" | yes | append needs no base |

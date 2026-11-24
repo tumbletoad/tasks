@@ -174,6 +174,7 @@ export type {
   QueryMode,
   QueryResult,
 } from "./worker/protocol.ts";
+export { OPEN_RUN, RUN_WAITS, runAsked, WAITS } from "./questions.ts";
 export { inTrashSql, removalSeqSql } from "./write/trash.ts";
 export { appliedSql, UNDO_TARGET_SQL } from "./write/history.ts";
 // One writer per space across processes (A2 3.4): writer.lock and writer.json, which every

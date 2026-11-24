@@ -18,7 +18,14 @@ import {
   type RunLimits,
   type RunRecord,
 } from "@ttasks/contracts/runs";
-import { decodeRun, newTicket, RunRefused, sessionOf, SpaceExecutionStore } from "@ttasks/launch";
+import {
+  decodeRun,
+  newTicket,
+  RunRefused,
+  servesSpace,
+  sessionOf,
+  SpaceExecutionStore,
+} from "@ttasks/launch";
 import { decodeRunRow, type SpaceWriterHandle } from "@ttasks/storage";
 import {
   containers as platformContainers,
@@ -45,6 +52,7 @@ import {
 } from "@ttasks/runs";
 import { DEFAULT_RUN_SETTINGS, type RunSettings } from "../config/machine-toml.ts";
 import { errorCode, errorType } from "../hub/crash.ts";
+import { NOT_FOR_SPACE } from "../launch/open.ts";
 import type { Logger } from "../hub/log.ts";
 import type { OpeningSpace } from "../hub/spaces.ts";
 import type { ServedSpace } from "../ops/index.ts";
@@ -58,15 +66,14 @@ import {
 } from "../ops/read.ts";
 import {
   buildRun,
-  runAdapter,
   runBriefHash,
   runFolder,
   runPermission,
-  runsWith,
   WORK_ON_IT,
   type BuiltRun,
   type RunAgents,
 } from "./agent.ts";
+import { runAdapter, runsWith } from "./drivers.ts";
 
 /** What a start of the service may set for runs. Tests pass their containers or times. */
 export interface RunOptions {
@@ -440,25 +447,37 @@ export class RunService {
       throw error;
     }
     if (!task.active) throw refusal("task_closed", "This task is done, or in the Trash.");
-    const able = agents.instances().filter(runsWith);
+    const runnable = agents.instances().filter(runsWith);
+    const able = runnable.filter((i) => servesSpace(i, { id: space, name: served.name }));
     const instance =
       asked.instance === undefined
         ? able.length === 1
           ? able[0]
           : undefined
         : able.find((i) => i.id === asked.instance);
+    if (instance === undefined && runnable.some((i) => i.id === asked.instance)) {
+      throw refusal(
+        "not_for_space",
+        NOT_FOR_SPACE,
+        "Add this space to its spaces in machine.toml, or run the task with another instance.",
+      );
+    }
     if (instance === undefined) {
       const ids = able.map((i) => i.id).join(", ");
       throw refusal(
         "instance",
         asked.instance !== undefined
           ? "No instance with this ID on this machine can run a task."
-          : able.length === 0
+          : runnable.length === 0
             ? "No instance on this machine can run a task: runs use a Codex or Claude Code instance."
-            : "Several instances on this machine can run a task.",
-        able.length === 0
+            : able.length === 0
+              ? "No instance on this machine that can run a task is set up for this space."
+              : "Several instances on this machine can run a task.",
+        runnable.length === 0
           ? `Set one up with: ${CLI_NAME} setup instances`
-          : `Name one with --instance: ${ids}`,
+          : able.length === 0
+            ? "Add this space to an instance's spaces in machine.toml."
+            : `Name one with --instance: ${ids}`,
       );
     }
     const folder = await runFolder(agents, space, task.folder);
@@ -495,7 +514,11 @@ export class RunService {
           place: null,
           // A task's run always holds what was asked: the person's words, else to work on the task.
           request: asked.request ?? WORK_ON_IT,
-          briefHash: runBriefHash(task.ref, task.title),
+          briefHash: runBriefHash(
+            task.ref,
+            task.title,
+            asked.request !== null && asked.request.trim() !== "",
+          ),
           permission: runPermission(instance),
           limits: { ...RUN_LIMITS.task, ...timeLimits(settings) },
         },

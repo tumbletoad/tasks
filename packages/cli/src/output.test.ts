@@ -131,6 +131,16 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     expect(render("launch.open", { launch: { ...launch, state: "prepared" } }, "Mira")).toBe(
       "Launch L7KQ21: prepared\n",
     );
+    // An Open that could not carry what its instance sets says what it left out.
+    expect(
+      render(
+        "launch.open",
+        { launch: { ...launch, left_out: ["read-only", "environment"] } },
+        "Mira",
+      ),
+    ).toBe(
+      `Launch L7KQ21: dispatched\nOpened without your read-only setting and your environment variables, which this way of opening cannot carry. A terminal can, where one is set up: see ${CLI_NAME} doctor.\n`,
+    );
   });
 
   test("people's text names the space of every write", () => {

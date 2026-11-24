@@ -433,6 +433,7 @@ export class ShimHost {
           base: base.env,
           baseKind: base.kind,
           instance: latest.plan.env,
+          ...(latest.plan.ownHome === undefined ? {} : { ownHome: latest.plan.ownHome }),
           additions: {
             [ADDED.ticket]: ticket,
             [ADDED.space]: space,

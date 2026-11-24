@@ -200,10 +200,13 @@ the behaviour it describes, and keep each one to a sentence or two.
   from then on no agent and no search reads it, the task's readable file loses it within about a
   second, a launch it was the request of says the request was taken back, and Put back brings it
   back as it was. Only you take notes back, and nothing is deleted for good.
-- A question an agent logs on a task waits for you under Needs you on the Agents page, also once
-  the task is finished or dropped, until you write a note on the task after it or dismiss it.
-  A note you take back answers nothing. Dismiss sets aside only the questions you were shown; Undo
-  brings them back.
+- A question an agent logs on a task, or a background run ends with, waits for you under Needs you
+  on the Agents page, also once the task is finished or dropped, until you write a note on the task
+  after it or dismiss it. A run's question is also answered by a run you start after it that gets
+  to work; a logged one is not. A note you take back answers nothing. Dismiss sets aside every
+  question up to the newest one the row shows, also those past the ten it shows; one asked after
+  that still waits, and Undo brings them back. A task in the Trash whose run asks shows there with
+  its question and no Dismiss: Restore brings it back to answer.
 - Your skills, the files in `skills/` of TTasks's folder, are your instructions to every agent that
   uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, an
   empty one, one that cannot be read or a link is not used at all, and agents and `ttasks skills`
@@ -245,8 +248,26 @@ the behaviour it describes, and keep each one to a sentence or two.
   folder made again at the same path, such as a fresh clone, asks, also when the machine was too
   busy to write the marker when the folder was set, and so does any folder whose marker went on a
   file system that records no creation time. A marker write given up after two seconds changes
-  nothing in the folder afterwards.
-- Opening with a particular account uses that account's settings of the agent app.
+  nothing in the folder afterwards. A folder replaced at its path while Open looks at it opens
+  nothing, and the next Open asks about the new one.
+- Opening with a particular account uses that account's settings of the agent app, and the agent
+  is started with that home. A Claude Code instance with a home of its own gets none of your
+  environment's variables that say which account or endpoint to use (every `ANTHROPIC_*`, and
+  `CLAUDE_CODE_USE_*` and `CLAUDE_CODE_OAUTH_*`), so it works with the account signed in to that
+  home; set one in the instance's `env` to use it there. The default home gets them as your setup
+  gives them. Codex keeps its account in its home, and TTasks takes nothing away from a Codex
+  instance's environment. Not protected: a federation profile shared by all homes can still
+  outrank a home's own sign-in, and a cloud provider's own credentials (`AWS_*`, `GOOGLE_*`) stay,
+  so an instance that selects that provider can use them.
+- Open sends a prompt to an agent only with everything its instance sets: its permission, extra
+  arguments, environment and home. Claude Code set to prefill opens in a terminal for them, with
+  the brief on the clipboard to paste. Where no way of opening here carries them, as a link or a
+  desktop app, it opens without them, leaves the prompt for you to send, and says what it left
+  out. A Claude Code instance with a home of its own never opens in the default account instead:
+  where no terminal can start, Open starts nothing and says so. The desktop apps open with their
+  own account, and Open says so.
+- An instance set for some spaces is offered, opens and runs only in those: a run queued before
+  its spaces changed does not start.
 - TTasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.
 - Restarting or updating TTasks does not end an agent it opened, and the agent stays its task's
@@ -274,10 +295,18 @@ the behaviour it describes, and keep each one to a sentence or two.
   TTasks keeps is kept as its start, and showing it says so. A message of the agent is read whole
   up to 64 MiB, a text in it longer than 8 MiB as its start; a longer message, or a long one
   TTasks cannot read, ends the run at once as failed, with what the agent had said.
+- Your request reaches the agent as you typed it: every character and line break inside it, every
+  line's indent kept. The blank lines around it and spaces and tabs at its very end go, and so do
+  characters that do not show, such as zero-width and direction marks. The composer clears only
+  when it still holds what you sent, so an edit made meanwhile stays.
 - Your request reaches the agent over its own connection, never on a command line. A run's
   answer, or the agent's question when it needs you, is kept in the run's record, and so is what
   the agent had written of its answer when Stop, a restart or its own end cut it short. A question
   from a helper the agent started does not reach you: that helper hears that no one answered.
+- A run you start while an earlier run's question waits starts a new conversation with the agent,
+  and is given the questions that waited when you started it, each quoted as the agent asked it,
+  then your words; one dismissed or answered after that stays in it. Nothing else of the earlier
+  run's conversation comes along.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
   ends what TTasks could find of it: the run is called ended once the agent itself is gone, and a

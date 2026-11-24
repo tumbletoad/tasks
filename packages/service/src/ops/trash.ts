@@ -1,10 +1,17 @@
 // The Trash: the tasks someone moved there on purpose (storage's trash.ts decides which), read a
 // page at a time, newest change first, each with the change that moved it there.
 import { heldAgentSql } from "@ttasks/launch";
-import { inTrashSql, removalSeqSql, type Row, type WorkerConnection } from "@ttasks/storage";
+import {
+  inTrashSql,
+  OPEN_RUN,
+  removalSeqSql,
+  RUN_WAITS,
+  type Row,
+  type WorkerConnection,
+} from "@ttasks/storage";
 import { byOf } from "./errors.ts";
 import { hasFolderTable } from "./read.ts";
-import { OPEN_RUN, taskColumns, taskRows, type CompactRow, type FeedHere } from "./task-rows.ts";
+import { taskColumns, taskRows, type CompactRow, type FeedHere } from "./task-rows.ts";
 
 /** What a page of the Trash asks for. */
 export interface TrashRequest {
@@ -77,8 +84,7 @@ function trashSql(request: TrashRequest, folders: boolean): string {
   if (request.working === true && folders) {
     agents.push(
       `EXISTS (SELECT 1 FROM runs r WHERE r.task_id = t.id AND ${OPEN_RUN})`,
-      "(SELECT r.state = 'failed' AND r.reason = 'needs_input' FROM runs r WHERE " +
-        "r.task_id = t.id ORDER BY r.queued_at DESC, r.id DESC LIMIT 1)",
+      `EXISTS (SELECT 1 FROM runs r WHERE ${RUN_WAITS})`,
     );
   }
   // An agent in a terminal shows on no other page: the record of its launch says it goes on.

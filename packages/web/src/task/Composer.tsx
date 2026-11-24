@@ -35,7 +35,7 @@ import { CopyIcon, RunIcon } from "../row/icons.tsx";
 import { sayMsg } from "../row/say.ts";
 import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { runners } from "./runs.ts";
-import { tileState, type BusyOf } from "../row/launch.ts";
+import { openers, tileState, type BusyOf } from "../row/launch.ts";
 import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 import { typingIn } from "../kept.ts";
 import {
@@ -231,15 +231,16 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   };
 
   /**
-   * The words went somewhere: the kept draft and the field clear, each unless the person has
-   * typed on since (here, in another tab, or in this task's composer opened again). A kept note
-   * of the same words goes only when a note of them was `saved`: a Copy or an Open posts no note,
-   * so a note that was not saved stays until its own answer or the person's Discard.
+   * The words of `draft` went somewhere: the kept draft and the field clear, each only while it
+   * is still that very draft, so whatever the person typed since stays, a space included (here, in
+   * another tab, or in this task's composer opened again). A kept note of the same words goes only
+   * when a note of them was `saved`: a Copy or an Open posts no note, so a note that was not saved
+   * stays until its own answer or the person's Discard.
    */
-  const sent = (words: string, saved = false) => {
-    const kept = readDraft(space, task.id);
-    if (wordsOf(kept) === words) letGo(space, { kind: "draft", task: task.id, text: kept });
-    if (wordsOf(now.current) === words) setText("");
+  const sent = (draft: string, saved = false) => {
+    letGo(space, { kind: "draft", task: task.id, text: draft });
+    if (now.current === draft) setText("");
+    const words = wordsOf(draft);
     if (!saved || sending.current === words) return;
     for (const note of readNotes(space, task.id)) {
       if (note.words === words) letGo(space, { kind: "note", task: task.id, id: note.id });
@@ -250,7 +251,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   useEffect(
     () =>
       onSaved((saved) => {
-        if (saved.space === space && saved.task === task.id) sent(saved.words);
+        if (saved.space === space && saved.task === task.id) sent(saved.draft);
       }),
     // `sent` reads the field through a ref and the draft as it is kept: it never goes stale.
     [space, task.id],
@@ -306,8 +307,11 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
     return undefined;
   };
 
-  /** Sends `words` as a note: kept until the service holds them, which then lets them go. */
-  const note = (words: string, known?: string) => {
+  /**
+   * Sends `words` as a note: kept until the service holds them, which then lets them go, and the
+   * `draft` they came from.
+   */
+  const note = (words: string, known?: string, draft = words) => {
     if (sending.current === words) return;
     // The same words again (after a failure, a reload, or from another tab) are the same request:
     // the service saves them once. A kept note sent again goes with the ID it shows, also when
@@ -335,7 +339,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
       () => {
         done();
         letGo(space, { kind: "note", task: task.id, id });
-        sent(words, true);
+        sent(draft, true);
         if (answers > 1) say(t("composer.noteAnswers"));
       },
       (error: unknown) => {
@@ -356,7 +360,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
       field.current?.focus();
       return;
     }
-    note(words);
+    note(words, undefined, text);
   };
 
   /**
@@ -371,7 +375,10 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
     setOpening((known) => new Set(known).add(instance.key));
     const request = words;
     // The open action says when the words are on the task (savedWords): the field clears then.
-    const carried = { ...(request === "" ? {} : { text: request }), another: another(instance) };
+    const carried = {
+      ...(request === "" ? {} : { text: request, draft: text }),
+      another: another(instance),
+    };
     void actions.open(task, instance, carried).then(() => {
       setOpening((known) => {
         const next = new Set(known);
@@ -385,20 +392,22 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const run = (instance: Instance) => {
     if (starting.current !== undefined) return;
     const request = words;
+    const draft = text;
     starting.current = request;
     setRunningFrom(true);
     void actions.run(task, instance, request === "" ? undefined : request).then((queued) => {
       starting.current = undefined;
       setRunningFrom(false);
       // The service holds the words in the run: they went somewhere.
-      if (queued !== undefined && request !== "") sent(request);
+      if (queued !== undefined && request !== "") sent(draft);
     });
   };
 
   const copy = (event: MouseEvent<HTMLButtonElement>) => {
     const request = words;
+    const draft = text;
     void actions.copy(task, event.shiftKey, request === "" ? undefined : request).then((ok) => {
-      if (ok && request !== "") sent(request);
+      if (ok && request !== "") sent(draft);
     });
   };
 
@@ -417,7 +426,8 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const noteKeys = keysOf("note", singleKeys);
   const openKeys = keysOf("open-first", singleKeys);
   const runKeys = keysOf("run-first", singleKeys);
-  const first = instances[0];
+  const opens = openers(instances);
+  const first = opens[0];
   const [runner, ...others] = runners(instances);
   const finished = task.lifecycle !== "active";
   /** Run's key on a finished task: Reopen, the step before any run. */
@@ -498,7 +508,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
           )}
         </button>
 
-        {instances.map((instance, i) => {
+        {opens.map((instance, i) => {
           const why = held(instance);
           const state = tileState(busy, instance.key);
           const second = another(instance);

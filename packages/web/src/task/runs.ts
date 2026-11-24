@@ -61,6 +61,7 @@ const CLEANUP: Readonly<Record<string, MessageId>> = {
 const NOT_STARTED: ReadonlySet<string> = new Set([
   "task_closed",
   "instance_gone",
+  "not_for_space",
   "folder_gone",
   "spawn_failed",
   "start_timed_out",
@@ -192,9 +193,15 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
   }
 }
 
+/** Who asked a waiting question: a run's agent by its instance's label, else the agent's own. */
+export const questionBy = (question: RowQuestion, instances: readonly Instance[]): string =>
+  question.instance === undefined
+    ? question.by
+    : runLabel({ instance: question.instance }, instances);
+
 /**
- * The row's marker for what agents ask of the person: its newest run working or needing them, or
- * else the newest question an agent asked that waits for them; none otherwise.
+ * The row's marker for what agents ask of the person: the newest question that waits for them,
+ * a run's or a logged one, else its run needing them or working; none otherwise.
  */
 export function agentMarker(
   run: RowRun | undefined,
@@ -202,8 +209,8 @@ export function agentMarker(
   question?: RowQuestion,
 ): MarkerFact | undefined {
   const by = run === undefined ? undefined : runLabel(run, instances);
+  if (question !== undefined) return { kind: "needs_input", by: questionBy(question, instances) };
   if (by !== undefined && run?.state === "needs_you") return { kind: "needs_input", by };
-  if (question !== undefined) return { kind: "needs_input", by: question.by };
   if (by !== undefined && run?.state === "working") return { kind: "working", by };
   return undefined;
 }
@@ -279,6 +286,7 @@ const REFUSALS: ReadonlySet<string> = new Set([
   "task_not_found",
   "task_closed",
   "instance",
+  "not_for_space",
   "other_machine",
   "folder_missing",
   "marker_missing",

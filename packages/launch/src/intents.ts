@@ -254,6 +254,11 @@ export const EVIDENCE_FIELDS = {
    * to the monitor's agents compares it, and the path itself is never stored.
    */
   home: "id",
+  /**
+   * What of the instance's settings the click's route could not carry, as Open said it: their
+   * codes (`read-only`, `home`) joined by `.`. Known at Prepared, so every later answer says it.
+   */
+  left_out: "id",
 } as const satisfies Record<string, EvidenceKind>;
 
 export type EvidenceKey = keyof typeof EVIDENCE_FIELDS;

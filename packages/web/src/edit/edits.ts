@@ -1004,7 +1004,20 @@ export class Edits {
           set: { reviewed: newest },
           request_id: request,
         }),
-      { tasks: [{ id: task.id, set: {}, clear: ["questions", "questions_more"] }] },
+      // A run that waits for an answer waits no more once its question is set aside.
+      {
+        tasks: [
+          {
+            id: task.id,
+            set: {},
+            clear: [
+              "questions",
+              "questions_more",
+              ...(task.run?.state === "needs_you" ? (["run"] as const) : []),
+            ],
+          },
+        ],
+      },
     );
     const dismissed: Omit<Toast, "key"> = {
       kind: "undo",

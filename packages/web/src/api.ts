@@ -35,7 +35,8 @@ export interface Instance {
   readonly label: string;
   readonly glyph: string;
   readonly ring: number;
-  readonly route: string;
+  /** How Open opens it here; absent when it cannot, and the tile is for Run. */
+  readonly route?: string;
   /** It can work on a task in the background: Run. */
   readonly runs?: true;
 }
@@ -125,6 +126,8 @@ export interface Opened {
    */
   readonly text: "none" | "inline" | "note" | "request";
   readonly note: string | undefined;
+  /** What the instance sets that this way of opening could not carry: a permission by name. */
+  readonly leftOut: readonly string[];
 }
 
 /** Open's terminal as Settings shows it (the service's TerminalView): fixed words only. */
@@ -502,6 +505,7 @@ export class Api {
       copy: result.copy,
       text: result.text,
       note: result.note,
+      leftOut: launch.left_out ?? [],
     };
   }
 

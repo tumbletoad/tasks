@@ -151,6 +151,21 @@ function taskLine(task: Result): string {
   return `${String(task["ref"])}  ${String(task["title"])}  (${parts.join(", ")})`;
 }
 
+/** An Open's `left_out` in words; a permission is said by its name ("your read-only setting"). */
+const LEFT_OUT_WORDS: Readonly<Record<string, string>> = {
+  arguments: "your extra arguments",
+  environment: "your environment variables",
+  home: "the account you chose for it",
+};
+
+/** What a launch receipt says its Open could not carry, as a sentence; undefined for nothing. */
+export function leftOutLine(launch: unknown): string | undefined {
+  const left = (launch as { left_out?: unknown } | undefined)?.left_out;
+  if (!Array.isArray(left) || left.length === 0) return undefined;
+  const what = left.map((code) => LEFT_OUT_WORDS[String(code)] ?? `your ${str(code)} setting`);
+  return `Opened without ${listed(what)}, which this way of opening cannot carry. A terminal can, where one is set up: see ${CLI_NAME} doctor.`;
+}
+
 /** `refs` as a sentence lists them: "M-20", "M-20 and M-21", "M-20, M-21 and M-22". */
 const listed = (refs: readonly string[]): string =>
   refs.length < 2 ? refs.join("") : `${refs.slice(0, -1).join(", ")} and ${refs.at(-1) ?? ""}`;
@@ -791,6 +806,8 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       const copy = result["copy"];
       if (typeof copy === "string") lines.push(copy);
       else lines.push(`Launch ${String(launch["reference"])}: ${String(launch["state"])}`);
+      const left = leftOutLine(launch);
+      if (left !== undefined) lines.push(left);
       break;
     }
     default:

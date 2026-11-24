@@ -6,13 +6,14 @@
 // the task's draft after what the person had written there, and the field takes focus. Nothing is
 // sent until the person acts.
 import type { AskField } from "../row/actions.ts";
-import { letGo, readDraft, wordsOf } from "../unsent.ts";
+import { letGo } from "../unsent.ts";
 
-/** Words an Open saved on a task: its request, or a note of the person's. */
+/** An Open saved the words of a task's draft on the task: its request, or a note of the person's. */
 export interface Saved {
   readonly space: string;
   readonly task: string;
-  readonly words: string;
+  /** The draft as it was when the Open was pressed. */
+  readonly draft: string;
 }
 
 const savedListeners = new Set<(saved: Saved) => void>();
@@ -26,13 +27,13 @@ export function onSaved(listener: (saved: Saved) => void): () => void {
 }
 
 /**
- * An Open saved `words` on the task, as Note does: the kept draft goes unless the person has
- * typed on since, here or in another tab, and so does the field that shows them.
+ * An Open saved the words of `draft` on the task, as Note does: the kept draft goes while it is
+ * still that draft, so what the person typed since, here or in another tab, stays, and so does
+ * the field that shows it.
  */
-export function savedWords(space: string, task: string, words: string): void {
-  const kept = readDraft(space, task);
-  if (wordsOf(kept) === words) letGo(space, { kind: "draft", task, text: kept });
-  for (const listener of savedListeners) listener({ space, task, words });
+export function savedWords(space: string, task: string, draft: string): void {
+  letGo(space, { kind: "draft", task, text: draft });
+  for (const listener of savedListeners) listener({ space, task, draft });
 }
 
 export interface Ask {

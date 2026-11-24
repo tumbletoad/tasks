@@ -244,10 +244,10 @@ export function renderContextPack(input: PackInput): Pack {
     return item(`${line(n.day)} ${first}`, rest);
   });
   const unreadBefore = Math.max(0, (input.instructionsTotal ?? 0) - input.instructions.length);
-  const composer =
-    input.composer === undefined || input.composer.trim() === ""
-      ? []
-      : lines(input.composer.trim());
+  // As typed: only the blank lines around the words go, so every line keeps its indent.
+  const composer = lines(input.composer ?? "");
+  while (composer[0]?.trim() === "") composer.shift();
+  while (composer.at(-1)?.trim() === "") composer.pop();
   const sources = input.sources.map((s) => {
     const parts = [`[${line(s.kind)}] "${sanitiseTitle(s.title)}"`];
     if (s.who !== undefined && line(s.who) !== "") parts.push(`from ${line(s.who)}`);
