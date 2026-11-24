@@ -142,7 +142,7 @@ export const PrefsManageInput = z.strictObject({
     .optional(),
   dry_run: z
     .boolean()
-    .describe("set: decide it as it would be written, and write nothing")
+    .describe("Decide a set as it would be written, and write nothing")
     .optional(),
   base: Base.optional(),
   request_id: RequestId.optional(),
@@ -228,6 +228,7 @@ export const prefsManage = defineEntry({
     },
   },
   budget: { typical: 600, max: 2000 },
+  agent: { hidden: ["dry_run"] },
   errors: [
     "invalid_input",
     "forbidden",

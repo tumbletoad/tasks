@@ -791,7 +791,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | A1 operations | `pref.set` |
 | Faces | MCP `preferences`, CLI `ttasks prefs`, UI |
 | Errors | `invalid_input`, `forbidden`, `conflict`, `space_unavailable`, `request_id_conflict`, `applied_earlier` |
-| Definition, estimated tokens | 435, reported |
+| Definition, estimated tokens | 384, reported |
 | Result budget, estimated tokens | typical 600, max 2000 |
 
 ### Input
@@ -812,7 +812,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `set[].moves` | object[], max 20 items | no | tasks.effort_scale only, set alone: the tasks on each size move with the change |
 | `set[].moves[].from` | string, max 20 | yes | A level, or a size tasks hold |
 | `set[].moves[].to` | string, max 20 \| null | yes | A level of the new list, or null for no size |
-| `dry_run` | boolean | no | set: decide it as it would be written, and write nothing |
+| `dry_run` | boolean | no, user only | Decide a set as it would be written, and write nothing |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 

@@ -750,10 +750,11 @@
         {
           "field": "dry_run",
           "flag": "--dry-run",
-          "help": "set: decide it as it would be written, and write nothing",
+          "help": "Decide a set as it would be written, and write nothing",
           "repeat": false,
           "required": false,
-          "type": "boolean"
+          "type": "boolean",
+          "userOnly": true
         },
         {
           "field": "mode",

@@ -1746,7 +1746,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "set: decide it as it would be written, and write nothing",
+            "description": "Decide a set as it would be written, and write nothing",
             "type": "boolean"
           },
           "keys": {
