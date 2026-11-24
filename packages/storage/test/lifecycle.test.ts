@@ -143,6 +143,32 @@ describe("[A1.5.write.lifecycle] complete, reopen, archive, wrap-up, delete and 
     expect(one("SELECT affected FROM commits WHERE seq = $seq", { seq: result.seq })).toBe(1);
   });
 
+  test("a lifecycle operation's result says how the request left the task, also when it changed nothing", () => {
+    const id = create();
+    expectStatus(submit([{ kind: "task.archive", task: id }]), "applied");
+    // A finish of an archived task leaves it archived, and says so: never completed.
+    const finish = submit([{ kind: "task.complete", task: id, if_active: true }]);
+    expect(finish.results[0]).toMatchObject({ status: "unchanged", lifecycle: "archived" });
+    const reopened = submit([{ kind: "task.reopen", task: id }]);
+    expect(reopened.results[0]).toMatchObject({
+      status: "updated",
+      lifecycle: "active",
+      status_key: String(task(id)["status"]),
+    });
+    const done = submit([{ kind: "task.complete", task: id }]);
+    expect(done.results[0]).toMatchObject({
+      lifecycle: "completed",
+      wrap_state: task(id)["wrap_state"],
+    });
+    // A patch and a move name the fields they changed, a move by its area and project.
+    const other = create();
+    const changed = submit([
+      { kind: "task.patch", task: other, set: { title: "Fix the export", summary: "Next: test" } },
+      { kind: "task.move", task: other, area: fx.areas.home },
+    ]);
+    expect(changed.results.map((r) => r.fields)).toEqual([["summary"], ["area"]]);
+  });
+
   test("wrap-up: outcome, learnings and the mark on a completed or archived task, never an active one", () => {
     const id = create({ planned_for: "2026-11-20", focus: "2026-11-12" });
     expect(submit([{ kind: "task.wrap_up", task: id, outcome: "Too early." }]).error).toMatchObject(
@@ -162,7 +188,8 @@ describe("[A1.5.write.lifecycle] complete, reopen, archive, wrap-up, delete and 
     );
     expectStatus(wrapped, "applied");
     expect(wrapped.results).toEqual([
-      { i: 0, status: "updated", id, ref: "M-1", version: wrapped.seq },
+      // With how many learnings it recorded, which its answer says.
+      { i: 0, status: "updated", id, ref: "M-1", version: wrapped.seq, learnings: 2 },
     ]);
     expect(task(id)).toMatchObject({
       lifecycle: "completed",

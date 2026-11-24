@@ -609,7 +609,6 @@ export function serve(
         actor: ({ handle, actorKind, label }) => writer(handle).actor(actorKind, label),
         submit: ({ handle, request }) => writer(handle).submit(request),
         receipt: ({ handle, lookup }) => writer(handle).receipt(lookup) ?? null,
-        keep: ({ handle, lookup, given }) => writer(handle).keep(lookup, given),
         launch: ({ handle, launch }) => writer(handle).launch(launch) ?? null,
         openLaunches: ({ handle, machine }) => writer(handle).openLaunches(machine),
         projected: ({ handle, batch }) => writer(handle).projected(batch),

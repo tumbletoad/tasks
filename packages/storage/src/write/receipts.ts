@@ -3,8 +3,9 @@
 // together or not at all. The row is keyed by the writer scope and the request ID (A3 3.7.9),
 // carries the fingerprint of the intent and stores the result. A request whose ID its scope already
 // holds is not run again: the same fingerprint returns the stored result with `replayed: true`,
-// whatever the state is now, and another fingerprint is REQUEST_ID_REUSED. The lookup comes before staging, so before references, dedupe, policy and
-// expansion (A1 3.7).
+// whatever the state is now, and another fingerprint is REQUEST_ID_REUSED. The lookup comes before
+// staging, so before references, dedupe, policy and expansion (A1 3.7). A registry entry's request
+// that the writer refuses wrote nothing and keeps no receipt: sent again, it is decided again.
 //
 // The fingerprint is SHA-256 over the RFC 8785 form of `{space_id, entry, input, reason}` (A1 3.8):
 // the caller's intent, never its base or request ID. With an intent from the registry it covers
@@ -14,24 +15,17 @@
 //
 // What a receipt stores is the result with one change: a conflict keeps the field, version, author
 // and time of each conflicting field but not its values (the current one, and an undo's value
-// written and value to restore). The current value was a read at the time of the decision, and a
-// replay is no fresh read. The stored result is bounded by its request: at most one result per
-// operation, and at most one conflict per (row, field) the request touches, each a few hundred
-// bytes. Once the service has built its answer, the receipt also keeps that answer as the caller
-// was given it (`keepGiven`), bounded as the answer was: the titles and names it showed among it.
+// written and value to restore). The current value was a read at the time of the decision, a
+// replay is no fresh read, and so a receipt holds no task text at all. The stored result is bounded
+// by its request: at most one result per operation, and at most one conflict per (row, field) the
+// request touches, each a few hundred bytes.
 import { createHash } from "node:crypto";
 import type { Connection, Row } from "../driver.ts";
 import { misuse } from "../errors.ts";
 import type { Id } from "../ids.ts";
 import { invalidValue, RowReader } from "../rows.ts";
 import { canonicalJson } from "./canonical.ts";
-import {
-  INSIDE_KEPT,
-  type CheckedRequest,
-  type Given,
-  type WriteResult,
-  type WriteStatus,
-} from "./request.ts";
+import { INSIDE_KEPT, type CheckedRequest, type WriteResult, type WriteStatus } from "./request.ts";
 
 /** A stored receipt. */
 export interface Receipt {
@@ -75,9 +69,7 @@ const SQL = {
     "INSERT INTO receipts (scope_id, request_id, fingerprint, status, seq, epoch, incarnation, " +
     "result, at) VALUES ($scope, $request, $fingerprint, $status, $seq, $epoch, $incarnation, " +
     "$result, $at)",
-  result:
-    "UPDATE receipts SET result = $result WHERE scope_id = $scope AND request_id = $request " +
-    "AND fingerprint = $fingerprint",
+  forget: "DELETE FROM receipts WHERE scope_id = $scope AND request_id = $request",
 } as const;
 
 /**
@@ -201,33 +193,12 @@ function storedResult(result: WriteResult): string {
 }
 
 /**
- * Keeps the answer the caller was given with the receipt of its request (WriteResult.given), in
- * the caller's transaction: once, and only on the receipt of the intent with `fingerprint`. A
- * receipt of another intent, one that keeps an answer already, or none at all, is left as it is.
- * Returns whether it kept it.
+ * Drops the receipt of a registry entry's request that the writer refused, as an earlier build kept
+ * one: that request wrote nothing, and it is decided again.
  */
-export function keepGiven(
-  conn: Connection,
-  lookup: ReceiptLookup & { readonly fingerprint: string },
-  given: Given,
-): boolean {
-  if (!conn.inTransaction) throw misuse("An answer is kept in a transaction");
-  const plain = (value: unknown) =>
-    typeof value === "object" && value !== null && !Array.isArray(value);
-  const kept = given.result;
-  if (!FINGERPRINT.test(given.sent) || !FINGERPRINT.test(lookup.fingerprint) || !plain(kept)) {
-    throw misuse("An answer is kept as an object, under the fingerprints of its intent");
-  }
-  const found = readReceipt(conn, lookup);
-  if (found?.fingerprint !== lookup.fingerprint || found.result.given !== undefined) return false;
-  const result = { ...found.result, given };
-  conn.prepare(SQL.result).run({
-    scope: lookup.scope_id,
-    request: lookup.request_id,
-    fingerprint: lookup.fingerprint,
-    result: storedResult(result),
-  });
-  return true;
+export function forgetRefusal(conn: Connection, lookup: ReceiptLookup): void {
+  if (!conn.inTransaction) throw misuse("A receipt is dropped in its request's transaction");
+  conn.prepare(SQL.forget).run({ scope: lookup.scope_id, request: lookup.request_id });
 }
 
 /**

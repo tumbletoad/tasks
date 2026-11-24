@@ -241,7 +241,15 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     // fv only grows; fp names the write the field holds again (A1 3.10).
     expect(maps(id)).toMatchObject({ fv: { summary: u2.seq }, fp: { summary: c1.seq } });
     expect(u2.results).toEqual([
-      { i: 0, status: "updated", id: commitAt(c2.seq)["id"], version: u2.seq },
+      // The tasks its commit changed, by reference: what the answer names, never read again.
+      {
+        i: 0,
+        status: "updated",
+        id: commitAt(c2.seq)["id"],
+        version: u2.seq,
+        tasks: [`M-${String(task(id)["ref"])}`],
+        task_count: 1,
+      },
     ]);
     expect(commitAt(u2.seq)).toMatchObject({
       kind: "undo",

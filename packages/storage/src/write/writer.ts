@@ -113,7 +113,7 @@ import {
   type RunState,
 } from "./runs.ts";
 import {
-  keepGiven,
+  forgetRefusal,
   readReceipt,
   requestFingerprint,
   writeReceipt,
@@ -141,7 +141,6 @@ import {
   type ConflictEntity,
   type Due,
   type FieldConflict,
-  type Given,
   type InsideFolder,
   type HistoryOperation,
   type OpResult,
@@ -154,6 +153,7 @@ import {
   type WriteErrorCode,
   type WriteProblem,
   type WriteResult,
+  type WriteStatus,
 } from "./request.ts";
 
 export { SYSTEM_SCOPE };
@@ -1087,15 +1087,6 @@ export class SpaceWriter {
     return conn.transaction("deferred", () => readReceipt(conn, lookup));
   }
 
-  /**
-   * Keeps the answer a caller was given with its request's receipt (receipts.ts `keepGiven`): a
-   * bookkeeping write, with no commit and no history. Returns whether it kept it.
-   */
-  keep(lookup: ReceiptLookup & { readonly fingerprint: string }, given: Given): boolean {
-    const conn = this.#usable();
-    return conn.transaction("immediate", () => keepGiven(conn, lookup, given));
-  }
-
   /** A launch record as it is now (A4 3.16.1), or undefined: the execution store's read. */
   launch(id: string): LaunchRecord | undefined {
     const conn = this.#usable();
@@ -1208,10 +1199,14 @@ export class SpaceWriter {
       return refused("rejected", asOf, error.problem);
     }
     // The receipt, before staging and expansion (A1 3.7, 3.8).
-    const prior = readReceipt(conn, {
-      scope_id: request.actor.scope_id,
-      request_id: request.request_id,
-    });
+    const lookup = { scope_id: request.actor.scope_id, request_id: request.request_id };
+    let prior = readReceipt(conn, lookup);
+    // A registry entry's refusal wrote nothing: one an earlier build kept is decided again.
+    const entry = request.intent !== undefined;
+    if (entry && prior !== undefined && !isAccepted(prior.status)) {
+      forgetRefusal(conn, lookup);
+      prior = undefined;
+    }
     if (prior?.fingerprint === fingerprint) return prior.result;
     if (prior !== undefined) {
       return refused("rejected", asOf, {
@@ -1223,19 +1218,20 @@ export class SpaceWriter {
     }
     const { at, wall } = this.#clock();
     const judged = this.#judge(conn, request, space, asOf, at, wall);
-    // What the caller found before the writer goes with the result and into its receipt, so a
-    // replay says what this answer says (WriteRequest.warnings, WriteRequest.answer): the warnings
-    // with an accepted result, the answer with every decided one.
-    const taken = judged.status === "applied" || judged.status === "unchanged";
-    const result: WriteResult = {
-      ...judged,
-      ...(!taken || request.warnings === undefined || request.warnings.length === 0
-        ? {}
-        : { warnings: [...judged.warnings, ...request.warnings] }),
-      ...(request.answer === undefined ? {} : { answer: request.answer }),
-    };
+    // What the caller found before the writer goes with an accepted result and into its receipt,
+    // so a replay is answered from the same record (WriteRequest.warnings, WriteRequest.answer).
+    const taken = isAccepted(judged.status);
+    const result: WriteResult = !taken
+      ? judged
+      : {
+          ...judged,
+          ...(request.warnings === undefined || request.warnings.length === 0
+            ? {}
+            : { warnings: [...judged.warnings, ...request.warnings] }),
+          ...(request.answer === undefined ? {} : { answer: request.answer }),
+        };
     // In the request's own transaction: the receipt exists exactly when its commit does.
-    writeReceipt(conn, { request, fingerprint, result, at });
+    if (taken || !entry) writeReceipt(conn, { request, fingerprint, result, at });
     return result;
   }
 
@@ -2768,6 +2764,7 @@ export class SpaceWriter {
         continue;
       }
       const commitId = newId("op", this.#random);
+      let tasks: { tasks: string[]; task_count: number };
       conn.exec("SAVEPOINT exec");
       try {
         // The inversions first: the rules across rows are decided on the state they make (A1 3.10).
@@ -2816,6 +2813,7 @@ export class SpaceWriter {
         });
         const changes = applied.changes.map((c) => ({ ...c, action: "set" as const }));
         insertChanges(conn, seq, changes);
+        tasks = changedTasks(conn, space.refPrefix, changes);
         // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
         // its children's, a restore brings them back, a field set back rewrites its document.
         if (this.#search) indexChanges(conn, seq, changes);
@@ -2836,7 +2834,7 @@ export class SpaceWriter {
       return {
         ...accepted("applied", { ...asOf, seq }),
         commit: commitId,
-        results: [{ i: 0, status: "updated", id: target.id, version: seq }],
+        results: [{ i: 0, status: "updated", id: target.id, version: seq, ...tasks }],
         // What a partial undo left as others set it, or why a redo passed over the steps before
         // the one it redid (WriteResult.conflicts).
         conflicts,
@@ -2889,6 +2887,8 @@ function refused(
 function accepted(status: "applied" | "unchanged", asOf: AsOf): WriteResult {
   return { status, as_of: formatAsOf(asOf), ...asOf, results: [], conflicts: [], warnings: [] };
 }
+
+const isAccepted = (status: WriteStatus): boolean => status === "applied" || status === "unchanged";
 
 /**
  * An area or project the request creates for its other operations is left out when every one of
@@ -3189,26 +3189,92 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
       case "task.wrap_up": {
         // Its target is the task: the learnings it adds change the task, they are not the result.
         const task = readTask(conn, staged.target as Id<"t">);
+        const learnings = changes.filter(
+          (c) => c.op === i && c.entity === "learnings" && c.action === "create",
+        ).length;
         return {
           i,
           status: status === "created" ? "updated" : status,
           id: task.id,
           ref: formatTaskRef(run.plan.refPrefix, task.ref),
           version: task.version,
+          ...(learnings === 0 ? {} : { learnings }),
         };
       }
-      default: {
+      case "task.complete":
+      case "task.archive":
+      case "task.reopen": {
+        // The task as the request left it, which the answer says: never read again later.
         const task = readTask(conn, staged.target as Id<"t">);
+        const wrap = task.raw["wrap_state"];
         return {
           i,
           status,
           id: task.id,
           ref: formatTaskRef(run.plan.refPrefix, task.ref),
           version: task.version,
+          lifecycle: task.lifecycle,
+          ...(op.kind === "task.reopen" ? { status_key: String(task.raw["status"]) } : {}),
+          ...(op.kind !== "task.reopen" && (wrap === "pending" || wrap === "wrapped")
+            ? { wrap_state: wrap }
+            : {}),
+        };
+      }
+      default: {
+        const task = readTask(conn, staged.target as Id<"t">);
+        const fields =
+          op.kind === "task.patch" || op.kind === "task.move" || op.kind === "task.context_append"
+            ? taskFields(changes, i, task.id)
+            : [];
+        return {
+          i,
+          status,
+          id: task.id,
+          ref: formatTaskRef(run.plan.refPrefix, task.ref),
+          version: task.version,
+          ...(fields.length === 0 ? {} : { fields }),
         };
       }
     }
   });
+}
+
+/** The tasks an undo's or a redo's commit changed, in the order it changed them (OpResult.tasks). */
+function changedTasks(
+  conn: Connection,
+  prefix: string,
+  changes: readonly { readonly taskId: string | null }[],
+): { tasks: string[]; task_count: number } {
+  const ids = [...new Set(changes.flatMap((c) => (c.taskId === null ? [] : [c.taskId])))];
+  const refs = ids.slice(0, 50).flatMap((id) => {
+    const row = conn.prepare(SQL.task).get({ id });
+    return row === undefined ? [] : [formatTaskRef(prefix, decodeTask(row).ref)];
+  });
+  return { tasks: refs, task_count: ids.length };
+}
+
+/**
+ * The logical fields of task `id` that operation `i` changed (OpResult.fields), a change of its
+ * grouping as `area` and `project`, the columns that moved: a new position alone moves neither.
+ */
+function taskFields(changes: readonly ChangeRow[], i: number, id: string): string[] {
+  const fields: string[] = [];
+  for (const c of changes) {
+    if (c.op !== i || c.entity !== "tasks" || c.entityId !== id || c.field === null) continue;
+    if (c.field !== "grouping") {
+      fields.push(c.field);
+      continue;
+    }
+    const column = (value: string | null, name: string): unknown => {
+      const parsed: unknown = value === null ? null : JSON.parse(value);
+      return typeof parsed === "object" && parsed !== null
+        ? ((parsed as Record<string, unknown>)[name] ?? null)
+        : null;
+    };
+    if (column(c.before, "area_id") !== column(c.after, "area_id")) fields.push("area");
+    if (column(c.before, "project_id") !== column(c.after, "project_id")) fields.push("project");
+  }
+  return fields;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -4476,11 +4542,14 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
             const moved = carriedTo(other.path, found.path, op.path, os);
             if (moved === undefined || moved === other.path) continue;
             const task = other.ownerKind === "task" ? (other.ownerId as Id<"t">) : null;
-            const label =
-              task === null
-                ? String(readRow(conn, "projects", other.ownerId)["title"])
-                : formatTaskRef(run.plan.refPrefix, readTask(conn, task).ref);
-            const named = { kind: other.ownerKind, owner: other.ownerId, label, from: other.path };
+            const named = {
+              kind: other.ownerKind,
+              owner: other.ownerId,
+              ...(task === null
+                ? {}
+                : { ref: formatTaskRef(run.plan.refPrefix, readTask(conn, task).ref) }),
+              from: other.path,
+            };
             if (!carried.has(other.ownerId)) {
               left.push({ ...named, to: other.path });
               continue;

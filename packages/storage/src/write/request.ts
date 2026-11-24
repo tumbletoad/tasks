@@ -294,9 +294,26 @@ export interface OpResult {
     stayed: number;
     left: InsideFolder[];
   };
-  /** A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). */
+  /**
+   * A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). The
+   * lifecycle of `task.complete`, `task.archive` and `task.reopen` is the task's after the request.
+   */
   matched_by?: "source_key";
   lifecycle?: TaskLifecycle;
+  /** `task.reopen`: the task's status after the request. */
+  status_key?: string;
+  /** `task.complete` and `task.archive`: the task's wrap-up state after the request, if it has one. */
+  wrap_state?: "pending" | "wrapped";
+  /** `task.wrap_up`: how many learnings it recorded. */
+  learnings?: number;
+  /**
+   * `task.patch`, `task.context_append` and `task.move`: the task's logical fields it changed, a
+   * move's as `area` and `project`.
+   */
+  fields?: string[];
+  /** An undo or a redo: the references of the first 50 tasks its commit changed, and their count. */
+  tasks?: string[];
+  task_count?: number;
   /**
    * A `task.create` whose keys several active tasks hold: their references, lowest first. The
    * result's task is the first of them, so the result keeps one shape; the caller picks one.
@@ -305,13 +322,13 @@ export interface OpResult {
 }
 
 /**
- * A folder inside one a request moved (OpResult.inside): whose it is, by the task's reference or
- * the project's name, where it was and where it is now, which is the same place for one left.
+ * A folder inside one a request moved (OpResult.inside): whose it is, a task with its reference,
+ * where it was and where it is now, which is the same place for one left.
  */
 export interface InsideFolder {
   kind: "project" | "task";
   owner: string;
-  label: string;
+  ref?: string;
   from: string;
   to: string;
 }
@@ -356,24 +373,10 @@ export interface WriteResult {
   /** Why, for `rejected` and `conflict`. */
   error?: WriteProblem;
   warnings: string[];
-  /** The request's `answer`, for every decided result: from the receipt on a replay. */
+  /** The request's `answer`: from the receipt on a replay. */
   answer?: Record<string, unknown>;
-  /** The answer the caller was given, once the service kept it with the receipt (`Given`). */
-  given?: Given;
   /** A retry with the same intent got the stored result of the first decision (A1 3.8). */
   replayed?: true;
-}
-
-/**
- * The answer a caller was given for a request, kept with its receipt after the service built it
- * (SpaceWriter.keep): the entry's result for a request the writer accepted. A retry is given it
- * again as it was, whatever changed in the space since. `sent` is the fingerprint of the input as
- * the caller sent it, before the service's own rules read it, so a retry sent as it was is known
- * before any rule of a later build looks at it.
- */
-export interface Given {
-  readonly sent: string;
-  readonly result: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1120,7 +1123,7 @@ export interface WriteRequest {
   /**
    * Every task the request changes must be active: A3 3.4.6's `update_task` changes an active
    * task. A completed or archived one refuses the request with TASK_NOT_ACTIVE, decided in the
-   * request's transaction, so it has a receipt and a retry answers the same.
+   * request's transaction.
    */
   active?: boolean;
   /** The caller's intent. Without one, the intent is the operations themselves. */
@@ -1134,15 +1137,15 @@ export interface WriteRequest {
    */
   warnings?: string[];
   /**
-   * The part of the caller's answer that it decided before the writer, such as the group a create
-   * found or how many operations it put ahead of its own: every decided result carries it and its
-   * receipt keeps it, so a replay answers, or is refused, as the first call was, also for a request
-   * that changed nothing. JSON; not part of the intent's fingerprint.
+   * What the caller decided before the writer and builds its answer from with the writer's
+   * result, such as the group a create found or where each operation came from in its input. The
+   * result carries it and the receipt keeps it, so a replay is answered from the same record. JSON,
+   * never task text; not part of the intent's fingerprint.
    */
   answer?: Record<string, unknown>;
   /**
    * The operations. A registry entry's request may hold none: the caller found that it changes
-   * nothing, and the request is decided `unchanged` so that its answer is kept with its receipt.
+   * nothing, and the request is decided `unchanged` so that its receipt keeps its answer.
    */
   ops: Operation[];
 }

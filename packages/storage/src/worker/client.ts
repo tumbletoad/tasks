@@ -58,7 +58,7 @@ import type { LaunchRecord } from "../write/launches.ts";
 import type { ProjectedBatch } from "../write/outbox.ts";
 import type { RunRow } from "../write/runs.ts";
 import type { Receipt, ReceiptLookup } from "../write/receipts.ts";
-import type { Given, WriteResult } from "../write/request.ts";
+import type { WriteResult } from "../write/request.ts";
 import type { MachineInfo } from "../write/writer.ts";
 import {
   readWriterHolder,
@@ -890,20 +890,6 @@ export class SpaceWriterHandle {
       this.#worker.call("receipt", { handle: this.handle, lookup }),
     );
     return found ?? undefined;
-  }
-
-  /**
-   * Keeps the answer a caller was given with its request's receipt (`SpaceWriter.keep`), once. It
-   * waits in the writer's queue, so a lookup sent after it finds the answer.
-   */
-  keep(lookup: ReceiptLookup & { readonly fingerprint: string }, given: Given): Promise<boolean> {
-    return this.#queued(() =>
-      this.#worker.call("keep", {
-        handle: this.handle,
-        lookup: { ...lookup },
-        given,
-      }),
-    );
   }
 
   /**
