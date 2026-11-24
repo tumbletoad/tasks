@@ -514,7 +514,11 @@ export class RunService {
           place: null,
           // A task's run always holds what was asked: the person's words, else to work on the task.
           request: asked.request ?? WORK_ON_IT,
-          briefHash: runBriefHash(task.ref, task.title),
+          briefHash: runBriefHash(
+            task.ref,
+            task.title,
+            asked.request !== null && asked.request.trim() !== "",
+          ),
           permission: runPermission(instance),
           limits: { ...RUN_LIMITS.task, ...timeLimits(settings) },
         },

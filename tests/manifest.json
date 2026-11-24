@@ -2727,14 +2727,14 @@
     },
     {
       "id": "M6.page.run-row",
-      "title": "A task's compact row says when its newest background run works (queued to stopping, or not confirmed ended) or ended asking the person, and nothing for any other end",
+      "title": "A task's compact row shows its newest background run that works (queued to stopping, or not confirmed ended), else its newest run whose question waits for the person, and nothing for any other end",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "M6.page.run-feed",
-      "title": "A run's change in the feed names its task and carries the task's row, which shows the newest run working or needing the person, in batches and in the snapshot",
+      "title": "A run's change in the feed names its task and carries the task's row, which shows a run working or waiting for the person's answer, and a run's question among the waiting questions, in batches and in the snapshot",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2770,6 +2770,13 @@
     {
       "id": "M6.page.run-once",
       "title": "One press of Run is one run: the second click of a double click and a held key start nothing more, and a Run that got no answer, pressed again with the same words, also after a reload, carries the same request ID; a refusal forgets it; an instance that can only run here offers Run and no Open",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.run-as-typed",
+      "title": "Run sends the composer's words as typed, an indented block's indent kept, without the blank lines around them; once the service holds them the field and the kept draft clear only when they still are the draft that was sent, so an edit made meanwhile, of whitespace alone too, stays",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2812,6 +2819,13 @@
     {
       "id": "M6.page.e2e.needs",
       "title": "In the browser: a run that needs the person shows its question and is findable from the row and Agents; a signed-out agent's failure is said in its own words",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.e2e.earlier-asks",
+      "title": "In Chromium and Firefox: a run queued before an earlier run asked works while that question waits on the row's marker and under Needs you with its words and its agent's label; stopped, the question stays; a reply run that gets to work answers it; at 1,440 and 390 px (Chromium)",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4099,6 +4113,14 @@
       "title": "The creation helpers set a mode only on what this call created: a folder that was there or that another process made in between keeps its mode, a new folder replaced by a link is not followed, a log append never creates a file without its mode or through a link, a lock file is never created by SQLite, and a copy into a file that cannot be created leaves no stream behind",
       "source": "A2 3.2.2, A2 3.2.3, A1 3.1",
       "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.12.toast.reading-time",
+      "title": "A toast stays as long as its sentence takes to read: a short one as before, a long one longer, none for ever, an error until it is dismissed",
+      "source": "A5 3.12",
+      "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -6199,6 +6221,41 @@
       "id": "A5.while-away.service.question",
       "title": "A task's row carries the newest question an agent or a routine logged on it while no note of the person's came after it and their dismissal came before it: not the person's own question, an agent's note does not answer it, the person's note does, a dismissal hides it and its undo brings it back, a later question waits again, and the feed's batch of the question carries the task's row",
       "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.service.run-question",
+      "title": "A run that ended asking the person keeps its question among the task's waiting questions, whatever runs come after: a run queued before it neither hides it while it works nor takes it along when stopped; a run queued after it answers it once it works or ran, one that never ran does not; the person's note answers it; Dismiss of the run sets it aside and Undo brings it back, on a finished task too",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.run.brief-as-typed",
+      "title": "The person's request reaches the agent as typed, in a run's brief byte for byte and in the context pack without the blank lines around it: every line keeps its indent and its line breaks; blank words ask to work on the task",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.run.reply-brief",
+      "title": "A run queued while an earlier run's question waits starts with that question, as the agent asked it with its options, before the person's words, also when built again after it started; a run queued before the question, after a reply that ran or after the person's note replies to nothing; a run without words hears the question and to work on the task",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.run.reply-quoted",
+      "title": "A run's brief quotes each earlier question between lines of tildes longer than any run of tildes in its text, and puts the person's words after them all under their heading: for any questions and words, the headings and fences included, both can be read back from the brief, and two different ones never make the same brief",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.run.reply-kept",
+      "title": "A reply answers the questions that waited when it was queued, oldest first, whatever changes before it starts: a retracted note put back, a Dismiss undone, an earlier queued reply cancelled, or a Dismiss of the questions it carries",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },

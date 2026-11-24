@@ -11,6 +11,8 @@ export type AskField = "summary" | "context" | "sources" | "outcome" | "learning
 export interface OpenWith {
   /** The composer's words, the launch's request. */
   readonly text?: string;
+  /** The composer's draft they came from, let go once the words are on the task. */
+  readonly draft?: string;
   /** A note of the person's already on the task, the launch's request in place of `text`. */
   readonly request?: string;
   /** A second session, although the app runs the task here. */

@@ -60,7 +60,7 @@ export interface TaskRow {
   readonly sources_more?: number;
   /** Its place's state on this machine. Absent: it has no place (A5 3.6). */
   readonly place?: RowPlace;
-  /** Its newest background run, while it works or needs the person. */
+  /** Its background run that works, else the one whose question waits for the person. */
   readonly run?: RowRun;
   /** The questions agents asked on it that wait for the person, newest first. */
   readonly questions?: readonly RowQuestion[];
@@ -80,10 +80,14 @@ export interface TaskRow {
 export const questionsWaiting = (row: TaskRow): number =>
   row.deleted_at === undefined ? (row.questions?.length ?? 0) + (row.questions_more ?? 0) : 0;
 
-/** An agent's question that waits: its log entry, its agent, and its start (the thread has it all). */
+/**
+ * An agent's question that waits: its log entry or the run that ended with it, its agent (a run's
+ * by its instance), and its start (the thread has it all).
+ */
 export interface RowQuestion {
   readonly ref: string;
   readonly by: string;
+  readonly instance?: string;
   readonly text: string;
   readonly at: number;
 }
@@ -455,6 +459,7 @@ const isQuestion = (v: unknown): boolean =>
   isRecord(v) &&
   isString(v["ref"]) &&
   isString(v["by"]) &&
+  optional(v["instance"], isString) &&
   isString(v["text"]) &&
   isNumber(v["at"]);
 

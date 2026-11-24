@@ -55,21 +55,24 @@ describe("[A5.3.8.web.composer-sends] a composer sends what was typed once, and 
     expect(readNotes(SPACE, "tk_4")).toEqual([]);
   });
 
-  test("words an Open saved on the task clear the kept draft and the field that shows them, unless the person typed on since; another task's are not touched", () => {
+  test("words an Open saved on the task clear the kept draft and the field that shows them, unless the person typed on since, a space too; another task's are not touched", () => {
     const heard: Saved[] = [];
     const stop = onSaved((saved) => heard.push(saved));
     keepDraft(SPACE, "tk_1", "Compare the listings\n");
     keepDraft(SPACE, "tk_2", "Compare the listings");
-    savedWords(SPACE, "tk_1", "Compare the listings");
+    savedWords(SPACE, "tk_1", "Compare the listings\n");
     expect(readDraft(SPACE, "tk_1")).toBe("");
     expect(readDraft(SPACE, "tk_2")).toBe("Compare the listings");
-    expect(heard).toEqual([{ space: SPACE, task: "tk_1", words: "Compare the listings" }]);
-    // Typed on since the click: the draft stays.
+    expect(heard).toEqual([{ space: SPACE, task: "tk_1", draft: "Compare the listings\n" }]);
+    // Typed on since the click: the draft stays, also when only its whitespace changed.
     keepDraft(SPACE, "tk_1", "Compare the listings, then book the van");
     savedWords(SPACE, "tk_1", "Compare the listings");
     expect(readDraft(SPACE, "tk_1")).toBe("Compare the listings, then book the van");
+    keepDraft(SPACE, "tk_1", "Compare the listings ");
+    savedWords(SPACE, "tk_1", "Compare the listings");
+    expect(readDraft(SPACE, "tk_1")).toBe("Compare the listings ");
     stop();
     savedWords(SPACE, "tk_2", "Compare the listings");
-    expect(heard).toHaveLength(2);
+    expect(heard).toHaveLength(3);
   });
 });
