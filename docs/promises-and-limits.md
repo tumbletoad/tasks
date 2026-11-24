@@ -199,9 +199,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   second, a launch it was the request of says the request was taken back, and Put back brings it
   back as it was. Only you take notes back, and nothing is deleted for good.
 - A question an agent logs on a task, or a background run ends with, waits for you under Needs you
-  on the Agents page, also once the task is finished or dropped and whatever runs came before or
-  after it, until you write a note on the task after it, run an agent on it after it that gets to
-  work, or dismiss it. A note you take back answers nothing. Dismiss sets aside only the questions you were shown; Undo
+  on the Agents page, also once the task is finished or dropped, until you write a note on the task
+  after it or dismiss it. A run's question is also answered by a run you start after it that gets
+  to work; a logged one is not. A note you take back answers nothing, and a task in the Trash has
+  no waiting question until you restore it. Dismiss sets aside every question up to the newest one
+  the row shows, also those past the ten it shows; one asked after that still waits, and Undo
   brings them back.
 - Your skills, the files in `skills/` of TTasks's folder, are your instructions to every agent that
   uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, an
@@ -271,15 +273,17 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A run starts in the space you named, with `--space` or `TTASKS_SPACE`, else in the default
   space, and `--wait` keeps following it there when the default changes. An answer longer than
   TTasks keeps is kept as its start, and showing it says so.
-- Your request reaches the agent as you typed it, every line's indent kept: only the blank lines
-  around it go, and characters that do not show, such as zero-width and direction marks. The
-  composer clears only when it still holds what you sent, so an edit made meanwhile stays.
+- Your request reaches the agent as you typed it: every character and line break inside it, every
+  line's indent kept. The blank lines around it and spaces and tabs at its very end go, and so do
+  characters that do not show, such as zero-width and direction marks. The composer clears only
+  when it still holds what you sent, so an edit made meanwhile stays.
 - Your request reaches the agent over its own connection, never on a command line. A run's
   answer, or the agent's question when it needs you, is kept in the run's record, and so is what
   the agent had written of its answer when Stop, a restart or its own end cut it short. A question
   from a helper the agent started does not reach you: that helper hears that no one answered.
 - A run you start while an earlier run's question waits starts a new conversation with the agent,
-  and is given that question as the agent asked it, then your words. Nothing else of the earlier
+  and is given the questions that waited when you started it, each quoted as the agent asked it,
+  then your words; one dismissed or answered after that stays in it. Nothing else of the earlier
   run's conversation comes along.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
