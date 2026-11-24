@@ -10,11 +10,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { instanceLabel, LABEL_MAX } from "@ttasks/launch";
 import { configOf, stateOf } from "@ttasks/service/test/harness";
 import { httpWorld, openFeed, signIn, type HttpWorld } from "@ttasks/service/test/http-world";
 import { installFakeAgents, type FakeAgents } from "@ttasks/testkit/fake-agents";
 import type { AgentsSetupOptions } from "../src/setup-agents.ts";
-import { distinctLabels, type Offer } from "@ttasks/service/setup";
 import { runMain } from "./cli-harness.ts";
 
 const SLOW = 300_000;
@@ -270,7 +270,7 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
       expect(shown.add.find((a) => a.id === "t3-claude-second")?.entry).toEqual({
         id: "t3-claude-second",
         target: "t3",
-        label: "Claude Second",
+        label: "Claude Second · T3 Code",
         account: "second",
         t3_environment: "local",
         t3_provider_instance: "claude_second",
@@ -278,7 +278,7 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
         remote_allowed: false,
       });
       expect(shown.add.find((a) => a.id === "t3-codex")?.entry).toMatchObject({
-        label: "Codex Work",
+        label: "Codex Work · T3 Code",
         account: "default",
         t3_provider_instance: "codex",
         t3_model: "gpt-6-astra",
@@ -333,25 +333,14 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
     SLOW,
   );
 
-  test("two homes of one app are each labelled with the home's folder name, in the preview and the entry", () => {
-    const offer = (id: string): Offer => ({
-      id,
-      label: "Codex",
-      entry: new Map<string, string | boolean>([
-        ["id", id],
-        ["label", "Codex"],
-      ]),
-    });
-    const homes = new Map([
-      ["codex", "/home/mira/.codex"],
-      ["codex-second", "/home/mira/.codex-second"],
-    ]);
-    const two = distinctLabels([offer("codex"), offer("codex-second")], homes, "linux");
-    expect(two.map((o) => [o.label, o.entry.get("label")])).toEqual([
-      ["Codex (.codex)", "Codex (.codex)"],
-      ["Codex (.codex-second)", "Codex (.codex-second)"],
-    ]);
-    // One home of an app keeps the app's own name.
-    expect(distinctLabels([offer("codex")], homes, "linux")[0]?.label).toBe("Codex");
+  test("a home's label comes from its app and account alone, within the bound the instance verb takes", () => {
+    expect(instanceLabel("Codex")).toBe("Codex");
+    expect(instanceLabel("Codex", "second")).toBe("Codex · second");
+    // A suffix as long as a folder's may be: shortened, never past the bound.
+    const long = instanceLabel("Claude Code", "a".repeat(32));
+    expect(long).toHaveLength(LABEL_MAX);
+    expect(long.startsWith("Claude Code · aaa")).toBe(true);
+    expect(instanceLabel("Codex", "\u{1F600}".repeat(20)).length).toBeLessThanOrEqual(LABEL_MAX);
+    expect(instanceLabel("Codex", "\u{1F600}".repeat(20))).not.toMatch(/[\uD800-\uDBFF]$/u);
   });
 });

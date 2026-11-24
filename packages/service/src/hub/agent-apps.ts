@@ -42,7 +42,6 @@ import {
   appLabel,
   applyHome,
   blockOf,
-  distinctLabels,
   entryInstance,
   entryLines,
   LockBusy,
@@ -157,6 +156,8 @@ export interface AppsOutcome {
   readonly part: "open" | "tools";
   readonly result: "done" | "failed";
   readonly reason?: string;
+  /** open, failed: the key of its entry the service refused (`label`). */
+  readonly field?: string;
   /**
    * tools turned off: the app's access is off, and its entry stayed in its file, for `reason`
    * (`edited`: the person changed it, so it is theirs).
@@ -299,10 +300,8 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   const configFile = shown(pathOf(platform).join(host.configDir, MACHINE_TOML));
 
   const items = new Map<string, PlanItem>();
-  const offers: Offer[] = [];
-  /** Each offer's row and home, which tell two offers of one app apart. */
-  const offerRows = new Map<string, string>();
-  const offerHomes = new Map<string, string>();
+  /** Each row's offer for machine.toml, by the row's key. */
+  const byRow = new Map<string, Offer>();
   const owners = new Map<string, string>();
   const out: (Omit<AppRow, "open"> & { open?: Part | "offer" })[] = [];
 
@@ -327,25 +326,18 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
       plan: digest([key, "remove", mine.entries]),
     };
   };
-  const offerPart = (
-    key: string,
-    proposal: Proposal | undefined,
-    id: string,
-    home?: string,
-  ): Part | "offer" => {
+  const offerPart = (key: string, proposal: Proposal | undefined, id: string): Part | "offer" => {
     if (proposal === undefined) return fixed(key, false, "no_command");
     if (machine.instances.some((i) => i.id === id)) return fixed(key, false, "id_taken");
     const made = instanceEntry({ ...proposal, id });
     if (!made.ok)
       return fixed(key, false, made.needs.includes("exec") ? "no_command" : "needs_home");
-    offers.push({
+    byRow.set(key, {
       id,
       label: proposal.label,
       entry: made.entry,
       ...(proposal.t3 === undefined ? {} : { modelFrom: proposal.t3.modelFrom }),
     });
-    offerRows.set(id, key);
-    if (home !== undefined) offerHomes.set(id, home);
     return "offer";
   };
 
@@ -370,6 +362,8 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     const key = JSON.stringify([home.app, home.home]);
     items.set(key, item);
     let open: Part | "offer" | undefined;
+    // The home's one label: the one machine.toml keeps for it, else the one its offer would write.
+    let label = appLabel(home.app);
     if (home.app !== "claude-desktop") {
       const target = TARGET[home.app];
       const owner = machine.instances.find(
@@ -378,25 +372,19 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
           i.target === target &&
           samePath(platform, instanceHome(i, userHome, platform)?.path ?? "", home.home),
       );
-      open =
-        owner !== undefined
-          ? ownedPart(key, owner)
-          : offerPart(
-              key,
-              detection.proposals.find(
-                (p) =>
-                  p.target === target &&
-                  p.configHome !== undefined &&
-                  samePath(platform, p.configHome, home.home),
-              ),
-              home.instance,
-              home.home,
-            );
+      const proposal = detection.proposals.find(
+        (p) =>
+          p.target === target &&
+          p.configHome !== undefined &&
+          samePath(platform, p.configHome, home.home),
+      );
+      label = owner?.label ?? proposal?.label ?? label;
+      open = owner !== undefined ? ownedPart(key, owner) : offerPart(key, proposal, home.instance);
     }
     out.push({
       key,
       app: home.app,
-      label: appLabel(home.app),
+      label,
       home: shown(home.home),
       also: home.hosts,
       ...(byName(view) ? { byName: true as const } : {}),
@@ -419,24 +407,17 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     out.push({
       key,
       app: "t3",
-      label: proposal.label,
+      label: owner?.label ?? proposal.label,
       home: null,
       also: [],
       open: owner !== undefined ? ownedPart(key, owner) : offerPart(key, proposal, proposal.id),
     });
   }
 
-  const labelled = distinctLabels(offers, offerHomes, platform);
-  const byRow = new Map<string, Offer>();
-  for (const offer of labelled) {
-    const key = offerRows.get(offer.id);
-    if (key !== undefined) byRow.set(key, offer);
-  }
   const view: AppsView = {
     space,
     rows: out.map(({ open, ...row }): AppRow => {
       if (open !== "offer") return { ...row, ...(open === undefined ? {} : { open }) };
-      // Every offer has its row: distinctLabels keeps them all.
       const offer = byRow.get(row.key);
       if (offer === undefined) return row;
       return {
@@ -622,6 +603,15 @@ function setupError(error: unknown): unknown {
 
 const reasonOf = (error: unknown): string => (error instanceof AppError ? error.code : "internal");
 
+/** The key of an entry the service refused (its first issue, `entries.0.label`): `label`. */
+function fieldOf(error: unknown): string | undefined {
+  if (!(error instanceof AppError)) return undefined;
+  const issues = (error.data as { issues?: { path?: unknown }[] } | undefined)?.issues;
+  const path = issues?.[0]?.path;
+  const key = typeof path === "string" ? /^entries.d+.([a-z_]+)$/u.exec(path)?.[1] : undefined;
+  return key;
+}
+
 /**
  * The person's environment as Open's agents get it, brought up to date first: on Linux and macOS a
  * service started at sign-in lacks what the person's profile adds to PATH until their login shell
@@ -688,18 +678,25 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
         for (const c of leaving) done(c, reasonOf(error));
       }
     }
-    const coming = changes.filter((c) => c.part === "open" && c.on);
-    if (coming.length > 0) {
+    // Each on its own, so one the service refuses is named with its field and the others go in.
+    for (const c of changes.filter((change) => change.part === "open" && change.on)) {
+      const offer = now.offers.get(c.key);
+      if (offer === undefined) {
+        done(c, "changed_meanwhile");
+        continue;
+      }
       try {
-        const entries = coming.map((c) => {
-          const offer = now.offers.get(c.key);
-          if (offer === undefined) throw new Error("An offer is missing");
-          return wireOf(offer.entry);
-        });
-        await verb("instances/add")({ entries }, "ui");
-        for (const c of coming) done(c);
+        await verb("instances/add")({ entries: [wireOf(offer.entry)] }, "ui");
+        done(c);
       } catch (error) {
-        for (const c of coming) done(c, reasonOf(error));
+        const field = fieldOf(error);
+        outcomes.push({
+          key: c.key,
+          part: c.part,
+          result: "failed",
+          reason: reasonOf(error),
+          ...(field === undefined ? {} : { field }),
+        });
       }
     }
 

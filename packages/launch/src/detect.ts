@@ -22,7 +22,7 @@ import {
   type TargetDef,
 } from "./catalogue.ts";
 import { helperOutput } from "./helpers.ts";
-import type { Instance } from "./sections.ts";
+import { instanceLabel, type Instance } from "./sections.ts";
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
@@ -406,7 +406,7 @@ function findWrappers(host: DetectHost, def: TargetDef): FoundWrapper[] {
 export const proposedAccount = (suffix: string): string => (suffix === "" ? "default" : suffix);
 
 function labelOf(def: TargetDef, suffix: string): string {
-  return suffix === "" ? def.label : `${def.label} · ${suffix}`;
+  return instanceLabel(def.label, suffix);
 }
 
 /** The instance ID detection proposes for a home or a wrapper: `claude`, `codex`, `codex-work`. */

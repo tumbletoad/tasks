@@ -29,7 +29,7 @@ import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
-import { INSTANCE_ID, isTable, MANUAL_INSTANCE, type Instance } from "@ttasks/launch";
+import { INSTANCE_ID, isTable, LABEL_MAX, MANUAL_INSTANCE, type Instance } from "@ttasks/launch";
 import { commitEdit, prepareEdit, type EditRefusal, type EditValue } from "../config/edit.ts";
 import { loadMachineConfig, parseMachineConfig } from "../config/machine-toml.ts";
 import { BOM, parseToml } from "../config/toml.ts";
@@ -168,8 +168,9 @@ function entryOf(value: unknown, at: number): Map<string, EditValue> {
     ["id", id],
     ["target", target],
   ]);
-  if (!isText(label, 40))
-    throw invalid(`${path}.label`, "Expected a label of at most 40 characters");
+  if (!isText(label, LABEL_MAX)) {
+    throw invalid(`${path}.label`, `Expected a label of at most ${String(LABEL_MAX)} characters`);
+  }
   entry.set("label", label);
   if (account !== undefined) {
     if (!isText(account, 40))

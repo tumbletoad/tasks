@@ -57,10 +57,20 @@ interface Kept {
   readonly edited: boolean;
 }
 
+/** A switch that was not turned over: its row, its home, and why. */
+interface Failed {
+  readonly key: string;
+  readonly label: string;
+  readonly home: string;
+  readonly part: PartName;
+  readonly reason: string;
+  readonly field: string;
+}
+
 /** What the last Apply came to, for the lines under the list. */
 type Said =
   | { readonly kind: "done"; readonly desktop: boolean; readonly kept: readonly Kept[] }
-  | { readonly kind: "partly"; readonly labels: readonly string[]; readonly kept: readonly Kept[] }
+  | { readonly kind: "partly"; readonly failed: readonly Failed[]; readonly kept: readonly Kept[] }
   | { readonly kind: "stale" | "failed" | "unknown" | "busy" };
 
 export function AgentApps({
@@ -177,8 +187,22 @@ export function AgentApps({
           // A failed one may have changed machine.toml too: the tiles follow either way.
           if (answer.outcomes.some((o) => o.part === "open")) onOpenChanged?.();
           if (failed.length > 0) {
-            const labels = failed.flatMap((o) => pendingOf(o)?.row.label ?? []);
-            setSaid({ kind: "partly", labels: [...new Set(labels)], kept });
+            const rows = failed.flatMap((o): Failed[] => {
+              const p = pendingOf(o);
+              return p === undefined
+                ? []
+                : [
+                    {
+                      key: switchKey(o.key, o.part),
+                      label: p.row.label,
+                      home: p.row.home ?? "none",
+                      part: o.part,
+                      reason: o.reason ?? "other",
+                      field: o.field ?? "none",
+                    },
+                  ];
+            });
+            setSaid({ kind: "partly", failed: rows, kept });
             return;
           }
           const desktop = done.some(
@@ -403,7 +427,20 @@ function SaidLine({ t, said }: { readonly t: Translate; readonly said: Said }) {
     case "partly":
       return (
         <div role="alert">
-          <p className={styles.error}>{t("apps.partly", { apps: said.labels.join(", ") })}</p>
+          <p className={styles.error}>{t("apps.partly")}</p>
+          <ul className={styles.error} data-part="failed">
+            {said.failed.map((f) => (
+              <li key={f.key}>
+                {t("apps.failedRow", {
+                  label: f.label,
+                  home: f.home,
+                  part: f.part,
+                  reason: f.reason,
+                  field: f.field,
+                })}
+              </li>
+            ))}
+          </ul>
           <KeptLines t={t} kept={said.kept} />
         </div>
       );

@@ -490,6 +490,44 @@ describe("[A7.3.12.m5-12.page-status] The tools switch is on only while the tool
     },
     SLOW,
   );
+  it(
+    "each home has one label within the bound, the same alone and beside others, and a saved one as saved",
+    async () => {
+      const suffix = "a".repeat(30);
+      mkdirSync(join(w.user, `.claude-${suffix}`));
+      try {
+        const seen = await look();
+        const long = seen.rows.find((r) => r.home?.endsWith(suffix));
+        const codex = row(seen, "codex");
+        expect(long?.label.length).toBeLessThanOrEqual(40);
+        expect(codex.label).toBe("Codex");
+        const applied = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [
+            { key: long?.key, part: "open", on: true, plan: long?.open?.plan },
+            { key: codex.key, part: "open", on: true, plan: codex.open?.plan },
+          ],
+        });
+        expect(applied.result.outcomes.map((o) => o.result)).toEqual(["done", "done"]);
+        // The person renames Codex's tile in machine.toml: the row says it as saved.
+        const toml = join(configOf(w.home), "machine.toml");
+        writeFileSync(
+          toml,
+          readFileSync(toml, "utf8").replace('label = "Codex"', 'label = "Mine"'),
+        );
+        expect(row(await look(), "codex").label).toBe("Mine");
+        const back = await look();
+        const off = [back.rows.find((r) => r.home?.endsWith(suffix)), row(back, "codex")];
+        await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: off.map((r) => ({ key: r?.key, part: "open", on: false, plan: r?.open?.plan })),
+        });
+      } finally {
+        rmSync(join(w.user, `.claude-${suffix}`), { recursive: true });
+      }
+    },
+    SLOW,
+  );
 
   it(
     "an entry someone took out shows off even while its access is live, and turning it on writes it again",

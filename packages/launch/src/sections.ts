@@ -140,6 +140,26 @@ export const INSTANCE_ID = /^[a-z0-9][a-z0-9-]{0,39}$/u;
  * actor, writer scope, sessions and grant rows would be the hand-made entry's.
  */
 export const MANUAL_INSTANCE = "manual";
+
+/** The most characters an instance's label holds (A4 3.2). */
+export const LABEL_MAX = 40;
+
+/**
+ * An instance's label within LABEL_MAX: `head`, or `head · tail` with the tail shortened to fit,
+ * never cut inside a surrogate pair. The same head and tail give the same label wherever it is made.
+ */
+export function instanceLabel(head: string, tail = ""): string {
+  const cut = (text: string, max: number) =>
+    text
+      .slice(0, max)
+      .replace(/[\uD800-\uDBFF]$/u, "")
+      .trim();
+  const name = cut(head, LABEL_MAX);
+  const room = LABEL_MAX - name.length - " · ".length;
+  const rest = room > 0 ? cut(tail, room) : "";
+  return rest === "" ? name : `${name} · ${rest}`;
+}
+
 /** An environment variable name an instance may add. */
 export const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 
@@ -266,7 +286,7 @@ function readInstance(
       target = targetText as TargetId;
     } else r.error("target", "unknown_target");
   }
-  const label = r.string("label", { required: true, nonEmpty: true, max: 40 });
+  const label = r.string("label", { required: true, nonEmpty: true, max: LABEL_MAX });
   const account = r.string("account", { max: 40 }) ?? "";
   const spaces = r.strings("spaces", { nonEmpty: true, max: 200 }) ?? [];
   const exec = r.path("exec", platform);
