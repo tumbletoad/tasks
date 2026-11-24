@@ -11,7 +11,13 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { MCP_SERVER_KEY } from "@ttasks/brand";
 import { valueText } from "@ttasks/service/config";
 import { startService, type RunningService } from "@ttasks/service/hub";
-import { removeRuntimeDir, serviceEnv, stateOf, tempRoot } from "@ttasks/service/test/harness";
+import {
+  configOf,
+  removeRuntimeDir,
+  serviceEnv,
+  stateOf,
+  tempRoot,
+} from "@ttasks/service/test/harness";
 import { post } from "@ttasks/service/test/http-client";
 import { signIn } from "@ttasks/service/test/http-world";
 import { classSession } from "@ttasks/service/test/ops-helpers";
@@ -529,6 +535,83 @@ describe("[A3.3.13.setup.tools-table] One answer for each home's tools: what the
         }
       }
       if (existsSync(`${present()}.away`)) renameSync(`${present()}.away`, present());
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.tools-table] One answer for each home's tools: what the page and the command line say and offer, and that what is offered is done", () => {
+  test(
+    "two settings files of one folder are two rows: each says and offers its own, and turning one on or off leaves the other as it is",
+    async () => {
+      await reset();
+      const config = join(configOf(home), "machine.toml");
+      const before = existsSync(config) ? readFileSync(config, "utf8") : undefined;
+      const plain = join(user, ".claude.json");
+      const named = join(user, ".claude", ".claude.json");
+      // An instance that names ~/.claude by its variable reads the file inside that folder.
+      mkdirSync(configOf(home), { recursive: true });
+      writeFileSync(
+        config,
+        `${before ?? ""}\n[[instance]]\nid = "claude-named"\ntarget = "claude-cli"\nlabel = "Claude named"\nenv = { CLAUDE_CONFIG_DIR = ${valueText(join(user, ".claude"))} }\n`,
+      );
+      /** The two Claude Code rows of the page, by their file. */
+      const rows = async () => {
+        const view = await call<{ rows: PageRow[] }>("/api/v1/machine/apps", {
+          space: spaces.here,
+        });
+        const of = (file: string) => {
+          const found = view.rows.find(
+            (r) => r.app === "claude-code" && r.home !== null && sameFolder(r.home, file),
+          );
+          if (found === undefined) throw new Error(`no row for ${file}`);
+          return found;
+        };
+        return { plain: of(plain), named: of(named) };
+      };
+      /** The two homes as the command line's status says them, by their file. */
+      const said = async () => {
+        const ran = await runMain(["setup", "agents", "--status", "--json"], {
+          home,
+          tty: false,
+          main: { agents: { env, home: user, systemApplications: join(user, "Apps") } },
+        });
+        const homes = (
+          JSON.parse(ran.stdout) as { homes: { file: string; tools: { status: string } }[] }
+        ).homes;
+        const of = (file: string) =>
+          homes.find((h) => h.file.toLowerCase() === file.toLowerCase())?.tools.status;
+        return { plain: of(plain), named: of(named) };
+      };
+      const turn = async (row: PageRow, on: boolean) => {
+        const applied = await call<Applied>("/api/v1/machine/apps_apply", {
+          space: spaces.here,
+          changes: [{ key: row.key, part: "tools", on, plan: row.tools?.plan }],
+        });
+        expect(applied.outcomes.map((o) => o.result)).toEqual(["done"]);
+      };
+      try {
+        const first = await rows();
+        expect(first.plain.key).not.toBe(first.named.key);
+        await turn(first.plain, true);
+        let now = await rows();
+        expect(seenOnPage(now.plain.tools)).toEqual(s("on", undefined, false, true));
+        expect(seenOnPage(now.named.tools)).toEqual(s("off", undefined, true, false));
+        expect(await said()).toEqual({ plain: "on", named: "off" });
+        await turn(now.named, true);
+        now = await rows();
+        await turn(now.plain, false);
+        now = await rows();
+        expect(seenOnPage(now.plain.tools)).toEqual(s("off", undefined, true, false));
+        expect(seenOnPage(now.named.tools)).toEqual(s("on", undefined, false, true));
+        expect(await said()).toEqual({ plain: "off", named: "on" });
+        await turn(now.named, false);
+      } finally {
+        if (before === undefined) rmSync(config, { force: true });
+        else writeFileSync(config, before);
+        rmSync(named, { force: true });
+        await reset();
+      }
     },
     SLOW,
   );
