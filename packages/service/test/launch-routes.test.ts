@@ -798,7 +798,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
   });
 
   test(
-    "refused before anything is recorded: an instance not set up, a route not built here, a folder not found on this machine",
+    "refused before anything is recorded: an instance not set up, T3 Code that does not run, a folder not found on this machine",
     { timeout: 300_000 },
     async () => {
       const r = await rig("refusals");
@@ -821,7 +821,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       });
       expect(await refusal({ task: placed.ref, instance: "t3-later" })).toMatchObject({
         code: "invalid_input",
-        data: { reason: "no_route" },
+        data: { reason: "t3", t3: "not_running" },
       });
       expect(await refusal({ task: placed.ref, instance: "claude" })).toMatchObject({
         code: "invalid_input",
@@ -859,7 +859,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         ?.reference;
       expect(receipts).toMatch(/^L[0-9A-Z]{5}$/u);
       const events = readLog(r.lab.home).filter((e) => e["ev"] === "launch.unavailable");
-      expect(events.map((e) => e["reason"])).toEqual(["not_set_up", "no_route"]);
+      expect(events.map((e) => e["reason"])).toEqual(["not_set_up", "t3"]);
     },
   );
 });
@@ -1064,11 +1064,12 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
       ],
     });
     // Claude Code opens through its link, saying what it left out; with a home of its own, and
-    // Codex, it only runs here.
+    // Codex, it only runs here; T3 Code opens through its own route, whether or not it runs now.
     expect(service.instances(SPACE.id).map((t) => [t.key, t.route ?? "runs only"])).toEqual([
       ["claude-plan", "link"],
       ["claude-work", "runs only"],
       ["codex-x", "runs only"],
+      ["t3-x", "t3-mcp"],
     ]);
   });
 

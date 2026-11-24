@@ -143,6 +143,16 @@ export function instanceRefusal(
     : undefined;
 }
 
+/** Why T3 Code cannot open the task now, from the service's refusal; undefined for another. */
+export function t3Refusal(error: unknown): string | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const data = (error as Error & { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return undefined;
+  const { field, reason, t3 } = data as Record<string, unknown>;
+  if (field !== "instance" || reason !== "t3") return undefined;
+  return typeof t3 === "string" ? t3 : "no_answer";
+}
+
 /** The reasons a folder's marker gives: the person may open the task there anyway. */
 export const MARKER_REASONS: ReadonlySet<string> = new Set(["marker_missing", "marker_other"]);
 

@@ -90,6 +90,7 @@ import {
   isLaunchRef,
   MANUAL_INSTANCE,
   PACK_LOG,
+  T3_TEXT,
   type LaunchIntent,
 } from "@ttasks/launch";
 import {
@@ -3526,6 +3527,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ...(opened.copy === undefined ? {} : { copy: opened.copy }),
       text: opened.composer,
       ...(opened.note === undefined ? {} : { note: opened.note }),
+      ...(opened.linkOpened === undefined ? {} : { link_opened: opened.linkOpened }),
     };
   },
 
@@ -4949,6 +4951,10 @@ export function launchError(error: unknown): unknown {
               "Only a terminal opens this instance with the account chosen for it, and none can start here. Nothing was started.",
             hint: `Run ${CLI_NAME} doctor to see which terminal it would use.`,
           };
+        case "t3":
+          return {
+            message: error.t3 === undefined ? "T3 Code cannot open it." : T3_TEXT[error.t3],
+          };
         default:
           return { message: "This instance cannot open the task here." };
       }
@@ -4956,7 +4962,11 @@ export function launchError(error: unknown): unknown {
     return new AppError({
       code: "invalid_input",
       ...said,
-      data: { field: "instance", reason: error.reason },
+      data: {
+        field: "instance",
+        reason: error.reason,
+        ...(error.t3 === undefined ? {} : { t3: error.t3 }),
+      },
     });
   }
   if (error instanceof LaunchFolderUnavailable) {

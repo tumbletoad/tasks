@@ -794,6 +794,8 @@ export const LAUNCH_FAIL_REASONS = [
   "verify_failed",
   "agent_exited",
   "folder_mismatch",
+  "model_unavailable",
+  "pairing_denied",
   "interrupted",
   "restored",
   // The folder's own reason, when it no longer resolved right before the launch.

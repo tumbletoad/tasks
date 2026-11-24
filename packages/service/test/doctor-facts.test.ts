@@ -236,10 +236,11 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
       ]?.({}, "cli-script");
     expect(await status()).toMatchObject({ state: "not_paired" });
     expect(await status()).not.toHaveProperty("renews");
-    const expiresAt = Date.UTC(2026, 10, 18);
+    // A token that runs out in ten days.
+    const expiresAt = Date.now() + 10 * 24 * 60 * 60_000;
     const pairing = {
       grant: newGrantId(),
-      pairedAt: Date.UTC(2026, 10, 1),
+      pairedAt: Date.now(),
       reconnect: false,
       clientId: "fixture-client",
       accessToken: "fixture-access",
@@ -248,7 +249,7 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
     writePairing(files, pairing);
     expect(await status()).toMatchObject({
       state: "not_running",
-      expires_at: "2026-11-18T00:00:00.000Z",
+      expires_at: new Date(expiresAt).toISOString(),
       renews: false,
     });
     writePairing(files, { ...pairing, refreshToken: "fixture-refresh" });

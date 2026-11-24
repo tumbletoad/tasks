@@ -128,6 +128,8 @@ export interface Opened {
   readonly note: string | undefined;
   /** What the instance sets that this way of opening could not carry: a permission by name. */
   readonly leftOut: readonly string[];
+  /** T3 Code: false when the thread exists and did not come up, so Open in T3 can bring it. */
+  readonly linkOpened?: boolean;
 }
 
 /** Open's terminal as Settings shows it (the service's TerminalView): fixed words only. */
@@ -506,7 +508,19 @@ export class Api {
       text: result.text,
       note: result.note,
       leftOut: launch.left_out ?? [],
+      ...(result.link_opened === undefined ? {} : { linkOpened: result.link_opened }),
     };
+  }
+
+  /**
+   * T3 Code from the page: `start` starts it, `pair` opens its approval page in the browser
+   * (`not_running` when T3 does not run), `open` brings a launch's thread up in it.
+   */
+  async t3(
+    action: "start" | "pair" | "open",
+    launch?: string,
+  ): Promise<{ readonly opened: boolean | "not_running" }> {
+    return this.#result(`/api/v1/launch/t3_${action}`, launch === undefined ? {} : { launch });
   }
 
   /** Sets one of this machine's settings of the page, or resets it with null. */
