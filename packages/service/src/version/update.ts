@@ -16,19 +16,23 @@
 //   5. The candidate's self-test runs through its own version-local launcher
 //      (`versions/<v>/bin/ttasks doctor --self-test --json`): integrity, the runtime gate and the
 //      candidate's checks. Authenticity was settled in step 2; this is the functional half.
-//   6. The journal records each stable launcher the switch changes, with its old and new SHA-256
+//   6. The restart is decided on what is so now (decideRestart): a service that runs is restarted
+//      only once the person agreed, its runs held first; otherwise the update stops here with
+//      nothing changed. The spaces of that service are noted, in memory only.
+//   7. The journal records each stable launcher the switch changes, with its old and new SHA-256
 //      (phase `staged`), and on Windows each one is staged as `bin\<name>.new` (checked, flushed)
 //      before `current` changes. Then `current` is switched atomically
 //      (`switched`), then each changed launcher is swapped for its staged copy, one at a time,
 //      `ttasks.exe` first: by one rename where Windows allows it, else by renaming the running one
 //      aside and the new one in (switch.ts placeLauncher; `launchers_done`), and install.json
 //      records the version.
-//   7. The service is restarted through the OS: a supervised service is asked for
+//   8. The service is restarted through the OS: a supervised service is asked for
 //      `service/shutdown {restart: true}` and its manager starts it again from the new current;
 //      one nobody supervises is stopped and started. The update waits up to 30 s for a handshake
 //      that names the new version. Sessions keep running in their own processes and reconnect;
-//      background runs were settled in step 3.
-//   8. The journal goes and the lock is let go. A failure after the switch rolls back through the
+//      background runs were settled in step 3. Then it waits up to SETTLE_MS for every space it
+//      noted to open or fail to, and the result says how each one compares with before.
+//   9. The journal goes and the lock is let go. A failure after the switch rolls back through the
 //      same repair: phase `rolling_back`, current and the launchers back, the old service again,
 //      the reason in install.json for doctor.
 // It never removes a version folder and never touches a person's data: spaces, `<config>` and
@@ -90,7 +94,6 @@ import {
   cleanLaunchers,
   currentFor,
   currentVersion,
-  digestOf,
   exists,
   InstallError,
   isInstalled,
@@ -113,6 +116,15 @@ import {
 export const LOCK_WAIT_MS = 10 * 60_000;
 /** How long the update waits for the restarted service to name the new version (A2 3.12.6 step 12). */
 export const RESTART_WAIT_MS = 30_000;
+/**
+ * How long the update waits, once the restarted service names the new version, for every space
+ * it served before to open or fail to: a migration behind its backup can take a while.
+ */
+export const SETTLE_MS = 120_000;
+/** How often the update asks the restarted service how its spaces are while it waits. */
+const SETTLE_POLL_MS = 500;
+/** After this long waiting for the spaces, the update says that it waits, and how long at most. */
+const SETTLE_TELL_MS = 5_000;
 /** How long the update waits for running background runs before it asks what to do. */
 export const RUNS_WAIT_MS = 15 * 60_000;
 /** The self-test's bound: a space, an endpoint and the bridge, each in a folder of its own. */
@@ -161,10 +173,40 @@ export { InstallError as UpdateError } from "./switch.ts";
 // ---------------------------------------------------------------------------------------------
 // The service, through the OS
 
+/** A migration the service ran on a space, with the backup taken just before it. */
+export interface SpaceMigration {
+  readonly from: string;
+  readonly to: string;
+  readonly at: string;
+  readonly backup?: string;
+  /** The folder that backup is in, when it is not the one set for the space. */
+  readonly backup_folder?: string;
+  /** Whether that backup is still in the space's backups folder. */
+  readonly backup_listed?: boolean;
+}
+
+/**
+ * A space as the service's status names it (hub/spaces.ts SpaceView): its state and the service's
+ * own words for it, which doctor and the page show too. Its name is for people, never the log.
+ */
+export interface SpaceNote {
+  /** The ID its entry names: the same before and after a restart. */
+  readonly registered?: string;
+  readonly id?: string;
+  readonly name?: string;
+  readonly state: string;
+  readonly reason?: string;
+  /** Why it is read-only or unavailable, and what to run (hub/space-ways.ts). */
+  readonly message?: string;
+  readonly migrated?: SpaceMigration;
+}
+
 /** The running service as an update sees it. */
 export interface RunningService {
   readonly version: string;
   readonly manager: string;
+  /** Its spaces, as its status names them. */
+  readonly spaces: readonly SpaceNote[];
 }
 
 /**
@@ -211,7 +253,11 @@ export function osServiceControl(ctx: ServiceContext, env: Env): ServiceControl 
     running: async () => {
       const probe = await ctx.probe();
       return probe.answers
-        ? { version: probe.status.version, manager: probe.status.manager }
+        ? {
+            version: probe.status.version,
+            manager: probe.status.manager,
+            spaces: spaceNotes(probe.status.spaces),
+          }
         : undefined;
     },
     restart: async ({ supervisorChanged }) => {
@@ -242,6 +288,52 @@ export function osServiceControl(ctx: ServiceContext, env: Env): ServiceControl 
     holdRuns: () => holdRuns(ctx.layout.state, ctx.installId, env),
     delegateUnit: () => delegateUnit(ctx),
   };
+}
+
+const text = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined;
+
+/** The spaces of a status, which another version's service may have written: checked here. */
+function spaceNotes(value: unknown): SpaceNote[] {
+  if (!Array.isArray(value)) return [];
+  const notes: SpaceNote[] = [];
+  for (const item of value as unknown[]) {
+    if (typeof item !== "object" || item === null) continue;
+    const row = item as Record<string, unknown>;
+    const state = text(row["state"]);
+    if (state === undefined) continue;
+    const migrated = row["migrated"] as Record<string, unknown> | undefined;
+    const from = text(migrated?.["from"]);
+    const to = text(migrated?.["to"]);
+    const at = text(migrated?.["at"]);
+    const backup = text(migrated?.["backup"]);
+    const folder = text(migrated?.["backup_folder"]);
+    const listed = migrated?.["backup_listed"];
+    const fields: [string, string | undefined][] = [
+      ["registered", text(row["registered"])],
+      ["id", text(row["id"])],
+      ["name", text(row["name"])],
+      ["reason", text(row["reason"])],
+      ["message", text(row["message"])],
+    ];
+    notes.push({
+      state,
+      ...Object.fromEntries(fields.filter(([, v]) => v !== undefined)),
+      ...(from === undefined || to === undefined || at === undefined
+        ? {}
+        : {
+            migrated: {
+              from,
+              to,
+              at,
+              ...(backup === undefined ? {} : { backup }),
+              ...(folder === undefined ? {} : { backup_folder: folder }),
+              ...(typeof listed === "boolean" ? { backup_listed: listed } : {}),
+            },
+          }),
+    });
+  }
+  return notes;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -333,6 +425,14 @@ export interface UpdateOptions {
   readonly say?: (line: string) => void;
   readonly lockWaitMs?: number;
   readonly restartWaitMs?: number;
+  /** How long the update waits for the restarted service's spaces. Default: SETTLE_MS. */
+  readonly settleWaitMs?: number;
+  /**
+   * Whether the person agrees to restart the service, asked when one runs at the switch: a
+   * command line asks at most once and keeps an answer given before. Without it a service that
+   * runs is restarted, as the caller decided already.
+   */
+  readonly agreeRestart?: () => Promise<boolean>;
   readonly now?: () => Date;
   /**
    * What to do about background runs a restart would cut short, once the wait for them is over:
@@ -345,8 +445,33 @@ export interface UpdateOptions {
   };
 }
 
+/** How a space the service served before the switch came through the restart. */
+export interface SpaceCompared {
+  readonly id: string;
+  /** Its name, else its ID. For people, never the log. */
+  readonly name: string;
+  readonly before: SpaceNote;
+  /** As the restarted service names it at the end of the wait; undefined when it named none. */
+  readonly after: SpaceNote | undefined;
+  /** Less usable than before, as usable, or not settled within the bound. */
+  readonly verdict: "worse" | "as_before" | "unsettled";
+}
+
+/** Every space the service served before the switch, after the restart. */
+export interface SpacesReport {
+  /** How long the update waited at most for them to settle. */
+  readonly boundMs: number;
+  readonly spaces: readonly SpaceCompared[];
+}
+
 export type UpdateResult =
-  | { readonly outcome: "updated"; readonly from: string; readonly to: string }
+  | {
+      readonly outcome: "updated";
+      readonly from: string;
+      readonly to: string;
+      /** When the update restarted a service that served spaces. */
+      readonly spaces?: SpacesReport;
+    }
   | { readonly outcome: "current"; readonly version: string }
   | { readonly outcome: "repaired"; readonly repair: RepairOutcome; readonly current: string };
 
@@ -776,6 +901,126 @@ interface Switch {
   readonly install: Install;
   readonly options: UpdateOptions;
   journal: Journal;
+  /** The spaces of the service the switch restarts, as they were right before it. */
+  readonly before: readonly SpaceNote[] | undefined;
+}
+
+/**
+ * The restart is decided right before the switch, on what is so then. A service that runs is
+ * restarted only when the person agrees (agreeRestart), with its runs held and waited for first
+ * if they were not yet; otherwise the update stops here, with the journal gone and nothing
+ * changed. One that ran when the journal was written and has stopped since is brought back. The
+ * journal's `service` says the decision; `before` holds the spaces of the service that runs.
+ */
+async function decideRestart(
+  install: Install,
+  options: UpdateOptions,
+  journal: Journal,
+  held: RunsHold | undefined,
+): Promise<{
+  journal: Journal;
+  held: RunsHold | undefined;
+  before: readonly SpaceNote[] | undefined;
+}> {
+  const running = await options.control?.running();
+  if (running === undefined) return { journal, held, before: undefined };
+  try {
+    if (!(await (options.agreeRestart?.() ?? true))) {
+      throw new InstallError(
+        "The service started while the update ran, and restarting it was not agreed, so the update stopped before the switch. Nothing was changed. Run it again; with --yes it restarts the service without a question.",
+        2,
+      );
+    }
+    let hold = held;
+    if (hold !== undefined && !hold.held) {
+      // The service that was held has ended since: the one that runs now holds runs of its own.
+      hold.release();
+      hold = undefined;
+    }
+    hold ??= await waitForRuns(options);
+    return { journal: { ...journal, service: true }, held: hold, before: running.spaces };
+  } catch (error) {
+    removeJournal(install.state);
+    throw error;
+  }
+}
+
+/** A space as the update compares it: by the ID its entry names, the same after a restart. */
+const idOf = (space: SpaceNote): string | undefined => space.registered ?? space.id;
+
+/**
+ * How usable a state is: open for changes 2, readable 1, neither 0; undefined while it is still
+ * opening or closing, which before the switch counts as on its way to open.
+ */
+const usable = (state: string): number | undefined =>
+  state === "open"
+    ? 2
+    : state === "read_only"
+      ? 1
+      : state === "unavailable" || state === "closed"
+        ? 0
+        : undefined;
+
+/** The most usable of a space's entries: two copies of one space are one space. */
+const best = (entries: readonly SpaceNote[]): SpaceNote | undefined =>
+  entries.reduce<SpaceNote | undefined>(
+    (top, entry) =>
+      top === undefined || (usable(entry.state) ?? 2) > (usable(top.state) ?? 2) ? entry : top,
+    undefined,
+  );
+
+const duration = (ms: number): string =>
+  ms >= 60_000
+    ? `${String(Math.round(ms / 60_000))} minutes`
+    : `${String(Math.round(ms / 1000))} s`;
+
+/**
+ * After the restart: waits until every space the service served before the switch is named by
+ * the restarted one and has opened or failed to, at most `settleWaitMs`, then compares. A space it
+ * does not name yet is not settled: a service says ready before its spaces are handed over. A
+ * space closed before is the person's choice and is not compared. Undefined when none was served.
+ */
+async function settleSpaces(
+  control: ServiceControl,
+  options: UpdateOptions,
+  version: string,
+  before: readonly SpaceNote[],
+): Promise<SpacesReport | undefined> {
+  const ids: string[] = [];
+  for (const space of before) {
+    const id = idOf(space);
+    if (id !== undefined && space.state !== "closed" && !ids.includes(id)) ids.push(id);
+  }
+  if (ids.length === 0) return undefined;
+  const of = (list: readonly SpaceNote[], id: string) => list.filter((space) => idOf(space) === id);
+  const settled = (list: readonly SpaceNote[], id: string) => {
+    const entries = of(list, id);
+    return entries.length > 0 && entries.every((space) => usable(space.state) !== undefined);
+  };
+  const boundMs = options.settleWaitMs ?? SETTLE_MS;
+  const start = Date.now();
+  let told = false;
+  let after: readonly SpaceNote[] = [];
+  for (;;) {
+    const running = await control.running().catch(() => undefined);
+    if (running?.version === version) after = running.spaces;
+    if (ids.every((id) => settled(after, id)) || Date.now() - start >= boundMs) break;
+    if (!told && Date.now() - start >= SETTLE_TELL_MS) {
+      say(options, `Waiting up to ${duration(boundMs)} for the spaces to open.`);
+      told = true;
+    }
+    await pause(Math.max(1, Math.min(SETTLE_POLL_MS, start + boundMs - Date.now())));
+  }
+  const spaces = ids.flatMap((id): SpaceCompared[] => {
+    const was = best(of(before, id).filter((space) => space.state !== "closed"));
+    if (was === undefined) return [];
+    const now = best(of(after, id));
+    const name = was.name ?? now?.name ?? id;
+    if (!settled(after, id)) return [{ id, name, before: was, after: now, verdict: "unsettled" }];
+    const worse = (usable(now?.state ?? "") ?? 0) < (usable(was.state) ?? 2);
+    return [{ id, name, before: was, after: now, verdict: worse ? "worse" : "as_before" }];
+  });
+  return { boundMs, spaces };
 }
 
 const at = async (options: UpdateOptions, point: UpdatePoint): Promise<void> => {
@@ -836,6 +1081,7 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
   }
   await at(options, "staged");
   let restarted = false;
+  let spaces: SpacesReport | undefined;
   try {
     writeCurrent(root, currentFor(to, platform), platform);
     await at(options, "current");
@@ -867,7 +1113,7 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
     if (await control?.delegateUnit?.().catch(() => false)) {
       say(options, "The service's systemd unit now has Delegate=yes, which background runs need.");
     }
-    if (control !== undefined && (run.journal.service || (await control.running()) !== undefined)) {
+    if (control !== undefined && run.journal.service) {
       write({ ...run.journal, phase: "restarted" });
       restarted = true;
       say(options, `Restarting the service on ${to}. Sessions keep running and reconnect.`);
@@ -881,6 +1127,14 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
           `The service did not come back on ${to} within ${String(Math.round((options.restartWaitMs ?? RESTART_WAIT_MS) / 1000))} s.`,
         );
       }
+      spaces =
+        run.before === undefined ? undefined : await settleSpaces(control, options, to, run.before);
+    } else if ((await control?.running()) !== undefined) {
+      // Started after the decision: it is not restarted unasked.
+      say(
+        options,
+        `The service started during the update and still runs ${from}. To run ${to}, restart it: ${PRODUCT_ID} service restart`,
+      );
     }
   } catch (error) {
     return await rollBack(run, error, restarted);
@@ -898,7 +1152,7 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
   removeJournal(state);
   await at(options, "done");
   cleanLaunchers(root);
-  return { outcome: "updated", from, to };
+  return { outcome: "updated", from, to, ...(spaces === undefined ? {} : { spaces }) };
 }
 
 /** A step of the switch that failed, with the reason install.json records. */
@@ -1027,7 +1281,7 @@ export async function updateFromArchive(
         5,
       );
     }
-    const held = await waitForRuns(options);
+    let held = await waitForRuns(options);
     try {
       const control = options.control;
       const journal: Journal = {
@@ -1086,7 +1340,9 @@ export async function updateFromArchive(
           1,
         );
       }
-      return await switchTo({ install, options, journal: { ...journal, staging: null } });
+      const decided = await decideRestart(install, options, { ...journal, staging: null }, held);
+      held = decided.held;
+      return await switchTo({ install, options, ...decided });
     } finally {
       held?.release();
     }
@@ -1123,7 +1379,7 @@ export async function rollbackUpdate(options: UpdateOptions): Promise<UpdateResu
         1,
       );
     }
-    const held = await waitForRuns(options);
+    let held = await waitForRuns(options);
     try {
       const control = options.control;
       const journal: Journal = {
@@ -1142,7 +1398,9 @@ export async function rollbackUpdate(options: UpdateOptions): Promise<UpdateResu
       };
       writeJournal(install.state, journal);
       await at(options, "prepared");
-      return await switchTo({ install, options, journal });
+      const decided = await decideRestart(install, options, journal, held);
+      held = decided.held;
+      return await switchTo({ install, options, ...decided });
     } finally {
       held?.release();
     }

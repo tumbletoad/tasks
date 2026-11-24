@@ -1136,7 +1136,13 @@ describe("[A2.3.12.6.update.spaces] an update ends by saying, for every space, w
       open("sp_work", "Work"),
       open("sp_home", "Home"),
       open("sp_notes", "Notes"),
-      { registered: "sp_copy", id: "sp_copy", name: "Copy", state: "read_only", reason: "read_only_copy" },
+      {
+        registered: "sp_copy",
+        id: "sp_copy",
+        name: "Copy",
+        state: "read_only",
+        reason: "read_only_copy",
+      },
       { registered: "sp_shut", state: "closed" },
     ];
     const settled: SpaceNote[] = [
@@ -1150,15 +1156,17 @@ describe("[A2.3.12.6.update.spaces] an update ends by saying, for every space, w
       },
       { registered: "sp_home", state: "unavailable", reason: "open_failed", message: OPEN_FAILED },
       open("sp_notes", "Notes"),
-      { registered: "sp_copy", id: "sp_copy", name: "Copy", state: "read_only", reason: "read_only_copy" },
+      {
+        registered: "sp_copy",
+        id: "sp_copy",
+        name: "Copy",
+        state: "read_only",
+        reason: "read_only_copy",
+      },
       { registered: "sp_shut", state: "closed" },
     ];
     // The restarted service names no space at first, then each one opening, then how they opened.
-    w.control.spacesAfter = [
-      [],
-      settled.map((space) => ({ registered: space.registered, state: "opening" })),
-      settled,
-    ];
+    w.control.spacesAfter = [[], settled.map((space) => ({ ...space, state: "opening" })), settled];
     const result = await updateFromArchive(release.archive, w.options);
     expect(result).toMatchObject({ outcome: "updated", from: "0.1.0", to: "0.2.0" });
     if (result.outcome !== "updated") throw new Error("not updated");
@@ -1166,15 +1174,27 @@ describe("[A2.3.12.6.update.spaces] an update ends by saying, for every space, w
       result.spaces?.spaces.map((s) => ({
         name: s.name,
         verdict: s.verdict,
-        before: s.before?.state,
+        before: s.before.state,
         after: s.after?.state,
         message: s.after?.message,
       })),
     ).toEqual([
       { name: "Work", verdict: "worse", before: "open", after: "read_only", message: FAILED },
-      { name: "Home", verdict: "worse", before: "open", after: "unavailable", message: OPEN_FAILED },
+      {
+        name: "Home",
+        verdict: "worse",
+        before: "open",
+        after: "unavailable",
+        message: OPEN_FAILED,
+      },
       { name: "Notes", verdict: "as_before", before: "open", after: "open", message: undefined },
-      { name: "Copy", verdict: "as_before", before: "read_only", after: "read_only", message: undefined },
+      {
+        name: "Copy",
+        verdict: "as_before",
+        before: "read_only",
+        after: "read_only",
+        message: undefined,
+      },
     ]);
   });
 
@@ -1240,7 +1260,6 @@ describe("[A2.3.12.6.update.way-back] an update cut off at any step and run agai
     },
   );
 });
-
 
 // ---------------------------------------------------------------------------------------------
 

@@ -61,9 +61,12 @@ const UPDATE_HELP = `Usage: ${CLI_NAME} update --from <archive> [--yes] [--stop-
 
 Updates this install from a signed release archive, goes back to the version before the last
 update, or finishes an update that was cut off. It restarts the service, and asks once in a
-terminal before it does. The restart ends background runs, so new runs wait meanwhile and the
-update waits up to 15 minutes for the running ones; then it asks whether to stop them or give
-the update up.
+terminal before it does, also about a service that started while it ran. The restart ends
+background runs, so new runs wait meanwhile and the update waits up to 15 minutes for the
+running ones; then it asks whether to stop them or give the update up.
+
+After the restart it waits up to 2 minutes for the spaces to open, and says which one is less
+usable than before, why, and how to go back. Then it exits 8.
 
   --from <archive>  The release archive to update from
   --rollback        Go back to the version before the last update

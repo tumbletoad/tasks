@@ -51,7 +51,10 @@ export interface Journal {
   readonly started_at: string;
   /** `versions/<staging>` while the archive is unpacked; null once it is gone or never made. */
   readonly staging: string | null;
-  /** Whether this install's service answered when it began: the update brings it back. */
+  /**
+   * Whether the update restarts this install's service, and a repair brings it back: it ran when
+   * the update began, or at the switch with the person's agreement. Always false for an install.
+   */
   readonly service: boolean;
   /**
    * Whether `to` passed its self-test: true from phase `staged` on (a `--rollback` tests its target

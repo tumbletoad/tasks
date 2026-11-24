@@ -355,6 +355,48 @@ interface Status {
 }
 
 /**
+ * The spaces row: each space's state, with the service's own words for it. A space the person
+ * closed, and a restored copy or another machine's space that is read-only by design, are as they
+ * should be. One that did not open, is read-only because its migration failed, or whose backups
+ * are not working is a warning. The migrations the service ran since `startedMs` are named.
+ */
+export function spacesCheck(spaces: NonNullable<Status["spaces"]>, startedMs: number): Check {
+  const bad = spaces.filter(
+    (s) =>
+      (s.state !== "open" && s.state !== "read_only" && s.state !== "closed") ||
+      (s.state === "read_only" && s.reason === "migration_failed") ||
+      s.backup !== undefined,
+  );
+  // A space's way out names `<folder>`, which ttasks space list shows: this row holds no path.
+  const folders = spaces.some(
+    (s) =>
+      s.message?.includes("<folder>") === true || s.backup?.message?.includes("<folder>") === true,
+  )
+    ? " Run ttasks space list to see each space's folder."
+    : "";
+  return {
+    id: "spaces",
+    status: bad.length > 0 ? "warn" : "ok",
+    detail:
+      spaces.length === 0
+        ? "No spaces."
+        : spaces
+            .map((s) => {
+              const name = s.name ?? s.id ?? `entry ${String(s.entry)}`;
+              const reason = s.reason === undefined ? "" : ` (${s.reason})`;
+              const message = s.message === undefined ? "" : `. ${s.message}`;
+              const migrated =
+                s.migrated !== undefined && migratedSince(s.migrated, startedMs)
+                  ? `. ${migratedLine(s.migrated)}`
+                  : "";
+              const backup = s.backup?.message === undefined ? "" : `. ${s.backup.message}`;
+              return `${name}: ${s.state}${reason}${message}${migrated}${backup}`;
+            })
+            .join("; ") + folders,
+  };
+}
+
+/**
  * The request path, end to end: `op/list` names the entry of every verb this CLI has, and
  * `space.status` answers through `op/call` for each served space, so a service whose status
  * answers while its operations fail does not pass. One folder serves a space at a time, so each
@@ -480,43 +522,8 @@ async function serviceChecks(
     });
     checks.push({ id: "endpoint", status: "ok", detail: "The handshake verified with ipc.key." });
     const spaces = status.spaces ?? [];
-    // A space the person closed is as they left it, not a problem. One whose backups are not
-    // working is.
-    const bad = spaces.filter(
-      (s) =>
-        (s.state !== "open" && s.state !== "read_only" && s.state !== "closed") ||
-        s.backup !== undefined,
-    );
-    // A space's way out names `<folder>`, which ttasks space list shows: this row holds no path.
-    const folders = spaces.some(
-      (s) =>
-        s.message?.includes("<folder>") === true ||
-        s.backup?.message?.includes("<folder>") === true,
-    )
-      ? " Run ttasks space list to see each space's folder."
-      : "";
     // What this run of the service migrated: an update shows here until the next restart.
-    const started = Date.now() - (status.uptime_ms ?? 0);
-    checks.push({
-      id: "spaces",
-      status: bad.length > 0 ? "warn" : "ok",
-      detail:
-        spaces.length === 0
-          ? "No spaces."
-          : spaces
-              .map((s) => {
-                const name = s.name ?? s.id ?? `entry ${String(s.entry)}`;
-                const reason = s.reason === undefined ? "" : ` (${s.reason})`;
-                const message = s.message === undefined ? "" : `. ${s.message}`;
-                const migrated =
-                  s.migrated !== undefined && migratedSince(s.migrated, started)
-                    ? `. ${migratedLine(s.migrated)}`
-                    : "";
-                const backup = s.backup?.message === undefined ? "" : `. ${s.backup.message}`;
-                return `${name}: ${s.state}${reason}${message}${migrated}${backup}`;
-              })
-              .join("; ") + folders,
-    });
+    checks.push(spacesCheck(spaces, Date.now() - (status.uptime_ms ?? 0)));
     checks.push(await requestCheck(session, spaces));
     checks.push(await httpCheck(status.http, io.platform, io.env));
     checks.push(runsCheck(status.runs));
