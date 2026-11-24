@@ -287,7 +287,7 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
   unexpected_entry: "the entry is not there as setup wrote it",
   busy: "Claude Code kept its settings file locked while setup waited: try again in a moment",
   other_space: `it names another space: run ${CLI_NAME} setup agents --remove first`,
-  grant_failed: `${PRODUCT_NAME}'s service did not give it its grant row`,
+  grant_failed: `${PRODUCT_NAME}'s service did not confirm that it gave it access`,
   instance_taken: `another agent home is registered as this instance: run ${CLI_NAME} setup agents again for a free one, or give this home an instance of its own in machine.toml`,
   record_unreadable: `${PRODUCT_NAME} cannot read its own record of the agent homes, so it changes no file there: ${CLI_NAME} setup agents --remove still turns access off`,
   revoke_failed: `${PRODUCT_NAME}'s service did not confirm that it took its access back, so nothing else was changed`,
