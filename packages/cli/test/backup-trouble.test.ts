@@ -63,10 +63,11 @@ describe("[A1.5.backup.failure-shown] a failed daily backup is shown until a bac
       ownerLabel: "Mira Okafor",
       machineId: machine,
     });
-    // A file where the backups folder goes: the daily backup cannot be written.
-    const blocker = backupsOf(home, created.space.spaceId);
-    mkdirSync(dirname(blocker));
-    writeFileSync(blocker, "not a folder");
+    // A file where the backups folder goes, and where the space's own would take its place: the
+    // daily backup cannot be written.
+    const blockers = [backupsOf(home, created.space.spaceId), join(folder, "backups")];
+    mkdirSync(dirname(blockers[0] ?? ""));
+    for (const blocker of blockers) writeFileSync(blocker, "not a folder");
     registerSpaces(home, [folder]);
     const service = await startService({
       env: serviceEnv(home),
@@ -95,7 +96,7 @@ describe("[A1.5.backup.failure-shown] a failed daily backup is shown until a bac
 
     // The person frees the folder and makes a backup now: it passes its trial restore, and the
     // report is gone.
-    rmSync(blocker);
+    for (const blocker of blockers) rmSync(blocker);
     const made = await runMain(["space", "backup", folder], { home, tty: true });
     expect(made.code, made.stderr).toBe(0);
     expect(service.spaces()[0]?.backup).toBeUndefined();
