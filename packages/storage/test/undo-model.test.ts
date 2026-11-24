@@ -28,6 +28,7 @@ import fc from "fast-check";
 import { afterAll, describe, expect, test } from "vitest";
 import { newerBy } from "@ttasks/contracts/newer-work";
 import { newId, type Id } from "../src/ids.ts";
+import { appliedSql } from "../src/write/history.ts";
 import { openWriter } from "../src/open.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
@@ -112,8 +113,18 @@ interface ModelCommit {
    * each redo of it, also one that wrote nothing.
    */
   last: number;
-  /** When it last wrote each row's field, by `field` (a create's by its tombstone): its seq, or a redo that wrote that field again. */
+  /**
+   * When it last wrote each row's field, by `field` (a create's by its tombstone): its seq, or a
+   * redo that wrote that field again.
+   */
   wrote: Map<string, number>;
+  /** When it last wrote anything: its seq, or a redo that wrote a row again. */
+  rewrote: number;
+  /**
+   * An undo's: the step it undid, and when that step last wrote anything before it. A script's
+   * change after then is the one the undo's answer names (appliedSql), however often it is sent.
+   */
+  noted?: { step: number; from: number };
 }
 
 type Patchable = "summary" | "priority" | "status" | "due";
@@ -501,6 +512,7 @@ class Model {
       rows,
       last: seq,
       wrote: new Map(),
+      rewrote: seq,
     };
     this.commits.set(seq, commit);
     this.lastSeq = seq;
@@ -685,6 +697,7 @@ class Model {
   /** A redo of `target` as commit `redo`: the step is applied again, and so is each row it wrote. */
   redone(target: ModelCommit, redo: ModelCommit): void {
     target.last = redo.seq;
+    if (redo.rows.length > 0) target.rewrote = redo.seq;
     for (const row of redo.rows) target.wrote.set(fieldKey(row), redo.seq);
   }
 
@@ -985,6 +998,7 @@ class Model {
       rows: inverted,
       last: seq,
       wrote: new Map(),
+      rewrote: seq,
     };
     this.commits.set(seq, commit);
     this.lastSeq = seq;
@@ -1523,6 +1537,7 @@ const property = (seen: Seen) =>
             expect(named(ids.tasks, result.conflicts)).toEqual(sorted(left.named));
           }
           const u = model.invert(target.rows, skip, s.who, "undo");
+          u.noted = { step: target.seq, from: target.rewrote };
           target.status = "undone";
           target.undoneBy = u.seq;
           expect(result.seq).toBe(u.seq);
@@ -1649,6 +1664,15 @@ const property = (seen: Seen) =>
           expect(cell.fv, `${k} fv`).toBeGreaterThanOrEqual(before.get(k)?.fv ?? 0);
         }
         expectModel(fx, ids, model);
+        for (const c of model.commits.values()) {
+          if (c.noted === undefined) continue;
+          const from = fx.reader
+            .prepare(`SELECT ${appliedSql(String(c.noted.step), String(c.seq))} AS seq`)
+            .get()?.["seq"];
+          expect(from, "an undo's note counts from the step's last write before it").toBe(
+            c.noted.from,
+          );
+        }
       }
       checkSpace(fx.reader, space);
       checkHistory(fx.reader);
