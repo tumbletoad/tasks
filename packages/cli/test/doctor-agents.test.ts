@@ -23,6 +23,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { stateOf } from "@ttasks/service/test/harness";
 import { classSession } from "@ttasks/service/test/ops-helpers";
 import { MCP_SERVER_KEY } from "@ttasks/brand";
 import {
@@ -253,7 +254,15 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
       // doctor checks the entry in each file as its reader reads it.
       const inner = join(user, ".claude", ".claude.json");
       writeFileSync(inner, "{}\n");
-      expect(row(await doctor(), "t3.homes")?.detail).toContain("Claude Code) runs in a home");
+      const lacking = await doctor();
+      expect(row(lacking, "t3.homes")?.detail).toContain("Claude Code) runs in a home");
+      // Doctor names the file that needs something: without the entry, then one it cannot read
+      // (pull request 193's first review, point 6).
+      expect(row(lacking, "mcp.claude.further")).toMatchObject({ status: "warn" });
+      expect(row(lacking, "mcp.claude.further")?.detail).toContain("this file has no");
+      writeFileSync(inner, '{"theme": "dark",}\n');
+      expect(row(await doctor(), "mcp.claude.further")).toMatchObject({ status: "fail" });
+      writeFileSync(inner, "{}\n");
       await applyAll(["--app", "t3"]);
       const both = await doctor();
       expect(row(both, "mcp.claude")?.status).toBe("ok");
@@ -261,6 +270,10 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
       expect(row(both, "mcp.claude.further")?.detail).toContain(
         "Claude Code (claude, the .claude.json inside its folder)",
       );
+
+      const furtherFile = join(stateOf(home), "setup", "agents-further.json");
+      const furtherRecord = readFileSync(furtherFile);
+      const innerWithEntry = readFileSync(inner);
 
       // Remove: every entry and row back, every file as it was (T3's file only by this test).
       const removed = await run(["setup", "agents", "--remove", "--json"]);
@@ -271,6 +284,15 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
       // Code made is as it made it.
       expect(existsSync(join(user, ".codex-t3x", "config.toml"))).toBe(false);
       expect(readFileSync(inner, "utf8")).toBe("{}\n");
+
+      // An earlier build's Off left the further file's entry and its record: doctor still sees a
+      // home set up, and names that file.
+      writeFileSync(furtherFile, furtherRecord);
+      writeFileSync(inner, innerWithEntry);
+      const left = await doctor();
+      expect(row(left, "agents")).toBeUndefined();
+      expect(row(left, "mcp.claude.further")).toBeDefined();
+      rmSync(furtherFile);
       rmSync(inner);
     },
     SLOW,

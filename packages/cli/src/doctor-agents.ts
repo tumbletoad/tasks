@@ -62,6 +62,7 @@ import {
   manualRemoval,
   readBlockRecords,
   homeGroups,
+  FURTHER_FILE,
   readRecords,
   readsHome,
   recordArgv,
@@ -270,6 +271,13 @@ export async function agentChecks(
       ...SKIPPED_ROWS,
     ];
   }
+  // The further files' records too: a record of either file is a home set up. One that cannot be
+  // read is named on its file's row below.
+  try {
+    records = [...records, ...readRecords(state, FURTHER_FILE)];
+  } catch (error) {
+    if (!(error instanceof SetupStateInvalid)) throw error;
+  }
   checks.push(instancesCheck(io, records, options));
   let session: Session | undefined;
   try {
@@ -310,7 +318,22 @@ export async function agentChecks(
     const { input } = await setupInputOf(io, options);
     const surveyed = await survey(input);
     const resolve = (argv: readonly string[]) => options.agents?.resolve?.(argv) ?? argv;
-    const views = surveyed.filter((view) => view.record !== undefined);
+    // Each file setup has a record of, and each other file of a home set up that needs something:
+    // one setup cannot read, or one without the entry.
+    const setUp = (v: HomeView) =>
+      surveyed.some(
+        (o) =>
+          o.record !== undefined &&
+          o.home.app === v.home.app &&
+          samePath(input.platform, o.home.home, v.home.home),
+      );
+    const views = surveyed.filter(
+      (v) =>
+        v.record !== undefined ||
+        (setUp(v) &&
+          (v.state === "not_registered" ||
+            (v.state === "refused" && v.refusal !== "foreign_entry"))),
+    );
     const rowOf = (view: HomeView) =>
       rows?.find(
         (r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home),
@@ -362,7 +385,16 @@ export async function agentChecks(
     if (!live) checks.push(liveSkipped(false, ""));
     else {
       const liveMs = options.agents?.liveMs ?? LIVE_MS;
-      checks.push(...(await liveChecks(input, state, views, call, resolve, liveMs)));
+      checks.push(
+        ...(await liveChecks(
+          input,
+          state,
+          views.filter((v) => v.record !== undefined),
+          call,
+          resolve,
+          liveMs,
+        )),
+      );
     }
     return checks;
   } finally {
@@ -440,6 +472,7 @@ const REFUSED: Readonly<Record<string, string>> = {
     "its file is now managed elsewhere (a link, generated, listed, or tracked by another git repository)",
   unsafe: "its file or folder now belongs to another user, or anyone can change it",
   not_set_up: "its file is gone",
+  record_unreadable: "setup cannot read its own record of this file",
 };
 
 /** `mcp.<instance>`: the entry setup wrote, as the file and the app itself see it. */
@@ -452,7 +485,24 @@ async function mcpCheck(
   const id = fileId("mcp", view);
   const fix = `${CLI_NAME} setup agents --remove, then ${CLI_NAME} setup agents and the apply it prints`;
   const record = view.record;
-  if (record === undefined) return { id, status: "skip", detail: "Not registered by setup." };
+  if (record === undefined) {
+    // A file of a home set up whose reader gets no entry from setup.
+    if (view.state === "refused") {
+      return {
+        id,
+        status: "fail",
+        detail: `${name(view)}: setup cannot change this file: ${REFUSED[view.refusal ?? ""] ?? "the file is not in a state setup understands"}, so an app that reads it cannot reach ${PRODUCT_NAME}. Fix the file, then run: ${CLI_NAME} setup agents --status`,
+      };
+    }
+    if (view.state === "not_registered") {
+      return {
+        id,
+        status: "warn",
+        detail: `${name(view)}: this file has no ${PRODUCT_NAME} entry, so an app that reads it cannot reach ${PRODUCT_NAME}. Run: ${CLI_NAME} setup agents, then the apply it prints`,
+      };
+    }
+    return { id, status: "skip", detail: "Not registered by setup." };
+  }
   // Whether its tools start: the answer Settings and setup agents give (toolsOf).
   const answer = toolsOf(
     row === undefined ? input : { ...input, rows: row === null ? [] : [row] },
