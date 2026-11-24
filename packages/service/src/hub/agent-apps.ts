@@ -41,22 +41,26 @@ import type { ConnectionClass, Grant } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
 import {
   appLabel,
-  applyHome,
+  applyFiles,
   blockOf,
   entryLines,
   LockBusy,
   planChange,
   planOf,
   planToken,
-  recordFile,
-  removeHome,
+  removeFiles,
+  setupRecords,
   rowAccess,
   runCommand,
   samePath,
   SetupStateInvalid,
   SetupStateUnsafe,
+  SetupStateUnwritable,
   settleHomes,
   survey,
+  accessOf,
+  homeAnswer,
+  homeGroups,
   toolsOf,
   t3Proposals,
   t3SettingsOf,
@@ -64,8 +68,8 @@ import {
   withSetupLock,
   type AgentApp,
   type HomeView,
-  type ToolsAnswer,
   type Offer,
+  type Outcome,
   type PlanItem,
   type SetupInput,
 } from "../setup/index.ts";
@@ -116,7 +120,29 @@ export interface Part {
    * tools that show off while their access may be live (the entry or the program it runs is gone):
    * turning them off all the same, what it takes out and its token.
    */
-  readonly off?: { readonly detail: readonly string[]; readonly plan: string };
+  readonly off?: {
+    readonly detail: readonly string[];
+    readonly plan: string;
+    /** The access may be live: turning off takes it away, not only setup's entry. */
+    readonly access: boolean;
+  };
+  /**
+   * tools that show on while a settings file still needs something (an entry, or a repair to this
+   * install's command): turning that on, what it writes and its token.
+   */
+  readonly more?: { readonly detail: readonly string[]; readonly plan: string };
+  /**
+   * tools of a home with several settings files: each file that needs something, shown with `~`,
+   * with its own reason and what turning on does there. Absent for a home with one file.
+   */
+  readonly files?: readonly FilePart[];
+}
+
+/** One settings file of a home that needs something (setup/answer.ts `FileNeed`). */
+export interface FilePart {
+  readonly file: string;
+  readonly why?: Why;
+  readonly on?: "add" | "grant" | "repair";
 }
 
 export interface AppRow {
@@ -168,6 +194,13 @@ export interface AppsOutcome {
   readonly kept?: true;
   /** tools, failed: the service did not confirm that the access is off, so the entry stayed too. */
   readonly unconfirmed?: true;
+  /** tools, failed for `state_unwritable`: setup's record file it could not write. */
+  readonly record?: string;
+  /**
+   * tools: each settings file left otherwise than asked, shown with `~`, with why: turned on, each
+   * that got no entry; turned off, each that still holds one.
+   */
+  readonly files?: readonly { readonly file: string; readonly why: Why }[];
 }
 
 type Verb = (params: JsonObject, cls: ConnectionClass) => Promise<unknown>;
@@ -228,7 +261,8 @@ type Planned = PlanItem & { readonly several?: true };
 interface Look {
   readonly view: AppsView;
   readonly input: SetupInput;
-  readonly items: ReadonlyMap<string, PlanItem>;
+  /** Each home's settings files, by the row's key. */
+  readonly items: ReadonlyMap<string, readonly PlanItem[]>;
   readonly offers: ReadonlyMap<string, Offer>;
   readonly owners: ReadonlyMap<string, string>;
 }
@@ -265,6 +299,8 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
       app: attr(grant, "app"),
       home: attr(grant, "home"),
       instance: attr(grant, "instance"),
+      account: attr(grant, "account"),
+      ...(grant.spaces[0] === undefined ? {} : { space: grant.spaces[0] }),
     }));
   const input: SetupInput = {
     platform,
@@ -276,12 +312,14 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     instances: machine.instances,
     managedPaths: machine.setup.managedPaths,
     rows,
+    served: host.homes
+      .spaces()
+      .flatMap((s) => (s.id === undefined || s.state === "closed" ? [] : [s.id])),
     isFolder,
     run: (argv, childEnv) => runCommand(argv, childEnv, userHome),
   };
   const views = userHome === "" ? [] : await survey(input);
-  const answerOf = ({ view, change }: PlanItem) =>
-    toolsOf(input, view, space, typeof change === "string" ? change : undefined);
+  const [damaged] = setupRecords(host.stateDir).unreadable;
   // Claude Desktop with several settings files (a Windows app installed twice over the years): the
   // engine changes none of them on its own, and here the person picks one with its switch.
   // A change that did not finish shows what turning it on writes once it is finished.
@@ -295,7 +333,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   const written = readInstancesRecord(host.stateDir);
   const configFile = shown(pathOf(platform).join(host.configDir, MACHINE_TOML));
 
-  const items = new Map<string, PlanItem>();
+  const items = new Map<string, readonly PlanItem[]>();
   /** Each row's offer for machine.toml, by the row's key. */
   const byRow = new Map<string, Offer>();
   const owners = new Map<string, string>();
@@ -358,11 +396,13 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
         samePath(platform, p.configHome, view.home.home),
     );
 
-  for (const item of plan) {
+  for (const files of homeGroups(platform, plan, (item) => item.view.home)) {
+    const [item] = files;
+    if (item === undefined) continue;
     const { view } = item;
     const { home } = view;
     const key = JSON.stringify([home.app, home.home]);
-    items.set(key, item);
+    items.set(key, files);
     let open: Part | "offer" | undefined;
     // The home's one label: the one machine.toml keeps for it, else the one its offer would write.
     let label = appLabel(home.app);
@@ -391,7 +431,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
       also: home.hosts,
       ...(byName(view) ? { byName: true as const } : {}),
       ...(open === undefined ? {} : { open }),
-      tools: toolsPart(host, space, item, answerOf(item), shown),
+      tools: toolsPart(host, input, space, files, shown),
     });
   }
 
@@ -433,9 +473,10 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
         },
       };
     }),
-    ...(views.some((v) => v.refusal === "record_unreadable")
-      ? { record: shown(recordFile(host.stateDir)) }
-      : {}),
+    // The record file that cannot be read, by its own path: the homes it does not concern work.
+    ...(damaged === undefined || !views.some((v) => v.refusal === "record_unreadable")
+      ? {}
+      : { record: shown(damaged) }),
   };
   return { view, input, items, offers: byRow, owners };
 }
@@ -452,51 +493,97 @@ const UNREADABLE = new Set<string>([
 ]);
 
 /**
- * The tools switch of a home, from its one answer (toolsOf): it shows on exactly while the tools
- * start, turns on only as the answer offers, and turns off whenever the access may be live. A
- * home that shows off with its access live (its entry gone, its program gone) carries that turning
- * off as `off`, beside the switch.
+ * The tools switch of a home, from its files' answers (toolsOf, homeAnswer): it shows on exactly
+ * while a file's tools start, turns on only as the files' answers offer, and turns off whenever a
+ * file offers it. A home that shows off while its access may be live (its entry gone, its program
+ * gone) carries that turning off as `off`; one that shows on while a file still needs something
+ * carries that turning on as `more`. A home with one file reads as that file's answer.
  */
 function toolsPart(
   host: AgentAppsHost,
+  input: SetupInput,
   space: string,
-  { view, change, several }: Planned,
-  answer: ToolsAnswer,
+  files: readonly Planned[],
   shown: (path: string) => string,
 ): Part {
-  const file = shown(view.home.file);
-  const plan = (word: string) => digest([word, planToken(space, [{ view, change }])]);
-  const recorded = view.record?.space;
-  const why =
-    answer.why !== undefined && UNREADABLE.has(answer.why)
+  const answers = files.map((item) => ({
+    item,
+    answer: toolsOf(
+      input,
+      item.view,
+      space,
+      typeof item.change === "string" ? item.change : undefined,
+    ),
+  }));
+  const home = homeAnswer(
+    answers.map(({ item, answer }) => ({ file: shown(item.view.home.file), answer })),
+  );
+  const [first] = answers;
+  const one = answers.length === 1 ? first : undefined;
+  const plan = (word: string) => digest([word, planToken(input, space, files)]);
+  const said = (why: string | undefined, several?: boolean) =>
+    why !== undefined && UNREADABLE.has(why)
       ? "file_unreadable"
-      : (answer.why ?? (several === true && answer.on === "add" ? "several" : undefined));
+      : (why ?? (several === true ? "several" : undefined));
+  const why =
+    one === undefined
+      ? undefined
+      : said(one.answer.why, one.item.several === true && one.answer.on === "add");
+  const recorded = first?.item.view.home.space ?? first?.item.view.record?.space;
+  /** What each file shows as written or taken out, with its file named when the home has several. */
+  const lines = (of: (item: Planned) => readonly string[]) =>
+    answers.flatMap(({ item }) => {
+      const each = of(item);
+      return each.length === 0 || one !== undefined
+        ? each
+        : [`# ${shown(item.view.home.file)}`, ...each];
+    });
   const base = {
-    on: answer.status === "on",
+    on: home.status === "on",
     ...(why === undefined ? {} : { why }),
-    file,
+    file: shown(first?.item.view.home.file ?? ""),
     ...(recorded === undefined
       ? {}
       : { space: { id: recorded, name: host.spaceName(recorded) ?? null } }),
+    ...(one === undefined
+      ? {
+          files: home.files.map((f) => ({
+            ...f,
+            ...(f.why === undefined ? {} : { why: said(f.why) ?? f.why }),
+          })),
+        }
+      : {}),
   };
-  // What turning it off takes out of the file: setup's own entry, never one the person changed.
-  const own =
-    view.entry !== undefined && (view.state === "registered" || view.state === "interrupted");
+  // What turning it off takes out of each file: setup's own entry, never one the person changed.
   const removing = {
-    detail: own ? entryLines(view.home.app, view.entry, "-") : [],
+    detail: lines(({ view }) =>
+      view.entry !== undefined && (view.state === "registered" || view.state === "interrupted")
+        ? entryLines(view.home.app, view.entry, "-")
+        : [],
+    ),
     plan: plan("remove"),
   };
+  const turning = answers.filter(({ answer }) => answer.on !== undefined);
+  const adding = {
+    detail: lines((item) =>
+      turning.some((t) => t.item === item) && typeof item.change === "object"
+        ? item.change.diff
+        : [],
+    ),
+    plan: plan("add"),
+  };
   if (base.on) {
-    return answer.off
-      ? { ...base, change: "remove", ...removing }
-      : { ...base, change: null, detail: [], plan: plan(why ?? "on") };
+    const more = turning.length > 0 ? { more: adding } : {};
+    return home.off
+      ? { ...base, change: "remove", ...removing, ...more }
+      : { ...base, change: null, detail: [], plan: plan(why ?? "on"), ...more };
   }
-  const off = answer.off ? { off: removing } : {};
-  if (answer.on === undefined) {
+  const live = first === undefined ? "unknown" : accessOf(input, first.item.view.home);
+  const off = home.off ? { off: { ...removing, access: live !== "off" } } : {};
+  if (turning.length === 0) {
     return { ...base, change: null, detail: [], plan: plan(why ?? "off"), ...off };
   }
-  const detail = typeof change === "object" ? [...change.diff] : [];
-  return { ...base, change: "add", detail, plan: plan("add"), ...off };
+  return { ...base, change: "add", ...adding, ...off };
 }
 
 const PLAN = /^[0-9a-f]{16}$/u;
@@ -553,6 +640,13 @@ function setupError(error: unknown): unknown {
       hint: "Run: ttasks doctor",
     });
   }
+  if (error instanceof SetupStateUnwritable) {
+    return new AppError({
+      code: "invalid_input",
+      message: `${error.message}.`,
+      hint: "Check that the disk has room and that you can write in that folder.",
+    });
+  }
   return error;
 }
 
@@ -591,20 +685,35 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
       (method, input) => verb(method)(input, "ui") as Promise<Record<string, unknown>>,
     );
     const first = await look(host, space);
-    const partOf = (c: AppsChange) => first.view.rows.find((r) => r.key === c.key)?.[c.part];
-    // Each switch as it was shown, and only what it offered: on, off, or off beside it.
-    const fits = changes.every((c) => {
-      const part = partOf(c);
-      if (part === undefined) return false;
-      if (part.change === (c.on ? "add" : "remove") && part.plan === c.plan) return true;
-      return !c.on && part.off?.plan === c.plan;
-    });
+    // Each switch as it was shown, and only what it offered: on, on beside it, off, or off beside it.
+    const fits = (look: Look) =>
+      changes.every((c) => {
+        const part = look.view.rows.find((r) => r.key === c.key)?.[c.part];
+        if (part === undefined) return false;
+        if (part.change === (c.on ? "add" : "remove") && part.plan === c.plan) return true;
+        return c.on ? part.more?.plan === c.plan : part.off?.plan === c.plan;
+      });
     // Something changed since the person looked: nothing is written, they see it as it is now.
-    if (!fits) return { applied: false, view: first.view };
-    // What a run that ended midway left is finished first (it only ever takes access away); the
-    // switches the person turned over, as they saw them, then apply to what is now.
-    const now =
-      (await settleHomes(first.input, access)).length === 0 ? first : await look(host, space);
+    if (!fits(first)) return { applied: false, view: first.view };
+    // What a run that ended midway left is finished first before anything is turned on; turning
+    // off needs no such step, and takes the access first (removeFiles). A switch that would then
+    // do other than it showed is not applied, and neither is any other.
+    const turnsOn = changes.filter((c) => c.part === "tools" && c.on);
+    const settled = turnsOn.length > 0 && (await settleHomes(first.input, access)).length > 0;
+    const now = settled ? await look(host, space) : first;
+    /** What a switch writes: each file's entry, for the home's instance and space. */
+    const writes = (seen: Look, c: AppsChange) =>
+      JSON.stringify(
+        (seen.items.get(c.key) ?? []).map(({ view, change }) => [
+          view.home.file,
+          view.home.instance,
+          view.home.space ?? null,
+          typeof change === "object" ? change.entry : (change ?? null),
+        ]),
+      );
+    if (turnsOn.some((c) => writes(first, c) !== writes(now, c))) {
+      return { applied: false, view: now.view };
+    }
 
     const outcomes: AppsOutcome[] = [];
     const done = (c: AppsChange, reason?: string): void => {
@@ -655,20 +764,20 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
       }
     }
 
-    // Then each app's own entry: out, then in, each with its row in the grants table. A home that
-    // fails is reported and the others still run, so the answer names every switch's outcome.
+    // Then each app's own entries: out, then in, each home with its row in the grants table. A home
+    // that fails is reported and the others still run, so the answer names every switch's outcome.
     const each = async (
       on: boolean,
-      run: (item: PlanItem, c: AppsChange) => Promise<AppsOutcome | string | undefined>,
+      run: (files: readonly PlanItem[], c: AppsChange) => Promise<AppsOutcome | string | undefined>,
     ) => {
       for (const c of changes.filter((change) => change.part === "tools" && change.on === on)) {
-        const item = now.items.get(c.key);
-        if (item === undefined) {
+        const files = now.items.get(c.key);
+        if (files === undefined) {
           done(c, "changed_meanwhile");
           continue;
         }
         try {
-          const ran = await run(item, c);
+          const ran = await run(files, c);
           if (typeof ran === "object") outcomes.push(ran);
           else done(c, ran);
         } catch (error) {
@@ -676,21 +785,79 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
         }
       }
     };
-    // Off is off once the access is taken back; an entry that stayed is said with it.
-    await each(false, async (item, c) => {
-      const outcome = await removeHome(now.input, item.view, access);
-      if (outcome.access !== "off") return "revoke_failed";
-      if (outcome.kept === undefined) return undefined;
-      const reason = outcome.reason ?? outcome.result;
-      return { key: c.key, part: "tools", result: "done", reason, kept: true };
+    /** Each file left otherwise than asked, with why. */
+    const leftOut = (files: readonly Outcome[], keep: (o: Outcome) => boolean) =>
+      files.filter(keep).map((o) => ({
+        file: shownPath(host.platform, host.userHome, o.home.file),
+        why: o.reason ?? o.result,
+      }));
+    // Off is off once the access is taken back; an entry that stayed is said with its file.
+    await each(false, async (files, c) => {
+      const out = await removeFiles(
+        now.input,
+        files.map((f) => f.view),
+        access,
+      );
+      if (out[0]?.access !== "off") return "revoke_failed";
+      const kept = leftOut(out, (o) => o.kept !== undefined);
+      const stuck = out.find((o) => o.record !== undefined)?.record;
+      if (stuck !== undefined) {
+        return {
+          key: c.key,
+          part: "tools",
+          result: "failed",
+          reason: "state_unwritable",
+          record: stuck,
+          ...(files.length > 1 && kept.length > 0 ? { files: kept } : {}),
+        };
+      }
+      if (kept.length === 0) return undefined;
+      const reason = out.find((o) => o.kept !== undefined)?.reason ?? "edited";
+      return {
+        key: c.key,
+        part: "tools",
+        result: "done",
+        reason,
+        kept: true,
+        ...(files.length > 1 ? { files: kept } : {}),
+      };
     });
-    // On is on once the home has its access: a new entry, or one in place whose access went.
-    await each(true, async (item, c) => {
-      const outcome = await applyHome(now.input, item.view, space, access, item.change);
-      if (outcome.access === "on") return undefined;
-      const reason = outcome.reason ?? outcome.result;
-      if (outcome.access !== "unknown" || reason === "revoke_failed") return reason;
-      return { key: c.key, part: "tools", result: "failed", reason, unconfirmed: true };
+    // On is on once the home has its access and a file's tools start; a file left out is said.
+    await each(true, async (files, c) => {
+      const out = await applyFiles(now.input, files, space, access);
+      const access_ = out[0]?.access;
+      const short = leftOut(out, (o) => o.result === "left" || o.result === "failed");
+      const named = files.length > 1 && short.length > 0 ? { files: short } : {};
+      // A record that could not be written is the outcome, whatever the files did.
+      const stuck = out.find((o) => o.record !== undefined);
+      if (
+        stuck === undefined &&
+        access_ === "on" &&
+        out.some((o) => o.result !== "failed" && o.result !== "left")
+      ) {
+        return Object.keys(named).length === 0
+          ? undefined
+          : { key: c.key, part: "tools", result: "done", ...named };
+      }
+      const failed =
+        stuck ?? out.find((o) => o.result === "failed") ?? out.find((o) => o.result === "left");
+      const reason =
+        stuck === undefined
+          ? (failed?.reason ?? failed?.result ?? "changed_meanwhile")
+          : "state_unwritable";
+      const record = failed?.record === undefined ? {} : { record: failed.record };
+      if (access_ !== "unknown" || reason === "revoke_failed") {
+        return { key: c.key, part: "tools", result: "failed", reason, ...record, ...named };
+      }
+      return {
+        key: c.key,
+        part: "tools",
+        result: "failed",
+        reason,
+        unconfirmed: true,
+        ...record,
+        ...named,
+      };
     });
     return { applied: true, outcomes, view: (await look(host, space)).view };
   });

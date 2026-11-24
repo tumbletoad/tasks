@@ -28,15 +28,14 @@ import {
   planChange,
   planOf,
   planToken,
-  readRecords,
   removeHome,
   setupDir,
-  SETUP_FILE,
   survey,
   type Change,
   type HomeView,
   type SetupInput,
 } from "../src/setup/index.ts";
+import { SETUP_FILE, readRecords } from "./setup-records.ts";
 import { keptRows } from "./setup-rows.ts";
 import { installedTasks } from "./harness.ts";
 
@@ -408,10 +407,10 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
 
       // The plan's token covers everything the home's row names, the account included.
       const views = await survey(named);
-      const token = planToken(SPACE, planOf(named, views, SPACE));
+      const token = planToken(named, SPACE, planOf(named, views, SPACE));
       const relabelled = views.map((v) => ({ ...v, home: { ...v.home, account: "other" } }));
-      expect(planToken(SPACE, planOf(named, relabelled, SPACE))).not.toBe(token);
-      expect(planToken(SPACE, planOf(named, await survey(named), SPACE))).toBe(token);
+      expect(planToken(named, SPACE, planOf(named, relabelled, SPACE))).not.toBe(token);
+      expect(planToken(named, SPACE, planOf(named, await survey(named), SPACE))).toBe(token);
     },
     SLOW,
   );

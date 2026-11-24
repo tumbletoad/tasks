@@ -1,15 +1,18 @@
 // A home's access through the service's agent-home rows (hub/agent-homes.ts): the command line
 // asks for them over its connection, the page in the service itself, with the same two verbs.
 import { AppError } from "@ttasks/contracts";
-import { GrantRefused, type Access } from "./agents.ts";
+import { GrantRefused, samePath, type Access } from "./agents.ts";
 
 /** One of the service's `setup/*` verbs. It throws an AppError when the service refuses. */
 export type RowCall = (
-  method: "setup/home_grant" | "setup/home_revoke",
+  method: "setup/home_grant" | "setup/home_revoke" | "setup/homes",
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
-/** A home's access as the service's rows: given with `setup/home_grant`, taken back with `setup/home_revoke`. */
+/**
+ * A home's access as the service's rows: given with `setup/home_grant`, taken back with
+ * `setup/home_revoke`, read with `setup/homes`.
+ */
 export function rowAccess(call: RowCall): Access {
   return {
     async grant(home, space) {
@@ -33,6 +36,17 @@ export function rowAccess(call: RowCall): Access {
     },
     async revoke(home) {
       await call("setup/home_revoke", { app: home.app, home: home.home });
+    },
+    async read(home) {
+      const listed = (await call("setup/homes", {}))["homes"];
+      const rows = Array.isArray(listed) ? (listed as Record<string, unknown>[]) : [];
+      const row = rows.find(
+        (r) =>
+          r["app"] === home.app &&
+          typeof r["home"] === "string" &&
+          samePath(process.platform, r["home"], home.home),
+      );
+      return typeof row?.["grant"] === "string" ? { grant: row["grant"] } : null;
     },
   };
 }

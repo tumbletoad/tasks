@@ -34,7 +34,6 @@ import {
   gitOnPath,
   planChange,
   planOf,
-  readRecords,
   removeHome,
   runCommand,
   survey,
@@ -42,6 +41,7 @@ import {
   type HomeView,
   type SetupInput,
 } from "../src/setup/index.ts";
+import { readRecords } from "./setup-records.ts";
 import { keptRows } from "./setup-rows.ts";
 import { installedTasks } from "./harness.ts";
 
@@ -485,8 +485,8 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       }
 
       // T3 names Claude Code's default folder by its path: its Claude then reads `.claude.json`
-      // inside that folder, not the user's `~/.claude.json` where the default home's entry goes, so
-      // that home is not marked as read by T3.
+      // inside that folder, a further settings file of the default home once Claude Code has made
+      // it. T3 reads that home.
       mkdirSync(join(w.home, ".claude"));
       const explicitT3 = join(w.root, "t3-explicit", "userdata");
       mkdirSync(explicitT3, { recursive: true, mode: 0o700 });
@@ -503,7 +503,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       expect(byFolder(await survey(explicit), "claude-code", ".claude").home).toMatchObject({
         isDefault: true,
         file: join(w.home, ".claude.json"),
-        hosts: [],
+        hosts: ["t3"],
       });
       expect(t3HomesOf(explicit)).toEqual([
         {

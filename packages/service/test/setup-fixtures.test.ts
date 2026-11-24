@@ -3,6 +3,7 @@
 // writes. After each action it compares the file's raw bytes, the home's access, and the other home
 // of the same app, which nothing may change. Every home is a folder under this file's own temporary
 // folder; no app's command runs, and the grants table is the test's own (setup-rows.ts).
+import { spawnSync } from "node:child_process";
 import fs, {
   chmodSync,
   existsSync,
@@ -26,19 +27,24 @@ import { detect, nodeDetectHost } from "@ttasks/launch";
 import { parseToml } from "../src/config/toml.ts";
 import { withAppLock } from "../src/setup/app-lock.ts";
 import {
+  applyFiles,
   applyHome,
+  homeAnswer,
   planOf,
-  readRecords,
+  planToken,
+  removeFiles,
   removeHome,
   setupDir,
-  SETUP_FILE,
   settleHomes,
   survey,
-  writeRecords,
+  toolsOf,
+  type Access,
   type AgentApp,
+  type HomeRecord,
   type HomeView,
   type SetupInput,
 } from "../src/setup/index.ts";
+import { FURTHER_FILE, SETUP_FILE, readRecords, writeRecords } from "./setup-records.ts";
 import { keptRows, type KeptRows } from "./setup-rows.ts";
 import { installedTasks } from "./harness.ts";
 
@@ -463,13 +469,14 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
-    "giving a registered home its access back checks its entry as a new install does: before the grant, after it, and when the record cannot be written",
+    "giving an intact entry its access back is done once the service confirms it: a save meanwhile stays the person's, a record that cannot be written takes nothing back, and a grant not confirmed leaves the entry",
     async () => {
       for (const a of ADAPTERS) {
         for (const event of [
-          "a save before the grant changes the entry",
-          "a save during the grant changes the entry",
+          "a save before the grant",
+          "a save during the grant",
           "the record cannot be written",
+          "the service does not confirm the grant",
         ] as const) {
           const what = `${a.app}: ${event}`;
           const w = await world();
@@ -486,8 +493,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             writeFileSync(file, saved);
           };
           const rows = keptRows((verb) => {
-            if (armed && verb === "grant" && event === "a save during the grant changes the entry")
-              change();
+            if (armed && verb === "grant" && event === "a save during the grant") change();
           });
           const first = await viewOf(w, a);
           const [item] = planOf(w.input, [first], SPACE);
@@ -500,7 +506,10 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           expect(view.state, what).toBe("registered");
           rows.asked.length = 0;
           armed = true;
-          if (event === "a save before the grant changes the entry") change();
+          if (event === "a save before the grant") change();
+          if (event === "the service does not confirm the grant")
+            rows.refuse.grant = "grant_failed";
+          const withEntry = readFileSync(file);
           const restore =
             event === "the record cannot be written" ? unwritable(recordPath(w)) : null;
           let outcome;
@@ -509,27 +518,23 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           } finally {
             restore?.();
           }
-          expect(outcome, what).toMatchObject({ result: "failed", access: "off" });
-          expect(rows.live, what).toEqual([]);
+          expect(
+            rows.asked.map((x) => x.verb),
+            what,
+          ).toEqual(["grant"]);
+          if (event === "the service does not confirm the grant") {
+            expect(outcome, what).toMatchObject({ result: "failed", reason: "grant_failed" });
+            expect(readFileSync(file), what).toEqual(withEntry);
+            expect(readRecords(w.input.stateDir), what).toMatchObject([{ state: "applied" }]);
+            continue;
+          }
+          expect(outcome, what).toMatchObject({ result: "unchanged", access: "on" });
+          expect(rows.live, what).toHaveLength(1);
           if (event === "the record cannot be written") {
-            expect(outcome.reason, what).toBe("state_unwritable");
-            expect(
-              rows.asked.map((x) => x.verb),
-              what,
-            ).toEqual(["grant", "revoke"]);
+            expect(readFileSync(file), what).toEqual(withEntry);
           } else {
-            expect(outcome.reason, what).toBe("changed_meanwhile");
             // The person's save stays, and is theirs from then on.
             expect(readFileSync(file, "utf8"), what).toBe(saved);
-            expect(readRecords(w.input.stateDir), what).toEqual([]);
-            expect(
-              rows.asked.map((x) => x.verb),
-              what,
-            ).toEqual(
-              event === "a save before the grant changes the entry"
-                ? ["revoke"]
-                : ["grant", "revoke"],
-            );
           }
         }
       }
@@ -699,7 +704,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   });
 
   test.skipIf(root)(
-    "a file that cannot be written: no access is given; turning off takes the access away, and the next setup takes the entry out once",
+    "a file that cannot be written: it is said before the apply, no access is given; turning off takes the access away, and the next setup takes the entry out once",
     async () => {
       for (const a of ADAPTERS) {
         const w = await world();
@@ -708,9 +713,11 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         const before = readFileSync(file);
         const restore = unwritable(file);
         try {
+          const view = await viewOf(w, a);
+          expect(planOf(w.input, [view], SPACE)[0]?.change, a.app).toBe("read_only");
           expect(await apply(w, a), a.app).toMatchObject({
-            result: "failed",
-            reason: "unwritable",
+            result: "left",
+            reason: "read_only",
             access: "off",
           });
         } finally {
@@ -760,11 +767,18 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
 
         // Ended after the entry was written, before its access, and after its access, before the
         // record said so: the entry comes out and the access is off. The person turns it on again.
-        for (const granted of [false, true]) {
+        // The record is as an earlier build writes it, without the mark: settled as that build
+        // does, with the revoke; this build's own marked record is settled the same way.
+        expect(record).not.toHaveProperty("gives_access");
+        for (const [granted, mark] of [
+          [false, {}],
+          [true, {}],
+          [true, { gives_access: true }],
+        ] as const) {
           writeFileSync(file, withEntry);
           await w.rows.revoke((await viewOf(w, a)).home);
           if (granted) await w.rows.grant((await viewOf(w, a)).home, SPACE);
-          writeRecords(w.input.stateDir, [{ ...record, state: "applying", grant: null }]);
+          writeRecords(w.input.stateDir, [{ ...record, state: "applying", grant: null, ...mark }]);
           const asked = w.rows.asked.length;
           expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
             { result: "removed", access: "off" },
@@ -775,6 +789,21 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           expect(readRecords(w.input.stateDir)).toEqual([]);
           expect(await settleHomes(w.input, w.rows)).toEqual([]);
         }
+
+        // The same in an apply that found the access live and attached to it: the entry comes out,
+        // and the access it did not give stays.
+        writeFileSync(file, withEntry);
+        await w.rows.grant((await viewOf(w, a)).home, SPACE);
+        writeRecords(w.input.stateDir, [
+          { ...record, state: "applying", gives_access: false, grant: null },
+        ]);
+        const asked = w.rows.asked.length;
+        expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
+          { result: "removed", access: "on" },
+        ]);
+        expect(w.rows.asked.slice(asked), a.app).toEqual([]);
+        expect(readFileSync(file)).toEqual(before);
+        await w.rows.revoke((await viewOf(w, a)).home);
 
         // Ended after its record, before the entry was written: nothing to finish.
         writeFileSync(file, before);
@@ -830,9 +859,20 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         const file = a.file(w);
         seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
         const before = readFileSync(file);
+        // The service is gone once it refused the row: it confirms nothing after that.
         w.rows.refuse = { grant: "grant_failed", revoke: true };
+        const view = await viewOf(w, a);
+        const [item] = planOf(w.input, [view], SPACE);
+        const rows: Access = {
+          read: (home) => w.rows.read(home),
+          revoke: (home) => w.rows.revoke(home),
+          grant: (home, space) => {
+            w.rows.refuse.read = true;
+            return w.rows.grant(home, space);
+          },
+        };
         // Nothing claims the entry went: it stays, and the outcome says so.
-        expect(await apply(w, a), a.app).toMatchObject({
+        expect(await applyHome(w.input, view, SPACE, rows, item?.change), a.app).toMatchObject({
           result: "failed",
           reason: "grant_failed",
           access: "unknown",
@@ -873,15 +913,18 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             reason: "grant_failed",
             access: "off",
           });
-          expect(readRecords(w.input.stateDir), a.app).toMatchObject([{ state: "removing" }]);
-          // The next run, which may be another app's: it takes the access back, never gives it.
+          // Its one revoke is done: the record is kept for the entry only.
+          expect(readRecords(w.input.stateDir), a.app).toMatchObject([
+            { state: "removing", gives_access: false },
+          ]);
+          // The next run, which may be another app's: it never gives the access, nor revokes again.
           rows.refuse = {};
           const asked = rows.asked.length;
           await settleHomes(w.input, rows);
           expect(
             rows.asked.slice(asked).map((x) => x.verb),
             a.app,
-          ).toEqual(["revoke"]);
+          ).toEqual([]);
           expect(rows.live, a.app).toEqual([]);
         } finally {
           restore();
@@ -1451,3 +1494,1458 @@ function unwritable(file: string): () => void {
     chmodSync(target, mode);
   };
 }
+
+// ---------------------------------------------------------------------------------------------
+// A home with two settings files: Claude Code's default folder, read as `~/.claude.json` when
+// Claude Code starts plainly and as `~/.claude/.claude.json` when it starts with its home set to
+// the folder (as T3 Code may start it).
+
+const CLAUDE = ADAPTERS[0] as Adapter;
+
+/** The default folder and its two settings files. */
+const twoFiles = (w: World) => ({
+  folder: join(w.home, ".claude"),
+  plain: join(w.home, ".claude.json"),
+  inner: join(w.home, ".claude", ".claude.json"),
+});
+
+/** The input with the test's live rows, as the service lists them. */
+const live = (w: World, input: SetupInput = w.input): SetupInput => ({
+  ...input,
+  rows: w.rows.live,
+});
+
+/** The default Claude Code home's settings files, the first first, as survey finds them. */
+async function filesOf(w: World, input: SetupInput = live(w)): Promise<HomeView[]> {
+  return (await survey(input)).filter(
+    (v) => v.home.app === "claude-code" && basename(v.home.home) === ".claude",
+  );
+}
+
+/** Turns the default home on from `space`: each of its files as its answer offers. */
+async function turnOn(
+  w: World,
+  rows: Access = w.rows,
+  input: SetupInput = live(w),
+  space: string = SPACE,
+) {
+  return applyFiles(input, planOf(input, await filesOf(w, input), space), space, rows);
+}
+
+/** Turns the default home off. */
+async function turnOff(w: World, rows: Access = w.rows, input: SetupInput = live(w)) {
+  return removeFiles(input, await filesOf(w, input), rows);
+}
+
+const furtherRecords = (w: World) => readRecords(w.input.stateDir, FURTHER_FILE);
+
+/** Each of the default home's files with its answer, as the command line's status reads it. */
+async function answers(w: World, input: SetupInput = live(w)) {
+  return (await filesOf(w, input)).map((v) => ({
+    file: v.home.file,
+    answer: toolsOf(input, v, ""),
+  }));
+}
+
+/** A JSON file's servers, read as Claude Code reads them. */
+function serversIn(file: string): Record<string, Record<string, unknown>> {
+  const doc = JSON.parse(readFileSync(file, "utf8")) as {
+    mcpServers?: Record<string, Record<string, unknown>>;
+  };
+  return doc.mcpServers ?? {};
+}
+
+/** Setup's entry in a JSON file, changed by hand: a key of the person's beside setup's. */
+function editEntry(file: string): void {
+  const doc = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  const entry = serversIn(file)[MCP_SERVER_KEY];
+  if (entry === undefined) throw new Error(`no entry in ${file}`);
+  doc["mcpServers"] = { ...serversIn(file), [MCP_SERVER_KEY]: { ...entry, cwd: dirname(file) } };
+  writeFileSync(file, JSON.stringify(doc, null, 2));
+}
+
+/** Each record of `file`, in either record file, changed by `change`. */
+function rewriteRecord(w: World, file: string, change: (r: HomeRecord) => HomeRecord): void {
+  for (const store of [SETUP_FILE, FURTHER_FILE]) {
+    const records = readRecords(w.input.stateDir, store);
+    writeRecords(
+      w.input.stateDir,
+      records.map((r) => (r.file === file ? change(r) : r)),
+      store,
+    );
+  }
+}
+
+/** The entry in `file` and its record name `command`, as an install elsewhere wrote them. */
+function recordedAs(w: World, file: string, command: string): void {
+  const doc = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  const entry = serversIn(file)[MCP_SERVER_KEY];
+  if (entry === undefined) throw new Error(`no entry in ${file}`);
+  doc["mcpServers"] = { ...serversIn(file), [MCP_SERVER_KEY]: { ...entry, command } };
+  writeFileSync(file, JSON.stringify(doc, null, 2));
+  rewriteRecord(w, file, (r) => ({ ...r, entry: { ...r.entry, command } }));
+}
+
+/** Runs `body`, doing `act` right after `file` is first put in place by a rename or a link. */
+async function afterPlaced<T>(file: string, act: () => void, body: () => Promise<T>): Promise<T> {
+  const real = { renameSync: fs.renameSync, linkSync: fs.linkSync };
+  let done = false;
+  const placed = (to: fs.PathLike) => {
+    if (!done && String(to) === file) {
+      done = true;
+      act();
+    }
+  };
+  fs.renameSync = (from: fs.PathLike, to: fs.PathLike) => {
+    real.renameSync(from, to);
+    placed(to);
+  };
+  fs.linkSync = (from: fs.PathLike, to: fs.PathLike) => {
+    real.linkSync(from, to);
+    placed(to);
+  };
+  syncBuiltinESMExports();
+  try {
+    return await body();
+  } finally {
+    Object.assign(fs, real);
+    syncBuiltinESMExports();
+  }
+}
+
+describe("[A3.3.13.setup.home-files] Each settings file of a home by itself: Claude Code's default folder has one for each way it is started, and the entry goes into each that is there and comes out of each", () => {
+  test(
+    "both files there: one apply writes the same entry into each and asks for the access once; Off takes the access first, then each entry out byte for byte; each file has its own record, the first where an earlier build reads it",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, '{\n  "numStartups": 3\n}\n');
+      seed(inner, '{"theme":"dark"}');
+      const before = [bytesOf(plain), bytesOf(inner)];
+      expect((await filesOf(w)).map((v) => v.home.file)).toEqual([plain, inner]);
+      expect(await turnOn(w)).toMatchObject([
+        { result: "applied", access: "on" },
+        { result: "applied", access: "on" },
+      ]);
+      expect(w.rows.asked.map((x) => x.verb)).toEqual(["grant"]);
+      const instance = (await filesOf(w))[0]?.home.instance ?? "";
+      expect(entryIn(CLAUDE, plain)).toEqual(expectedEntry(w, CLAUDE, instance));
+      expect(entryIn(CLAUDE, inner)).toEqual(expectedEntry(w, CLAUDE, instance));
+      // One record per file: the first file's in agents.json, as an earlier build reads it.
+      const [first] = readRecords(w.input.stateDir);
+      expect(readRecords(w.input.stateDir)).toHaveLength(1);
+      expect(first).toMatchObject({ file: plain, state: "applied", made: { file: false } });
+      expect(first).not.toHaveProperty("gives_access");
+      expect(furtherRecords(w)).toMatchObject([
+        { file: inner, state: "applied", made: { file: false } },
+      ]);
+      expect(homeAnswer(await answers(w))).toEqual({ status: "on", files: [], off: true });
+
+      // Off: the access goes before either file changes, then each entry comes out.
+      const withEntries = [bytesOf(plain), bytesOf(inner)];
+      let atRevoke: (Buffer | null)[] = [];
+      const watched = keptRows(() => {
+        atRevoke = [bytesOf(plain), bytesOf(inner)];
+      });
+      watched.live.push(...w.rows.live);
+      expect(await turnOff(w, watched)).toMatchObject([
+        { result: "removed", access: "off" },
+        { result: "removed", access: "off" },
+      ]);
+      expect(atRevoke).toEqual(withEntries);
+      expect(watched.live).toEqual([]);
+      expect([bytesOf(plain), bytesOf(inner)]).toEqual(before);
+      expect(readRecords(w.input.stateDir)).toEqual([]);
+      expect(furtherRecords(w)).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a further file counts only while it is there, and setup never creates it: not for a reader T3 starts with its home set to the folder, not when it goes between the survey and the write",
+    async () => {
+      const w = await world();
+      const { folder, plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      const t3 = join(w.home, ".t3", "userdata");
+      mkdirSync(t3, { recursive: true, mode: 0o700 });
+      writeFileSync(
+        join(t3, "settings.json"),
+        JSON.stringify({
+          providerInstances: {
+            claudeAgent: { driver: "claudeAgent", config: { homePath: folder } },
+          },
+        }),
+        { mode: 0o600 },
+      );
+      const views = await filesOf(w);
+      expect(views.map((v) => v.home.file)).toEqual([plain]);
+      expect(views[0]?.home.hosts).toEqual(["t3"]);
+      expect(await turnOn(w)).toMatchObject([{ result: "applied", access: "on" }]);
+      expect(existsSync(inner)).toBe(false);
+
+      // There when the plan was made, gone when its turn comes.
+      const v = await world();
+      const two = twoFiles(v);
+      seed(two.plain, "{}\n");
+      seed(two.inner, "{}\n");
+      const input = live(v);
+      const items = planOf(input, await filesOf(v, input), SPACE);
+      rmSync(two.inner);
+      expect(await applyFiles(input, items, SPACE, v.rows)).toMatchObject([
+        { result: "applied", access: "on" },
+        { result: "failed", reason: "changed_meanwhile", access: "on" },
+      ]);
+      expect(existsSync(two.inner)).toBe(false);
+      expect(furtherRecords(v)).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "an entry edited by hand in one file never keeps the other from being turned on (188's second review, sequence 2)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      editEntry(inner);
+      expect(await turnOff(w)).toMatchObject([
+        { result: "removed", access: "off" },
+        { result: "left", reason: "edited", kept: "edited", access: "off" },
+      ]);
+      // The plain file offers its entry again; the edited one is the person's, and is named.
+      const after = await answers(w);
+      expect(homeAnswer(after)).toEqual({
+        status: "off",
+        files: [
+          { file: plain, on: "add" },
+          { file: inner, why: "foreign_entry" },
+        ],
+        off: false,
+      });
+      expect(await turnOn(w)).toMatchObject([
+        { result: "applied", access: "on" },
+        { result: "left", reason: "foreign_entry", access: "on" },
+      ]);
+      expect(homeAnswer(await answers(w)).status).toBe("on");
+    },
+    SLOW,
+  );
+
+  test.skipIf(root)(
+    "a further file that cannot be written is said before the apply, and the other is written and works (188's second review, sequence 4)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, '{"theme":"dark"}\n');
+      const restore = unwritable(inner);
+      try {
+        const input = live(w);
+        const items = planOf(input, await filesOf(w, input), SPACE);
+        expect(items.map((i) => (typeof i.change === "string" ? i.change : "write"))).toEqual([
+          "write",
+          "read_only",
+        ]);
+        expect(await applyFiles(input, items, SPACE, w.rows)).toMatchObject([
+          { result: "applied", access: "on" },
+          { result: "left", reason: "read_only", access: "on" },
+        ]);
+      } finally {
+        restore();
+      }
+      expect(readFileSync(inner, "utf8")).toBe('{"theme":"dark"}\n');
+      expect(entryIn(CLAUDE, plain)).toBeDefined();
+    },
+    SLOW,
+  );
+
+  test(
+    "a file setup cannot read is named each time, and the other is written: the same apply again says the same (188's second review, sequence 3)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, '{"theme": "dark",}\n');
+      expect(await turnOn(w)).toMatchObject([
+        { result: "applied", access: "on" },
+        { result: "left", reason: "invalid_file", access: "on" },
+      ]);
+      expect(await turnOn(w)).toMatchObject([
+        { result: "unchanged", access: "on" },
+        { result: "left", reason: "invalid_file", access: "on" },
+      ]);
+      expect(homeAnswer(await answers(w))).toEqual({
+        status: "on",
+        files: [{ file: inner, why: "invalid_file" }],
+        off: true,
+      });
+    },
+    SLOW,
+  );
+
+  test(
+    "Off names an entry of setup's name that it has no record of, and leaves it (188's second review, sequence 8)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      await turnOn(w);
+      seed(
+        inner,
+        JSON.stringify({ mcpServers: { [MCP_SERVER_KEY]: entryIn(CLAUDE, plain) } }, null, 2),
+      );
+      const copied = bytesOf(inner);
+      expect((await answers(w))[1]?.answer.why).toBe("foreign_entry");
+      expect(await turnOff(w)).toMatchObject([
+        { result: "removed", access: "off" },
+        { result: "left", reason: "foreign_entry", kept: "unrecorded", access: "off" },
+      ]);
+      expect(bytesOf(inner)).toEqual(copied);
+      expect(w.rows.live).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "cannot happen: a hand edit of a working file while another is added takes the access, or a change of the other during a repair takes the repaired entry (188's second review, sequence 5)",
+    async () => {
+      let onWait = (): void => undefined;
+      const w = await world(() => {
+        onWait();
+        return Promise.resolve();
+      });
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      await turnOn(w);
+      seed(inner, "{}\n");
+      // Claude Code holds the inner file's lock; while setup waits, the person edits the plain
+      // entry, then the lock goes.
+      mkdirSync(`${inner}.lock`);
+      onWait = () => {
+        editEntry(plain);
+        rmdirSync(`${inner}.lock`);
+        onWait = () => undefined;
+      };
+      w.rows.asked.length = 0;
+      expect(await turnOn(w)).toMatchObject([
+        { result: "unchanged", access: "on" },
+        { result: "applied", access: "on" },
+      ]);
+      expect(w.rows.asked).toEqual([]);
+      expect(w.rows.live).toHaveLength(1);
+      expect(serversIn(plain)[MCP_SERVER_KEY]).toMatchObject({ cwd: dirname(plain) });
+
+      // Both entries run where TTasks was before; while the inner one waits for its lock during
+      // the repair, another server is added there.
+      const v = await world(() => {
+        onWait();
+        return Promise.resolve();
+      });
+      const two = twoFiles(v);
+      seed(two.plain, "{}\n");
+      seed(two.inner, "{}\n");
+      await turnOn(v);
+      const gone = join(v.dir, "before", basename(v.input.tasks));
+      recordedAs(v, two.plain, gone);
+      recordedAs(v, two.inner, gone);
+      mkdirSync(`${two.inner}.lock`);
+      onWait = () => {
+        const doc = JSON.parse(readFileSync(two.inner, "utf8")) as Record<string, unknown>;
+        doc["mcpServers"] = { ...serversIn(two.inner), other: { command: "x" } };
+        writeFileSync(two.inner, JSON.stringify(doc, null, 2));
+        rmdirSync(`${two.inner}.lock`);
+        onWait = () => undefined;
+      };
+      v.rows.asked.length = 0;
+      expect(await turnOn(v)).toMatchObject([
+        { result: "applied", access: "on" },
+        { result: "failed", reason: "changed_meanwhile", access: "on" },
+      ]);
+      expect(v.rows.asked).toEqual([]);
+      expect(serversIn(two.plain)[MCP_SERVER_KEY]).toMatchObject({ command: v.input.tasks });
+      expect(serversIn(two.inner)[MCP_SERVER_KEY]).toMatchObject({ command: gone });
+      expect(serversIn(two.inner)["other"]).toEqual({ command: "x" });
+    },
+    SLOW,
+  );
+
+  test(
+    "cannot happen: a failed add says the access is off while its row is live (188's second review, sequence 6)",
+    async () => {
+      const w = await world();
+      const { plain } = twoFiles(w);
+      seed(plain, "{}\n");
+      await turnOn(w);
+      // The record is lost and the entry gone: the row is live with no entry, and Add is offered.
+      rmSync(recordPath(w));
+      seed(plain, "{}\n");
+      const [view] = await filesOf(w);
+      if (view === undefined) throw new Error("no default home");
+      expect(toolsOf(live(w), view, "")).toMatchObject({ why: "missing", on: "add" });
+      w.rows.asked.length = 0;
+      // A change right after the write, before setup reads its entry back.
+      const out = await afterPlaced(
+        plain,
+        () => {
+          editEntry(plain);
+        },
+        () => turnOn(w),
+      );
+      expect(out).toMatchObject([
+        { result: "failed", reason: "changed_meanwhile", access: "on", notes: ["entry_left"] },
+      ]);
+      expect(w.rows.asked).toEqual([]);
+      expect(w.rows.live).toHaveLength(1);
+    },
+    SLOW,
+  );
+
+  test(
+    "cannot happen: two files run different installs and nothing says so (188's second review, sequence 7): an older install still there is offered a repair, and a repair that cannot write keeps the entry that works",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      const older = join(w.dir, "older", basename(w.input.tasks));
+      mkdirSync(dirname(older), { recursive: true });
+      writeFileSync(older, "");
+      recordedAs(w, plain, older);
+      const before = await answers(w);
+      expect(before[0]?.answer).toEqual({ status: "on", why: "older", on: "repair", off: true });
+      expect(before[1]?.answer).toEqual({ status: "on", off: true });
+      expect(homeAnswer(before).files).toEqual([{ file: plain, why: "older", on: "repair" }]);
+      // A write that fails keeps the entry as it was, and its record.
+      const kept = bytesOf(plain);
+      const failed = await faulty(plain, { sync: true }, () => turnOn(w));
+      expect(failed[0]).toMatchObject({ result: "failed", reason: "unwritable", access: "on" });
+      expect(bytesOf(plain)).toEqual(kept);
+      expect((await answers(w))[0]?.answer.why).toBe("older");
+      w.rows.asked.length = 0;
+      expect(await turnOn(w)).toMatchObject([
+        { result: "applied", access: "on" },
+        { result: "unchanged", access: "on" },
+      ]);
+      expect(w.rows.asked).toEqual([]);
+      expect(entryIn(CLAUDE, plain)).toEqual(entryIn(CLAUDE, inner));
+    },
+    SLOW,
+  );
+
+  test(
+    "agents-further.json that cannot be read concerns only the home that can have a further file: its first file works, the other is named and untouched, Off still revokes; every other home works",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      const codex = ADAPTERS[1] as Adapter;
+      seed(codex.file(w), 'model = "m"\n');
+      writeFileSync(join(setupDir(w.input.stateDir), FURTHER_FILE), '{"format": 2, "homes": [');
+      const innerBytes = bytesOf(inner);
+      const views = await filesOf(w);
+      expect(views.map((v) => [v.state, v.refusal])).toEqual([
+        ["registered", undefined],
+        ["refused", "record_unreadable"],
+      ]);
+      expect(await apply(w, codex)).toMatchObject({ result: "applied", access: "on" });
+      expect(await turnOff(w)).toMatchObject([
+        { result: "removed", access: "off" },
+        { result: "left", reason: "record_unreadable", access: "off" },
+      ]);
+      expect(bytesOf(inner)).toEqual(innerBytes);
+      expect(accessOf(w, codex, codex.file(w))).toBe(true);
+    },
+    SLOW,
+  );
+
+  test(
+    "the home's space and instance are its live row's: a file whose record names another instance is not counted as on, and Off cleans it",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      rewriteRecord(w, inner, (r) => ({ ...r, instance: "claude-before" }));
+      const seen = await answers(w);
+      expect(seen[1]?.answer).toEqual({ status: "off", why: "unbound", off: true });
+      expect(homeAnswer(seen).status).toBe("on");
+      // Nothing to turn on: the row is renewed for the home's own instance, never the record's.
+      expect(await turnOn(w)).toMatchObject([
+        { result: "unchanged", access: "on" },
+        { result: "left", reason: "unbound", access: "on" },
+      ]);
+      expect(w.rows.live.map((r) => r.instance)).toEqual([(await filesOf(w))[0]?.home.instance]);
+      expect(await turnOff(w)).toMatchObject([{ result: "removed" }, { result: "removed" }]);
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.access-rule] Only the apply that finds a home's access off asks for it, and only that apply takes it back; with the service silent nothing is given or taken", () => {
+  test(
+    "adding a file to a home that has its grant asks the service for nothing: no grant, no renewal, no revoke",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      await turnOn(w);
+      seed(inner, "{}\n");
+      w.rows.asked.length = 0;
+      expect(await turnOn(w)).toMatchObject([
+        { result: "unchanged", access: "on" },
+        { result: "applied", access: "on" },
+      ]);
+      expect(w.rows.asked).toEqual([]);
+      expect(furtherRecords(w)).toMatchObject([{ file: inner, state: "applied" }]);
+      expect(furtherRecords(w)[0]).not.toHaveProperty("gives_access");
+    },
+    SLOW,
+  );
+
+  test(
+    "a file added to a home that has its grant, whose read back fails, is taken back without a revoke, at once and when it is settled",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      await turnOn(w);
+      seed(inner, "{}\n");
+      w.rows.asked.length = 0;
+      const out = await failingReadAfterWrite(inner, () => turnOn(w));
+      expect(out[1]).toMatchObject({
+        result: "failed",
+        reason: "unreadable",
+        access: "on",
+        notes: ["undo_failed"],
+      });
+      expect(furtherRecords(w)).toMatchObject([{ state: "removing" }]);
+      expect(await settleHomes(live(w), w.rows)).toMatchObject([
+        { result: "removed", access: "on" },
+      ]);
+      expect(w.rows.asked).toEqual([]);
+      expect(w.rows.live).toHaveLength(1);
+      expect(entryIn(CLAUDE, inner)).toBeUndefined();
+      expect(entryIn(CLAUDE, plain)).toBeDefined();
+    },
+    SLOW,
+  );
+
+  test(
+    "the apply that finds the access off marks its record before it asks, and takes the access back when its file fails",
+    async () => {
+      const w = await world();
+      const { plain } = twoFiles(w);
+      seed(plain, "{}\n");
+      let atGrant: HomeRecord[] = [];
+      const rows = keptRows((verb) => {
+        if (verb === "grant") atGrant = readRecords(w.input.stateDir);
+      });
+      rows.refuse.grant = "grant_failed";
+      expect(await turnOn(w, rows, { ...w.input, rows: rows.live })).toMatchObject([
+        { result: "failed", reason: "grant_failed", access: "off", notes: ["undone"] },
+      ]);
+      expect(atGrant).toMatchObject([{ state: "applying", gives_access: true }]);
+      expect(rows.asked.map((x) => x.verb)).toEqual(["grant", "revoke"]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+    },
+    SLOW,
+  );
+
+  test(
+    "the service cannot say whether the access is live: nothing is offered, granted or revoked, and each file says the access is unknown",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      const before = [bytesOf(plain), bytesOf(inner)];
+      // No rows: no service said.
+      const silent = w.input;
+      for (const { answer } of await answers(w, silent)) {
+        expect(answer).toEqual({ status: "off", off: true });
+      }
+      w.rows.refuse.read = true;
+      expect(await turnOn(w, w.rows, silent)).toMatchObject([
+        { result: "left", reason: "access_unknown", access: "unknown" },
+        { result: "left", reason: "access_unknown", access: "unknown" },
+      ]);
+      expect(w.rows.asked).toEqual([]);
+      expect([bytesOf(plain), bytesOf(inner)]).toEqual(before);
+      expect(readRecords(w.input.stateDir)).toEqual([]);
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.cuts] What a run cut between two of its steps leaves: what the next start shows and offers, and what settling it does", () => {
+  /** The default home on in both files, its row live. */
+  async function bothOn(w: World) {
+    const files = twoFiles(w);
+    seed(files.plain, "{}\n");
+    seed(files.inner, "{}\n");
+    await turnOn(w);
+    w.rows.asked.length = 0;
+    return files;
+  }
+  const verbs = (w: World) => w.rows.asked.map((x) => x.verb);
+
+  test(
+    "an add of a further file to a home with its grant, cut after its record or after its write: the file shows interrupted, settling takes its entry out without a revoke, and it offers Add",
+    async () => {
+      for (const written of [false, true]) {
+        const w = await world();
+        const { inner } = await bothOn(w);
+        rewriteRecord(w, inner, (r) => ({ ...r, state: "applying", gives_access: false }));
+        if (!written) seed(inner, "{}\n");
+        const seen = await answers(w);
+        expect(seen[1]?.answer, String(written)).toEqual(
+          written
+            ? { status: "on", why: "interrupted", off: true }
+            : { status: "off", why: "interrupted", on: "add", off: true },
+        );
+        expect(homeAnswer(seen).status).toBe("on");
+        expect(await settleHomes(live(w), w.rows)).toMatchObject([
+          { result: "removed", access: "on" },
+        ]);
+        expect(verbs(w)).toEqual([]);
+        expect(entryIn(CLAUDE, inner)).toBeUndefined();
+        expect((await answers(w))[1]?.answer).toMatchObject({ on: "add" });
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "the same cut with the entry edited meanwhile: it is the person's, and no Add is promised; with the file unreadable meanwhile: it stays pending, untouched",
+    async () => {
+      const w = await world();
+      const { inner } = await bothOn(w);
+      rewriteRecord(w, inner, (r) => ({ ...r, state: "applying", gives_access: false }));
+      editEntry(inner);
+      expect((await answers(w))[1]?.answer).toMatchObject({ why: "foreign_entry" });
+      expect((await answers(w))[1]?.answer.on).toBeUndefined();
+      expect(await settleHomes(live(w), w.rows)).toMatchObject([
+        { result: "left", reason: "edited", kept: "edited" },
+      ]);
+      expect(furtherRecords(w)).toEqual([]);
+
+      const v = await world();
+      const two = await bothOn(v);
+      rewriteRecord(v, two.inner, (r) => ({ ...r, state: "applying", gives_access: false }));
+      const broken = `${readFileSync(two.inner, "utf8")},`;
+      writeFileSync(two.inner, broken);
+      expect((await answers(v))[1]?.answer).toEqual({
+        status: "off",
+        why: "invalid_file",
+        off: true,
+      });
+      expect(await settleHomes(live(v), v.rows)).toMatchObject([
+        { result: "left", reason: "invalid_file", kept: "own" },
+      ]);
+      expect(readFileSync(two.inner, "utf8")).toBe(broken);
+      expect(furtherRecords(v)).toMatchObject([{ state: "removing" }]);
+      expect(verbs(v)).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "the add that asked for the access, cut after the service gave it and before its record said so: the row is live until settling, which takes it and the entry back",
+    async () => {
+      const w = await world();
+      const { plain } = twoFiles(w);
+      seed(plain, "{}\n");
+      await turnOn(w);
+      rewriteRecord(w, plain, (r) => ({ ...r, state: "applying", gives_access: true }));
+      w.rows.asked.length = 0;
+      expect((await answers(w))[0]?.answer).toEqual({
+        status: "on",
+        why: "interrupted",
+        off: true,
+      });
+      expect(await settleHomes(live(w), w.rows)).toMatchObject([
+        { result: "removed", access: "off" },
+      ]);
+      expect(verbs(w)).toEqual(["revoke"]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+    },
+    SLOW,
+  );
+
+  test(
+    "giving an intact entry its access back, cut after the service confirmed it and before the record took the row's ID: the row is live, the file is on, and nothing is left to settle",
+    async () => {
+      const w = await world();
+      const { plain } = await bothOn(w);
+      rewriteRecord(w, plain, (r) => ({ ...r, grant: "gr_00000000000000000000000000" }));
+      expect(homeAnswer(await answers(w)).status).toBe("on");
+      expect(await settleHomes(live(w), w.rows)).toEqual([]);
+      expect(verbs(w)).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "Off cut after its revoke, before either file, or after the first file said removing: Off is offered again, the access off, and it finishes both",
+    async () => {
+      for (const first of ["untouched", "removing"] as const) {
+        const w = await world();
+        const { plain, inner } = await bothOn(w);
+        await w.rows.revoke((await filesOf(w))[0]?.home ?? missingHome());
+        if (first === "removing") {
+          rewriteRecord(w, plain, (r) => ({ ...r, state: "removing", gives_access: false }));
+        }
+        const seen = await answers(w);
+        expect(
+          seen.map((s) => s.answer),
+          first,
+        ).toEqual([
+          first === "removing"
+            ? { status: "off", why: "entry_left", on: "add", off: true }
+            : { status: "off", why: "access_off", on: "grant", off: true },
+          { status: "off", why: "access_off", on: "grant", off: true },
+        ]);
+        expect(homeAnswer(seen).off).toBe(true);
+        expect(await turnOff(w)).toMatchObject([{ result: "removed" }, { result: "removed" }]);
+        expect([entryIn(CLAUDE, plain), entryIn(CLAUDE, inner)]).toEqual([undefined, undefined]);
+        expect(homeAnswer(await answers(w)).off).toBe(false);
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "a repair in place, cut after its record and before its write: the file shows interrupted, settling takes its entry out without a revoke, and it offers Add",
+    async () => {
+      const w = await world();
+      const { plain } = await bothOn(w);
+      rewriteRecord(w, plain, (r) => ({
+        ...r,
+        state: "applying",
+        gives_access: false,
+        entry: { ...r.entry, command: join(w.dir, "new", basename(w.input.tasks)) },
+        also: [r.entry],
+      }));
+      expect((await answers(w))[0]?.answer).toMatchObject({ why: "interrupted" });
+      expect(await settleHomes(live(w), w.rows)).toMatchObject([
+        { result: "removed", access: "on" },
+      ]);
+      expect(verbs(w)).toEqual([]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+      expect((await answers(w))[0]?.answer).toMatchObject({ why: "missing", on: "add" });
+    },
+    SLOW,
+  );
+});
+
+/** The default home was not found: the test cannot go on. */
+function missingHome(): never {
+  throw new Error("no default home");
+}
+
+describe("[A3.3.13.setup.earlier-builds] Installs set up by earlier builds keep their access after the update, and a rollback to one leaves a state this build answers", () => {
+  const EARLIER = ["42d05231", "491a6d74", "2f09505f", "11ebfa74"] as const;
+
+  interface Earlier {
+    readonly record: { readonly format: number; readonly homes: Record<string, unknown>[] };
+    readonly after: Readonly<Record<string, string | null>>;
+  }
+
+  /** A fixture's text with each placeholder as this world's path, escaped as its place needs. */
+  function placed(w: World, text: string, escape: (path: string) => string): string {
+    const paths: Record<string, string> = {
+      user: w.home,
+      desktop: w.desktop,
+      root: w.dir,
+      tasks: w.input.tasks,
+    };
+    return text.replace(
+      /\{\{(user|desktop|root|tasks)\}\}((?:\/[^"'\s,\]]*)?)/gu,
+      (_m, token: string, rest: string) =>
+        escape(join(paths[token] ?? "", ...rest.split("/").filter((s) => s !== ""))),
+    );
+  }
+  const raw = (path: string) => path;
+  const escaped = (path: string) => JSON.stringify(path).slice(1, -1);
+
+  test.each(EARLIER)(
+    "an install the build %s set up keeps its access and shows on; the default folder's further file shows without its entry, and one apply writes it without asking for access; each home then turns off and comes out",
+    async (build) => {
+      const fixture = JSON.parse(
+        readFileSync(
+          join(import.meta.dirname, "fixtures", "setup-earlier", `${build}.json`),
+          "utf8",
+        ),
+      ) as Earlier;
+      const w = await world();
+      mkdirSync(join(w.home, ".claude-two"));
+      const input: SetupInput = {
+        ...w.input,
+        detection: await detect(nodeDetectHost({ env: w.input.env, home: w.home })),
+      };
+      const files: Record<string, string> = {};
+      for (const [key, text] of Object.entries(fixture.after)) {
+        const file = placed(w, key, raw);
+        files[key] = file;
+        // A TOML literal string holds the path as it is, every other string escaped.
+        seed(
+          file,
+          text === null
+            ? null
+            : placed(w, text.replaceAll("'{{tasks}}'", `'${w.input.tasks}'`), escaped),
+        );
+      }
+      mkdirSync(setupDir(w.input.stateDir), { recursive: true });
+      writeFileSync(recordPath(w), placed(w, JSON.stringify(fixture.record), escaped));
+      for (const r of fixture.record.homes) {
+        w.rows.live.push({
+          app: r["app"] as string,
+          home: placed(w, r["home"] as string, raw),
+          instance: r["instance"] as string,
+          space: r["space"] as string,
+          grant: r["grant"] as string,
+        });
+      }
+      const rowed = () => live(w, input);
+      const bytes = () => Object.values(files).map(bytesOf);
+      const written = bytes();
+
+      // After the update: each home on, with nothing to say and nothing written.
+      const views = await survey(rowed());
+      expect(views.map((v) => v.home.instance).sort(), build).toEqual(
+        ["claude", "claude-desktop", "claude-two", "claude-work", "codex", "codex-work"].sort(),
+      );
+      for (const view of views) {
+        expect(view.state, `${build}: ${view.home.instance}`).toBe("registered");
+        expect(toolsOf(rowed(), view, ""), `${build}: ${view.home.instance}`).toEqual({
+          status: "on",
+          off: true,
+        });
+      }
+      expect(bytes(), build).toEqual(written);
+
+      // Claude Code started with its home set to the folder makes its own file: no entry yet.
+      const { plain, inner } = twoFiles(w);
+      seed(inner, '{"numStartups": 1}\n');
+      const seen = await answers(w, rowed());
+      expect(homeAnswer(seen), build).toEqual({
+        status: "on",
+        files: [{ file: inner, why: "missing", on: "add" }],
+        off: true,
+      });
+      expect(bytes(), `${build}: nothing is written before an apply`).toEqual(written);
+      w.rows.asked.length = 0;
+      // As the command line applies: from no space of its own, the home's is the one.
+      expect(await turnOn(w, w.rows, rowed(), ""), build).toMatchObject([
+        { result: "unchanged", access: "on" },
+        { result: "applied", access: "on" },
+      ]);
+      expect(w.rows.asked, build).toEqual([]);
+      // This install's entry, for the instance and space of the home's row.
+      const space = (
+        fixture.record.homes.find((h) => h["instance"] === "claude") as {
+          space: string;
+        }
+      ).space;
+      expect(entryIn(CLAUDE, inner), build).toEqual({
+        command: w.input.tasks,
+        args: ["mcp", "--space", space, "--instance", "claude", "--app", "claude-code"],
+      });
+      expect(entryIn(CLAUDE, plain), build).toBeDefined();
+
+      // Each turns off and comes out of every file.
+      for (const group of await survey(rowed())) {
+        expect(
+          await removeHome(rowed(), group, w.rows),
+          `${build}: ${group.home.instance} ${group.home.file}`,
+        ).toMatchObject({ result: "removed", access: "off" });
+        const adapter = ADAPTERS.find((a) => a.app === group.home.app) as Adapter;
+        if (existsSync(group.home.file)) {
+          expect(entryIn(adapter, group.home.file), group.home.file).toBeUndefined();
+        }
+      }
+      expect(w.rows.live, build).toEqual([]);
+      expect(readRecords(w.input.stateDir), build).toEqual([]);
+      expect(furtherRecords(w), build).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "rolled back to an earlier build, which knows the first file only: its Off takes that file's entry out, and after the update the further file's recorded entry offers Off and turning on; its turning on again is on in both",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      const home = (await filesOf(w))[0]?.home ?? missingHome();
+      const further = readFileSync(join(setupDir(w.input.stateDir), FURTHER_FILE));
+
+      // The earlier build's Off: the folder's rows, then the one file it knows, then its record.
+      await w.rows.revoke(home);
+      seed(plain, "{}\n");
+      writeRecords(w.input.stateDir, []);
+      expect(readFileSync(join(setupDir(w.input.stateDir), FURTHER_FILE))).toEqual(further);
+
+      // Updated again.
+      const seen = await answers(w);
+      expect(seen.map((s) => s.answer)).toEqual([
+        { status: "off", on: "add", off: false },
+        { status: "off", why: "access_off", on: "grant", off: true },
+      ]);
+      expect(homeAnswer(seen)).toMatchObject({ status: "off", off: true });
+      expect(await turnOff(w)).toMatchObject([
+        { result: "unchanged", access: "off" },
+        { result: "removed", access: "off" },
+      ]);
+      expect(entryIn(CLAUDE, inner)).toBeUndefined();
+      expect(furtherRecords(w)).toEqual([]);
+
+      // Or the earlier build turns it on again: its entry, its record, its row.
+      const v = await world();
+      const two = twoFiles(v);
+      seed(two.plain, "{}\n");
+      seed(two.inner, "{}\n");
+      await turnOn(v);
+      const vHome = (await filesOf(v))[0]?.home ?? missingHome();
+      const vEntry = bytesOf(two.plain);
+      const vLegacy = readRecords(v.input.stateDir);
+      await v.rows.revoke(vHome);
+      seed(two.plain, "{}\n");
+      writeRecords(v.input.stateDir, []);
+      writeFileSync(two.plain, vEntry ?? "");
+      writeRecords(v.input.stateDir, vLegacy);
+      await v.rows.grant(vHome, SPACE);
+      expect(homeAnswer(await answers(v))).toEqual({ status: "on", files: [], off: true });
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.plan-bound] A plan is bound to what its apply writes and gives: each file as read, and the access", () => {
+  const tokenOf = async (w: World, a: Adapter, input: SetupInput = w.input) => {
+    const view = (await survey(input)).find(
+      (v) => v.home.app === a.app && (a.folder === undefined || v.home.home.endsWith(a.folder)),
+    );
+    if (view === undefined) throw new Error(`no ${a.app} home`);
+    return planToken(input, SPACE, planOf(input, [view], SPACE));
+  };
+
+  test(
+    "an edit of a selected file changes the plan, for turning on and for turning off; Claude Code's own saves outside its servers do not",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        const file = a.file(w);
+        const base =
+          a.format === "json" ? '{"theme": "dark", "mcpServers": {}}\n' : 'model = "m"\n';
+        seed(file, base);
+        const other =
+          a.format === "json"
+            ? '{"theme": "dark", "mcpServers": {"other": {"command": "x"}}}\n'
+            : 'model = "m"\n\n[mcp_servers.other]\ncommand = "x"\n';
+        const adding = await tokenOf(w, a);
+        seed(file, other);
+        expect(await tokenOf(w, a), `${a.app}: another server, before it is turned on`).not.toBe(
+          adding,
+        );
+        seed(file, base);
+        expect(await apply(w, a)).toMatchObject({ result: "applied" });
+        const withRows = { ...w.input, rows: w.rows.live };
+        const removing = await tokenOf(w, a, withRows);
+        const text = readFileSync(file, "utf8");
+        seed(
+          file,
+          a.format === "json"
+            ? text.replace('"theme": "dark"', '"theme": "light"')
+            : text.replace('model = "m"', 'model = "n"'),
+        );
+        const edited = await tokenOf(w, a, withRows);
+        if (a.app === "claude-code") {
+          // Claude Code saves its own state into this file while a session runs.
+          expect(edited, `${a.app}: its own save, before it is turned off`).toBe(removing);
+        } else {
+          expect(edited, `${a.app}: an edit, before it is turned off`).not.toBe(removing);
+        }
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "the access an apply gives back is part of its plan: on, off and unknown are three plans, and an apply that cannot read the access gives none back",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        seed(a.file(w), a.format === "json" ? "{}\n" : "");
+        expect(await apply(w, a)).toMatchObject({ result: "applied", access: "on" });
+        const on = await tokenOf(w, a, { ...w.input, rows: w.rows.live });
+        const off = await tokenOf(w, a, { ...w.input, rows: [] });
+        const unknown = await tokenOf(w, a, w.input);
+        expect(new Set([on, off, unknown]).size, a.app).toBe(3);
+        // The service does not answer: a renewal asks for no access, and nothing is taken.
+        await w.rows.revoke((await viewOf(w, a)).home);
+        w.rows.asked.length = 0;
+        w.rows.refuse.read = true;
+        const view = await viewOf(w, a);
+        expect(await applyHome(w.input, view, SPACE, w.rows), a.app).toMatchObject({
+          result: "left",
+          reason: "access_unknown",
+          access: "unknown",
+        });
+        expect(w.rows.asked, a.app).toEqual([]);
+        expect(w.rows.live, a.app).toEqual([]);
+      }
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.access-rule] A mark is one revoke: once it is done the record takes nothing back, an earlier build's pending record is settled with its revoke, and nothing turns on while a revoke is owed", () => {
+  test(
+    "a marked add cut after its grant, its file then unreadable: settling revokes once and spends the mark, so the access the other file gets later is never taken by the next settling (pull request 193's first review, point 1)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      // The plain file not set up; the inner file's add cut right after the service gave it the
+      // access: pending and marked, the row live. Then the inner file cannot be read.
+      seed(plain, "{}\n");
+      writeRecords(w.input.stateDir, []);
+      rewriteRecord(w, inner, (r) => ({ ...r, state: "applying", gives_access: true }));
+      writeFileSync(inner, `${readFileSync(inner, "utf8")},`);
+      w.rows.asked.length = 0;
+      expect(await settleHomes(live(w), w.rows)).toMatchObject([
+        { result: "left", reason: "invalid_file", kept: "own", access: "off" },
+      ]);
+      expect(furtherRecords(w)).toMatchObject([{ state: "removing", gives_access: false }]);
+      // The plain file is turned on: it asks for the access, and gets it.
+      expect(await turnOn(w)).toMatchObject([
+        { result: "applied", access: "on" },
+        { result: "left", reason: "invalid_file", access: "on" },
+      ]);
+      // An unrelated run settles again: the inner file is still owed its cleanup, never a revoke.
+      expect(await settleHomes(live(w), w.rows)).toMatchObject([
+        { result: "left", reason: "invalid_file", access: "on" },
+      ]);
+      expect(w.rows.asked.map((x) => x.verb)).toEqual(["revoke", "grant"]);
+      expect(w.rows.live).toHaveLength(1);
+      expect(homeAnswer(await answers(w)).status).toBe("on");
+    },
+    SLOW,
+  );
+
+  test(
+    "a failed add whose revoke is done keeps its record only for the entry: a later settling takes the entry out without a revoke",
+    async () => {
+      const w = await world();
+      const { plain } = twoFiles(w);
+      seed(plain, "{}\n");
+      // The service refuses the row, and the file cannot be written for the undo.
+      let restore = (): void => undefined;
+      const rows = keptRows((verb) => {
+        if (verb === "grant") restore = unwritable(plain);
+      });
+      rows.refuse.grant = "grant_failed";
+      try {
+        await turnOn(w, rows, { ...w.input, rows: rows.live });
+        expect(readRecords(w.input.stateDir)).toMatchObject([
+          { state: "removing", gives_access: false },
+        ]);
+      } finally {
+        restore();
+      }
+      rows.refuse = {};
+      rows.asked.length = 0;
+      await settleHomes(w.input, rows);
+      expect(rows.asked).toEqual([]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+    },
+    SLOW,
+  );
+
+  test(
+    "nothing turns on while a record of the home still owes its revoke: one not confirmed leaves the other file off, and asks for no access",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      seed(plain, "{}\n");
+      writeRecords(w.input.stateDir, []);
+      rewriteRecord(w, inner, (r) => ({ ...r, state: "applying", gives_access: true }));
+      w.rows.refuse.revoke = true;
+      expect(await settleHomes(live(w), w.rows)).toMatchObject([
+        { result: "failed", reason: "revoke_failed" },
+      ]);
+      w.rows.asked.length = 0;
+      expect(await turnOn(w)).toMatchObject([
+        { result: "left", reason: "interrupted" },
+        { result: "left" },
+      ]);
+      expect(w.rows.asked).toEqual([]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+    },
+    SLOW,
+  );
+
+  test(
+    "each file's result is the access as it is when its turn comes: two intact entries given their access back are both on, as is a second one after the first was added (point 6)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      const home = (await filesOf(w))[0]?.home ?? missingHome();
+      await w.rows.revoke(home);
+      expect(await turnOn(w)).toMatchObject([
+        { result: "unchanged", access: "on" },
+        { result: "unchanged", access: "on" },
+      ]);
+      // After a rollback's Off: the first file needs its entry, the second keeps its own.
+      await w.rows.revoke(home);
+      seed(plain, "{}\n");
+      writeRecords(w.input.stateDir, []);
+      expect(await turnOn(w)).toMatchObject([
+        { result: "applied", access: "on" },
+        { result: "unchanged", access: "on" },
+      ]);
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.home-files] Every record names a home to show: a recorded entry whose folder is gone, or whose record an earlier build left in the further file, is shown and taken out by Off", () => {
+  test(
+    "the inner file first and the plain one further: an earlier build's Off took the inner entry out, then the folder was renamed; the plain file's entry and record are shown, and Off takes them out (point 5)",
+    async () => {
+      const w = await world();
+      const { folder, plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      // The earlier build's Off: the access taken away, the inner entry and its record gone; the
+      // plain file's record where that build does not look. Then the folder renamed.
+      const [first] = readRecords(w.input.stateDir);
+      if (first === undefined) throw new Error("no record");
+      await w.rows.revoke((await filesOf(w))[0]?.home ?? missingHome());
+      writeRecords(w.input.stateDir, []);
+      writeRecords(w.input.stateDir, [first], FURTHER_FILE);
+      rmSync(inner);
+      renameSync(folder, `${folder}-moved`);
+      // The next start looks for the homes again.
+      const now = live(w, {
+        ...w.input,
+        detection: await detect(nodeDetectHost({ env: w.input.env, home: w.home })),
+      });
+      const views = await filesOf(w, now);
+      expect(views.map((v) => [v.home.file, v.state])).toEqual([[plain, "registered"]]);
+      expect(toolsOf(now, views[0] as HomeView, "").off).toBe(true);
+      expect(await turnOff(w, w.rows, now)).toMatchObject([{ result: "removed", access: "off" }]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+      expect(furtherRecords(w)).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a limit stated, its second half true: after two rollbacks with a change of how Claude Code is started, both records may be in the further file; this build shows the home, offers Off with the access off, and Off takes both entries out (point 4)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      const before = [bytesOf(plain), bytesOf(inner)];
+      await turnOn(w);
+      const records = [...readRecords(w.input.stateDir), ...furtherRecords(w)];
+      writeRecords(w.input.stateDir, []);
+      writeRecords(w.input.stateDir, records, FURTHER_FILE);
+      await w.rows.revoke((await filesOf(w))[0]?.home ?? missingHome());
+      const seen = await answers(w);
+      expect(seen.map((s) => s.answer)).toEqual([
+        { status: "off", why: "access_off", on: "grant", off: true },
+        { status: "off", why: "access_off", on: "grant", off: true },
+      ]);
+      expect(await turnOff(w)).toMatchObject([{ result: "removed" }, { result: "removed" }]);
+      expect([bytesOf(plain), bytesOf(inner)]).toEqual(before);
+      expect(furtherRecords(w)).toEqual([]);
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.home-files] What setup recorded is what it cleans up: a recorded file that is gone, and an entry whose record cannot be read, are never passed over", () => {
+  test(
+    "Off with one file malformed, then that file deleted: Off is still offered, and it and settling forget the record, saying the file is gone (pull request 193's second review, finding 2)",
+    async () => {
+      for (const by of ["off", "settling"] as const) {
+        const w = await world();
+        const { plain, inner } = twoFiles(w);
+        seed(plain, "{}\n");
+        seed(inner, "{}\n");
+        await turnOn(w);
+        writeFileSync(inner, `${readFileSync(inner, "utf8")},`);
+        expect(await turnOff(w), by).toMatchObject([
+          { result: "removed", access: "off" },
+          { result: "left", reason: "invalid_file" },
+        ]);
+        expect(furtherRecords(w)).toMatchObject([{ state: "removing" }]);
+        rmSync(inner);
+        const seen = await answers(w);
+        expect(seen.map((s) => s.file)).toEqual([plain, inner]);
+        expect(homeAnswer(seen).off, by).toBe(true);
+        const done = by === "off" ? await turnOff(w) : await settleHomes(live(w), w.rows);
+        expect(
+          done.find((o) => o.home.file === inner),
+          by,
+        ).toMatchObject({
+          result: "removed",
+          notes: ["file_gone"],
+        });
+        expect(furtherRecords(w), by).toEqual([]);
+        expect((await filesOf(w)).map((v) => v.home.file)).toEqual([plain]);
+        expect(homeAnswer(await answers(w)).off).toBe(false);
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "a file turned on, then deleted: its home offers Off, which forgets its record with the other file's entry, and nothing writes the file again",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      rmSync(inner);
+      const seen = await answers(w);
+      expect(seen.map((s) => s.file)).toEqual([plain, inner]);
+      expect(homeAnswer(seen)).toMatchObject({ status: "on", off: true });
+      await turnOn(w);
+      expect(existsSync(inner)).toBe(false);
+      expect(await turnOff(w)).toMatchObject([
+        { result: "removed", access: "off" },
+        { result: "removed", notes: ["file_gone"] },
+      ]);
+      expect([readRecords(w.input.stateDir), furtherRecords(w)]).toEqual([[], []]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+    },
+    SLOW,
+  );
+
+  test(
+    "both entries in place and agents-further.json then damaged: Off says the inner entry stays, with its file, the first time and every time after, and the file says why (pull request 193's second review, finding 3)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      writeFileSync(join(setupDir(w.input.stateDir), FURTHER_FILE), '{"format": 2, "homes": [');
+      const innerBytes = bytesOf(inner);
+      expect(await turnOff(w)).toMatchObject([
+        { result: "removed", access: "off" },
+        { result: "left", reason: "record_unreadable", kept: "own", access: "off" },
+      ]);
+      expect((await answers(w))[1]?.answer).toMatchObject({ why: "record_unreadable" });
+      const again = await turnOff(w);
+      expect(again).toMatchObject([
+        { result: "left", reason: "record_unreadable" },
+        { result: "left", reason: "record_unreadable", kept: "own" },
+      ]);
+      expect(again[0]?.kept).toBeUndefined();
+      expect(bytesOf(inner)).toEqual(innerBytes);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+    },
+    SLOW,
+  );
+});
+
+/**
+ * Makes `dir` refuse new files for this user, and so a file put in place by a rename: read-only on
+ * Linux and macOS, a rule that denies adding files on Windows. Returns its undo.
+ */
+function refusingNewFiles(dir: string): () => void {
+  if (!windows) {
+    const mode = statSync(dir).mode & 0o777;
+    chmodSync(dir, 0o555);
+    return () => {
+      chmodSync(dir, mode);
+    };
+  }
+  const icacls = join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "icacls.exe");
+  const run = (...args: string[]) => {
+    const ran = spawnSync(icacls, [dir, ...args], { encoding: "utf8", windowsHide: true });
+    if (ran.status !== 0) throw new Error(`icacls failed: ${ran.stdout}${ran.stderr}`);
+  };
+  // Everyone, which includes this user: adding a file or a folder, and writing data.
+  run("/deny", "*S-1-1-0:(AD,WD)");
+  return () => {
+    run("/remove:d", "*S-1-1-0");
+  };
+}
+
+/**
+ * What can keep a record from being written: its folder, on every system; the file alone only on
+ * Windows, where a read-only file is not replaced (elsewhere the folder decides).
+ */
+const RECORD_LOCKS: readonly (readonly [string, (w: World) => () => void])[] = [
+  ["its folder refuses new files", (w) => refusingNewFiles(setupDir(w.input.stateDir))],
+  ...(windows ? [["the file is read-only", (w: World) => unwritable(recordPath(w))] as const] : []),
+];
+
+describe("[A3.3.13.setup.access-rule] Nothing turns on for a home while a record of it owes its revoke or could not be written: one check where each grant is asked for", () => {
+  test.skipIf(root).each(RECORD_LOCKS)(
+    "the first file's record cannot be written right after its grant (%s): the undo revokes, the same apply turns the other file on not, and names the record file; settling later takes nothing a later grant gave (pull request 193's second review, finding 4)",
+    async (_name, lock) => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      let restore = (): void => undefined;
+      let grants = 0;
+      const rows = keptRows((verb) => {
+        if (verb === "grant" && (grants += 1) === 1) restore = lock(w);
+      });
+      const input = { ...w.input, rows: rows.live };
+      let done: Awaited<ReturnType<typeof turnOn>>;
+      try {
+        done = await turnOn(w, rows, input);
+      } finally {
+        restore();
+      }
+      const record = recordPath(w);
+      expect(done).toMatchObject([
+        { result: "failed", reason: "state_unwritable", record },
+        { result: "left", reason: "state_unwritable", record },
+      ]);
+      expect(rows.asked.map((x) => x.verb)).toEqual(["grant", "revoke"]);
+      expect(entryIn(CLAUDE, inner)).toBeUndefined();
+      // The record writable again: what it still owes is settled, and nothing live is taken.
+      await settleHomes({ ...w.input, rows: rows.live }, rows);
+      expect(rows.asked.filter((x) => x.verb === "grant")).toHaveLength(1);
+      expect(rows.live).toEqual([]);
+      expect([entryIn(CLAUDE, plain), entryIn(CLAUDE, inner)]).toEqual([undefined, undefined]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a revoke the service did not confirm: the row offers Off only, and says why; Off asks for the revoke again, and then the home turns on (pull request 193's second review)",
+    async () => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      seed(inner, "{}\n");
+      await turnOn(w);
+      seed(plain, "{}\n");
+      writeRecords(w.input.stateDir, []);
+      rewriteRecord(w, inner, (r) => ({ ...r, state: "applying", gives_access: true }));
+      w.rows.refuse.revoke = true;
+      expect(await settleHomes(live(w), w.rows)).toMatchObject([
+        { result: "failed", reason: "revoke_failed" },
+      ]);
+      const seen = await answers(w);
+      expect(seen.map((s) => s.answer.on)).toEqual([undefined, undefined]);
+      expect(seen.map((s) => s.answer.why)).toEqual(["interrupted", "interrupted"]);
+      expect(homeAnswer(seen)).toMatchObject({ off: true });
+      w.rows.refuse = {};
+      w.rows.asked.length = 0;
+      await turnOff(w);
+      expect(w.rows.asked.map((x) => x.verb)).toEqual(["revoke"]);
+      expect(await turnOn(w)).toMatchObject([
+        { result: "applied", access: "on" },
+        { result: "applied", access: "on" },
+      ]);
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.access-rule] A record write that fails is the same event on every route: said for its file with the record file, and the apply gives the home nothing more", () => {
+  test.skipIf(root).each(RECORD_LOCKS)(
+    "giving an intact entry its access back, the record write after it fails (%s): that file names the record file, the access stays given, and the same apply adds nothing to the other file (pull request 193's third check, fix 4)",
+    async (_name, lock) => {
+      const w = await world();
+      const { plain, inner } = twoFiles(w);
+      seed(plain, "{}\n");
+      let armed = false;
+      let restore = (): void => undefined;
+      const rows = keptRows((verb) => {
+        if (verb === "grant" && armed) {
+          armed = false;
+          restore = lock(w);
+        }
+      });
+      const input = () => ({ ...w.input, rows: rows.live });
+      await turnOn(w, rows, input());
+      await rows.revoke((await filesOf(w, input()))[0]?.home ?? missingHome());
+      seed(inner, "{}\n");
+      rows.asked.length = 0;
+      armed = true;
+      let done: Awaited<ReturnType<typeof turnOn>>;
+      try {
+        done = await turnOn(w, rows, input());
+      } finally {
+        restore();
+      }
+      const record = recordPath(w);
+      expect(done).toMatchObject([
+        { result: "unchanged", reason: "state_unwritable", record, access: "on" },
+        { result: "left", reason: "state_unwritable", record },
+      ]);
+      expect(rows.asked.map((x) => x.verb)).toEqual(["grant"]);
+      expect(entryIn(CLAUDE, inner)).toBeUndefined();
+      // Writable again: the next apply adds the other file.
+      expect(await turnOn(w, rows, input())).toMatchObject([
+        { result: "unchanged" },
+        { result: "applied" },
+      ]);
+    },
+    SLOW,
+  );
+
+  test.skipIf(root).each(RECORD_LOCKS)(
+    "Off whose record cannot be dropped once the entry is out (%s): the file is removed and names the record file, and the next Off forgets the record",
+    async (_name, lock) => {
+      const w = await world();
+      const { plain } = twoFiles(w);
+      seed(plain, "{}\n");
+      await turnOn(w);
+      let restore = (): void => undefined;
+      let off: Awaited<ReturnType<typeof turnOff>>;
+      try {
+        off = await afterPlaced(
+          plain,
+          () => {
+            restore = lock(w);
+          },
+          () => turnOff(w),
+        );
+      } finally {
+        restore();
+      }
+      expect(off).toMatchObject([{ result: "removed", record: recordPath(w), access: "off" }]);
+      expect(entryIn(CLAUDE, plain)).toBeUndefined();
+      expect(readRecords(w.input.stateDir)).toMatchObject([
+        { state: "removing", gives_access: false },
+      ]);
+      expect(await turnOff(w)).toMatchObject([{ result: "removed" }]);
+      expect(readRecords(w.input.stateDir)).toEqual([]);
+    },
+    SLOW,
+  );
+});

@@ -49,7 +49,7 @@ import {
   AGENT_APPS,
   appLabel,
   applyBlock,
-  applyHome,
+  applyFiles,
   approveToolsHint,
   BLOCK_FORS,
   blockCanonical,
@@ -67,6 +67,8 @@ import {
   type BlockView,
   manualRemoval,
   HOSTS,
+  homeAnswer,
+  homeGroups,
   isPrintApp,
   LockBusy,
   toolsOf,
@@ -75,13 +77,15 @@ import {
   PRINT_APPS,
   PRINT_HOMES,
   PRINT_LABELS,
-  recordFile,
-  removeHome,
+  removeFiles,
+  renews,
+  setupRecords,
   rowAccess,
   runCommand,
   samePath,
   SetupStateInvalid,
   SetupStateUnsafe,
+  SetupStateUnwritable,
   settleHomes,
   snippetFor,
   survey,
@@ -271,7 +275,12 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
     "its MCP servers are written in a layout setup cannot keep (inline, dotted keys, or JSON it cannot splice), or the entry's command cannot be written there",
   foreign_entry: `it has an entry named ${MCP_SERVER_KEY} that setup did not write`,
   not_set_up:
-    "Claude Desktop has not made its configuration file yet: open its Settings, then Developer, once, and run setup again",
+    "the app has not made this file yet (Claude Desktop: open its Settings, then Developer, once; Claude Code: start it that way once), and setup never creates it: run setup again then",
+  read_only: "its file or its folder is read-only, so no entry can go into it",
+  access_unknown: `${PRODUCT_NAME}'s service did not say whether its access is on, so nothing that needs it was done: run this again while the service runs`,
+  older: `its entry runs ${PRODUCT_NAME} where it was installed before, which is still there: apply writes it again with the command installed now`,
+  no_program: "its entry names no program, so its tools do not start",
+  unbound: `its entry names another instance or space than the home's access, so its tools do not start: ${CLI_NAME} setup agents --remove takes it out`,
   ambiguous: `there are several Claude Desktop configuration files: pass --home <folder> for the one the app uses`,
   edited: "the entry was changed after setup wrote it",
   interrupted: `an earlier setup did not finish there: the next ${CLI_NAME} setup agents --apply or --remove settles it first`,
@@ -306,11 +315,19 @@ function accessText(outcome: Outcome): string | undefined {
   if (outcome.access === "unknown") {
     return `Access could not be confirmed off: run ${CLI_NAME} setup agents --remove again while ${PRODUCT_NAME}'s service runs.`;
   }
-  if (outcome.kept === "edited") {
-    return `Access is off. Your edited entry is still in ${outcome.home.file}.`;
-  }
-  if (outcome.kept === "own") return `Access is off. The entry is still in ${outcome.home.file}.`;
   return "Access is off.";
+}
+
+/** What a removal left in a file, said with the file. */
+function keptText(outcome: Outcome): string | undefined {
+  const { file } = outcome.home;
+  if (outcome.kept === "edited") return `Your edited entry is still in ${file}.`;
+  if (outcome.kept === "own") return `The entry is still in ${file}.`;
+  if (outcome.kept === "unrecorded") {
+    const removal = manualRemoval(outcome.home);
+    return `An entry of ${PRODUCT_NAME}'s name that setup did not write is still in ${file}: take ${removal.what} out of it by hand if it is not wanted.`;
+  }
+  return undefined;
 }
 
 /**
@@ -318,7 +335,10 @@ function accessText(outcome: Outcome): string | undefined {
  * hand) also says what to take out of which file, so the next setup can register the home (A3
  * 3.7.8: the grant gate's refusal of such an entry sends the person here).
  */
-function reasonText(reason: OutcomeReason, home: HomeView["home"]): string {
+function reasonText(reason: OutcomeReason, home: HomeView["home"], record?: string): string {
+  if (reason === "state_unwritable" && record !== undefined) {
+    return `setup could not write its own record ${record} (a full disk, or a read-only file?), so it did nothing more in this home: run ${CLI_NAME} setup agents again once it can`;
+  }
   if (reason !== "foreign_entry") return REASON[reason];
   const removal = manualRemoval(home);
   return `${REASON.foreign_entry} (one added by hand). For setup to register this home, take ${removal.what} out of ${removal.file}; then run ${CLI_NAME} setup agents again`;
@@ -329,6 +349,7 @@ const NOTE: Readonly<Record<string, string>> = {
   undo_failed: `The entry may still be there: the next ${CLI_NAME} setup agents --apply or --remove takes it out.`,
   entry_left:
     "The entry there is not exactly the one setup asked for, so it was left as it is: take it out by hand if it is not wanted.",
+  file_gone: "Its file is gone, so only setup's record of it was taken out.",
 };
 
 const STATE_TEXT: Readonly<Record<HomeView["state"], string>> = {
@@ -355,10 +376,16 @@ function toolsLine(view: HomeView, answer: ToolsAnswer, live: boolean | undefine
           ? reasonText(why, view.home)
           : `${STATE_TEXT[view.state]}: ${reasonText(why, view.home)}`;
   const access = live === true ? "" : " and gives it its access again";
+  // While its access is on and its tools do not start, turning it off is said too.
+  const still =
+    live === true && answer.status !== "on" && answer.off
+      ? `; ${CLI_NAME} setup agents --remove turns its access off`
+      : "";
   if (answer.on === "grant") return `${said}: apply gives it its access again`;
   if (answer.on === "repair") {
-    return `${said}: apply writes it again with the command installed now${access}`;
+    return `${said}: apply writes it again with the command installed now${access}${still}`;
   }
+  if (answer.on === "add") return `${said}: apply writes it${still}`;
   if (answer.status === "off" && answer.off) {
     const still = live === true ? "its access is still on, and " : "";
     return `${said}: ${still}${CLI_NAME} setup agents --remove turns its access off`;
@@ -394,12 +421,14 @@ const viewJson = (view: HomeView) => ({
 const outcomeJson = (outcome: Outcome) => ({
   app: outcome.home.app,
   home: outcome.home.home,
+  file: outcome.home.file,
   instance: outcome.home.instance,
   result: outcome.result,
   ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
   ...(outcome.access === undefined ? {} : { access: outcome.access }),
   ...(outcome.kept === undefined ? {} : { kept: outcome.kept }),
   ...(outcome.notes === undefined ? {} : { notes: outcome.notes }),
+  ...(outcome.record === undefined ? {} : { record: outcome.record }),
 });
 
 interface SpaceRow {
@@ -522,7 +551,7 @@ export async function agentsCommand(
         `${CLI_NAME} setup agents --apply needs --plan: run ${CLI_NAME} setup agents first and use the command it prints`,
       );
     }
-    const { input, defaultSpace, root } = await setupInputOf(io, options);
+    const { input, defaultSpace } = await setupInputOf(io, options);
     const selected: Selected = (view) =>
       (parsed.apps === undefined ||
         parsed.apps.includes(view.home.app) ||
@@ -558,26 +587,21 @@ export async function agentsCommand(
           parsed.home,
         );
       case "apply": {
-        if (mcp && (!isFolder(root) || !exists(input.tasks))) {
-          throw new AppError({
-            code: "invalid_input",
-            message: `${PRODUCT_NAME}'s command is not installed where the entries would run it.`,
-            hint: "Install it first; the entries run the installed command, never a source tree.",
-            data: { issues: [{ path: "command", message: "Not installed" }] },
-          });
-        }
         const access = rowAccess(rowCall(call));
-        const { outcomes, blocks } = await withSetupLock(input.stateDir, async () => {
-          // What a run that ended midway left is settled first, and said.
+        const { outcomes, notes, blocks } = await withSetupLock(input.stateDir, async () => {
+          // What a run that ended midway left is settled first, and said: as an outcome for a home
+          // this apply was asked about, as a note for any other.
           const settled = mcp ? await settleHomes(await rowsOf(), access) : [];
           // The preview again, under the lock: apply goes on only when it is the plan the
           // person saw (`--plan`), whatever changed in the homes, machine.toml or the spaces.
-          const all = (await survey(await rowsOf())).filter(selected);
-          const views = mcp ? all : [];
+          const rowed = await rowsOf();
+          const all = (await survey(rowed)).filter(selected);
+          const views = mcp ? all.filter(turnsOn) : [];
           const space = needsSpace(views) ? await spaceOf() : "";
-          const items = planOf(input, views, space);
+          const items = planOf(rowed, views, space);
           const planned = block ? await blockPlan(input, all, selected) : undefined;
           const token = planToken(
+            rowed,
             space,
             items,
             planned === undefined ? undefined : blockCanonical(planned),
@@ -593,43 +617,45 @@ export async function agentsCommand(
               ...(settled.length === 0 ? {} : { data: { settled: settled.map(outcomeJson) } }),
             });
           }
-          const done: Outcome[] = [...settled];
-          for (const item of items) {
-            done.push(await applyHome(input, item.view, space, access, item.change));
+          const done: Outcome[] = settled.filter((o) => selected(o));
+          for (const files of homeGroups(input.platform, items, (i) => i.view.home)) {
+            done.push(...(await applyFiles(rowed, files, space, access)));
           }
-          return { outcomes: done, blocks: (planned ?? []).map((b) => applyBlock(input, b)) };
+          return {
+            outcomes: done,
+            notes: settled.filter((o) => !selected(o)).map(settledText),
+            blocks: (planned ?? []).map((b) => applyBlock(input, b)),
+          };
         });
-        return report(io, globals, "apply", outcomes, [], blocks);
+        return report(io, globals, "apply", outcomes, notes, blocks);
       }
       case "remove": {
         const access = rowAccess(rowCall(call));
         const { outcomes, notes, blocks } = await withSetupLock(input.stateDir, async () => {
-          const done: Outcome[] = mcp ? await settleHomes(input, access) : [];
-          let surveyed = await survey(input);
+          const done: Outcome[] = [];
+          const live = mcp ? await withRows(input, call) : input;
+          const surveyed = await survey(live);
           const said: string[] = [];
-          const unrecorded = surveyed.some((view) => view.refusal === "record_unreadable");
-          if (mcp && unrecorded) {
-            // Without its record setup reaches a home by its live row: the access goes, and no
-            // file changes.
-            const live = await withRows(input, call);
-            surveyed = await survey(live);
-            const rowed = (view: HomeView) =>
+          if (mcp) {
+            // Each selected home by its own records: one with something of setup's, an entry of
+            // its name, or a live row. Its access first, then each of its files; a file whose
+            // record cannot be read is left as it is. Reverse order (A3 3.13.1): the latest first.
+            const rowed = (v: HomeView) =>
               (live.rows ?? []).some(
-                (row) =>
-                  row.app === view.home.app && samePath(input.platform, row.home, view.home.home),
+                (r) => r.app === v.home.app && samePath(input.platform, r.home, v.home.home),
               );
-            for (const view of surveyed.filter((v) => selected(v) && rowed(v))) {
-              done.push(await removeHome(input, view, access));
-            }
-            said.push(...(await revokeLeftRows(input, selected, call)));
-            said.push(recordUnreadableText(input.stateDir));
-          } else if (mcp) {
-            const views = surveyed.filter((view) => selected(view) && view.record !== undefined);
-            // Reverse order (A3 3.13.1): the latest apply first.
-            views.sort((a, b) => (b.record?.at ?? "").localeCompare(a.record?.at ?? ""));
-            for (const view of views) done.push(await removeHome(input, view, access));
+            const homes = homeGroups(input.platform, surveyed.filter(selected), (v) => v.home)
+              .filter((views) =>
+                views.some((v) => v.record !== undefined || v.entry !== undefined || rowed(v)),
+              )
+              .sort((a, b) => latest(b).localeCompare(latest(a)));
+            for (const views of homes) done.push(...(await removeFiles(input, views, access)));
             // Under the same lock: an apply that runs right after must not lose its row to this.
             said.push(...(await revokeLeftRows(input, selected, call)));
+            // A selected home with a file whose record cannot be read is never passed over in silence.
+            if (surveyed.some((v) => selected(v) && v.refusal === "record_unreadable")) {
+              said.push(...setupRecords(input.stateDir).unreadable.map(recordUnreadableText));
+            }
           }
           if (!block) {
             // The blocks are a part of their own: a remove of the entries says they stay.
@@ -663,14 +689,6 @@ export async function agentsCommand(
   }
 }
 
-function exists(path: string): boolean {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
-}
-
 /** Setup's own failures as A3's error bodies. */
 function setupError(error: unknown): unknown {
   if (error instanceof LockBusy) {
@@ -685,6 +703,13 @@ function setupError(error: unknown): unknown {
       code: "invalid_input",
       message: `${error.message}, so nothing was changed.`,
       hint: `Run: ${CLI_NAME} doctor`,
+    });
+  }
+  if (error instanceof SetupStateUnwritable) {
+    return new AppError({
+      code: "invalid_input",
+      message: `${error.message}.`,
+      hint: "Check that the disk has room and that you can write in that folder, then run it again.",
     });
   }
   return error;
@@ -706,13 +731,33 @@ async function withRows(input: SetupInput, call: Call): Promise<SetupInput> {
   }
   const rows = (Array.isArray(listed) ? (listed as unknown[]) : []).flatMap((row) => {
     if (typeof row !== "object" || row === null) return [];
-    const { app, home, instance, grant } = row as Record<string, unknown>;
+    const { app, home, instance, grant, account, spaces } = row as Record<string, unknown>;
     if (typeof app !== "string" || typeof home !== "string" || typeof instance !== "string") {
       return [];
     }
-    return [{ app, home, instance, ...(typeof grant === "string" ? { grant } : {}) }];
+    const space: unknown = Array.isArray(spaces) ? (spaces as unknown[])[0] : undefined;
+    return [
+      {
+        app,
+        home,
+        instance,
+        ...(typeof grant === "string" ? { grant } : {}),
+        ...(typeof account === "string" ? { account } : {}),
+        ...(typeof space === "string" ? { space } : {}),
+      },
+    ];
   });
-  return { ...input, rows };
+  // The spaces the service serves: access for a closed one is not offered.
+  let served: string[] | undefined;
+  try {
+    const spaces = ((await call("space/list", {}))["spaces"] ?? []) as SpaceRow[];
+    served = spaces.flatMap((s) =>
+      typeof s.id === "string" && s.state !== "closed" ? [s.id] : [],
+    );
+  } catch {
+    served = undefined;
+  }
+  return { ...input, rows, ...(served === undefined ? {} : { served }) };
 }
 
 /** Whether `--app`, `--instance` and `--home` select a home. */
@@ -736,15 +781,22 @@ const rowCall =
     }
   };
 
-/** Whether apply registers a home, so it needs the space new entries name (from the service). */
+/** Whether apply registers a home set up nowhere yet, so it needs the space its entries name. */
 const needsSpace = (views: readonly HomeView[]): boolean =>
-  views.some((view) => view.state === "not_registered");
+  views.some((view) => view.state === "not_registered" && view.home.space === undefined);
 
-/** Whether apply has anything to do: a home it turns on, or a registered one whose row it renews. */
+/** A home that can be turned on: not one listed only for its live row, which is turned off only. */
+const turnsOn = (view: HomeView): boolean => view.home.rowOnly !== true;
+
+/** When setup last wrote any of a home's records. */
+const latest = (views: readonly HomeView[]): string =>
+  views.reduce((at, v) => ((v.record?.at ?? "") > at ? (v.record?.at ?? "") : at), "");
+
+/** Whether apply has anything to do: a file it turns on, or a registered one whose row it renews. */
 const applies = (input: SetupInput, items: readonly PlanItem[]): boolean =>
   items.some(({ view, change }) => {
     const answer = toolsOf(input, view, "", typeof change === "string" ? change : undefined);
-    return answer.on !== undefined || (view.state === "registered" && answer.why === undefined);
+    return answer.on !== undefined || renews(input, view, "");
   });
 
 /**
@@ -772,6 +824,12 @@ async function revokeLeftRows(
       (v) => v.home.app === row.app && samePath(input.platform, v.home.home, row.home),
     );
     // A home that is gone is selected by its row's app, instance, home and hosts.
+    const recorded = views.some(
+      (v) =>
+        v.home.app === row.app &&
+        samePath(input.platform, v.home.home, row.home) &&
+        v.record !== undefined,
+    );
     const pick = selected(
       view ?? {
         home: {
@@ -784,7 +842,7 @@ async function revokeLeftRows(
         },
       },
     );
-    return pick && view?.record === undefined;
+    return pick && !recorded;
   });
   if (stale.length > 0) await call("setup/home_revoke", { grants: stale.map((r) => r.grant) });
   return [];
@@ -797,44 +855,84 @@ async function status(
   selected: Selected,
 ): Promise<number> {
   // One snapshot of the rows for every home: its answer and its row say the same.
-  const views = (await survey(input)).filter(selected);
+  const homes = homeGroups(input.platform, (await survey(input)).filter(selected), (v) => v.home);
+  // The plan's refusals too: several Claude Desktop files are one the person picks (--home).
+  const items = planOf(input, homes.flat(), "");
+  const refusal = (view: HomeView) => {
+    const change = items.find((i) => i.view === view)?.change;
+    return typeof change === "string" ? change : undefined;
+  };
   const { rows } = input;
   const rowOf = (view: HomeView) =>
     rows?.find((r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home));
+  const answers = homes.map((views) =>
+    views.map((view) => ({ view, answer: toolsOf(input, view, "", refusal(view)) })),
+  );
   if (globals.json) {
     io.stdout(
       `${JSON.stringify({
-        homes: views.map((view) => ({
-          ...viewJson(view),
-          tools: toolsOf(input, view, ""),
-          row: rowOf(view)?.grant ?? null,
-        })),
+        homes: answers.map((files) => {
+          const [first] = files;
+          const home = homeAnswer(
+            files.map(({ view, answer }) => ({ file: view.home.file, answer })),
+          );
+          return {
+            ...(first === undefined ? {} : viewJson(first.view)),
+            // One file: its own answer, as it always was; several: the home's, each file said.
+            tools: files.length === 1 && first !== undefined ? first.answer : home,
+            ...(files.length === 1
+              ? {}
+              : {
+                  files: files.map(({ view, answer }) => ({ ...viewJson(view), tools: answer })),
+                }),
+            row: first === undefined ? null : (rowOf(first.view)?.grant ?? null),
+          };
+        }),
         service: rows !== undefined,
       })}\n`,
     );
     return 0;
   }
-  if (views.length === 0) io.stdout("No agent home was found.\n");
-  for (const view of views) {
-    const row = rowOf(view);
-    const space = view.record === undefined ? "" : `, space ${view.record.space}`;
+  if (answers.length === 0) io.stdout("No agent home was found.\n");
+  for (const files of answers) {
+    const [first] = files;
+    if (first === undefined) continue;
+    const row = rowOf(first.view);
+    const record = files.find(({ view }) => view.record !== undefined)?.view.record;
+    const space = record === undefined ? "" : `, space ${record.space}`;
     const grant =
       rows === undefined
         ? ""
         : row === undefined
           ? ", no grant row"
           : `, grant row ${row.grant ?? "(no ID)"}`;
-    const said = toolsLine(
-      view,
-      toolsOf(input, view, ""),
-      rows === undefined ? undefined : row !== undefined,
+    const live = rows === undefined ? undefined : row !== undefined;
+    io.stdout(`${title(first.view)}\n`);
+    if (files.length === 1) {
+      io.stdout(`  ${toolsLine(first.view, first.answer, live)}${space}${grant}\n`);
+      continue;
+    }
+    const home = homeAnswer(files.map(({ view, answer }) => ({ file: view.home.file, answer })));
+    io.stdout(
+      `  tools ${home.status === "on" ? "on" : home.status === "unknown" ? "not known" : "off"}${space}${grant}\n`,
     );
-    io.stdout(`${title(view)}\n  ${said}${space}${grant}\n`);
+    for (const { view, answer } of files) {
+      io.stdout(`  ${view.home.file}: ${toolsLine(view, answer, live)}\n`);
+    }
   }
+  unreadableRecords(io, input, homes.flat());
   if (rows === undefined) {
     io.stdout(`${PRODUCT_NAME}'s service is not running: the grant rows are not shown.\n`);
   }
   return 0;
+}
+
+/** Each record file setup cannot read, by its path, when a shown home's file needs it. */
+function unreadableRecords(io: Io, input: SetupInput, views: readonly HomeView[]): void {
+  if (!views.some((v) => v.refusal === "record_unreadable")) return;
+  for (const file of setupRecords(input.stateDir).unreadable) {
+    io.stdout(`${recordUnreadableText(file)}\n`);
+  }
 }
 
 /** The approve-tools part of each selected home: a change for the person to make, never made. */
@@ -855,7 +953,7 @@ async function preview(
 ): Promise<number> {
   const all = (await survey(input)).filter(selected);
   const mcp = parsed.parts.includes("mcp");
-  const views = mcp ? all : [];
+  const views = mcp ? all.filter(turnsOn) : [];
   const registers = needsSpace(views);
   const blocks = parsed.parts.includes("block") ? await blockPlan(input, all, selected) : undefined;
   const blockChanges = (blocks ?? []).filter((b) => typeof b.change === "object").length;
@@ -865,7 +963,12 @@ async function preview(
   const items = planOf(input, views, space);
   const answerOf = (view: HomeView, change: PlanItem["change"]) =>
     toolsOf(input, view, space, typeof change === "string" ? change : undefined);
-  const plan = planToken(space, items, blocks === undefined ? undefined : blockCanonical(blocks));
+  const plan = planToken(
+    input,
+    space,
+    items,
+    blocks === undefined ? undefined : blockCanonical(blocks),
+  );
   const delegated = parsed.parts.includes("approve-tools") ? approvals(all, io.platform) : [];
   // The exact apply of this preview: the same selection, parts and space, and the plan's token.
   const parts = parsed.parts.filter((p) => p !== "approve-tools");
@@ -923,9 +1026,17 @@ async function preview(
   if (parsed.parts.includes("mcp") && items.length === 0) io.stdout("No agent home was found.\n");
   let n = 0;
   let changes = 0;
+  let shown: HomeView["home"] | undefined;
   for (const { view, change } of items) {
-    n += 1;
-    io.stdout(`${String(n)}. ${title(view)}\n`);
+    const again =
+      shown !== undefined &&
+      shown.app === view.home.app &&
+      samePath(input.platform, shown.home, view.home.home);
+    shown = view.home;
+    if (!again) {
+      n += 1;
+      io.stdout(`${String(n)}. ${title(view)}\n`);
+    }
     const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
     io.stdout(`   ${view.home.file} (${hash})\n`);
     const answer = answerOf(view, change);
@@ -947,6 +1058,7 @@ async function preview(
       io.stdout(`   ${toolsLine(view, answer, live)}. Nothing to do.\n`);
     }
   }
+  if (mcp) unreadableRecords(io, input, all);
   if (delegated.length > 0) {
     io.stdout(
       `approve-tools: ${PRODUCT_NAME} never changes another app's approval settings. To approve its tools yourself:\n`,
@@ -999,9 +1111,23 @@ async function blockPlan(
   return planBlocks(views.filter(selected));
 }
 
+/** A home an apply was not asked about, whose setup that did not finish it settled first. */
+function settledText(outcome: Outcome): string {
+  const where = `${title(outcome)}, ${outcome.home.file}`;
+  if (outcome.result === "removed" || outcome.result === "unchanged") {
+    return `${where}: a setup that did not finish there was finished.`;
+  }
+  const why =
+    outcome.reason === undefined
+      ? ""
+      : `: ${reasonText(outcome.reason, outcome.home, outcome.record)}`;
+  const kept = keptText(outcome);
+  return `${where}: a setup that did not finish there is still to be finished${why}.${kept === undefined ? "" : ` ${kept}`}`;
+}
+
 /** What a remove says when setup's own record cannot be read: the access went, nothing else. */
-const recordUnreadableText = (stateDir: string): string =>
-  `${PRODUCT_NAME} cannot read its own record of the agent homes, ${recordFile(stateDir)}, so a remove only takes the access away and changes no file: the record and each app's entry stay as they are. ${CLI_NAME} doctor says how to clean them up.`;
+const recordUnreadableText = (file: string): string =>
+  `${PRODUCT_NAME} cannot read its own record ${file}, so where that record is needed a remove only takes the access away and changes no file: the record and the entries it covers stay as they are. ${CLI_NAME} doctor says how to clean them up.`;
 
 /** A remove of the entries leaves the blocks: they are a part of their own. */
 const BLOCKS_STAY = `The instruction blocks setup wrote stay: ${CLI_NAME} setup agents --remove --parts block takes them out.`;
@@ -1210,8 +1336,9 @@ function report(
   notes: readonly string[] = [],
   blocks: readonly BlockOutcome[] = [],
 ): number {
+  // A record that could not be written leaves the home short of what was asked, whatever else did.
   const complete =
-    outcomes.every((o) => o.result !== "failed" && o.result !== "left") &&
+    outcomes.every((o) => o.result !== "failed" && o.result !== "left" && o.record === undefined) &&
     blocks.every((b) => b.result !== "failed" && b.result !== "left");
   if (globals.json) {
     io.stdout(
@@ -1250,14 +1377,25 @@ function report(
       left: "left alone",
       failed: "failed",
     } as const;
-    for (const outcome of outcomes) {
-      const reason =
-        outcome.reason === undefined || outcome.result === "removed"
-          ? ""
-          : `: ${reasonText(outcome.reason, outcome.home)}`;
-      io.stdout(`${title(outcome)}\n  ${verb[outcome.result]}${reason}\n`);
-      for (const note of outcome.notes ?? []) io.stdout(`  ${NOTE[note] ?? note}\n`);
-      const access = accessText(outcome);
+    for (const files of homeGroups(io.platform, outcomes, (o) => o.home)) {
+      const [first] = files;
+      if (first === undefined) continue;
+      io.stdout(`${title(first)}\n`);
+      for (const outcome of files) {
+        const reason =
+          outcome.reason === undefined || outcome.result === "removed"
+            ? ""
+            : `: ${reasonText(outcome.reason, outcome.home, outcome.record)}`;
+        const which = files.length === 1 ? "" : `${outcome.home.file}: `;
+        io.stdout(`  ${which}${verb[outcome.result]}${reason}\n`);
+        for (const note of outcome.notes ?? []) io.stdout(`  ${NOTE[note] ?? note}\n`);
+        if (outcome.record !== undefined && outcome.reason !== "state_unwritable") {
+          io.stdout(`  Setup could not write its own record ${outcome.record} either.\n`);
+        }
+        const kept = keptText(outcome);
+        if (kept !== undefined) io.stdout(`  ${kept}\n`);
+      }
+      const access = accessText(first);
       if (access !== undefined) io.stdout(`  ${access}\n`);
     }
     for (const note of notes) io.stdout(`${note}\n`);

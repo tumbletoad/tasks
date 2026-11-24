@@ -15,8 +15,8 @@ export interface KeptRows extends Access {
   readonly live: KeptRow[];
   /** Each call as it came: `grant` or `revoke`, with the home's folder. */
   readonly asked: { readonly verb: "grant" | "revoke"; readonly home: string }[];
-  /** What the service does with the next calls: refuse a grant, or fail a revoke. */
-  refuse: { grant?: "instance_taken" | "grant_failed"; revoke?: boolean };
+  /** What the service does with the next calls: refuse a grant, or fail a revoke or a read. */
+  refuse: { grant?: "instance_taken" | "grant_failed"; revoke?: boolean; read?: boolean };
 }
 
 /** A grants table that gives each home one row, as the service does. `before` sees each call first. */
@@ -45,6 +45,11 @@ export function keptRows(before?: (verb: "grant" | "revoke", home: AgentHome) =>
       const grant = `gr_${String(made).padStart(26, "0")}`;
       live.push({ app: home.app, home: home.home, instance: home.instance, space, grant });
       return Promise.resolve(grant);
+    },
+    read(home) {
+      if (rows.refuse.read === true) return Promise.reject(new Error("service gone"));
+      const row = live.find(ofHome(home));
+      return Promise.resolve(row === undefined ? null : { grant: row.grant });
     },
     revoke(home) {
       rows.asked.push({ verb: "revoke", home: home.home });

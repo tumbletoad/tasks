@@ -3595,7 +3595,7 @@
     },
     {
       "id": "A3.3.13.setup.tools-table",
-      "title": "One answer for each home's tools, as a table for Claude Code, Codex and Claude Desktop: every combination of the entry (setup's, changed by hand, gone), the program it names, the access and the space, read through the page and the command line's status JSON on one scratch state; turning off is offered whenever the access is live, and every action offered is carried out",
+      "title": "One answer for each home's tools, as a table for Claude Code, Codex and Claude Desktop: every combination of the entry (setup's, changed by hand, gone), the program it names, the access and the space, read through the page and the command line's status JSON on one scratch state; an entry whose program is gone, that names another instance or none, or a file setup cannot read is never shown as on; a working older install is on with a repair offered; turning off is offered whenever the access is live or setup's entry is still there, and every action offered is carried out",
       "source": "A3 3.13.1, A3 3.14",
       "owner": "M2",
       "kind": "ci",
@@ -3619,8 +3619,64 @@
     },
     {
       "id": "A3.3.13.setup.fixtures",
-      "title": "Agent setup's fixture table, run through the production planner, writer and grants for Claude Code, Codex and Claude Desktop with the raw bytes, the access and the other home compared after each action: add then remove gives back every byte (a byte order mark, CRLF, four spaces, tabs, one line, unknown keys, an empty servers object with spaces inside, comments, no final newline, an empty file, no file, which setup creates and deletes again except Claude Desktop's); access is given once the entry is in place and taken back before it comes out; a file setup does not accept stays as it was; an entry changed by hand, a comment in or above its table included, and a change made while setup gives the access stay and lose their access; a file changed since the plan is not written while Claude Code's file takes the entry as it is then; a Claude Code session that saves during setup keeps its save under its own lock, one that keeps the lock leaves nothing written, and a left lock is taken over; a file that cannot be written gives no access and its entry comes out at the next setup; a run that ended midway is finished or undone once; a refused row takes the entry back and a failed revoke is done again, the entry kept until one is confirmed; a read that fails right after the write keeps the record to take the entry out; giving a registered home its access back checks its entry as a new install does; with setup's own record unreadable every home with access still turns off and nothing turns on; a volume without hard links still gets a new file; an earlier build's records are read in place",
+      "title": "Agent setup's fixture table, run through the production planner, writer and grants for Claude Code, Codex and Claude Desktop with the raw bytes, the access and the other home compared after each action: add then remove gives back every byte (a byte order mark, CRLF, four spaces, tabs, one line, unknown keys, an empty servers object with spaces inside, comments, no final newline, an empty file, no file, which setup creates and deletes again except Claude Desktop's); access is given once the entry is in place and taken back before it comes out; a file setup does not accept stays as it was; an entry changed by hand, a comment in or above its table included, and a change made while setup gives the access stay and lose their access; a file changed since the plan is not written while Claude Code's file takes the entry as it is then; a Claude Code session that saves during setup keeps its save under its own lock, one that keeps the lock leaves nothing written, and a left lock is taken over; a file that cannot be written gives no access and its entry comes out at the next setup; a run that ended midway is finished or undone once; a refused row takes the entry back and a failed revoke is done again, the entry kept until one is confirmed; a read that fails right after the write keeps the record to take the entry out; giving an intact entry its access back is done once the service confirms it; settling a run that ended midway takes the access back only for an apply that asked for it; a known read-only file is refused before the apply; with setup's own record unreadable every home with access still turns off and nothing turns on; a volume without hard links still gets a new file; an earlier build's records are read in place",
       "source": "A3 3.13.1, A3 3.7.4",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.home-files",
+      "title": "Each settings file of a home by itself: Claude Code's default folder has one for each way it is started; both there, one apply writes the same entry into each and asks for the access once, each file with its own record (the first where an earlier build reads it), and Off takes the access first, then each entry out byte for byte; a further file is never created; an edited, unreadable, read-only or copied entry in one file never keeps the other from being turned on or off, and is named with its file; a repair keeps a working entry when its write fails; a damaged agents-further.json concerns only that home, and an entry it covers is said to stay, with its file and that record, by Off, status and preview, the command line's Remove exiting 10 each time; a recorded file that is gone keeps Off offered, and Off or settling forgets its record and says so; through the command line, a file that cannot be read is named and the apply exits 10 each time, the same command again being a stale plan, and an apply's exit concerns only the homes it was asked about, another home's settling being a note",
+      "source": "A3 3.13.1",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.access-rule",
+      "title": "Only the apply that finds a home's access off asks for it, marking its record before it asks, and only that apply takes it back when its file fails; adding or repairing a file of a home with its grant asks the service for nothing, and its failure takes that file's entry out only, at once and when settled; with the service silent nothing is offered, granted or revoked, and the access is said as unknown; nothing is given to a home (add, repair, access back, renewal) while a record of it owes its revoke, read where each grant is asked for, when the row offers Off only and says why, nor after a record of it could not be written in the same apply, on any route (an add, giving the access back, a removal) and whatever refused it (the file or its folder), whose outcome names that record file",
+      "source": "A3 3.13.1",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.cuts",
+      "title": "What a run cut between two steps leaves, as the next start shows it and settles it: a further file's add before or after its write, with its entry edited or its file unreadable meanwhile; the apply that asked for the access, after the grant; access given back to an intact entry, before its record took the row's ID; Off after its revoke, before or after the first file; a repair in place before its write",
+      "source": "A3 3.13.1",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.earlier-builds",
+      "title": "Installs the four earlier builds set up keep their access and show on, the default folder's further file is written by one apply without asking for access, and each home turns off and comes out; rolled back to an earlier build, its Off leaves the further file's recorded entry, which this build offers to turn off and on",
+      "source": "A3 3.13.1",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.plan-bound",
+      "title": "A plan is bound to what its apply writes and gives: each file as read (Claude Code's: its servers' table), for turning on and for turning off, and the access it gives back (on, off and unknown are three plans); an apply that cannot read the access gives none back",
+      "source": "A3 3.13.1",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.one-reader",
+      "title": "Setup's two record files are read in one place, both at once: no product source but the record module names either file",
+      "source": "A3 3.13.1",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.home-answer",
+      "title": "A home's row from its files' answers: on when one file's tools start, each file's need said as its own, Off as any file offers it; a file's tools are on only when its entry will start, a working older install is on with a repair offered, and nothing is offered to turn on while the access is not known",
+      "source": "A3 3.13.1",
       "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5225,8 +5281,15 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.12.m5-12.e2e.two-files",
+      "title": "In the browser: Claude Code's two settings files are one row; at the first start a file setup cannot read is named, set up where it can be, and the page waits until the person has read which file got no entry; once mended, its entry is added beside the On switch; Off takes both out",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-12.e2e.settings",
-      "title": "In Chromium: Settings shows the agent apps as they stand, takes one app's tools out, refuses a home that changed between the view and the click with the new view and the choice kept, turns off the tools of an entry changed by hand and says apart that the entry stays in its file, turns the tools off while setup's own record cannot be read and says where it is, and takes everything out again",
+      "title": "In Chromium: Settings shows the agent apps as they stand, takes one app's tools out, refuses a home that changed between the view and the click with the new view and the choice kept, turns off the tools of an entry changed by hand and says apart that the entry stays in its file, turns off from beside the switch the access of a file it cannot read and while setup's own record cannot be read, says a read-only file before anything is applied, and takes everything out again",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5248,6 +5311,13 @@
     {
       "id": "A7.3.12.m5-12.page-apps",
       "title": "Over HTTP as the page calls them: a space from a name alone, each app's two switches with what they write, one click that adds and one that takes out again, a home that changed since the view written nowhere with the new view returned, and a space not served or a switch named twice refused",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.page-files",
+      "title": "A home with two settings files is one row: it names each file that needs something, adds the entry to one beside an On switch, says the file a turning on left out, and turns both off",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

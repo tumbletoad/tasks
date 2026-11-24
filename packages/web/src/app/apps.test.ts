@@ -6,7 +6,9 @@ import {
   appliedOf,
   carryChoices,
   choose,
+  chooseMore,
   chooseOff,
+  moreChosen,
   offChosen,
   initialChoices,
   pendingOf,
@@ -219,5 +221,57 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
     });
     expect(applied.applied && applied.outcomes.map((o) => o.result)).toEqual(["failed", "done"]);
     expect(appliedOf({ applied: false, view: VIEW }).applied).toBe(false);
+  });
+
+  test("a home with two settings files: each file's need is read, the entry is written beside an On switch, and a file a turning on left out is said", () => {
+    const view = viewOf({
+      space: "sp_one",
+      rows: [
+        {
+          key: "claude",
+          app: "claude-code",
+          label: "Claude Code",
+          home: "~/.claude",
+          also: [],
+          tools: {
+            ...part(true, "remove"),
+            files: [
+              { file: "~/.claude/.claude.json", why: "missing", on: "add" },
+              { file: "~/elsewhere.json", why: "not a word!", on: "sideways" },
+            ],
+            more: { detail: ["# ~/.claude/.claude.json", "+ x"], plan: "fedcba9876543210" },
+          },
+        },
+      ],
+    });
+    const [row] = view.rows;
+    if (row === undefined) throw new Error("no rows");
+    expect(row.tools?.files).toEqual([
+      { file: "~/.claude/.claude.json", why: "missing", on: "add" },
+      { file: "~/elsewhere.json", why: undefined, on: undefined },
+    ]);
+    // Beside the On switch: chosen, it is what Apply sends, and the switch still shows on.
+    const more = chooseMore(new Map(), row, "tools", true);
+    expect(moreChosen(more, row, "tools")).toBe(true);
+    expect(shownOn(more, row, "tools")).toBe(true);
+    expect(pendingOf(view, more).map((p) => [p.on, p.plan, p.detail])).toEqual([
+      [true, "fedcba9876543210", ["# ~/.claude/.claude.json", "+ x"]],
+    ]);
+    expect(pendingOf(view, chooseMore(more, row, "tools", false))).toEqual([]);
+    const applied = appliedOf({
+      applied: true,
+      view,
+      outcomes: [
+        {
+          key: "claude",
+          part: "tools",
+          result: "done",
+          files: [{ file: "~/.claude/.claude.json", why: "invalid_file" }],
+        },
+      ],
+    });
+    expect(applied.applied && applied.outcomes[0]?.files).toEqual([
+      { file: "~/.claude/.claude.json", why: "invalid_file" },
+    ]);
   });
 });

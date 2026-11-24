@@ -1,0 +1,387 @@
+{
+  "build": "42d05231",
+  "record": {
+    "format": 1,
+    "homes": [
+      {
+        "app": "claude-code",
+        "home": "{{user}}/.claude",
+        "file": "{{user}}/.claude.json",
+        "is_default": true,
+        "instance": "claude",
+        "account": "default",
+        "space": "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+        "state": "applied",
+        "file_existed": true,
+        "parent_existed": false,
+        "sha256_before": "a8cd4431c7995da9e472be3785486baa003977aa744b244f374874b2098e935b",
+        "sha256_after": "b2e27901679b654953e97115cee9787eca559e581dc18e11868b6dbb611b72cb",
+        "args": [
+          "mcp",
+          "add",
+          "--scope",
+          "user",
+          "ttasks",
+          "--",
+          "{{tasks}}",
+          "mcp",
+          "--space",
+          "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+          "--instance",
+          "claude",
+          "--app",
+          "claude-code"
+        ],
+        "undo": ["mcp", "remove", "ttasks", "--scope", "user"],
+        "entry_argv": [
+          "{{tasks}}",
+          "mcp",
+          "--space",
+          "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+          "--instance",
+          "claude",
+          "--app",
+          "claude-code"
+        ],
+        "env": {},
+        "entry": {
+          "type": "stdio",
+          "command": "{{tasks}}",
+          "args": [
+            "mcp",
+            "--space",
+            "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+            "--instance",
+            "claude",
+            "--app",
+            "claude-code"
+          ],
+          "env": {}
+        },
+        "patches": [],
+        "grant": "gr_7mf0cabp2xezzxhnw95pjdrvqb",
+        "at": "2026-11-24T05:12:25.311Z"
+      },
+      {
+        "app": "claude-code",
+        "home": "{{user}}/.claude-two",
+        "file": "{{user}}/.claude-two/.claude.json",
+        "is_default": false,
+        "instance": "claude-two",
+        "account": "two",
+        "space": "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+        "state": "applied",
+        "file_existed": false,
+        "parent_existed": false,
+        "sha256_before": null,
+        "sha256_after": "fbd43341b4ba3efbacf8a6a212c09cca9fb5715ada725d6b9aef8afaceeddb40",
+        "args": [
+          "mcp",
+          "add",
+          "--scope",
+          "user",
+          "ttasks",
+          "--",
+          "{{tasks}}",
+          "mcp",
+          "--space",
+          "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+          "--instance",
+          "claude-two",
+          "--app",
+          "claude-code"
+        ],
+        "undo": ["mcp", "remove", "ttasks", "--scope", "user"],
+        "entry_argv": [
+          "{{tasks}}",
+          "mcp",
+          "--space",
+          "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+          "--instance",
+          "claude-two",
+          "--app",
+          "claude-code"
+        ],
+        "env": {
+          "CLAUDE_CONFIG_DIR": "{{user}}/.claude-two"
+        },
+        "entry": {
+          "type": "stdio",
+          "command": "{{tasks}}",
+          "args": [
+            "mcp",
+            "--space",
+            "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+            "--instance",
+            "claude-two",
+            "--app",
+            "claude-code"
+          ],
+          "env": {}
+        },
+        "patches": [],
+        "grant": "gr_3ab2npxfv018az9d5d8fgc59jq",
+        "at": "2026-11-24T05:12:25.368Z"
+      },
+      {
+        "app": "claude-code",
+        "home": "{{user}}/.claude-work",
+        "file": "{{user}}/.claude-work/.claude.json",
+        "is_default": false,
+        "instance": "claude-work",
+        "account": "work",
+        "space": "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+        "state": "applied",
+        "file_existed": false,
+        "parent_existed": false,
+        "sha256_before": null,
+        "sha256_after": "e37c6e02c1eae173e0144a3cb8b4391296e2dc97fd438bb62d1b0427cb6746a7",
+        "args": [
+          "mcp",
+          "add",
+          "--scope",
+          "user",
+          "ttasks",
+          "--",
+          "{{tasks}}",
+          "mcp",
+          "--space",
+          "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+          "--instance",
+          "claude-work",
+          "--app",
+          "claude-code"
+        ],
+        "undo": ["mcp", "remove", "ttasks", "--scope", "user"],
+        "entry_argv": [
+          "{{tasks}}",
+          "mcp",
+          "--space",
+          "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+          "--instance",
+          "claude-work",
+          "--app",
+          "claude-code"
+        ],
+        "env": {
+          "CLAUDE_CONFIG_DIR": "{{user}}/.claude-work"
+        },
+        "entry": {
+          "type": "stdio",
+          "command": "{{tasks}}",
+          "args": [
+            "mcp",
+            "--space",
+            "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+            "--instance",
+            "claude-work",
+            "--app",
+            "claude-code"
+          ],
+          "env": {}
+        },
+        "patches": [],
+        "grant": "gr_6q81zbt5h1bjf0c8d64h379a6d",
+        "at": "2026-11-24T05:12:25.428Z"
+      },
+      {
+        "app": "codex",
+        "home": "{{user}}/.codex",
+        "file": "{{user}}/.codex/config.toml",
+        "is_default": true,
+        "instance": "codex",
+        "account": "default",
+        "space": "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+        "state": "applied",
+        "file_existed": true,
+        "parent_existed": false,
+        "sha256_before": "95fa4c777860df502d434b4c2e00eb7750634aa43d20c71d6a956c168c2712e6",
+        "sha256_after": "c0e7186f4ffd108e9f3c78d6ac17a420c17b44f64bec3efc222c8407d98934ef",
+        "args": [
+          "mcp",
+          "add",
+          "ttasks",
+          "--",
+          "{{tasks}}",
+          "mcp",
+          "--space",
+          "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+          "--instance",
+          "codex",
+          "--app",
+          "codex"
+        ],
+        "undo": ["mcp", "remove", "ttasks"],
+        "entry_argv": [
+          "{{tasks}}",
+          "mcp",
+          "--space",
+          "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+          "--instance",
+          "codex",
+          "--app",
+          "codex"
+        ],
+        "env": {
+          "CODEX_HOME": "{{user}}/.codex"
+        },
+        "entry": {
+          "command": "{{tasks}}",
+          "args": [
+            "mcp",
+            "--space",
+            "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+            "--instance",
+            "codex",
+            "--app",
+            "codex"
+          ],
+          "env_vars": ["TTASKS_TICKET"],
+          "startup_timeout_sec": 20
+        },
+        "patches": [
+          {
+            "key": "env_vars",
+            "before": null,
+            "after": ["TTASKS_TICKET"]
+          },
+          {
+            "key": "startup_timeout_sec",
+            "before": null,
+            "after": 20
+          }
+        ],
+        "grant": "gr_3vbkjez1qwhmnd8341zmhzaa62",
+        "at": "2026-11-24T05:12:25.488Z"
+      },
+      {
+        "app": "codex",
+        "home": "{{user}}/.codex-work",
+        "file": "{{user}}/.codex-work/config.toml",
+        "is_default": false,
+        "instance": "codex-work",
+        "account": "work",
+        "space": "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+        "state": "applied",
+        "file_existed": false,
+        "parent_existed": false,
+        "sha256_before": null,
+        "sha256_after": "911c85bdcc24ecaf7f779f8e455832f3656ed3cd514b89e2a8f6eccf470b1ab0",
+        "args": [
+          "mcp",
+          "add",
+          "ttasks",
+          "--",
+          "{{tasks}}",
+          "mcp",
+          "--space",
+          "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+          "--instance",
+          "codex-work",
+          "--app",
+          "codex"
+        ],
+        "undo": ["mcp", "remove", "ttasks"],
+        "entry_argv": [
+          "{{tasks}}",
+          "mcp",
+          "--space",
+          "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+          "--instance",
+          "codex-work",
+          "--app",
+          "codex"
+        ],
+        "env": {
+          "CODEX_HOME": "{{user}}/.codex-work"
+        },
+        "entry": {
+          "command": "{{tasks}}",
+          "args": [
+            "mcp",
+            "--space",
+            "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+            "--instance",
+            "codex-work",
+            "--app",
+            "codex"
+          ],
+          "env_vars": ["TTASKS_TICKET"],
+          "startup_timeout_sec": 20
+        },
+        "patches": [
+          {
+            "key": "env_vars",
+            "before": null,
+            "after": ["TTASKS_TICKET"]
+          },
+          {
+            "key": "startup_timeout_sec",
+            "before": null,
+            "after": 20
+          }
+        ],
+        "grant": "gr_2111548fe2z367f56j73k420y4",
+        "at": "2026-11-24T05:12:25.553Z"
+      },
+      {
+        "app": "claude-desktop",
+        "home": "{{desktop}}",
+        "file": "{{desktop}}/claude_desktop_config.json",
+        "is_default": true,
+        "instance": "claude-desktop",
+        "account": "default",
+        "space": "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+        "state": "applied",
+        "file_existed": true,
+        "parent_existed": false,
+        "sha256_before": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+        "sha256_after": "5077c7d4399b2f183a8f06cccaa0105fdea491ef2af933f7471f35b1e1e7d2c2",
+        "args": [],
+        "undo": [],
+        "entry_argv": [
+          "{{tasks}}",
+          "mcp",
+          "--space",
+          "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+          "--instance",
+          "claude-desktop",
+          "--app",
+          "claude-desktop"
+        ],
+        "env": {},
+        "entry": {
+          "command": "{{tasks}}",
+          "args": [
+            "mcp",
+            "--space",
+            "sp_3rnr0m1hjp0j91rwandmzk7gnj",
+            "--instance",
+            "claude-desktop",
+            "--app",
+            "claude-desktop"
+          ]
+        },
+        "patches": [],
+        "grant": "gr_4sgzca75sasqncwt3fxmj7mvg1",
+        "at": "2026-11-24T05:12:25.623Z"
+      }
+    ]
+  },
+  "before": {
+    "{{user}}/.claude.json": "{\n  \"numStartups\": 3\n}\n",
+    "{{user}}/.claude-work/.claude.json": null,
+    "{{user}}/.claude-two/.claude.json": null,
+    "{{user}}/.codex/config.toml": "model = \"m\"\n",
+    "{{user}}/.codex-work/config.toml": null,
+    "{{desktop}}/claude_desktop_config.json": "{}\n"
+  },
+  "after": {
+    "{{user}}/.claude.json": "{\n  \"numStartups\": 3,\n  \"mcpServers\": {\n    \"ttasks\": {\n      \"type\": \"stdio\",\n      \"command\": \"{{tasks}}\",\n      \"args\": [\n        \"mcp\",\n        \"--space\",\n        \"sp_3rnr0m1hjp0j91rwandmzk7gnj\",\n        \"--instance\",\n        \"claude\",\n        \"--app\",\n        \"claude-code\"\n      ],\n      \"env\": {}\n    }\n  }\n}",
+    "{{user}}/.claude-work/.claude.json": "{\n  \"mcpServers\": {\n    \"ttasks\": {\n      \"type\": \"stdio\",\n      \"command\": \"{{tasks}}\",\n      \"args\": [\n        \"mcp\",\n        \"--space\",\n        \"sp_3rnr0m1hjp0j91rwandmzk7gnj\",\n        \"--instance\",\n        \"claude-work\",\n        \"--app\",\n        \"claude-code\"\n      ],\n      \"env\": {}\n    }\n  }\n}",
+    "{{user}}/.claude-two/.claude.json": "{\n  \"mcpServers\": {\n    \"ttasks\": {\n      \"type\": \"stdio\",\n      \"command\": \"{{tasks}}\",\n      \"args\": [\n        \"mcp\",\n        \"--space\",\n        \"sp_3rnr0m1hjp0j91rwandmzk7gnj\",\n        \"--instance\",\n        \"claude-two\",\n        \"--app\",\n        \"claude-code\"\n      ],\n      \"env\": {}\n    }\n  }\n}",
+    "{{user}}/.codex/config.toml": "model = \"m\"\n\n[mcp_servers.ttasks]\ncommand = \"{{tasks}}\"\nargs = [\"mcp\", \"--space\", \"sp_3rnr0m1hjp0j91rwandmzk7gnj\", \"--instance\", \"codex\", \"--app\", \"codex\"]\nenv_vars = [\"TTASKS_TICKET\"]\nstartup_timeout_sec = 20\n",
+    "{{user}}/.codex-work/config.toml": "[mcp_servers.ttasks]\ncommand = \"{{tasks}}\"\nargs = [\"mcp\", \"--space\", \"sp_3rnr0m1hjp0j91rwandmzk7gnj\", \"--instance\", \"codex-work\", \"--app\", \"codex\"]\nenv_vars = [\"TTASKS_TICKET\"]\nstartup_timeout_sec = 20\n",
+    "{{desktop}}/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"ttasks\": {\n      \"command\": \"{{tasks}}\",\n      \"args\": [\n        \"mcp\",\n        \"--space\",\n        \"sp_3rnr0m1hjp0j91rwandmzk7gnj\",\n        \"--instance\",\n        \"claude-desktop\",\n        \"--app\",\n        \"claude-desktop\"\n      ]\n    }\n  }\n}\n"
+  }
+}

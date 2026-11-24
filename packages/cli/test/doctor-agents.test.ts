@@ -18,10 +18,12 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { stateOf } from "@ttasks/service/test/harness";
 import { classSession } from "@ttasks/service/test/ops-helpers";
 import { MCP_SERVER_KEY } from "@ttasks/brand";
 import {
@@ -221,8 +223,8 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
       ).toEqual(["claude", "codex", "codex-t3x"]);
 
       // T3 names Claude Code's default folder by its path: its Claude reads `.claude.json` inside
-      // that folder, not the user's file where the default home's entry is. Doctor says so, names
-      // an instance turned off and the entries it passed over, and checks the rest.
+      // that folder, which Claude Code has not made yet. Doctor says so, names an instance turned
+      // off and the entries it passed over, and checks the rest.
       writeFileSync(
         settings,
         JSON.stringify({
@@ -239,20 +241,90 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
       );
       const explicit = row(await doctor(), "t3.homes");
       expect(explicit).toMatchObject({ status: "warn" });
-      expect(explicit?.detail).toContain("clear the instance's home path");
+      expect(explicit?.detail).toContain(
+        "reads the .claude.json inside its folder, which Claude Code has not made yet",
+      );
       expect(explicit?.detail).toContain("Turned off in T3 Code, so not checked: claude_off.");
       expect(explicit?.detail).toContain("a kind of agent this build does not know: future.");
       expect(explicit?.detail).toContain("(a key that is not a plain name) was passed over");
       expect(explicit?.detail).not.toContain(user);
       expect(explicit?.detail).not.toContain("\u001b");
 
+      // Once Claude Code has made it, it is a settings file of the home: setup writes it, and
+      // doctor checks the entry in each file as its reader reads it.
+      const inner = join(user, ".claude", ".claude.json");
+      writeFileSync(inner, "{}\n");
+      const lacking = await doctor();
+      expect(row(lacking, "t3.homes")?.detail).toContain("Claude Code) runs in a home");
+      // Doctor names the file that needs something: without the entry, then one it cannot read
+      // (pull request 193's first review, point 6).
+      expect(row(lacking, "mcp.claude.further")).toMatchObject({ status: "warn" });
+      expect(row(lacking, "mcp.claude.further")?.detail).toContain("this file has no");
+      writeFileSync(inner, '{"theme": "dark",}\n');
+      expect(row(await doctor(), "mcp.claude.further")).toMatchObject({ status: "fail" });
+      writeFileSync(inner, "{}\n");
+      await applyAll(["--app", "t3"]);
+      const both = await doctor();
+      expect(row(both, "mcp.claude")?.status).toBe("ok");
+      expect(row(both, "mcp.claude.further")?.status).toBe("ok");
+      expect(row(both, "mcp.claude.further")?.detail).toContain(
+        "Claude Code (claude, the .claude.json inside its folder)",
+      );
+
+      const furtherFile = join(stateOf(home), "setup", "agents-further.json");
+      const furtherRecord = readFileSync(furtherFile);
+      const innerWithEntry = readFileSync(inner);
+
       // Remove: every entry and row back, every file as it was (T3's file only by this test).
       const removed = await run(["setup", "agents", "--remove", "--json"]);
       expect(removed.code, removed.stdout).toBe(0);
       writeFileSync(settings, t3Before);
       expect(read()).toEqual(before);
-      // The file the command made there, emptied by its remove, is gone again.
+      // The file the command made there, emptied by its remove, is gone again; the one Claude
+      // Code made is as it made it.
       expect(existsSync(join(user, ".codex-t3x", "config.toml"))).toBe(false);
+      expect(readFileSync(inner, "utf8")).toBe("{}\n");
+
+      // An earlier build's Off left the further file's entry and its record: doctor still sees a
+      // home set up, and names that file.
+      writeFileSync(furtherFile, furtherRecord);
+      writeFileSync(inner, innerWithEntry);
+      const left = await doctor();
+      expect(row(left, "agents")).toBeUndefined();
+      expect(row(left, "mcp.claude.further")).toBeDefined();
+      rmSync(furtherFile);
+      rmSync(inner);
+    },
+    SLOW,
+  );
+
+  test(
+    "an entry Off had to leave because its record file is damaged: doctor names the file and that record file, and both ways out (pull request 193's third check, fix 3)",
+    async () => {
+      const inner = join(user, ".claude", ".claude.json");
+      const furtherFile = join(stateOf(home), "setup", "agents-further.json");
+      const claude = ["setup", "agents", "--app", "claude-code"];
+      writeFileSync(inner, "{}\n");
+      try {
+        await applyAll(["--app", "claude-code"]);
+        const intact = readFileSync(furtherFile);
+        writeFileSync(furtherFile, '{"format": 2, "homes": [');
+        expect((await run([...claude, "--remove"])).code).toBe(10);
+        const check = row(await doctor(), "mcp.claude.further");
+        expect(check?.status).toBe("fail");
+        expect(check?.detail).toContain(furtherFile);
+        expect(check?.detail).toContain("put that record file back as it was");
+        expect(check?.detail).toContain("out of this file by hand");
+        expect(check?.detail).not.toContain(user);
+        // The first way out: the record file back, Off takes the entry out.
+        writeFileSync(furtherFile, intact);
+        const off = await run([...claude, "--remove"]);
+        expect(off.code, off.stdout).toBe(0);
+        expect(readFileSync(inner, "utf8")).toBe("{}\n");
+      } finally {
+        rmSync(furtherFile, { force: true });
+        rmSync(inner, { force: true });
+      }
     },
     SLOW,
   );

@@ -686,3 +686,308 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
     SLOW,
   );
 });
+
+describe("[A3.3.13.setup.home-files] ttasks setup agents with Claude Code's two settings files", () => {
+  test(
+    "a file that cannot be read is named each time and the apply exits 10; the same command again is a stale plan (exit 4), and the fresh one names the file again; Remove names an entry of setup's name it has no record of",
+    async () => {
+      const plain = join(user, ".claude.json");
+      const inner = join(user, ".claude", ".claude.json");
+      const claude = ["setup", "agents", "--app", "claude-code"];
+      await run([...claude, "--remove"]);
+      writeFileSync(inner, '{"theme": "dark",}\n');
+      try {
+        interface Planned {
+          apply: string[];
+          homes: { file: string; state: string; reason?: string }[];
+        }
+        interface Done {
+          homes: {
+            file: string;
+            result: string;
+            reason?: string;
+            kept?: string;
+            access?: string;
+          }[];
+        }
+        const preview = async () => {
+          const ran = await run([...claude, "--space", space, "--json"], false);
+          expect(ran.code, ran.stderr).toBe(0);
+          return JSON.parse(ran.stdout) as Planned;
+        };
+        const first = await preview();
+        expect(first.homes.map((h) => [h.file, h.state, h.reason])).toEqual([
+          [plain, "not_registered", undefined],
+          [inner, "refused", "invalid_file"],
+        ]);
+        const applied = await run([...first.apply.slice(1), "--json"]);
+        expect(applied.code, applied.stdout).toBe(10);
+        expect((JSON.parse(applied.stdout) as Done).homes).toMatchObject([
+          { file: plain, result: "applied", access: "on" },
+          { file: inner, result: "left", reason: "invalid_file", access: "on" },
+        ]);
+        // The plan the person ran has been carried out in part: it is not the plan of now.
+        const again = await run([...first.apply.slice(1), "--json"]);
+        expect(again.code, again.stdout).toBe(4);
+        const second = await preview();
+        const text = await run(second.apply.slice(1));
+        expect(text.code, text.stdout).toBe(10);
+        expect(text.stdout).toContain(`${inner}: left alone: its file is not valid`);
+        expect(text.stdout).toContain("Access is on.");
+
+        // An entry of setup's name copied into the inner file by hand: Remove leaves it, and says so.
+        const entry = (
+          JSON.parse(readFileSync(plain, "utf8")) as { mcpServers: Record<string, unknown> }
+        ).mcpServers[MCP_SERVER_KEY];
+        writeFileSync(inner, JSON.stringify({ mcpServers: { [MCP_SERVER_KEY]: entry } }));
+        const removed = await run([...claude, "--remove", "--json"]);
+        expect(removed.code, removed.stdout).toBe(10);
+        expect((JSON.parse(removed.stdout) as Done).homes).toMatchObject([
+          { file: plain, result: "removed", access: "off" },
+          { file: inner, result: "left", kept: "unrecorded", access: "off" },
+        ]);
+        const said = await run([...claude, "--remove"]);
+        expect(said.stdout).toContain(`that setup did not write is still in ${inner}`);
+        expect(await rows()).toEqual([]);
+      } finally {
+        rmSync(inner, { force: true });
+      }
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.home-files] A home is judged by its own records, and nothing is offered without the service", () => {
+  test(
+    "Claude Code's further record file damaged: Remove of Codex takes Codex's entry out as if nothing were wrong, and a Remove of Claude Code names the damaged file by its own path (pull request 193's first review, point 2)",
+    async () => {
+      const codexFile = join(user, ".codex", "config.toml");
+      const inner = join(user, ".claude", ".claude.json");
+      const further = join(stateOf(home), "setup", "agents-further.json");
+      const plan = async (argv: string[]) => {
+        const ran = await run([...argv, "--space", space, "--json"], false);
+        return (JSON.parse(ran.stdout) as { apply: string[] }).apply;
+      };
+      const codexApply = await plan(["setup", "agents", "--app", "codex"]);
+      expect((await run(codexApply.slice(1))).code).toBe(0);
+      expect(readFileSync(codexFile, "utf8")).toContain("[mcp_servers.ttasks]");
+      // Its access taken away by another program: only its entry and record are left.
+      await revokeAll();
+      writeFileSync(inner, "{}\n");
+      mkdirSync(join(stateOf(home), "setup"), { recursive: true });
+      writeFileSync(further, '{"format": 2, "homes": [');
+      try {
+        const removed = await run(["setup", "agents", "--app", "codex", "--remove", "--json"]);
+        expect(removed.code, removed.stdout).toBe(0);
+        expect(
+          (JSON.parse(removed.stdout) as { homes: { app: string; result: string }[] }).homes,
+        ).toMatchObject([{ app: "codex", result: "removed" }]);
+        expect(readFileSync(codexFile, "utf8")).not.toContain("[mcp_servers.ttasks]");
+        const claude = await run(["setup", "agents", "--app", "claude-code", "--remove"]);
+        expect(claude.stdout).toContain(`cannot read its own record ${further}`);
+        expect(claude.stdout).not.toContain("agents.json,");
+      } finally {
+        rmSync(further, { force: true });
+        rmSync(inner, { force: true });
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "with the service stopped, status says the access is not known and the preview offers no apply (point 6)",
+    async () => {
+      const codexApply = (
+        JSON.parse(
+          (await run(["setup", "agents", "--app", "codex", "--space", space, "--json"], false))
+            .stdout,
+        ) as { apply: string[] }
+      ).apply;
+      expect((await run(codexApply.slice(1))).code).toBe(0);
+      // The same install's state, from a home whose service does not run: its entry runs that
+      // home's command, so it is this install's.
+      const away = join(root, "away");
+      const codexFile = join(user, ".codex", "config.toml");
+      const installed = (at: string) => join(at, "bin", windows ? "ttasks.exe" : "ttasks");
+      const kept = readFileSync(codexFile, "utf8");
+      mkdirSync(join(stateOf(away), "setup"), { recursive: true });
+      mkdirSync(join(away, "bin"), { recursive: true });
+      writeFileSync(installed(away), "");
+      const record = JSON.parse(
+        readFileSync(join(stateOf(home), "setup", "agents.json"), "utf8"),
+      ) as { homes: { app: string; entry: Record<string, unknown> }[] };
+      writeFileSync(
+        join(stateOf(away), "setup", "agents.json"),
+        JSON.stringify({
+          ...record,
+          homes: record.homes
+            .filter((h) => h.app === "codex")
+            .map((h) => ({ ...h, entry: { ...h.entry, command: installed(away) } })),
+        }),
+      );
+      writeFileSync(
+        codexFile,
+        kept.replace(
+          `command = ${valueText(installed(home))}`,
+          `command = ${valueText(installed(away))}`,
+        ),
+      );
+      expect(readFileSync(codexFile, "utf8")).not.toBe(kept);
+      try {
+        const asAway = (argv: string[]) =>
+          runMain(argv, {
+            home: away,
+            tty: false,
+            main: {
+              agents: { env: fakes.env, home: user, systemApplications: join(user, "Apps") },
+            },
+          });
+        const status = JSON.parse(
+          (await asAway(["setup", "agents", "--app", "codex", "--status", "--json"])).stdout,
+        ) as { homes: { tools: { status: string; on?: string } }[]; service: boolean };
+        expect(status.service).toBe(false);
+        expect(status.homes[0]?.tools.status).toBe("unknown");
+        expect(status.homes[0]?.tools.on).toBeUndefined();
+        const preview = JSON.parse(
+          (await asAway(["setup", "agents", "--app", "codex", "--json"])).stdout,
+        ) as { apply?: string[] };
+        expect(preview.apply).toBeUndefined();
+      } finally {
+        rmSync(away, { recursive: true, force: true });
+        writeFileSync(codexFile, kept);
+        await run(["setup", "agents", "--app", "codex", "--remove"]);
+      }
+    },
+    SLOW,
+  );
+});
+
+/** Takes every live agent-home row away, as another program could. */
+async function revokeAll(): Promise<void> {
+  const session = await classSession(home, service.endpoint.path, "cli-interactive");
+  try {
+    const listed = (await session.call("setup/homes", {}, { timeoutMs: 30_000 })) as {
+      homes: { grant: string }[];
+    };
+    if (listed.homes.length > 0) {
+      await session.call(
+        "setup/home_revoke",
+        { grants: listed.homes.map((h) => h.grant) },
+        { timeoutMs: 30_000 },
+      );
+    }
+  } finally {
+    session.close();
+  }
+}
+
+describe("[A3.3.13.setup.home-files] ttasks setup agents cleans up by what it recorded, says what it could not, and an apply's exit is about the homes it was asked about", () => {
+  const plain = () => join(user, ".claude.json");
+  const inner = () => join(user, ".claude", ".claude.json");
+  const further = () => join(stateOf(home), "setup", "agents-further.json");
+  const claude = ["setup", "agents", "--app", "claude-code"];
+  interface Done {
+    homes: { file: string; result: string; reason?: string; kept?: string; notes?: string[] }[];
+    notes?: string[];
+  }
+  /** Turns Claude Code's default home on, each file that is there. */
+  const claudeOn = async () => {
+    const planned = await run([...claude, "--space", space, "--json"], false);
+    const applied = await run((JSON.parse(planned.stdout) as { apply: string[] }).apply.slice(1));
+    expect(applied.code, applied.stdout).toBe(0);
+  };
+  const recordedFiles = () =>
+    [recordFile(), further()].flatMap((f) =>
+      existsSync(f)
+        ? (JSON.parse(readFileSync(f, "utf8")) as { homes: { file: string }[] }).homes.map(
+            (h) => h.file,
+          )
+        : [],
+    );
+
+  test(
+    "Off with the inner file malformed, then that file deleted: Remove forgets its record, saying the file is gone, and exits 0 (pull request 193's second review, finding 2)",
+    async () => {
+      const before = readFileSync(plain(), "utf8");
+      writeFileSync(inner(), "{}\n");
+      try {
+        await claudeOn();
+        writeFileSync(inner(), `${readFileSync(inner(), "utf8")},`);
+        expect((await run([...claude, "--remove"])).code).toBe(10);
+        rmSync(inner());
+        const removed = await run([...claude, "--remove", "--json"]);
+        expect(removed.code, removed.stdout).toBe(0);
+        expect((JSON.parse(removed.stdout) as Done).homes).toContainEqual(
+          expect.objectContaining({ file: inner(), result: "removed", notes: ["file_gone"] }),
+        );
+        expect(recordedFiles()).not.toContain(inner());
+        expect(readFileSync(plain(), "utf8")).toBe(before);
+      } finally {
+        rmSync(inner(), { force: true });
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "both entries in place, then agents-further.json damaged: Remove exits 10 and names the inner file and that record, the first time and every time after; status and preview name the record too (finding 3)",
+    async () => {
+      const before = readFileSync(plain(), "utf8");
+      writeFileSync(inner(), "{}\n");
+      let good: string | undefined;
+      try {
+        await claudeOn();
+        good = readFileSync(further(), "utf8");
+        writeFileSync(further(), '{"format": 2, "homes": [');
+        const status = await run([...claude, "--status"], false);
+        expect(status.stdout).toContain(further());
+        const preview = await run([...claude, "--space", space], false);
+        expect(preview.stdout).toContain(further());
+        for (const time of ["first", "again"]) {
+          const removed = await run([...claude, "--remove"]);
+          expect(removed.code, `${time}: ${removed.stdout}`).toBe(10);
+          expect(removed.stdout).toContain(`The entry is still in ${inner()}.`);
+          expect(removed.stdout).toContain(further());
+        }
+        expect(readFileSync(plain(), "utf8")).toBe(before);
+      } finally {
+        if (good !== undefined) writeFileSync(further(), good);
+        await run([...claude, "--remove"]);
+        rmSync(inner(), { force: true });
+      }
+      expect(recordedFiles()).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a Claude Code cleanup that could not finish is said as a note by a Codex apply, which exits 0 (pull request 193's second review; also on main)",
+    async () => {
+      const before = readFileSync(plain(), "utf8");
+      const codexFile = join(user, ".codex", "config.toml");
+      let on: string | undefined;
+      try {
+        await claudeOn();
+        on = readFileSync(plain(), "utf8");
+        writeFileSync(plain(), `${on},`);
+        expect((await run([...claude, "--remove"])).code).toBe(10);
+        const planned = await run(
+          ["setup", "agents", "--app", "codex", "--space", space, "--json"],
+          false,
+        );
+        const apply = (JSON.parse(planned.stdout) as { apply: string[] }).apply.slice(1);
+        const applied = await run([...apply, "--json"]);
+        expect(applied.code, applied.stdout).toBe(0);
+        const done = JSON.parse(applied.stdout) as Done;
+        expect(done.homes.map((h) => h.file)).toEqual([codexFile]);
+        expect(done.notes?.join("\n")).toContain(plain());
+      } finally {
+        if (on !== undefined) writeFileSync(plain(), on);
+        await run([...claude, "--remove"]);
+        await run(["setup", "agents", "--app", "codex", "--remove"]);
+      }
+      expect(readFileSync(plain(), "utf8")).toBe(before);
+    },
+    SLOW,
+  );
+});

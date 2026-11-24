@@ -278,29 +278,33 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
   );
 
   it(
-    "the tools switch shows the access, not the file: an unreadable file stays on and turns off; an entry that could not be taken out shows off, and turning it on again works",
+    "an unreadable file is not counted as on, and turns off; an entry that could not be taken out shows off, and turning it on again works",
     async () => {
       const file = join(w.user, ".claude.json");
       const tools = async () =>
         row((await call<AppsView>(w, "/api/v1/machine/apps", { space })).result, "claude-code");
       const turn = async (on: boolean) => {
         const found = await tools();
+        const plan =
+          on || found.tools?.change === "remove" ? found.tools?.plan : found.tools?.off?.plan;
         return call<Applied>(w, "/api/v1/machine/apps_apply", {
           space,
-          changes: [{ key: found.key, part: "tools", on, plan: found.tools?.plan }],
+          changes: [{ key: found.key, part: "tools", on, plan }],
         });
       };
       expect((await tools()).tools).toMatchObject({ on: false, change: "add" });
       expect((await turn(true)).result.outcomes).toMatchObject([{ result: "done" }]);
       const withEntry = readFileSync(file, "utf8");
 
-      // A trailing comma someone typed: setup cannot read the file, and the access is still there.
+      // A trailing comma someone typed: setup cannot read the file, so it cannot say that the tools
+      // start; the access is still there, and turning it off is offered.
       const broken = withEntry.replace(/\}\s*$/u, ",}\n");
       writeFileSync(file, broken);
       expect((await tools()).tools).toMatchObject({
-        on: true,
-        change: "remove",
+        on: false,
+        change: null,
         why: "file_unreadable",
+        off: {},
       });
       const off = await turn(false);
       expect(off.result.outcomes).toMatchObject([{ result: "done", kept: true }]);
@@ -357,13 +361,14 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
         expect(seen.record).toMatch(/agents\.json$/u);
         const claude = row(seen, "claude-code");
         expect(claude.tools).toMatchObject({
-          on: true,
-          change: "remove",
+          on: false,
+          change: null,
           why: "record_unreadable",
+          off: {},
         });
         const off = await call<Applied>(w, "/api/v1/machine/apps_apply", {
           space,
-          changes: [{ key: claude.key, part: "tools", on: false, plan: claude.tools?.plan }],
+          changes: [{ key: claude.key, part: "tools", on: false, plan: claude.tools?.off?.plan }],
         });
         expect(off.result.outcomes).toMatchObject([{ result: "done" }]);
         // Off, and it cannot be turned on again while the record cannot be read.
@@ -377,6 +382,119 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
       } finally {
         writeFileSync(record, kept);
       }
+    },
+    SLOW,
+  );
+
+  it(
+    "turning off is bound to the file as shown: an edit of it since gives the new view and takes nothing out",
+    async () => {
+      const codexFile = join(w.user, ".codex", "config.toml");
+      const look = async () => (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+      const first = row(await look(), "codex");
+      if (first.tools?.on !== true) {
+        await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: first.key, part: "tools", on: true, plan: first.tools?.plan }],
+        });
+      }
+      const shown = row(await look(), "codex");
+      expect(shown.tools).toMatchObject({ on: true, change: "remove" });
+      appendFileSync(codexFile, "\n# the person's note\n");
+      const stale = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+        space,
+        changes: [{ key: shown.key, part: "tools", on: false, plan: shown.tools?.plan }],
+      });
+      expect(stale.result.applied).toBe(false);
+      expect(readFileSync(codexFile, "utf8")).toContain("[mcp_servers.ttasks]");
+      const fresh = row(stale.result.view, "codex");
+      const off = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+        space,
+        changes: [{ key: fresh.key, part: "tools", on: false, plan: fresh.tools?.plan }],
+      });
+      expect(off.result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(readFileSync(codexFile, "utf8")).toContain("# the person's note");
+    },
+    SLOW,
+  );
+
+  it(
+    "a setup that ended midway is shown as settling leaves it: Off settles it, and the next Apply writes exactly what it showed",
+    async () => {
+      const recordPath = join(stateOf(w.home), "setup", "agents.json");
+      const look = async () => (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+      // Nothing of setup's in this home first: its Off, on the switch or beside it.
+      const claude = row(await look(), "claude-code");
+      const off = claude.tools?.change === "remove" ? claude.tools.plan : claude.tools?.off?.plan;
+      if (off !== undefined) {
+        await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: claude.key, part: "tools", on: false, plan: off }],
+        });
+      }
+      expect(claudeEntry(w.user)).toBeUndefined();
+      // A run that stopped before it wrote its entry, under an instance this home is no longer
+      // offered: settling takes that record away, so it names nothing the switch writes.
+      const kept = existsSync(recordPath) ? readFileSync(recordPath, "utf8") : undefined;
+      const argv = [
+        join(w.home, "bin", process.platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME),
+        "mcp",
+        "--space",
+        space,
+        "--instance",
+        "claude-before",
+        "--app",
+        "claude-code",
+      ];
+      mkdirSync(join(stateOf(w.home), "setup"), { recursive: true });
+      writeFileSync(
+        recordPath,
+        JSON.stringify({
+          format: 2,
+          homes: [
+            {
+              app: "claude-code",
+              home: join(w.user, ".claude"),
+              file: join(w.user, ".claude.json"),
+              is_default: true,
+              instance: "claude-before",
+              account: "",
+              space,
+              state: "applying",
+              entry: { command: argv[0], args: argv.slice(1) },
+              also: [],
+              made: { file: false, parent: true, spacing: null },
+              grant: null,
+              at: "2026-11-01T00:00:00.000Z",
+            },
+            ...(kept === undefined ? [] : (JSON.parse(kept) as { homes: unknown[] }).homes),
+          ],
+        }),
+      );
+      // An earlier build's pending record may still take the access back: until Off has settled
+      // it, nothing is offered to turn on.
+      const pending = row(await look(), "claude-code");
+      expect(pending.tools).toMatchObject({ on: false, change: null, why: "interrupted" });
+      expect(pending.tools?.off).toBeDefined();
+      const settled = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+        space,
+        changes: [{ key: pending.key, part: "tools", on: false, plan: pending.tools?.off?.plan }],
+      });
+      expect(settled.result.outcomes).toMatchObject([{ result: "done" }]);
+      const shown = row(settled.result.view, "claude-code");
+      expect(shown.tools).toMatchObject({ on: false, change: "add" });
+      expect(shown.tools?.detail.join("\n")).not.toContain("claude-before");
+      const applied = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+        space,
+        changes: [{ key: shown.key, part: "tools", on: true, plan: shown.tools?.plan }],
+      });
+      expect(applied.result.applied).toBe(true);
+      expect(applied.result.outcomes).toMatchObject([{ result: "done" }]);
+      // The args it wrote are the ones the row showed.
+      expect(JSON.stringify(claudeEntry(w.user)?.args)).toBe(
+        shown.tools?.detail.find((l) => l.includes(".args = "))?.split(" = ")[1],
+      );
+      expect(readFileSync(recordPath, "utf8")).not.toContain("claude-before");
     },
     SLOW,
   );
@@ -692,4 +810,192 @@ describe("[A7.3.12.m5-12.page-env] The agent apps are looked for in the person's
     expect(await personEnv(base)).toEqual({ PATH: "/person/bin" });
     expect(base.prepared).toBe(1);
   });
+});
+
+describe("[A7.3.12.m5-12.page-files] A home with two settings files is one row: it names each file that needs something, adds the entry to one beside an On switch, and says the file a turning on left out", () => {
+  let w: World;
+  let space: string;
+  beforeAll(async () => {
+    w = await world("files");
+    const made = await call<{ id: string }>(w, "/api/v1/space/create", {
+      name: "Mira",
+      folder: join(w.home, "mira"),
+    });
+    space = made.result.id;
+  }, SLOW);
+  afterAll(async () => {
+    await w.close();
+  }, SLOW);
+
+  it(
+    "both files: one switch writes both; a file setup cannot read is said after the apply and on the row; once readable it is added beside the On switch; Off takes both out",
+    async () => {
+      const plain = join(w.user, ".claude.json");
+      const inner = join(w.user, ".claude", ".claude.json");
+      writeFileSync(plain, "{}\n");
+      writeFileSync(inner, '{"theme": "dark",}\n');
+      const look = async () =>
+        row((await call<AppsView>(w, "/api/v1/machine/apps", { space })).result, "claude-code");
+      const apply = async (on: boolean, plan: string | undefined, key: string) =>
+        call<Applied & { outcomes: { files?: unknown[] }[] }>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key, part: "tools", on, plan }],
+        });
+      const shownPlain = join("~", ".claude.json");
+      const shownInner = join("~", ".claude", ".claude.json");
+
+      const first = await look();
+      expect(first.tools).toMatchObject({
+        on: false,
+        change: "add",
+        files: [
+          { file: shownPlain, on: "add" },
+          { file: shownInner, why: "file_unreadable" },
+        ],
+      });
+      const on = await apply(true, first.tools?.plan, first.key);
+      expect(on.result.outcomes).toEqual([
+        {
+          key: first.key,
+          part: "tools",
+          result: "done",
+          files: [{ file: shownInner, why: "invalid_file" }],
+        },
+      ]);
+      const after = row(on.result.view, "claude-code");
+      expect(after.tools).toMatchObject({
+        on: true,
+        change: "remove",
+        files: [{ file: shownInner, why: "file_unreadable" }],
+      });
+      expect(after.tools?.more).toBeUndefined();
+
+      // Mended: the row is on, and the inner file's entry is offered beside the switch.
+      writeFileSync(inner, '{"theme": "dark"}\n');
+      const mended = await look();
+      expect(mended.tools).toMatchObject({
+        on: true,
+        change: "remove",
+        files: [{ file: shownInner, why: "missing", on: "add" }],
+        more: {},
+      });
+      expect(mended.tools?.more?.detail[0]).toBe(`# ${shownInner}`);
+      const added = await apply(true, mended.tools?.more?.plan, mended.key);
+      expect(added.result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(row(added.result.view, "claude-code").tools).toMatchObject({ on: true, files: [] });
+      expect(JSON.parse(readFileSync(inner, "utf8"))).toMatchObject({
+        theme: "dark",
+        mcpServers: { ttasks: {} },
+      });
+
+      // Off takes both out, and says nothing is left.
+      const both = await look();
+      const off = await apply(false, both.tools?.plan, both.key);
+      expect(off.result.outcomes).toEqual([{ key: both.key, part: "tools", result: "done" }]);
+      expect(claudeEntry(w.user)).toBeUndefined();
+      expect(readFileSync(inner, "utf8")).toBe('{"theme": "dark"}\n');
+      rmSync(inner);
+    },
+    SLOW,
+  );
+});
+
+describe("[A7.3.12.m5-12.page-files] A damaged record file is named by its own path, and the homes it does not concern work as if nothing were wrong", () => {
+  let w: World;
+  let space: string;
+  beforeAll(async () => {
+    w = await world("damaged");
+    const made = await call<{ id: string }>(w, "/api/v1/space/create", {
+      name: "Mira",
+      folder: join(w.home, "mira"),
+    });
+    space = made.result.id;
+  }, SLOW);
+  afterAll(async () => {
+    await w.close();
+  }, SLOW);
+
+  it(
+    "Claude Code's further record file damaged: the page names that file, and Codex turns on and off (pull request 193's first review, point 2)",
+    async () => {
+      const inner = join(w.user, ".claude", ".claude.json");
+      const further = join(stateOf(w.home), "setup", "agents-further.json");
+      writeFileSync(inner, "{}\n");
+      mkdirSync(join(stateOf(w.home), "setup"), { recursive: true });
+      writeFileSync(further, '{"format": 2, "homes": [');
+      try {
+        const look = async () =>
+          (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+        const seen = await look();
+        expect(seen.record).toMatch(/[\\/]agents-further\.json$/u);
+        const codex = row(seen, "codex");
+        expect(codex.tools).toMatchObject({ on: false, change: "add" });
+        const on = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: codex.key, part: "tools", on: true, plan: codex.tools?.plan }],
+        });
+        expect(on.result.outcomes).toMatchObject([{ result: "done" }]);
+        const shown = row(on.result.view, "codex");
+        const off = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: shown.key, part: "tools", on: false, plan: shown.tools?.plan }],
+        });
+        expect(off.result.outcomes).toMatchObject([{ result: "done" }]);
+        // The file setup made for its entry goes with it.
+        expect(existsSync(join(w.user, ".codex", "config.toml"))).toBe(false);
+      } finally {
+        rmSync(further, { force: true });
+        rmSync(inner, { force: true });
+      }
+    },
+    SLOW,
+  );
+
+  it(
+    "both of Claude Code's entries in place, then its further record file damaged: Off says the inner entry stays, with its file, and the page keeps naming both (pull request 193's second review, finding 3)",
+    async () => {
+      const plain = join(w.user, ".claude.json");
+      const inner = join(w.user, ".claude", ".claude.json");
+      const further = join(stateOf(w.home), "setup", "agents-further.json");
+      const shownInner = join("~", ".claude", ".claude.json");
+      writeFileSync(plain, "{}\n");
+      writeFileSync(inner, "{}\n");
+      const look = async () =>
+        row((await call<AppsView>(w, "/api/v1/machine/apps", { space })).result, "claude-code");
+      const turn = async (on: boolean, found: AppsView["rows"][number]) =>
+        call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: found.key, part: "tools", on, plan: found.tools?.plan }],
+        });
+      try {
+        expect((await turn(true, await look())).result.outcomes).toMatchObject([
+          { result: "done" },
+        ]);
+        writeFileSync(further, '{"format": 2, "homes": [');
+        const off = await turn(false, await look());
+        expect(off.result.outcomes).toMatchObject([
+          {
+            result: "done",
+            reason: "record_unreadable",
+            kept: true,
+            files: [{ file: shownInner, why: "record_unreadable" }],
+          },
+        ]);
+        expect(claudeEntry(w.user)).toBeUndefined();
+        expect(readFileSync(inner, "utf8")).toContain(MCP_SERVER_KEY);
+        // Afterwards the page names the damaged record, and the row the file whose entry stays.
+        const after = (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+        expect(after.record).toBe(further);
+        expect(row(after, "claude-code").tools?.files).toContainEqual({
+          file: shownInner,
+          why: "record_unreadable",
+        });
+      } finally {
+        rmSync(further, { force: true });
+        rmSync(inner, { force: true });
+        rmSync(plain, { force: true });
+      }
+    },
+    SLOW,
+  );
 });

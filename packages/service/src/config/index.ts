@@ -21,7 +21,9 @@ export {
 export {
   applyEdits,
   commitEdit,
+  configDigest,
   editMachineToml,
+  machineDigest,
   prepareEdit,
   keyText,
   valueText,

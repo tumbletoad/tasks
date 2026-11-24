@@ -1,9 +1,8 @@
 // The apps' own commands doctor runs (their `mcp get`), and the lock that keeps one setup at a time.
 import { join } from "node:path";
 import { startHelper, type Env } from "@ttasks/launch";
-import { ensurePrivateDir } from "../hub/files.ts";
 import { acquireLock } from "../hub/lock.ts";
-import { SETUP_LOCK, SetupStateUnsafe, setupDir } from "./state.ts";
+import { SETUP_LOCK, setupFolder } from "./state.ts";
 
 export { LockBusy } from "../hub/lock.ts";
 
@@ -35,8 +34,7 @@ export async function runCommand(
  * LockBusy when another setup holds it.
  */
 export async function withSetupLock<T>(stateDir: string, work: () => Promise<T>): Promise<T> {
-  const dir = setupDir(stateDir);
-  if (ensurePrivateDir(dir) !== undefined) throw new SetupStateUnsafe();
+  const dir = setupFolder(stateDir, SETUP_LOCK);
   const lock = await acquireLock(join(dir, SETUP_LOCK));
   try {
     return await work();
