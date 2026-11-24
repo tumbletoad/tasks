@@ -13,6 +13,11 @@ import {
   type Operation,
 } from "../../packages/storage/src/index.ts";
 import { checkedDriver } from "../../packages/testkit/src/index.ts";
+import {
+  EFFORT_LEVELS,
+  EFFORT_NAME_MAX,
+  type EffortLevel,
+} from "../../packages/contracts/src/preferences.ts";
 import { day } from "./days.ts";
 
 const TITLES = [
@@ -221,18 +226,35 @@ export async function addLargeSpace(folder: string, machine: Machine): Promise<v
   );
 }
 
-/** A space's own statuses and effort keys (`tasks.statuses`, `tasks.effort_scale`). */
+/** A space's own statuses and effort levels (`tasks.statuses`, `tasks.effort_scale`). */
 export interface Scales {
   readonly statuses: readonly string[];
-  readonly efforts: readonly string[];
+  /** Levels, or their names alone. */
+  readonly efforts: readonly (string | EffortLevel)[];
+}
+
+/** The levels of a scale, a name alone as a level with nothing more. */
+export const levelsOf = (scales: Scales): EffortLevel[] =>
+  scales.efforts.map((level) => (typeof level === "string" ? { key: level } : level));
+
+/** What resting on a level of `levels` says: its name, its time, what belongs on it. */
+export function levelTip(key: string, levels: readonly EffortLevel[] = EFFORT_LEVELS): string {
+  const level = levels.find((known) => known.key === key);
+  const time = level?.time;
+  const unit = time === undefined ? "" : time.amount === 1 ? time.unit.slice(0, -1) : time.unit;
+  return `${key}${time === undefined ? "" : `, about ${String(time.amount)} ${unit}`}${level?.about === undefined ? "" : `. ${level.about}`}`;
 }
 
 /**
  * Sets the space's statuses and effort scale, as its owner. A scale never drops a key an active
  * task holds, so the tasks on a key the new one leaves out move first: to the first status, and to
- * no effort.
+ * no effort. A level's name longer than a person sets now is stored as the earlier build that let
+ * them set it did, past this build's writer.
  */
 export async function setScales(folder: string, machine: Machine, scales: Scales): Promise<void> {
+  const levels = levelsOf(scales);
+  const names = levels.map((level) => level.key);
+  const earlier = names.some((name) => name.length > EFFORT_NAME_MAX);
   const status = scales.statuses[0] ?? "open";
   await writeRequests(
     folder,
@@ -244,8 +266,7 @@ export async function setScales(folder: string, machine: Machine, scales: Scales
         ).flatMap((task): Operation[] => {
           const off = !scales.statuses.includes(String(task["status"]));
           const effort = task["effort"];
-          const unsized =
-            typeof effort === "string" && effort !== "" && !scales.efforts.includes(effort);
+          const unsized = typeof effort === "string" && effort !== "" && !names.includes(effort);
           if (!off && !unsized) return [];
           return [
             {
@@ -258,15 +279,26 @@ export async function setScales(folder: string, machine: Machine, scales: Scales
         }),
       [
         { kind: "pref.set", key: "tasks.statuses", value: [...scales.statuses] },
-        {
-          kind: "pref.set",
-          key: "tasks.effort_scale",
-          value: scales.efforts.map((key) => ({ key })),
-        },
+        ...(earlier
+          ? []
+          : [{ kind: "pref.set" as const, key: "tasks.effort_scale", value: levels }]),
       ],
     ],
     () => Date.now(),
   );
+  if (!earlier) return;
+  const opened = openSpace(await checkedDriver(), folder, { role: "writer" });
+  try {
+    opened.conn
+      .prepare(
+        "INSERT INTO preferences (key, value, schema_ver, policy, created_seq, version) " +
+          "VALUES ('tasks.effort_scale', $value, 1, 0, 0, 0) " +
+          "ON CONFLICT (key) DO UPDATE SET value = $value, schema_ver = 1",
+      )
+      .run({ value: JSON.stringify(levels) });
+  } finally {
+    opened.conn.close();
+  }
 }
 
 /** Finished fixture tasks: completed and wrapped up, checked off (wrap-up waiting), dropped. */

@@ -872,7 +872,15 @@ function groupsRendered(result: Groups, organize: string): Rendered {
 
 type Prefs = OutputOf<"prefs.manage">;
 
-const prefText = (value: unknown): string => JSON.stringify(value);
+/** A value as JSON; a list of effort levels by their names, which the sizing skill says whole. */
+const prefText = (value: unknown): string =>
+  JSON.stringify(
+    Array.isArray(value)
+      ? value.map((item: unknown) =>
+          typeof item === "object" && item !== null && "key" in item ? item.key : item,
+        )
+      : value,
+  );
 
 function prefsRendered(result: Prefs): Rendered {
   const prefs = result.prefs ?? [];

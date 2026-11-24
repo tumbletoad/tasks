@@ -4,6 +4,12 @@ import { describe, expect, test } from "vitest";
 import { a1ErrorBody } from "./a1-errors.ts";
 import {
   checkPreferences,
+  EFFORT_ABOUT_MAX,
+  EFFORT_KEY_MAX,
+  EFFORT_LEVELS,
+  EFFORT_NAME_MAX,
+  effortNamesFit,
+  effortTimeText,
   FEATURE_FLAGS,
   fitsShape,
   mayWrite,
@@ -11,6 +17,7 @@ import {
   preferenceSpec,
   preferenceValue,
   readPreference,
+  samePrefValue,
   type PreferenceSpec,
   type ValueShape,
 } from "./preferences.ts";
@@ -223,5 +230,138 @@ describe("[A1.3.16.prefs.flags] each feature flag has a default and is read thro
     const f = spec("features.search_trigram");
     expect(f.default).toBe(false);
     expect(f.flag).toEqual({ stability: "preview" });
+  });
+});
+
+/**
+ * The reader of the build before version 2 (step 1's `effortKeys` and declaration), kept as it
+ * shipped: what that build shows for a space this one wrote.
+ */
+function stepOneNames(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 10) return undefined;
+  const keys: string[] = [];
+  for (const item of value) {
+    const key: unknown =
+      typeof item === "object" && item !== null ? (item as { key?: unknown }).key : undefined;
+    const line =
+      typeof key === "string" &&
+      key.trim() !== "" &&
+      key.normalize("NFC") === key &&
+      !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(key) &&
+      Array.from(key).length <= 20;
+    if (!line || key.trim() !== key) return undefined;
+    if (!keys.includes(key)) keys.push(key);
+  }
+  return keys;
+}
+
+describe("[A1.3.16.prefs.effort-levels] an effort level is a name, a typical time and a line on what belongs on it", () => {
+  const scale = spec("tasks.effort_scale");
+  const fits = (levels: unknown) => fitsShape(scale.shape, levels);
+
+  test("a level takes a name with single spaces inside, a time of 1 to 999 of a unit, a line of up to 280", () => {
+    expect(scale.default).toEqual(EFFORT_LEVELS);
+    expect(EFFORT_LEVELS.map((level) => level.key)).toEqual(["XS", "S", "M", "L", "XL"]);
+    expect(
+      fits([
+        { key: "Half a day", time: { amount: 4, unit: "hours" }, about: "One sitting" },
+        { key: "2h" },
+        { key: "W", time: { amount: 999, unit: "weeks" } },
+        { key: "Long", about: "x".repeat(EFFORT_ABOUT_MAX) },
+      ]),
+    ).toBe(true);
+    for (const wrong of [
+      [{ key: "Half  a day" }],
+      [{ key: " Day" }],
+      [{ key: "Day " }],
+      [{ key: "null" }],
+      [{ key: "Day", time: { amount: 0, unit: "hours" } }],
+      [{ key: "Day", time: { amount: 1000, unit: "hours" } }],
+      [{ key: "Day", time: { amount: 1.5, unit: "hours" } }],
+      [{ key: "Day", time: { amount: 2, unit: "fortnights" } }],
+      [{ key: "Day", time: { amount: 2 } }],
+      [{ key: "Day", about: "x".repeat(EFFORT_ABOUT_MAX + 1) }],
+      [{ key: "Day", about: "Two\nlines" }],
+      [{ key: "Day", colour: "teal" }],
+      [{ key: "Day" }, { key: "day" }],
+    ]) {
+      expect(fits(wrong), JSON.stringify(wrong)).toBe(false);
+    }
+  });
+
+  test("a name set anew has at most 10 characters; a longer one the space holds may stay", () => {
+    expect(EFFORT_NAME_MAX).toBe("Half a day".length);
+    expect(effortNamesFit(["Half a day"], [])).toBe(true);
+    expect(effortNamesFit(["Half a day!"], [])).toBe(false);
+    const held = "Deep-work_2.0".padEnd(EFFORT_KEY_MAX, "x");
+    expect(effortNamesFit(["S", held], ["S", held])).toBe(true);
+    expect(effortNamesFit(["S", held.slice(0, -1)], ["S", held])).toBe(false);
+  });
+
+  test("a list of names an earlier build stored: a default level's name means that level, another stays a name", () => {
+    const read = preferenceValue(scale, stored([{ key: "XS" }, { key: "Q" }, { key: "XL" }], 1));
+    expect(read).toEqual({
+      key: "tasks.effort_scale",
+      value: [EFFORT_LEVELS[0], { key: "Q" }, EFFORT_LEVELS[4]],
+      state: "set",
+    });
+    // The same names written by this build mean only what they say.
+    expect(preferenceValue(scale, stored([{ key: "XS" }], 2)).value).toEqual([{ key: "XS" }]);
+  });
+
+  test("a newer build's list gives its names, and each time and line this build can read", () => {
+    const read = preferenceValue(
+      scale,
+      stored(
+        [
+          { key: "XS", time: { amount: 10, unit: "minutes" }, colour: "teal" },
+          { key: "S", time: { amount: 1, unit: "fortnights" }, about: "Short" },
+        ],
+        3,
+      ),
+    );
+    expect(read).toEqual({
+      key: "tasks.effort_scale",
+      value: [
+        { key: "XS", time: { amount: 10, unit: "minutes" } },
+        { key: "S", about: "Short" },
+      ],
+      state: "newer",
+    });
+  });
+
+  test("the build before this one reads the names of a list this build writes", () => {
+    const before: PreferenceSpec = {
+      ...scale,
+      schemaVer: 1,
+      default: [{ key: "S" }, { key: "M" }, { key: "L" }],
+      salvage: (value) => stepOneNames(value)?.map((key) => ({ key })),
+    };
+    delete (before as { upgrade?: unknown }).upgrade;
+    const written = [...EFFORT_LEVELS, { key: "Half a day", about: "One sitting" }];
+    expect(fits(written)).toBe(true);
+    expect(preferenceValue(before, stored(written, scale.schemaVer))).toEqual({
+      key: "tasks.effort_scale",
+      value: [...EFFORT_LEVELS.map(({ key }) => ({ key })), { key: "Half a day" }],
+      state: "newer",
+    });
+  });
+
+  test("a level's time in words", () => {
+    expect(effortTimeText({ amount: 1, unit: "hours" })).toBe("1 hour");
+    expect(effortTimeText({ amount: 10, unit: "minutes" })).toBe("10 minutes");
+    expect(effortTimeText({ amount: 1, unit: "weeks" })).toBe("1 week");
+  });
+
+  test("two lists of levels are the same when each level says the same, whatever its fields' order", () => {
+    // As storage gives them back: each level's fields sorted.
+    const sorted = EFFORT_LEVELS.map(({ key, time, about }) => ({ about, key, time }));
+    expect(samePrefValue(sorted, EFFORT_LEVELS)).toBe(true);
+    expect(samePrefValue([...EFFORT_LEVELS].reverse(), EFFORT_LEVELS)).toBe(false);
+    expect(samePrefValue(EFFORT_LEVELS.slice(1), EFFORT_LEVELS)).toBe(false);
+    expect(samePrefValue([{ key: "S" }], [{ key: "S", about: "One sitting" }])).toBe(false);
+    expect(samePrefValue([{ key: "S" }], { 0: { key: "S" } })).toBe(false);
+    expect(samePrefValue(null, null)).toBe(true);
+    expect(samePrefValue(null, {})).toBe(false);
   });
 });

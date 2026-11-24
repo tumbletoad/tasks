@@ -606,6 +606,7 @@ export function serve(
           }
         },
         registerMachine: ({ handle }) => writer(handle).registerMachine(),
+        storeDefaults: ({ handle }) => writer(handle).storeDefaults(),
         actor: ({ handle, actorKind, label }) => writer(handle).actor(actorKind, label),
         submit: ({ handle, request }) => writer(handle).submit(request),
         receipt: ({ handle, lookup }) => writer(handle).receipt(lookup) ?? null,

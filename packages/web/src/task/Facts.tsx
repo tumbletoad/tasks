@@ -4,7 +4,7 @@
 // under the control (edit/Unsaved.tsx). A fact without a value is an empty control a person can
 // fill. Editable values sit in outlined controls; that outline is the only hint that a value can be
 // changed by hand. A finished task's facts are read-only text.
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ToggleButton, ToggleButtonGroup, type Key } from "react-aria-components";
 import { classes } from "../app/css.ts";
 import {
@@ -21,8 +21,9 @@ import { useEdits } from "../edit/useEdits.ts";
 import { areaSlots } from "../groups.ts";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import { localDate } from "@ttasks/contracts/day";
+import { EFFORT_NAME_MAX } from "@ttasks/contracts/preferences";
 import { formatDay, formatInstant, type Clock } from "../row/dates.ts";
-import { contextFor, renderRow } from "../row/model.ts";
+import { contextFor, effortLevelOf, levelMsg, renderRow } from "../row/model.ts";
 import { sayMsg } from "../row/say.ts";
 import { useLive } from "../store/hooks.ts";
 import { effortOptions, type TaskRow } from "../store/rows.ts";
@@ -41,6 +42,7 @@ const styles = classes(css, [
   "plain",
   "trash",
   "trashButton",
+  "level",
 ]);
 
 const STATUS_LABEL: Readonly<Record<string, MessageId>> = {
@@ -100,7 +102,7 @@ function dueOf(
   clock: Clock,
   t: Translate,
 ): { text: string; tip: string } | undefined {
-  const model = renderRow({ task, instances: [] }, contextFor("open", "flat", clock));
+  const model = renderRow({ task, instances: [] }, contextFor("open", "flat", clock, []));
   const relative = model.due === undefined ? "" : sayMsg(t, model.due.text);
   if (task.due_at !== undefined) {
     const date = shortDate(localDate(task.due_at, clock.timeZone), clock, t);
@@ -119,7 +121,7 @@ function dueOf(
 
 /** The created fact: "9 Nov · 3d", the only place a task's age shows while it is expanded. */
 function createdOf(task: TaskRow, clock: Clock, t: Translate): string {
-  const model = renderRow({ task, instances: [] }, contextFor("open", "flat", clock));
+  const model = renderRow({ task, instances: [] }, contextFor("open", "flat", clock, []));
   const date = localDate(task.created_at, clock.timeZone);
   // Created today: "today" alone, so today's date stays the strip's (A5 U1).
   const age = model.age === undefined ? "" : sayMsg(t, model.age.text);
@@ -184,13 +186,23 @@ function Segmented({
 }: {
   readonly label: string;
   readonly part: string;
-  readonly options: readonly { readonly key: string; readonly text: string }[];
+  /**
+   * `tip`: said on resting on the option and to assistive technology, as its description. `long`:
+   * the text is cut to one line, as its tip says it whole.
+   */
+  readonly options: readonly {
+    readonly key: string;
+    readonly text: string;
+    readonly tip?: string;
+    readonly long?: boolean;
+  }[];
   readonly value: string | undefined;
   readonly clearable: boolean;
   readonly columns: number;
   readonly span?: number;
   readonly onChange: (value: string | undefined) => void;
 }) {
+  const ids = useId();
   // Custom properties through React's style object, which the CSP's style-src allows.
   const grid = { "--k-cols": columns, "--k-span": span } as CSSProperties;
   return (
@@ -208,11 +220,26 @@ function Segmented({
         if (next !== value) onChange(next);
       }}
     >
-      {options.map((option) => (
-        <ToggleButton key={option.key} id={option.key} className={styles.segButton}>
+      {options.map((option, i) => (
+        <ToggleButton
+          key={option.key}
+          id={option.key}
+          className={styles.segButton}
+          {...(option.tip === undefined
+            ? {}
+            : { "data-tip": option.tip, "aria-describedby": `${ids}-${String(i)}` })}
+          {...(option.long === true ? { "data-long": "" } : {})}
+        >
           <span dir="auto">{option.text}</span>
         </ToggleButton>
       ))}
+      {options.map((option, i) =>
+        option.tip === undefined ? null : (
+          <span key={option.key} id={`${ids}-${String(i)}`} hidden>
+            {option.tip}
+          </span>
+        ),
+      )}
     </ToggleButtonGroup>
   );
 }
@@ -370,6 +397,8 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
   const due = dueOf(task, clock, t);
   const level = task.priority;
   const priority = level === 1 || level === 2 || level === 3 ? String(level) : undefined;
+  const sized = effortLevelOf(task.effort, state.scales.efforts);
+  const say = (m: Parameters<typeof sayMsg>[1]) => sayMsg(t, m);
 
   const trashed = task.deleted_at !== undefined;
   // Move to Trash goes with its button: focus moves to the Restore that takes its place, never to
@@ -439,9 +468,20 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
           {priority === undefined ? null : (
             <Fact label={t("fact.priority")}>{t("row.priority", { level: Number(priority) })}</Fact>
           )}
-          {task.effort === undefined || task.effort === "" ? null : (
+          {sized === undefined ? null : (
             <Fact label={t("fact.effort")}>
-              <span dir="auto">{task.effort}</span>
+              <span
+                className={styles.level}
+                dir="auto"
+                data-part="effort"
+                data-tip={say(levelMsg(sized))}
+                data-long={sized.key.length > EFFORT_NAME_MAX ? "" : undefined}
+                aria-description={say(levelMsg(sized))}
+                // Focusable, so the keyboard brings up what the level means as the mouse does.
+                tabIndex={0}
+              >
+                {sized.key}
+              </span>
             </Fact>
           )}
           {due === undefined ? null : (
@@ -547,7 +587,12 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
           <Segmented
             label={t("fact.effort")}
             part="effort"
-            options={efforts.map((key) => ({ key, text: key }))}
+            options={efforts.map((option) => ({
+              key: option.key,
+              text: option.key,
+              tip: say(levelMsg(option)),
+              long: option.key.length > EFFORT_NAME_MAX,
+            }))}
             value={task.effort === "" ? undefined : task.effort}
             clearable
             columns={shared}

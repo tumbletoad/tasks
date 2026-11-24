@@ -16,6 +16,7 @@ import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { splitGlobals, takesFolder, UsageError, verbSpec, type Globals } from "./args.ts";
 import { briefCommand, type BriefOptions } from "./brief.ts";
 import { folderVerb } from "./folders.ts";
+import { prefsVerb } from "./prefs-file.ts";
 import { CLI_BUILD, readServiceRecord, stateDir } from "./connect.ts";
 import { doctor, type DoctorOptions } from "./doctor.ts";
 import { helpText, localCommand, shortHelp } from "./help.ts";
@@ -189,6 +190,7 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
           return await undoCommand(io, globals, verb, args, options);
         }
         if (takesFolder(verb)) return await folderVerb(io, globals, verb, args, options);
+        if (verb.entry === "prefs.manage") return await prefsVerb(io, globals, verb, args, options);
         return await runVerb(io, globals, verb, args, options);
       }
     }
