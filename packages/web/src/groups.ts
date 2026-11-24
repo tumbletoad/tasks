@@ -8,7 +8,6 @@
 // - Then tasks with no area that are not in the Inbox.
 // - Inside a group: open first, then the other statuses, backlog last, then position.
 // Each task appears exactly once.
-import { byText } from "@ttasks/contracts/day";
 import type { MessageId } from "./i18n/intl.tsx";
 import type { AreaRow, ProjectRow, TaskRow } from "./live.ts";
 
@@ -45,24 +44,22 @@ export interface Group {
 const STATUS_RANK: Readonly<Record<string, number>> = { open: 0, waiting: 1, review: 2 };
 const rank = (status: string): number => (status === "backlog" ? 9 : (STATUS_RANK[status] ?? 5));
 
-/** The order of areas, and of the projects of an area: position, then ID. */
-export const byPosition = (
-  a: { position: string; id: string },
-  b: { position: string; id: string },
-): number => byText(a.position, b.position) || byText(a.id, b.id);
-
-/**
- * The order of a list of tasks, as the writer places them (storage: TASK_ORDER): position, then
- * age, then ID, so two tasks on one position show in the same order everywhere.
- */
-export const inListOrder = (a: TaskRow, b: TaskRow): number =>
-  byText(a.position, b.position) || a.created_at - b.created_at || byText(a.id, b.id);
+const byPosition = (a: { position: string; id: string }, b: { position: string; id: string }) =>
+  a.position < b.position
+    ? -1
+    : a.position > b.position
+      ? 1
+      : a.id < b.id
+        ? -1
+        : a.id > b.id
+          ? 1
+          : 0;
 
 const byStatusThenPosition = (a: TaskRow, b: TaskRow) =>
-  rank(a.status) - rank(b.status) || inListOrder(a, b);
+  rank(a.status) - rank(b.status) || byPosition(a, b);
 
 export const newestFirst = (a: TaskRow, b: TaskRow) =>
-  b.created_at - a.created_at || inListOrder(a, b);
+  b.created_at - a.created_at || byPosition(a, b);
 
 /** An area's slot: the stored one (1 to 8), else its place in the order, wrapping after 8. */
 export function slotOf(area: AreaRow, index: number): number {
@@ -279,7 +276,7 @@ export const personGroups: GroupTasks = (tasks) => {
     else known.tasks.push(task);
   }
   const order = (a: TaskRow, b: TaskRow) =>
-    followUp(a) < followUp(b) ? -1 : followUp(a) > followUp(b) ? 1 : inListOrder(a, b);
+    followUp(a) < followUp(b) ? -1 : followUp(a) > followUp(b) ? 1 : byPosition(a, b);
   const groups: Group[] = [...people]
     .sort(([ka, a], [kb, b]) => names.compare(a.title, b.title) || (ka < kb ? -1 : 1))
     .map(([key, person]) => ({

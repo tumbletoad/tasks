@@ -26,7 +26,7 @@
 //   the project's tasks the batch holds, so the row the client holds never shows a source, a
 //   folder, a run state or a question the space no longer has.
 import type { PreferenceRead } from "@ttasks/contracts";
-import { RUN_WAITS, TASK_ORDER, WAITS, type Row, type WorkerConnection } from "@ttasks/storage";
+import { RUN_WAITS, WAITS, type Row, type WorkerConnection } from "@ttasks/storage";
 import { hasFolderTable } from "../ops/read.ts";
 import {
   compact,
@@ -152,7 +152,7 @@ const PROJECT_COLUMNS =
   "p.id, p.area_id, p.slug, p.title, p.position, p.color, p.lifecycle, p.deleted_at, p.version";
 
 const openTasks = (folders: boolean) =>
-  `SELECT ${taskColumns(folders)} FROM tasks t WHERE t.lifecycle = 'active' AND t.deleted_at IS NULL ORDER BY ${TASK_ORDER}`;
+  `SELECT ${taskColumns(folders)} FROM tasks t WHERE t.lifecycle = 'active' AND t.deleted_at IS NULL ORDER BY t.position, t.id`;
 const LIVE_AREAS = `SELECT ${AREA_COLUMNS} FROM areas a WHERE a.deleted_at IS NULL ORDER BY a.position, a.id`;
 const LIVE_PROJECTS = `SELECT ${PROJECT_COLUMNS} FROM projects p WHERE p.deleted_at IS NULL ORDER BY p.position, p.id`;
 

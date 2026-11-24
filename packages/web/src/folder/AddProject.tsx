@@ -11,7 +11,7 @@ import { useUnarchive } from "../app/Archived.tsx";
 import { useToast } from "../app/frame.ts";
 import setup from "../app/Setup.module.css";
 import { Session } from "../context.ts";
-import { byPosition, liveGroups } from "../groups.ts";
+import { liveGroups } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
 import { sameName } from "../task/areaNames.ts";
@@ -83,7 +83,10 @@ export function AddProject({
   const areaId = useId();
   // An archived area takes no new project: it is not offered, also when the page on screen is its.
   const areas = useMemo(
-    () => liveGroups(state.areas.values(), []).areas.sort(byPosition),
+    () =>
+      liveGroups(state.areas.values(), []).areas.sort((a, b) =>
+        a.position < b.position ? -1 : a.position > b.position ? 1 : 0,
+      ),
     [state.areas],
   );
   const [text, setText] = useState("");

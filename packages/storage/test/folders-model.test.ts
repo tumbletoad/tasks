@@ -24,7 +24,7 @@ import { openSpace } from "../src/space.ts";
 import { type FolderOs } from "../src/write/folders.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
-import { checkSpace, expectBeside, listOf, listsOf } from "./space-rules.ts";
+import { checkSpace, listsOf } from "./space-rules.ts";
 import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("folders-model");
@@ -246,15 +246,6 @@ const GROUP_CASES: readonly (readonly Step[])[] = [
     { kind: "file", who: "human" },
     { kind: "note", who: "agent", t: TASKS },
     { kind: "undo", partial: true },
-  ],
-  // An undo of a move out of a list that another filled meanwhile: the task comes back on its
-  // place, which the other holds too, and one moved before the second then stands right there.
-  [
-    { kind: "move", who: "human", t: 0, p: 2 },
-    { kind: "move", who: "human", t: 0, p: 3 },
-    { kind: "move", who: "agent", t: 1, p: 2 },
-    { kind: "undo", partial: false },
-    { kind: "beside", who: "agent", t: 3, s: 1, side: "before" },
   ],
   // An undo of a project's restore that a task restored since keeps: the restore is named.
   [
@@ -658,7 +649,6 @@ async function run(steps: readonly Step[]): Promise<void> {
       const machine = nth(w.machines, "m" in s ? s.m : 0);
       let ops: Operation[] | undefined;
       let actor = "who" in s && s.who === "agent" ? machine.agent : machine.human;
-      let sibling: { list: string[] } | undefined;
       // A request that files new rows and is refused leaves none of them.
       const counts = [w.areas.length, w.projects.length, w.tasks.length] as const;
       if (s.kind === "steal") {
@@ -675,7 +665,6 @@ async function run(steps: readonly Step[]): Promise<void> {
       } else if (s.kind !== "undo" && s.kind !== "redo") {
         ops = opsOf(w, s, machine, before);
         if (ops === undefined) continue;
-        if (s.kind === "beside") sibling = { list: listOf(w.fx.reader, nth(w.tasks, s.s)) };
       }
       let result: WriteResult;
       if (ops !== undefined) {
@@ -733,9 +722,6 @@ async function run(steps: readonly Step[]): Promise<void> {
       }
       expect(["applied", "unchanged", "conflict", "rejected"]).toContain(result.status);
       space = checkSpace(w.fx.reader, space);
-      if (s.kind === "beside" && result.status === "applied" && sibling !== undefined) {
-        expectBeside(w.fx.reader, nth(w.tasks, s.t), nth(w.tasks, s.s), s.side, sibling.list);
-      }
       // A folder change on a machine moved exactly the folders inside the old one, when it said so.
       if ((s.kind === "project_set" || s.kind === "task_set") && result.status === "applied") {
         const kind = s.kind === "project_set" ? "project" : "task";
@@ -778,7 +764,7 @@ describe("[A1.5.write.folders-model] random folder operations, deletes, restores
     );
   }, 300_000);
 
-  test("after every write, undo and redo, also of several writes in one request: a deleted project or area holds nothing live, a task stays in its project's area, and a task placed beside another stands right there", async () => {
+  test("after every write, undo and redo, also of several writes in one request: a deleted project or area holds nothing live, and a task stays in its project's area", async () => {
     const failures: string[] = [];
     for (const [k, steps] of GROUP_CASES.entries()) {
       try {

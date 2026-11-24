@@ -153,20 +153,6 @@ describe("[A5.archived.web.groups] an archived area or project leaves the areas 
     ]);
   });
 
-  test("two tasks of a list on one position: the older first, and by ID when made at once", () => {
-    const kiln: ProjectRow = { id: "p_kiln", title: "Kiln", position: "d1" };
-    const rows = [
-      task({ title: "Newer", project_id: "p_kiln", position: "a1", created_at: 20 }),
-      task({ title: "Older", project_id: "p_kiln", position: "a1", created_at: 10 }),
-      task({ id: "t_b", title: "B", project_id: "p_kiln", position: "a2", created_at: 30 }),
-      task({ id: "t_a", title: "A", project_id: "p_kiln", position: "a2", created_at: 30 }),
-      task({ title: "First", project_id: "p_kiln", position: "a0", created_at: 40 }),
-    ];
-    expect(titles(projectGroups(rows, areas, [kiln]))).toEqual([
-      ["flat", undefined, [[undefined, ["First", "Older", "Newer", "A", "B"]]]],
-    ]);
-  });
-
   test("archiving an area recolours no other: each keeps its place among all areas", () => {
     const before = sidebarAreas(
       areas.map((a) => ({ ...a, lifecycle: "active" })),

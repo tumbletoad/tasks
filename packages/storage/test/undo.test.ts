@@ -11,7 +11,6 @@ import { openWriter } from "../src/open.ts";
 import { planInversions, readChanges } from "../src/write/history.ts";
 import type { Credential, Operation, WriteRequest, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
-import { listOf } from "./space-rules.ts";
 import { checkHistory, expectStatus, type Fixture, fixtureCopies } from "./write-helpers.ts";
 
 const temp = tempFolders("undo");
@@ -1183,26 +1182,6 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     expect(row("SELECT deleted_at FROM projects WHERE id = $id", { id: fx.project })).toEqual({
       deleted_at: null,
     });
-  });
-
-  test("two tasks on one position after an Undo: a task put before the second stands between them, and its Undo gives the two their position back", () => {
-    // A leaves the Inbox, Codex's new task takes A's place at its end, and the Undo puts A back.
-    const a = create("Renew the passport");
-    const place = task(a)["position"];
-    applied(write([{ kind: "task.move", task: a, project: fx.project }]));
-    const b = create("Book the dentist", "codex");
-    applied(undo());
-    expect([task(a)["position"], task(b)["position"]]).toEqual([place, place]);
-    const [first, second] = listOf(fx.reader, a).slice(-2) as [Id<"t">, Id<"t">];
-    expect([first, second].sort()).toEqual([a, b].sort());
-
-    const c = newId("t");
-    applied(write([{ kind: "task.create", id: c, title: "Water the plants", before: second }]));
-    expect(listOf(fx.reader, a).slice(-3)).toEqual([first, c, second]);
-    applied(undo());
-    expect([task(first)["position"], task(second)["position"]]).toEqual([place, place]);
-    applied(redo());
-    expect(listOf(fx.reader, a).slice(-3)).toEqual([first, c, second]);
   });
 
   test("Redo writes what its step wrote under a task the step moved to the Trash, and moves a task a Redo before it put back there", () => {

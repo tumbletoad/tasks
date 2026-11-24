@@ -4,7 +4,6 @@
 import { expect } from "vitest";
 import type { Connection } from "../src/driver.ts";
 import { folderKey, hasFolders, machineOs } from "../src/write/folders.ts";
-import { TASK_ORDER } from "../src/write/positions.ts";
 import { WRITE_LIMITS, type WriteRequest, type WriteResult } from "../src/write/request.ts";
 
 /** The space as a step found it: what a rule about the step compares with. */
@@ -73,9 +72,6 @@ const KINDS_SINCE = "SELECT DISTINCT kind FROM commits WHERE seq > $seq";
  * - A task in a project is in that project's area, in the Trash too.
  * - A live task or project never has an area or a project that is deleted, so a deleted project
  *   holds no live task, and no live folder either.
- * - Every list has one order, which every view reads (TASK_ORDER). Two tasks may share a position
- *   (an Undo puts a task back on its place while another took it); a task placed beside either
- *   still stands right there (ruled).
  * - An owner has at most one live folder on a machine, and two live projects never share one
  *   folder on one machine, by that machine's case rule.
  * - An active task has no wrap-up, and a task has at most 20 live learnings.
@@ -143,11 +139,7 @@ export function checkSpace(conn: Connection, before?: SpaceState): SpaceState {
 
 /**
  * `submit`, with the rules checked on the space each write leaves (checkSpace), the space as the
- * write found it as `before`: a step that sends several writes is checked after each of them. And
- * a task a forward write placed right before or after another stands right there in its list, as
- * every view reads the list (listOf), also when two tasks of it share a position: unless a later
- * operation of the request names either task again. A retried request that is answered from its
- * receipt writes nothing.
+ * write found it as `before`: a step that sends several writes is checked after each of them.
  */
 export function ruled(
   conn: Connection,
@@ -157,91 +149,24 @@ export function ruled(
   return (request) => {
     const result = submit(request);
     state = checkSpace(conn, state);
-    if (result.status === "applied" && result.replayed !== true) {
-      for (const { task, sibling, side } of placedBeside(conn, request, result)) {
-        const list = listOf(conn, sibling);
-        const at = list.indexOf(sibling) + (side === "before" ? -1 : 1);
-        expect(list[at], `${task} right ${side} ${sibling}`).toBe(task);
-      }
-    }
     return result;
   };
 }
 
-/** The tasks the request placed right before or after another that no later operation names. */
-function placedBeside(
-  conn: Connection,
-  request: WriteRequest,
-  result: WriteResult,
-): { task: string; sibling: string; side: "before" | "after" }[] {
-  return request.ops.flatMap((op, k) => {
-    if (op.kind !== "task.create" && op.kind !== "task.move") return [];
-    const side = op.before !== undefined ? "before" : op.after !== undefined ? "after" : undefined;
-    const done = result.results[k];
-    if (side === undefined || done === undefined || done.status === "existing") return [];
-    const task = done.task ?? done.id;
-    const sibling = conn
-      .prepare("SELECT id FROM tasks WHERE id = $s OR ref = $s")
-      .get({ s: op[side] ?? null })?.["id"];
-    if (typeof sibling !== "string") return [];
-    const later = JSON.stringify(request.ops.slice(k + 1));
-    if (later.includes(task) || later.includes(sibling)) return [];
-    return [{ task, sibling, side }];
-  });
-}
-
 /**
- * Every list of the space in its order, as every view sorts it: the tasks of each project, of each
- * area outside a project and of the Inbox, and the projects of each area and of none. A row in the
- * Trash, or one whose creation was undone, keeps its place in its list.
+ * Every list of the space by position, then ID: the tasks of each project, of each area outside a
+ * project and of the Inbox, and the projects of each area and of none. A row in the Trash, or one
+ * whose creation was undone, keeps its place in its list.
  */
 export function listsOf(conn: Connection): Record<string, string[]> {
   const lists: Record<string, string[]> = {};
-  for (const sql of [TASK_LISTS, PROJECT_LISTS]) {
-    for (const r of conn.prepare(sql).all())
-      (lists[String(r["list"])] ??= []).push(String(r["id"]));
-  }
+  for (const r of conn.prepare(LISTS).all())
+    (lists[String(r["list"])] ??= []).push(String(r["id"]));
   return lists;
 }
 
-const TASK_LISTS =
+const LISTS =
   "SELECT id, CASE WHEN project_id IS NOT NULL THEN 'tasks of project ' || project_id " +
-  "WHEN area_id IS NOT NULL THEN 'tasks of area ' || area_id ELSE 'the Inbox' END AS list " +
-  `FROM tasks ORDER BY list, ${TASK_ORDER}`;
-const PROJECT_LISTS =
-  "SELECT id, 'projects of ' || coalesce('area ' || area_id, 'no area') AS list FROM projects " +
-  "ORDER BY list, position, id";
-
-/** The tasks of `task`'s list in their order, as every view sorts them (TASK_ORDER). */
-export function listOf(conn: Connection, task: string): string[] {
-  const group = conn
-    .prepare("SELECT project_id AS project, area_id AS area FROM tasks WHERE id = $id")
-    .get<{ project: string | null; area: string | null }>({ id: task });
-  if (group === undefined) throw new Error("no such task");
-  return conn
-    .prepare(
-      "SELECT id FROM tasks WHERE project_id IS $project " +
-        `AND ($project IS NOT NULL OR area_id IS $area) ORDER BY ${TASK_ORDER}`,
-    )
-    .all(group)
-    .map((r) => String(r["id"]));
-}
-
-/**
- * A task placed right `side` of `sibling` stands there in its list: before it and after what was
- * before it, or the other way round. `was` is the sibling's list before the move.
- */
-export function expectBeside(
-  conn: Connection,
-  task: string,
-  sibling: string,
-  side: "before" | "after",
-  was: readonly string[],
-): void {
-  const list = listOf(conn, sibling);
-  const others = was.filter((id) => id !== task);
-  const at = others.indexOf(sibling);
-  const expected = [...others];
-  expected.splice(side === "before" ? at : at + 1, 0, task);
-  expect(list, `${task} ${side} ${sibling}`).toEqual(expected);
-}
+  "WHEN area_id IS NOT NULL THEN 'tasks of area ' || area_id ELSE 'the Inbox' END AS list, " +
+  "position FROM tasks UNION ALL SELECT id, 'projects of ' || coalesce('area ' || area_id, " +
+  "'no area'), position FROM projects ORDER BY 2, 3, 1";

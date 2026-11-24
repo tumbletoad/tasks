@@ -105,7 +105,7 @@ import {
 } from "./launches.ts";
 import { canonicalJson } from "./canonical.ts";
 import { markProjected, queueProjection, type ProjectedBatch } from "./outbox.ts";
-import { isPosition, positionBetween, TASK_ORDER } from "./positions.ts";
+import { isPosition, positionBetween } from "./positions.ts";
 import { freeSlug } from "./slugs.ts";
 import {
   decodeRun,
@@ -584,8 +584,6 @@ const SQL = {
   last: inGroup("max(position)", ""),
   next: inGroup("min(position)", " AND position > $at"),
   previous: inGroup("max(position)", " AND position < $at"),
-  /** The tasks on position `$at`, in the order of the list. */
-  tied: inGroup("id", ` AND position = $at ORDER BY ${TASK_ORDER}`),
   machine: "SELECT id FROM machines WHERE id = $id",
   insertMachine:
     "INSERT INTO machines (id, name, os, first_seen, retired_at, created_seq, version, fv, fp) " +
@@ -3814,15 +3812,6 @@ function regroupRestored(conn: Connection, run: Execution, staged: StagedOp, tar
   wrote(run, staged.i, "tasks", target, target, inbox ? ["grouping", "inbox"] : ["grouping"]);
 }
 
-/** The tasks a placement moved on (place), each a write of operation `i`, which its Undo sets back. */
-function pushOn(conn: Connection, run: Execution, i: number, placed: Placed): void {
-  for (const { id, position } of placed.pushed ?? []) {
-    ensureStart(conn, run, "tasks", id);
-    update(conn, id, { position });
-    wrote(run, i, "tasks", id, id, ["grouping"]);
-  }
-}
-
 function update(conn: Connection, id: Id<"t">, values: Record<string, SqlValue>): void {
   conn.prepare(updateTaskSql(Object.keys(values))).run({ ...values, id });
 }
@@ -3902,35 +3891,18 @@ function positionIn(
   return value;
 }
 
-/** The tasks of `group` on position `at`, but `self`, in the order of the list. */
-function tiedAt(conn: Connection, group: Group, self: Id<"t">, at: string): Id<"t">[] {
-  const rows =
-    group.projectId === null
-      ? conn.prepare(SQL.tied.area).all({ self, at, area: group.areaId })
-      : conn.prepare(SQL.tied.project).all({ self, at, project: group.projectId });
-  return rows.map((row) => new RowReader("tasks", row).id("p", "t"));
-}
-
-/** Where a task goes, and the tasks that move on to make room right after it (pushOn). */
-type Placed = Group & {
-  position: string;
-  pushed?: readonly { readonly id: Id<"t">; readonly position: string }[];
-};
-
 /**
  * The group and position a task takes: the explicit group, else the sibling's, else its own;
  * right next to the sibling, else at the end of a new group, else where it is. A task that
  * already stands where it is asked to keeps its position. One placed by a sibling in a project
  * takes the project's area, also when the sibling holds another from before the group rules.
- * Between two tasks on one position (an Undo puts a task back on its place while another took
- * it), the tasks of that position that show after the place move on behind it, in their order.
  */
 function place(
   conn: Connection,
   staged: StagedOp,
   self: Id<"t">,
   current: TaskRow | undefined,
-): Placed {
+): Group & { position: string } {
   const sibling = staged.sibling === undefined ? undefined : readTask(conn, staged.sibling.id);
   const intent = staged.group;
   const group: Group =
@@ -3959,31 +3931,18 @@ function place(
         staged.sibling.side,
       );
     }
-    const at = sibling.position;
-    const tied = tiedAt(conn, target, self, at);
-    const cut = tied.indexOf(sibling.id) + (staged.sibling.side === "after" ? 1 : 0);
-    if (cut < 0) throw misuse("A sibling stands on its own position");
-    const later = tied.slice(cut);
-    const low = cut > 0 ? at : positionIn(conn, SQL.previous, target, self, at);
-    const high = later.length > 0 ? at : positionIn(conn, SQL.next, target, self, at);
-    if (low !== high) {
-      if (
-        kept !== undefined &&
-        (low === undefined || low < kept) &&
-        (high === undefined || kept < high)
-      ) {
-        return { ...target, position: kept };
-      }
-      return { ...target, position: positionBetween(low, high) };
+    const [low, high] =
+      staged.sibling.side === "after"
+        ? [sibling.position, positionIn(conn, SQL.next, target, self, sibling.position)]
+        : [positionIn(conn, SQL.previous, target, self, sibling.position), sibling.position];
+    if (
+      kept !== undefined &&
+      (low === undefined || low < kept) &&
+      (high === undefined || kept < high)
+    ) {
+      return { ...target, position: kept };
     }
-    const next = positionIn(conn, SQL.next, target, self, at);
-    const position = positionBetween(at, next);
-    let last = position;
-    const pushed = later.map((id) => {
-      last = positionBetween(last, next);
-      return { id, position: last };
-    });
-    return { ...target, position, pushed };
+    return { ...target, position: positionBetween(low, high) };
   }
   if (kept !== undefined) return { ...target, position: kept };
   const last = positionIn(conn, SQL.last, target, self);
@@ -4057,7 +4016,6 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         seq: run.seq,
       });
       wrote(run, i, "tasks", target, target, null);
-      pushOn(conn, run, i, placed);
       return;
     }
     case "task.patch": {
@@ -4092,7 +4050,6 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         position: placed.position,
       });
       wrote(run, i, "tasks", target, target, ["grouping"]);
-      pushOn(conn, run, i, placed);
       return;
     }
     case "task.complete": {
