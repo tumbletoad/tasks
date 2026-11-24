@@ -189,14 +189,14 @@ test.describe("[A7.3.12.m5-10.e2e.search] Search results are a list like any oth
     await expect(page.locator("main")).toContainText("Type words or filters");
 
     await searching(page).fill(word);
-    await expect(page).toHaveURL(new RegExp(`/search\\?q=${word}$`));
     await expect(titles(page, "To do")).toHaveCount(2);
+    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/search$`));
 
     // Expanding a result puts it in the URL, as in any view.
     const row = page.locator(`main li[data-task="${first ?? ""}"]`);
     await row.locator('[data-part="title"]').click();
     await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");
-    await expect(page).toHaveURL(new RegExp(`q=${word}&task=${first ?? ""}$`));
+    await expect(page).toHaveURL(new RegExp(`/search\\?task=${first ?? ""}$`));
     await row.locator('[data-part="title"]').click();
 
     // Check-off through the one edit path: the toast's Undo; the row stays, checked, after its hold.
@@ -477,6 +477,55 @@ test.describe("[A5.3.13.e2e.search-now] A search result changes the task as it s
     await picture(page, "search-dropped-1440.png");
     await page.setViewportSize({ width: 390, height: 900 });
     await picture(page, "search-dropped-390.png");
+  });
+});
+
+test.describe("[A5.3.13.e2e.search-address] What the person types in the top field stays out of the address", () => {
+  test("a draft switched to search, the search typed on and its expanded result: the address holds none of the words; a reload, Back and Forward bring the search back", async ({
+    page,
+    world,
+  }) => {
+    const word = wordOf("medlar");
+    const [first] = await addTasks(world, [
+      { title: `Bottle the ${word} cordial`, area: "home", priority: 1 },
+      { title: `Sieve ${word} jelly`, area: "home", priority: 2 },
+    ]);
+    const address = new RegExp(`/s/${world.mira.id}/search$`);
+    await open(page, world, "/today");
+    await adding(page).fill(`Bottle the ${word}`);
+    await page.getByRole("button", { name: "Search instead" }).click();
+    await expect(searching(page)).toHaveValue(`Bottle the ${word}`);
+    await expect(titles(page, "To do")).toHaveText([`Bottle the ${word} cordial`]);
+    await expect(page).toHaveURL(address);
+
+    // Typing on: no words in the address, and no history entry per keystroke.
+    const entries = await page.evaluate(() => history.length);
+    await searching(page).fill("");
+    await searching(page).pressSequentially(word);
+    await expect(titles(page, "To do")).toHaveCount(2);
+    await expect(page).toHaveURL(address);
+    expect(await page.evaluate(() => history.length)).toBe(entries);
+
+    // An expanded result is in the address, as in any view; the words still are not.
+    const title = page.locator(`main li[data-task="${first ?? ""}"] [data-part="title"]`);
+    await title.click();
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/search\\?task=${first ?? ""}$`));
+    expect(page.url()).not.toContain(word);
+
+    await page.reload();
+    await showsSpace(page, world.mira.name);
+    await expect(searching(page)).toHaveValue(word);
+    await expect(titles(page, "To do")).toHaveCount(2);
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/today$`));
+    await expect(adding(page)).toBeVisible();
+    await page.goForward();
+    await expect(searching(page)).toHaveValue(word);
+    await expect(titles(page, "To do")).toHaveCount(2);
+    expect(page.url()).not.toContain(word);
   });
 });
 

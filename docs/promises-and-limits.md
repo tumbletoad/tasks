@@ -367,6 +367,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A website you visit cannot read or change your tasks through the page.
 - Logs hold no task text, and there is no telemetry. Task text leaves TTasks only where you send it:
   what you copy, and what an agent reads through its connection.
+- What you type in the top field, a search included, stays out of the page's address, so a copied
+  link and the browser's history list hold the search page but not your words. A reload, Back and
+  Forward bring the search back in that tab; the search's link opened in another tab is an empty
+  search.
 - The generated folder of readable files is not where tasks are stored. A file you edit or add
   there is kept or moved to a rescue folder, never deleted. A generated file that goes missing,
   removed by hand or by a sync, is written again within seconds while TTasks runs.
