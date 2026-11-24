@@ -1032,6 +1032,134 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     expect(updates).toEqual([]);
   });
 
+  test("a title a reload brought back whose save lands as the card opens: the card and its editor agree, and the editor closes", async () => {
+    localStorage.clear();
+    keepTitleDraft(SPACE.id, "t_00001", { typed: "Task 1, fixed", title: "Task 1" });
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot([task(1)]));
+    // The save's answer arrives right after the opened card has read the kept title, before
+    // anything the card decided is drawn.
+    const read = localStorage.getItem.bind(localStorage);
+    let delivered = false;
+    vi.spyOn(localStorage, "getItem").mockImplementation((key) => {
+      const opened = container.querySelector('li[data-key="t_00001"][data-expanded="true"]');
+      if (!delivered && opened !== null && key.includes(".title.")) {
+        delivered = true;
+        live.store.push(batch(11, [task(1, { title: "Task 1, fixed", version: 2 })], ["title"]));
+        live.store.flush();
+      }
+      return read(key);
+    });
+    expand("t_00001");
+    await settle();
+    expect(delivered).toBe(true);
+    expect(container.querySelector('li[data-key="t_00001"] [data-part="title-edit"]')).toBeNull();
+    expect(titleOf("t_00001")?.textContent).toContain("Task 1, fixed");
+    expect(readTitleDraft(SPACE.id, "t_00001")).toBeUndefined();
+    expect(updates).toEqual([]);
+  });
+
+  test("a title saved on this tab, its card closed and opened again before the answer: no editor opens, and the answer lets the words go", async () => {
+    localStorage.clear();
+    let answer: (value: unknown) => void = () => undefined;
+    (api.client.task as { update: unknown }).update = (input: Record<string, unknown>) => {
+      updates.push(input);
+      return new Promise((resolve) => {
+        answer = resolve;
+      });
+    };
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot([task(1), task(2)]));
+    const field = () =>
+      container.querySelector<HTMLInputElement>('li[data-key="t_00001"] [data-part="title-edit"]');
+    act(() => {
+      titleOf("t_00001")?.focus();
+    });
+    press(titleOf("t_00001"), "F2");
+    type(field(), "Task 1, fixed");
+    press(field(), "Enter");
+    expect(updates).toHaveLength(1);
+    expand("t_00001");
+    expect(expandedOf("t_00001")).toBe("false");
+    expand("t_00001");
+    await settle();
+    expect(field()).toBeNull();
+    expect(expandedOf("t_00001")).toBe("true");
+    // The words are kept until the answer: it is what lets them go, not the card's opening.
+    expect(readTitleDraft(SPACE.id, "t_00001")?.typed).toBe("Task 1, fixed");
+    act(() => {
+      answer({ result: "updated", as_of: "1.11.01234567", warnings: [] });
+    });
+    await settle();
+    expect(readTitleDraft(SPACE.id, "t_00001")).toBeUndefined();
+    expect(field()).toBeNull();
+    expect(updates).toHaveLength(1);
+  });
+
+  test("words typed over a title a reload brought back are the ones kept and sent, also after the task was finished and reopened meanwhile", async () => {
+    localStorage.clear();
+    (api.client.task as { update: unknown }).update = (input: Record<string, unknown>) => {
+      updates.push(input);
+      return Promise.reject(
+        Object.assign(new Error("not active"), {
+          code: "wrong_tool",
+          data: { cause: "TASK_NOT_ACTIVE" },
+        }),
+      );
+    };
+    keepTitleDraft(SPACE.id, "t_00001", { typed: "First draft", title: "Task 1" });
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot([task(1), task(2)]));
+    expand("t_00001");
+    await settle();
+    const card = () => container.querySelector('li[data-key="t_00001"]');
+    const field = () =>
+      container.querySelector<HTMLInputElement>('li[data-key="t_00001"] [data-part="title-edit"]');
+    expect(field()?.value).toBe("First draft");
+    type(field(), "Newer words");
+    // An agent finishes the task while the person types, and reopens it.
+    apply(batch(11, [task(1, { lifecycle: "completed", version: 2 })], ["lifecycle"]));
+    await settle();
+    apply(batch(12, [task(1, { lifecycle: "active", version: 3 })], ["lifecycle"]));
+    await settle();
+    if (field() != null) press(field(), "Enter");
+    await settle();
+    const sent = updates.map((update) => (update["set"] as { title?: string }).title);
+    expect(sent).not.toContain("First draft");
+    expect([
+      readTitleDraft(SPACE.id, "t_00001")?.typed,
+      card()?.querySelector('[data-part="unsaved-value"]')?.textContent,
+      ...sent,
+    ]).toContain("Newer words");
+  });
+
+  test("a kept title discarded on the finished card is gone: reopened, the editor starts from the title and sends nothing", async () => {
+    localStorage.clear();
+    keepTitleDraft(SPACE.id, "t_00001", { typed: "First draft", title: "Task 1" });
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot([task(1), task(2)]));
+    expand("t_00001");
+    await settle();
+    const card = () => container.querySelector('li[data-key="t_00001"]');
+    const field = () =>
+      container.querySelector<HTMLInputElement>('li[data-key="t_00001"] [data-part="title-edit"]');
+    expect(field()?.value).toBe("First draft");
+    apply(batch(11, [task(1, { lifecycle: "completed", version: 2 })], ["lifecycle"]));
+    await settle();
+    const discard = card()?.querySelector<HTMLElement>('[data-part="discard-kept-title"]');
+    expect(discard).not.toBeNull();
+    act(() => {
+      discard?.click();
+    });
+    expect(readTitleDraft(SPACE.id, "t_00001")).toBeUndefined();
+    apply(batch(12, [task(1, { lifecycle: "active", version: 3 })], ["lifecycle"]));
+    await settle();
+    expect(field()?.value ?? "Task 1").toBe("Task 1");
+    if (field() != null) press(field(), "Enter");
+    await settle();
+    expect(updates).toEqual([]);
+  });
+
   test("a title being typed is saved when the view changes under the person", () => {
     const tasks = [task(1), task(2)];
     mount(<TaskList view="open" filter={OPEN} empty="" />);
