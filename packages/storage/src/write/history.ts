@@ -1326,44 +1326,91 @@ const LIST: Readonly<Record<"tasks" | "projects", string>> = {
   projects: "area_id IS $area",
 };
 
-/**
- * A grouping an inversion writes back: its old place, unless another row of that list holds the
- * position now (a move or a new row since took it). Then right after that row, before the next one,
- * so no two rows of a list share a position and a row placed next to either stands where it asks.
- */
-function placedBack(
-  conn: Connection,
-  entity: "tasks" | "projects",
-  id: string,
-  value: string,
-): string {
+/** A grouping an inversion writes back: the list it goes to, and the position it asks for. */
+interface Place {
+  readonly grouping: Record<string, unknown>;
+  readonly list: { area: string | null; project?: string | null };
+  readonly key: string;
+  readonly position: string;
+}
+
+function placeOf(entity: "tasks" | "projects", value: string): Place {
   const grouping = parsed(value);
   if (typeof grouping !== "object" || grouping === null || Array.isArray(grouping)) {
     throw invalidValue("changes", "before");
   }
-  const { position, project_id: project, area_id: area } = grouping as Record<string, unknown>;
+  const record = grouping as Record<string, unknown>;
+  const { position, project_id: project, area_id: area } = record;
   if (typeof position !== "string") throw invalidValue("changes", "before");
   const list = {
     area: typeof area === "string" ? area : null,
     ...(entity === "tasks" ? { project: typeof project === "string" ? project : null } : {}),
   };
-  const taken = conn
-    .prepare(
-      `SELECT 1 AS found FROM ${entity} WHERE ${LIST[entity]} AND position = $position ` +
-        "AND id <> $id",
+  // A task in a project is in that project's list whatever its area.
+  const key =
+    entity === "tasks" && list.project !== null
+      ? `${entity}|${String(list.project)}|`
+      : `${entity}|${String(list.project)}|${String(list.area)}`;
+  return { grouping: record, list, key, position };
+}
+
+/**
+ * Where the groupings an inversion writes back stand, decided against each list as the whole
+ * inversion leaves it: the rows it does not move where they are, those it moves where they go. A
+ * grouping keeps its old place unless one of those rows holds the position: then it stands right
+ * after that row, before the next one, so no two rows of a list share a position and a row placed
+ * next to either stands where it asks. Such a place is no one's change: it keeps the provenance of
+ * the write it sets back (writeInversions), so the steps below it still invert.
+ */
+function placements(conn: Connection, inversions: readonly Inversion[]): Map<Inversion, string> {
+  const moving = inversions
+    .filter(
+      (i): i is Restore & { entity: "tasks" | "projects" } =>
+        i.kind === "restore" &&
+        i.field === "grouping" &&
+        (i.entity === "tasks" || i.entity === "projects"),
     )
-    .get({ ...list, position, id });
-  if (taken === undefined) return value;
-  // The next position of the list counts the row itself, so its new one is never its current one.
-  const next = conn
-    .prepare(
-      `SELECT min(position) AS p FROM ${entity} WHERE ${LIST[entity]} AND position > $position`,
-    )
-    .get({ ...list, position })?.["p"];
-  if (next !== null && next !== undefined && !isPosition(next)) {
-    throw invalidValue(entity, "position");
+    .map((i) => {
+      const place = placeOf(i.entity, i.value);
+      // It stands where it asks until it is placed: the rows placed before it count it there.
+      return { i, entity: i.entity, place, position: place.position };
+    });
+  const moved = new Set(moving.map(({ i }) => `${i.entity}|${i.id}`));
+  const placed = new Map<Inversion, string>();
+  for (const m of moving) {
+    const { i, entity, place } = m;
+    /** The positions of the list as the inversion leaves it, but this row's. */
+    const there: string[] = [];
+    /** Where the row stands now, when that is in this list: its new place is never that one. */
+    let own: string | undefined;
+    /** It stands where it asks already, as an earlier place of its own can: it moves right after. */
+    let same = false;
+    for (const row of conn
+      .prepare(`SELECT id, position, area_id FROM ${entity} WHERE ${LIST[entity]}`)
+      .all(place.list)) {
+      const position = row["position"];
+      if (!isPosition(position)) throw invalidValue(entity, "position");
+      if (row["id"] === i.id) {
+        own = position;
+        same = position === place.position && (row["area_id"] ?? null) === place.list.area;
+      } else if (!moved.has(`${entity}|${String(row["id"])}`)) there.push(position);
+    }
+    for (const other of moving) {
+      if (other !== m && other.entity === entity && other.place.key === place.key) {
+        there.push(other.position);
+      }
+    }
+    if (!same && !there.includes(place.position)) {
+      placed.set(i, i.value);
+      continue;
+    }
+    const next = [...there, ...(own === undefined ? [] : [own])]
+      .filter((p) => p > place.position)
+      .reduce<string | undefined>((low, p) => (low === undefined || p < low ? p : low), undefined);
+    m.position = positionBetween(place.position, next);
+    placed.set(i, fieldJson({ ...place.grouping, position: m.position }));
   }
-  return fieldJson({ ...grouping, position: positionBetween(position, next ?? undefined) });
+  return placed;
 }
 
 /** A tombstone's value: when, and for a task who (A1 3.4 `deleted_at`, `deleted_by`). */
@@ -2015,6 +2062,7 @@ function writeInversions(
   }
   const changes: InvertedChange[] = [];
   const tasks = new Set<Id<"t">>();
+  const places = placements(conn, inversions);
   for (const group of groups.values()) {
     const first = group[0];
     if (first === undefined) throw misuse("An inversion group is never empty");
@@ -2034,17 +2082,14 @@ function writeInversions(
       const after =
         inversion.kind === "tombstone"
           ? tombstoneJson(entity, commit.at, commit.principal)
-          : field === "grouping" && (entity === "tasks" || entity === "projects")
-            ? placedBack(conn, entity, id, inversion.value)
-            : inversion.value;
+          : (places.get(inversion) ?? inversion.value);
       // The guard found the write the inverted row made; its value is never the one restored.
       if (before === after) {
         throw new StorageError("SPACE_INVALID", "A field does not hold the write it names");
       }
       Object.assign(values, columnValues(table.fields[field] ?? [], after));
-      // A value set back holds the write it came from; a new place is this commit's own write.
-      const prov =
-        inversion.kind === "restore" && after === inversion.value ? inversion.prov : commit.seq;
+      // A value set back holds the write it came from, also at a place of its own (placements).
+      const prov = inversion.kind === "restore" ? inversion.prov : commit.seq;
       changes.push({
         op: commit.op,
         entity,

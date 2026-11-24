@@ -11,6 +11,7 @@ import { openWriter } from "../src/open.ts";
 import { planInversions, readChanges } from "../src/write/history.ts";
 import type { Credential, Operation, WriteRequest, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
+import { listOf } from "./space-rules.ts";
 import { checkHistory, expectStatus, type Fixture, fixtureCopies } from "./write-helpers.ts";
 
 const temp = tempFolders("undo");
@@ -1182,5 +1183,73 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     expect(row("SELECT deleted_at FROM projects WHERE id = $id", { id: fx.project })).toEqual({
       deleted_at: null,
     });
+  });
+
+  test("a place an Undo gives a task because another row holds its old one is no one's change: the steps below still undo, and Redo and Undo again", () => {
+    // Alone: B, made after A left the Inbox, takes A's old place there.
+    const a = create("Renew the passport");
+    applied(write([{ kind: "task.move", task: a, project: fx.project }]));
+    const b = create("Book the dentist");
+    applied(undo());
+    applied(undo());
+    expect(task(a)["position"]).not.toBe(task(b)["position"]);
+    applied(undo());
+    expect([task(a)["deleted_at"], task(b)["deleted_at"]]).not.toContain(null);
+    applied(redo());
+    applied(redo());
+    applied(redo());
+    expect([task(a)["project_id"], task(b)["deleted_at"]]).toEqual([fx.project, null]);
+
+    // Another puts C where A was in the project while the move is undone.
+    const c = create("Water the plants");
+    applied(write([{ kind: "task.move", task: c, project: fx.project }]));
+    applied(undo());
+    applied(write([{ kind: "task.create", title: "Pay the rent", project: fx.project }], "codex"));
+    applied(redo());
+    applied(undo());
+    expect(task(c)["project_id"]).toBeNull();
+  });
+
+  test("Undo and Redo of a step that moves several tasks give back the order of the list, not the order the rows were written in", () => {
+    const [a, b, c] = ["Renew the passport", "Book the dentist", "Water the plants"].map((t) =>
+      create(t),
+    );
+    if (a === undefined || b === undefined || c === undefined) throw new Error("no tasks");
+    const spacer = newId("t");
+    applied(write([{ kind: "task.create", id: spacer, title: "Spacer", before: b }]));
+    const y = newId("t");
+    applied(write([{ kind: "task.create", id: y, title: "Pay the rent", before: spacer }]));
+    applied(write([{ kind: "task.move", task: spacer, project: fx.project }]));
+    expect(listOf(fx.reader, a)).toEqual([a, y, b, c]);
+    // C takes A's old place while A and Y leave: the undo must not put A after it.
+    applied(
+      write([
+        { kind: "task.move", task: a, project: fx.project },
+        { kind: "task.move", task: y, project: fx.project },
+        { kind: "task.move", task: c, before: b },
+      ]),
+    );
+    applied(undo());
+    expect(listOf(fx.reader, a)).toEqual([a, y, b, c]);
+    applied(redo());
+    applied(undo());
+    expect(listOf(fx.reader, a)).toEqual([a, y, b, c]);
+
+    // The same on Redo: C holds A's old place while the redo puts A, Y and S back.
+    applied(
+      write([
+        { kind: "task.move", task: a, before: c },
+        { kind: "task.move", task: y, before: c },
+        { kind: "task.move", task: c, after: b },
+        { kind: "task.move", task: a, before: b },
+        { kind: "task.move", task: spacer, before: b },
+        { kind: "task.move", task: y, before: spacer },
+        { kind: "task.move", task: spacer, project: fx.project },
+      ]),
+    );
+    expect(listOf(fx.reader, a)).toEqual([a, y, b, c]);
+    applied(undo());
+    applied(redo());
+    expect(listOf(fx.reader, a)).toEqual([a, y, b, c]);
   });
 });
