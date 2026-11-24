@@ -2,6 +2,9 @@
 // 0600 in a 0700 folder, replaced atomically. Per home: the app, the home and its file, the
 // instance, account and space the entry names, the entry TTasks writes there, what its write made
 // beside it (the file, the servers' table, the bytes around the entry), and the agent-home grant.
+// A home's further settings file (Claude Code's default folder has two) has a record of the same
+// shape in `agents-further.json`, which no earlier build opens: an earlier build rewrites
+// `agents.json` with what it knows, and finds there the one file it knows of each home.
 //
 // No copy of a file and no other key's value: these files hold other servers' secrets, and A3 3.13.1
 // step 5 forbids whole-file backups. What the record holds is TTasks's own entry as it intended to
@@ -24,6 +27,8 @@ export const isAgentApp = (value: unknown): value is AgentApp =>
 
 export const SETUP_DIR = "setup";
 export const SETUP_FILE = "agents.json";
+/** The records of the further settings files of a home, one per file. */
+export const FURTHER_FILE = "agents-further.json";
 export const SETUP_LOCK = "agents.lock";
 export const SETUP_FORMAT = 2;
 
@@ -46,6 +51,11 @@ export interface HomeRecord {
    * finished as a removal.
    */
   readonly state: "applying" | "applied" | "removing";
+  /**
+   * The apply that wrote this record found the home's access off and asks for it: only such a
+   * record takes the access back when its apply fails or a run that ended midway is settled.
+   */
+  readonly gives_access?: true;
   /** The entry TTasks writes there, as it intended it: never what it read back. */
   readonly entry: Readonly<Record<string, unknown>>;
   /** Other entries that are TTasks's own there: what an earlier build's writers left midway. */
@@ -124,7 +134,8 @@ function isRecord(value: unknown): value is HomeRecord {
     typeof made["file"] === "boolean" &&
     typeof made["parent"] === "boolean" &&
     (made["spacing"] === null || text(made["spacing"])) &&
-    (made["ended"] === undefined || text(made["ended"]))
+    (made["ended"] === undefined || text(made["ended"])) &&
+    (value["gives_access"] === undefined || value["gives_access"] === true)
   );
 }
 
@@ -183,8 +194,8 @@ function fromFormat1(value: unknown): HomeRecord | undefined {
  * The records of every home setup changed, an earlier build's read in place. A missing file is
  * none; a damaged one throws.
  */
-export function readRecords(stateDir: string): HomeRecord[] {
-  const doc = readStateFile(recordFile(stateDir));
+export function readRecords(stateDir: string, file: string = SETUP_FILE): HomeRecord[] {
+  const doc = readStateFile(join(setupDir(stateDir), file));
   if (doc === undefined) return [];
   const homes = stateField(doc, "homes");
   const format = stateField(doc, "format");
@@ -240,8 +251,12 @@ export function readStateFile(path: string): unknown {
 }
 
 /** Replaces setup's record. The folder is made user-only, and one others can change is refused. */
-export function writeRecords(stateDir: string, records: readonly HomeRecord[]): void {
-  writeStateFile(stateDir, SETUP_FILE, { format: SETUP_FORMAT, homes: records });
+export function writeRecords(
+  stateDir: string,
+  records: readonly HomeRecord[],
+  file: string = SETUP_FILE,
+): void {
+  writeStateFile(stateDir, file, { format: SETUP_FORMAT, homes: records });
 }
 
 /** Replaces one of setup's record files, 0600 in its user-only folder. */

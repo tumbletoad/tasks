@@ -35,6 +35,7 @@ import {
   settleHomes,
   survey,
   writeRecords,
+  type Access,
   type AgentApp,
   type HomeView,
   type SetupInput,
@@ -463,13 +464,14 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
-    "giving a registered home its access back checks its entry as a new install does: before the grant, after it, and when the record cannot be written",
+    "giving an intact entry its access back is done once the service confirms it: a save meanwhile stays the person's, a record that cannot be written takes nothing back, and a grant not confirmed leaves the entry",
     async () => {
       for (const a of ADAPTERS) {
         for (const event of [
-          "a save before the grant changes the entry",
-          "a save during the grant changes the entry",
+          "a save before the grant",
+          "a save during the grant",
           "the record cannot be written",
+          "the service does not confirm the grant",
         ] as const) {
           const what = `${a.app}: ${event}`;
           const w = await world();
@@ -486,8 +488,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             writeFileSync(file, saved);
           };
           const rows = keptRows((verb) => {
-            if (armed && verb === "grant" && event === "a save during the grant changes the entry")
-              change();
+            if (armed && verb === "grant" && event === "a save during the grant") change();
           });
           const first = await viewOf(w, a);
           const [item] = planOf(w.input, [first], SPACE);
@@ -500,7 +501,10 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           expect(view.state, what).toBe("registered");
           rows.asked.length = 0;
           armed = true;
-          if (event === "a save before the grant changes the entry") change();
+          if (event === "a save before the grant") change();
+          if (event === "the service does not confirm the grant")
+            rows.refuse.grant = "grant_failed";
+          const withEntry = readFileSync(file);
           const restore =
             event === "the record cannot be written" ? unwritable(recordPath(w)) : null;
           let outcome;
@@ -509,27 +513,23 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           } finally {
             restore?.();
           }
-          expect(outcome, what).toMatchObject({ result: "failed", access: "off" });
-          expect(rows.live, what).toEqual([]);
+          expect(
+            rows.asked.map((x) => x.verb),
+            what,
+          ).toEqual(["grant"]);
+          if (event === "the service does not confirm the grant") {
+            expect(outcome, what).toMatchObject({ result: "failed", reason: "grant_failed" });
+            expect(readFileSync(file), what).toEqual(withEntry);
+            expect(readRecords(w.input.stateDir), what).toMatchObject([{ state: "applied" }]);
+            continue;
+          }
+          expect(outcome, what).toMatchObject({ result: "unchanged", access: "on" });
+          expect(rows.live, what).toHaveLength(1);
           if (event === "the record cannot be written") {
-            expect(outcome.reason, what).toBe("state_unwritable");
-            expect(
-              rows.asked.map((x) => x.verb),
-              what,
-            ).toEqual(["grant", "revoke"]);
+            expect(readFileSync(file), what).toEqual(withEntry);
           } else {
-            expect(outcome.reason, what).toBe("changed_meanwhile");
             // The person's save stays, and is theirs from then on.
             expect(readFileSync(file, "utf8"), what).toBe(saved);
-            expect(readRecords(w.input.stateDir), what).toEqual([]);
-            expect(
-              rows.asked.map((x) => x.verb),
-              what,
-            ).toEqual(
-              event === "a save before the grant changes the entry"
-                ? ["revoke"]
-                : ["grant", "revoke"],
-            );
           }
         }
       }
@@ -699,7 +699,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   });
 
   test.skipIf(root)(
-    "a file that cannot be written: no access is given; turning off takes the access away, and the next setup takes the entry out once",
+    "a file that cannot be written: it is said before the apply, no access is given; turning off takes the access away, and the next setup takes the entry out once",
     async () => {
       for (const a of ADAPTERS) {
         const w = await world();
@@ -708,9 +708,11 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         const before = readFileSync(file);
         const restore = unwritable(file);
         try {
+          const view = await viewOf(w, a);
+          expect(planOf(w.input, [view], SPACE)[0]?.change, a.app).toBe("read_only");
           expect(await apply(w, a), a.app).toMatchObject({
-            result: "failed",
-            reason: "unwritable",
+            result: "left",
+            reason: "read_only",
             access: "off",
           });
         } finally {
@@ -759,12 +761,15 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         const withEntry = readFileSync(file);
 
         // Ended after the entry was written, before its access, and after its access, before the
-        // record said so: the entry comes out and the access is off. The person turns it on again.
+        // record said so, in an apply that asked for the access: the entry comes out and the access
+        // is off. The person turns it on again.
         for (const granted of [false, true]) {
           writeFileSync(file, withEntry);
           await w.rows.revoke((await viewOf(w, a)).home);
           if (granted) await w.rows.grant((await viewOf(w, a)).home, SPACE);
-          writeRecords(w.input.stateDir, [{ ...record, state: "applying", grant: null }]);
+          writeRecords(w.input.stateDir, [
+            { ...record, state: "applying", gives_access: true, grant: null },
+          ]);
           const asked = w.rows.asked.length;
           expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
             { result: "removed", access: "off" },
@@ -775,6 +780,19 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           expect(readRecords(w.input.stateDir)).toEqual([]);
           expect(await settleHomes(w.input, w.rows)).toEqual([]);
         }
+
+        // The same in an apply that found the access live and did not ask for it: the entry comes
+        // out, and the access it did not give stays.
+        writeFileSync(file, withEntry);
+        await w.rows.grant((await viewOf(w, a)).home, SPACE);
+        writeRecords(w.input.stateDir, [{ ...record, state: "applying", grant: null }]);
+        const asked = w.rows.asked.length;
+        expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
+          { result: "removed", access: "on" },
+        ]);
+        expect(w.rows.asked.slice(asked), a.app).toEqual([]);
+        expect(readFileSync(file)).toEqual(before);
+        await w.rows.revoke((await viewOf(w, a)).home);
 
         // Ended after its record, before the entry was written: nothing to finish.
         writeFileSync(file, before);
@@ -830,9 +848,20 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         const file = a.file(w);
         seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
         const before = readFileSync(file);
+        // The service is gone once it refused the row: it confirms nothing after that.
         w.rows.refuse = { grant: "grant_failed", revoke: true };
+        const view = await viewOf(w, a);
+        const [item] = planOf(w.input, [view], SPACE);
+        const rows: Access = {
+          read: (home) => w.rows.read(home),
+          revoke: (home) => w.rows.revoke(home),
+          grant: (home, space) => {
+            w.rows.refuse.read = true;
+            return w.rows.grant(home, space);
+          },
+        };
         // Nothing claims the entry went: it stays, and the outcome says so.
-        expect(await apply(w, a), a.app).toMatchObject({
+        expect(await applyHome(w.input, view, SPACE, rows, item?.change), a.app).toMatchObject({
           result: "failed",
           reason: "grant_failed",
           access: "unknown",

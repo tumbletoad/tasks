@@ -27,13 +27,16 @@ type App = (typeof APPS)[number];
 interface Seen {
   readonly status: "on" | "off" | "unknown";
   readonly why?: string;
+  /** Something to turn on is offered: the switch, or with the tools on, a repair beside it. */
   readonly on: boolean;
   readonly off: boolean;
 }
 
 interface Row {
-  readonly entry: "none" | "own" | "edited" | "gone" | "removing";
-  readonly program: "there" | "moved" | "gone";
+  readonly entry:
+    "none" | "own" | "edited" | "gone" | "removing" | "no_program" | "unbound" | "unreadable";
+  /** `older`: the program the entry runs is there, and is not this install's. */
+  readonly program: "there" | "older" | "moved" | "gone";
   readonly access: "live" | "off";
   readonly space: "here" | "other";
   /** What the page and the command line say, for each of the three apps. */
@@ -64,12 +67,28 @@ const TABLE: readonly Row[] = [
     space: "here",
     seen: s("on", undefined, false, true),
   },
+  // Setup's own entry stays offered to turn off while it is there, the access off too.
   {
     entry: "own",
     program: "there",
     access: "off",
     space: "here",
-    seen: s("off", "access_off", true, false),
+    seen: s("off", "access_off", true, true),
+  },
+  // An older install that is still there: the tools start, and a repair is offered beside them.
+  {
+    entry: "own",
+    program: "older",
+    access: "live",
+    space: "here",
+    seen: s("on", "older", true, true),
+  },
+  {
+    entry: "own",
+    program: "older",
+    access: "off",
+    space: "here",
+    seen: s("off", "access_off", true, true),
   },
   {
     entry: "own",
@@ -83,7 +102,7 @@ const TABLE: readonly Row[] = [
     program: "moved",
     access: "off",
     space: "here",
-    seen: s("off", "moved", true, false),
+    seen: s("off", "moved", true, true),
   },
   {
     entry: "own",
@@ -97,7 +116,7 @@ const TABLE: readonly Row[] = [
     program: "gone",
     access: "off",
     space: "here",
-    seen: s("off", "not_installed", false, false),
+    seen: s("off", "not_installed", false, true),
   },
   {
     entry: "edited",
@@ -126,6 +145,29 @@ const TABLE: readonly Row[] = [
     access: "off",
     space: "here",
     seen: s("off", "edited_gone", false, false),
+  },
+  // An entry whose tools cannot start, or a file setup cannot read: never shown as on.
+  {
+    entry: "no_program",
+    program: "there",
+    access: "live",
+    space: "here",
+    seen: s("off", "no_program", false, true),
+  },
+  {
+    entry: "unbound",
+    program: "there",
+    access: "live",
+    space: "here",
+    seen: s("off", "unbound", false, true),
+  },
+  {
+    entry: "unreadable",
+    program: "there",
+    access: "live",
+    space: "here",
+    seen: s("off", "file_unreadable", false, true),
+    cli: s("off", "invalid_file", false, true),
   },
   {
     entry: "gone",
@@ -169,8 +211,8 @@ const TABLE: readonly Row[] = [
     program: "there",
     access: "off",
     space: "other",
-    seen: s("off", "other_space", false, false),
-    cli: s("off", "access_off", true, false),
+    seen: s("off", "other_space", false, true),
+    cli: s("off", "access_off", true, true),
   },
   {
     entry: "own",
@@ -208,7 +250,7 @@ const TABLE: readonly Row[] = [
     program: "there",
     access: "off",
     space: "here",
-    seen: s("off", "entry_left", true, false),
+    seen: s("off", "entry_left", true, true),
   },
 ];
 
@@ -311,6 +353,7 @@ interface Part {
   readonly why?: string;
   readonly plan: string;
   readonly off?: { readonly plan: string };
+  readonly more?: { readonly plan: string };
 }
 interface PageRow {
   readonly key: string;
@@ -353,7 +396,7 @@ const seenOnPage = (part: Part | undefined): Seen => {
   return s(
     part.on ? "on" : "off",
     part.why,
-    part.change === "add",
+    part.change === "add" || part.more !== undefined,
     part.change === "remove" || part.off !== undefined,
   );
 };
@@ -405,6 +448,7 @@ async function asPerson<T>(
 /** Nothing of setup's anywhere: no record, no row, each file as it was, the install in place. */
 async function reset(): Promise<void> {
   writeFileSync(present(), "");
+  rmSync(old(), { force: true });
   await asPerson(async (person) => {
     const listed = (await person("setup/homes", {})) as { homes: { grant: string }[] };
     if (listed.homes.length > 0) {
@@ -418,10 +462,17 @@ async function reset(): Promise<void> {
 }
 
 /** Changes TTasks's entry in an app's file by hand, in the file's own format. */
-function byHand(app: App, change: "moved" | "edited" | "edited_gone" | "gone"): void {
+function byHand(
+  app: App,
+  change: "moved" | "edited" | "edited_gone" | "gone" | "no_program" | "unbound" | "unreadable",
+): void {
   const file = FILE[app]();
+  const text = readFileSync(file, "utf8");
+  if (change === "unreadable") {
+    writeFileSync(file, app === "codex" ? `${text}\n[mcp_servers\n` : `${text.trimEnd()},\n`);
+    return;
+  }
   if (app === "codex") {
-    const text = readFileSync(file, "utf8");
     const command = (to: string) =>
       text.replace(`command = ${valueText(present())}`, `command = ${valueText(to)}`);
     const next =
@@ -431,12 +482,16 @@ function byHand(app: App, change: "moved" | "edited" | "edited_gone" | "gone"): 
           ? command(nowhere())
           : change === "edited"
             ? text.replace("startup_timeout_sec = 20", "startup_timeout_sec = 21")
-            : BASE_TOML;
+            : change === "no_program"
+              ? text.replace(`command = ${valueText(present())}\n`, "")
+              : change === "unbound"
+                ? text.replace(/("--instance",\s*)"[^"]+"/u, '$1"elsewhere"')
+                : BASE_TOML;
     expect(next, `${app} ${change}`).not.toBe(text);
     writeFileSync(file, next);
     return;
   }
-  const doc = JSON.parse(readFileSync(file, "utf8")) as {
+  const doc = JSON.parse(text) as {
     mcpServers: Record<string, Record<string, unknown>>;
   };
   const entry = doc.mcpServers[MCP_SERVER_KEY];
@@ -444,7 +499,11 @@ function byHand(app: App, change: "moved" | "edited" | "edited_gone" | "gone"): 
   if (change === "moved") entry["command"] = old();
   else if (change === "edited_gone") entry["command"] = nowhere();
   else if (change === "edited") entry["cwd"] = root;
-  else Reflect.deleteProperty(doc.mcpServers, MCP_SERVER_KEY);
+  else if (change === "no_program") Reflect.deleteProperty(entry, "command");
+  else if (change === "unbound") {
+    const args = entry["args"] as string[];
+    args[args.indexOf("--instance") + 1] = "elsewhere";
+  } else Reflect.deleteProperty(doc.mcpServers, MCP_SERVER_KEY);
   writeFileSync(file, JSON.stringify(doc, null, 2));
 }
 
@@ -464,16 +523,24 @@ async function put(row: Row): Promise<void> {
     })),
   });
   expect(applied.outcomes.map((o) => o.result)).toEqual(["done", "done", "done"]);
+  if (row.program === "older") {
+    mkdirSync(join(home, "old"), { recursive: true });
+    writeFileSync(old(), "");
+  }
   for (const app of APPS) {
     if (row.entry === "edited") byHand(app, row.program === "there" ? "edited" : "edited_gone");
     else if (row.entry === "gone") byHand(app, "gone");
-    else if (row.program === "moved") byHand(app, "moved");
+    else if (row.entry === "no_program" || row.entry === "unbound" || row.entry === "unreadable") {
+      byHand(app, row.entry);
+    } else if (row.program === "moved" || row.program === "older") byHand(app, "moved");
   }
   const record = JSON.parse(readFileSync(recordFile(), "utf8")) as {
     homes: { entry: { command: string }; state: string }[];
   };
   for (const h of record.homes) {
-    if (row.entry === "own" && row.program === "moved") h.entry.command = old();
+    if (row.entry === "own" && (row.program === "moved" || row.program === "older")) {
+      h.entry.command = old();
+    }
     if (row.entry === "removing") h.state = "removing";
   }
   writeFileSync(recordFile(), JSON.stringify(record));
@@ -508,7 +575,13 @@ describe("[A3.3.13.setup.tools-table] One answer for each home's tools: what the
           space: spaces.here,
           changes: APPS.map((app) => {
             const tools = before[app].tools;
-            const plan = on || tools?.change === "remove" ? tools?.plan : tools?.off?.plan;
+            const plan = on
+              ? tools?.change === "add"
+                ? tools.plan
+                : tools?.more?.plan
+              : tools?.change === "remove"
+                ? tools.plan
+                : tools?.off?.plan;
             return { key: before[app].key, part: "tools", on, plan };
           }),
         });

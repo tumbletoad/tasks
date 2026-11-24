@@ -278,29 +278,33 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
   );
 
   it(
-    "the tools switch shows the access, not the file: an unreadable file stays on and turns off; an entry that could not be taken out shows off, and turning it on again works",
+    "an unreadable file is not counted as on, and turns off; an entry that could not be taken out shows off, and turning it on again works",
     async () => {
       const file = join(w.user, ".claude.json");
       const tools = async () =>
         row((await call<AppsView>(w, "/api/v1/machine/apps", { space })).result, "claude-code");
       const turn = async (on: boolean) => {
         const found = await tools();
+        const plan =
+          on || found.tools?.change === "remove" ? found.tools?.plan : found.tools?.off?.plan;
         return call<Applied>(w, "/api/v1/machine/apps_apply", {
           space,
-          changes: [{ key: found.key, part: "tools", on, plan: found.tools?.plan }],
+          changes: [{ key: found.key, part: "tools", on, plan }],
         });
       };
       expect((await tools()).tools).toMatchObject({ on: false, change: "add" });
       expect((await turn(true)).result.outcomes).toMatchObject([{ result: "done" }]);
       const withEntry = readFileSync(file, "utf8");
 
-      // A trailing comma someone typed: setup cannot read the file, and the access is still there.
+      // A trailing comma someone typed: setup cannot read the file, so it cannot say that the tools
+      // start; the access is still there, and turning it off is offered.
       const broken = withEntry.replace(/\}\s*$/u, ",}\n");
       writeFileSync(file, broken);
       expect((await tools()).tools).toMatchObject({
-        on: true,
-        change: "remove",
+        on: false,
+        change: null,
         why: "file_unreadable",
+        off: {},
       });
       const off = await turn(false);
       expect(off.result.outcomes).toMatchObject([{ result: "done", kept: true }]);
@@ -357,13 +361,14 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
         expect(seen.record).toMatch(/agents\.json$/u);
         const claude = row(seen, "claude-code");
         expect(claude.tools).toMatchObject({
-          on: true,
-          change: "remove",
+          on: false,
+          change: null,
           why: "record_unreadable",
+          off: {},
         });
         const off = await call<Applied>(w, "/api/v1/machine/apps_apply", {
           space,
-          changes: [{ key: claude.key, part: "tools", on: false, plan: claude.tools?.plan }],
+          changes: [{ key: claude.key, part: "tools", on: false, plan: claude.tools?.off?.plan }],
         });
         expect(off.result.outcomes).toMatchObject([{ result: "done" }]);
         // Off, and it cannot be turned on again while the record cannot be read.
