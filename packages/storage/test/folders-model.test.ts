@@ -256,6 +256,15 @@ const GROUP_CASES: readonly (readonly Step[])[] = [
     { kind: "undo", partial: false },
     { kind: "beside", who: "agent", t: 3, s: 1, side: "before" },
   ],
+  // An undo of a project's restore that a task restored since keeps: the restore is named.
+  [
+    { kind: "move", who: "agent", t: 0, p: 2 },
+    { kind: "task_delete", who: "human", t: 0, restore: false },
+    { kind: "delete", who: "human", p: 2 },
+    { kind: "restore", who: "human", p: 2 },
+    { kind: "task_delete", who: "agent", t: 0, restore: true },
+    { kind: "undo", partial: false },
+  ],
   // A project restored after its area's creation was undone comes back without an area
   // (seed 163886335, path "23:3:3:6:6:6:2:2:2:2:2:2:2:2").
   [
@@ -443,6 +452,23 @@ function undoneTo(now: Snapshot, was: Snapshot): Snapshot {
   };
 }
 
+/**
+ * What a refused or partial undo names is someone's change after the step it undoes: who moved,
+ * filed, restored or deleted something since, never what was there before the step.
+ */
+function expectNewer(w: World, result: WriteResult): void {
+  const step = result.status === "conflict" ? result.target : result.results[0]?.id;
+  if (step === undefined || result.conflicts.length === 0) return;
+  const seq = Number(
+    w.fx.reader.prepare("SELECT seq FROM commits WHERE id = $id").get({ id: step })?.["seq"],
+  );
+  for (const c of result.conflicts) {
+    expect(c.version, `${c.entity} ${c.field} is named by a change after the step`).toBeGreaterThan(
+      seq,
+    );
+  }
+}
+
 /** A commit on the person's stack, with the space before and after it. */
 interface Entry {
   before: Snapshot;
@@ -616,6 +642,7 @@ async function run(steps: readonly Step[]): Promise<void> {
               : { kind: "redo" },
           ]),
         );
+        if (s.kind === "undo") expectNewer(w, result);
         if (result.status === "applied") {
           const whole = result.conflicts.length === 0;
           if (s.kind === "undo") {
