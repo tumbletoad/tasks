@@ -27,7 +27,6 @@ import { AppError } from "@ttasks/contracts";
 import {
   detect,
   instanceEntry,
-  instanceHome,
   nodeDetectHost,
   type Env,
   type EnvironmentSource,
@@ -46,6 +45,7 @@ import {
   entryInstance,
   entryLines,
   hasAccess,
+  instanceFile,
   LockBusy,
   planChange,
   planOf,
@@ -348,19 +348,22 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     return "offer";
   };
 
+  /** Whether an instance's or a proposal's agent reads the file of `home`. */
+  const reads = (
+    instance: Pick<Instance, "target" | "env" | "configHome">,
+    home: { readonly file: string },
+  ) => samePath(platform, instanceFile(input, instance) ?? "", home.file);
   for (const item of plan) {
     const { view } = item;
     const { home } = view;
-    const key = JSON.stringify([home.app, home.home]);
+    // A row is one settings file: two of one folder are two rows (setup/agents.ts agentHomes).
+    const key = JSON.stringify([home.app, home.file]);
     items.set(key, item);
     let open: Part | "offer" | undefined;
     if (home.app !== "claude-desktop") {
       const target = TARGET[home.app];
       const owner = machine.instances.find(
-        (i) =>
-          i.enabled &&
-          i.target === target &&
-          samePath(platform, instanceHome(i, userHome, platform)?.path ?? "", home.home),
+        (i) => i.enabled && i.target === target && reads(i, home),
       );
       open =
         owner !== undefined
@@ -371,17 +374,24 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
                 (p) =>
                   p.target === target &&
                   p.configHome !== undefined &&
-                  samePath(platform, p.configHome, home.home),
+                  reads({ target: p.target, env: p.env ?? {}, configHome: p.configHome }, home),
               ),
               home.instance,
               home.home,
             );
     }
+    // Two rows of one folder are told apart by their files.
+    const shared = plan.some(
+      (other) =>
+        other.view.home !== home &&
+        other.view.home.app === home.app &&
+        samePath(platform, other.view.home.home, home.home),
+    );
     out.push({
       key,
       app: home.app,
       label: appLabel(home.app),
-      home: shown(home.home),
+      home: shown(shared ? home.file : home.home),
       also: home.hosts,
       ...(open === undefined ? {} : { open }),
       tools: toolsPart(host, space, item, installed, hasAccess(platform, rows, view), shown),

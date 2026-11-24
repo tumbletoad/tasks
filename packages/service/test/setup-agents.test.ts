@@ -143,6 +143,13 @@ const byHome = (views: readonly HomeView[], app: string, folder: string) => {
   return view;
 };
 
+/** The home of one settings file: two of one folder are two homes. */
+const byFile = (views: readonly HomeView[], file: string) => {
+  const view = views.find((v) => v.home.file === file);
+  if (view === undefined) throw new Error(`no home for ${file}`);
+  return view;
+};
+
 /** An enabled Claude Code instance of machine.toml with the variables it sets. */
 function claudeInstance(id: string, env: Record<string, string>): Instance {
   return {
@@ -371,12 +378,8 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
         ...base,
         instances: [claudeInstance("claude-main", { CLAUDE_CONFIG_DIR: folder })],
       };
-      const view = byHome(await survey(input), "claude-code", ".claude");
-      expect(view.home).toMatchObject({
-        instance: "claude-main",
-        isDefault: false,
-        file: join(folder, ".claude.json"),
-      });
+      const view = byFile(await survey(input), join(folder, ".claude.json"));
+      expect(view.home).toMatchObject({ instance: "claude-main", isDefault: false });
       expect((await applyHome(input, view, SPACE, ROWS)).result).toBe("applied");
       expect(JSON.parse(readFileSync(join(folder, ".claude.json"), "utf8"))).toMatchObject({
         mcpServers: { [MCP_SERVER_KEY]: { command: w.tasks } },
@@ -388,7 +391,7 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
   );
 
   test(
-    "a registered home stays the recorded one when machine.toml names it otherwise; remove, then apply, moves it",
+    "a registered home stays the recorded one when machine.toml names its folder otherwise, and the file that instance reads is a home of its own",
     async () => {
       const w = world("moved");
       const folder = join(w.home, ".claude");
@@ -397,8 +400,7 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
       writeFileSync(defaultFile, "{}");
       const plain = await inputOf(w);
       expect(
-        (await applyHome(plain, byHome(await survey(plain), "claude-code", ".claude"), SPACE, ROWS))
-          .result,
+        (await applyHome(plain, byFile(await survey(plain), defaultFile), SPACE, ROWS)).result,
       ).toBe("applied");
 
       // An instance now selects the same folder by its variable, under another ID.
@@ -406,17 +408,16 @@ describe("[A3.3.13.setup.exact] apply then remove gives back every file byte for
         ...plain,
         instances: [claudeInstance("claude-main", { CLAUDE_CONFIG_DIR: folder })],
       };
-      const view = byHome(await survey(named), "claude-code", ".claude");
-      expect(view.home).toMatchObject({ file: defaultFile, instance: "claude", isDefault: true });
-      expect(view.state).toBe("registered");
-      expect(await removeHome(named, view, ROWS)).toMatchObject({ result: "removed" });
+      const registered = byFile(await survey(named), defaultFile);
+      expect(registered.home).toMatchObject({ instance: "claude", isDefault: true });
+      expect(registered.state).toBe("registered");
+      expect(byFile(await survey(named), join(folder, ".claude.json"))).toMatchObject({
+        home: { instance: "claude-main", isDefault: false },
+        state: "not_registered",
+      });
+      expect(await removeHome(named, registered, ROWS)).toMatchObject({ result: "removed" });
       expect(readFileSync(defaultFile, "utf8")).toBe("{}");
       expect(readRecords(w.state)).toEqual([]);
-      // Now the home is what the machine says: the instance's own file and ID.
-      expect(byHome(await survey(named), "claude-code", ".claude").home).toMatchObject({
-        file: join(folder, ".claude.json"),
-        instance: "claude-main",
-      });
 
       // The plan's token covers everything the home's row names, the account included.
       const views = await survey(named);

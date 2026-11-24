@@ -531,11 +531,31 @@ export function agentHomeOf(
 }
 
 /** The file of an app's entry in a home. */
-function fileOf(input: SetupInput, app: AgentApp, home: string, isDefault: boolean): string {
+function fileOf(
+  input: Pick<SetupInput, "platform" | "userHome">,
+  app: AgentApp,
+  home: string,
+  isDefault: boolean,
+): string {
   const p = pathOf(input.platform);
   if (app === "codex") return p.join(home, CODEX_FILE);
   if (app === "claude-desktop") return p.join(home, DESKTOP_FILE);
   return isDefault ? p.join(input.userHome, CLAUDE_FILE) : p.join(home, CLAUDE_FILE);
+}
+
+/**
+ * The settings file an instance's agent reads its entry from (launch's rule, `homeOf`), or
+ * undefined for an instance whose agent reads none of setup's or names no home.
+ */
+export function instanceFile(
+  input: Pick<SetupInput, "platform" | "userHome">,
+  instance: Pick<Instance, "target" | "env" | "configHome">,
+): string | undefined {
+  const app = agentAppOf(instance.target);
+  if (app === undefined) return undefined;
+  const home = instanceHome(instance, input.userHome, input.platform);
+  if (home?.path === undefined) return undefined;
+  return fileOf(input, app, pathOf(input.platform).resolve(home.path), home.isDefault);
 }
 
 /**
@@ -610,9 +630,9 @@ function hostsOf(
  * Every agent home: the homes detection found (A4 3.2: `.claude`, `.claude-<suffix>` or
  * `.claude_<suffix>`, the same for `.codex`, and the home a variable names), the homes of
  * machine.toml's instances that are folders, the homes T3's enabled provider instances use, and
- * Claude Desktop's configuration folders. A home an instance names takes the instance's ID and
- * account; any other takes detection's proposal (T3's from its folder or provider key, Claude
- * Desktop's from the catalogue).
+ * Claude Desktop's configuration folders, one per settings file an agent reads. A home whose file
+ * an instance's agent reads takes the instance's ID and account; any other takes detection's
+ * proposal (T3's from its folder or provider key, Claude Desktop's from the catalogue).
  *
  * A Codex shadow home (its `config.toml` a link into another home, hosts.ts) is never a home of its
  * own: the home it links to is offered in its place, with the shadow named on it, and its ID comes
@@ -648,23 +668,20 @@ export async function agentHomes(
       );
       account = proposedAccount(id === "codex" ? "" : id.replace(/^codex-/u, ""));
     }
-    if (homes.some((h) => h.app === app && samePath(platform, h.home, path))) return;
-    const rule = targetDef(APPS[app].target).detect.homes;
-    const owner = instances.find(
-      (i) =>
-        i.enabled &&
-        i.target === APPS[app].target &&
-        (app === "claude-desktop" ||
-          samePath(platform, homeOf(i, app, userHome, platform).path, path)),
-    );
-    // The instance's own selection wins (A4 3.2): one that names the default folder by its variable
-    // runs Claude Code with `.claude.json` inside that folder, so that is the file of its entry.
-    const isDefault =
-      owner === undefined || app === "claude-desktop"
-        ? found_
-        : homeOf(owner, app, userHome, platform).isDefault;
+    const isDefault = found_;
     const home = p.resolve(path);
     const file = fileOf(input, app, home, isDefault);
+    // One home per file an agent reads: Claude Code started plainly reads `~/.claude.json`, and
+    // started with its variable naming `~/.claude` reads `.claude.json` inside it (A4 3.2), so those
+    // are two homes of one folder, and two readers of one file are one.
+    if (homes.some((h) => h.app === app && samePath(platform, h.file, file))) return;
+    const rule = targetDef(APPS[app].target).detect.homes;
+    const owner = instances.find((i) => {
+      if (!i.enabled || i.target !== APPS[app].target) return false;
+      if (app === "claude-desktop") return true;
+      const own = homeOf(i, app, userHome, platform);
+      return samePath(platform, fileOf(input, app, p.resolve(own.path), own.isDefault), file);
+    });
     homes.push({
       app,
       home,
@@ -1025,7 +1042,7 @@ async function homeOfRecord(
 
 /** The record of a home, if setup keeps one. */
 const recordOf = (records: readonly HomeRecord[], home: AgentHome, platform: NodeJS.Platform) =>
-  records.find((r) => r.app === home.app && samePath(platform, r.home, home.home));
+  records.find((r) => r.app === home.app && samePath(platform, r.file, home.file));
 
 /**
  * Every home setup knows of, inspected now: the homes found, then recorded homes not found. A home
@@ -1044,7 +1061,7 @@ export async function survey(input: SetupInput): Promise<HomeView[]> {
   const found = discover(input);
   const homes = await agentHomes(input, found);
   for (const record of records) {
-    if (!homes.some((h) => h.app === record.app && samePath(input.platform, h.home, record.home))) {
+    if (!homes.some((h) => h.app === record.app && samePath(input.platform, h.file, record.file))) {
       homes.push(await homeOfRecord(input, found, record));
     }
   }
@@ -1068,25 +1085,30 @@ async function unrecorded(input: SetupInput): Promise<HomeView[]> {
   const found = discover(input);
   const homes = await agentHomes(input, found);
   const rows = input.rows ?? [];
+  const noRecord = registrationOfRecord(undefined);
+  const ofHome = (row: ServiceRow, home: AgentHome) => rowOfHome(input.platform, row, home, noRecord);
   for (const row of rows) {
     if (!isAgentApp(row.app)) continue;
-    if (homes.some((h) => h.app === row.app && samePath(input.platform, h.home, row.home))) {
-      continue;
-    }
+    if (homes.some((h) => ofHome(row, h))) continue;
+    // An earlier build's row names no file: its folder's file of an explicitly selected home.
+    const file = row.file ?? fileOf(input, row.app, row.home, false);
+    const isDefault =
+      row.file !== undefined &&
+      !samePath(input.platform, fileOf(input, row.app, row.home, false), file);
     homes.push({
       app: row.app,
       home: row.home,
-      file: fileOf(input, row.app, row.home, false),
-      isDefault: false,
+      file,
+      isDefault,
       variable: targetDef(APPS[row.app].target).detect.homes?.env ?? "",
       instance: row.instance,
       account: "",
-      hosts: hostsOf(input, found, row.app, row.home, false),
+      hosts: hostsOf(input, found, row.app, row.home, isDefault),
       managed: false,
     });
   }
   return homes.map((home) => {
-    const row = rows.find((r) => r.app === home.app && samePath(input.platform, r.home, home.home));
+    const row = rows.find((r) => ofHome(r, home));
     return {
       home: row === undefined ? home : { ...home, instance: row.instance },
       state: "refused",
@@ -1119,11 +1141,16 @@ function freeInstances(
     ...records.map((r) => r.instance),
     ...homes.filter((h) => h.proposed !== true && !recorded(h)).map((h) => h.instance),
   ]);
+  // A home with no record gets a registration of its own: an earlier build's row of its folder is
+  // another file's (rowOfHome), unless its entry will carry no ID as that build's did.
+  const own = (row: ServiceRow, home: AgentHome) =>
+    rowOfHome(platform, row, home, {
+      registration:
+        input.registers === false ? undefined : registrationId(platform, home.app, home.file),
+      recorded: null,
+    });
   const heldByRow = (id: string, home: AgentHome) =>
-    (input.rows ?? []).some(
-      (row) =>
-        row.instance === id && !(row.app === home.app && samePath(platform, row.home, home.home)),
-    );
+    (input.rows ?? []).some((row) => row.instance === id && !own(row, home));
   const proposedHere = new Map<string, AgentApp>();
   return homes.map((home) => {
     // A proposal that is no instance ID at all is left as it is: the service refuses it by name.
@@ -1137,14 +1164,10 @@ function freeInstances(
       );
     // A home whose own live row outlived setup's record (lost state) gets that row's instance
     // back while it is free, so the sessions bound to it go on.
-    const own = (input.rows ?? []).find(
-      (row) =>
-        row.app === home.app &&
-        samePath(platform, row.home, home.home) &&
-        INSTANCE_ID.test(row.instance) &&
-        free(row.instance),
+    const kept = (input.rows ?? []).find(
+      (row) => own(row, home) && INSTANCE_ID.test(row.instance) && free(row.instance),
     );
-    let id = own?.instance ?? home.instance;
+    let id = kept?.instance ?? home.instance;
     // Ends: each n gives another ID, and only finitely many are held.
     for (let n = 2; !free(id); n += 1) {
       const suffix = `-${String(n)}`;
@@ -1366,7 +1389,7 @@ export function planToken(space: string, items: readonly PlanItem[], blocks?: un
 
 function putRecord(stateDir: string, platform: NodeJS.Platform, record: HomeRecord): void {
   const others = readRecords(stateDir).filter(
-    (r) => !(r.app === record.app && samePath(platform, r.home, record.home)),
+    (r) => !(r.app === record.app && samePath(platform, r.file, record.file)),
   );
   writeRecords(stateDir, [...others, record]);
 }
@@ -1376,7 +1399,7 @@ function forget(input: SetupInput, home: AgentHome): void {
   try {
     const records = readRecords(input.stateDir);
     const kept = records.filter(
-      (r) => !(r.app === home.app && samePath(input.platform, r.home, home.home)),
+      (r) => !(r.app === home.app && samePath(input.platform, r.file, home.file)),
     );
     if (kept.length !== records.length) writeRecords(input.stateDir, kept);
   } catch {

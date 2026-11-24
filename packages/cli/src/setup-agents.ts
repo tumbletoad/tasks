@@ -66,6 +66,7 @@ import {
   type BlockReason,
   type BlockView,
   manualRemoval,
+  hasAccess,
   HOSTS,
   isPrintApp,
   LockBusy,
@@ -78,6 +79,8 @@ import {
   removeHome,
   rowAccess,
   runCommand,
+  registrationOfRecord,
+  rowOfHome,
   samePath,
   SetupStateInvalid,
   SetupStateUnsafe,
@@ -92,6 +95,7 @@ import {
   type OutcomeReason,
   type PrintApp,
   type RowCall,
+  type ServiceRow,
   type SetupInput,
 } from "@ttasks/service/setup";
 import { UsageError, type Globals } from "./args.ts";
@@ -581,9 +585,8 @@ export async function agentsCommand(
             const live = await withRows(input, call);
             surveyed = await survey(live);
             const rowed = (view: HomeView) =>
-              (live.rows ?? []).some(
-                (row) =>
-                  row.app === view.home.app && samePath(input.platform, row.home, view.home.home),
+              (live.rows ?? []).some((row) =>
+                rowOfHome(input.platform, row, view.home, registrationOfRecord(view.record)),
               );
             for (const view of surveyed.filter((v) => selected(v) && rowed(v))) {
               done.push(await removeHome(input, view, access));
@@ -733,7 +736,7 @@ async function revokeLeftRows(
   selected: Selected,
   call: Call,
 ): Promise<string[]> {
-  let rows: { grant: string; app: string; home: string; instance: string; hosts?: string[] }[];
+  let rows: (ServiceRow & { hosts?: string[] })[];
   try {
     rows = ((await call("setup/homes", {}))["homes"] ?? []) as typeof rows;
   } catch {
@@ -744,8 +747,8 @@ async function revokeLeftRows(
   const views = await survey(input);
   const stale = rows.filter((row) => {
     if (!(AGENT_APPS as readonly string[]).includes(row.app)) return false;
-    const view = views.find(
-      (v) => v.home.app === row.app && samePath(input.platform, v.home.home, row.home),
+    const view = views.find((v) =>
+      rowOfHome(input.platform, row, v.home, registrationOfRecord(v.record)),
     );
     // A home that is gone is selected by its row's app, instance, home and hosts.
     const pick = selected(
@@ -774,14 +777,14 @@ async function status(
   call: Call,
 ): Promise<number> {
   const views = (await survey(input)).filter(selected);
-  let rows: { grant: string; app: string; home: string; spaces: string[] }[] | undefined;
+  let rows: (ServiceRow & { spaces: string[] })[] | undefined;
   try {
     rows = ((await call("setup/homes", {}))["homes"] ?? []) as typeof rows;
   } catch {
     rows = undefined;
   }
   const rowOf = (view: HomeView) =>
-    rows?.find((r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home));
+    rows?.find((r) => rowOfHome(input.platform, r, view.home, registrationOfRecord(view.record)));
   if (globals.json) {
     io.stdout(
       `${JSON.stringify({
@@ -818,9 +821,7 @@ function approvals(views: readonly HomeView[], platform: NodeJS.Platform) {
 const givesAccessBack = (input: SetupInput, view: HomeView): boolean =>
   view.state === "registered" &&
   input.rows !== undefined &&
-  !input.rows.some(
-    (r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home),
-  );
+  !hasAccess(input.platform, input.rows, view);
 
 async function preview(
   io: Io,

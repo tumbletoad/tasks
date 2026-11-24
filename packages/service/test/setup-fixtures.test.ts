@@ -24,10 +24,13 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
 import { detect, nodeDetectHost, type Instance } from "@ttasks/launch";
 import { parseToml } from "../src/config/toml.ts";
+import { intendedEntry } from "../src/setup/entry.ts";
 import { withAppLock } from "../src/setup/app-lock.ts";
 import {
   applyHome,
+  hasAccess,
   entryInstance,
+  entryRegistration,
   registrationOfRecord,
   planOf,
   readRecords,
@@ -40,6 +43,7 @@ import {
   writeRecords,
   type AgentApp,
   type HomeView,
+  type ServiceRow,
   type SetupInput,
 } from "../src/setup/index.ts";
 import { keptRows, type KeptRows } from "./setup-rows.ts";
@@ -1331,6 +1335,238 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           expect(readFileSync(file, "utf8")).toBe(bare);
           expect(readRecords(w.input.stateDir)).toEqual([]);
         }
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "second home, implicit versus explicit default: plain Claude Code and an instance that names ~/.claude by its variable read two files, and each is a row of its own",
+    async () => {
+      const w = await world();
+      const folder = join(w.home, ".claude");
+      const input: SetupInput = {
+        ...w.input,
+        instances: [claudeInstance("claude-named", { CLAUDE_CONFIG_DIR: folder })],
+      };
+      const files = (await survey(input))
+        .filter((v) => v.home.app === "claude-code" && !v.home.home.endsWith(".claude-work"))
+        .map((v) => v.home.file)
+        .sort();
+      expect(files).toEqual([join(w.home, ".claude.json"), join(folder, ".claude.json")].sort());
+    },
+    SLOW,
+  );
+
+  test(
+    "second home, implicit versus explicit default, shared reader: T3's provider that names ~/.claude gets the file it reads, plain Claude Code keeps its own, each with its own registration and access; T3's Codex shares the Codex CLI's row",
+    async () => {
+      const w = await world();
+      const folder = join(w.home, ".claude");
+      const implicit = join(w.home, ".claude.json");
+      const explicit = join(folder, ".claude.json");
+      seed(implicit, '{"numStartups": 3}\n');
+      seed(explicit, '{"numStartups": 1}\n');
+      const t3 = join(w.home, ".t3", "userdata");
+      mkdirSync(t3, { recursive: true });
+      writeFileSync(
+        join(t3, "settings.json"),
+        JSON.stringify({
+          providerInstances: {
+            claude_t3: { driver: "claudeAgent", enabled: true, config: { homePath: folder } },
+            claudeAgent: { driver: "claudeAgent", enabled: false },
+            codex: { driver: "codex", enabled: true },
+          },
+        }),
+      );
+      const claude = ADAPTERS.find((a) => a.app === "claude-code") as Adapter;
+      const views = await survey(w.input);
+      const ofFile = (file: string) => {
+        const found = views.find((v) => v.home.file === file);
+        if (found === undefined) throw new Error(`no home for ${file}`);
+        return found;
+      };
+      expect(ofFile(implicit).home).toMatchObject({ home: folder, isDefault: true, hosts: [] });
+      expect(ofFile(explicit).home).toMatchObject({
+        home: folder,
+        isDefault: false,
+        hosts: ["t3"],
+      });
+      expect(ofFile(implicit).home.instance).not.toBe(ofFile(explicit).home.instance);
+      const codexHomes = views.filter(
+        (v) => v.home.app === "codex" && v.home.home.endsWith(".codex"),
+      );
+      expect(codexHomes.map((v) => v.home.hosts)).toEqual([["t3"]]);
+
+      // Only the selected file and its access change.
+      const before = bytesOf(implicit);
+      const turnOn = async (file: string) => {
+        const view = (await survey(w.input)).find((v) => v.home.file === file) as HomeView;
+        return applyHome(w.input, view, SPACE, w.rows, planOf(w.input, [view], SPACE)[0]?.change);
+      };
+      expect(await turnOn(explicit)).toMatchObject({ result: "applied", access: "on" });
+      expect(bytesOf(implicit)).toEqual(before);
+      expect(w.rows.live.map((r) => r.file)).toEqual([explicit]);
+      const t3Entry = entryIn(claude, explicit);
+      expect(w.rows.may(t3Entry, SPACE)).toBe(true);
+      expect(await turnOn(implicit)).toMatchObject({ result: "applied", access: "on" });
+      const plainEntry = entryIn(claude, implicit);
+      expect(entryRegistration(plainEntry)).not.toBe(entryRegistration(t3Entry));
+      expect(w.rows.may(plainEntry, SPACE)).toBe(true);
+
+      // Turning one off leaves the other on.
+      const off = (await survey(w.input)).find((v) => v.home.file === explicit) as HomeView;
+      expect(await removeHome(w.input, off, w.rows)).toMatchObject({ result: "removed" });
+      expect(w.rows.may(t3Entry, SPACE)).toBe(false);
+      expect(w.rows.may(plainEntry, SPACE)).toBe(true);
+      expect(w.rows.live.map((r) => r.file)).toEqual([implicit]);
+    },
+    SLOW,
+  );
+
+  test.skipIf(root)(
+    "an install an earlier build set up, five agent homes and Claude Desktop, recorded in either earlier format: each keeps its access and shows on; one turned off whose entry stayed reaches nothing once another home takes its name; each turns off and comes out",
+    async () => {
+      for (const format of [1, 2] as const) {
+        const w = await world();
+        mkdirSync(join(w.home, ".claude-two"));
+        mkdirSync(join(w.home, ".codex-three"));
+        const input: SetupInput = {
+          ...w.input,
+          detection: await detect(nodeDetectHost({ env: w.input.env, home: w.home })),
+        };
+        const registered = (await survey(input)).filter(
+          (v) => !v.home.home.endsWith(".codex-three"),
+        );
+        expect(registered.map((v) => v.home.instance).sort(), `format ${String(format)}`).toEqual(
+          ["claude", "claude-desktop", "claude-two", "claude-work", "codex", "codex-work"].sort(),
+        );
+        // What that build left in each file, its record and its row: no file, no registration.
+        const records: Record<string, unknown>[] = [];
+        for (const view of registered) {
+          const { app, file, home, instance } = view.home;
+          const argv = [
+            w.input.tasks,
+            "mcp",
+            "--space",
+            SPACE,
+            "--instance",
+            instance,
+            "--app",
+            app,
+          ];
+          const left =
+            format === 1 && app === "claude-code"
+              ? { type: "stdio", command: argv[0], args: argv.slice(1), env: {} }
+              : intendedEntry(app === "codex" ? "toml" : "json", argv, undefined);
+          if (app === "codex") {
+            seed(
+              file,
+              `[mcp_servers.${MCP_SERVER_KEY}]\ncommand = ${JSON.stringify(argv[0])}\nargs = [${argv
+                .slice(1)
+                .map((s) => JSON.stringify(s))
+                .join(", ")}]\nenv_vars = ["${envVar("TICKET")}"]\nstartup_timeout_sec = 20\n`,
+            );
+          } else {
+            seed(file, `${JSON.stringify({ mcpServers: { [MCP_SERVER_KEY]: left } }, null, 2)}\n`);
+          }
+          const grant = w.rows.earlier(view.home, SPACE);
+          const base = {
+            app,
+            home,
+            file,
+            is_default: view.home.isDefault,
+            instance,
+            account: view.home.account,
+            space: SPACE,
+            state: "applied",
+            grant,
+            at: "2026-11-01T00:00:00.000Z",
+          };
+          records.push(
+            format === 1
+              ? {
+                  ...base,
+                  file_existed: true,
+                  parent_existed: false,
+                  entry_argv: argv,
+                  patches: [],
+                }
+              : {
+                  ...base,
+                  entry: left,
+                  also: [],
+                  made: { file: false, parent: true, spacing: null },
+                },
+          );
+        }
+        mkdirSync(setupDir(w.input.stateDir), { recursive: true });
+        writeFileSync(recordPath(w), JSON.stringify({ format, homes: records }));
+        const rows = (): ServiceRow[] =>
+          w.rows.live.map(({ grant, app, home, file, instance, registration }) => ({
+            grant,
+            app,
+            home,
+            ...(file === undefined ? {} : { file }),
+            instance,
+            ...(registration === undefined ? {} : { registration }),
+          }));
+
+        // After the update: registered, on, and each entry's connection goes through.
+        const after = (await survey(input)).filter((v) => !v.home.home.endsWith(".codex-three"));
+        for (const view of after) {
+          const what = `format ${String(format)}: ${view.home.instance}`;
+          expect(view.state, what).toBe("registered");
+          expect(hasAccess(process.platform, rows(), view), what).toBe(true);
+          expect(w.rows.may(view.entry, SPACE), what).toBe(true);
+        }
+
+        // One turned off while its file cannot be written: its access goes, its entry stays.
+        const codexWork = after.find((v) => v.home.instance === "codex-work") as HomeView;
+        const left = codexWork.entry;
+        const restore = unwritable(codexWork.home.file);
+        try {
+          expect(await removeHome(input, codexWork, w.rows)).toMatchObject({
+            access: "off",
+            kept: "own",
+          });
+        } finally {
+          restore();
+        }
+        expect(w.rows.may(left, SPACE)).toBe(false);
+        // Another home takes its name: the old entry still reaches nothing, the new one does.
+        const taking: SetupInput = {
+          ...input,
+          instances: [
+            {
+              ...claudeInstance("codex-work", { CODEX_HOME: join(w.home, ".codex-three") }),
+              target: "codex-cli",
+            },
+          ],
+        };
+        const third = (await survey(taking)).find((v) =>
+          v.home.home.endsWith(".codex-three"),
+        ) as HomeView;
+        expect(
+          await applyHome(taking, third, SPACE, w.rows, planOf(taking, [third], SPACE)[0]?.change),
+        ).toMatchObject({ result: "applied", access: "on" });
+        const taken = entryIn(ADAPTERS.find((a) => a.app === "codex") as Adapter, third.home.file);
+        expect(w.rows.may(taken, SPACE)).toBe(true);
+        expect(w.rows.may(left, SPACE), `format ${String(format)}: the old entry`).toBe(false);
+
+        // The others turn off and come out exactly.
+        for (const view of await survey(input)) {
+          if (view.home.instance === "codex-work" || view.home.home.endsWith(".codex-three")) {
+            continue;
+          }
+          expect(await removeHome(input, view, w.rows), view.home.instance).toMatchObject({
+            result: "removed",
+            access: "off",
+          });
+          const adapter = ADAPTERS.find((a) => a.app === view.home.app) as Adapter;
+          if (existsSync(view.home.file)) expect(entryIn(adapter, view.home.file)).toBeUndefined();
+        }
+        expect(w.rows.live.map((r) => r.instance)).toEqual(["codex-work"]);
       }
     },
     SLOW,
