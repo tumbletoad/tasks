@@ -18,6 +18,7 @@ import {
   isId,
   RECEIPT_SQL,
   removalSeqSql,
+  runAsked,
   UNDO_TARGET_SQL,
   storedPreference,
   type FolderView,
@@ -43,7 +44,6 @@ import {
 import { sessionRecord } from "@ttasks/launch";
 import { byOf } from "./errors.ts";
 import type { FoldersHere } from "./here.ts";
-import { runAsked, runWaits } from "./questions.ts";
 
 /** One statement of a read. Only the parameters the statement names are bound. */
 interface Statement {
@@ -690,7 +690,7 @@ const questionArrival = (runs: boolean): Statement => {
 
 /**
  * The task's `reviewed_at` once the person dismissed its question `question` and those before it:
- * that question's arrival (task-rows.ts's `WAITS`), a millisecond before it when a later question
+ * that question's arrival (storage's `WAITS`), a millisecond before it when a later question
  * arrived in the same millisecond, so the one the person did not see still waits. Never earlier
  * than the mark the task has. `mark` is undefined when it is no question of the task; `asOf` is
  * the read's.
@@ -1668,35 +1668,23 @@ export async function hasFolderTable(reader: WorkerConnection): Promise<boolean>
   return true;
 }
 
-const REPLIED_TEXT = "COALESCE(json_extract(r.result, '$.text'), '') AS text";
-
 /**
- * The questions a run replies to, oldest first, each as the agent asked it: those its task's
- * earlier runs ended with that waited for the person when it was queued (task-rows.ts's
- * `runWaits`). `{ task }` asks which wait now, for a run about to be queued.
+ * The questions the run `run` replies to, in the order it was queued with them, each as the agent
+ * asked it: those that waited when it was queued (storage's `REPLIED_SQL`), also once answered.
  */
-export async function readReplied(
-  reader: WorkerConnection,
-  of: { readonly run: string } | { readonly task: string },
-): Promise<string[]> {
+export async function readReplied(reader: WorkerConnection, run: string): Promise<string[]> {
   const [rows] = await snapshot(
     reader,
     [
-      "run" in of
-        ? {
-            sql:
-              `SELECT ${REPLIED_TEXT} FROM runs x JOIN tasks t ON t.id = x.task_id JOIN runs r ON ` +
-              `${runWaits("x.created_seq")} WHERE x.id = $run ORDER BY ${runAsked("r")}`,
-            mode: "all",
-          }
-        : {
-            sql:
-              `SELECT ${REPLIED_TEXT} FROM tasks t JOIN runs r ON ${runWaits()} WHERE t.id = $task ` +
-              `ORDER BY ${runAsked("r")}`,
-            mode: "all",
-          },
+      {
+        sql:
+          "SELECT COALESCE(json_extract(r.result, '$.text'), '') AS text FROM runs x, " +
+          "json_each(x.spec, '$.replies') j JOIN runs r ON r.id = j.value WHERE x.id = $run " +
+          "ORDER BY j.key",
+        mode: "all",
+      },
     ],
-    "run" in of ? { run: of.run } : { task: of.task },
+    { run },
   );
   return (rows as Row[]).map((row) => String(row["text"]));
 }

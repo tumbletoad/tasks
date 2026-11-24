@@ -26,9 +26,8 @@
 //   the project's tasks the batch holds, so the row the client holds never shows a source, a
 //   folder, a run state or a question the space no longer has.
 import type { PreferenceRead } from "@ttasks/contracts";
-import type { Row, WorkerConnection } from "@ttasks/storage";
+import { RUN_WAITS, WAITS, type Row, type WorkerConnection } from "@ttasks/storage";
 import { hasFolderTable } from "../ops/read.ts";
-import { RUN_WAITS, WAITS } from "../ops/questions.ts";
 import {
   compact,
   taskColumns,

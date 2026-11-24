@@ -46,6 +46,7 @@ import {
   type SpaceRow,
 } from "../rows.ts";
 import { readSpacePreference } from "../preferences.ts";
+import { REPLIED_SQL } from "../questions.ts";
 import type { SchemaStep } from "../schema.ts";
 import { indexChanges } from "../search/documents.ts";
 import { repairSearchIndex } from "../search/remake.ts";
@@ -4136,6 +4137,12 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       return;
     }
     case "run.create": {
+      // The questions a task's run replies to are those that wait as it is queued: the person
+      // wrote to what they saw, so no later change to the task gives the run others.
+      const replies =
+        staged.runTask === undefined || staged.runTask === null
+          ? []
+          : conn.prepare(REPLIED_SQL).all({ task: staged.runTask }).map((row) => String(row["id"]));
       conn.prepare(RUN_SQL.insert).run({
         id: staged.target,
         task: staged.runTask ?? null,
@@ -4150,6 +4157,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
           brief_hash: op.brief_hash,
           permission: op.permission,
           limits: op.limits,
+          ...(replies.length === 0 ? {} : { replies }),
         }),
         // The time of each state is the wall clock's (Plan.wall), as a launch's.
         detail: runDetailText({ evidence: {}, at: { queued: run.plan.wall } }),

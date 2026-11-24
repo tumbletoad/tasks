@@ -152,17 +152,12 @@ export function runBrief(
 }
 
 /**
- * SHA-256 of a run's brief with its texts as marks, lower-case hex: what its record keeps, so the
- * record never holds the person's words. `replied` counts the questions it carries, `words` whether
- * the person gave any.
+ * SHA-256 of a run's brief as a template, lower-case hex: what its record keeps, so the record
+ * never holds the person's words or an agent's. The request is a mark, or WORK_ON_IT when the
+ * person gave no words, and the questions it replies to are one mark: the record names them.
  */
-export function runBriefHash(ref: string, title: string, replied = 0, words = true): string {
-  const brief = runBrief(
-    ref,
-    title,
-    words ? "{{request}}" : null,
-    Array.from({ length: replied }, () => "{{question}}"),
-  );
+export function runBriefHash(ref: string, title: string, words: boolean): string {
+  const brief = runBrief(ref, title, words ? "{{request}}" : null, ["{{questions}}"]);
   return createHash("sha256").update(`${PRODUCT_ID}-run-brief/1\n${brief}`, "utf8").digest("hex");
 }
 
@@ -221,12 +216,7 @@ export async function buildRun(
     instance.target,
   );
   if (!program.ok) return "spawn_failed";
-  const request = runBrief(
-    task.ref,
-    task.title,
-    run.request,
-    await readReplied(reader, { run: run.id }),
-  );
+  const request = runBrief(task.ref, task.title, run.request, await readReplied(reader, run.id));
   // The home the app keeps the run's session in, as the link to the monitor's agents reads it.
   const home = instanceHome(instance, agents.home, agents.platform)?.path;
   const evidence =

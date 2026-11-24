@@ -362,7 +362,7 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
     if (result.status !== "applied") throw new Error(JSON.stringify(result.error));
   }
   const QUESTION = "Fixture which draft?\n1. The short one\n2. The long one";
-  function asks(run: Id<"ru">): void {
+  function asks(run: Id<"ru">, text = QUESTION): void {
     move(run, "starting");
     move(run, "running");
     move(run, "failed", {
@@ -373,7 +373,7 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
         exit_code: 0,
         signal: null,
         native_id: null,
-        text: QUESTION,
+        text,
         error: null,
         usage: null,
         app_tools: null,
@@ -468,10 +468,9 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
         "M-1",
         "Fixture runs",
         record?.request ?? null,
-        await readReplied(reader, { run }),
+        await readReplied(reader, run),
       );
     };
-    expect(await readReplied(reader, { task: id })).toEqual([QUESTION]);
     const reply = queue(id, "The second one");
     expect(await brief(reply)).toMatch(
       /\n\nAn earlier run on this task stopped to ask the person:\n\nFixture which draft\?\n1\. The short one\n2\. The long one\n\nThe person's reply:\n\nThe second one$/u,
@@ -481,8 +480,8 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
     move(reply, "running");
     expect(await brief(reply)).toContain(QUESTION);
     // A run queued before the question, or after the reply that ran, replies to nothing.
-    expect(await readReplied(reader, { run: before })).toEqual([]);
-    expect(await readReplied(reader, { run: queue(id) })).toEqual([]);
+    expect(await readReplied(reader, before)).toEqual([]);
+    expect(await readReplied(reader, queue(id))).toEqual([]);
     // Nor does one after the person's note answered it.
     const again = queue(id);
     move(again, "cancelled");
@@ -505,7 +504,7 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
     const third = queue(id);
     asks(third);
     submit(fx.human, [{ kind: "note.add", task: id, body: "Fixture answer" }], (clock += 60_000));
-    expect(await readReplied(reader, { run: queue(id) })).toEqual([]);
+    expect(await readReplied(reader, queue(id))).toEqual([]);
     // Run without words after a question: the agent hears the question, and to work on the task.
     const fourth = queue(id);
     asks(fourth);
@@ -513,6 +512,40 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
     expect(plain).toContain(QUESTION);
     expect(plain).not.toContain("The person's reply:");
     expect(plain.endsWith(`\n\n${WORK_ON_IT}`)).toBe(true);
+  });
+
+  test("[A4.3.11.run.reply-kept] a reply answers the questions that waited when it was queued, whatever changes before it starts", async () => {
+    const { task: id } = task();
+    const replied = (run: Id<"ru">) => readReplied(readerOf(fx.reader), run);
+    const [one, two] = ["Fixture one?", "Fixture two?"];
+    // One stays one: the person's retracted note is put back after the reply was queued.
+    asks(queue(id), one);
+    submit(fx.human, [{ kind: "note.add", task: id, body: "Fixture answer" }], (clock += 60_000));
+    submit(fx.human, [{ kind: "note.delete", task: id, ordinal: 1 }], (clock += 60_000));
+    const kept = queue(id, "Fixture the first");
+    submit(fx.human, [{ kind: "note.restore", task: id, ordinal: 1 }], (clock += 60_000));
+    expect(await replied(kept)).toEqual([one]);
+    move(kept, "cancelled");
+    // None stays none: a Dismiss undone after the reply was queued.
+    const asked = queue(id);
+    asks(asked, two);
+    await call("task.update", { task: id, set: { reviewed: asked }, request_id: rid() });
+    const none = queue(id, "Fixture go on");
+    await call("history.undo", { request_id: rid() });
+    expect(await replied(none)).toEqual([]);
+    // None stays none: an earlier queued reply carried the question, and is cancelled.
+    const later = queue(id, "Fixture also");
+    move(none, "cancelled");
+    expect(await replied(later)).toEqual([]);
+    move(later, "cancelled");
+    // Two stay two, oldest first, when they are dismissed after the reply was queued: the words
+    // were written to them.
+    const [a, b] = [queue(id), queue(id)];
+    asks(a, "Fixture a?");
+    asks(b, "Fixture b?");
+    const both = queue(id, "Fixture both");
+    await call("task.update", { task: id, set: { reviewed: b }, request_id: rid() });
+    expect(await replied(both)).toEqual(["Fixture a?", "Fixture b?"]);
   });
 });
 

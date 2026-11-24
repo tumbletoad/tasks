@@ -50,7 +50,6 @@ import type { OpeningSpace } from "../hub/spaces.ts";
 import type { ServedSpace } from "../ops/index.ts";
 import {
   readLaunchTask,
-  readReplied,
   readRestoredRuns,
   readRunRow,
   readRunRows,
@@ -499,7 +498,6 @@ export class RunService {
           briefHash: runBriefHash(
             task.ref,
             task.title,
-            (await readReplied(served.reader, { task: task.id })).length,
             asked.request !== null && asked.request.trim() !== "",
           ),
           permission: runPermission(instance),
