@@ -523,6 +523,25 @@ describe("[A3.answers.retry-first] a request answered before is answered again b
   });
 });
 
+describe("[A3.answers.refusal-replay] a refusal sent again names what the first refusal named", () => {
+  test("a refused batch whose first draft makes a group names the same draft on its retry", async () => {
+    const input = {
+      tasks: [
+        { title: "Makes a group", area: "Refused area", project: "Refused project" },
+        { title: "Sized wrongly", effort: "Enormous" },
+        { title: "Fine as it is" },
+        { title: "Fine as well" },
+      ],
+      request_id: rid(),
+    };
+    const first = await refusal("task.add", input);
+    expect(first).toMatchObject({ data: { issues: [{ path: "tasks.1.effort" }] } });
+    const retry = await refusal("task.add", input);
+    expect(retry).toEqual({ ...first, data: { ...first.data, replayed: true } });
+    expect(await groupNames()).not.toContain("Refused area");
+  });
+});
+
 describe("[A3.answers.groups] an import makes groups only for the drafts it adds", () => {
   const ticket = (key: string) => ({ key, kind: "ticket", title: "Fixture ticket" });
 
