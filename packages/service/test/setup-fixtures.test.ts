@@ -820,6 +820,33 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
+    "a refused row whose revoke fails too: the entry stays until a revoke is confirmed, the access is said as not confirmed, and the next run takes both out",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        const file = a.file(w);
+        seed(file, a.format === "json" ? "{}\n" : 'model = "m"\n');
+        const before = readFileSync(file);
+        w.rows.refuse = { grant: "grant_failed", revoke: true };
+        expect(await apply(w, a), a.app).toMatchObject({
+          result: "failed",
+          reason: "grant_failed",
+          access: "unknown",
+        });
+        expect(entryIn(a, file), a.app).toBeDefined();
+        expect(readRecords(w.input.stateDir), a.app).toMatchObject([{ state: "removing" }]);
+        w.rows.refuse = {};
+        expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
+          { result: "removed", access: "off" },
+        ]);
+        expect(readFileSync(file), a.app).toEqual(before);
+        expect(readRecords(w.input.stateDir), a.app).toEqual([]);
+      }
+    },
+    SLOW,
+  );
+
+  test(
     "a refused row whose undo cannot write the file: the record says it is being taken back, and no later run gives the home access",
     async () => {
       for (const a of ADAPTERS) {
@@ -866,7 +893,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
-    "turning off asks for the revoke first and alone: one that fails changes nothing and says the access is still on; a record that cannot be written never stops it",
+    "turning off asks for the revoke first and alone: one that fails changes nothing and says the access could not be confirmed off; a record that cannot be written never stops it",
     async () => {
       for (const a of ADAPTERS) {
         const w = await world();
@@ -881,7 +908,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         expect(await remove(w, a), a.app).toMatchObject({
           result: "failed",
           reason: "revoke_failed",
-          access: "on",
+          access: "unknown",
         });
         expect(readFileSync(file)).toEqual(withEntry);
         expect(readFileSync(recordPath(w))).toEqual(recorded);

@@ -270,10 +270,9 @@ export interface Outcome {
   readonly result: "applied" | "removed" | "unchanged" | "left" | "failed";
   readonly reason?: OutcomeReason;
   /**
-   * The home's access as this action left it, apart from its file: `on` once its row was given, or
-   * when turning it off failed and nothing was changed; `off` when none was given or it was taken
-   * back; `unknown` when a row may have been made and taking it back failed. Absent when the action
-   * did not touch it.
+   * The home's access as this action left it, apart from its file: `on` once its row was given;
+   * `off` when none was given or it was taken back; `unknown` when a revoke was asked for and the
+   * service did not confirm it, so its entry stays too. Absent when the action did not touch it.
    */
   readonly access?: "on" | "off" | "unknown";
   /** A removal that left an entry in the file: TTasks's own (`reason` says why), or one the person changed. */
@@ -1641,10 +1640,11 @@ function entryNow(
 /**
  * Takes back an apply that cannot stand. The decision is recorded first (`removing`), then the
  * access goes (when it may have been given), then the entry when a read shows it is still setup's
- * own. After a read that failed (`readable` false) the file is not touched: the record stays
- * `removing`, and the next run takes the entry out. A record that cannot be written stays as it
- * was: an unfinished one the next run finishes as a removal all the same, a registered home's stays
- * registered with its access off until the person asks again.
+ * own. After a read that failed (`readable` false), or a revoke the service did not confirm, the
+ * file is not touched: the record stays `removing`, and the next run takes the access and then the
+ * entry out. A record that cannot be written stays as it was: an unfinished one the next run
+ * finishes as a removal all the same, a registered home's stays registered with its access off
+ * until the person asks again.
  */
 async function undo(
   input: SetupInput,
@@ -1661,7 +1661,7 @@ async function undo(
     // Left as it was: see above.
   }
   const off = given ? await revoked(access, home) : true;
-  if (!readable) {
+  if (!readable || !off) {
     return {
       home,
       result: "failed",
@@ -1670,14 +1670,14 @@ async function undo(
       notes: ["undo_failed"],
     };
   }
-  const out = await takeOut(input, home, removing, off);
+  const out = await takeOut(input, home, removing);
   const note =
     out.kept === "own" ? "undo_failed" : out.kept === "edited" ? "entry_left" : undefined;
   return {
     home,
     result: "failed",
     reason,
-    access: off ? "off" : "unknown",
+    access: "off",
     ...(note === undefined ? {} : { notes: [note] }),
   };
 }
@@ -1700,7 +1700,7 @@ export async function removeHome(
       home,
       result: "failed",
       reason: "revoke_failed",
-      access: record === undefined || record.state === "applied" ? "on" : "unknown",
+      access: "unknown",
     };
   }
   if (record === undefined) {
@@ -1725,7 +1725,7 @@ export async function removeHome(
       };
     }
   }
-  return { ...(await takeOut(input, home, removing, true)), access: "off" };
+  return { ...(await takeOut(input, home, removing)), access: "off" };
 }
 
 /**
@@ -1736,15 +1736,10 @@ export async function removeHome(
  * from then on. An entry of TTasks's that could not be taken out keeps its record, so the next setup
  * tries again.
  */
-async function takeOut(
-  input: SetupInput,
-  home: AgentHome,
-  record: HomeRecord,
-  off: boolean,
-): Promise<Outcome> {
+async function takeOut(input: SetupInput, home: AgentHome, record: HomeRecord): Promise<Outcome> {
   const { format, servers } = APPS[home.app];
   const done = (outcome: Outcome): Outcome => {
-    if (off) forget(input, home);
+    forget(input, home);
     return outcome;
   };
   for (let attempt = 1; ; attempt += 1) {

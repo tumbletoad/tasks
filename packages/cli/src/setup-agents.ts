@@ -283,7 +283,7 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
   grant_failed: `${PRODUCT_NAME}'s service did not give it its grant row, so its entry was taken out again`,
   instance_taken: `another agent home is registered as this instance, so its entry was taken out again: run ${CLI_NAME} setup agents again for a free one, or give this home an instance of its own in machine.toml`,
   record_unreadable: `${PRODUCT_NAME} cannot read its own record of the agent homes, so it changes no file there: ${CLI_NAME} setup agents --remove still turns access off`,
-  revoke_failed: `${PRODUCT_NAME}'s service did not take its access back, so nothing was changed: run ${CLI_NAME} setup agents --remove again while the service runs`,
+  revoke_failed: `${PRODUCT_NAME}'s service did not confirm that it took its access back, so nothing else was changed`,
   unwritable:
     "its file could not be written: it is read-only, another program holds it, or the disk is full",
   state_unwritable: `setup could not write its own record of it (a full disk?), so its file was left as it was: run ${CLI_NAME} setup agents --remove again once it can`,
@@ -295,9 +295,7 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
  */
 function accessText(outcome: Outcome): string | undefined {
   if (outcome.access === undefined) return undefined;
-  if (outcome.access === "on") {
-    return outcome.result === "failed" ? "Access is still on." : "Access is on.";
-  }
+  if (outcome.access === "on") return "Access is on.";
   if (outcome.access === "unknown") {
     return `Access could not be confirmed off: run ${CLI_NAME} setup agents --remove again while ${PRODUCT_NAME}'s service runs.`;
   }
