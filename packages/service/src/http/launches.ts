@@ -50,7 +50,9 @@ import type { HttpLog } from "./events.ts";
 export interface UiInstance {
   /** The instance's key in machine.toml's `[[instance]]`. */
   readonly key: string;
-  /** Names the account: "Codex · work". */
+  /** The app's name, which the page groups its instances by: "Codex". */
+  readonly app: string;
+  /** Its name as every place shows it: "Codex", or "Codex · work" beside another Codex. */
   readonly label: string;
   /** A neutral monogram, one or two characters: "Cx". */
   readonly glyph: string;
@@ -256,6 +258,8 @@ export function checkInstances(list: readonly UiInstance[]): UiInstance[] {
       typeof item.label !== "string" ||
       item.label.length === 0 ||
       item.label.length > 40 ||
+      typeof item.app !== "string" ||
+      item.app.length > 40 ||
       !MONOGRAM.test(item.glyph) ||
       !Number.isInteger(item.ring) ||
       item.ring < 1 ||
@@ -268,6 +272,7 @@ export function checkInstances(list: readonly UiInstance[]): UiInstance[] {
     seen.add(item.key);
     out.push({
       key: item.key,
+      app: item.app,
       label: item.label,
       glyph: item.glyph,
       ring: item.ring,
@@ -284,6 +289,17 @@ const invalid = (message: string, field?: string): AppError =>
     message,
     ...(field === undefined ? {} : { data: { field } }),
   });
+
+const LAST_SQL =
+  "SELECT (SELECT instance_id FROM launches WHERE machine_id = $machine AND route <> 'clipboard' " +
+  "ORDER BY created_at DESC, id DESC LIMIT 1) AS open, (SELECT instance_id FROM runs " +
+  "WHERE machine_id = $machine ORDER BY queued_at DESC, id DESC LIMIT 1) AS run";
+
+/** The instance a space's last Open here used, and its last Run's, by key. */
+export interface UiLast {
+  readonly open?: string;
+  readonly run?: string;
+}
 
 const LIST_SQL =
   "SELECT id, reference, instance_id, route, state, reason, detail FROM launches " +
@@ -442,6 +458,21 @@ export class UiLaunches {
   async busy(spaceRef: string | undefined, copy?: string): Promise<readonly UiBusy[]> {
     const space = this.#space(spaceRef, copy).id ?? "";
     return (await this.#options.port?.busy?.(space)) ?? [];
+  }
+
+  /**
+   * The instances this machine last opened a task of the space in and last ran one with, from the
+   * space's own records: what the page's Open and Run use when the task names none of its own.
+   */
+  async last(spaceRef: string | undefined, copy?: string): Promise<UiLast> {
+    const { reader } = this.#space(spaceRef, copy);
+    if (reader === undefined) return {};
+    const [row] = await reader.all(LAST_SQL, { machine: this.#options.host.machine.id });
+    const { open, run } = row ?? {};
+    return {
+      ...(typeof open === "string" ? { open } : {}),
+      ...(typeof run === "string" ? { run } : {}),
+    };
   }
 
   /**

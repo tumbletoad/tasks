@@ -17,6 +17,8 @@ import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
 import {
   agentSetup,
+  appName,
+  instanceNames,
   checkPlan,
   CLAIM_WINDOW_MS,
   PREPARED_TTL_MS,
@@ -145,7 +147,9 @@ export interface BusyLaunch {
 export interface LaunchInstance {
   /** The instance's key in machine.toml's `[[instance]]`. */
   readonly key: string;
-  /** Names the account: "Codex · work". */
+  /** The app's name: "Codex". */
+  readonly app: string;
+  /** Its name as every place shows it (instanceNames): "Codex", or "Codex · work" beside another. */
   readonly label: string;
   /** A neutral monogram: "Cx". */
   readonly glyph: string;
@@ -658,7 +662,7 @@ export class LaunchService {
    * (chooseRoute), or that can run in the background. Copy is not an instance.
    */
   instances(space: string): LaunchInstance[] {
-    const out: LaunchInstance[] = [];
+    const shown: { instance: Instance; route: Route | undefined }[] = [];
     for (const instance of this.#instances()) {
       if (!instance.enabled || !servesSpace(instance, this.#spaceOf(space))) continue;
       let route: Route | undefined;
@@ -668,15 +672,18 @@ export class LaunchService {
         route = undefined;
       }
       if (route === undefined && !runsWith(instance)) continue;
-      out.push({
-        key: instance.id,
-        label: instance.label,
-        glyph: glyphOf(instance),
-        ring: (out.length % 8) + 1,
-        ...(route === undefined ? {} : { route }),
-      });
+      shown.push({ instance, route });
     }
-    return out;
+    const apps = shown.map(({ instance }) => ({ ...instance, app: appName(instance) }));
+    const names = instanceNames(apps);
+    return shown.map(({ instance, route }, i) => ({
+      key: instance.id,
+      app: apps[i]?.app ?? "",
+      label: names[i] ?? instance.label,
+      glyph: glyphOf(instance),
+      ring: (i % 8) + 1,
+      ...(route === undefined ? {} : { route }),
+    }));
   }
 
   /**

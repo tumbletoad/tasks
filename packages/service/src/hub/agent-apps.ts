@@ -29,6 +29,8 @@ import {
   envValue,
   instanceEntry,
   instanceHome,
+  instanceNames,
+  targetDef,
   nodeDetectHost,
   type Env,
   type EnvironmentSource,
@@ -338,6 +340,8 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   const byRow = new Map<string, Offer>();
   const owners = new Map<string, string>();
   const out: (Omit<AppRow, "open"> & { open?: Part | "offer" })[] = [];
+  /** The account each row's instance or offer names, by the row's key. */
+  const accounts = new Map<string, string>();
 
   const fixed = (key: string, on: boolean, why: Why): Part => ({
     on,
@@ -421,6 +425,8 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
           samePath(platform, p.configHome, home.home),
       );
       label = owner?.label ?? proposal?.label ?? label;
+      const account = owner?.account ?? proposal?.account;
+      if (account !== undefined) accounts.set(key, account);
       open = owner !== undefined ? ownedPart(key, owner) : offerPart(key, proposal, home.instance);
     }
     out.push({
@@ -446,6 +452,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     const owner = machine.instances.find(
       (i) => i.target === "t3" && i.t3?.providerInstance === provider,
     );
+    accounts.set(key, owner?.account ?? proposal.account);
     out.push({
       key,
       app: "t3",
@@ -456,9 +463,18 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     });
   }
 
+  // Each row is named as Open names its instance.
+  const names = instanceNames(
+    out.map((row) => ({
+      app: row.app === "t3" ? targetDef("t3").label : appLabel(row.app),
+      label: row.label,
+      account: accounts.get(row.key) ?? "",
+    })),
+  );
   const view: AppsView = {
     space,
-    rows: out.map(({ open, ...row }): AppRow => {
+    rows: out.map(({ open, ...named }, i): AppRow => {
+      const row = { ...named, label: names[i] ?? named.label };
       if (open !== "offer") return { ...row, ...(open === undefined ? {} : { open }) };
       const offer = byRow.get(row.key);
       if (offer === undefined) return row;
