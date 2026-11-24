@@ -95,7 +95,12 @@ export const READS: readonly { changed: string; tests: readonly string[] }[] = [
   { changed: ANY, tests: ["scripts/machine-facts.test.ts"] },
   {
     changed: "packages/web/src/**",
-    tests: ["packages/web/test/catalogue.test.ts", "packages/web/test/styles.test.ts"],
+    // The build bundles the folder, and its test holds the bundle to a size.
+    tests: [
+      "packages/web/test/build.test.ts",
+      "packages/web/test/catalogue.test.ts",
+      "packages/web/test/styles.test.ts",
+    ],
   },
   { changed: "packages/contracts/**", tests: ["scripts/generated.test.ts"] },
   { changed: ".dependency-cruiser.cjs", tests: ["scripts/dependency-rules.test.ts"] },
