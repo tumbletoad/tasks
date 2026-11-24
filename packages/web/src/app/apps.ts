@@ -68,6 +68,8 @@ export interface Outcome {
   readonly kept: boolean;
   /** Tools, failed: the service did not confirm that the access is off, so the entry stayed too. */
   readonly unconfirmed: boolean;
+  /** Tools, failed because setup could not write its own record: that record file. */
+  readonly record: string | undefined;
   /** Tools: each file left otherwise than asked, with why (no entry written, or one that stayed). */
   readonly files: readonly { readonly file: string; readonly why: string }[];
 }
@@ -189,6 +191,7 @@ export function appliedOf(value: unknown): Applied {
                 typeof o["field"] === "string" && WORD.test(o["field"]) ? o["field"] : undefined,
               kept: o["kept"] === true,
               unconfirmed: o["unconfirmed"] === true,
+              record: text(o["record"]),
               files: fileNeeds(o["files"]).flatMap((f) =>
                 f.why === undefined ? [] : [{ file: f.file, why: f.why }],
               ),

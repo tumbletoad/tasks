@@ -79,6 +79,8 @@ interface Failed {
   readonly field: string;
   /** The service did not confirm that the tools are off. */
   readonly unconfirmed: boolean;
+  /** Setup's record file it could not write, or `none`. */
+  readonly record: string;
 }
 
 /** What the last Apply came to, for the lines under the list. */
@@ -235,6 +237,7 @@ export function AgentApps({
                       reason: o.reason ?? "other",
                       field: o.field ?? "none",
                       unconfirmed: o.unconfirmed,
+                      record: o.record ?? "none",
                     },
                   ];
             });
@@ -563,6 +566,7 @@ function SaidLine({ t, said }: { readonly t: Translate; readonly said: Said }) {
                   reason: f.reason,
                   field: f.field,
                   unconfirmed: f.unconfirmed ? "yes" : "no",
+                  record: f.record,
                 })}
               </li>
             ))}
