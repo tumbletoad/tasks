@@ -3595,7 +3595,7 @@
     },
     {
       "id": "A3.3.13.setup.tools-table-files",
-      "title": "One answer for Claude Code's default folder with both of its settings files, read through the page and the command line's status JSON: both with setup's entry is on; one without it yet is on, names that file and turning on writes it there, with the access given when it is off; one changed by hand, one that cannot be parsed and one that runs a program that is gone are on and named; turning off is offered while the access is live, and every action offered is carried out",
+      "title": "One answer for Claude Code's default folder from both of its settings files, read through the page and the command line's status JSON, for each pair of what the files hold (setup's entry that runs, setup's entry whose program moved, changed by hand, unparseable, no entry) and access live, off and unconfirmed: on while the access is live and one file holds an entry that runs, each other file named with why, turning off offered while the access may be live, and every action offered carried out",
       "source": "A3 3.13.1, A3 3.14",
       "owner": "M4",
       "kind": "ci",
