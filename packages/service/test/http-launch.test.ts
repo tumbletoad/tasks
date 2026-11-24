@@ -112,13 +112,21 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       expect(snapshot["instances"]).toEqual([
         {
           key: "fake-agent",
-          label: "Fake agent · test",
+          app: "Claude Code",
+          label: "Claude Code",
           glyph: "Cc",
           ring: 1,
           route: "terminal",
           runs: true,
         },
-        { key: "t3-later", label: "T3 · test", glyph: "T3", ring: 2, route: "t3-mcp" },
+        {
+          key: "t3-later",
+          app: "T3 Code",
+          label: "T3 Code",
+          glyph: "T3",
+          ring: 2,
+          route: "t3-mcp",
+        },
       ]);
 
       const click = { task: task.id, instance: "fake-agent", request_id: "click-0000000000000001" };
@@ -157,10 +165,13 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       expect(JSON.stringify(receipts)).not.toContain("appointment");
 
       // The tab learns which agent apps are busy here for every task, without a task's receipts:
-      // this one is opening until its shim settles it.
+      // this one is opening until its shim settles it. The space last opened in it here.
       const busy = await post(port, "/api/v1/launch/busy", {}, { token, headers });
       expect(JSON.parse(busy.body)).toEqual({
-        result: { busy: [{ task: task.id, instance: "fake-agent", state: "opening" }] },
+        result: {
+          busy: [{ task: task.id, instance: "fake-agent", state: "opening" }],
+          last: { open: "fake-agent" },
+        },
       });
       // A distinct click while it is opening gets the same launch and starts nothing.
       const second = await post(
@@ -219,7 +230,7 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       );
       expect(left.state).toBe("prepared");
       const busy = await post(port, "/api/v1/launch/busy", {}, { token, headers });
-      expect(JSON.parse(busy.body)).toEqual({ result: { busy: [] } });
+      expect(JSON.parse(busy.body)).toEqual({ result: { busy: [], last: { open: "fake-agent" } } });
       const opened = await post(
         port,
         OPEN,

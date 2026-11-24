@@ -496,6 +496,13 @@ export const CompactTaskRow = z.strictObject({
     })
     .describe("Its newest background run, while it works, needs the person, or is recorded")
     .optional(),
+  last: z
+    .strictObject({
+      open: z.string().describe("The instance of its newest Open that was not refused").optional(),
+      run: z.string().describe("The instance of its newest run").optional(),
+    })
+    .describe("The agent instances it was last opened in and last ran with")
+    .optional(),
   questions: z
     .array(
       z.strictObject({

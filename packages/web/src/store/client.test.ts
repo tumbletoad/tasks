@@ -295,7 +295,14 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     // A batch from before the new snapshot is not applied over it.
     receive(batch(6, 7, [taskEvent(task("a", "Old"), 7)]));
     expect(live.getState().tasks.get("a")?.title).toBe("Two");
-    const instance = { key: "claude", label: "Claude Code", glyph: "C", ring: 0, route: "cli" };
+    const instance = {
+      key: "claude",
+      app: "Claude Code",
+      label: "Claude Code",
+      glyph: "C",
+      ring: 0,
+      route: "cli",
+    };
     receive({ ...snapshot(8, [task("a", "Two")]), instances: [instance] });
     expect(live.getState().phase).toBe("live");
     expect(live.getState().instances).not.toBe(before);

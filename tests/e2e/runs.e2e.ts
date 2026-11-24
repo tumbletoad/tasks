@@ -75,7 +75,7 @@ test.describe("[M6.page.e2e.run] Run from the page, with and without words, and 
   }) => {
     await watchViolations(page);
     const ref = await addTask(world, "Check the portal's appointment times");
-    world.codex(ref, ["answer", "answer", "long"]);
+    world.codex(ref, ["answer", "answer", "long", "answer", "answer"]);
     await openTask(page, world, ref);
 
     // The task has no folder: Run says it works in the space's work folder, as Open does.
@@ -126,12 +126,24 @@ test.describe("[M6.page.e2e.run] Run from the page, with and without words, and 
     // The person's other agent is one click away, in the menu beside Run.
     await stripOf(page, ref).getByRole("button", { name: "Run with another agent" }).click();
     await page
-      .getByRole("dialog", { name: "Run with another agent" })
-      .getByRole("button", { name: `Run with ${OTHER_LABEL}` })
+      .getByRole("menu", { name: "Run with another agent" })
+      .getByRole("menuitemradio", { name: `Run with ${OTHER_LABEL}` })
       .click();
     const fourth = runsOf(page, ref).nth(3);
     await expect(fourth).toContainText(OTHER_LABEL);
     await expect(stateOf(fourth)).toContainText("Done.", { timeout: SLOW_MS });
+    // The one picked is Run's from then on; picking the first again puts it back, for this task
+    // and for the tests after this one, which run in the same space.
+    await expect(
+      stripOf(page, ref).getByRole("button", { name: `Run with ${OTHER_LABEL}` }),
+    ).toBeVisible();
+    await stripOf(page, ref).getByRole("button", { name: "Run with another agent" }).click();
+    await page
+      .getByRole("menu", { name: "Run with another agent" })
+      .getByRole("menuitemradio", { name: `Run with ${CODEX_INSTANCE.label}` })
+      .click();
+    await expect(stateOf(runsOf(page, ref).nth(4))).toContainText("Done.", { timeout: SLOW_MS });
+    await expect(runButton(page, ref)).toBeVisible();
     expect(await violations(page)).toEqual([]);
   });
 });
@@ -628,8 +640,8 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
         await stripOf(shot, ended).getByRole("button", { name: "Run with another agent" }).click();
         await expect(
           shot
-            .getByRole("dialog", { name: "Run with another agent" })
-            .getByRole("button", { name: `Run with ${OTHER_LABEL}` }),
+            .getByRole("menu", { name: "Run with another agent" })
+            .getByRole("menuitemradio", { name: `Run with ${OTHER_LABEL}` }),
         ).toBeVisible();
         await rowOf(shot, ended).locator('[data-part="strip"]').scrollIntoViewIfNeeded();
         await picture(shot, `run-menu-${theme}-1440.png`);

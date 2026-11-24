@@ -44,9 +44,17 @@ const CLOCK: Clock = {
 const DAY = 86_400_000;
 const daysAgo = (n: number) => CLOCK.now - n * DAY;
 
-const CX: Instance = { key: "cx", label: "Codex · work", glyph: "Cx", ring: 6, route: "terminal" };
+const CX: Instance = {
+  key: "cx",
+  app: "Codex",
+  label: "Codex · work",
+  glyph: "Cx",
+  ring: 6,
+  route: "terminal",
+};
 const CC: Instance = {
   key: "cc",
+  app: "Claude Code",
   label: "Claude Code · work",
   glyph: "Cc",
   ring: 2,

@@ -152,7 +152,7 @@ beforeEach(() => {
             : Promise.resolve({ view: "sections", as_of: "1.10.01234567", sections: {} }),
       },
     },
-    busy: () => Promise.resolve([]),
+    busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => Promise.resolve([]),
     runs: () => Promise.resolve([]),
   } as unknown as Api;
