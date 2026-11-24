@@ -42,6 +42,7 @@ Error codes:
 | `forbidden` | forbidden | 403 | User-only, policy, grant or limit rule |
 | `not_permitted` | forbidden | 403 | The session does not allow this tool |
 | `request_id_conflict` | conflict | 409 | Same request_id, different intent |
+| `applied_earlier` | conflict | 409 | Another version applied this request_id: nothing written now |
 | `too_large` | usage | 413 | Over a field, item or request limit |
 | `cursor_expired` | not_found | 404 | Search cursor no longer valid |
 | `space_unavailable` | space | 503 | The space cannot answer now |
@@ -65,7 +66,7 @@ MCP tool `add_entry`, "Log on a task": Use often while working: log progress, ev
 | Audience filter | caller |
 | A1 operations | `log.add`, `note.add` |
 | Faces | MCP `add_entry`, CLI `ttasks log`, `ttasks note`, UI |
-| Errors | `invalid_input`, `unbound`, `not_found`, `too_large`, `forbidden`, `request_id_conflict` |
+| Errors | `invalid_input`, `unbound`, `not_found`, `too_large`, `forbidden`, `request_id_conflict`, `applied_earlier` |
 | Definition, estimated tokens | 708, reported |
 | Result budget, estimated tokens | typical 40, max 80 |
 
@@ -91,8 +92,8 @@ MCP tool `add_entry`, "Log on a task": Use often while working: log progress, ev
 | `task` | string | yes | Task reference |
 | `entry` | string | yes | Its ordinal: l3 for a log entry, n2 for a note |
 | `kind` | "progress" \| "evidence" \| "decision" \| "blocker" \| "question" \| "note" | yes | Entry kind |
-| `as_of` | string | yes | The space's position when this answer was made |
-| `replayed` | boolean | no | True when a retry returned the stored result |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
+| `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 
 ### Examples
 
@@ -160,7 +161,7 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | Audience filter | none |
 | A1 operations | `area.create`, `project.create`, `project.folder_set`, `project.folder_clear`, `task.folder_set`, `task.folder_clear` |
 | Faces | UI |
-| Errors | `invalid_input`, `not_found`, `ambiguous`, `conflict`, `forbidden`, `space_unavailable`, `read_only`, `request_id_conflict` |
+| Errors | `invalid_input`, `not_found`, `ambiguous`, `conflict`, `forbidden`, `space_unavailable`, `read_only`, `request_id_conflict`, `applied_earlier` |
 
 ### Input
 
@@ -185,7 +186,7 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | `owner.id` | string | yes | Its ID |
 | `owner.name` | string | no | A project's name |
 | `owner.ref` | string | no | Task reference |
-| `owner.area` | object | no | A project's area as of the write; absent: it has none |
+| `owner.area` | object | no | A project's area; absent: it has none |
 | `owner.area.id` | string | yes | Area ID |
 | `owner.area.name` | string | yes | Its name |
 | `owner.area.archived` | true | no | Archived, and the project with it |
@@ -193,18 +194,18 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved, and they are in it |
 | `followed` | object[], max 20 items | no | The first of them |
 | `followed[].kind` | "project" \| "task" | yes | Whose folder it is |
-| `followed[].name` | string | no | A project's name |
+| `followed[].name` | string | no | A project's name, when it could be read |
 | `followed[].ref` | string | no | Task reference |
 | `followed[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
 | `stayed` | integer, 0 to 1000000 | no | Folders inside the old one that stayed |
 | `stayed_because` | "old_folder_there" \| "old_folder_unseen" \| "unchecked" \| "not_in_new_folder" | no | Why they stayed: old folder there or unseen, unchecked, or not in the new one |
 | `kept` | object[], max 20 items | no | The first of them |
 | `kept[].kind` | "project" \| "task" | yes | Whose folder it is |
-| `kept[].name` | string | no | A project's name |
+| `kept[].name` | string | no | A project's name, when it could be read |
 | `kept[].ref` | string | no | Task reference |
 | `kept[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
-| `as_of` | string | yes | The space's position when this answer was made |
-| `replayed` | boolean | no | True when a retry returned the stored result |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
+| `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 
 ### Examples
 
@@ -253,7 +254,7 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | Audience filter | caller |
 | A1 operations | `area.create`, `area.patch`, `area.move`, `area.archive`, `project.create`, `project.patch`, `project.move`, `project.archive`, `area.unarchive`, `project.unarchive`, `project.folder_set`, `project.folder_clear` |
 | Faces | MCP `organize`, CLI `ttasks area`, UI |
-| Errors | `invalid_input`, `not_found`, `ambiguous`, `conflict`, `forbidden`, `space_unavailable`, `request_id_conflict` |
+| Errors | `invalid_input`, `not_found`, `ambiguous`, `conflict`, `forbidden`, `space_unavailable`, `request_id_conflict`, `applied_earlier` |
 | Definition, estimated tokens | 854, reported |
 | Result budget, estimated tokens | typical 400, max 1500 |
 
@@ -276,8 +277,8 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `action` | "list" \| "create" \| "rename" \| "move" \| "archive" \| "unarchive" \| "set_folder" \| "clear_folder" | yes | The action |
-| `as_of` | string | yes | The space's position when this answer was made |
-| `areas` | object[] | yes | Areas in the space's order, each with its projects |
+| `as_of` | string | yes | A list's read, or this write's position: your next base. Names may be newer |
+| `areas` | object[] | no | Areas in the space's order, with their projects; absent: not read |
 | `areas[].id` | string | yes | Area ID |
 | `areas[].slug` | string | yes | Slug |
 | `areas[].name` | string | yes | Name |
@@ -293,7 +294,7 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | `areas[].projects[].repo` | string, max 255 | no | The Git repository in its folder, by name |
 | `areas[].projects[].archived` | true | no | Archived |
 | `areas[].projects[].ref` | string | no | Its ID, for a path: its name alone does not name it |
-| `projects` | object[] | yes | Projects without an area, after every area |
+| `projects` | object[] | no | Projects without an area, after every area |
 | `projects[].id` | string | yes | Project ID |
 | `projects[].slug` | string | yes | Slug |
 | `projects[].name` | string | yes | Name |
@@ -302,33 +303,33 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | `projects[].repo` | string, max 255 | no | The Git repository in its folder, by name |
 | `projects[].archived` | true | no | Archived |
 | `projects[].ref` | string | no | Its ID, for a path: its name alone does not name it |
-| `total_areas` | integer, 0 to 1000000000 | yes | Areas the whole list holds |
-| `total_projects` | integer, 0 to 1000000000 | yes | Projects the whole list holds |
+| `total_areas` | integer, 0 to 1000000000 | no | Areas the whole list holds |
+| `total_projects` | integer, 0 to 1000000000 | no | Projects the whole list holds |
 | `cursor` | string, max 330 | no | Pass it for the next page |
 | `result` | "created" \| "exists" \| "renamed" \| "moved" \| "archived" \| "unarchived" \| "folder_set" \| "folder_cleared" \| "no_change" | no | A write: what happened; exists: another project has this folder |
 | `group` | object | no | A write: the group it changed |
 | `group.kind` | "area" \| "project" | yes | Area or project |
 | `group.id` | string | yes | Its ID |
-| `group.name` | string | yes | Its name now |
+| `group.name` | string | no | Its name now; absent when it is gone |
 | `group.folder` | string | no | Its folder on this machine, the home as ~ |
-| `group.area` | object | no | A project's area as of the write; absent: it has none |
+| `group.area` | object | no | A project's area; absent: it has none |
 | `group.area.id` | string | yes | Area ID |
 | `group.area.name` | string | yes | Its name |
 | `group.area.archived` | true | no | Archived, and the project with it |
 | `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved, and they are in it |
 | `followed` | object[], max 20 items | no | The first of them |
 | `followed[].kind` | "project" \| "task" | yes | Whose folder it is |
-| `followed[].name` | string | no | A project's name |
+| `followed[].name` | string | no | A project's name, when it could be read |
 | `followed[].ref` | string | no | Task reference |
 | `followed[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
 | `stayed` | integer, 0 to 1000000 | no | Folders inside the old one that stayed |
 | `stayed_because` | "old_folder_there" \| "old_folder_unseen" \| "unchecked" \| "not_in_new_folder" | no | Why they stayed: old folder there or unseen, unchecked, or not in the new one |
 | `kept` | object[], max 20 items | no | The first of them |
 | `kept[].kind` | "project" \| "task" | yes | Whose folder it is |
-| `kept[].name` | string | no | A project's name |
+| `kept[].name` | string | no | A project's name, when it could be read |
 | `kept[].ref` | string | no | Task reference |
 | `kept[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
-| `replayed` | boolean | no | True when a retry returned the stored result |
+| `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 
 ### Examples
 
@@ -461,7 +462,7 @@ Redo the change you undid last, as long as nobody changed its fields since.
 | Audience filter | none |
 | A1 operations | `redo` |
 | Faces | CLI `ttasks redo`, UI |
-| Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `request_id_conflict` |
+| Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `request_id_conflict`, `applied_earlier` |
 
 ### Input
 
@@ -476,10 +477,10 @@ Redo the change you undid last, as long as nobody changed its fields since.
 |---|---|---|---|
 | `result` | "redone" | yes | The change is back |
 | `commit` | string | yes | The change undone or redone |
-| `tasks` | string[], max 50 items | no | The tasks it changed, the first 50; absent when they could not be read |
-| `task_count` | integer, 0 to 9999999999 | no | How many tasks it changed; absent when they could not be read |
-| `as_of` | string | yes | The space's position when this answer was made |
-| `replayed` | boolean | no | True when a retry returned the stored result |
+| `tasks` | string[], max 50 items | yes | The tasks it changed, the first 50 |
+| `task_count` | integer, 0 to 9999999999 | yes | How many tasks it changed |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
+| `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `passed_over` | string[] | no | Older changes it could not redo: they stay, and the next redo tries them again |
 | `newer_work` | object[] | no | Who changed which task since, one entry per task and author |
 | `newer_work[].task` | string | no | The task; absent for an area, a project or a source |
@@ -525,7 +526,7 @@ Undo your newest change in the space, field by field as long as nobody changed i
 | Audience filter | none |
 | A1 operations | `undo` |
 | Faces | CLI `ttasks undo`, UI |
-| Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `request_id_conflict` |
+| Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `request_id_conflict`, `applied_earlier` |
 
 ### Input
 
@@ -542,10 +543,10 @@ Undo your newest change in the space, field by field as long as nobody changed i
 |---|---|---|---|
 | `result` | "undone" \| "partial" | yes | undone: all of it; partial: the unresolved fields stay as others set them |
 | `commit` | string | yes | The change undone or redone |
-| `tasks` | string[], max 50 items | no | The tasks it changed, the first 50; absent when they could not be read |
-| `task_count` | integer, 0 to 9999999999 | no | How many tasks it changed; absent when they could not be read |
-| `as_of` | string | yes | The space's position when this answer was made |
-| `replayed` | boolean | no | True when a retry returned the stored result |
+| `tasks` | string[], max 50 items | yes | The tasks it changed, the first 50 |
+| `task_count` | integer, 0 to 9999999999 | yes | How many tasks it changed |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
+| `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `unresolved` | object[] | no | Fields left as others set them |
 | `unresolved[].entity` | string, max 20 | yes | Table of the row: tasks, or a child such as notes or log_entries |
 | `unresolved[].id` | string, max 60 | no | A row other than the task: its ID, or task_id\|source_id for a link |
@@ -686,7 +687,7 @@ Take back a note on a task, or put a removed one back. Nothing is deleted for go
 | Audience filter | none |
 | A1 operations | `note.delete`, `note.restore` |
 | Faces | CLI `ttasks note`, UI |
-| Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `request_id_conflict` |
+| Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `request_id_conflict`, `applied_earlier` |
 
 ### Input
 
@@ -705,8 +706,8 @@ Take back a note on a task, or put a removed one back. Nothing is deleted for go
 | `result` | "removed" \| "put_back" \| "no_change" | yes | removed, put back, or the note was that way already |
 | `task` | string | yes | Task reference |
 | `note` | string | yes | The note, such as n3 |
-| `as_of` | string | yes | The space's position when this answer was made |
-| `replayed` | boolean | no | True when a retry returned the stored result |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
+| `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 
 ### Examples
 
@@ -773,7 +774,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | Audience filter | caller |
 | A1 operations | `pref.set` |
 | Faces | MCP `preferences`, CLI `ttasks prefs`, UI |
-| Errors | `invalid_input`, `forbidden`, `conflict`, `space_unavailable`, `request_id_conflict` |
+| Errors | `invalid_input`, `forbidden`, `conflict`, `space_unavailable`, `request_id_conflict`, `applied_earlier` |
 | Definition, estimated tokens | 384, reported |
 | Result budget, estimated tokens | typical 600, max 2000 |
 
@@ -795,8 +796,8 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `action` | "describe" \| "get" \| "set" | yes | The action |
-| `as_of` | string | yes | The space's position when this answer was made |
-| `prefs` | object[] | yes | The keys asked for, sorted |
+| `as_of` | string | yes | A list's read, or this write's position: your next base. Names may be newer |
+| `prefs` | object[] | no | The keys asked for, sorted; absent on a set when they could not be read |
 | `prefs[].key` | string | yes | The key |
 | `prefs[].summary` | string | no | What it sets (describe) |
 | `prefs[].shape` | string | no | Its values, in words (describe) |
@@ -811,8 +812,8 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `changed` | object[] | no | The keys a change changed |
 | `changed[].key` | string | yes | The key |
 | `changed[].from` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | yes | Its value before |
-| `changed[].to` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | yes | Its value now |
-| `replayed` | boolean | no | True when a retry returned the stored result |
+| `changed[].to` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | yes | The value it set |
+| `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 
 ### Examples
 
@@ -956,7 +957,7 @@ When `found` is `false`:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `found` | false | yes | No receipt for that request ID in this writer scope |
+| `found` | false | yes | No receipt here: nothing was written under that ID; it can be sent again |
 
 When `found` is `true`:
 
@@ -1063,7 +1064,7 @@ Result:
 }
 ```
 
-#### A stale summary update: its conflict, without the value it saw
+#### A stale summary update: refused, it wrote nothing and keeps no receipt
 
 Called by the agent.
 
@@ -1077,35 +1078,7 @@ Result:
 
 ```json
 {
-  "found": true,
-  "request": "7f3c2a10-5d4e-4b8a-9c61-2e0f3a7b0013",
-  "status": "conflict",
-  "decided_at": "2026-11-12T10:06:00.000Z",
-  "as_of": "1.1046.5n0w8k3q",
-  "incarnation": "ai_5n0w8k3q7d1m9x4r2t6v0b8c3h",
-  "results": [],
-  "conflicts": [
-    {
-      "op": 0,
-      "entity": "tasks",
-      "id": "t_5m2k8q0w3z7r1c9d4f6h8j0n2p",
-      "task": "t_5m2k8q0w3z7r1c9d4f6h8j0n2p",
-      "ref": "M-14",
-      "field": "summary",
-      "version": 1045,
-      "by": {
-        "actor": "ac_3k7m1q5t9w3z7c1f5h9k3n7r1v",
-        "kind": "agent",
-        "label": "Codex · work"
-      },
-      "at": "2026-11-12T09:58:00.000Z"
-    }
-  ],
-  "error": {
-    "cause": "VERSION_CONFLICT",
-    "message": "A field changed after the base: read again"
-  },
-  "warnings": []
+  "found": false
 }
 ```
 
@@ -1473,8 +1446,8 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | Audience filter | caller |
 | A1 operations | `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `add_tasks`, CLI `ttasks add`, UI |
-| Errors | `invalid_input`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1629, reported |
+| Errors | `invalid_input`, `too_large`, `forbidden`, `request_id_conflict`, `applied_earlier` |
+| Definition, estimated tokens | 1648, reported |
 | Result budget, estimated tokens | typical 80, max 2000 |
 
 ### Input
@@ -1501,7 +1474,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | `tasks[].sources[].title` | string, max 300; agents: string, max 200 | yes | Subject, chat or ticket title |
 | `tasks[].sources[].who` | string, max 120 | no | Sender or counterpart |
 | `tasks[].sources[].url` | string, max 2048 | no | Link |
-| `tasks[].sources[].at` | string, max 40 | no | When it was sent |
+| `tasks[].sources[].at` | string, max 40 | no | When it was sent: ISO date, or instant with its offset |
 | `tasks[].context` | string, max 65536; agents: string, max 8000 | no | Markdown context |
 | `tasks[].log` | string, max 16384; agents: string, max 2000 | no | Log entry; also added to a matched task that lacks it |
 | `tasks[].on_existing` | "return" \| "add_sources" \| "create_new" | no | When a source key matches; default return |
@@ -1512,12 +1485,12 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `tasks` | object[] | yes | One row per draft, in order |
 | `tasks[].result` | "created" \| "exists" \| "inbox" | yes | created, matched an existing task, or created in the Inbox |
 | `tasks[].id` | string | no | Task ID |
 | `tasks[].ref` | string | no | Task reference |
-| `tasks[].title` | string | yes | Title |
+| `tasks[].title` | string | no | Its title now; absent when it could not be read |
 | `tasks[].lifecycle` | "active" \| "completed" \| "archived" | no | Lifecycle |
 | `tasks[].matched_by` | "source_key" | no | How an existing task matched |
 | `tasks[].ambiguous` | string[] | no | Several active matches: pick one |
@@ -1527,7 +1500,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | `tasks[].held[].source` | integer, 0 to 9 | yes | Index in the draft's sources |
 | `tasks[].held[].held_by` | string | yes | The task that holds its key |
 | `warnings` | string[] | yes | Warnings, one sentence each |
-| `replayed` | boolean | no | True when a retry returned the stored result |
+| `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 
 ### Examples
 
@@ -1604,7 +1577,7 @@ Move tasks to the Trash, or restore them. Nothing is deleted for good.
 | Audience filter | caller |
 | A1 operations | `task.delete`, `task.restore` |
 | Faces | CLI `ttasks delete`, `ttasks restore`, UI |
-| Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `request_id_conflict` |
+| Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `request_id_conflict`, `applied_earlier` |
 
 ### Input
 
@@ -1638,8 +1611,8 @@ Move tasks to the Trash, or restore them. Nothing is deleted for good.
 | `restored[].held[].source` | string | yes | Source ID |
 | `restored[].held[].by` | string | yes | The task that took its key meanwhile: captures go there |
 | `commit` | string | no | The change, which Undo names |
-| `as_of` | string | yes | The space's position when this answer was made |
-| `replayed` | boolean | no | True when a retry returned the stored result |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
+| `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 
 ### Examples
 
@@ -1724,8 +1697,8 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | Audience filter | caller |
 | A1 operations | `task.complete`, `task.archive`, `task.wrap_up`, `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `complete_task`, CLI `ttasks done`, UI |
-| Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 2026, reported |
+| Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict`, `applied_earlier` |
+| Definition, estimated tokens | 2045, reported |
 | Result budget, estimated tokens | typical 100, max 1500 |
 
 ### Input
@@ -1756,7 +1729,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].sources[].title` | string, max 300; agents: string, max 200 | yes | Subject, chat or ticket title |
 | `follow_ups[].sources[].who` | string, max 120 | no | Sender or counterpart |
 | `follow_ups[].sources[].url` | string, max 2048 | no | Link |
-| `follow_ups[].sources[].at` | string, max 40 | no | When it was sent |
+| `follow_ups[].sources[].at` | string, max 40 | no | When it was sent: ISO date, or instant with its offset |
 | `follow_ups[].context` | string, max 65536; agents: string, max 8000 | no | Markdown context |
 | `follow_ups[].log` | string, max 16384; agents: string, max 2000 | no | Log entry; also added to a matched task that lacks it |
 | `follow_ups[].on_existing` | "return" \| "add_sources" \| "create_new" | no | When a source key matches; default return |
@@ -1777,7 +1750,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups` | object[] | yes | One row per follow-up draft |
 | `follow_ups[].result` | "created" \| "exists" | yes | What happened to the draft |
 | `follow_ups[].ref` | string | no | Task reference |
-| `follow_ups[].title` | string | yes | Title |
+| `follow_ups[].title` | string | no | Its title now; absent when it could not be read |
 | `follow_ups[].lifecycle` | "active" \| "completed" \| "archived" | no | The matched task's lifecycle |
 | `follow_ups[].ambiguous` | string[] | no | Several active matches: pick one |
 | `follow_ups[].log_added` | boolean | yes | The draft's log entry was added |
@@ -1786,8 +1759,8 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].held[].source` | integer, 0 to 9 | yes | Index in the draft's sources |
 | `follow_ups[].held[].held_by` | string | yes | The task that holds its key |
 | `warnings` | string[] | no | Warnings, one sentence each |
-| `as_of` | string | yes | The space's position when this answer was made |
-| `replayed` | boolean | no | True when a retry returned the stored result |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
+| `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 
 ### Examples
 
@@ -2289,7 +2262,7 @@ When `view` is `"sections"`:
 | `sections.outcome.slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
 | `sections.outcome.slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
 | `sections.outcome.slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
-| `sections.history` | object[], max 20 items | no | The last 20 operations on the task, newest first |
+| `sections.history` | object[], max 64 items | no | The task's own changes, newest first: before reads the older ones |
 | `sections.history[].seq` | integer, 1 to 9007199254740991 | yes | Commit sequence number |
 | `sections.history[].actor` | string | yes | Actor that wrote it, from history |
 | `sections.history[].what` | string | yes | Operation kind and the fields it changed |
@@ -2576,7 +2549,7 @@ MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archiv
 | Audience filter | caller |
 | A1 operations | `task.reopen` |
 | Faces | MCP `reopen_task`, CLI `ttasks reopen`, UI |
-| Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
+| Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict`, `applied_earlier` |
 | Definition, estimated tokens | 521, reported |
 | Result budget, estimated tokens | typical 40, max 150 |
 
@@ -2597,8 +2570,8 @@ MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archiv
 | `task` | string | yes | Task reference |
 | `lifecycle` | "active" \| "completed" \| "archived" | yes | Lifecycle |
 | `status` | string | yes | Status key |
-| `as_of` | string | yes | The space's position when this answer was made |
-| `replayed` | boolean | no | True when a retry returned the stored result |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
+| `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 
 ### Examples
 
@@ -2936,8 +2909,8 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | Audience filter | caller |
 | A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `source.relink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
 | Faces | MCP `update_task`, CLI `ttasks set`, UI |
-| Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict`, `ambiguous` |
-| Definition, estimated tokens | 1907, reported |
+| Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict`, `applied_earlier`, `ambiguous` |
+| Definition, estimated tokens | 1926, reported |
 | Result budget, estimated tokens | typical 80, max 400 |
 
 ### Input
@@ -2969,7 +2942,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `add_sources[].title` | string, max 300; agents: string, max 200 | yes | Subject, chat or ticket title |
 | `add_sources[].who` | string, max 120 | no | Sender or counterpart |
 | `add_sources[].url` | string, max 2048 | no | Link |
-| `add_sources[].at` | string, max 40 | no | When it was sent |
+| `add_sources[].at` | string, max 40 | no | When it was sent: ISO date, or instant with its offset |
 | `remove_sources` | (string, max 2048)[], max 10 items | no | Sources to detach (ID, key or URL): captures stop finding this task |
 | `put_back_sources` | (string, max 2048)[], max 10 items | no | Detached sources to link again; refused on an active task if another has the key |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
@@ -2985,9 +2958,22 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `task` | string | yes | Task reference |
 | `fields` | string[] | yes | The fields the call changed |
 | `context` | "appended" \| "replaced" | no | How it changed the context |
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
+| `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved, and they are in it |
+| `followed` | object[], max 20 items | no | The first of them |
+| `followed[].kind` | "project" \| "task" | yes | Whose folder it is |
+| `followed[].name` | string | no | A project's name, when it could be read |
+| `followed[].ref` | string | no | Task reference |
+| `followed[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
+| `stayed` | integer, 0 to 1000000 | no | Folders inside the old one that stayed |
+| `stayed_because` | "old_folder_there" \| "old_folder_unseen" \| "unchecked" \| "not_in_new_folder" | no | Why they stayed: old folder there or unseen, unchecked, or not in the new one |
+| `kept` | object[], max 20 items | no | The first of them |
+| `kept[].kind` | "project" \| "task" | yes | Whose folder it is |
+| `kept[].name` | string | no | A project's name, when it could be read |
+| `kept[].ref` | string | no | Task reference |
+| `kept[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
 | `warnings` | string[] | yes | Warnings, one sentence each |
-| `replayed` | boolean | no | True when a retry returned the stored result |
+| `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 
 ### Examples
 

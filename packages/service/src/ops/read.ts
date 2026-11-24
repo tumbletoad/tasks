@@ -328,19 +328,25 @@ async function readsLearnings(reader: WorkerConnection): Promise<boolean> {
   learningReaders.add(reader);
   return true;
 }
-/** One row per commit that changed the task or a row under it, newest first. */
+/**
+ * One row per commit that changed the task or a row under it, newest first, from commit `hupto`
+ * down: what each did to this task, from its change rows of this task alone, so a commit that
+ * also made another task says nothing of that one.
+ */
 const HISTORY: Statement = {
   sql:
     "SELECT k.seq AS seq, CASE WHEN k.origin = 'import' THEN 'import' " +
     "WHEN x.kind = 'human' THEN 'user' ELSE x.label END AS actor, " +
-    "(SELECT group_concat(DISTINCT json_extract(value, '$.op')) FROM json_each(k.ops)) AS ops, " +
-    "(SELECT group_concat(DISTINCT field) FROM changes " +
-    "WHERE seq = k.seq AND entity = 'tasks' AND field IS NOT NULL) AS fields, " +
+    "(SELECT group_concat(DISTINCT json_extract(k.ops, '$[' || c.op || '].op')) FROM changes c " +
+    `WHERE c.seq = k.seq AND c.task_id = ${MATCH}) AS ops, ` +
+    "(SELECT group_concat(DISTINCT field) FROM changes WHERE seq = k.seq " +
+    `AND task_id = ${MATCH} AND entity = 'tasks' AND field IS NOT NULL) AS fields, ` +
     "(SELECT group_concat(CASE entity WHEN 'notes' THEN 'n' ELSE 'l' END || " +
-    "json_extract(after, '$.ordinal'), ',') FROM changes WHERE seq = k.seq AND action = 'create' " +
-    "AND entity IN ('notes', 'log_entries')) AS entries " +
-    "FROM commits k JOIN actors x ON x.id = k.author_id WHERE k.seq IN " +
-    `(SELECT DISTINCT seq FROM changes WHERE task_id = ${MATCH}) ORDER BY k.seq DESC LIMIT 20`,
+    "json_extract(after, '$.ordinal'), ',') FROM changes WHERE seq = k.seq " +
+    `AND task_id = ${MATCH} AND action = 'create' AND entity IN ('notes', 'log_entries')) ` +
+    "AS entries FROM commits k JOIN actors x ON x.id = k.author_id WHERE k.seq IN " +
+    `(SELECT DISTINCT seq FROM changes WHERE task_id = ${MATCH} ` +
+    "AND ($hupto IS NULL OR seq <= $hupto)) ORDER BY k.seq DESC LIMIT $hlimit",
   mode: "all",
 };
 
@@ -535,6 +541,8 @@ export async function readTask(
     readonly instructions: EntryRange;
     readonly notes: EntryRange;
     readonly log: EntryRange;
+    /** Commits by their seq; none without it. */
+    readonly history?: EntryRange;
     readonly named?: readonly number[];
     readonly trash?: boolean;
     /** The notes taken back too: for the person, never for an agent. */
@@ -554,6 +562,8 @@ export async function readTask(
     nlimit: options.notes.limit,
     lupto: options.log.upto,
     llimit: options.log.limit,
+    hupto: options.history?.upto ?? null,
+    hlimit: options.history?.limit ?? 0,
     named: JSON.stringify(options.named ?? []),
   };
   const learned = await readsLearnings(reader);
@@ -588,7 +598,7 @@ export async function readTask(
       LOG_COUNT,
       SOURCES,
       REMOVED_SOURCES,
-      HISTORY,
+      options.history === undefined || options.history.limit === 0 ? NOTHING : HISTORY,
       learned ? LEARNINGS : NOTHING,
       options.named === undefined || options.named.length === 0 ? NOTHING : NAMED,
       options.removed === true ? REMOVED_NOTE_ROWS : NOTHING,
@@ -816,12 +826,11 @@ const TITLES: Statement = {
   mode: "all",
 };
 
-/** The stored titles of the tasks `ids` names, by ID. */
-export async function readTaskTitles(
+/** The titles of the tasks `ids` names, by ID. */
+export async function readTitles(
   reader: WorkerConnection,
   ids: readonly string[],
 ): Promise<Map<string, string>> {
-  if (ids.length === 0) return new Map();
   const [rows] = await snapshot(reader, [TITLES], { ids: JSON.stringify(ids) });
   return new Map((rows as Row[]).map((row) => [String(row["id"]), String(row["title"])]));
 }
@@ -1396,85 +1405,7 @@ export async function readStatus(
 }
 
 // ---------------------------------------------------------------------------------------------
-// What a write's commit did, for its result
-
-/** One change row of a commit: the entity, the logical field (null for a created row), values. */
-export interface CommitChange {
-  readonly entity: string;
-  readonly field: string | null;
-  readonly before: unknown;
-  readonly after: unknown;
-}
-
-export interface CommitFacts {
-  /** The change rows the commit wrote for the task and the rows under it. */
-  readonly changes: readonly CommitChange[];
-  /** The task's status as of the commit. */
-  readonly status: string | undefined;
-  /** The task's lifecycle and wrap-up state as of the commit (A1 3.11). */
-  readonly lifecycle: string | undefined;
-  readonly wrapState: string | undefined;
-}
-
-const COMMIT_CHANGES: Statement = {
-  sql: "SELECT entity, field, before, after FROM changes WHERE seq = $seq AND task_id = $task",
-  mode: "all",
-};
-/**
- * A field's column as of $seq: from the first later change of the field its `before`, else the
- * column now. `wrap_state` may be null, so the later change is found first, not coalesced.
- */
-const columnAt = (field: string, path: string, column: string): string =>
-  `(SELECT CASE WHEN c.before IS NULL THEN t.${column} ELSE json_extract(c.before, '${path}') END ` +
-  "FROM tasks t LEFT JOIN (SELECT before FROM changes WHERE entity = 'tasks' " +
-  `AND entity_id = $task AND field = '${field}' AND seq > $seq ORDER BY seq, n LIMIT 1) c ` +
-  "WHERE t.id = $task)";
-/** The status, lifecycle and wrap-up state as of $seq. */
-const STATE_AT: Statement = {
-  sql:
-    `SELECT ${columnAt("status", "$", "status")} AS status, ` +
-    `${columnAt("lifecycle", "$.lifecycle", "lifecycle")} AS lifecycle, ` +
-    `${columnAt("wrap", "$.wrap_state", "wrap_state")} AS wrap_state`,
-  mode: "get",
-};
-
-const json = (value: unknown): unknown => {
-  if (typeof value !== "string") return null;
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return null;
-  }
-};
-
-/**
- * What commit `seq` did to `task`, read from history in one snapshot. A write's result names its
- * commit, and history never changes, so the first answer and every replay of the request read
- * the same facts, whatever happened since (A3 3.4.1). A result value that the writer's result does
- * not carry is read here, never from the task's current state.
- */
-export async function readCommit(
-  reader: WorkerConnection,
-  task: string,
-  seq: number,
-): Promise<CommitFacts> {
-  const [changes, state] = await snapshot(reader, [COMMIT_CHANGES, STATE_AT], { task, seq });
-  const at = (name: string): string | undefined => {
-    const value = (state as Row | null)?.[name];
-    return typeof value === "string" ? value : undefined;
-  };
-  return {
-    changes: (changes as Row[]).map((row) => ({
-      entity: text(row["entity"]),
-      field: typeof row["field"] === "string" ? row["field"] : null,
-      before: json(row["before"]),
-      after: json(row["after"]),
-    })),
-    status: at("status"),
-    lifecycle: at("lifecycle"),
-    wrapState: at("wrap_state"),
-  };
-}
+// What a commit changed
 
 /** A1 3.4: a task's references come from its row; the first 50 a commit changed, in its order. */
 const COMMIT_TASKS: Statement = {
@@ -1490,11 +1421,10 @@ const COMMIT_TASK_COUNT: Statement = {
 };
 
 /**
- * The tasks commit `seq` changed (an undo's or a redo's), from history in one snapshot: the
- * references of the first 50 in the order it changed them, and how many there are. History never
- * changes, so a replay of the request answers the same.
+ * The tasks commit `seq` changed, from history in one snapshot: the references of the first 50 in
+ * the order it changed them, and how many there are.
  */
-export async function readCommitTasks(
+async function readCommitTasks(
   reader: WorkerConnection,
   seq: number,
 ): Promise<{ refs: string[]; count: number }> {
@@ -1766,6 +1696,35 @@ export async function readGroups(
   return { space: spaceFacts(space), areas: areas as Row[], projects: projects as Row[] };
 }
 
+/**
+ * The groups as `readGroups` reads them, and each live project's folder on `machine`, in one
+ * snapshot. A space whose schema has no folders has none.
+ */
+export async function readGroupsAt(
+  reader: WorkerConnection,
+  machine: string,
+): Promise<{
+  space: SpaceFacts;
+  areas: Row[];
+  projects: Row[];
+  folders: ProjectFolderRow[];
+}> {
+  const folders = await hasFolderTable(reader);
+  const [space, areas, projects, here] = await snapshot(
+    reader,
+    folders
+      ? [SPACE, AREA_LIST, PROJECT_LIST, PROJECT_FOLDERS_HERE]
+      : [SPACE, AREA_LIST, PROJECT_LIST],
+    { machine },
+  );
+  return {
+    space: spaceFacts(space),
+    areas: areas as Row[],
+    projects: projects as Row[],
+    folders: ((here ?? []) as Row[]).map(projectFolderRow),
+  };
+}
+
 /** One area or project as a name resolves against it (groups.ts). */
 export interface GroupName {
   readonly id: string;
@@ -1888,21 +1847,6 @@ export async function readLaunchFolder(
   const projectRows = (project as Row[]).map(ownerFolder);
   const names = new Map([...ownRows, ...projectRows].map((f) => [f.machine, f.machineName]));
   return decideLaunchFolder(ownRows, projectRows, machine, (id) => names.get(id));
-}
-
-const FOLDER_OWNER: Statement = {
-  sql: "SELECT owner_id FROM folders WHERE id = $id",
-  mode: "get",
-};
-
-/** The owner of a folder row, by the row's ID. */
-export async function readFolderOwner(
-  reader: WorkerConnection,
-  id: string,
-): Promise<string | undefined> {
-  const [row] = await snapshot(reader, [FOLDER_OWNER], { id });
-  const owner = (row as Row | null | undefined)?.["owner_id"];
-  return typeof owner === "string" ? owner : undefined;
 }
 
 /** A live project's live folder on one machine. */

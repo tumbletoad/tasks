@@ -11,12 +11,12 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   AppError,
   GROUP_PAGE,
-  GroupManageResult,
+  GroupListResult,
   opSpec,
   LATER_PREFERENCES,
   PREFERENCES,
   preferenceSpec,
-  PrefsManageResult,
+  PrefsReadResult,
   registry,
   TaskAddResult,
   TaskGetResult,
@@ -409,7 +409,7 @@ describe("[A3.3.4.add.names] add_tasks: areas and projects by name, the Inbox an
 
 describe("[A3.3.4.organize.list] organize: the list, one area, and writes that wait for their step", () => {
   test("list gives the active areas in order, their projects and active task counts", async () => {
-    const listed = GroupManageResult.parse(
+    const listed = GroupListResult.parse(
       await call(fx, script, "group.manage", { action: "list" }),
     );
     const active = (area: string) =>
@@ -427,14 +427,14 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
       ["Home", "home", active(fx.areas.home), []],
     ]);
     expect(listed).toMatchObject({ total_areas: 2, total_projects: 1, projects: [] });
-    const one = GroupManageResult.parse(
+    const one = GroupListResult.parse(
       await call(fx, script, "group.manage", { action: "list", path: "HOME" }),
     );
     expect(one.areas.map((a) => a.name)).toEqual(["Home"]);
     expect(one.total_projects).toBe(0);
     // "Area/Project" is that project under its area; an unknown area is not_found, not a group to
     // create.
-    const narrowed = GroupManageResult.parse(
+    const narrowed = GroupListResult.parse(
       await call(fx, script, "group.manage", { action: "list", path: "Lumen/Portal" }),
     );
     expect(narrowed.areas.map((a) => [a.name, a.projects.map((p) => p.name)])).toEqual([
@@ -460,11 +460,11 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
 
   test("every group can be read: page after page, by its exact name, and archived ones when asked", async () => {
     const list = async (input: Record<string, unknown> = {}) =>
-      GroupManageResult.parse(
+      GroupListResult.parse(
         await call(paged, script, "group.manage", { action: "list", ...input }),
       );
     const write = async (input: Record<string, unknown>) =>
-      GroupManageResult.parse(
+      GroupListResult.parse(
         await call(paged, script, "group.manage", { request_id: rid(), ...input }),
       );
     const many = Array.from({ length: GROUP_PAGE + 1 }, (_, k) => `Project ${String(k + 1)}`);
@@ -559,7 +559,7 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
 
   test("a list goes on from where its page ended while groups move: none that stayed put is skipped", async () => {
     const write = async (input: Record<string, unknown>) =>
-      GroupManageResult.parse(
+      GroupListResult.parse(
         await call(moved, script, "group.manage", {
           request_id: rid(),
           base: moved.base(),
@@ -567,7 +567,7 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
         }),
       );
     const list = async (input: Record<string, unknown> = {}) =>
-      GroupManageResult.parse(
+      GroupListResult.parse(
         await call(moved, script, "group.manage", { action: "list", ...input }),
       );
     const alpha = Array.from({ length: GROUP_PAGE - 1 }, (_, k) => `Item ${String(k + 1)}`);
@@ -622,7 +622,7 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
     }
     // Each project has a long folder on this machine, and one a folder too long for a page.
     const huge = `~/${"g".repeat(1453)}/x`;
-    const listed = GroupManageResult.parse(
+    const listed = GroupListResult.parse(
       await call(long, script, "group.manage", { action: "list", path: "Long" }),
     );
     for (const [k, p] of (listed.areas[0]?.projects ?? []).entries()) {
@@ -660,7 +660,7 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
 
   test("every group can be named: by its exact name first, a live one first, else by its ID", async () => {
     const write = async (input: Record<string, unknown>) =>
-      GroupManageResult.parse(
+      GroupListResult.parse(
         await call(named, script, "group.manage", {
           request_id: rid(),
           base: named.base(),
@@ -668,7 +668,7 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
         }),
       );
     const list = async (input: Record<string, unknown> = {}) =>
-      GroupManageResult.parse(
+      GroupListResult.parse(
         await call(named, script, "group.manage", { action: "list", archived: true, ...input }),
       );
     // An area renamed to a name with a slash is listed with its ID, which names it.
@@ -754,7 +754,7 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
 describe("[A3.3.4.organize.write] organize: create, rename, move, archive and unarchive through the request path", () => {
   test("each write changes the group it names, keeps its ID, answers the list as of the write, and a retry replays", async () => {
     const write = async (input: Record<string, unknown>, request = rid()) =>
-      GroupManageResult.parse(
+      GroupListResult.parse(
         await call(organized, script, "group.manage", { request_id: request, ...input }),
       );
     const created = await write({ action: "create", path: "Clients/Northwind Clinic" });
@@ -857,7 +857,7 @@ describe("[A3.3.4.organize.write] organize: create, rename, move, archive and un
 
   test("create makes the group it names even beside a close name or a project of that name in another area; the area named to hold it keeps the typo check", async () => {
     const write = async (input: Record<string, unknown>) =>
-      GroupManageResult.parse(
+      GroupListResult.parse(
         await call(organized, script, "group.manage", { request_id: rid(), ...input }),
       );
     expect(await write({ action: "create", path: "Sprint 1" })).toMatchObject({
@@ -888,7 +888,7 @@ describe("[A3.3.4.organize.write] organize: create, rename, move, archive and un
 
 describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and who may set them", () => {
   test("describe and get read every declared key, the stored value or its default", async () => {
-    const described = PrefsManageResult.parse(
+    const described = PrefsReadResult.parse(
       await call(fx, script, "prefs.manage", { action: "describe" }),
     );
     // The registry's space keys whose value is one of the tool's kinds and that this build acts
@@ -918,7 +918,7 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
     // A script changes no key: the agents' set is a later step's (later.ts). The person does,
     // all but the statuses, whose change is a later step's too.
     expect(described.prefs.filter((p) => p.writable)).toEqual([]);
-    const got = PrefsManageResult.parse(
+    const got = PrefsReadResult.parse(
       await call(fx, user, "prefs.manage", { action: "get", keys: ["tasks.*"] }),
     );
     expect(got.prefs.map((p) => [p.key, p.value, p.is_default, p.writable])).toEqual([
@@ -930,15 +930,13 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
     expect(
       await refusal(call(fx, script, "prefs.manage", { action: "get", keys: ["autonomy.*"] })),
     ).toMatchObject({ code: "invalid_input" });
-    const person = PrefsManageResult.parse(
+    const person = PrefsReadResult.parse(
       await call(fx, user, "prefs.manage", { action: "get", keys: ["autonomy.level"] }),
     );
     expect(person.prefs.map((p) => [p.key, p.value, p.writable])).toEqual([
       ["autonomy.level", "review", false],
     ]);
-    const all = PrefsManageResult.parse(
-      await call(fx, user, "prefs.manage", { action: "describe" }),
-    );
+    const all = PrefsReadResult.parse(await call(fx, user, "prefs.manage", { action: "describe" }));
     // A machine key lives in machine.toml, and doctor names one set there.
     for (const later of LATER_PREFERENCES.filter(
       (row) => preferenceSpec(row.key)?.scope === "space",
@@ -985,7 +983,7 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
     // Objects with a key are the list's other stored form.
     await store("tasks.effort_scale", JSON.stringify([{ key: "S" }, { key: "XL" }]));
     await store("tasks.dedupe_window_days", "9999");
-    const got = PrefsManageResult.parse(
+    const got = PrefsReadResult.parse(
       await call(edited, user, "prefs.manage", { action: "get", keys: ["tasks.*"] }),
     );
     expect(got.prefs.map((p) => [p.key, p.value, p.is_default])).toEqual([

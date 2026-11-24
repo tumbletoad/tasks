@@ -147,7 +147,8 @@ export function folderWrites(client: Client, edits: Pick<Edits, "write">): Folde
           ...("receipt" in result || result.group?.kind !== "project"
             ? {}
             : {
-                project: { id: result.group.id, name: result.group.name },
+                // An answer that could not read the name back names none: the one asked for.
+                project: { id: result.group.id, name: result.group.name ?? name },
                 ...(result.group.area === undefined ? {} : { area: result.group.area }),
               }),
         }));

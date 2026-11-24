@@ -3,8 +3,9 @@
 // together or not at all. The row is keyed by the writer scope and the request ID (A3 3.7.9),
 // carries the fingerprint of the intent and stores the result. A request whose ID its scope already
 // holds is not run again: the same fingerprint returns the stored result with `replayed: true`,
-// whatever the state is now, and another fingerprint is REQUEST_ID_REUSED. The lookup comes before staging, so before references, dedupe, policy and
-// expansion (A1 3.7).
+// whatever the state is now, and another fingerprint is REQUEST_ID_REUSED. The lookup comes before
+// staging, so before references, dedupe, policy and expansion (A1 3.7). A registry entry's request
+// that the writer refuses wrote nothing and keeps no receipt: sent again, it is decided again.
 //
 // The fingerprint is SHA-256 over the RFC 8785 form of `{space_id, entry, input, reason}` (A1 3.8):
 // the caller's intent, never its base or request ID. With an intent from the registry it covers
@@ -15,16 +16,16 @@
 // What a receipt stores is the result with one change: a conflict keeps the field, version, author
 // and time of each conflicting field but not its values (the current one, and an undo's value
 // written and value to restore). The current value was a read at the time of the decision, a
-// replay is no fresh read, and so a receipt holds no task text at all. The stored
-// result is bounded by its request: at most one result per operation, and at most one conflict per
-// (row, field) the request touches, each a few hundred bytes.
+// replay is no fresh read, and so a receipt holds no task text at all. The stored result is bounded
+// by its request: at most one result per operation, and at most one conflict per (row, field) the
+// request touches, each a few hundred bytes.
 import { createHash } from "node:crypto";
 import type { Connection, Row } from "../driver.ts";
 import { misuse } from "../errors.ts";
 import type { Id } from "../ids.ts";
 import { invalidValue, RowReader } from "../rows.ts";
 import { canonicalJson } from "./canonical.ts";
-import type { CheckedRequest, WriteResult, WriteStatus } from "./request.ts";
+import { INSIDE_KEPT, type CheckedRequest, type WriteResult, type WriteStatus } from "./request.ts";
 
 /** A stored receipt. */
 export interface Receipt {
@@ -68,6 +69,7 @@ const SQL = {
     "INSERT INTO receipts (scope_id, request_id, fingerprint, status, seq, epoch, incarnation, " +
     "result, at) VALUES ($scope, $request, $fingerprint, $status, $seq, $epoch, $incarnation, " +
     "$result, $at)",
+  forget: "DELETE FROM receipts WHERE scope_id = $scope AND request_id = $request",
 } as const;
 
 /**
@@ -159,12 +161,25 @@ export function readReceipt(conn: Connection, lookup: ReceiptLookup): Receipt | 
 }
 
 /**
- * The result as a receipt stores it: without `replayed`, and conflicts without their values (the
- * value now, and an undo's value written and value to restore).
+ * The result as a receipt stores it: without `replayed`, conflicts without their values (the
+ * value now, and an undo's value written and value to restore), and of the folders a move took
+ * along or left, the first INSIDE_KEPT with their counts.
  */
 function storedResult(result: WriteResult): string {
   const decided: WriteResult = {
     ...result,
+    results: result.results.map((op) =>
+      op.inside === undefined
+        ? op
+        : {
+            ...op,
+            inside: {
+              ...op.inside,
+              along: op.inside.along.slice(0, INSIDE_KEPT),
+              left: op.inside.left.slice(0, INSIDE_KEPT),
+            },
+          },
+    ),
     conflicts: result.conflicts.map((conflict) => {
       const kept = { ...conflict };
       delete kept.value;
@@ -175,6 +190,15 @@ function storedResult(result: WriteResult): string {
   };
   delete decided.replayed;
   return JSON.stringify(decided);
+}
+
+/**
+ * Drops the receipt of a registry entry's request that the writer refused, as an earlier build kept
+ * one: that request wrote nothing, and it is decided again.
+ */
+export function forgetRefusal(conn: Connection, lookup: ReceiptLookup): void {
+  if (!conn.inTransaction) throw misuse("A receipt is dropped in its request's transaction");
+  conn.prepare(SQL.forget).run({ scope: lookup.scope_id, request: lookup.request_id });
 }
 
 /**

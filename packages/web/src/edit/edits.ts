@@ -1102,7 +1102,7 @@ export class Edits {
         return;
       }
       const result = decision.value;
-      this.#undone(result.tasks ?? [], true);
+      this.#undone(result.tasks, true);
       say({
         kind: "undo",
         text: { id: result.result === "partial" ? "toast.undoneRest" : "toast.undone" },
@@ -1124,8 +1124,8 @@ export class Edits {
         return;
       }
       const result = decision.value;
-      for (const ref of result.tasks ?? []) this.#redone.set(ref, result.commit);
-      this.#undone(result.tasks ?? [], false);
+      for (const ref of result.tasks) this.#redone.set(ref, result.commit);
+      this.#undone(result.tasks, false);
       // Older changes it passed over stay for the next Redo: who changed which tasks since.
       const passed = (result as { passed_over?: readonly string[] }).passed_over ?? [];
       const newer = newerValues(newerOf(result.newer_work));

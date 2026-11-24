@@ -177,7 +177,7 @@
                     "additionalProperties": false,
                     "properties": {
                       "at": {
-                        "description": "When it was sent",
+                        "description": "When it was sent: ISO date, or instant with its offset",
                         "maxLength": 40,
                         "type": "string"
                       },
@@ -367,7 +367,7 @@
                     "additionalProperties": false,
                     "properties": {
                       "at": {
-                        "description": "When it was sent",
+                        "description": "When it was sent: ISO date, or instant with its offset",
                         "maxLength": 40,
                         "type": "string"
                       },
@@ -832,7 +832,7 @@
               "additionalProperties": false,
               "properties": {
                 "at": {
-                  "description": "When it was sent",
+                  "description": "When it was sent: ISO date, or instant with its offset",
                   "maxLength": 40,
                   "type": "string"
                 },

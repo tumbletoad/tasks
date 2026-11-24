@@ -148,7 +148,11 @@ export const SourceInput = z.strictObject({
   title: safeLine(USER_LIMITS.sourceTitle).describe("Subject, chat or ticket title"),
   who: safeLine(120).describe("Sender or counterpart").optional(),
   url: z.string().max(USER_LIMITS.url).describe("Link").optional(),
-  at: z.string().max(40).describe("When it was sent").optional(),
+  at: z
+    .string()
+    .max(40)
+    .describe("When it was sent: ISO date, or instant with its offset")
+    .optional(),
 });
 
 /**
@@ -257,27 +261,43 @@ export const AsOf = z
   .regex(patterns.asOf)
   .describe("The space's position when this answer was made");
 
+/**
+ * A write's `as_of`: the position of its own commit, or of the space it was judged on when it
+ * changed nothing, in its first answer and in every retry. A caller passes it as the base of its
+ * next write, which is then refused when something it has not seen changed since. The names and
+ * lists in the answer are read when it is made, and may be newer.
+ */
+export const WriteAsOf = AsOf.describe(
+  "This write's position: your next base. Names and lists here may be newer",
+);
+
 export const TaskId = z.string().regex(idPattern("t")).describe("Task ID");
 export const TaskRef = z.string().regex(patterns.taskRef).describe("Task reference");
 export const SourceId = z.string().regex(idPattern("s")).describe("Source ID");
 export const ProposalId = z.string().regex(idPattern("pr")).describe("Proposal ID");
 export const Lifecycle = z.enum(["active", "completed", "archived"]).describe("Lifecycle");
 export const WrapState = z.enum(["pending", "wrapped"]).describe("Wrap-up state");
-export const Replayed = z.boolean().describe("True when a retry returned the stored result");
-/** A project's area as of a write: a project in an archived area is out of sight with it. */
+/**
+ * A retry's mark. A retry repeats what the write did, from what it stored; the names and lists in
+ * its answer are read as of now, and its `as_of` dates them.
+ */
+export const Replayed = z
+  .boolean()
+  .describe("True on a retry: what the write did, with names and lists as of now");
+/** A project's area now: a project in an archived area is out of sight with it. */
 export const ProjectArea = z
   .strictObject({
     id: z.string().regex(idPattern("a")).describe("Area ID"),
     name: z.string().describe("Its name"),
     archived: z.literal(true).describe("Archived, and the project with it").optional(),
   })
-  .describe("A project's area as of the write; absent: it has none");
+  .describe("A project's area; absent: it has none");
 export const Warnings = z.array(z.string()).describe("Warnings, one sentence each");
 
 /** A folder inside one whose change a write made: one that moved along with it, or stayed. */
 export const InsideFolder = z.strictObject({
   kind: z.enum(["project", "task"]).describe("Whose folder it is"),
-  name: z.string().describe("A project's name").optional(),
+  name: z.string().describe("A project's name, when it could be read").optional(),
   ref: TaskRef.optional(),
   folder: z.string().max(4096).describe("Where it is now, the home as ~"),
 });

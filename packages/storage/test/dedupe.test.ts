@@ -296,6 +296,43 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     expect(one("SELECT count(*) FROM receipts WHERE status = 'unchanged'")).toBe(1);
   });
 
+  test("an area and a project made for drafts that all match a task are left out; one an added draft or nothing else names is made", () => {
+    const first = draft(["jira:FIX-1"]);
+    expectStatus(submit(first.ops), "applied");
+    const groups = (): unknown[] => [
+      one("SELECT count(*) FROM areas"),
+      one("SELECT count(*) FROM projects"),
+    ];
+    const before = groups();
+    const area = newId("a");
+    const project = newId("p");
+    const named = (d: Draft): Operation[] => [
+      { ...(d.ops[0] as TaskCreate), area, project },
+      ...d.ops.slice(1),
+    ];
+    const made: Operation[] = [
+      { kind: "area.create", id: area, title: "Unused area" },
+      { kind: "project.create", id: project, title: "Unused project", area },
+    ];
+    // Every draft that names them matched: no group, no commit, and the results say unchanged.
+    const matched = submit([...made, ...named(draft(["jira:FIX-1"]))]);
+    expectStatus(matched, "unchanged");
+    expect(matched.results.slice(0, 2).map((r) => [r.status, r.id])).toEqual([
+      ["unchanged", area],
+      ["unchanged", project],
+    ]);
+    expect(groups()).toEqual(before);
+    // One draft matched, one is added: the groups are made, once, for the added one.
+    const added = draft([], { title: "New beside it" });
+    const mixed = submit([...made, ...named(draft(["jira:FIX-1"])), ...named(added)]);
+    expectStatus(mixed, "applied");
+    expect(mixed.results.slice(0, 2).map((r) => r.status)).toEqual(["created", "created"]);
+    expect(one("SELECT project_id FROM tasks WHERE id = $id", { id: added.id })).toBe(project);
+    // A group no other operation names was asked for itself, and is made.
+    expectStatus(submit([{ kind: "area.create", title: "Asked for" }]), "applied");
+    expect(one("SELECT count(*) FROM areas WHERE title = 'Asked for'")).toBe(1);
+  });
+
   test("a draft with a key that matches nothing is new: a key another active task holds is linked to it without the key", () => {
     const first = draft(["planning:p-1", "jira:FIX-1"]);
     expectStatus(submit(first.ops), "applied");

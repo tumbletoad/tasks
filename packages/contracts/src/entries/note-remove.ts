@@ -4,7 +4,15 @@
 // agent never takes back what the person wrote.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { AsOf, Base, Replayed, RequestId, TaskRef, TaskRefInput, patterns } from "../schemas.ts";
+import {
+  WriteAsOf,
+  Base,
+  Replayed,
+  RequestId,
+  TaskRef,
+  TaskRefInput,
+  patterns,
+} from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 
 /** A note's number as the person reads it in the thread: `3`, or its reference `n3`. */
@@ -27,7 +35,7 @@ export const NoteRemoveResult = z.strictObject({
     .describe("removed, put back, or the note was that way already"),
   task: TaskRef,
   note: z.string().regex(patterns.entryRef).describe("The note, such as n3"),
-  as_of: AsOf,
+  as_of: WriteAsOf,
   replayed: Replayed.optional(),
 });
 
@@ -48,7 +56,14 @@ export const noteRemove = defineEntry({
     // never remove the task.
     cli: { verb: "note", positional: ["task"], when: ["remove", "put_back"] },
   },
-  errors: ["invalid_input", "not_found", "conflict", "forbidden", "request_id_conflict"],
+  errors: [
+    "invalid_input",
+    "not_found",
+    "conflict",
+    "forbidden",
+    "request_id_conflict",
+    "applied_earlier",
+  ],
   examples: [
     {
       title: "Take back note n2 on M-14",

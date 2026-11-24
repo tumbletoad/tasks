@@ -1,7 +1,7 @@
 // The request path's errors (A3 3.5): every failure becomes the contract's error body. A1's codes
 // map through contracts' table (A3 3.5). Bodies never quote a value the caller sent: issues
 // name a path and a fixed sentence, and storage's messages are fixed sentences.
-import { CLI_NAME } from "@ttasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import {
   a1ErrorBody,
   AppError,
@@ -9,9 +9,11 @@ import {
   findEntry,
   laterIn,
   newerWorkJson,
+  ReceiptGetResult,
+  receiptResult,
   type ErrorBody,
 } from "@ttasks/contracts";
-import { StorageError, type WriteResult } from "@ttasks/storage";
+import { StorageError, type Receipt, type WriteResult } from "@ttasks/storage";
 import { USER_ONLY } from "./caller.ts";
 
 /**
@@ -215,6 +217,61 @@ export function storageFailure(error: unknown): AppError {
     return new AppError(body);
   }
   return new AppError({ code: "internal", message: "Something went wrong in the service." });
+}
+
+/**
+ * A request ID whose receipt in the caller's writer scope is another request's, decided at `at`,
+ * as the writer refuses one (REQUEST_ID_REUSED).
+ */
+export function requestIdReused(at: number): AppError {
+  return new AppError(
+    a1ErrorBody(
+      "REQUEST_ID_REUSED",
+      "This request ID was used for another change: review it, then use a new ID",
+      { field: "request_id", at },
+    ),
+  );
+}
+
+/**
+ * A retry of a request another version of TTasks decided, answered from its receipt alone: no
+ * answer of the tool is rebuilt and nothing else is read. It says that the request was applied
+ * before and nothing was written now, with what receipt.get shows of it: its position and each row
+ * it made or changed. A stored result this version cannot read leaves the request ID alone.
+ */
+export function appliedEarlier(receipt: Receipt): AppError {
+  const found = shownOf(receipt);
+  const rows = [
+    ...new Set(
+      (found?.results ?? []).map((r) =>
+        r.ref === undefined ? r.id : r.entry === undefined ? r.ref : `${r.ref} ${r.entry}`,
+      ),
+    ),
+  ];
+  const named =
+    rows.length === 0
+      ? ""
+      : ` (${rows.slice(0, 10).join(", ")}${rows.length > 10 ? `, ${String(rows.length - 10)} more` : ""})`;
+  const did =
+    found?.status === "unchanged"
+      ? "found nothing to change for this request"
+      : "applied this request";
+  return new AppError({
+    code: "applied_earlier",
+    message: `Another version of ${PRODUCT_NAME} ${did} before${named}: nothing was written now.`,
+    hint: "Do not send it again under a new request ID. Read the task for how it is now.",
+    data: { request: receipt.request_id, ...(found === undefined ? {} : { receipt: found }) },
+  });
+}
+
+/** The receipt as receipt.get returns it, or undefined when its stored result cannot be read. */
+function shownOf(receipt: Receipt) {
+  try {
+    const parsed = ReceiptGetResult.safeParse(receiptResult(receipt));
+    return parsed.success && parsed.data.found ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The input path of the caller's own operation `op`, with the field a refusal names there. */

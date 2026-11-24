@@ -15,7 +15,8 @@
         "not_found",
         "too_large",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -100,7 +101,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -122,7 +123,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -165,7 +166,8 @@
         "forbidden",
         "space_unavailable",
         "read_only",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -241,7 +243,7 @@
             "type": "string"
           },
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -269,7 +271,7 @@
                   "type": "string"
                 },
                 "name": {
-                  "description": "A project's name",
+                  "description": "A project's name, when it could be read",
                   "type": "string"
                 },
                 "ref": {
@@ -306,7 +308,7 @@
                   "type": "string"
                 },
                 "name": {
-                  "description": "A project's name",
+                  "description": "A project's name, when it could be read",
                   "type": "string"
                 },
                 "ref": {
@@ -336,7 +338,7 @@
             "properties": {
               "area": {
                 "additionalProperties": false,
-                "description": "A project's area as of the write; absent: it has none",
+                "description": "A project's area; absent: it has none",
                 "properties": {
                   "archived": {
                     "const": true,
@@ -389,7 +391,7 @@
             "type": "object"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -447,7 +449,8 @@
         "conflict",
         "forbidden",
         "space_unavailable",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -556,7 +559,7 @@
             "type": "string"
           },
           "areas": {
-            "description": "Areas in the space's order, each with its projects",
+            "description": "Areas in the space's order, with their projects; absent: not read",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -656,7 +659,7 @@
             "type": "array"
           },
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "A list's read, or this write's position: your next base. Names may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -685,7 +688,7 @@
                   "type": "string"
                 },
                 "name": {
-                  "description": "A project's name",
+                  "description": "A project's name, when it could be read",
                   "type": "string"
                 },
                 "ref": {
@@ -709,7 +712,7 @@
             "properties": {
               "area": {
                 "additionalProperties": false,
-                "description": "A project's area as of the write; absent: it has none",
+                "description": "A project's area; absent: it has none",
                 "properties": {
                   "archived": {
                     "const": true,
@@ -750,14 +753,13 @@
                 "type": "string"
               },
               "name": {
-                "description": "Its name now",
+                "description": "Its name now; absent when it is gone",
                 "type": "string"
               }
             },
             "required": [
               "kind",
-              "id",
-              "name"
+              "id"
             ],
             "type": "object"
           },
@@ -780,7 +782,7 @@
                   "type": "string"
                 },
                 "name": {
-                  "description": "A project's name",
+                  "description": "A project's name, when it could be read",
                   "type": "string"
                 },
                 "ref": {
@@ -864,7 +866,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -914,11 +916,7 @@
         },
         "required": [
           "action",
-          "as_of",
-          "areas",
-          "projects",
-          "total_areas",
-          "total_projects"
+          "as_of"
         ],
         "type": "object"
       },
@@ -937,7 +935,8 @@
         "not_found",
         "conflict",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -968,7 +967,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -1015,7 +1014,7 @@
             "type": "array"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -1026,13 +1025,13 @@
             "type": "string"
           },
           "task_count": {
-            "description": "How many tasks it changed; absent when they could not be read",
+            "description": "How many tasks it changed",
             "maximum": 9999999999,
             "minimum": 0,
             "type": "integer"
           },
           "tasks": {
-            "description": "The tasks it changed, the first 50; absent when they could not be read",
+            "description": "The tasks it changed, the first 50",
             "items": {
               "description": "Task reference",
               "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
@@ -1045,6 +1044,8 @@
         "required": [
           "result",
           "commit",
+          "tasks",
+          "task_count",
           "as_of"
         ],
         "type": "object"
@@ -1064,7 +1065,8 @@
         "not_found",
         "conflict",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -1103,7 +1105,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -1141,7 +1143,7 @@
             "type": "array"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -1180,13 +1182,13 @@
             "type": "object"
           },
           "task_count": {
-            "description": "How many tasks it changed; absent when they could not be read",
+            "description": "How many tasks it changed",
             "maximum": 9999999999,
             "minimum": 0,
             "type": "integer"
           },
           "tasks": {
-            "description": "The tasks it changed, the first 50; absent when they could not be read",
+            "description": "The tasks it changed, the first 50",
             "items": {
               "description": "Task reference",
               "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
@@ -1245,6 +1247,8 @@
         "required": [
           "result",
           "commit",
+          "tasks",
+          "task_count",
           "as_of"
         ],
         "type": "object"
@@ -1486,7 +1490,8 @@
         "not_found",
         "conflict",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -1537,7 +1542,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -1547,7 +1552,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -1590,7 +1595,8 @@
         "forbidden",
         "conflict",
         "space_unavailable",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -1706,7 +1712,7 @@
             "type": "string"
           },
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "A list's read, or this write's position: your next base. Names may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -1767,7 +1773,7 @@
                       "type": "null"
                     }
                   ],
-                  "description": "Its value now"
+                  "description": "The value it set"
                 }
               },
               "required": [
@@ -1780,7 +1786,7 @@
             "type": "array"
           },
           "prefs": {
-            "description": "The keys asked for, sorted",
+            "description": "The keys asked for, sorted; absent on a set when they could not be read",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -1905,7 +1911,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -1920,8 +1926,7 @@
         },
         "required": [
           "action",
-          "as_of",
-          "prefs"
+          "as_of"
         ],
         "type": "object"
       },
@@ -1966,7 +1971,7 @@
             "properties": {
               "found": {
                 "const": false,
-                "description": "No receipt for that request ID in this writer scope",
+                "description": "No receipt here: nothing was written under that ID; it can be sent again",
                 "type": "boolean"
               }
             },
@@ -2444,7 +2449,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -3092,7 +3097,8 @@
         "invalid_input",
         "too_large",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -3192,7 +3198,7 @@
                     "additionalProperties": false,
                     "properties": {
                       "at": {
-                        "description": "When it was sent",
+                        "description": "When it was sent: ISO date, or instant with its offset",
                         "maxLength": 40,
                         "type": "string"
                       },
@@ -3292,7 +3298,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -3302,7 +3308,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "tasks": {
@@ -3390,13 +3396,12 @@
                   "type": "string"
                 },
                 "title": {
-                  "description": "Title",
+                  "description": "Its title now; absent when it could not be read",
                   "type": "string"
                 }
               },
               "required": [
                 "result",
-                "title",
                 "log_added"
               ],
               "type": "object"
@@ -3433,7 +3438,8 @@
         "not_found",
         "conflict",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -3499,7 +3505,7 @@
             "type": "array"
           },
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -3529,7 +3535,7 @@
             "type": "array"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "restored": {
@@ -3653,7 +3659,8 @@
         "unbound",
         "conflict",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -3748,7 +3755,7 @@
                     "additionalProperties": false,
                     "properties": {
                       "at": {
-                        "description": "When it was sent",
+                        "description": "When it was sent: ISO date, or instant with its offset",
                         "maxLength": 40,
                         "type": "string"
                       },
@@ -3893,7 +3900,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -3969,13 +3976,12 @@
                   "type": "string"
                 },
                 "title": {
-                  "description": "Title",
+                  "description": "Its title now; absent when it could not be read",
                   "type": "string"
                 }
               },
               "required": [
                 "result",
-                "title",
                 "log_added"
               ],
               "type": "object"
@@ -4003,7 +4009,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -5699,7 +5705,7 @@
                     "type": "object"
                   },
                   "history": {
-                    "description": "The last 20 operations on the task, newest first",
+                    "description": "The task's own changes, newest first: before reads the older ones",
                     "items": {
                       "additionalProperties": false,
                       "properties": {
@@ -5725,7 +5731,7 @@
                       ],
                       "type": "object"
                     },
-                    "maxItems": 20,
+                    "maxItems": 64,
                     "type": "array"
                   },
                   "instructions": {
@@ -6355,7 +6361,8 @@
         "unbound",
         "conflict",
         "forbidden",
-        "request_id_conflict"
+        "request_id_conflict",
+        "applied_earlier"
       ],
       "input": {
         "additionalProperties": false,
@@ -6406,7 +6413,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -6425,7 +6432,7 @@
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -7287,6 +7294,7 @@
         "forbidden",
         "wrong_tool",
         "request_id_conflict",
+        "applied_earlier",
         "ambiguous"
       ],
       "input": {
@@ -7298,7 +7306,7 @@
               "additionalProperties": false,
               "properties": {
                 "at": {
-                  "description": "When it was sent",
+                  "description": "When it was sent: ISO date, or instant with its offset",
                   "maxLength": 40,
                   "type": "string"
                 },
@@ -7538,7 +7546,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -7557,13 +7565,93 @@
             },
             "type": "array"
           },
+          "followed": {
+            "description": "The first of them",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "folder": {
+                  "description": "Where it is now, the home as ~",
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "Whose folder it is",
+                  "enum": [
+                    "project",
+                    "task"
+                  ],
+                  "type": "string"
+                },
+                "name": {
+                  "description": "A project's name, when it could be read",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "folder"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "kept": {
+            "description": "The first of them",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "folder": {
+                  "description": "Where it is now, the home as ~",
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "Whose folder it is",
+                  "enum": [
+                    "project",
+                    "task"
+                  ],
+                  "type": "string"
+                },
+                "name": {
+                  "description": "A project's name, when it could be read",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "folder"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "moved": {
+            "description": "Folders inside the old one that moved along: it was moved, and they are in it",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
           "proposal": {
             "description": "Proposal ID",
             "pattern": "^pr_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
           },
           "replayed": {
-            "description": "True when a retry returned the stored result",
+            "description": "True on a retry: what the write did, with names and lists as of now",
             "type": "boolean"
           },
           "result": {
@@ -7573,6 +7661,22 @@
               "no_change",
               "review",
               "proposed"
+            ],
+            "type": "string"
+          },
+          "stayed": {
+            "description": "Folders inside the old one that stayed",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stayed_because": {
+            "description": "Why they stayed: old folder there or unseen, unchecked, or not in the new one",
+            "enum": [
+              "old_folder_there",
+              "old_folder_unseen",
+              "unchecked",
+              "not_in_new_folder"
             ],
             "type": "string"
           },

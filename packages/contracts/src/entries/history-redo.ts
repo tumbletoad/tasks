@@ -38,7 +38,14 @@ export const historyRedo = defineEntry({
   input: HistoryRedoInput,
   output: HistoryRedoResult,
   faces: { ui: true, cli: { verb: "redo" } },
-  errors: ["invalid_input", "not_found", "conflict", "forbidden", "request_id_conflict"],
+  errors: [
+    "invalid_input",
+    "not_found",
+    "conflict",
+    "forbidden",
+    "request_id_conflict",
+    "applied_earlier",
+  ],
   examples: [
     {
       title: "Check M-15 off again after the undo",

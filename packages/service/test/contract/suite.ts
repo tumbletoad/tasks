@@ -21,13 +21,21 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { CLI_NAME } from "@ttasks/brand";
-import { registry, type ErrorBody } from "@ttasks/contracts";
+import {
+  AppError,
+  findEntry,
+  opSpec,
+  readsOnly,
+  registry,
+  type ErrorBody,
+} from "@ttasks/contracts";
 import { presetSession, SHIM_METHODS, type Attachment, type SpawnPlan } from "@ttasks/launch";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import type { HttpStart } from "../../src/http/index.ts";
 import { startService, type RunningService, type StartOptions } from "../../src/hub/service.ts";
 import { renderError } from "../../src/mcp/index.ts";
 import { opCall } from "../../src/ops/index.ts";
+import type { Principal } from "../../src/ops/index.ts";
 import { removeRuntimeDir, serviceEnv, tempRoot } from "../harness.ts";
 import { bridge, launchContext } from "../agents.ts";
 import { agentHomeOf, classSession, grantHome, revokeHome } from "../ops-helpers.ts";
@@ -63,6 +71,12 @@ export interface ContractTransport {
    * has no examples on it. Default: every entry.
    */
   carries?(entry: string): boolean;
+  /** A write in between two sends of an example (`ContractWorld.aside`). */
+  aside(
+    entry: string,
+    input: Record<string, unknown>,
+    by?: Aside,
+  ): Promise<Record<string, unknown>>;
   close(): Promise<void>;
 }
 
@@ -80,6 +94,16 @@ export interface ContractWorld {
    * in the page: through the request path in this process, since not every face carries it.
    */
   folder(task: string): Promise<void>;
+  /**
+   * Calls an entry in the world's space as another agent of this machine, whose changes are on
+   * nobody's undo stack and are no script's of the person, or as the person for a preference only
+   * they change, which is on no undo stack either: the write in between two sends.
+   */
+  aside(
+    entry: string,
+    input: Record<string, unknown>,
+    by?: Aside,
+  ): Promise<Record<string, unknown>>;
   /**
    * A terminal launch of `task` (a reference or ID) as a real click makes one: on an instance of its
    * own, with the instance's agent home (`agentHomeOf`) recorded at the click and registered for the
@@ -131,6 +155,18 @@ export interface LaunchAsks {
   /** The click presets a session ID, as it does for Claude Code in a terminal. */
   readonly preset?: boolean;
 }
+
+/** Who writes in between two sends of an example (`ContractWorld.aside`). */
+export type Aside = "agent" | "person";
+
+/** The agent that writes in between: on nobody's undo stack. */
+const ASIDE: Principal = {
+  audience: "user",
+  actorKind: "agent",
+  label: "contract-aside",
+  scope: "contract-aside",
+  origin: "cli",
+};
 
 /** The start time the world's process probe reports for every process. */
 export const WORLD_START = "windows:1";
@@ -312,6 +348,16 @@ export async function contractWorld(
       },
     );
   };
+  const aside = async (
+    entry: string,
+    input: Record<string, unknown>,
+    by: Aside = "agent",
+  ): Promise<Record<string, unknown>> =>
+    (await opCall(
+      service.ops,
+      { class: "cli-interactive", env: {}, ...(by === "agent" ? { principal: ASIDE } : {}) },
+      { op: entry, input, space },
+    )) as Record<string, unknown>;
   return {
     service,
     home,
@@ -320,6 +366,7 @@ export async function contractWorld(
     portal,
     root: temp.root,
     folder,
+    aside,
     launch,
     other,
     close: async () => {
@@ -616,6 +663,285 @@ function meaning(entry: string, value: Value): unknown {
 
 const AS_OF = /^[0-9]{1,10}\.[0-9]{1,15}\.[0-9a-hjkmnp-tv-z]{8}$/;
 
+/**
+ * Whether a call is a write the space's writer keeps a receipt of: its retry is answered from it.
+ * A launch is the user's record of its own, and opening it again finds it as it is now.
+ */
+function receipted(name: string, input: Value): boolean {
+  const entry = findEntry(name);
+  return (
+    entry !== undefined &&
+    !readsOnly(entry, input) &&
+    typeof input["request_id"] === "string" &&
+    !entry.ops.some((op) => opSpec(op)?.r7 === true)
+  );
+}
+
+let asides = 0;
+const asideId = (): string => `contract-aside-${String((asides += 1)).padStart(8, "0")}`;
+
+/** Every string in a value, and every object in it, depth first. */
+function walk(value: unknown, strings: string[], objects: Value[]): void {
+  if (typeof value === "string") strings.push(value);
+  else if (Array.isArray(value)) for (const item of value) walk(item, strings, objects);
+  else if (typeof value === "object" && value !== null) {
+    objects.push(value as Value);
+    for (const item of Object.values(value)) walk(item, strings, objects);
+  }
+}
+
+/**
+ * A write between an example's two sends, by another agent (`aside`), to everything its answer
+ * names: each active task gets another title, each project another area and name, each area
+ * another name, each preference set another value, and a project's folder another folder. What
+ * it returns takes each change back, so the examples after it find the world as it was.
+ */
+async function meanwhile(t: ContractTransport, answer: Value): Promise<() => Promise<void>> {
+  const back: (() => Promise<unknown>)[] = [];
+  const base = async (): Promise<string> => String((await t.aside("space.status", {}))["as_of"]);
+  /** One change, and what takes it back. */
+  const change = async (
+    entry: string,
+    input: Value,
+    undo: () => Value,
+    by: Aside = "agent",
+  ): Promise<boolean> => {
+    try {
+      await t.aside(entry, { ...input, base: await base(), request_id: asideId() }, by);
+    } catch (error) {
+      // A task in the Trash takes no new title; everything else the answer names takes its change.
+      if (entry === "task.update" && error instanceof AppError) return false;
+      throw error;
+    }
+    back.push(async () =>
+      t.aside(entry, { ...undo(), base: await base(), request_id: asideId() }, by),
+    );
+    return true;
+  };
+  const strings: string[] = [];
+  const objects: Value[] = [];
+  walk(answer, strings, objects);
+
+  for (const ref of new Set(strings.filter((s) => /^M-[0-9]+$/u.test(s)))) {
+    const read = await t.aside("task.get", { task: ref }).catch(() => undefined);
+    const task = read?.["task"] as Value | undefined;
+    if (task?.["lifecycle"] !== "active" || typeof task["title"] !== "string") continue;
+    const title = task["title"];
+    await change("task.update", { task: ref, set: { title: `${title} meanwhile` } }, () => ({
+      task: ref,
+      set: { title },
+    }));
+  }
+
+  const ids = new Set(
+    objects.flatMap((o) =>
+      typeof o["id"] === "string" && /^[ap]_/u.test(o["id"]) ? [o["id"]] : [],
+    ),
+  );
+  if (ids.size > 0) {
+    const listed = await t.aside("group.manage", { action: "list", archived: true });
+    const areas = (listed["areas"] ?? []) as { id: string; name: string; projects: Value[] }[];
+    const projects = [
+      ...areas.flatMap((a) => a.projects.map((p) => ({ ...p, area: a.id }))),
+      ...((listed["projects"] ?? []) as Value[]).map((p) => ({ ...p, area: undefined })),
+    ] as { id: string; name: string; area: string | undefined }[];
+    for (const project of projects.filter((p) => ids.has(p.id))) {
+      if (project.area !== undefined) {
+        const area = project.area;
+        await change("group.manage", { action: "move", path: project.id, to: "Meanwhile" }, () => ({
+          action: "move",
+          path: project.id,
+          to: area,
+        }));
+      }
+      await change(
+        "group.manage",
+        { action: "rename", path: project.id, to: `${project.name} meanwhile` },
+        () => ({ action: "rename", path: project.id, to: project.name }),
+      );
+    }
+    for (const area of areas.filter((a) => ids.has(a.id))) {
+      await change(
+        "group.manage",
+        { action: "rename", path: area.id, to: `${area.name} meanwhile` },
+        () => ({ action: "rename", path: `${area.name} meanwhile`, to: area.name }),
+      );
+    }
+  }
+
+  if (answer["action"] === "set" && Array.isArray(answer["prefs"])) {
+    for (const row of answer["prefs"] as Value[]) {
+      const value = row["value"] as unknown[] | undefined;
+      if (typeof row["key"] !== "string" || !Array.isArray(value)) continue;
+      const key = row["key"];
+      await change(
+        "prefs.manage",
+        { action: "set", set: [{ key, value: [...value, "XXL"] }] },
+        () => ({ action: "set", set: [{ key, value }] }),
+        "person",
+      );
+    }
+  }
+
+  const owner = answer["owner"] as Value | undefined;
+  if (owner?.["kind"] === "project" && typeof answer["folder"] === "string") {
+    const elsewhere = join(t.portal, "..", "meanwhile");
+    mkdirSync(elsewhere, { recursive: true, mode: 0o700 });
+    const folder = answer["folder"];
+    await change(
+      "folder.manage",
+      { action: "set", project: String(owner["id"]), folder: elsewhere },
+      () => ({ action: "set", project: String(owner["id"]), folder }),
+    );
+  }
+
+  return async () => {
+    for (const undo of back.reverse()) await undo();
+  };
+}
+
+/**
+ * An answer's parts as of now, by entry (the rule in handlers.ts's ANSWERS): names and lists read
+ * when the answer is made. The rest of an answer is what the write did, its `as_of` included.
+ */
+const NOW: Readonly<Record<string, (answer: Value) => Value | undefined>> = {
+  "task.add": (a) => ({ titles: refs(a["tasks"], "title") }),
+  "task.finish": (a) =>
+    refs(a["follow_ups"]).length === 0 ? undefined : { titles: refs(a["follow_ups"], "title") },
+  "group.manage": (a) => {
+    const group = (a["group"] ?? {}) as Value;
+    return {
+      name: group["name"],
+      area: group["area"],
+      list: [a["areas"], a["projects"], a["total_areas"], a["total_projects"], a["cursor"]],
+    };
+  },
+  "folder.manage": (a) => {
+    const owner = (a["owner"] ?? {}) as Value;
+    return { name: owner["name"], area: owner["area"] };
+  },
+  "prefs.manage": (a) => ({ prefs: unwritable(a["prefs"]) }),
+};
+
+/** Preference rows without who may change them, which is the caller's. */
+const unwritable = (rows: unknown): unknown =>
+  Array.isArray(rows)
+    ? (rows as Value[]).map((row) =>
+        Object.fromEntries(Object.entries(row).filter(([field]) => field !== "writable")),
+      )
+    : rows;
+
+/** A value without the fields `keys`. */
+const without = (value: Value, keys: readonly string[]): Value =>
+  Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
+
+/** What a write did, in its answer: the answer without its parts as of now and its retry's mark. */
+function did(entry: string, answer: Value): Value {
+  const rest = without(answer, ["replayed"]);
+  if (NOW[entry]?.(answer) === undefined) return rest;
+  const rows = (list: unknown) =>
+    Array.isArray(list) ? (list as Value[]).map((row) => without(row, ["title"])) : list;
+  const named = (holder: unknown) =>
+    typeof holder === "object" && holder !== null
+      ? without(holder as Value, ["name", "area"])
+      : holder;
+  const kept = without(rest, [
+    "areas",
+    "projects",
+    "total_areas",
+    "total_projects",
+    "cursor",
+    "prefs",
+  ]);
+  return {
+    ...kept,
+    ...("tasks" in kept ? { tasks: rows(kept["tasks"]) } : {}),
+    ...("follow_ups" in kept ? { follow_ups: rows(kept["follow_ups"]) } : {}),
+    ...("group" in kept ? { group: named(kept["group"]) } : {}),
+    ...("owner" in kept ? { owner: named(kept["owner"]) } : {}),
+  };
+}
+
+/**
+ * The parts of `answer` as of now, read again from the space through `t` with nothing written in
+ * between: what they must be in an answer made just before.
+ */
+async function partsNow(t: ContractTransport, entry: string, answer: Value): Promise<Value> {
+  const titleOf = async (ref: unknown) =>
+    typeof ref === "string"
+      ? ((await t.aside("task.get", { task: ref }))["task"] as Value)["title"]
+      : undefined;
+  switch (entry) {
+    case "task.add":
+    case "task.finish": {
+      const rows = (answer[entry === "task.add" ? "tasks" : "follow_ups"] ?? []) as Value[];
+      return { titles: await Promise.all(rows.map((r) => titleOf(r["ref"]))) };
+    }
+    case "group.manage": {
+      const listed = await t.aside("group.manage", { action: "list" });
+      const group = (answer["group"] ?? {}) as Value;
+      const rows = [
+        ...((listed["areas"] ?? []) as Value[]),
+        ...((listed["areas"] ?? []) as Value[]).flatMap((a) => (a["projects"] ?? []) as Value[]),
+        ...((listed["projects"] ?? []) as Value[]),
+      ];
+      const row = rows.find((g) => g["id"] === group["id"]);
+      const area = ((listed["areas"] ?? []) as Value[]).find((a) =>
+        ((a["projects"] ?? []) as Value[]).some((p) => p["id"] === group["id"]),
+      );
+      return {
+        name: row?.["name"],
+        area:
+          area === undefined
+            ? undefined
+            : {
+                id: area["id"],
+                name: area["name"],
+                ...(area["archived"] === true ? { archived: true } : {}),
+              },
+        list: [
+          listed["areas"],
+          listed["projects"],
+          listed["total_areas"],
+          listed["total_projects"],
+          listed["cursor"],
+        ],
+      };
+    }
+    case "folder.manage": {
+      const listed = await t.aside("group.manage", { action: "list" });
+      const owner = (answer["owner"] ?? {}) as Value;
+      const areas = (listed["areas"] ?? []) as Value[];
+      const area = areas.find((a) =>
+        ((a["projects"] ?? []) as Value[]).some((p) => p["id"] === owner["id"]),
+      );
+      const project = [
+        ...areas.flatMap((a) => (a["projects"] ?? []) as Value[]),
+        ...((listed["projects"] ?? []) as Value[]),
+      ].find((p) => p["id"] === owner["id"]);
+      return {
+        name: owner["kind"] === "project" ? project?.["name"] : undefined,
+        // Only a project's creation, or the project that holds the folder, names its area.
+        area:
+          owner["area"] === undefined || area === undefined
+            ? undefined
+            : {
+                id: area["id"],
+                name: area["name"],
+                ...(area["archived"] === true ? { archived: true } : {}),
+              },
+      };
+    }
+    case "prefs.manage": {
+      const keys = refs(answer["prefs"], "key");
+      const got = await t.aside("prefs.manage", { action: "get", keys }, "person");
+      return { prefs: unwritable(got["prefs"]) };
+    }
+    default:
+      return {};
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // The grant gate on every face that carries an agent home's call (A3 3.7.8)
 
@@ -831,20 +1157,56 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             if (later !== undefined) {
               if ("error" in later.now) {
                 expect(error?.code, `${key}: ${later.why}`).toBe(later.now.error);
-              } else {
-                expect(error, `${key}: ${later.why}`).toBeUndefined();
-                expect(entry.output.safeParse(result).success, key).toBe(true);
+                continue;
               }
-              continue;
+              expect(error, `${key}: ${later.why}`).toBeUndefined();
+              expect(entry.output.safeParse(result).success, key).toBe(true);
+            } else {
+              expect(error, `${key}: ${JSON.stringify(error)}`).toBeUndefined();
+              const parsed = entry.output.safeParse(result);
+              expect(parsed.success, key).toBe(true);
+              const value = result as Value;
+              if (typeof value["as_of"] === "string") expect(value["as_of"]).toMatch(AS_OF);
+              expect(meaning(entry.name, value), key).toEqual(
+                meaning(entry.name, example.output as Value),
+              );
             }
-            expect(error, `${key}: ${JSON.stringify(error)}`).toBeUndefined();
-            const parsed = entry.output.safeParse(result);
-            expect(parsed.success, key).toBe(true);
-            const value = result as Value;
-            if (typeof value["as_of"] === "string") expect(value["as_of"]).toMatch(AS_OF);
-            expect(meaning(entry.name, value), key).toEqual(
-              meaning(entry.name, example.output as Value),
-            );
+            // The same write sent again, as after a lost answer, gets what the write did (A3 3.4.1),
+            // its as_of included, whatever was written in between: here, a change to everything the
+            // answer names. Its names and lists are the space's now, read again before anything else
+            // is.
+            if (receipted(entry.name, input)) {
+              const value = result as Value;
+              const takeBack = await meanwhile(transport, value);
+              const again = (await transport.call(entry.name, input, actor)) as Value;
+              const now =
+                NOW[entry.name]?.(again) === undefined
+                  ? undefined
+                  : await partsNow(transport, entry.name, again);
+              await takeBack();
+              expect.soft(again["replayed"], `${key}: sent again`).toBe(true);
+              expect
+                .soft(did(entry.name, again), `${key}: what the write did, sent again`)
+                .toEqual(did(entry.name, value));
+              if (now !== undefined) {
+                expect.soft(NOW[entry.name]?.(again), `${key}: as of now, sent again`).toEqual(now);
+              }
+              // Its receipt, in its public shape (receipt.get is the page's and the command line's).
+              if (transport.carries?.("receipt.get") !== false) {
+                const receipt = await transport.call(
+                  "receipt.get",
+                  { request: input["request_id"] },
+                  actor,
+                );
+                expect.soft(receipt, `${key}: its receipt`).toMatchObject({ found: true });
+                expect
+                  .soft(
+                    findEntry("receipt.get")?.output.safeParse(receipt).success,
+                    `${key}: its receipt`,
+                  )
+                  .toBe(true);
+              }
+            }
           }
         }
       } finally {

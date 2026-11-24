@@ -4,7 +4,7 @@
 import { z } from "zod";
 import { defineEntry, under } from "../define.ts";
 import {
-  AsOf,
+  WriteAsOf,
   Cwd,
   DRAFT_AGENT_MAX,
   HeldSources,
@@ -31,7 +31,7 @@ export const TaskAddInput = z.strictObject({
 });
 
 export const TaskAddResult = z.strictObject({
-  as_of: AsOf,
+  as_of: WriteAsOf,
   tasks: z
     .array(
       z.strictObject({
@@ -40,7 +40,7 @@ export const TaskAddResult = z.strictObject({
           .describe("created, matched an existing task, or created in the Inbox"),
         id: TaskId.optional(),
         ref: TaskRef.optional(),
-        title: z.string().describe("Title"),
+        title: z.string().describe("Its title now; absent when it could not be read").optional(),
         lifecycle: Lifecycle.optional(),
         matched_by: z.enum(["source_key"]).describe("How an existing task matched").optional(),
         ambiguous: SeveralMatch.optional(),
@@ -81,7 +81,7 @@ export const taskAdd = defineEntry({
   },
   // A3 3.2.5: 25 drafts' lines at their longest fit whole, with the counts.
   budget: { typical: 80, max: 2000 },
-  errors: ["invalid_input", "too_large", "forbidden", "request_id_conflict"],
+  errors: ["invalid_input", "too_large", "forbidden", "request_id_conflict", "applied_earlier"],
   examples: [
     {
       title: "A follow-up found during work, and a ticket that already has a task",

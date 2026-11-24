@@ -8,7 +8,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
-  GroupManageResult,
+  GroupListResult,
   HistoryUndoResult,
   TaskAddResult,
   TaskFinishResult,
@@ -106,7 +106,7 @@ beforeAll(async () => {
     ["Client work/Portal", folder("portal")],
     ["Client work/Portal web", folder("portal", "web")],
   ] as const) {
-    const made = GroupManageResult.parse(
+    const made = GroupListResult.parse(
       await call(agent, "group.manage", { action: "create", path, folder: at, request_id: rid() }),
     );
     expect(made).toMatchObject({ result: "created", group: { kind: "project", folder: ends("") } });
@@ -239,7 +239,7 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
       path: "Client work/Billing",
       request_id: rid(),
     });
-    const set = GroupManageResult.parse(
+    const set = GroupListResult.parse(
       await call(agent, "group.manage", {
         action: "set_folder",
         path: "Client work/Billing",
@@ -253,10 +253,10 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
       result: "folder_set",
       group: { kind: "project", name: "Billing", folder: ends("billing") },
     });
-    const listed = GroupManageResult.parse(await call(agent, "group.manage", { action: "list" }));
+    const listed = GroupListResult.parse(await call(agent, "group.manage", { action: "list" }));
     const billing = listed.areas.flatMap((a) => a.projects).find((p) => p.name === "Billing");
     expect(billing?.folder).toEqual(ends("billing"));
-    const cleared = GroupManageResult.parse(
+    const cleared = GroupListResult.parse(
       await call(agent, "group.manage", {
         action: "clear_folder",
         path: "Client work/Billing",
@@ -265,7 +265,7 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
       }),
     );
     expect(cleared).toMatchObject({ result: "folder_cleared" });
-    const after = GroupManageResult.parse(await call(agent, "group.manage", { action: "list" }));
+    const after = GroupListResult.parse(await call(agent, "group.manage", { action: "list" }));
     expect(
       after.areas.flatMap((a) => a.projects).find((p) => p.name === "Billing")?.folder,
     ).toBeUndefined();
@@ -279,7 +279,7 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
       request_id: rid(),
     });
     const projectFolder = async () =>
-      GroupManageResult.parse(await call(user, "group.manage", { action: "list" }))
+      GroupListResult.parse(await call(user, "group.manage", { action: "list" }))
         .areas.flatMap((a) => a.projects)
         .find((p) => p.name === "Ledger")?.folder;
     await call(user, "group.manage", {
@@ -296,7 +296,7 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
 
   test("creating a project with a folder another project has answers exists with that project", async () => {
     const before = await asOf();
-    const answer = GroupManageResult.parse(
+    const answer = GroupListResult.parse(
       await call(agent, "group.manage", {
         action: "create",
         path: "Client work/Portal again",
@@ -314,7 +314,7 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
   });
 
   test("creating with an area and a folder makes a project in the area named after the folder", async () => {
-    const made = GroupManageResult.parse(
+    const made = GroupListResult.parse(
       await call(agent, "group.manage", {
         action: "create",
         path: "Errands",
@@ -389,7 +389,7 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
       ),
     ).toMatchObject({ code: "invalid_input", data: { reason: "folder_reserved" } });
     // Nothing was made for the refused project.
-    const listed = GroupManageResult.parse(await call(agent, "group.manage", { action: "list" }));
+    const listed = GroupListResult.parse(await call(agent, "group.manage", { action: "list" }));
     expect(JSON.stringify(listed)).not.toContain("Nowhere");
   });
 
@@ -459,7 +459,7 @@ describe("[A3.3.4.folders.agent] names an earlier draft makes, and where a refus
       }),
     );
     expect(added.tasks.map((t) => t.result)).toEqual(["created", "created"]);
-    const listed = GroupManageResult.parse(await call(agent, "group.manage", { action: "list" }));
+    const listed = GroupListResult.parse(await call(agent, "group.manage", { action: "list" }));
     const garden = listed.areas.filter((a) => a.name === "Garden work");
     expect(garden).toHaveLength(1);
     expect(garden[0]?.active).toBe(2);
@@ -508,9 +508,8 @@ describe("[A3.3.4.folders.agent] update_task's folder", () => {
         request_id: rid(),
       }),
     );
-    // The answer names the task whose folder followed; its words are the tool's to choose.
-    expect(updated.warnings).toHaveLength(1);
-    expect(updated.warnings[0]).toContain(inner?.ref ?? "");
+    // The answer names the task whose folder followed, and where it is now.
+    expect(updated).toMatchObject({ moved: 1, followed: [{ kind: "task", ref: inner?.ref }] });
     expect((await filed(inner?.ref ?? "")).folder).toEqual({
       path: ends(`moved\\${sep}inner`),
       of: "task",

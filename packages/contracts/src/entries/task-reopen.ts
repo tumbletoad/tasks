@@ -4,7 +4,7 @@ import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeText } from "../safe-text.ts";
 import {
-  AsOf,
+  WriteAsOf,
   Base,
   Lifecycle,
   Mode,
@@ -30,7 +30,7 @@ export const TaskReopenResult = z.strictObject({
   lifecycle: Lifecycle,
   status: z.string().describe("Status key"),
   proposal: ProposalId.optional(),
-  as_of: AsOf,
+  as_of: WriteAsOf,
   replayed: Replayed.optional(),
 });
 
@@ -59,7 +59,15 @@ export const taskReopen = defineEntry({
     },
   },
   budget: { typical: 40, max: 150 },
-  errors: ["invalid_input", "not_found", "unbound", "conflict", "forbidden", "request_id_conflict"],
+  errors: [
+    "invalid_input",
+    "not_found",
+    "unbound",
+    "conflict",
+    "forbidden",
+    "request_id_conflict",
+    "applied_earlier",
+  ],
   examples: [
     {
       title: "Reopen M-3 when its bug comes back",
