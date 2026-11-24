@@ -146,6 +146,8 @@ export interface EditDeps {
   readonly onChanges: (listener: (changes: Changes) => void) => () => void;
   /** The live row of a task, by its reference (a conflict names tasks by reference). */
   readonly rowOf: (ref: string) => TaskRow | undefined;
+  /** The effort levels the screen shows, keyed as a kept size remembers them (levelsKey). */
+  readonly levels?: () => string;
   readonly newRequest: () => string;
   /** False once the tab's session stopped: an unanswered request is not asked about any more. */
   readonly alive?: () => boolean;
@@ -718,6 +720,14 @@ export class Edits {
    * build). No base makes sending it again an informed choice, so it is not sent:
    * its value can be copied or discarded.
    */
+  /** Whether a kept size was chosen from effort levels the screen no longer shows (levelsKey). */
+  relevelled(unsaved: Unsaved): boolean {
+    const { source } = unsaved.change;
+    const now = this.#deps.levels?.();
+    if (source?.kind !== "effort" || source.levels === undefined || now === undefined) return false;
+    return source.levels !== now;
+  }
+
   restored(unsaved: Unsaved): boolean {
     if (unsaved.base === undefined) return unsaved.reason === "failed";
     const now = this.#deps.asOf();
@@ -727,7 +737,7 @@ export class Edits {
   /** "Apply mine" or "Try again": this tab's kept value of the field, sent again (`#again`). */
   apply(task: string, field: Field): void {
     const unsaved = this.unsaved(task, field);
-    if (unsaved === undefined || this.restored(unsaved)) return;
+    if (unsaved === undefined || this.restored(unsaved) || this.relevelled(unsaved)) return;
     this.#again({ id: unsaved.task, ref: unsaved.ref }, unsaved.change, [unsaved]);
   }
 
@@ -1715,7 +1725,7 @@ export class Edits {
           const again = joinChanges(waiting);
           const kept = waiting.flatMap((part) => lines.get(part) ?? []);
           if (again === undefined || kept.length === 0) return;
-          if (kept.some((line) => this.restored(line))) return;
+          if (kept.some((line) => this.restored(line) || this.relevelled(line))) return;
           this.#again(task, again, kept);
         },
       },

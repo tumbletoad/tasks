@@ -66,6 +66,8 @@ class World {
   /** What the next call of each entry answers: a result, or an error to throw. */
   readonly answers = new Map<string, ((input: Record<string, unknown>) => unknown)[]>();
   seq = 10;
+  /** The effort levels the screen shows, as a kept size remembers them. */
+  levels = "levels-a";
 
   constructor(rows: readonly TaskRow[], keeper?: Keeper, leaving?: () => Promise<unknown>) {
     this.store = new LiveStore({
@@ -111,6 +113,7 @@ class World {
       failed: () => false,
       onChanges: (listener) => this.store.onChanges(listener),
       rowOf: (ref) => [...this.store.getState().tasks.values()].find((t) => t.ref === ref),
+      levels: () => this.levels,
       newRequest: () => `rq-${String((requests += 1))}`,
       ...(keeper === undefined ? {} : { keeper: { onGone: () => () => undefined, ...keeper } }),
       ...(leaving === undefined ? {} : { leaving }),
@@ -1543,6 +1546,23 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
       values: { kind: "undo", count: 1, tasks: "M-2" },
     });
     expect(w.edits.getState().leaving.get("t_00001")).toMatchObject({ done: true });
+  });
+
+  test("a size kept unsent is not sent again, by its line or its toast, once the levels changed", async () => {
+    const w = new World([task(1)]);
+    w.answer("task.update", () => {
+      throw appError("internal", {});
+    });
+    w.edits.edit(task(1), effortChange("M", w.levels));
+    await flush();
+    const tryAgain = w.lastToast()?.action;
+    expect(tryAgain?.label).toEqual({ id: "toast.tryAgain" });
+    w.levels = "levels-b";
+    tryAgain?.run();
+    w.edits.apply("t_00001", "effort");
+    await flush();
+    expect(w.calls.filter((c) => c.name === "task.update")).toHaveLength(1);
+    expect(w.edits.unsaved("t_00001", "effort")?.change.set).toEqual({ effort: "M" });
   });
 
   test("a refused one offers Undo the rest from a page that did not make it", async () => {

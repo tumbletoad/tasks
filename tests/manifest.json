@@ -4193,6 +4193,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.10.history.effort-stored-rows",
+      "title": "A change of levels with a move over a list of names an earlier build stored, or over a reset it left, undone, leaves the stored row exactly as it was, its version included, and the moved task back on its size",
+      "source": "A1 3.10.1, A1 3.16",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.10.history.effort-first",
       "title": "The first change of levels on a space that never stored them needs a base, records the levels it read, and its Undo stores those, which reopening the space keeps, so Redo applies after a reopen; of two people who read no stored levels the second conflicts",
       "source": "A1 3.10.1, A1 3.16",
@@ -4936,6 +4944,14 @@
       "id": "A5.3.7.web.effort-lists",
       "title": "Generated lists of 1 to 10 sizes reach the page's store, the card's options and the row's mark and tip as they are; a size the scale lost stays on its task's card; items with unknown fields keep their names, and more sizes than the contract allows, or a name longer than it allows, keep the default levels",
       "source": "A5 3.6, A5 3.7",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.12.e2e.undo-levels",
+      "title": "In Chromium and Firefox against the real service: a change of the effort levels made at a terminal is undone from the page with Ctrl+Z, which puts back the levels and the task's size and says so, and redone with Ctrl+Shift+Z; a size the service did not take is not sent again once the levels change, and its line asks to choose again",
+      "source": "A5 3.11, A5 3.12",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

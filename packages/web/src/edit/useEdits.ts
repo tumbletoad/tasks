@@ -4,6 +4,7 @@ import { useContext, useSyncExternalStore } from "react";
 import { requestId, type Api } from "../api.ts";
 import { Session } from "../context.ts";
 import type { Live } from "../live.ts";
+import { levelsKey } from "./change.ts";
 import { Edits, type EditState } from "./edits.ts";
 import { unsavedKeeper } from "../unsent.ts";
 
@@ -17,6 +18,7 @@ export function editsOf(live: Live, api: Api): Edits {
       client: api.client,
       write: (send, overlay) => live.write(send, overlay),
       asOf: () => live.store.asOf,
+      levels: () => levelsKey(live.getState().scales.efforts),
       failed: (error) => live.failed(error),
       onChanges: (listener) => live.onChanges(listener),
       rowOf: (ref) => {

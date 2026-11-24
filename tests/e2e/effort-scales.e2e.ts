@@ -227,3 +227,74 @@ test.describe("[A5.3.7.e2e.effort-scales] one level, ten levels and the longest 
     }
   });
 });
+
+test.describe("[A5.3.12.e2e.undo-levels] a change of the effort levels made at a terminal, undone from the page", () => {
+  test("Ctrl+Z puts back the levels and the task's size and says so, Ctrl+Shift+Z changes them again, and a size kept unsent waits once the levels change, at 1,440 and 390 px", async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    const ui = process.env["E2E_UI_BUILD"];
+    if (ui === undefined) throw new Error("global-setup.ts did not build the page");
+    const world = await startWorld(ui, {
+      scales: [{ statuses: STATUSES, efforts: ["S", "M", "L"] }],
+    });
+    const toast = page.locator('[data-part="toast-text"]');
+    const levels = async (space: string, value: string, moves: { from: string; to: string }[]) => {
+      const read = (await world.op(space, "prefs.manage", { action: "get" })) as { as_of: string };
+      await world.op(space, "prefs.manage", {
+        action: "set",
+        set: [{ key: "tasks.effort_scale", value, moves }],
+        base: read.as_of,
+      });
+    };
+    const bothWidths = async (name: string) => {
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 1000 });
+        await picture(page, `${name}-${String(width)}.png`);
+      }
+      await page.setViewportSize({ width: 1440, height: 1000 });
+    };
+    try {
+      const space = world.scaled[0];
+      if (space === undefined) throw new Error("the world has no space of its own levels");
+      const added = (await world.op(space.id, "task.add", {
+        tasks: [{ title: "Plan the stalls for the spring fair", inbox: true, effort: "M" }],
+      })) as { tasks: { ref: string }[] };
+      const ref = added.tasks[0]?.ref ?? "";
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await signIn(page, world, `/s/${space.id}/task/${ref}`);
+      await showsSpace(page, space.name);
+      const effort = page
+        .locator(`main li[data-task="${ref}"] dl`)
+        .getByRole("radiogroup", { name: "Effort" });
+      const chosen = (name: string) => effort.getByRole("radio", { name, exact: true });
+      await expect(chosen("M")).toHaveAttribute("aria-checked", "true", { timeout: SLOW_MS });
+
+      await levels(space.id, "S,Medium,L", [{ from: "M", to: "Medium" }]);
+      await expect(chosen("Medium")).toHaveAttribute("aria-checked", "true", { timeout: SLOW_MS });
+      await page.locator("main").focus();
+      await page.keyboard.press("Control+z");
+      await expect(toast).toHaveText("Effort levels put back");
+      await expect(chosen("M")).toHaveAttribute("aria-checked", "true", { timeout: SLOW_MS });
+      await bothWidths("levels-undone");
+      await page.locator("main").focus();
+      await page.keyboard.press("Control+Shift+z");
+      await expect(toast).toHaveText("Effort levels changed again");
+      await expect(chosen("Medium")).toHaveAttribute("aria-checked", "true", { timeout: SLOW_MS });
+
+      // A size the service did not take, then a change of the levels: it is not sent again.
+      await page.route("**/api/v1/op/task.update", (route) => route.abort());
+      await chosen("L").click();
+      const line = page.locator(`main li[data-task="${ref}"] [data-part="unsaved"]`);
+      await expect(line.locator('[data-part="apply-mine"]')).toHaveCount(1, { timeout: SLOW_MS });
+      await page.unroute("**/api/v1/op/task.update");
+      await levels(space.id, "S,Medium,Large", [{ from: "L", to: "Large" }]);
+      await expect(line).toHaveAttribute("data-reason", "levels", { timeout: SLOW_MS });
+      await expect(line.locator('[data-part="unsaved-value"]')).toHaveText("L");
+      await expect(line.locator('[data-part="apply-mine"]')).toHaveCount(0);
+      await bothWidths("levels-kept-size");
+    } finally {
+      await world.close();
+    }
+  });
+});

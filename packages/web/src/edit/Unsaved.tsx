@@ -22,7 +22,7 @@ import { Session } from "../context.ts";
 import { sayMsg } from "../row/say.ts";
 import { useLive } from "../store/hooks.ts";
 import { letGo, useKeptEdits } from "../unsent.ts";
-import { levelsKey, type Field } from "./change.ts";
+import type { Field } from "./change.ts";
 import { fieldWords, keyOf, whoOf, type Unsaved as Line } from "./edits.ts";
 import { readOnlyWhy } from "./read-only.ts";
 import css from "./Unsaved.module.css";
@@ -122,12 +122,9 @@ function UnsavedLine({
           : readOnly !== undefined
             ? "read_only"
             : undefined;
-  const { source } = unsaved.change;
-  const relevelled =
-    source?.kind === "effort" &&
-    source.levels !== undefined &&
-    source.levels !== levelsKey(state.scales.efforts);
-  const why = blocked ?? (edits.restored(unsaved) ? "restored" : relevelled ? "levels" : undefined);
+  const why =
+    blocked ??
+    (edits.restored(unsaved) ? "restored" : edits.relevelled(unsaved) ? "levels" : undefined);
   const sendable = why === undefined;
   return (
     <span
