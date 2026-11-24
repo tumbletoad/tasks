@@ -3,6 +3,7 @@
 // text only, in a temporary space.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { SqlValue } from "../src/driver.ts";
+import { newId } from "../src/ids.ts";
 import { openSpace } from "../src/space.ts";
 import type { Operation, WriteRequest, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
@@ -258,6 +259,95 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     // A restore whose slug a new project took meanwhile is refused, and changes nothing.
     created(submit([{ kind: "project.create", title: "Spare" }]));
     expectStatus(submit([{ kind: "project.restore", project: empty }]), "rejected");
+  });
+
+  test("a step that makes a group and files what was there into it is undone whole: the undo moves it out", () => {
+    const task = created(submit([{ kind: "task.create", title: "Dig" }], "codex"));
+    const area = newId("a");
+    const project = newId("p");
+    expectStatus(
+      submit([
+        { kind: "area.create", id: area, title: "Garden" },
+        { kind: "project.move", project: fx.project, area },
+        { kind: "project.create", id: project, title: "Beds", area },
+        { kind: "task.move", task, project },
+      ]),
+      "applied",
+    );
+    expectStatus(undo(), "applied");
+    expect([
+      row("areas", area)["deleted_at"],
+      row("projects", project)["deleted_at"],
+    ]).not.toContain(null);
+    expect(row("projects", fx.project)["area_id"]).toBe(fx.areas.lumen);
+    expect(
+      fx.reader.prepare("SELECT project_id FROM tasks WHERE id = $id").get({ id: task }),
+    ).toEqual({ project_id: null });
+  });
+
+  test("a project restored after its area is gone comes back without an area, with its tasks", () => {
+    const area = created(submit([{ kind: "area.create", title: "Garden" }]));
+    const project = created(submit([{ kind: "project.create", title: "Beds", area }], "codex"));
+    const task = created(submit([{ kind: "task.create", title: "Dig", project }], "codex"));
+    expectStatus(submit([{ kind: "task.delete", task }], "codex"), "applied");
+    expectStatus(submit([{ kind: "project.delete", project }], "codex"), "applied");
+    // Nothing live is in the area: its creation is undone.
+    expectStatus(undo(), "applied");
+    expect(row("areas", area)["deleted_at"]).not.toBeNull();
+    expectStatus(submit([{ kind: "project.restore", project }]), "applied");
+    expect(row("projects", project)).toMatchObject({ deleted_at: null, area_id: null });
+    expect(
+      fx.reader.prepare("SELECT area_id, project_id FROM tasks WHERE id = $id").get({ id: task }),
+    ).toEqual({ area_id: null, project_id: project });
+  });
+
+  test("Undo and Redo of a project's move take along its tasks out of sight, as the move does", () => {
+    const areaOf = (id: string): unknown =>
+      fx.reader.prepare("SELECT area_id FROM tasks WHERE id = $id").get({ id })?.["area_id"];
+    // A task made in the project after the move, whose creation is undone first.
+    expectStatus(
+      submit([{ kind: "project.move", project: fx.project, area: fx.areas.home }]),
+      "applied",
+    );
+    const later = created(submit([{ kind: "task.create", title: "Dig", project: fx.project }]));
+    expectStatus(undo(), "applied");
+    expectStatus(undo(), "applied");
+    expect(areaOf(later)).toBe(fx.areas.lumen);
+    expectStatus(redo(), "applied");
+    expectStatus(redo(), "applied");
+    expect(areaOf(later)).toBe(fx.areas.home);
+    // A task made in the project by the request that moves it.
+    const id = newId("t");
+    expectStatus(
+      submit([
+        { kind: "task.create", id, title: "Rake", project: fx.project },
+        { kind: "project.move", project: fx.project, area: fx.areas.lumen },
+      ]),
+      "applied",
+    );
+    expectStatus(undo(), "applied");
+    expect(areaOf(id)).toBe(fx.areas.home);
+  });
+
+  test("one request that restores a project and makes another of the same name gives the new one a slug of its own", () => {
+    const beds = created(submit([{ kind: "project.create", title: "Beds" }]));
+    expectStatus(submit([{ kind: "project.delete", project: beds }]), "applied");
+    const both = submit([
+      { kind: "project.restore", project: beds },
+      { kind: "project.create", title: "Beds" },
+    ]);
+    const made = created(both, 1);
+    expect(row("projects", beds)).toMatchObject({ slug: "beds", deleted_at: null });
+    expect(row("projects", made)).toMatchObject({ slug: "beds-2", deleted_at: null });
+    // A slug the request asks for is refused while the restored project holds it.
+    expectStatus(submit([{ kind: "project.delete", project: made }]), "applied");
+    expectStatus(submit([{ kind: "project.delete", project: beds }]), "applied");
+    const asked = submit([
+      { kind: "project.restore", project: beds },
+      { kind: "project.create", title: "Beds", slug: "beds" },
+    ]);
+    expectStatus(asked, "rejected");
+    expect(asked.error).toMatchObject({ code: "VALIDATION_FAILED", field: "slug" });
   });
 
   test("Redo of a project's delete after someone renamed it is a conflict naming the rename, and the project stays", () => {
