@@ -26,7 +26,7 @@ import { hasControl, INSTANCE_ID, MANUAL_INSTANCE } from "@ttasks/launch";
 import { isId } from "@ttasks/storage";
 import { isLive, type ConnectionClass, type Grant, type GrantStore } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
-import { HOSTS, rowOfHome, samePath } from "../setup/agents.ts";
+import { HOSTS, samePath } from "../setup/agents.ts";
 import { AGENT_APPS, isAgentApp } from "../setup/state.ts";
 import type { Logger } from "./log.ts";
 
@@ -191,24 +191,25 @@ function text(params: JsonObject, key: string, max: number): string {
 }
 
 /**
- * The registration a verb names: its app, folder and settings file, and the row setup's record of
- * it names (`grant`: an ID, null for none, absent when setup keeps no record of it), which finds an
- * earlier build's row (rowOfHome).
+ * The settings file a verb names: its app, folder and file, and the row an earlier build made for
+ * that file (`grant`), which names the folder only (setup/agents.ts rowFile).
  */
-function registrationParams(params: JsonObject) {
+function fileParams(params: JsonObject) {
   const app = params["app"];
   if (!isAgentApp(app)) throw invalid("app", `Expected ${AGENT_APPS.join(", ")}`);
-  const recorded = params["grant"];
+  const earlier = params["grant"];
   if (
-    recorded !== undefined &&
-    recorded !== null &&
-    !(typeof recorded === "string" && GRANT_ID.test(recorded))
+    earlier !== undefined &&
+    earlier !== null &&
+    !(typeof earlier === "string" && GRANT_ID.test(earlier))
   ) {
     throw invalid("grant", "Expected a grant ID or null");
   }
   return {
-    home: { app, home: text(params, "home", 4096), file: text(params, "file", 4096) },
-    of: { recorded },
+    app,
+    home: text(params, "home", 4096),
+    file: text(params, "file", 4096),
+    earlier: typeof earlier === "string" ? earlier : undefined,
   };
 }
 
@@ -222,21 +223,14 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
     await host.grants().flush?.();
   };
 
-  /** The live rows of the registration a verb names. */
-  const ofRegistration = (named: ReturnType<typeof registrationParams>) =>
+  /** The live rows of the file a verb names. */
+  const ofFile = (named: ReturnType<typeof fileParams>) =>
     live().filter((grant) => {
+      if (attr(grant, "app") !== named.app) return false;
       const file = attr(grant, "file");
-      return rowOfHome(
-        host.platform,
-        {
-          grant: grant.grant_id,
-          app: attr(grant, "app"),
-          home: attr(grant, "home"),
-          ...(file === "" ? {} : { file }),
-        },
-        named.home,
-        named.of,
-      );
+      return file === ""
+        ? grant.grant_id === named.earlier
+        : samePath(host.platform, file, named.file);
     });
 
   return {
@@ -258,8 +252,8 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
 
     "setup/home_grant": async (params, cls) => {
       userOnly(cls);
-      const named = registrationParams(params);
-      const { app, home, file } = named.home;
+      const named = fileParams(params);
+      const { app, home, file } = named;
       const given = params["hosts"];
       if (
         given !== undefined &&
@@ -289,10 +283,10 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
           data: { reason: "not_served", retryable: false },
         });
       }
-      // One live row per registration: the same answer keeps it, another one replaces it. A row an
-      // earlier build made has no file, and is replaced by one that has.
-      const ofHome = ofRegistration(named);
-      // One registration per live instance: an actor name stands for one home at a time, and the
+      // One live row per file: the same answer keeps it, another one replaces it. A row an earlier
+      // build made has no file, and is replaced by one that has.
+      const ofHome = ofFile(named);
+      // One file per live instance: an actor name stands for one home at a time, and the
       // gate finds a connection's row by it (hub/home-gate.ts). The person frees the instance by
       // turning the other home off, or gives this one its own instance in machine.toml.
       // Named as such (`reason`), so setup can say which refusal it was (A3 3.7.8).
@@ -344,8 +338,8 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
       userOnly(cls);
       let ids = params["grants"];
       if (ids === undefined) {
-        // A registration's every live row, whatever its instance or space: turning a home off.
-        ids = ofRegistration(registrationParams(params)).map((grant) => grant.grant_id);
+        // A file's every live row, whatever its instance or space: turning a home off.
+        ids = ofFile(fileParams(params)).map((grant) => grant.grant_id);
       }
       if (
         !Array.isArray(ids) ||

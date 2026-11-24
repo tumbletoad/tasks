@@ -32,12 +32,12 @@ import {
   planOf,
   planToken,
   readRecords,
-  registrationOfRecord,
   removeHome,
   setupDir,
   SETUP_FILE,
   settleHomes,
   survey,
+  toolsOf,
   writeRecords,
   type AgentApp,
   type HomeView,
@@ -181,17 +181,15 @@ async function remove(w: World, a: Adapter) {
 
 const recordPath = (w: World): string => join(setupDir(w.input.stateDir), SETUP_FILE);
 
-/** A grant or a revoke for a home setup keeps no record of. */
-const NO_RECORD = { recorded: undefined } as const;
-
 /** The test's live rows as `setup/homes` lists them. */
 const serviceRows = (w: World): ServiceRow[] =>
-  w.rows.live.map(({ grant, app, home, file, instance }) => ({
+  w.rows.live.map(({ grant, app, home, file, instance, space }) => ({
     grant,
     app,
     home,
     ...(file === undefined ? {} : { file }),
     instance,
+    spaces: [space],
   }));
 
 /** Whether the selected home has access: a live row of the test's grants table. */
@@ -513,7 +511,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             "applied",
           );
           // The "off until asked" row: registered, and its access gone.
-          await rows.revoke(first.home, NO_RECORD);
+          await rows.revoke(first.home, undefined);
           const view = await viewOf(w, a);
           expect(view.state, what).toBe("registered");
           rows.asked.length = 0;
@@ -780,9 +778,9 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         // record said so: the entry comes out and the access is off. The person turns it on again.
         for (const granted of [false, true]) {
           writeFileSync(file, withEntry);
-          await w.rows.revoke((await viewOf(w, a)).home, NO_RECORD);
+          await w.rows.revoke((await viewOf(w, a)).home, undefined);
           if (granted) {
-            await w.rows.grant((await viewOf(w, a)).home, SPACE, registrationOfRecord(record));
+            await w.rows.grant((await viewOf(w, a)).home, SPACE, record.grant ?? undefined);
           }
           writeRecords(w.input.stateDir, [{ ...record, state: "applying", grant: null }]);
           const asked = w.rows.asked.length;
@@ -798,7 +796,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
 
         // Ended after its record, before the entry was written: nothing to finish.
         writeFileSync(file, before);
-        await w.rows.revoke((await viewOf(w, a)).home, NO_RECORD);
+        await w.rows.revoke((await viewOf(w, a)).home, undefined);
         writeRecords(w.input.stateDir, [{ ...record, state: "applying", grant: null }]);
         expect(await settleHomes(w.input, w.rows), a.app).toMatchObject([
           { result: "removed", access: "off" },
@@ -1077,16 +1075,17 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             instance: "codex-gone",
           },
           SPACE,
-          NO_RECORD,
+          undefined,
         );
         const input: SetupInput = {
           ...w.input,
-          rows: w.rows.live.map(({ grant, app, home, file, instance }) => ({
+          rows: w.rows.live.map(({ grant, app, home, file, instance, space }) => ({
             grant,
             app,
             home,
             ...(file === undefined ? {} : { file }),
             instance,
+            spaces: [space],
           })),
         };
         expect(await settleHomes(input, w.rows)).toEqual([]);
@@ -1467,6 +1466,115 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
       expect(w.rows.may(t3Entry, SPACE)).toBe(false);
       expect(w.rows.may(plainEntry, SPACE)).toBe(true);
       expect(w.rows.live.map((r) => r.file)).toEqual([implicit]);
+    },
+    SLOW,
+  );
+
+  test(
+    "second home, an earlier build's grant: the row that build gave plain Claude Code's folder is the file its receipt names, and without a receipt the file that build gave the folder; the other file of that folder is off and has nothing to turn off",
+    async () => {
+      for (const receipt of [true, false]) {
+        const w = await world();
+        const folder = join(w.home, ".claude");
+        const implicit = join(w.home, ".claude.json");
+        const explicit = join(folder, ".claude.json");
+        const named: SetupInput = {
+          ...w.input,
+          instances: [claudeInstance("claude-named", { CLAUDE_CONFIG_DIR: folder })],
+        };
+        seed(explicit, '{"numStartups": 1}\n');
+        const claude = ADAPTERS.find((a) => a.app === "claude-code") as Adapter;
+        // That build registered plain Claude Code: its entry, its row (a folder, no file), and its
+        // record, which names the row.
+        seed(implicit, '{"numStartups": 3}\n');
+        const plain = (await survey(w.input)).find((v) => v.home.file === implicit) as HomeView;
+        expect(
+          await applyHome(
+            w.input,
+            plain,
+            SPACE,
+            w.rows,
+            planOf(w.input, [plain], SPACE)[0]?.change,
+          ),
+        ).toMatchObject({ access: "on" });
+        await w.rows.revoke(plain.home, undefined);
+        const earlier = w.rows.earlier(plain.home, SPACE);
+        const [record] = readRecords(w.input.stateDir);
+        if (record === undefined) throw new Error("no record");
+        writeRecords(w.input.stateDir, receipt ? [{ ...record, grant: earlier }] : []);
+        const entry = entryIn(claude, implicit);
+
+        const input: SetupInput = { ...named, rows: serviceRows(w) };
+        const views = await survey(input);
+        const ofFile = (file: string) => views.find((v) => v.home.file === file) as HomeView;
+        const what = receipt ? "with its receipt" : "without a receipt";
+        // Its tools start: the entry is in place and that row is its access.
+        expect(toolsOf(input, ofFile(implicit), SPACE), what).toMatchObject({
+          status: "on",
+          off: true,
+        });
+        expect(toolsOf(input, ofFile(explicit), SPACE), what).toMatchObject({
+          status: "off",
+          off: false,
+        });
+        // Turning the other file off takes nothing from the first.
+        expect(await removeHome(input, ofFile(explicit), w.rows), what).toMatchObject({
+          access: "off",
+        });
+        expect(
+          w.rows.live.map((r) => r.grant),
+          what,
+        ).toEqual([earlier]);
+        expect(entryIn(claude, implicit), what).toEqual(entry);
+        // Turning the first off takes that build's row.
+        expect(await removeHome(input, ofFile(implicit), w.rows), what).toMatchObject({
+          access: "off",
+        });
+        expect(w.rows.live, what).toEqual([]);
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "a live grant no home and no record accounts for (its folder renamed, setup's record lost) is listed with its file: its tools are off, nothing is offered to turn on, and it turns off",
+    async () => {
+      const w = await world();
+      const codex = ADAPTERS.find((a) => a.app === "codex") as Adapter;
+      const file = codex.file(w);
+      seed(file, 'model = "m"\n');
+      expect(await apply(w, codex)).toMatchObject({ access: "on" });
+      rmSync(setupDir(w.input.stateDir), { recursive: true, force: true });
+      renameSync(dirname(file), join(w.home, ".codex-renamed"));
+      const input: SetupInput = { ...w.input, rows: serviceRows(w) };
+      const view = (await survey(input)).find((v) => v.home.file === file);
+      if (view === undefined) throw new Error("the row's file is not listed");
+      expect(toolsOf(input, view, SPACE)).toEqual({ status: "off", why: "missing", off: true });
+      expect(await applyHome(input, view, SPACE, w.rows)).toMatchObject({ result: "left" });
+      expect(await removeHome(input, view, w.rows)).toMatchObject({ access: "off" });
+      expect(w.rows.live).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a grant's own space: with the entry and the record gone and the grant live for one space, the home is said to be set up for that space in another, and turning it on from there moves nothing",
+    async () => {
+      const w = await world();
+      const codex = ADAPTERS.find((a) => a.app === "codex") as Adapter;
+      const file = codex.file(w);
+      seed(file, 'model = "m"\n');
+      expect(await apply(w, codex)).toMatchObject({ access: "on" });
+      rmSync(setupDir(w.input.stateDir), { recursive: true, force: true });
+      seed(file, 'model = "m"\n');
+      const other = `sp_${"9".repeat(26)}`;
+      const input: SetupInput = { ...w.input, rows: serviceRows(w) };
+      const view = (await survey(input)).find((v) => v.home.file === file) as HomeView;
+      expect(toolsOf(input, view, other)).toEqual({ status: "off", why: "other_space", off: true });
+      expect(toolsOf(input, view, SPACE)).toMatchObject({ why: "missing", on: "add" });
+      expect(await applyHome(input, view, other, w.rows)).toMatchObject({ result: "left" });
+      expect(w.rows.live.map((r) => r.space)).toEqual([SPACE]);
+      expect(readFileSync(file, "utf8")).toBe('model = "m"\n');
     },
     SLOW,
   );

@@ -201,6 +201,11 @@ export interface HomeView {
   /** TTasks's entry as found, when there is one. TTasks's own data: never another key's value. */
   readonly entry?: unknown;
   readonly record?: HomeRecord;
+  /**
+   * The row an earlier build made for this file, which names its folder only (rowFile): the service
+   * finds that row by this ID. Without the service's rows, the row the record names.
+   */
+  readonly earlier?: string;
 }
 
 /** What setup writes for one home. */
@@ -273,10 +278,14 @@ export class GrantRefused extends Error {
  * written never leaves a home with access it should not have.
  */
 export interface Access {
-  /** Gives the home its row for `space`, or keeps the one it has: the row's ID. Throws when refused. */
-  grant(home: AgentHome, space: string, of: RegistrationOf): Promise<string>;
-  /** Takes back every live row of the home's registration. Throws when that could not be done. */
-  revoke(home: AgentHome, of: RegistrationOf): Promise<void>;
+  /**
+   * Gives the home's file its row for `space`, or keeps the one it has: the row's ID. `earlier` is
+   * the home's row from an earlier build (HomeView.earlier), which a new row replaces. Throws when
+   * refused.
+   */
+  grant(home: AgentHome, space: string, earlier: string | undefined): Promise<string>;
+  /** Takes back every live row of the home's file, and `earlier`. Throws when that could not be done. */
+  revoke(home: AgentHome, earlier: string | undefined): Promise<void>;
 }
 
 /** What setup reads, injected so tests use scratch homes (and doctor's probes fake commands). */
@@ -373,47 +382,88 @@ export interface ServiceRow {
   /** Its settings file; undefined for a row an earlier build made. */
   readonly file?: string;
   readonly instance: string;
+  /** The spaces it grants; empty when the caller does not keep them. */
+  readonly spaces: readonly string[];
 }
 
 /**
- * Which registration a grant or a revoke is for, beside its file: the row the home's record names
- * (null when it names none; undefined when setup keeps no record of the home).
- */
-export interface RegistrationOf {
-  readonly recorded: string | null | undefined;
-}
-
-/** What setup's record of a home says of its registration, or that it keeps none. */
-export const registrationOfRecord = (record: HomeRecord | undefined): RegistrationOf => ({
-  recorded: record?.grant,
-});
-
-/**
- * Whether a row is the registration of TTasks's entry in `home`'s file: a row setup made names that
- * file. A row an earlier build made names a folder only, where two files can be: it is the one the
- * home's record names, none when the record names none, and one of the folder's for a home setup
- * keeps no record of. The service and setup decide it alike.
+ * Whether a live row is the access of a home's file: a row setup made names the file, and an
+ * earlier build's row, which names a folder only, is the home's `earlier` (rowFile).
  */
 export function rowOfHome(
   platform: NodeJS.Platform,
-  row: Pick<ServiceRow, "grant" | "app" | "home" | "file">,
-  home: Pick<AgentHome, "app" | "home" | "file">,
-  of: RegistrationOf,
+  row: Pick<ServiceRow, "grant" | "app" | "file">,
+  view: Pick<HomeView, "home" | "earlier">,
 ): boolean {
-  if (row.app !== home.app) return false;
-  if (row.file !== undefined) return samePath(platform, row.file, home.file);
-  if (of.recorded !== undefined) return row.grant === of.recorded;
-  return samePath(platform, row.home, home.home);
+  if (row.app !== view.home.app) return false;
+  return row.file === undefined
+    ? row.grant === view.earlier
+    : samePath(platform, row.file, view.home.file);
 }
 
-/** Whether a home has its access: a live row of its registration (rowOfHome). */
+/** Whether a home's file has its access: a live row of it (rowOfHome). */
 export function hasAccess(
   platform: NodeJS.Platform,
   rows: readonly ServiceRow[],
-  view: Pick<HomeView, "home" | "record">,
+  view: Pick<HomeView, "home" | "earlier">,
 ): boolean {
-  const of = registrationOfRecord(view.record);
-  return rows.some((row) => rowOfHome(platform, row, view.home, of));
+  return rows.some((row) => rowOfHome(platform, row, view));
+}
+
+/**
+ * The file an earlier build gave a folder: it kept one home per folder, and the app's default
+ * folder was its default home, whose Claude Code file is the account's `~/.claude.json`.
+ */
+function folderFile(
+  input: Pick<SetupInput, "platform" | "userHome">,
+  app: AgentApp,
+  folder: string,
+): string {
+  const rule = targetDef(APPS[app].target).detect.homes;
+  const isDefault =
+    rule !== undefined &&
+    samePath(input.platform, folder, pathOf(input.platform).join(input.userHome, rule.folder));
+  return fileOf(input, app, folder, isDefault);
+}
+
+/**
+ * The settings file a live row is for. A row setup made names it. A row an earlier build made
+ * names a folder only, where Claude Code can have two files: it is the file of the record that
+ * names the row, else the file that build gave the folder.
+ */
+function rowFile(
+  input: Pick<SetupInput, "platform" | "userHome">,
+  records: readonly HomeRecord[],
+  row: ServiceRow & { readonly app: AgentApp },
+): string {
+  return (
+    row.file ??
+    records.find((r) => r.grant === row.grant)?.file ??
+    folderFile(input, row.app, row.home)
+  );
+}
+
+/** Each view with `earlier`: the live row an earlier build made for its file (rowFile). */
+function withEarlier(
+  input: SetupInput,
+  records: readonly HomeRecord[],
+  views: readonly HomeView[],
+): HomeView[] {
+  const rows = input.rows;
+  if (rows === undefined) return [...views];
+  return views.map((view) => {
+    const earlier = rows.find(
+      (r) =>
+        r.file === undefined &&
+        r.app === view.home.app &&
+        samePath(
+          input.platform,
+          rowFile(input, records, { ...r, app: view.home.app }),
+          view.home.file,
+        ),
+    )?.grant;
+    return earlier === undefined ? view : { ...view, earlier };
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -951,6 +1001,7 @@ export function inspectHome(home: AgentHome, record: HomeRecord | undefined): Ho
     parent: read.kind === "read" && read.parent,
     ...(read.kind === "read" && read.entry !== undefined ? { entry: read.entry } : {}),
     ...(record === undefined ? {} : { record }),
+    ...(record?.grant == null ? {} : { earlier: record.grant }),
   };
   if (read.kind === "refused") return { ...base, state: "refused", refusal: read.refusal };
   if (record === undefined) {
@@ -1007,6 +1058,7 @@ export async function survey(input: SetupInput): Promise<HomeView[]> {
       homes.push(await homeOfRecord(input, found, record));
     }
   }
+  for (const home of rowHomes(input, found, records, homes)) homes.push(home);
   const views: HomeView[] = [];
   for (const home of freeInstances(input, homes, records)) {
     const record = recordOf(records, home, input.platform);
@@ -1014,52 +1066,68 @@ export async function survey(input: SetupInput): Promise<HomeView[]> {
       inspectHome(record === undefined ? home : await homeOfRecord(input, found, record), record),
     );
   }
-  return views;
+  return withEarlier(input, records, views);
 }
 
 /**
- * Every home while setup's own record cannot be read: the homes found, and the homes the service's
- * live rows (`input.rows`) name, each with its row's instance and refused as `record_unreadable`.
- * Turning one off revokes its access and nothing else (removeHome); no app's settings file is
- * opened, and nothing can be turned on.
+ * The homes of the live rows (`input.rows`) whose file none of `homes` is: a folder renamed, or
+ * setup's record lost or unreadable. Each is listed with its row's instance, so its access can be
+ * turned off.
+ */
+function rowHomes(
+  input: SetupInput,
+  found: Discovered,
+  records: readonly HomeRecord[],
+  homes: readonly AgentHome[],
+): AgentHome[] {
+  const listed: AgentHome[] = [];
+  for (const row of input.rows ?? []) {
+    const { app } = row;
+    if (!isAgentApp(app)) continue;
+    const file = rowFile(input, records, { ...row, app });
+    const known = (h: AgentHome) => h.app === app && samePath(input.platform, h.file, file);
+    if (homes.some(known) || listed.some(known)) continue;
+    const isDefault = !samePath(input.platform, fileOf(input, app, row.home, false), file);
+    listed.push({
+      app,
+      home: row.home,
+      file,
+      isDefault,
+      variable: targetDef(APPS[app].target).detect.homes?.env ?? "",
+      instance: row.instance,
+      account: "",
+      hosts: hostsOf(input, found, app, row.home, isDefault),
+      managed: false,
+    });
+  }
+  return listed;
+}
+
+/**
+ * Every home while setup's own record cannot be read: the homes found, and the homes of the
+ * service's live rows, each with its row's instance and refused as `record_unreadable`. Turning
+ * one off revokes its access and nothing else (removeHome); no app's settings file is opened, and
+ * nothing can be turned on.
  */
 async function unrecorded(input: SetupInput): Promise<HomeView[]> {
   const found = discover(input);
   const homes = await agentHomes(input, found);
-  const rows = input.rows ?? [];
-  const noRecord = registrationOfRecord(undefined);
-  const ofHome = (row: ServiceRow, home: AgentHome) =>
-    rowOfHome(input.platform, row, home, noRecord);
-  for (const row of rows) {
-    if (!isAgentApp(row.app)) continue;
-    if (homes.some((h) => ofHome(row, h))) continue;
-    // An earlier build's row names no file: its folder's file of an explicitly selected home.
-    const file = row.file ?? fileOf(input, row.app, row.home, false);
-    const isDefault =
-      row.file !== undefined &&
-      !samePath(input.platform, fileOf(input, row.app, row.home, false), file);
-    homes.push({
-      app: row.app,
-      home: row.home,
-      file,
-      isDefault,
-      variable: targetDef(APPS[row.app].target).detect.homes?.env ?? "",
-      instance: row.instance,
-      account: "",
-      hosts: hostsOf(input, found, row.app, row.home, isDefault),
-      managed: false,
-    });
-  }
-  return homes.map((home) => {
-    const row = rows.find((r) => ofHome(r, home));
-    return {
-      home: row === undefined ? home : { ...home, instance: row.instance },
+  homes.push(...rowHomes(input, found, [], homes));
+  const views = withEarlier(
+    input,
+    [],
+    homes.map((home) => ({
+      home,
       state: "refused",
       refusal: "record_unreadable",
       sha256: null,
       bound: null,
       parent: false,
-    };
+    })),
+  );
+  return views.map((view) => {
+    const row = input.rows?.find((r) => rowOfHome(input.platform, r, view));
+    return row === undefined ? view : { ...view, home: { ...view.home, instance: row.instance } };
   });
 }
 
@@ -1085,9 +1153,10 @@ function freeInstances(
     ...records.map((r) => r.instance),
     ...homes.filter((h) => h.proposed !== true && !recorded(h)).map((h) => h.instance),
   ]);
-  // A home with no record names no row: an earlier build's row of its folder is another file's.
   const own = (row: ServiceRow, home: AgentHome) =>
-    rowOfHome(platform, row, home, { recorded: null });
+    row.app === home.app &&
+    isAgentApp(row.app) &&
+    samePath(platform, rowFile(input, records, { ...row, app: row.app }), home.file);
   const heldByRow = (id: string, home: AgentHome) =>
     (input.rows ?? []).some((row) => row.instance === id && !own(row, home));
   const proposedHere = new Map<string, AgentApp>();
@@ -1242,8 +1311,9 @@ export function toolsOf(
   space: string,
   writable?: Refusal,
 ): ToolsAnswer {
-  const { home, record } = view;
+  const { home } = view;
   const program = programOf(input, view);
+  const named = spaceOfHome(input, view);
   return toolsAnswer({
     state: view.state,
     ...(view.refusal === undefined ? {} : { refusal: view.refusal }),
@@ -1255,12 +1325,30 @@ export function toolsOf(
         : hasAccess(input.platform, input.rows, view)
           ? "live"
           : "off",
-    otherSpace: record !== undefined && space !== "" && record.space !== space,
+    otherSpace: named !== undefined && space !== "" && named !== space,
     writable:
-      writable ?? (home.app === "claude-desktop" && view.sha256 === null ? "not_set_up" : true),
+      writable ??
+      (home.app === "claude-desktop" && view.sha256 === null
+        ? "not_set_up"
+        : // A file whose folder is not there (renamed, or gone) cannot take an entry.
+          input.isFolder(pathOf(input.platform).dirname(home.file))
+          ? true
+          : "unreadable"),
     installed: isFile(input.tasks),
     handMade: view.refusal === "foreign_entry" && entryInstance(view.entry) === null,
   });
+}
+
+/**
+ * The space a home is set up for: the one its record names, else the one its live row grants (a
+ * row whose record was lost). Undefined for neither.
+ */
+export function spaceOfHome(input: SetupInput, view: HomeView): string | undefined {
+  return (
+    view.record?.space ??
+    input.rows?.find((r) => rowOfHome(input.platform, r, view))?.spaces[0] ??
+    undefined
+  );
 }
 
 /**
@@ -1426,8 +1514,8 @@ const grantReason = (error: unknown): OutcomeReason =>
   error instanceof GrantRefused ? error.reason : "grant_failed";
 
 /** Whether the service confirmed that the home has no access now. */
-const revoked = (access: Access, home: AgentHome, of: RegistrationOf): Promise<boolean> =>
-  access.revoke(home, of).then(
+const revoked = (access: Access, home: AgentHome, earlier: string | undefined): Promise<boolean> =>
+  access.revoke(home, earlier).then(
     () => true,
     () => false,
   );
@@ -1631,20 +1719,20 @@ export async function applyHome(
     case "grant":
       return record === undefined
         ? left()
-        : giveAccess(input, home, record, record.space, access, true);
+        : giveAccess(input, home, record, record.space, access, view.earlier);
     case "add": {
       if (view.state !== "not_registered") return left();
       const change = typeof planned === "object" ? planned : planChange(input, view, space);
       if (typeof change === "string") return { home, result: "left", reason: change };
       const written = await writeEntry(input, view, space, change);
       if (!("entry" in written)) return { home, ...written, access: "off" };
-      return giveAccess(input, home, written, space, access, false);
+      return giveAccess(input, home, written, space, access, view.earlier, false);
     }
     default:
       if (view.state !== "registered" || record === undefined || answer.why !== undefined) {
         return left();
       }
-      return giveAccess(input, home, record, record.space, access, true);
+      return giveAccess(input, home, record, record.space, access, view.earlier);
   }
 }
 
@@ -1667,15 +1755,16 @@ async function rewrite(input: SetupInput, view: HomeView, access: Access): Promi
   if (typeof change === "string") return { home, result: "failed", reason: change, access: "off" };
   const written = await writeEntry(input, fresh, record.space, change);
   if (!("entry" in written)) return { home, ...written, access: "off" };
-  return giveAccess(input, home, written, record.space, access, false);
+  return giveAccess(input, home, written, record.space, access, undefined, false);
 }
 
 /**
  * Gives a home whose entry is in its file its access, for a new install and a registered home
  * alike: the entry is read and must be the one setup intended, the access is asked for, the file is
  * read once more after the service's answer, and the record says `applied` with the row. Anything
- * else takes it all back (undo). `registered`: the home was registered before this apply, so it may
- * have access already, and a row the service refuses leaves that as it was.
+ * else takes it all back (undo). `earlier` is the home's row from an earlier build (HomeView). `registered`:
+ * the home was registered before this apply, so it may have access already, and a row the service
+ * refuses leaves that as it was.
  */
 async function giveAccess(
   input: SetupInput,
@@ -1683,27 +1772,28 @@ async function giveAccess(
   record: HomeRecord,
   space: string,
   access: Access,
-  registered: boolean,
+  earlier: string | undefined,
+  registered = true,
 ): Promise<Outcome> {
   // The entry as setup intended it, read back from its place: anything else there is not its own.
   const placed = entryNow(home, record);
   if (placed.whose !== "own") {
-    return undo(input, home, record, access, placed.reason, {
+    return undo(input, home, record, access, earlier, placed.reason, {
       given: registered,
       readable: placed.whose !== "unchecked",
     });
   }
   let grant: string;
   try {
-    grant = await access.grant(home, space, registrationOfRecord(record));
+    grant = await access.grant(home, space, earlier);
   } catch (error) {
     if (registered) return { home, result: "failed", reason: grantReason(error) };
     // A row the service made before its answer was lost is taken back too.
-    return undo(input, home, record, access, grantReason(error));
+    return undo(input, home, record, access, earlier, grantReason(error));
   }
   const after = entryNow(home, record);
   if (after.whose !== "own") {
-    return undo(input, home, record, access, after.reason, {
+    return undo(input, home, record, access, earlier, after.reason, {
       readable: after.whose !== "unchecked",
     });
   }
@@ -1711,7 +1801,7 @@ async function giveAccess(
     try {
       putRecord(input.stateDir, input.platform, { ...record, state: "applied", grant });
     } catch {
-      return undo(input, home, record, access, "state_unwritable");
+      return undo(input, home, record, access, earlier, "state_unwritable");
     }
   }
   return { home, result: registered ? "unchanged" : "applied", access: "on" };
@@ -1747,6 +1837,7 @@ async function undo(
   home: AgentHome,
   record: HomeRecord,
   access: Access,
+  earlier: string | undefined,
   reason: OutcomeReason,
   { given = true, readable = true }: { readonly given?: boolean; readonly readable?: boolean } = {},
 ): Promise<Outcome> {
@@ -1756,7 +1847,7 @@ async function undo(
   } catch {
     // Left as it was: see above.
   }
-  const off = given ? await revoked(access, home, registrationOfRecord(record)) : true;
+  const off = given ? await revoked(access, home, earlier) : true;
   if (!readable || !off) {
     return {
       home,
@@ -1784,7 +1875,7 @@ export async function removeHome(
   access: Access,
 ): Promise<Outcome> {
   const { home, record } = view;
-  if (!(await revoked(access, home, registrationOfRecord(record)))) {
+  if (!(await revoked(access, home, view.earlier))) {
     return {
       home,
       result: "failed",

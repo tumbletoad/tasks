@@ -54,7 +54,10 @@ export interface ToolsFacts {
   readonly program?: "there" | "moved" | "gone";
   /** The home's agent-home row: live, off, or unknown (no service answered). */
   readonly access: "live" | "off" | "unknown";
-  /** The record names another space than the one the person is in. */
+  /**
+   * The home is set up for another space than the one the person is in: its record names one, or
+   * its live row grants one (agents.ts `spaceOfHome`).
+   */
   readonly otherSpace: boolean;
   /** A new entry can go into the file (agents.ts `planChange`), or why it cannot. */
   readonly writable: true | Refusal;
@@ -128,12 +131,15 @@ export function toolsAnswer(f: ToolsFacts): ToolsAnswer {
     case "not_registered": {
       // A live row with no entry (setup's record was lost): its entry is what is missing.
       const lost = f.access === "live" ? "missing" : undefined;
+      // Writing an entry here would move that row's access to this space.
+      if (f.otherSpace) return made("off", "other_space");
       return blocked === undefined ? made("off", lost, "add") : made("off", lost ?? blocked);
     }
     case "interrupted": {
       // The next apply finishes it first as a removal, then this one adds.
       const why = f.entry && !off ? "entry_left" : "interrupted";
       const status = f.entry && program !== "moved" && program !== "gone" ? live : "off";
+      if (f.otherSpace) return made(status, "other_space");
       return blocked === undefined ? made(status, why, "add") : made(status, why);
     }
     case "missing":

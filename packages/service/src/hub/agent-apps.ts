@@ -57,6 +57,7 @@ import {
   SetupStateInvalid,
   SetupStateUnsafe,
   settleHomes,
+  spaceOfHome,
   survey,
   toolsOf,
   t3Proposals,
@@ -274,6 +275,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
         home: attr(grant, "home"),
         ...(file === "" ? {} : { file }),
         instance: attr(grant, "instance"),
+        spaces: grant.spaces,
       };
     });
   const input: SetupInput = {
@@ -412,7 +414,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
       also: home.hosts,
       ...(byName(view) ? { byName: true as const } : {}),
       ...(open === undefined ? {} : { open }),
-      tools: toolsPart(host, space, item, answerOf(item), shown),
+      tools: toolsPart(host, space, item, answerOf(item), spaceOfHome(input, view), shown),
     });
   }
 
@@ -486,6 +488,7 @@ function toolsPart(
   space: string,
   { view, change, access, several }: Planned,
   answer: ToolsAnswer,
+  recorded: string | undefined,
   shown: (path: string) => string,
 ): Part {
   const file = shown(view.home.file);
@@ -494,7 +497,6 @@ function toolsPart(
       word,
       planToken(space, [{ view, change, ...(access === undefined ? {} : { access }) }]),
     ]);
-  const recorded = view.record?.space;
   const why =
     answer.why !== undefined && UNREADABLE.has(answer.why)
       ? "file_unreadable"

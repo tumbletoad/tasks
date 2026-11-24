@@ -64,7 +64,6 @@ import {
   readRecords,
   readsHome,
   recordArgv,
-  registrationOfRecord,
   rowOfHome,
   recordedBlocks,
   samePath,
@@ -294,8 +293,7 @@ export async function agentChecks(
     } catch {
       rows = undefined;
     }
-    const rowOf = (view: HomeView) =>
-      rows?.find((r) => rowOfHome(input.platform, r, view.home, registrationOfRecord(view.record)));
+    const rowOf = (view: HomeView) => rows?.find((r) => rowOfHome(input.platform, r, view));
 
     for (const view of views) {
       checks.push(
@@ -610,8 +608,7 @@ function grantsCheck(
 ): Check {
   if (rows === undefined) return { id: "grants", status: "skip", detail: "No service to ask." };
   const registered = views.filter((v) => v.record?.state === "applied");
-  const ofView = (r: Row, v: HomeView) =>
-    rowOfHome(input.platform, r, v.home, registrationOfRecord(v.record));
+  const ofView = (r: Row, v: HomeView) => rowOfHome(input.platform, r, v);
   const without = registered.filter((v) => !rows.some((r) => ofView(r, v)));
   const orphans = rows.filter((r) => !views.some((v) => ofView(r, v)));
   if (without.length > 0) {

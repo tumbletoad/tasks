@@ -80,7 +80,6 @@ import {
   removeHome,
   rowAccess,
   runCommand,
-  registrationOfRecord,
   rowOfHome,
   samePath,
   SetupStateInvalid,
@@ -619,9 +618,7 @@ export async function agentsCommand(
             const live = await withRows(input, call);
             surveyed = await survey(live);
             const rowed = (view: HomeView) =>
-              (live.rows ?? []).some((row) =>
-                rowOfHome(input.platform, row, view.home, registrationOfRecord(view.record)),
-              );
+              (live.rows ?? []).some((row) => rowOfHome(input.platform, row, view));
             for (const view of surveyed.filter((v) => selected(v) && rowed(v))) {
               done.push(await removeHome(input, view, access));
             }
@@ -711,7 +708,7 @@ async function withRows(input: SetupInput, call: Call): Promise<SetupInput> {
   const listed = answer["homes"];
   const rows = (Array.isArray(listed) ? (listed as unknown[]) : []).flatMap((row) => {
     if (typeof row !== "object" || row === null) return [];
-    const { grant, app, home, file, instance } = row as Record<string, unknown>;
+    const { grant, app, home, file, instance, spaces } = row as Record<string, unknown>;
     return typeof grant === "string" &&
       typeof app === "string" &&
       typeof home === "string" &&
@@ -723,6 +720,9 @@ async function withRows(input: SetupInput, call: Call): Promise<SetupInput> {
             home,
             ...(typeof file === "string" ? { file } : {}),
             instance,
+            spaces: Array.isArray(spaces)
+              ? spaces.filter((s): s is string => typeof s === "string")
+              : [],
           },
         ]
       : [];
@@ -780,12 +780,10 @@ async function revokeLeftRows(
       `${PRODUCT_NAME}'s service is not running, so the homes' grant rows stay. Run ${CLI_NAME} setup agents --remove again once it runs.`,
     ];
   }
-  const views = await survey(input);
+  const views = await survey({ ...input, rows });
   const stale = rows.filter((row) => {
     if (!(AGENT_APPS as readonly string[]).includes(row.app)) return false;
-    const view = views.find((v) =>
-      rowOfHome(input.platform, row, v.home, registrationOfRecord(v.record)),
-    );
+    const view = views.find((v) => rowOfHome(input.platform, row, v));
     // A home that is gone is selected by its row's app, instance, home and hosts.
     const pick = selected(
       view ?? {
@@ -814,8 +812,7 @@ async function status(
   // One snapshot of the rows for every home: its answer and its row say the same.
   const views = (await survey(input)).filter(selected);
   const { rows } = input;
-  const rowOf = (view: HomeView) =>
-    rows?.find((r) => rowOfHome(input.platform, r, view.home, registrationOfRecord(view.record)));
+  const rowOf = (view: HomeView) => rows?.find((r) => rowOfHome(input.platform, r, view));
   if (globals.json) {
     io.stdout(
       `${JSON.stringify({

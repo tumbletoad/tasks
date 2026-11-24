@@ -1,7 +1,7 @@
 // A home's access through the service's agent-home rows (hub/agent-homes.ts): the command line
 // asks for them over its connection, the page in the service itself, with the same two verbs.
 import { AppError } from "@ttasks/contracts";
-import { GrantRefused, type Access, type AgentHome, type RegistrationOf } from "./agents.ts";
+import { GrantRefused, type Access, type AgentHome } from "./agents.ts";
 
 /** One of the service's `setup/*` verbs. It throws an AppError when the service refuses. */
 export type RowCall = (
@@ -9,22 +9,22 @@ export type RowCall = (
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
-/** The registration a verb is for: the home's file and the row its record names. */
-const registrationParams = (home: AgentHome, of: RegistrationOf) => ({
+/** The file a verb is for, and the row an earlier build made for it (`grant`). */
+const fileParams = (home: AgentHome, earlier: string | undefined) => ({
   app: home.app,
   home: home.home,
   file: home.file,
-  ...(of.recorded === undefined ? {} : { grant: of.recorded }),
+  ...(earlier === undefined ? {} : { grant: earlier }),
 });
 
 /** A home's access as the service's rows: given with `setup/home_grant`, taken back with `setup/home_revoke`. */
 export function rowAccess(call: RowCall): Access {
   return {
-    async grant(home, space, of) {
+    async grant(home, space, earlier) {
       let granted: Record<string, unknown>;
       try {
         granted = await call("setup/home_grant", {
-          ...registrationParams(home, of),
+          ...fileParams(home, earlier),
           instance: home.instance,
           account: home.account,
           hosts: home.hosts,
@@ -38,8 +38,8 @@ export function rowAccess(call: RowCall): Access {
       if (typeof grant !== "string") throw new GrantRefused("grant_failed");
       return grant;
     },
-    async revoke(home, of) {
-      await call("setup/home_revoke", registrationParams(home, of));
+    async revoke(home, earlier) {
+      await call("setup/home_revoke", fileParams(home, earlier));
     },
   };
 }

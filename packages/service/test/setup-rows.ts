@@ -82,17 +82,17 @@ export function keptRows(before?: (verb: "grant" | "revoke", home: AgentHome) =>
     },
     asked: [],
     refuse: {},
-    async grant(home, space, of) {
+    async grant(home, space, earlier) {
       rows.asked.push({ verb: "grant", home: home.home });
       before?.("grant", home);
       if (rows.refuse.grant !== undefined) throw new GrantRefused(rows.refuse.grant);
-      return access.grant(home, space, of);
+      return access.grant(home, space, earlier);
     },
-    async revoke(home, of) {
+    async revoke(home, earlier) {
       rows.asked.push({ verb: "revoke", home: home.home });
       before?.("revoke", home);
       if (rows.refuse.revoke === true) throw new Error("service gone");
-      return access.revoke(home, of);
+      return access.revoke(home, earlier);
     },
     may(entry, space) {
       return gate.may(entryInstance(entry) ?? MANUAL_INSTANCE, space);
