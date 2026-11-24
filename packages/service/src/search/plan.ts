@@ -46,6 +46,8 @@ export interface Vocabulary {
   readonly refPrefix: string;
   readonly statuses: readonly string[];
   readonly efforts: readonly string[];
+  /** The sizes tasks hold, read for an `effort:` filter: one the list lacks is found too. */
+  readonly heldEfforts: readonly string[];
   readonly areas: readonly { readonly id: string; readonly slug: string; readonly title: string }[];
   readonly projects: readonly {
     readonly id: string;
@@ -421,7 +423,7 @@ function filterCondition(term: FilterTerm, ctx: PlanContext, b: Binder): string 
     case "status":
       return `t.status IN ${b.list(namedValues(term, v.statuses, "status"))}`;
     case "effort":
-      return `t.effort IN ${b.list(namedValues(term, v.efforts, "effort"))}`;
+      return `t.effort IN ${b.list(namedValues(term, [...new Set([...v.efforts, ...v.heldEfforts])], "effort"))}`;
     case "area": {
       // An area includes its projects (A3 3.9.2).
       const ids = b.list(groupIds(term, v.areas, "area"));

@@ -339,3 +339,36 @@ describe("[A3.5.search.effort-exact] search tells apart two sizes that differ on
     expect(await titles("effort:LONG")).toEqual(["Fixture long"]);
   });
 });
+
+describe("[A1.3.16.prefs.effort-off-list] a size the list lacks stays readable everywhere", () => {
+  test("search finds it, sort puts it last, and the tools' text and the readable file show it", async () => {
+    const w = await spaces.next();
+    await w.store(JSON.stringify([{ key: "S" }, { key: "Gone" }, { key: "L" }]), 1);
+    await w.tool("add_tasks", {
+      tasks: [
+        { title: "Fixture large", effort: "L" },
+        { title: "Fixture gone", effort: "Gone" },
+        { title: "Fixture small", effort: "S" },
+      ],
+      request_id: w.rid(),
+    });
+    // A list stored past the writer's check: the task keeps the size the list no longer has.
+    await w.store(JSON.stringify([{ key: "S" }, { key: "L" }]), 1);
+    const rows = async (q: string) => (await w.call("task.search", { q }))["rows"] as Json[];
+    const [gone] = await rows("effort:Gone");
+    expect(gone).toMatchObject({ title: "Fixture gone", effort: "Gone" });
+    expect((await rows("effort:gone")).map((r) => r["title"])).toEqual(["Fixture gone"]);
+    expect((await rows("sort:effort")).map((r) => r["title"])).toEqual([
+      "Fixture small",
+      "Fixture large",
+      "Fixture gone",
+    ]);
+    const ref = String(gone?.["ref"]);
+    expect(await w.tool("get_task", { task: ref })).toContain("Effort: Gone");
+    expect(w.file(ref)).toContain("effort: Gone");
+    // A name no task holds and no level has is still unknown.
+    expect(await w.refusal("task.search", { q: "effort:Nowhere" })).toMatchObject({
+      code: "invalid_input",
+    });
+  });
+});

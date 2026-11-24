@@ -4161,6 +4161,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.16.prefs.effort-off-list",
+      "title": "A task on a size the list lacks stays readable: effort: search finds it, sort:effort puts it last, and the tools' text and the readable file show it",
+      "source": "A1 3.16",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.16.prefs.effort-any",
       "title": "Every reader of the effort scale (an agent's tools, the refusal of a wrong size, the page's snapshot, the writer's check) offers exactly the levels of a list an earlier build stored as names, a default level's name meaning that level, or of a newer build's list, which stays read-only; a missing or reset row has the five default levels; a list the person set offers its levels; a value that is no list of levels reads as the defaults",
       "source": "A1 3.16",
