@@ -1401,6 +1401,34 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
     SLOW,
   );
 
+  test.skipIf(root)(
+    "one of the two files cannot be written: the other is given back as it was, and no access is given",
+    async () => {
+      const w = await world();
+      const { plain, explicit } = filesOf(w);
+      seed(plain, '{\n  "numStartups": 3\n}\n');
+      seed(explicit, '{"theme":"dark"}');
+      const before = [bytesOf(plain), bytesOf(explicit)];
+      const restore = unwritable(explicit);
+      let outcome;
+      try {
+        outcome = await applyDefault(w);
+      } finally {
+        restore();
+      }
+      expect(outcome).toMatchObject({
+        result: "failed",
+        reason: "unwritable",
+        file: explicit,
+        access: "off",
+      });
+      expect([bytesOf(plain), bytesOf(explicit)]).toEqual(before);
+      expect(w.rows.asked).toEqual([]);
+      expect(readRecords(w.input.stateDir)).toEqual([]);
+    },
+    SLOW,
+  );
+
   test(
     "T3 Code starts Claude Code with its home set to the folder: that file gets the entry too, though it is not there yet",
     async () => {
