@@ -70,9 +70,20 @@ export class T3Error extends Error {
   }
 }
 
-/** T3's code of a tool's refusal (`structuredContent.code`), when it is one of its fixed words. */
+/**
+ * T3's code of a tool's refusal, when it is one of its fixed words: T3 answers a declared failure
+ * with its JSON (`{"_tag":"OrchestratorMcpFailure","code":…}`) as the first text content.
+ */
 function refusalCode(result: Record<string, unknown>): string | undefined {
-  const failure = result["structuredContent"];
+  const content = result["content"];
+  const first: unknown = Array.isArray(content) ? content[0] : undefined;
+  let failure: unknown;
+  try {
+    failure =
+      isObject(first) && typeof first["text"] === "string" ? JSON.parse(first["text"]) : undefined;
+  } catch {
+    return undefined;
+  }
   const code = isObject(failure) ? failure["code"] : undefined;
   return typeof code === "string" && /^[a-z_]{1,64}$/u.test(code) ? code : undefined;
 }

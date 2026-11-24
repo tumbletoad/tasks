@@ -189,7 +189,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   );
 
   test(
-    "T3's refusal of the model or the mode is Failed with its reason at once: no repeat, no thread",
+    "T3's refusal of the model, a narrower mode or a read-only pairing is Failed with its reason at once: no repeat, no thread",
     async () => {
       fake.addProject(folder("lumen"));
       fake.models = ["another-model"];
@@ -202,9 +202,15 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
       await pair();
       const mode = await launch(machine(), "lumen");
       expect(mode.dispatched?.state).toBe("failed");
-      expect(mode.dispatched?.reason).toBe("mode_denied");
+      expect(mode.dispatched?.reason).toBe("pairing_denied");
+      // Read only: T3 lists the projects and makes no thread.
+      fake.access = "read-only";
+      await pair();
+      const read = await launch(machine(), "lumen");
+      expect(read.dispatched?.state).toBe("failed");
+      expect(read.dispatched?.reason).toBe("pairing_denied");
       expect(fake.threads.size).toBe(0);
-      for (const { intent } of [model, mode]) {
+      for (const { intent } of [model, mode, read]) {
         const calls = fake.callsOf("t3_thread_launch");
         expect(calls.filter((c) => c.clientRequestId === intent.id)).toHaveLength(1);
       }
@@ -547,15 +553,14 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
       expect(fake.callsOf("t3_project_list")).toHaveLength(lists);
       expect(fake.callsOf("t3_thread_launch").some((c) => c.projectId === lumen)).toBe(false);
 
-      // A pairing below full access cannot register: T3 did not add the folder.
+      // A pairing below full access cannot register: pair again, choosing Full access.
       folder("lumen", "notes");
       fake.access = "auto";
       await pair();
       expect((await prepare("lumen/notes")).prepared).toEqual({
         kind: "unavailable",
-        reason: "not_registered",
+        reason: "pairing_denied",
       });
-      expect(T3_TEXT.not_registered).toBe("T3 Code did not add this folder as a project.");
     },
     SLOW,
   );

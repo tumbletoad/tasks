@@ -126,8 +126,9 @@ interface Token {
   revoked: boolean;
 }
 
-/** The access levels T3's approval page offers, broadest last. */
-export type FakeT3Access = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
+/** The access levels T3's approval page offers, broadest last; read-only writes nothing. */
+export type FakeT3Access =
+  "read-only" | "approval-required" | "auto-accept-edits" | "auto" | "full-access";
 const ACCESS_RANK: readonly string[] = [
   "approval-required",
   "auto-accept-edits",
@@ -737,7 +738,6 @@ export class FakeT3 {
       reply({
         result: {
           isError: true,
-          structuredContent: failure,
           content: [{ type: "text", text: JSON.stringify(failure) }],
         },
       });
@@ -963,6 +963,9 @@ export class FakeT3 {
     const title = args["title"];
     if (typeof title !== "string" || title === "") {
       throw new Refusal("invalid_request", "title is required");
+    }
+    if (token.access === "read-only") {
+      throw new Refusal("capability_denied", "This client was approved for read-only access.");
     }
     // The mode may not be broader than the one the person approved (checked on every call).
     const mode = args["runtimeMode"];

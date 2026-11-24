@@ -2,8 +2,9 @@
 // service process: a T3 Code instance whose T3 is testkit's fake server in this worker, and an app
 // link opener that records each link instead of opening it (world.ts `links`), so no real T3 Code
 // is reached. The common click from the start: T3 not running offers Start, not paired offers Pair
-// (approved on the fake's page), then Open makes one thread with the brief in its composer, at a
-// project root and in a folder inside it, and the thread's entry brings it up again. Fixture data.
+// (approved on the fake's page), a read-only pairing fails the launch at once with Pair again,
+// then Open makes one thread with the brief in its composer, at a project root and in a folder
+// inside it, and the thread's entry brings it up again. Fixture data.
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
@@ -77,19 +78,36 @@ test.describe("[A4.3.4.1.t3.e2e] Open in T3 Code from the page", () => {
     expect(world.links().at(-1)).toBe("t3code://");
     await fake.restart();
 
-    // Not paired: Pair opens T3 Code's approval page, where the person approves.
+    // Not paired: Pair opens T3 Code's approval page, where the person approves, here choosing
+    // read only.
     await p.open.click();
     const unpaired = page.getByRole("status").filter({ hasText: "Pair TTasks with T3 Code" });
     await expect(unpaired).toBeVisible({ timeout: SLOW_MS });
     await pictures(page, "t3-not-paired");
-    const links = world.links().length;
-    await unpaired.getByRole("button", { name: "Pair" }).click();
-    await expect.poll(() => world.links().length, { timeout: SLOW_MS }).toBe(links + 1);
-    expect(await fake.approveInBrowser(lastLink(world).href)).toBe(200);
+    const pair = async (toast: Locator) => {
+      const links = world.links().length;
+      await toast.getByRole("button", { name: "Pair" }).click();
+      await expect.poll(() => world.links().length, { timeout: SLOW_MS }).toBe(links + 1);
+      expect(await fake.approveInBrowser(lastLink(world).href)).toBe(200);
+    };
+    fake.access = "read-only";
+    await pair(unpaired);
+
+    // A read-only pairing: one press, no thread, the reason and Pair again.
+    const portal = fake.addProject(here(world.portal), "portal");
+    await p.open.click();
+    const narrow = page
+      .getByRole("status")
+      .filter({ hasText: "The pairing with T3 Code does not allow this" });
+    await expect(narrow).toBeVisible({ timeout: SLOW_MS });
+    await pictures(page, "t3-pairing-denied");
+    expect(fake.callsOf("t3_thread_launch")).toHaveLength(1);
+    expect(fake.threads.size).toBe(0);
+    fake.access = "full-access";
+    await pair(narrow);
 
     // Open at the project's root, with words of the person's: one thread, the brief in its
     // composer, and the words only in the launch's request.
-    const portal = fake.addProject(here(world.portal), "portal");
     await p.composer.fill("Fixture words: read the handoff notes first.");
     await p.open.click();
     await expect(p.opened).toHaveCount(1, { timeout: SLOW_MS });

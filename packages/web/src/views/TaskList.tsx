@@ -813,12 +813,12 @@ export function TaskList({
       );
     };
     // What T3 Code's refusal offers: Start when it does not run (Pair needs its server), Pair when
-    // TTasks is not paired or the pairing ended.
+    // TTasks is not paired, or the pairing ended or allows too little.
     const t3Next = (why: string): ToastAction | undefined => {
       const act =
         why === "not_running"
           ? "start"
-          : why === "not_paired" || why === "reconnect"
+          : why === "not_paired" || why === "reconnect" || why === "pairing_denied"
             ? "pair"
             : undefined;
       if (act === undefined) return undefined;
@@ -909,6 +909,16 @@ export function TaskList({
                   : []),
               ];
               const then = said.length === 0 ? undefined : said.join(" ");
+              // T3 Code refused before making a thread: why, and what to do.
+              if (
+                receipt.state === "failed" &&
+                (receipt.reason === "model_unavailable" || receipt.reason === "pairing_denied")
+              ) {
+                say(
+                  t("row.openT3", { why: receipt.reason, label: instance.label }),
+                  t3Next(receipt.reason),
+                );
+              }
               // T3 Code made the thread and did not come forward: the same thread, brought up.
               if (opened.linkOpened === false) {
                 say(t("row.t3NotUp"), {

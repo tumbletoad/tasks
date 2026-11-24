@@ -153,8 +153,8 @@ export const FAIL_REASONS = [
   "folder_mismatch",
   /** T3 does not offer the instance's model, and made no thread. */
   "model_unavailable",
-  /** T3 refused the instance's permission as broader than the pairing allows, and made no thread. */
-  "mode_denied",
+  /** T3's pairing does not allow what the launch asks (read only, or a narrower mode): no thread. */
+  "pairing_denied",
   /** Clipboard: the service stopped before the copy was reported. */
   "interrupted",
   /**

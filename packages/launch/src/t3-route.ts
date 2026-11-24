@@ -58,10 +58,12 @@ export type T3Unavailable =
   | "reconnect"
   /** T3 answered, but not in a way that tells: try again. */
   | "no_answer"
-  /** The folder is no T3 project root or worktree, and the person chose Not now. */
+  /** The folder is no T3 project root or worktree, and T3 did not add it as one. */
   | "not_registered"
   /** The instance names a T3 provider instance without a model; T3 needs both together. */
   | "model_required"
+  /** The pairing allows less than opening here needs: pair again, choosing Full access. */
+  | "pairing_denied"
   // The CLI fallback route (t3-cli.ts, A4 3.4.1 "Fallback route"):
   /** The instance names a model without a provider instance: the CLI takes both or neither. */
   | "provider_required"
@@ -88,6 +90,7 @@ export const T3_TEXT = {
   no_answer: "T3 Code did not answer. Try again.",
   not_registered: "T3 Code did not add this folder as a project.",
   model_required: "Set t3_model for this instance: T3 takes a provider instance with its model.",
+  pairing_denied: `The pairing with T3 Code does not allow this. Pair again, choosing Full access: ${CLI_NAME} setup t3`,
   provider_required:
     "Set t3_provider_instance for this instance: T3's command line takes a model with its provider instance.",
   invalid_instance:
@@ -128,7 +131,8 @@ export const T3_RUNTIME_MODES: Readonly<Record<Permission, string | undefined>> 
 /** T3's refusals of a launch that it makes before any thread, by its code. */
 const PRE_LAUNCH: Readonly<Record<string, FailReason>> = {
   model_unavailable: "model_unavailable",
-  runtime_mode_escalation_denied: "mode_denied",
+  runtime_mode_escalation_denied: "pairing_denied",
+  capability_denied: "pairing_denied",
 };
 
 /** A thread link's brief may hold this many characters (A4 3.4.1: T3's limit is 8,000). */
@@ -397,14 +401,12 @@ export class T3Route {
    * Binds the task's resolved folder to T3 (A4 3.4.1 steps 1 to 4): an exact project root or an
    * existing worktree. Any other folder is registered as a project of its own, titled `name`, and
    * bound to it: a thread runs only at a project root, and the person chose this folder for the
-   * task. It is never bound to a containing project.
+   * task. It is never bound to a containing project. The caller has checked `availability`.
    */
   async prepare(input: {
     readonly folder: BindFolder;
     readonly name: string;
   }): Promise<Extract<T3Prepared, { kind: "bound" | "unavailable" }>> {
-    const available = await this.availability();
-    if (available.state !== "ready") return { kind: "unavailable", reason: available.state };
     try {
       const binding = await bindFolder(await this.#projects(), input.folder, this.#platform);
       if (binding.kind === "bound") return binding;
@@ -415,8 +417,11 @@ export class T3Route {
       if (typeof made["id"] !== "string" || made["id"] === "") throw new T3Error("unreadable");
       return { kind: "bound", projectId: made["id"], strategy: { type: "root" } };
     } catch (error) {
-      // T3 refused the folder (a pairing below Full access, a project made there meanwhile):
-      // what T3 lists now decides.
+      // Registering needs Full access: a narrower pairing is the person's to widen.
+      if (error instanceof T3Error && error.code === "capability_denied") {
+        return { kind: "unavailable", reason: "pairing_denied" };
+      }
+      // T3 refused the folder otherwise (a project made there meanwhile): what it lists decides.
       if (error instanceof T3Error && error.failure === "tool_error") {
         const binding = await this.#projects()
           .then((projects) => bindFolder(projects, input.folder, this.#platform))
