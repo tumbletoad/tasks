@@ -691,23 +691,12 @@ function walk(value: unknown, strings: string[], objects: Value[]): void {
 }
 
 /**
- * The entries whose answer names tasks the person just made open again: another's change to them,
- * even one taken back, holds back the Undo or Redo that would check them off again, as it should.
- */
-const REOPENED = new Set(["task.reopen", "history.undo", "history.redo"]);
-
-/**
  * A write between an example's two sends, by another agent (`aside`), to everything its answer
- * names: each active task gets another title (but those the answer made open again: REOPENED),
- * each project another area and name, each area another name, each preference set another value,
- * and a project's folder another folder. What it returns takes each change back, so the examples
- * after it find the world as it was.
+ * names: each active task gets another title, each project another area and name, each area
+ * another name, each preference set another value, and a project's folder another folder. What
+ * it returns takes each change back, so the examples after it find the world as it was.
  */
-async function meanwhile(
-  t: ContractTransport,
-  example: string,
-  answer: Value,
-): Promise<() => Promise<void>> {
+async function meanwhile(t: ContractTransport, answer: Value): Promise<() => Promise<void>> {
   const back: (() => Promise<unknown>)[] = [];
   const base = async (): Promise<string> => String((await t.aside("space.status", {}))["as_of"]);
   /** One change, and what takes it back. */
@@ -733,8 +722,7 @@ async function meanwhile(
   const objects: Value[] = [];
   walk(answer, strings, objects);
 
-  const refs = REOPENED.has(example) ? [] : strings.filter((s) => /^M-[0-9]+$/u.test(s));
-  for (const ref of new Set(refs)) {
+  for (const ref of new Set(strings.filter((s) => /^M-[0-9]+$/u.test(s)))) {
     const read = await t.aside("task.get", { task: ref }).catch(() => undefined);
     const task = read?.["task"] as Value | undefined;
     if (task?.["lifecycle"] !== "active" || typeof task["title"] !== "string") continue;
@@ -1143,6 +1131,7 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
           if (transport.carries?.(entry.name) === false) continue;
           for (const [i, example] of entry.examples.entries()) {
             const key = `${entry.name} ${String(i)}`;
+            await BEFORE[key]?.(transport, () => world.asOf());
             const actor: Actor = example.actor ?? "agent";
             const input = { ...(example.input as Value) };
             // An example's base is "the as_of of a read just before": the world's own.
@@ -1189,7 +1178,7 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             // is.
             if (receipted(entry.name, input)) {
               const value = result as Value;
-              const takeBack = await meanwhile(transport, entry.name, value);
+              const takeBack = await meanwhile(transport, value);
               const again = (await transport.call(entry.name, input, actor)) as Value;
               const now =
                 NOW[entry.name]?.(again) === undefined
@@ -1239,6 +1228,27 @@ const TITLES: Readonly<Record<number, string>> = {
 
 let counter = 0;
 const rid = (): string => `contract-world-${String((counter += 1)).padStart(8, "0")}`;
+
+/**
+ * The user's own change an undo or a redo example takes back or brings back, made right before it.
+ * The in-between change of an earlier example (meanwhile) is another's newer work on its task, which
+ * rightly holds back an Undo or Redo that would close that task again, so these examples do not
+ * depend on what the examples before them left.
+ */
+const BEFORE: Readonly<
+  Record<string, (t: ContractTransport, base: () => Promise<string>) => Promise<void>>
+> = {
+  // M-15, checked off by the user just now.
+  "history.undo 0": async (t, base) => {
+    await t.call("task.reopen", { task: "M-15", base: await base(), request_id: rid() }, "user");
+    await t.call("task.finish", { task: "M-15", base: await base(), request_id: rid() }, "user");
+  },
+  // M-15's check-off by the user, undone just now.
+  "history.redo 0": async (t, base) => {
+    await t.call("task.finish", { task: "M-15", base: await base(), request_id: rid() }, "user");
+    await t.call("history.undo", { request_id: rid() }, "user");
+  },
+};
 
 async function buildWorld(t: ContractTransport): Promise<{ asOf(): Promise<string> }> {
   const asOf = async (): Promise<string> =>
