@@ -391,6 +391,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   puts that back where it can be done from there. While its access may still be on, turning it off
   is offered, whatever else is missing.
 - An update is checked before it runs. A failed update returns to the version before it.
+- An install or an update that was cut off is finished or undone by the next one, or by the
+  service. However often it is run again, `ttasks update --rollback` still goes back to the
+  version that was current before it.
 - An update does not end a background run unasked. It waits up to 15 minutes for running runs,
   then asks whether to stop them or give the update up; without anyone to ask, it gives up.
 - An install over a running TTasks never restarts it unasked: it says that the old version still

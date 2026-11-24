@@ -273,9 +273,14 @@ const isDailyRoot = (root: string): boolean =>
  * and on Windows, once the command folder exists, both stable launchers must be in it: `<root>\bin`
  * of a TTASKS_HOME install (it holds home.marker), else `~\.local\bin` beside `share` when the root
  * is `share\ttasks`. An update journal is doctor's `update` row (M6.12): during an update the
- * candidate's own self-test runs beside it. Returns one message per problem.
+ * candidate's own self-test runs beside it. Returns one message per problem. `launchers: false`
+ * leaves the stable launchers out: `install --finish` puts them in place itself, after its check.
  */
-export function checkInstallAround(versionFolder: string, platform: NodeJS.Platform): string[] {
+export function checkInstallAround(
+  versionFolder: string,
+  platform: NodeJS.Platform,
+  options: { readonly launchers?: boolean } = {},
+): string[] {
   const versions = dirname(versionFolder);
   if (basename(versions) !== "versions") return [];
   const root = dirname(versions);
@@ -310,7 +315,7 @@ export function checkInstallAround(versionFolder: string, platform: NodeJS.Platf
     : isDailyRoot(root)
       ? join(dirname(dirname(root)), "bin")
       : undefined;
-  if (platform === "win32" && bin !== undefined && existsSync(bin)) {
+  if (options.launchers !== false && platform === "win32" && bin !== undefined && existsSync(bin)) {
     for (const launcher of [`${PRODUCT_ID}.exe`, `${PRODUCT_ID}w.exe`]) {
       if (!existsSync(join(bin, launcher))) {
         problems.push(`missing stable launcher: bin/${launcher}`);

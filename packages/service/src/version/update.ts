@@ -94,6 +94,7 @@ import {
   exists,
   InstallError,
   isInstalled,
+  launcherChanges,
   placeLauncher,
   placeStable,
   readInstallRecord,
@@ -674,23 +675,6 @@ function place(staging: string, target: string): void {
   } finally {
     rmSync(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
-}
-
-/** The launchers the switch to `target` changes (Windows), with their old and new SHA-256. */
-function launcherChanges(
-  root: string,
-  target: string,
-  platform: NodeJS.Platform,
-): LauncherChange[] {
-  if (platform !== "win32") return [];
-  const changes: LauncherChange[] = [];
-  for (const name of WINDOWS_LAUNCHERS) {
-    const next = digestOf(join(target, "bin", name));
-    if (next === null) throw new InstallError(`The new version has no bin/${name}.`, 1);
-    const old = digestOf(join(root, "bin", name));
-    if (old !== next) changes.push({ name, old, new: next });
-  }
-  return changes;
 }
 
 // ---------------------------------------------------------------------------------------------

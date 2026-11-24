@@ -428,11 +428,14 @@ async function cutFinish(root: string, versionFolder: string, cut: "switch" | nu
 }
 
 describe("[A2.3.12.6.update.way-back] an install cut off and run again keeps the way back", () => {
-  test("cut off after its switch, then run again twice, the version before it stays the one --rollback goes back to", async () => {
+  // Windows: also after the first of its two launchers.
+  const cuts: ("switch" | number)[] = windows ? [1, "switch"] : ["switch"];
+
+  test.each(cuts)("cut off at %s, then run again twice, the version before it stays the one --rollback goes back to", async (cut) => {
     const { root, folder } = install();
     await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
     const next = addVersion(root, "0.2.0", "launcher two");
-    await cutFinish(root, next, "switch");
+    await cutFinish(root, next, cut);
     expect(currentOf(root)).toBe(windows ? "0.2.0" : "versions/0.2.0");
     for (const run of [1, 2]) {
       await finishInstall({ versionFolder: next, facts: facts(root) });

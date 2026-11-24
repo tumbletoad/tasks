@@ -6,7 +6,9 @@
 //   1. the install it belongs to is checked: a separate install whose root the launcher named, a
 //      umask that leaves the person's own bits, and a state folder no other user can change,
 //   2. the self-test: doctor's integrity and runtime rows and the candidate's checks (A2 3.12.6),
-//      printed as doctor prints them. Any failure stops here, and current stays as it was,
+//      printed as doctor prints them. Any failure stops here, and current stays as it was. It
+//      checks the version, not whether bin holds both stable launchers yet: an install cut off
+//      between them is finished by the next step, never refused by this one,
 //   3. only then the switch (service's finishInstall): update.lock, current, the stable command,
 //      install.json with what the installer created,
 //   4. the stable command, and the offer of `ttasks service install` (A2 3.12.4), which this
@@ -117,7 +119,7 @@ export async function installCommand(
   const madeData = makesDataFolder(target.layout, parsed.created);
 
   const checks: Check[] = [
-    ...(await versionChecks(io, versionFolder)),
+    ...(await versionChecks(io, versionFolder, undefined, { launchers: false })),
     ...(await candidateRows(io, versionFolder, true, state)),
   ];
   const failed = checks.some((check) => check.status === "fail");

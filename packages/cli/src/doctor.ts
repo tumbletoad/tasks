@@ -633,12 +633,15 @@ const named = (problems: readonly string[]): string =>
 /**
  * The version folder's rows (A2 3.13): integrity, and the runtime gate of A2 3.12.1 against the
  * manifest's pins. Both load their modules only here: the gate loads storage's start-up check,
- * which probes in-memory databases only, and nothing else of the CLI needs either.
+ * which probes in-memory databases only, and nothing else of the CLI needs either. `launchers`
+ * false leaves out whether bin holds both stable launchers: `install --finish` checks the version
+ * it installs, and putting those launchers in place is its own next step.
  */
 export async function versionChecks(
   io: Io,
   versionFolder: string | undefined,
   gateFacts?: GateFacts,
+  options: { readonly launchers?: boolean } = {},
 ): Promise<Check[]> {
   if (versionFolder === undefined) {
     return [
@@ -667,7 +670,7 @@ export async function versionChecks(
   }
   const problems = [
     ...folder.checkVersionFolder(versionFolder),
-    ...folder.checkInstallAround(versionFolder, io.platform),
+    ...folder.checkInstallAround(versionFolder, io.platform, options),
   ];
   const integrity: Check =
     problems.length === 0

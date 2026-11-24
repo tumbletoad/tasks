@@ -35,6 +35,7 @@ import { PRODUCT_ID } from "@ttasks/brand";
 import { atomicWrite, createFile, makeDir, removeStaleTemps } from "../hub/files.ts";
 import { canonicalStatePath, HOME_MARKER, installId } from "../hub/paths.ts";
 import { isVersionName, MANIFEST_FILE, sha256File } from "./folder.ts";
+import type { LauncherChange } from "./journal.ts";
 
 /** The file in a TTASKS_HOME install's root: one constant, the layout's (hub/paths.ts). */
 export { HOME_MARKER };
@@ -503,6 +504,23 @@ export function placeStable(
     options.afterStep?.();
   }
   return created;
+}
+
+/** The launchers the switch to `target` changes (Windows), with their old and new SHA-256. */
+export function launcherChanges(
+  root: string,
+  target: string,
+  platform: NodeJS.Platform,
+): LauncherChange[] {
+  if (platform !== "win32") return [];
+  const changes: LauncherChange[] = [];
+  for (const name of WINDOWS_LAUNCHERS) {
+    const next = digestOf(join(target, "bin", name));
+    if (next === null) throw new InstallError(`The new version has no bin/${name}.`, 1);
+    const old = digestOf(join(root, "bin", name));
+    if (old !== next) changes.push({ name, old, new: next });
+  }
+  return changes;
 }
 
 /** The SHA-256 of a file, or null when there is none. */
