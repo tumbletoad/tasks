@@ -127,7 +127,8 @@ function AgentMenu({
   readonly current: Instance;
   /** What the item says it does: "Open in Codex · work". */
   readonly name: (instance: Instance) => string;
-  readonly held: (instance: Instance) => string | undefined;
+  /** Why an agent cannot do it now; none: every one can. */
+  readonly held?: (instance: Instance) => string | undefined;
   readonly pick: (instance: Instance) => void;
 }) {
   if (list.length < 2) return null;
@@ -146,7 +147,7 @@ function AgentMenu({
           aria-label={label}
           selectionMode="single"
           selectedKeys={[current.key]}
-          disabledKeys={list.filter((i) => held(i) !== undefined).map((i) => i.key)}
+          disabledKeys={list.filter((i) => held?.(i) !== undefined).map((i) => i.key)}
           onAction={(key) => {
             const instance = list.find((i) => i.key === key);
             if (instance !== undefined) pick(instance);
@@ -155,7 +156,7 @@ function AgentMenu({
           {byApp(list).map((group) => (
             <MenuSection key={group.app} id={group.app} aria-label={group.app}>
               {group.instances.map((instance) => {
-                const why = held(instance);
+                const why = held?.(instance);
                 return (
                   <MenuItem
                     key={instance.key}
@@ -730,7 +731,6 @@ export function Composer({ task, busy, instances, opened, ran, actions }: Compos
               list={runs}
               current={runner}
               name={(instance) => t("composer.run", { label: instance.label })}
-              held={() => undefined}
               pick={(instance) => {
                 setPicked((before) => ({ ...before, run: instance.key }));
                 run(instance);
