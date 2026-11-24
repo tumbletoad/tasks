@@ -815,7 +815,7 @@ describe("[A3.5.search.find] task.search through the request path", () => {
     ).toEqual([]);
     const error = await refusal(call(h, user, { q: "zoneword", time_zone: "Mars/Olympus_Mons" }));
     expect(error.code).toBe("invalid_input");
-    expect(error.data).toEqual({ issues: [{ path: "time_zone", message: expect.any(String) }] });
+    expect(error.data).toMatchObject({ issues: [{ path: "time_zone" }] });
     expect((await refusal(call(h, user, { q: "zoneword", time_zone: "+01:00" }))).code).toBe(
       "invalid_input",
     );

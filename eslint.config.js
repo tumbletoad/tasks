@@ -214,7 +214,8 @@ const noOwnDay = [
   },
 ];
 // Formatting in the default zone shows another day than the clock: dates.ts formats with its zone.
-const FORMAT_MESSAGE = "Format a date with the clock's zone: formatInstant or formatDay (row/dates.ts).";
+const FORMAT_MESSAGE =
+  "Format a date with the clock's zone: formatInstant or formatDay (row/dates.ts).";
 const noOwnFormat = [
   {
     selector: "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",

@@ -544,7 +544,7 @@ test.describe("[A5.3.13.e2e.search-address] What the person types in the top fie
     page,
     world,
   }) => {
-    const word = wordOf("quince");
+    const word = wordOf("bilberry");
     const [first] = await addTasks(world, [
       { title: `Poach the ${word} halves`, area: "home", priority: 1 },
     ]);
