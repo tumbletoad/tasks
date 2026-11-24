@@ -109,12 +109,20 @@ export async function openTask(page: Page, world: World, ref: string): Promise<L
   await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true", {
     timeout: SLOW_MS,
   });
+  await threadDrawn(row);
+  return row;
+}
+
+/**
+ * Waits for an open card's thread: its notes, sessions and runs are drawn. Until then what sits
+ * under the thread moves down as the card's reads arrive, and a click aimed there can miss.
+ */
+export async function threadDrawn(row: Locator): Promise<void> {
   await expect(
     row
       .getByRole("list", { name: "Notes, log, sessions and runs" })
       .or(row.getByText("Nothing logged yet.")),
   ).toBeVisible({ timeout: SLOW_MS });
-  return row;
 }
 
 /** Records every CSP violation the page reports, from before its first script runs. */
