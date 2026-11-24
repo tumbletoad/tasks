@@ -339,7 +339,7 @@ function TitleEditor({
 }: {
   readonly task: TaskRow;
   readonly label: string;
-  /** The kept words the card opened this editor for. */
+  /** The kept words the card opened this editor for, as the card read them. */
   readonly brought: TitleDraft | undefined;
   readonly onDone: () => void;
 }) {
@@ -352,11 +352,13 @@ function TitleEditor({
   // Taken once, as the editor opens: the save's base is the title the person began to change, also
   // when a reload brought back what they typed.
   const [opened] = useState(() => {
-    // The card's words are the ones it brought back, whatever the title became since it read them.
-    // An editor the person opens on words whose save is on its way and already shows as the title
-    // starts from the title.
-    const found = brought ?? readTitleDraft(space, task.id);
-    const kept = brought === undefined && found?.typed.trim() === task.title ? undefined : found;
+    // The words the card opened this editor for are brought back whatever the title became since
+    // the card read them, as long as they are still the kept ones: what the person typed or
+    // discarded since is what counts. Other kept words that already show as the title are a save
+    // on its way: the editor starts from the title.
+    const found = readTitleDraft(space, task.id);
+    const cards = brought !== undefined && found?.typed === brought.typed;
+    const kept = !cards && found?.typed.trim() === task.title ? undefined : found;
     return {
       base: kept === undefined ? edits.seen(task, ["title"]) : kept.base,
       mark: edits.mark(),

@@ -1085,6 +1085,8 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     await settle();
     expect(field()).toBeNull();
     expect(expandedOf("t_00001")).toBe("true");
+    // The words are kept until the answer: it is what lets them go, not the card's opening.
+    expect(readTitleDraft(SPACE.id, "t_00001")?.typed).toBe("Task 1, fixed");
     act(() => {
       answer({ result: "updated", as_of: "1.11.01234567", warnings: [] });
     });
@@ -1092,6 +1094,70 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     expect(readTitleDraft(SPACE.id, "t_00001")).toBeUndefined();
     expect(field()).toBeNull();
     expect(updates).toHaveLength(1);
+  });
+
+  test("words typed over a title a reload brought back are the ones kept and sent, also after the task was finished and reopened meanwhile", async () => {
+    localStorage.clear();
+    (api.client.task as { update: unknown }).update = (input: Record<string, unknown>) => {
+      updates.push(input);
+      return Promise.reject(
+        Object.assign(new Error("not active"), {
+          code: "wrong_tool",
+          data: { cause: "TASK_NOT_ACTIVE" },
+        }),
+      );
+    };
+    keepTitleDraft(SPACE.id, "t_00001", { typed: "First draft", title: "Task 1" });
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot([task(1), task(2)]));
+    expand("t_00001");
+    await settle();
+    const card = () => container.querySelector('li[data-key="t_00001"]');
+    const field = () =>
+      container.querySelector<HTMLInputElement>('li[data-key="t_00001"] [data-part="title-edit"]');
+    expect(field()?.value).toBe("First draft");
+    type(field(), "Newer words");
+    // An agent finishes the task while the person types, and reopens it.
+    apply(batch(11, [task(1, { lifecycle: "completed", version: 2 })], ["lifecycle"]));
+    await settle();
+    apply(batch(12, [task(1, { lifecycle: "active", version: 3 })], ["lifecycle"]));
+    await settle();
+    if (field() != null) press(field(), "Enter");
+    await settle();
+    const sent = updates.map((update) => (update["set"] as { title?: string }).title);
+    expect(sent).not.toContain("First draft");
+    expect([
+      readTitleDraft(SPACE.id, "t_00001")?.typed,
+      card()?.querySelector('[data-part="unsaved-value"]')?.textContent,
+      ...sent,
+    ]).toContain("Newer words");
+  });
+
+  test("a kept title discarded on the finished card is gone: reopened, the editor starts from the title and sends nothing", async () => {
+    localStorage.clear();
+    keepTitleDraft(SPACE.id, "t_00001", { typed: "First draft", title: "Task 1" });
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot([task(1), task(2)]));
+    expand("t_00001");
+    await settle();
+    const card = () => container.querySelector('li[data-key="t_00001"]');
+    const field = () =>
+      container.querySelector<HTMLInputElement>('li[data-key="t_00001"] [data-part="title-edit"]');
+    expect(field()?.value).toBe("First draft");
+    apply(batch(11, [task(1, { lifecycle: "completed", version: 2 })], ["lifecycle"]));
+    await settle();
+    const discard = card()?.querySelector<HTMLElement>('[data-part="discard-kept-title"]');
+    expect(discard).not.toBeNull();
+    act(() => {
+      discard?.click();
+    });
+    expect(readTitleDraft(SPACE.id, "t_00001")).toBeUndefined();
+    apply(batch(12, [task(1, { lifecycle: "active", version: 3 })], ["lifecycle"]));
+    await settle();
+    expect(field()?.value ?? "Task 1").toBe("Task 1");
+    if (field() != null) press(field(), "Enter");
+    await settle();
+    expect(updates).toEqual([]);
   });
 
   test("a title being typed is saved when the view changes under the person", () => {
