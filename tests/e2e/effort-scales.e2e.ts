@@ -298,3 +298,67 @@ test.describe("[A5.3.12.e2e.undo-levels] a change of the effort levels made at a
     }
   });
 });
+
+test.describe("[A5.3.12.e2e.undo-levels-rest] the rest of a change of the effort levels an agent built on", () => {
+  test("the refused Undo offers the rest, and its toast says what was put back and what kept a newer size, at 1,440 and 390 px", async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    const ui = process.env["E2E_UI_BUILD"];
+    if (ui === undefined) throw new Error("global-setup.ts did not build the page");
+    const world = await startWorld(ui, {
+      scales: [{ statuses: STATUSES, efforts: ["S", "M", "L"] }],
+    });
+    const toast = page.locator('[data-part="toast-text"]');
+    const action = page.locator('[data-part="toast-action"]');
+    try {
+      const space = world.scaled[0];
+      if (space === undefined) throw new Error("the world has no space of its own levels");
+      const added = (await world.op(space.id, "task.add", {
+        tasks: [{ title: "Order the banners for the spring fair", inbox: true, effort: "M" }],
+      })) as { tasks: { ref: string }[] };
+      const ref = added.tasks[0]?.ref ?? "";
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await signIn(page, world, `/s/${space.id}/task/${ref}`);
+      await showsSpace(page, space.name);
+      const effort = page
+        .locator(`main li[data-task="${ref}"] dl`)
+        .getByRole("radiogroup", { name: "Effort" });
+      const chosen = (name: string) => effort.getByRole("radio", { name, exact: true });
+      await expect(chosen("M")).toHaveAttribute("aria-checked", "true", { timeout: SLOW_MS });
+      const read = (await world.op(space.id, "prefs.manage", { action: "get" })) as {
+        as_of: string;
+      };
+      await world.op(space.id, "prefs.manage", {
+        action: "set",
+        set: [
+          { key: "tasks.effort_scale", value: "S,Medium,L", moves: [{ from: "M", to: "Medium" }] },
+        ],
+        base: read.as_of,
+      });
+      await expect(chosen("Medium")).toHaveAttribute("aria-checked", "true", { timeout: SLOW_MS });
+      const got = (await world.op(space.id, "task.get", { task: ref })) as { as_of: string };
+      await world.op(
+        space.id,
+        "task.update",
+        { task: ref, set: { effort: "S" }, base: got.as_of },
+        "agent",
+      );
+      await expect(chosen("S")).toHaveAttribute("aria-checked", "true", { timeout: SLOW_MS });
+      await page.locator("main").focus();
+      await page.keyboard.press("Control+z");
+      await expect(toast).toContainText("Not undone");
+      await expect(action).toHaveText("Undo the rest");
+      await action.click();
+      await expect(toast).toHaveText("Effort levels put back. 1 task kept a newer size");
+      await expect(chosen("S")).toHaveAttribute("aria-checked", "true");
+      await expect(effort.getByRole("radio", { name: "M", exact: true })).toBeVisible();
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 1000 });
+        await picture(page, `levels-rest-${String(width)}.png`);
+      }
+    } finally {
+      await world.close();
+    }
+  });
+});

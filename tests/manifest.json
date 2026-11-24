@@ -4973,6 +4973,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.12.e2e.undo-levels-rest",
+      "title": "In Chromium and Firefox against the real service: an Undo of a change of the effort levels an agent built on is refused and offers the rest, which puts the levels back and says that the agent's task kept its newer size, at 1,440 and 390 px",
+      "source": "A5 3.12",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.7.e2e.effort-scales",
       "title": "In Chromium and Firefox against the real service: a space with one level and one with ten (four of the longest name a person sets) offer each level whole in the expanded task's control, and a longer name an earlier build let be set is cut there; resting on a level by mouse or keyboard focus shows its time and line, as its description says them; the largest chosen there holds after a reload at 1,440 and 390 px with nothing scrolling sideways, and the collapsed row marks it with the whole name, its time and line in its tip, hidden at 390 px",
       "source": "A5 3.6, A5 3.7",
