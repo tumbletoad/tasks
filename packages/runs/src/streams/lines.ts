@@ -3,7 +3,8 @@
 // - A line ends at LF. A CR before the LF is dropped, so CRLF streams parse the same.
 // - A line longer than the cap is dropped whole: once the buffer would pass the cap, the bytes
 //   held so far are released and the rest of the line is skipped up to its LF. The splitter never
-//   holds more than cap + 1 bytes, whatever the input and however it is chunked.
+//   holds more than cap + 1 bytes, whatever the input and however it is chunked, and the byte past
+//   the cap only when it is a CR.
 // - Bytes are decoded as UTF-8 only once a line is complete, so a code point split across chunks
 //   decodes correctly. Invalid UTF-8 is reported and decoded with replacement characters.
 // - At the end of the stream, an unterminated rest is handed out as a final, partial line.
@@ -11,6 +12,8 @@
 /** One line, decoded. `invalidUtf8` says the bytes were not valid UTF-8. */
 export interface Line {
   text: string;
+  /** Its length in UTF-8 bytes, without its line break. */
+  bytes: number;
   invalidUtf8: boolean;
   /** The line had no LF: the stream ended inside it. */
   partial: boolean;
@@ -86,7 +89,8 @@ export class LineSplitter {
   private take(segment: Uint8Array, out: LineResult[]): void {
     if (segment.length === 0 || this.skipping) return;
     const needed = this.size + segment.length;
-    if (needed > this.limit) {
+    // Past the cap only a CR may wait, for the LF that makes the two a line end.
+    if (needed > this.limit || (needed > this.cap && segment[segment.length - 1] !== CR)) {
       this.reset();
       this.skipping = true;
       out.push({ kind: "oversized" });
@@ -115,7 +119,7 @@ export class LineSplitter {
     }
     const { text, invalidUtf8 } = decodeUtf8(this.buf.subarray(0, end));
     this.reset();
-    out.push({ kind: "line", line: { text, invalidUtf8, partial } });
+    out.push({ kind: "line", line: { text, bytes: end, invalidUtf8, partial } });
   }
 
   private reset(): void {

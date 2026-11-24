@@ -13,6 +13,7 @@ import {
   RunHost,
   RunMachine,
   Supervisor,
+  type Confirmation,
   type Containers,
   type Lane,
   type Prepared,
@@ -21,7 +22,7 @@ import {
   type RunFolders,
   type SavedAnswer,
 } from "../src/index.ts";
-import { MACHINE, settle } from "./supervisor-world.ts";
+import { held, MACHINE, settle } from "./supervisor-world.ts";
 
 const DAY = 24 * 60 * 60_000;
 const TASK = "t_0000000000000000000000000a";
@@ -60,6 +61,7 @@ async function failedWithoutAnswer(store: RunStore, run: RunRecord): Promise<voi
 /** Containers whose start never answers: a run that reaches one stays starting. */
 const hanging: Containers = {
   probe: () => Promise.resolve({ available: true, kind: "job" }),
+  kind: () => Promise.resolve("job" as const),
   start: () => new Promise<never>(() => undefined),
   interrupt: () => Promise.resolve(false),
   kill: () => Promise.resolve(),
@@ -73,7 +75,7 @@ function folders(now: () => number) {
     prepare: (id) => kept.set(id, { changedAt: now() }),
     saveAnswer: (id, answer) => kept.set(id, { changedAt: now(), answer }),
     readAnswer: (id) => kept.get(id)?.answer,
-    hasAnswer: (id) => kept.get(id)?.answer !== undefined,
+    heldAnswer: (id) => held(kept.get(id)?.answer),
     logs: () => ({ stdout: () => undefined, stderr: () => undefined, close: () => undefined }),
     removeTemps: () => undefined,
     list: () => [...kept].map(([id, f]) => ({ id, changedAt: f.changedAt })),
@@ -90,6 +92,7 @@ function bench(
     prepareMs?: number;
     updating?: () => boolean;
     limits?: QueueLimits;
+    containers?: Containers;
   } = {},
 ) {
   let now = Date.UTC(2026, 10, 16, 9, 0, 0);
@@ -101,7 +104,7 @@ function bench(
     ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
   });
   const { kept, files } = folders(() => now);
-  const host = new RunHost({ machine, containers: hanging, files });
+  const host = new RunHost({ machine, containers: options.containers ?? hanging, files });
   const lane: Lane = { space: "sp_0000000000000000000000000a", machine, host };
   let refuse = false;
   const supervisor = new Supervisor({
@@ -221,6 +224,38 @@ describe("[A4.5.run.supervisor] the supervisor's rules: a start whose record lan
     await b.host.close();
   });
 
+  test("a run whose Stop could not be confirmed holds its task's place: the task's next run waits until that end is confirmed", async () => {
+    let left = true;
+    const confirm = (): Promise<Confirmation> =>
+      Promise.resolve(left ? { state: "occupied", detail: "left" } : { state: "empty" });
+    const b = bench({ containers: { ...hanging, confirmEmpty: confirm, recover: confirm } });
+    const first = await b.queue();
+    const starting = await b.store.transitionRun(
+      first.id,
+      { state: "queued", version: first.version },
+      "starting",
+    );
+    const running = await b.store.transitionRun(first.id, seenRun(starting), "running", {
+      evidence: { pid: 7 },
+    });
+    const cancelling = await b.store.transitionRun(first.id, seenRun(running), "cancelling");
+    await b.store.transitionRun(first.id, seenRun(cancelling), "unknown", {
+      reason: "stop_timed_out",
+    });
+    await b.host.recover();
+    expect(b.host.hosted()).toEqual([first.id]);
+    const second = await b.queue();
+    await b.supervisor.round();
+    expect((await b.store.readRun(second.id))?.state).toBe("queued");
+    expect(b.supervisor.waiting(second.id)).toBe("task_limit");
+    left = false;
+    expect(await b.host.forceEnd(first.id)).toMatchObject({ state: "cancelled" });
+    await b.supervisor.round();
+    expect((await b.store.readRun(second.id))?.state).toBe("starting");
+    b.supervisor.close();
+    await b.host.close();
+  });
+
   test("retention removes old folders of runs that ended and were saved, and keeps open, unconfirmed and unsaved runs' folders and those of runs no open space knows", async () => {
     const b = bench();
     const make = async (state: "succeeded" | "unknown" | "running" | "unsaved") => {
@@ -305,6 +340,62 @@ describe("[A4.5.run.supervisor] the supervisor's rules: a start whose record lan
       rmSync(answer);
       expect(await supervisor.retain()).toBe(1);
       expect(files.list()).toEqual([]);
+      supervisor.close();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("retention removes the folder of a run that ended with no answer once its record holds that end, and keeps one whose end only the folder holds", async () => {
+    const b = bench();
+    const said = {
+      outcome: "agent_error" as const,
+      error: "Not signed in. Sign in with: codex login",
+    };
+    const recorded = await b.queue();
+    const starting = await b.store.transitionRun(
+      recorded.id,
+      { state: "queued", version: recorded.version },
+      "starting",
+    );
+    const running = await b.store.transitionRun(recorded.id, seenRun(starting), "running", {
+      evidence: { pid: 7 },
+    });
+    await b.store.transitionRun(recorded.id, seenRun(running), "failed", {
+      reason: "agent_error",
+      result: {
+        ok: false,
+        ...said,
+        exitCode: 1,
+        signal: null,
+        nativeId: null,
+        text: null,
+        usage: null,
+        appTools: null,
+        declined: 0,
+        permissionDenials: 0,
+        durationMs: 1,
+      },
+    });
+    const unrecorded = await b.queue();
+    await failedWithoutAnswer(b.store, unrecorded);
+    const root = mkdtempSync(join(tmpdir(), "ttasks-retain-"));
+    try {
+      const files = new RunFiles(root);
+      for (const run of [recorded, unrecorded]) {
+        files.prepare(run.id);
+        files.saveAnswer(run.id, { text: null, final: false, cut: false, ...said });
+      }
+      const supervisor = new Supervisor({
+        lanes: () => [b.lane],
+        limits: () => ({ runs: 3, perInstance: 2, perTask: 1 }),
+        prepare: () => Promise.resolve({ refused: "spawn_failed" }),
+        folders: files,
+        retention: { days: 14, count: 0 },
+        now: b.now,
+      });
+      expect(await supervisor.retain()).toBe(1);
+      expect(files.list().map((folder) => folder.id)).toEqual([unrecorded.id]);
       supervisor.close();
     } finally {
       rmSync(root, { recursive: true, force: true });

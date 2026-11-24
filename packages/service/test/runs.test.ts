@@ -233,6 +233,7 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
     ];
     let probes = 0;
     const containers: Containers = {
+      kind: () => Promise.resolve("job" as const),
       probe: () =>
         Promise.resolve(answers[Math.min(probes++, 1)] ?? { available: true, kind: "job" }),
       start: () => Promise.reject(new Error("no runs here")),
@@ -340,6 +341,7 @@ function fakeBoxes() {
   let pid = 4_000;
   const containers: Containers = {
     probe: () => Promise.resolve({ available: true, kind: "job" }),
+    kind: () => Promise.resolve("job" as const),
     start: (spec) => {
       let exit!: (e: AgentExit) => void;
       const exited = new Promise<AgentExit>((resolve) => {
