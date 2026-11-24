@@ -43,8 +43,6 @@ export const LONG_MS = 90_000;
 
 /** A recording whose fake agent exits 0 once its stdin ends (packages/runs/test/fake-agents.ts). */
 export const SUCCESS_FIXTURE = "claude-print/windows-success-tool-call.jsonl";
-/** One that exits 1 at once. */
-export const FAILURE_FIXTURE = "claude-print/windows-error-model.jsonl";
 
 /** A child process of the test, with its output kept. */
 export interface Child {
@@ -336,14 +334,13 @@ export class ShimLab {
   /** A fake agent's plan: the recording, its report file, the instance's env and the folder. */
   plan(
     options: {
-      fixture?: string;
       report?: string;
       env?: Record<string, string>;
       afterExit?: SpawnPlan["afterExit"];
       folder?: PlanFolder | null;
     } = {},
   ): SpawnPlan {
-    const { command, args } = fakeAgentCommand(options.fixture ?? SUCCESS_FIXTURE, {
+    const { command, args } = fakeAgentCommand(SUCCESS_FIXTURE, {
       maxMs: 600_000,
       ...(options.report === undefined ? {} : { report: options.report }),
     });

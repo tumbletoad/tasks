@@ -425,7 +425,7 @@ describe("[A4.5.shim.reply] the shim reads the claim's reply strictly, and repor
 });
 
 describe("[A4.5.shim.client] how long the agent ran", () => {
-  test("is measured on the monotonic clock: a wall clock step never settles an agent that ended at once", async () => {
+  test("a slow spawn and a wall clock step do not count towards how long the agent ran", async () => {
     const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-shim-link-")));
     temps.push(folder);
     const reply = {
@@ -440,30 +440,33 @@ describe("[A4.5.shim.client] how long the agent ran", () => {
       credential: `${"c".repeat(21)}A`,
       exit_file: join(folder, "exit.json"),
     };
-    const session = fake((method) => Promise.resolve(method === "launch.claim" ? reply : {}));
-    const real = Date.now();
+    let elapsed = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    const wall = vi.spyOn(Date, "now").mockReturnValue(0);
+    const session = fake((method) => {
+      if (method === "launch.started") {
+        wall.mockReturnValue(3_600_000);
+        elapsed += 2;
+      }
+      return Promise.resolve(method === "launch.claim" ? reply : {});
+    });
     const code = await runShim(["0".repeat(24)], {
       io: fakeIo([]),
       startTime: () => Promise.resolve("windows:1"),
       connect: () => Promise.resolve(session.session),
       checkFolder: () => Promise.resolve({ status: "ok" }),
-      startAgent: () =>
-        Promise.resolve({
+      startAgent: () => {
+        elapsed += 4_000;
+        return Promise.resolve({
           pid: 99,
-          // The agent ends at once, just after the wall clock stepped an hour ahead.
-          exited: new Promise((resolve) => {
-            setTimeout(() => {
-              vi.spyOn(Date, "now").mockReturnValue(real + 3_600_000);
-              resolve({ code: 1, signal: null });
-            }, 5);
-          }),
+          exited: Promise.resolve({ code: 1, signal: null }),
           kill: () => undefined,
-        }),
+        });
+      },
     });
     expect(code).toBe(1);
     const exited = session.params[session.calls.indexOf("launch.exited")];
-    expect(exited).toMatchObject({ code: 1, settled: false });
-    expect(exited?.["ran_ms"]).toBeLessThan(3_000);
+    expect(exited).toMatchObject({ code: 1, settled: false, ran_ms: 2 });
   });
 });
 
