@@ -644,7 +644,7 @@ function setupError(error: unknown): unknown {
     return new AppError({
       code: "invalid_input",
       message: `${error.message}.`,
-      hint: "Check that the disk has room and that you can write in that folder, then try again.",
+      hint: "Check that the disk has room and that you can write in that folder.",
     });
   }
   return error;
