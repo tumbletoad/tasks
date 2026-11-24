@@ -70,6 +70,8 @@ describe("[A2.3.13.cli.doctor] ttasks doctor --self-test", () => {
       expect(status(report, "sessions")).toBe("skip");
       const text = await runMain(["doctor"], { home: join(temp.root, "h") });
       expect(text.stdout).toMatch(/^fail {2}paths:/m);
+      // Where the spaces' backups go by default, outside the data folder.
+      expect(text.stdout).toContain(join(temp.root, "h-backups"));
     } finally {
       temp.cleanup();
     }
