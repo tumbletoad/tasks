@@ -3,6 +3,7 @@
 // From the sign-in to a space with its agent apps without a terminal, Skip, a second visit in
 // Settings, a home that changed between the view and the click, removing again, and the space
 // switcher's New space and Open folder. The tests run in order on one worker's install.
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test as base, type Page } from "@playwright/test";
 import { PRODUCT_NAME } from "../../packages/brand/src/index.ts";
@@ -358,72 +359,6 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
   });
 });
 
-test.describe("[A7.3.12.m5-12.e2e.two-files] Claude Code's two settings files: one row, each file that needs something named, the entry added beside an On switch, and a file left out said before the space opens", () => {
-  test("the first start with a file setup cannot read: the space waits until the person has read which file got no entry; once mended, its entry is added beside the On switch; Off takes both out @one-browser", async ({
-    page,
-    fresh,
-  }) => {
-    const inside = /~[\\/]\.claude[\\/]\.claude\.json/u;
-    const original = fresh.claudeFile();
-    await fresh.forgetSpaces();
-    fresh.insideClaude('{"theme": "dark",}\n');
-    try {
-      await firstStart(page, fresh);
-      await nameField(page).fill("Kiln");
-      await page.getByRole("button", { name: "Make the space" }).click();
-      await expect(appsHeading(page)).toBeVisible({ timeout: SLOW_MS });
-      const claude = page.locator('[data-app="claude-code"]');
-      const innerLine = claude.locator('[data-part="file"]', { hasText: inside });
-      await expect(innerLine).toContainText(`${PRODUCT_NAME} cannot read it`);
-      await widths(page, "two-files-first-start");
-      await page.getByRole("button", { name: "Apply" }).click();
-      // Set up where it can be; the page stays until the person has read the file left out.
-      const left = page.locator('[data-part="left-out"]');
-      await expect(left).toContainText(inside);
-      await expect(left).toContainText(`${PRODUCT_NAME} cannot read that file`);
-      expect(fresh.claudeEntry()).toBeDefined();
-      expect(fresh.insideClaudeEntry()).toBeUndefined();
-      await widths(page, "two-files-left-out");
-      expect(await violations(page)).toEqual([]);
-      await page.getByRole("button", { name: "Continue" }).click();
-      await showsSpace(page, "Kiln");
-
-      // Mended by the person: the tools are on, and the entry is offered there beside the switch.
-      fresh.insideClaude('{"theme": "dark"}\n');
-      await page.goto(`${fresh.origin}/s/${spaceOf(page)}/settings`);
-      await expect(appsHeading(page)).toBeVisible();
-      await expect(toggle(page, toolsFor("Claude Code"))).toBeChecked();
-      await expect(claude.locator('[data-part="file"]')).toHaveCount(1);
-      await expect(innerLine).toContainText(`no entry of ${PRODUCT_NAME}'s there`);
-      await widths(page, "two-files-lacking");
-      await claude.locator('[data-part="more"]').click();
-      await expect(changes(page)).toContainText(inside);
-      await widths(page, "two-files-chosen");
-      await page.getByRole("button", { name: "Apply" }).click();
-      await expect(page.getByRole("status")).toContainText("Done");
-      expect(fresh.insideClaudeEntry()).toBeDefined();
-      await expect(claude.locator('[data-part="file"]')).toHaveCount(0);
-      await expect(claude.locator('[data-part="more"]')).toHaveCount(0);
-      await widths(page, "two-files-done");
-      expect(await violations(page)).toEqual([]);
-
-      // Off takes the entry out of both files; the first start's other switches go too.
-      for (const app of ["Claude Code", "Codex"]) {
-        await flip(page, toolsFor(app), false);
-        await flip(page, openIn(app), false);
-      }
-      await page.getByRole("button", { name: "Apply" }).click();
-      await expect(page.getByRole("status")).toContainText("Done");
-      expect(fresh.claudeEntry()).toBeUndefined();
-      expect(fresh.insideClaudeEntry()).toBeUndefined();
-    } finally {
-      fresh.insideClaude(null);
-      fresh.writeClaudeFile(original === "" ? null : original);
-    }
-    await fresh.forgetSpaces();
-  });
-});
-
 test.describe("[A7.3.12.m5-12.e2e.switcher] The space switcher's New space and Open folder", () => {
   test("New space makes one and goes to it; Open folder serves a space folder and goes to it @one-browser", async ({
     page,
@@ -510,6 +445,74 @@ test.describe("[A7.3.12.m5-12.e2e.screens] The first start and the agent apps in
     } finally {
       await fresh.machine("ui.theme", null);
     }
+  });
+});
+
+test.describe("[A7.3.12.m5-12.e2e.two-files] Claude Code's two settings files: one row, each file that needs something named, the entry added beside an On switch, and a file left out said before the space opens", () => {
+  test("the first start with a file setup cannot read: the space waits until the person has read which file got no entry; once mended, its entry is added beside the On switch; Off takes both out @one-browser", async ({
+    page,
+    fresh,
+  }) => {
+    const inside = /~[\\/]\.claude[\\/]\.claude\.json/u;
+    const original = fresh.claudeFile();
+    await fresh.forgetSpaces();
+    fresh.insideClaude('{"theme": "dark",}\n');
+    try {
+      await firstStart(page, fresh);
+      await nameField(page).fill("Kiln");
+      await page.getByRole("button", { name: "Make the space" }).click();
+      await expect(appsHeading(page)).toBeVisible({ timeout: SLOW_MS });
+      const claude = page.locator('[data-app="claude-code"]');
+      const innerLine = claude.locator('[data-part="file"]', { hasText: inside });
+      await expect(innerLine).toContainText(`${PRODUCT_NAME} cannot read it`);
+      await widths(page, "two-files-first-start");
+      await page.getByRole("button", { name: "Apply" }).click();
+      // Set up where it can be; the page stays until the person has read the file left out.
+      const left = page.locator('[data-part="left-out"]');
+      await expect(left).toContainText(inside);
+      await expect(left).toContainText(`${PRODUCT_NAME} cannot read that file`);
+      expect(fresh.claudeEntry()).toBeDefined();
+      expect(readFileSync(join(fresh.agentHome, ".claude", ".claude.json"), "utf8")).toBe(
+        '{"theme": "dark",}\n',
+      );
+      await widths(page, "two-files-left-out");
+      expect(await violations(page)).toEqual([]);
+      await page.getByRole("button", { name: "Continue" }).click();
+      await showsSpace(page, "Kiln");
+
+      // Mended by the person: the tools are on, and the entry is offered there beside the switch.
+      fresh.insideClaude('{"theme": "dark"}\n');
+      await page.goto(`${fresh.origin}/s/${spaceOf(page)}/settings`);
+      await expect(appsHeading(page)).toBeVisible();
+      await expect(toggle(page, toolsFor("Claude Code"))).toBeChecked();
+      await expect(claude.locator('[data-part="file"]')).toHaveCount(1);
+      await expect(innerLine).toContainText(`no entry of ${PRODUCT_NAME}'s there`);
+      await widths(page, "two-files-lacking");
+      await claude.locator('[data-part="more"]').click();
+      await expect(changes(page)).toContainText(inside);
+      await widths(page, "two-files-chosen");
+      await page.getByRole("button", { name: "Apply" }).click();
+      await expect(page.getByRole("status")).toContainText("Done");
+      expect(fresh.insideClaudeEntry()).toBeDefined();
+      await expect(claude.locator('[data-part="file"]')).toHaveCount(0);
+      await expect(claude.locator('[data-part="more"]')).toHaveCount(0);
+      await widths(page, "two-files-done");
+      expect(await violations(page)).toEqual([]);
+
+      // Off takes the entry out of both files; the first start's other switches go too.
+      for (const app of ["Claude Code", "Codex"]) {
+        await flip(page, toolsFor(app), false);
+        await flip(page, openIn(app), false);
+      }
+      await page.getByRole("button", { name: "Apply" }).click();
+      await expect(page.getByRole("status")).toContainText("Done");
+      expect(fresh.claudeEntry()).toBeUndefined();
+      expect(fresh.insideClaudeEntry()).toBeUndefined();
+    } finally {
+      fresh.insideClaude(null);
+      fresh.writeClaudeFile(original === "" ? null : original);
+    }
+    await fresh.forgetSpaces();
   });
 });
 

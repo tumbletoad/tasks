@@ -1554,9 +1554,15 @@ function putRecord(input: SetupInput, home: AgentHome, record: HomeRecord): void
   const here = () => {
     writeRecords(stateDir, [...legacy.filter((r) => !mine(r)), record]);
   };
-  if (held !== undefined && thisFile(held)) return here();
+  if (held !== undefined && thisFile(held)) {
+    here();
+    return;
+  }
   const further = twoFiled(input, home) ? readRecords(stateDir, FURTHER_FILE) : [];
-  if (held === undefined && home.further !== true && !further.some(thisFile)) return here();
+  if (held === undefined && home.further !== true && !further.some(thisFile)) {
+    here();
+    return;
+  }
   writeRecords(stateDir, [...further.filter((r) => !thisFile(r)), record], FURTHER_FILE);
 }
 
