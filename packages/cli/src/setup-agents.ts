@@ -649,9 +649,31 @@ export async function agentsCommand(
             surveyed.map((v) => v.home),
           );
           const chosen = found.filter(
-            (v) => selected(v) && (v.record !== undefined || v.state === "foreign"),
+            (v) => readBy(v, selected) && (v.record !== undefined || v.state === "foreign"),
           );
-          return { outcomes: done, notes: said, blocks: chosen.map((v) => removeBlock(input, v)) };
+          // A block another reader of its file uses (a settings file of the folder this remove leaves
+          // registered) stays.
+          const after = await survey(input);
+          const used = (v: BlockView) =>
+            v.readers.some(
+              (h) =>
+                !selected({ home: h }) &&
+                after.some(
+                  (a) =>
+                    a.state === "registered" &&
+                    a.home.app === h.app &&
+                    samePath(input.platform, a.home.file, h.file),
+                ),
+            );
+          return {
+            outcomes: done,
+            notes: said,
+            blocks: chosen.map((v) =>
+              used(v)
+                ? { view: v, result: "left" as const, reason: "in_use" as const }
+                : removeBlock(input, v),
+            ),
+          };
         });
         return report(io, globals, "remove", outcomes, notes, blocks);
       }
@@ -1034,8 +1056,12 @@ async function blockPlan(
     input,
     homes.map((v) => v.home),
   );
-  return planBlocks(views.filter(selected));
+  return planBlocks(views.filter((v) => readBy(v, selected)));
 }
+
+/** Whether a selection names a block: one of the homes that read its file. */
+const readBy = (view: BlockView, selected: Selected): boolean =>
+  view.readers.some((home) => selected({ home }));
 
 /** What a remove says when setup's own record cannot be read: the access went, nothing else. */
 const recordUnreadableText = (stateDir: string): string =>
@@ -1072,6 +1098,8 @@ const BLOCK_REASON: Readonly<Record<BlockReason, string>> = {
   not_registered: "setup has not written a block there",
   missing: "the block setup wrote is gone",
   changed_meanwhile: "its file changed while setup was working",
+  in_use:
+    "another settings file of this folder still has the entry, and its agent reads this block, so it stays until that one is turned off too",
 };
 
 /** Why a home's block was left, with what the person can do: print-block for a managed file. */

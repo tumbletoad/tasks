@@ -715,3 +715,93 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
     SLOW,
   );
 });
+
+describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the service", () => {
+  test(
+    "two settings files of one folder share the instruction block: either one's selection finds it, and it stays while the other keeps its entry",
+    async () => {
+      const before = read();
+      const config = join(configOf(home), "machine.toml");
+      const named = join(user, ".claude", ".claude.json");
+      mkdirSync(configOf(home), { recursive: true, mode: 0o700 });
+      // An instance that names ~/.claude by its variable: it reads the file inside that folder.
+      writeFileSync(
+        config,
+        [
+          "[[instance]]",
+          'id = "claude-named"',
+          'target = "claude-cli"',
+          'label = "Claude named"',
+          `env = { CLAUDE_CONFIG_DIR = '${join(user, ".claude")}' }`,
+          "",
+        ].join("\n"),
+        { mode: 0o600 },
+      );
+      const block = join(user, ".claude", "CLAUDE.md");
+      const parts = ["--app", "claude-code", "--parts", "mcp,block", "--space", space];
+      try {
+        // Selecting the second file alone plans the folder's one block.
+        const second = JSON.parse(
+          (await run(["setup", "agents", "--instance", "claude-named", ...parts, "--json"], false))
+            .stdout,
+        ) as { blocks?: unknown[] };
+        expect(second.blocks).toHaveLength(1);
+        const preview = JSON.parse(
+          (await run(["setup", "agents", ...parts, "--json"], false)).stdout,
+        ) as { apply: string[]; blocks: unknown[] };
+        expect(preview.blocks).toHaveLength(1);
+        const applied = await run([...preview.apply.slice(1), "--json"]);
+        expect(applied.code, applied.stdout).toBe(0);
+        expect((await rows()).map((r) => r.instance).sort()).toEqual(["claude", "claude-named"]);
+        expect(readFileSync(block, "utf8")).toContain(MCP_SERVER_KEY);
+
+        // Turning the first off, its block part included: the second still reads the block.
+        const first = JSON.parse(
+          (
+            await run([
+              "setup",
+              "agents",
+              "--remove",
+              "--instance",
+              "claude",
+              "--parts",
+              "mcp,block",
+              "--json",
+            ])
+          ).stdout,
+        ) as { homes: { result: string }[]; blocks: { result: string; reason?: string }[] };
+        expect(first.homes).toMatchObject([{ result: "removed" }]);
+        expect(first.blocks).toEqual([
+          expect.objectContaining({ result: "left", reason: "in_use" }),
+        ]);
+        expect(readFileSync(block, "utf8")).toContain(MCP_SERVER_KEY);
+        expect((await rows()).map((r) => r.instance)).toEqual(["claude-named"]);
+
+        // The second turned off by its own selection: the block goes with it.
+        const last = JSON.parse(
+          (
+            await run([
+              "setup",
+              "agents",
+              "--remove",
+              "--instance",
+              "claude-named",
+              "--parts",
+              "mcp,block",
+              "--json",
+            ])
+          ).stdout,
+        ) as { blocks: { result: string }[] };
+        expect(last.blocks).toEqual([expect.objectContaining({ result: "removed" })]);
+        expect(existsSync(block) ? readFileSync(block, "utf8") : "").not.toContain(MCP_SERVER_KEY);
+        expect(await rows()).toEqual([]);
+        expect(read()).toEqual(before);
+      } finally {
+        rmSync(config, { force: true });
+        rmSync(named, { force: true });
+        rmSync(block, { force: true });
+      }
+    },
+    SLOW,
+  );
+});

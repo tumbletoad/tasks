@@ -202,7 +202,7 @@ export function readBlockRecords(stateDir: string): BlockRecord[] {
 
 function sameHome(
   platform: NodeJS.Platform,
-  r: BlockRecord,
+  r: Pick<AgentHome, "app" | "home">,
   home: Pick<AgentHome, "app" | "home">,
 ) {
   return r.app === home.app && samePath(platform, r.home, home.home);
@@ -360,6 +360,8 @@ export type BlockRefusal =
 
 export interface BlockView {
   readonly home: AgentHome;
+  /** The homes whose agents read this file: two settings files of one folder share it. */
+  readonly readers: readonly AgentHome[];
   readonly file: string;
   readonly for: BlockFor;
   readonly state: BlockState;
@@ -396,6 +398,7 @@ function judge(
 ): BlockView {
   const base = {
     home,
+    readers: [home],
     file: target.file,
     for: target.for,
     ...(record === undefined ? {} : { record }),
@@ -501,7 +504,8 @@ export async function surveyBlocks(
   for (const home of all) {
     const record = records.find((r) => sameHome(input.platform, r, home));
     const view = await inspectBlock(input, home, record);
-    if (view !== undefined) views.push(view);
+    const readers = homes.filter((h) => sameHome(input.platform, h, home));
+    if (view !== undefined) views.push(readers.length === 0 ? view : { ...view, readers });
   }
   return views;
 }
@@ -603,7 +607,14 @@ export function editedDiff(view: BlockView): string {
 // Apply and remove
 
 export type BlockReason =
-  BlockRefusal | "edited" | "foreign" | "not_registered" | "missing" | "changed_meanwhile";
+  | BlockRefusal
+  | "edited"
+  | "foreign"
+  | "not_registered"
+  | "missing"
+  | "changed_meanwhile"
+  /** Another settings file of the folder still has TTasks's entry, and its agent reads the block. */
+  | "in_use";
 
 export interface BlockOutcome {
   readonly view: BlockView;
