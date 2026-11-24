@@ -3,7 +3,6 @@
 // groups are unit tests: the page source, one group per change that moved tasks there, and how many
 // tasks agents moved there since the person last had it open in this browser.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
-import type { Instance } from "../api.ts";
 import type { Group } from "../groups.ts";
 import { browserKept, type Kept } from "../kept.ts";
 import { taskRow, type TaskRow } from "../store/rows.ts";
@@ -128,17 +127,6 @@ export function trashGroups(
     });
   }
   return out;
-}
-
-/**
- * An agent's name as the page knows its app, from the label it wrote under (`agent:<instance>`,
- * or `agent:<instance>:<session>` for one TTasks started), or undefined for an agent that did not
- * say which it is.
- */
-export function agentName(by: string, instances: readonly Instance[]): string | undefined {
-  const key = by.replace(/^agent:/u, "").split(":")[0] ?? "";
-  if (key === "" || key === "unknown") return undefined;
-  return instances.find((instance) => instance.key === key)?.label ?? key;
 }
 
 /**

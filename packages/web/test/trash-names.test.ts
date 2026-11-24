@@ -3,7 +3,7 @@
 // its session.
 import { describe, expect, test } from "vitest";
 import { sessionPrincipal } from "../../service/src/ops/caller.ts";
-import { agentName } from "../src/views/trash.ts";
+import { agentName } from "../src/views/agent-name.ts";
 
 describe("[A5.trash.web.names] an agent's change in the Trash is headed by its app's name", () => {
   test("an agent TTasks started, one that named its instance, an instance the page does not list, and one that said nothing", () => {
@@ -14,7 +14,7 @@ describe("[A5.trash.web.names] an agent's change in the Trash is headed by its a
         space: "sp_fixture",
         task: "t_fixture",
         home: { of: "launch", app: "claude-code", home: undefined },
-      } as Parameters<typeof sessionPrincipal>[0],
+      },
       "claude-code",
       "mcp",
     );

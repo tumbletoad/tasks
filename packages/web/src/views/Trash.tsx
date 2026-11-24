@@ -22,10 +22,10 @@ import { useLive, usePagedQuery } from "../store/hooks.ts";
 import { affects } from "../store/queries.ts";
 import type { TaskRow } from "../store/rows.ts";
 import { onKept } from "../kept.ts";
+import { agentName } from "./agent-name.ts";
 import { letGo, useUnsent } from "../unsent.ts";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
 import {
-  agentName,
   keepTrashSeen,
   movedByOthers,
   seenName,
