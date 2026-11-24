@@ -6,6 +6,7 @@
 // opener is recorded.
 import { createServer as createHttpServer } from "node:http";
 import { createServer, type Server, type Socket } from "node:net";
+import { renameSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { blockedMessage, movedMessage } from "@ttasks/service/http/shared";
@@ -75,17 +76,14 @@ describe("[A2.3.9.cli.open] ttasks open", () => {
     const match = URL_SHAPE.exec(opened[0] ?? "");
     const to = decodeURIComponent(match?.[3] ?? "");
     expect(to).toMatch(/^\/s\/sp_[0-9a-z]{26}\/task\/M-1$/);
-    // A folder is no space ID or name: the page's Open folder opens it.
-    for (const folder of [join(w.root, "s", "mira-copy"), "s\\mira-copy"]) {
-      const refused = await runMain(["open", "--space", folder], {
-        home: w.home,
-        tty: true,
-        main: { openUrl },
-      });
-      expect(refused.code).toBe(2);
-      expect(refused.stderr).toContain("--space takes a space ID or name, not a folder");
-      expect(refused.stderr).toContain("choose Open folder in the page's space list");
-    }
+    // A folder no space of the service is in opens nothing.
+    const refused = await runMain(["open", "--space", join(w.root, "s", "mira-copy")], {
+      home: w.home,
+      tty: true,
+      main: { openUrl },
+    });
+    expect(refused.code).toBe(3);
+    expect(refused.stderr).toContain("The service has no space in that folder.");
     expect(opened).toHaveLength(1);
     const json = await runMain(["open", "--json"], { home: w.home, tty: true, main: { openUrl } });
     expect(JSON.parse(json.stdout)).toEqual({ opened: true, port: w.port(), moved: false });
@@ -97,6 +95,123 @@ describe("[A2.3.9.cli.open] ttasks open", () => {
     expect(failed.code).toBe(6);
     expect(failed.stderr).toContain("--print-url");
   });
+
+  test(
+    "a space that names no space, or two, opens nothing and lists the spaces there are",
+    SLOW,
+    async () => {
+      const w = await world("od");
+      const opened: string[] = [];
+      const openUrl = (url: string) => {
+        opened.push(url);
+        return Promise.resolve(true);
+      };
+      const open = (args: string[], env: Record<string, string> = {}) =>
+        runMain(["open", ...args], { home: w.home, tty: true, env, main: { openUrl } });
+
+      const typo = await open(["--space", "Mra"]);
+      expect(typo.code).toBe(3);
+      expect(typo.stderr).toContain("The service has no space by that ID or name.");
+      expect(typo.stderr).toMatch(/\n {2}Mira {2}sp_[0-9a-z]{26} {2}\S/);
+      // A TTASKS_SPACE left set that names no space is said to be that, wherever it names the space.
+      const stale = { TTASKS_SPACE: "Mra" };
+      const fromEnv = await open([], stale);
+      expect(fromEnv.code).toBe(3);
+      expect(fromEnv.stderr).toContain("TTASKS_SPACE names a space the service does not have.");
+      expect(fromEnv.stderr).toContain("Clear TTASKS_SPACE to use the default space");
+      for (const argv of [
+        ["space", "backups"],
+        ["run", "list"],
+      ]) {
+        const ran = await runMain(argv, { home: w.home, tty: true, env: stale });
+        expect(ran.code, argv.join(" ")).toBe(3);
+        expect(ran.stderr).toContain("TTASKS_SPACE names a space the service does not have.");
+      }
+      expect((await open(["Mira"], stale)).code).toBe(0);
+      opened.pop();
+
+      const user = await w.user();
+      const other = (await user.call(
+        "space/create",
+        { name: "mira", path: join(w.root, "s", "mira-two"), ref_prefix: "N" },
+        { timeoutMs: 120_000 },
+      )) as { space: { id: string } };
+      const two = await open(["--space", "Mira", "--task", "M-1"]);
+      expect(two.code).toBe(3);
+      expect(two.stderr).toContain("Several spaces have this name.");
+      expect(two.stderr).toContain(`  mira  ${other.space.id}`);
+      const json = await open(["--space", "Mira", "--json"]);
+      const error = (
+        JSON.parse(json.stdout) as {
+          error: { code: string; data: { spaces: { id: string; name: string }[] } };
+        }
+      ).error;
+      expect(error.code).toBe("ambiguous");
+      expect(error.data.spaces.map((s) => s.name).sort()).toEqual(["Mira", "mira"]);
+      expect(error.data.spaces.map((s) => s.id)).toContain(other.space.id);
+      expect(opened).toEqual([]);
+
+      // Its ID, its folder or the argument name the one space, and the tab goes to it.
+      for (const args of [["--space", other.space.id], [join(w.root, "s", "mira-two")]]) {
+        expect((await open(args)).code).toBe(0);
+        const to = decodeURIComponent(URL_SHAPE.exec(opened.pop() ?? "")?.[3] ?? "");
+        expect(to).toBe(`/s/${other.space.id}`);
+      }
+      // No space named: the page's own default, as before.
+      expect((await open([])).code).toBe(0);
+      expect(URL_SHAPE.exec(opened.pop() ?? "")?.[3]).toBeUndefined();
+    },
+  );
+
+  test(
+    "a folder opens only the copy in it: a restored copy that is not served opens nothing, though it shares its space's ID",
+    SLOW,
+    async () => {
+      const w = await world("og");
+      const opened: string[] = [];
+      const openUrl = (url: string) => {
+        opened.push(url);
+        return Promise.resolve(true);
+      };
+      const user = (argv: string[]) => runMain(argv, { home: w.home, cwd: w.root, tty: true });
+      const open = (args: string[]) =>
+        runMain(["open", ...args], { home: w.home, tty: true, main: { openUrl } });
+      const original = join(w.root, "s", "mira");
+      const copy = join(w.root, "s", "mira-copy");
+      const backup = await user(["space", "backup", "--space", "Mira", "--json"]);
+      const name = (JSON.parse(backup.stdout) as { backup: { name: string } }).backup.name;
+      expect((await user(["space", "restore", name, "--space", "Mira", "--to", copy])).code).toBe(
+        0,
+      );
+      expect((await user(["space", "close", "Mira"])).code).toBe(0);
+      expect((await user(["space", "open", copy])).code).toBe(0);
+
+      // The copy serves the space, read-only: its folder opens it, the original's folder does not.
+      expect((await open([copy])).code).toBe(0);
+      expect(decodeURIComponent(URL_SHAPE.exec(opened.pop() ?? "")?.[3] ?? "")).toMatch(
+        /^\/s\/sp_/,
+      );
+      const closed = await open([original]);
+      expect(closed.code).toBe(8);
+      expect(closed.stderr).toContain(`Mira is open from ${copy}.`);
+
+      // The copy's folder goes away and the original is open again: the copy's folder still names
+      // that copy, not the writable original.
+      await w.stop();
+      renameSync(copy, `${copy}-away`);
+      await w.restart();
+      expect((await user(["space", "open", original])).code).toBe(0);
+      const away = await open([copy]);
+      expect(away.code).toBe(8);
+      expect(away.stderr).toContain("That folder holds a copy of Mira that is not open here.");
+      expect(away.stderr).toContain(`Mira is open from ${original}.`);
+      const json = await open([copy, "--json"]);
+      expect(JSON.parse(json.stdout)).toMatchObject({
+        error: { code: "space_unavailable", data: { reason: "not_served", serving: original } },
+      });
+      expect(opened).toEqual([]);
+    },
+  );
 
   test("an agent's shell cannot open the UI: it is told to ask the user", SLOW, async () => {
     const w = await world("oc", {}, { space: false });

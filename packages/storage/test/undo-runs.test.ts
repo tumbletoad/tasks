@@ -209,7 +209,7 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
           partial: true,
           op: 0,
           principal: fx.human.principal_id,
-          applied: seq,
+          applied: () => seq,
         });
       } catch (error) {
         problem = error;

@@ -28,7 +28,8 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { CLI_NAME } from "@ttasks/brand";
-import { onlySpace } from "@ttasks/service/copies";
+import { AppError, type ErrorBody } from "@ttasks/contracts";
+import { findSpace, onlySpace } from "@ttasks/service/copies";
 import { defaultSpaceFolder, hostFacts, resolveLayout } from "@ttasks/service/paths";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
@@ -264,6 +265,58 @@ export function namedSpace(io: Io, globals: Globals, given?: string): string | u
   return existsSync(folder) ? folder : named;
 }
 
+/** Whether TTASKS_SPACE is what names the command's space: no argument and no --space. */
+const fromVariable = (io: Io, globals: Globals, given: string | undefined): boolean =>
+  given === undefined && globals.space === undefined && (io.env["TTASKS_SPACE"] ?? "") !== "";
+
+/**
+ * The refusal of a named space the service does not have. A name from TTASKS_SPACE says so, since
+ * a variable left set in a shell is no name the person just typed.
+ */
+export function noSuchSpace(
+  io: Io,
+  globals: Globals,
+  given: string | undefined,
+  named: string,
+): ErrorBody {
+  if (fromVariable(io, globals, given)) {
+    return {
+      code: "not_found",
+      message: "TTASKS_SPACE names a space the service does not have.",
+      hint: `Clear TTASKS_SPACE to use the default space, or set it to one of ${CLI_NAME} space list.`,
+    };
+  }
+  return {
+    code: "not_found",
+    message: isAbsolute(named)
+      ? "The service has no space in that folder."
+      : "The service has no space by that ID or name.",
+    hint: `${CLI_NAME} space list also shows the closed ones.`,
+  };
+}
+
+/**
+ * The space a command names (namedSpace). One that only TTASKS_SPACE names is looked up first, so
+ * a variable that names no space is refused as that, whatever the command then asks.
+ */
+export async function checkedSpace(
+  io: Io,
+  globals: Globals,
+  given: string | undefined,
+  call: (method: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>,
+): Promise<string | undefined> {
+  const named = namedSpace(io, globals, given);
+  if (named === undefined || !fromVariable(io, globals, given)) return named;
+  const rows = ((await call("space/list", {}))["spaces"] as SpaceRow[]).map((s) => ({
+    ...s,
+    id: s.id ?? s.registered,
+  }));
+  if (findSpace(rows, named) === undefined) {
+    throw new AppError(noSuchSpace(io, globals, given, named));
+  }
+  return named;
+}
+
 /**
  * The space a command names, in the order op/call takes it: its argument, --space, TTASKS_SPACE,
  * the machine's default space (`ttasks space use`), else the one space the service has. The
@@ -277,7 +330,7 @@ export async function whichSpace(
   call: (method: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>,
   unnamed: Unnamed = {},
 ): Promise<string> {
-  const named = namedSpace(io, globals, given);
+  const named = await checkedSpace(io, globals, given, call);
   if (named !== undefined) return named;
   const result = await call("space/list", {});
   const live = (result["spaces"] as SpaceRow[])

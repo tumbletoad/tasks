@@ -4103,6 +4103,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.2.2.files.new-file-replaced",
+      "title": "A file the files package put in place as new can be replaced at once: three hundred new files, each replaced right after it was made",
+      "source": "A2 3.2.2",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.2.2.permissions.repair",
       "title": "One place turns a path's facts (kind, owner, mode, link) into the words and the command, from the whole rule for that object: run against fixtures without root, each command makes the next start pass, and where root is needed the text is exact; an existing config folder is judged before machine.toml exists and nothing is written into one that fails; configuration is never read or written through a link, and no command that changes an owner is given for a link or a path below one; a folder this user cannot look into says what it hides",
       "source": "A2 3.2.2, A2 3.2.4",

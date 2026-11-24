@@ -9,7 +9,7 @@ import fs, { existsSync, readdirSync, readFileSync, writeFileSync } from "node:f
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { appendPrivate, atomicWrite, createFile, writeAll } from "../src/hub/files.ts";
+import { appendPrivate, atomicWrite, createFile, stageFile, writeAll } from "../src/hub/files.ts";
 import { tempRoot } from "./harness.ts";
 
 const cleanups: (() => void)[] = [];
@@ -104,5 +104,18 @@ describe("[A2.3.2.2.files.whole-write] a write of durable state writes every byt
       appendPrivate(log, "more\n");
     }).toThrow(expect.objectContaining({ code: "EIO" }));
     expect(existsSync(log)).toBe(true);
+  });
+});
+
+describe("[A2.3.2.2.files.new-file-replaced] a file put in place as new can be replaced at once", () => {
+  test("three hundred new files, each replaced right after it was made", () => {
+    const root = temp("wr");
+    for (let round = 0; round < 300; round += 1) {
+      const file = join(root, `record-${String(round)}.json`);
+      expect(stageFile(file, TEXT).create()).toBe(true);
+      atomicWrite(file, "next\n");
+      expect(readFileSync(file, "utf8")).toBe("next\n");
+    }
+    expect(readdirSync(root)).toHaveLength(300);
   });
 });
