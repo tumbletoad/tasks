@@ -163,6 +163,31 @@ export function instanceLabel(head: string, tail = ""): string {
   return `${short} · ${shorten(rest, room - short.length)}`;
 }
 
+/** The app an instance belongs to, by name: its target's, or a custom target's own label. */
+export const appName = (instance: { readonly target: TargetId; readonly label: string }): string =>
+  isBuiltInTarget(instance.target) ? targetDef(instance.target).label : instance.label.trim();
+
+/**
+ * The name a person reads for each instance of a list, wherever it is shown: the app's name, and
+ * the instance's own name after it only when the list holds more than one of that app ("Codex",
+ * "Claude Code · work"). The own name is the label without the app's name and without a folder's
+ * name, else the account the person gave it at setup.
+ */
+export function instanceNames(
+  list: readonly { readonly app: string; readonly label: string; readonly account?: string }[],
+): string[] {
+  return list.map(({ app, label, account }) => {
+    if (list.filter((other) => other.app === app).length < 2) return instanceLabel(app);
+    const own = label
+      .split("·")
+      .map((part) => part.trim())
+      .filter((part) => part !== "" && part.toLowerCase() !== app.toLowerCase())
+      .filter((part) => !part.startsWith("."))
+      .join(" · ");
+    return instanceLabel(app, own !== "" ? own : (account ?? ""));
+  });
+}
+
 /** `text` within `max` UTF-16 units: its start and end around `…`, no surrogate pair split. */
 function shorten(text: string, max: number): string {
   if (text.length <= max) return text;

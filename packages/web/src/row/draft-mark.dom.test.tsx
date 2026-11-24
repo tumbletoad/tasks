@@ -43,7 +43,7 @@ beforeEach(() => {
   localStorage.clear();
   const api = {
     client: { task: {} },
-    busy: () => Promise.resolve([]),
+    busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => Promise.resolve([]),
   } as unknown as Api;
   live = new Live({

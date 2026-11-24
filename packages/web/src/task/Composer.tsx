@@ -9,18 +9,29 @@
 // above the field, with Send again, Copy and Discard. Near its limit the strip says how much more
 // fits.
 //
+// Open and Run each are one button that names its agent, with a menu beside it of every agent that
+// can do it, grouped by app: the agent the task last used for it, else the one the space last used
+// here, else the first in Settings' order. One picked in the menu does it, and once the service took
+// it, it is the button's.
 // Run starts an agent that works on the task in the background, without a window, with the text
-// as its request (without text it works on the task): one button for the first instance that can
-// run, and, when several can, a menu beside it with the others. Its words clear once the service
-// queued the run, which holds them; a refusal keeps them. A finished task runs nothing: Reopen
-// stands where Run would, on Run's key, until the task is open again.
+// as its request (without text it works on the task). Its words clear once the service queued the
+// run, which holds them; a refusal keeps them. A finished task runs nothing: Reopen stands where
+// Run would, on Run's key, until the task is open again.
 //
-// Enter saves a note, Ctrl+Enter opens the first instance and Ctrl+Shift+Enter runs the first
-// that can (keymap.ts): never while an input method composes.
+// Enter saves a note, Ctrl+Enter opens with Open's agent and Ctrl+Shift+Enter runs with Run's
+// (keymap.ts): never while an input method composes.
 import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { flushSync } from "react-dom";
-import { Button, Dialog, DialogTrigger, Popover, Toolbar } from "react-aria-components";
-import { requestId, type Instance } from "../api.ts";
+import {
+  Button,
+  Menu,
+  MenuItem,
+  MenuSection,
+  MenuTrigger,
+  Popover,
+  Toolbar,
+} from "react-aria-components";
+import { requestId, type Instance, type LastUsed } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useMachine } from "../app/machine.ts";
@@ -35,7 +46,7 @@ import { CopyIcon, RunIcon } from "../row/icons.tsx";
 import { sayMsg } from "../row/say.ts";
 import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { runners } from "./runs.ts";
-import { openers, tileState, type BusyOf } from "../row/launch.ts";
+import { agentFor, byApp, openers, tileState, type BusyOf, type Cannot } from "../row/launch.ts";
 import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 import { typingIn } from "../kept.ts";
 import {
@@ -63,10 +74,12 @@ const styles = classes(css, [
   "hint",
   "label",
   "gap",
-  "runs",
+  "split",
   "others",
-  "runMenu",
-  "runItem",
+  "agents",
+  "agent",
+  "why",
+  "wide",
   "limit",
 ]);
 const noteLine = classes(keptCss, ["line", "why", "act", "value"]);
@@ -87,7 +100,91 @@ export interface ComposerProps {
   /** What busies each agent app with the task on this machine. */
   readonly busy: BusyOf | undefined;
   readonly instances: readonly Instance[];
+  /** The instances the space last opened a task in and ran one with here. */
+  readonly last: LastUsed;
+  /** Why an instance refused its last Open here, by key. */
+  readonly cannot: Cannot;
   readonly actions: RowActions;
+}
+
+/**
+ * The menu beside Open or Run: every agent that can do it, grouped by app in Settings' order, the
+ * button's own checked. A pick does it with that agent; one that is held says why and is off, and
+ * one that refused its last try says why and tries again, where the answer offers Start or Pair.
+ */
+function AgentMenu({
+  part,
+  main = false,
+  label,
+  list,
+  current,
+  name,
+  held,
+  refused,
+  pick,
+}: {
+  readonly part: "open-other" | "run-other";
+  /** It is the strip's main action's, drawn as that action is. */
+  readonly main?: boolean;
+  readonly label: string;
+  readonly list: readonly Instance[];
+  readonly current: Instance;
+  /** What the item says it does: "Open in Codex · work". */
+  readonly name: (instance: Instance) => string;
+  /** Why an agent cannot do it now; none: every one can. */
+  readonly held?: (instance: Instance) => string | undefined;
+  /** Why an agent refused its last try here; it can be picked again. */
+  readonly refused?: (instance: Instance) => string | undefined;
+  readonly pick: (instance: Instance) => void;
+}) {
+  if (list.length < 2) return null;
+  return (
+    <MenuTrigger>
+      <Button
+        className={`${styles.button} ${styles.others}`}
+        data-part={part}
+        data-default={main ? "" : undefined}
+        aria-label={label}
+      >
+        <ChevronDownIcon />
+      </Button>
+      <Popover className={styles.agents} placement="bottom end" offset={4}>
+        <Menu
+          aria-label={label}
+          selectionMode="single"
+          selectedKeys={[current.key]}
+          disabledKeys={list.filter((i) => held?.(i) !== undefined).map((i) => i.key)}
+          onAction={(key) => {
+            const instance = list.find((i) => i.key === key);
+            if (instance !== undefined) pick(instance);
+          }}
+        >
+          {byApp(list).map((group) => (
+            <MenuSection key={group.app} id={group.app} aria-label={group.app}>
+              {group.instances.map((instance) => {
+                const why = held?.(instance) ?? refused?.(instance);
+                return (
+                  <MenuItem
+                    key={instance.key}
+                    id={instance.key}
+                    className={styles.agent}
+                    data-ring={instance.ring}
+                    textValue={name(instance)}
+                  >
+                    <span className={styles.glyph} aria-hidden="true">
+                      {instance.glyph}
+                    </span>
+                    <span>{name(instance)}</span>
+                    {why === undefined ? null : <span className={styles.why}>{why}</span>}
+                  </MenuItem>
+                );
+              })}
+            </MenuSection>
+          ))}
+        </Menu>
+      </Popover>
+    </MenuTrigger>
+  );
 }
 
 /**
@@ -200,7 +297,7 @@ export function KeptDraft({ task }: { readonly task: TaskRow }) {
   );
 }
 
-export function Composer({ task, busy, instances, actions }: ComposerProps) {
+export function Composer({ task, busy, instances, last, cannot, actions }: ComposerProps) {
   const t = useT();
   const say = useToast();
   const edits = useEdits();
@@ -427,14 +524,34 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const openKeys = keysOf("open-first", singleKeys);
   const runKeys = keysOf("run-first", singleKeys);
   const opens = openers(instances);
-  const first = opens[0];
-  const [runner, ...others] = runners(instances);
+  const first = agentFor(opens, "open", task, last);
+  const runs = runners(instances);
+  const runner = agentFor(runs, "run", task, last);
   const finished = task.lifecycle !== "active";
   /** Run's key on a finished task: Reopen, the step before any run. */
   const runOrReopen = (instance: Instance) => {
     if (finished) edits.reopen(task);
     else run(instance);
   };
+  /** Why `instance` refused its last Open here, as its button and its menu item say it. */
+  const refusedWhy = (instance: Instance): string | undefined => {
+    const why = cannot.get(instance.key);
+    return why === undefined ? undefined : t("composer.refused", { why });
+  };
+  /** What Open does with `instance`, as its button and its menu item say it. */
+  const openName = (instance: Instance) =>
+    t(another(instance) ? "composer.openAnother" : "row.openIn", { label: instance.label });
+  const openTip = (instance: Instance) =>
+    held(instance) ??
+    refusedWhy(instance) ??
+    t(
+      another(instance)
+        ? "composer.anotherTip"
+        : words === ""
+          ? "composer.openTip"
+          : "composer.openWithTip",
+      { label: instance.label },
+    );
   // A task without a folder of its own runs in the space's work folder, as Open does.
   const runTip = (instance: Instance) =>
     t(task.place === undefined ? "composer.runTipWorkFolder" : "composer.runTip", {
@@ -508,37 +625,24 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
           )}
         </button>
 
-        {opens.map((instance, i) => {
-          const why = held(instance);
-          const state = tileState(busy, instance.key);
-          const second = another(instance);
-          const tip =
-            why ??
-            t(
-              second
-                ? "composer.anotherTip"
-                : words === ""
-                  ? "composer.openTip"
-                  : "composer.openWithTip",
-              { label: instance.label },
-            );
-          return (
+        {first === undefined ? null : (
+          <span className={styles.split}>
             <button
-              key={instance.key}
               type="button"
               className={styles.button}
               data-part="open"
-              data-default={i === 0 ? "" : undefined}
-              data-state={state}
-              data-ring={instance.ring}
-              aria-disabled={why !== undefined}
-              aria-keyshortcuts={i === 0 ? ariaKeys(openKeys, mac) : undefined}
-              aria-description={tip}
-              data-tip={tip}
+              data-default=""
+              data-state={tileState(busy, first.key)}
+              data-ring={first.ring}
+              data-instance={first.key}
+              aria-disabled={held(first) !== undefined}
+              aria-keyshortcuts={ariaKeys(openKeys, mac)}
+              aria-description={openTip(first)}
+              data-tip={openTip(first)}
               onClick={(event) => {
                 // A double click is one Open, even when the first one's answer came in between.
                 if (event.detail > 1) return;
-                if (why === undefined) open(instance);
+                if (held(first) === undefined) open(first);
               }}
               onKeyDown={(event) => {
                 // A held Enter repeats the button's click: one press is one Open.
@@ -546,26 +650,37 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
               }}
             >
               <span className={styles.glyph} aria-hidden="true">
-                {instance.glyph}
+                {first.glyph}
               </span>
               {/* Both labels hold the button's width: reading that a session runs never moves
                   the buttons after it under a press. */}
               <span className={styles.label}>
-                <span data-off={second || undefined}>
-                  {t("row.openIn", { label: instance.label })}
+                <span data-off={another(first) || undefined}>
+                  {t("row.openIn", { label: first.label })}
                 </span>
-                <span data-off={!second || undefined}>
-                  {t("composer.openAnother", { label: instance.label })}
+                <span data-off={!another(first) || undefined}>
+                  {t("composer.openAnother", { label: first.label })}
                 </span>
               </span>
-              {i === 0 && openKeys[0] !== undefined ? (
+              {openKeys[0] === undefined ? null : (
                 <kbd className={styles.hint} aria-hidden="true">
                   {keyLabel(openKeys[0])}
                 </kbd>
-              ) : null}
+              )}
             </button>
-          );
-        })}
+            <AgentMenu
+              part="open-other"
+              main
+              label={t("composer.openOther")}
+              list={opens}
+              current={first}
+              name={openName}
+              held={held}
+              refused={refusedWhy}
+              pick={open}
+            />
+          </span>
+        )}
         {runner === undefined ? null : finished ? (
           <button
             type="button"
@@ -588,12 +703,13 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
             )}
           </button>
         ) : (
-          <span className={styles.runs}>
+          <span className={styles.split}>
             <button
               type="button"
               className={styles.button}
               data-part="run"
               data-ring={runner.ring}
+              aria-label={t("composer.run", { label: runner.label })}
               aria-disabled={runningFrom}
               aria-keyshortcuts={ariaKeys(runKeys, mac)}
               aria-description={runTip(runner)}
@@ -609,47 +725,18 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
               }}
             >
               <RunIcon />
-              {t("composer.run", { label: runner.label })}
-              {runKeys[0] === undefined ? null : (
-                <kbd className={styles.hint} aria-hidden="true">
-                  {keyLabel(runKeys[0])}
-                </kbd>
-              )}
+              <span className={`${styles.label} ${styles.wide}`} aria-hidden="true">
+                <span>{t("composer.run", { label: runner.label })}</span>
+              </span>
             </button>
-            {others.length === 0 ? null : (
-              <DialogTrigger>
-                <Button
-                  className={`${styles.button} ${styles.others}`}
-                  data-part="run-other"
-                  aria-label={t("composer.runOther")}
-                >
-                  <ChevronDownIcon />
-                </Button>
-                <Popover className={styles.runMenu} placement="bottom end" offset={4}>
-                  <Dialog aria-label={t("composer.runOther")}>
-                    {({ close }) =>
-                      others.map((instance) => (
-                        <button
-                          key={instance.key}
-                          type="button"
-                          className={styles.runItem}
-                          data-ring={instance.ring}
-                          onClick={() => {
-                            close();
-                            run(instance);
-                          }}
-                        >
-                          <span className={styles.glyph} aria-hidden="true">
-                            {instance.glyph}
-                          </span>
-                          {t("composer.run", { label: instance.label })}
-                        </button>
-                      ))
-                    }
-                  </Dialog>
-                </Popover>
-              </DialogTrigger>
-            )}
+            <AgentMenu
+              part="run-other"
+              label={t("composer.runOther")}
+              list={runs}
+              current={runner}
+              name={(instance) => t("composer.run", { label: instance.label })}
+              pick={run}
+            />
           </span>
         )}
         {text.length >= LIMIT_SHOWN ? (
@@ -668,7 +755,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
           onClick={copy}
         >
           <CopyIcon />
-          {t("row.copy")}
+          <span className={styles.wide}>{t("row.copy")}</span>
         </button>
       </Toolbar>
     </>

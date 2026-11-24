@@ -89,8 +89,8 @@ test.describe("[A7.3.12.m5-12.e2e.skip] Skip: a space is all a person needs, and
       await page.getByRole("button", { name: "Make the space" }).click();
       await expect(appsHeading(page)).toBeVisible({ timeout: SLOW_MS });
       // The usual choice is made: every switch that can be on is on, but the folder found by its
-      // name alone is listed and left off.
-      for (const app of ["Claude Code", "Codex"]) {
+      // name alone is listed and left off. Beside it, the usual Codex home is named by its account.
+      for (const app of ["Claude Code", "Codex · default"]) {
         await expect(toggle(page, openIn(app))).toBeChecked();
         await expect(toggle(page, toolsFor(app))).toBeChecked();
       }

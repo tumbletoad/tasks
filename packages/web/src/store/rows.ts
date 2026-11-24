@@ -5,7 +5,7 @@
 //
 // Rows are the service's compact rows: a field that is null in the space is absent.
 import { EFFORT_LEVELS, effortLevels, type EffortLevel } from "@ttasks/contracts/preferences";
-import type { Instance } from "../api.ts";
+import type { Instance, LastUsed } from "../api.ts";
 import { parseAgents, type AgentsView } from "./agents.ts";
 
 export interface TaskRow {
@@ -62,6 +62,8 @@ export interface TaskRow {
   readonly place?: RowPlace;
   /** Its background run that works, else the one whose question waits for the person. */
   readonly run?: RowRun;
+  /** The agent instances it was last opened in (an Open the service took) and last ran with. */
+  readonly last?: LastUsed;
   /** The questions agents asked on it that wait for the person, newest first. */
   readonly questions?: readonly RowQuestion[];
   /** How many more questions wait than `questions` holds. */
@@ -471,6 +473,9 @@ const isPlace = (v: unknown): boolean =>
 const isRun = (v: unknown): boolean =>
   isRecord(v) && isString(v["id"]) && isString(v["state"]) && isString(v["instance"]);
 
+const isLast = (v: unknown): boolean =>
+  isRecord(v) && optional(v["open"], isString) && optional(v["run"], isString);
+
 const isQuestion = (v: unknown): boolean =>
   isRecord(v) &&
   isString(v["ref"]) &&
@@ -508,6 +513,7 @@ export function taskRow(value: unknown): TaskRow | undefined {
     !optional(v["sources_more"], isNumber) ||
     !optional(v["place"], isPlace) ||
     !optional(v["run"], isRun) ||
+    !optional(v["last"], isLast) ||
     !optional(v["questions"], (q) => Array.isArray(q) && q.every(isQuestion)) ||
     !optional(v["questions_more"], isNumber) ||
     !optional(v["terminals"], isNumber)
@@ -585,6 +591,7 @@ function instancesOf(value: unknown): Instance[] {
     (i): i is Instance =>
       isRecord(i) &&
       isString(i["key"]) &&
+      isString(i["app"]) &&
       isString(i["label"]) &&
       isString(i["glyph"]) &&
       typeof i["ring"] === "number" &&

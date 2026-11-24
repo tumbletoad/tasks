@@ -810,7 +810,7 @@ export class HttpApp {
 
   /**
    * `POST /api/v1/launch/<action>` (checks.ts admits these only): `busy`, the agent apps busy
-   * with a task on this machine; `list`, a task's receipts; `run`, the person's Run; `runs`, a
+   * with a task on this machine and the ones the space last opened and ran here; `list`, a task's receipts; `run`, the person's Run; `runs`, a
    * task's runs; `stop`, the person's Stop of a run; `folder`, the task's folder in the file
    * manager; `t3_start`, `t3_pair` and `t3_open`, T3 Code started, paired or showing a thread. The
    * UI's grant is the person, the only one who starts or stops a run or opens a folder or an app
@@ -840,7 +840,10 @@ export class HttpApp {
               : action === "stop"
                 ? { run: await this.launches.stop(space, input, copy) }
                 : action === "busy"
-                  ? { busy: await this.launches.busy(space, copy) }
+                  ? {
+                      busy: await this.launches.busy(space, copy),
+                      last: await this.launches.last(space, copy),
+                    }
                   : { receipts: await this.launches.list(space, input, copy) };
       this.#json(res, port, 200, { result });
     } catch (error) {

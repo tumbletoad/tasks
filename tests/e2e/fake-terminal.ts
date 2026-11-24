@@ -26,22 +26,33 @@ const FAILING_AGENT_SHIM = fileURLToPath(new URL("./failing-agent-shim.ts", impo
 /** The one instance the page offers: the fake agent, as machine.toml's `[[instance]]` has it. */
 export const FAKE_INSTANCE = {
   key: "fake-agent",
-  label: "Fake agent · test",
+  label: "Claude Code",
   glyph: "Cc",
   ring: 1,
   route: "terminal",
 } as const;
+
+/** Another agent a world offers: the fake agent under its own key, app and label. */
+export interface FakeAgent {
+  readonly key: string;
+  readonly target: "claude-cli" | "codex-cli";
+  readonly label: string;
+}
 
 /**
  * The instance's table in machine.toml: Claude Code's target, run as the fake, which reads the
  * person's request as its brief says without the tools (`ttasks show --launch`) from the install of
  * `home`. On a task `holds` has a file for, the fake runs until that file is removed.
  */
-export function fakeInstanceToml(home: string, holds: string): string {
+export function fakeInstanceToml(
+  home: string,
+  holds: string,
+  as: FakeAgent = { key: FAKE_INSTANCE.key, target: "claude-cli", label: FAKE_INSTANCE.label },
+): string {
   return instanceToml({
-    id: FAKE_INSTANCE.key,
-    target: "claude-cli",
-    label: FAKE_INSTANCE.label,
+    id: as.key,
+    target: as.target,
+    label: as.label,
     exec: process.execPath,
     args_prefix: [FAKE_CLI_AGENT],
     env: {

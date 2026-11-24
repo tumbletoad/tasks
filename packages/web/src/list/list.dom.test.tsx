@@ -64,7 +64,9 @@ function snapshot(tasks: readonly TaskRow[]): SnapshotMessage {
     tasks,
     areas: [{ id: "a_1", title: "Lumen", position: "a" }],
     projects: [],
-    instances: [{ key: "cx", label: "Codex · work", glyph: "Cx", ring: 6, route: "terminal" }],
+    instances: [
+      { key: "cx", app: "Codex", label: "Codex · work", glyph: "Cx", ring: 6, route: "terminal" },
+    ],
   };
 }
 
@@ -142,7 +144,7 @@ beforeEach(() => {
         get: () => Promise.resolve({ sections: { log: [] } }),
       },
     },
-    busy: () => Promise.resolve([]),
+    busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => Promise.resolve([]),
     runs: () => Promise.resolve([]),
   } as unknown as Api;

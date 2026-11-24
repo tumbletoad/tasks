@@ -718,11 +718,15 @@ a + .muted,
   cursor: pointer;
 }
 
+/* One row at every width: an agent's name gives way before the strip would wrap. */
 .strip {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.strip > * {
+  flex: none;
 }
 
 /* Note stands a little apart from the agents. */
@@ -730,13 +734,27 @@ a + .muted,
   margin-right: 8px;
 }
 
-/* Run, and beside it the menu of the other agents that can run: one control, two halves. */
-.runs {
+/* Open or Run, and beside it the menu of every agent that can: one control, two halves. */
+.split {
   display: inline-flex;
   gap: 2px;
 }
 
-.runs > .button:first-child:not(:last-child) {
+.strip > .split {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Run's name gives way long before Open's. */
+.strip > .split:has([data-part="run"]) {
+  flex-shrink: 20;
+}
+
+.split > .button:first-child {
+  min-width: 0;
+}
+
+.split > .button:first-child:not(:last-child) {
   border-start-end-radius: 2px;
   border-end-end-radius: 2px;
 }
@@ -752,9 +770,10 @@ a + .muted,
   outline-offset: 2px;
 }
 
-.runMenu {
+.agents {
   min-width: 220px;
   max-width: min(320px, calc(100vw - 32px));
+  overflow: auto;
   padding: 4px;
   border: 1px solid var(--k-line-strong);
   border-radius: 10px;
@@ -762,12 +781,19 @@ a + .muted,
   color: var(--k-text);
 }
 
-.runMenu [role="dialog"] {
+.agents [role="menu"] {
   display: grid;
   outline: none;
 }
 
-.runItem {
+/* Each app's agents together, a line between apps. */
+.agents [role="group"] + [role="group"] {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--k-line);
+}
+
+.agent {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -783,34 +809,81 @@ a + .muted,
   cursor: pointer;
 }
 
-.runItem:hover,
-.runItem:focus-visible {
+.agent:hover,
+.agent[data-focused] {
   background: var(--k-hover);
   color: var(--k-text);
+  outline: none;
 }
 
-.runItem[data-ring="1"] {
+.agent[data-focus-visible] {
+  outline: 2px solid var(--k-focus);
+  outline-offset: -2px;
+}
+
+/* The button's own agent. */
+.agent[aria-checked="true"] {
+  color: var(--k-text);
+  font-weight: 600;
+}
+
+.agent[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Why an agent cannot do it now, after its name. */
+.why {
+  margin-inline-start: auto;
+  padding-inline-start: 8px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--k-muted);
+}
+
+/* Narrow, Run and Copy are their icons, so Open keeps the name of its agent. */
+@media (max-width: 599px) {
+  .strip {
+    gap: 4px;
+  }
+
+  .strip .hint,
+  .strip .wide,
+  .strip .glyph {
+    display: none;
+  }
+
+  .button[data-part="note"] {
+    margin-right: 0;
+  }
+
+  .strip > .split:has([data-part="run"]) {
+    flex-shrink: 0;
+  }
+}
+
+.agent[data-ring="1"] {
   --k-ring: var(--k-slot-1);
 }
-.runItem[data-ring="2"] {
+.agent[data-ring="2"] {
   --k-ring: var(--k-slot-2);
 }
-.runItem[data-ring="3"] {
+.agent[data-ring="3"] {
   --k-ring: var(--k-slot-3);
 }
-.runItem[data-ring="4"] {
+.agent[data-ring="4"] {
   --k-ring: var(--k-slot-4);
 }
-.runItem[data-ring="5"] {
+.agent[data-ring="5"] {
   --k-ring: var(--k-slot-5);
 }
-.runItem[data-ring="6"] {
+.agent[data-ring="6"] {
   --k-ring: var(--k-slot-6);
 }
-.runItem[data-ring="7"] {
+.agent[data-ring="7"] {
   --k-ring: var(--k-slot-7);
 }
-.runItem[data-ring="8"] {
+.agent[data-ring="8"] {
   --k-ring: var(--k-slot-8);
 }
 
@@ -821,10 +894,14 @@ a + .muted,
 
 .label {
   display: inline-grid;
+  min-width: 0;
 }
 
 .label > * {
   grid-area: 1 / 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .label > [data-off] {
@@ -876,7 +953,7 @@ a + .muted,
   color: var(--k-text-2);
 }
 
-/* The first instance is the default: Ctrl+Enter opens it. */
+/* Open, the strip's main action: Ctrl+Enter presses it. */
 .button[data-default] {
   box-shadow: none;
   background: var(--k-accent);
@@ -897,6 +974,7 @@ a + .muted,
 }
 
 .button svg {
+  flex: none;
   width: 14px;
   height: 14px;
 }

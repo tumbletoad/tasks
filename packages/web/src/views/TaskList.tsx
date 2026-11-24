@@ -16,7 +16,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Refused, requestId, type Instance, type Receipt, type Run } from "../api.ts";
+import {
+  Refused,
+  requestId,
+  type Instance,
+  type LastUsed,
+  type Receipt,
+  type Run,
+} from "../api.ts";
 import { useToast, type ToastAction } from "../app/frame.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
@@ -37,6 +44,7 @@ import {
   markerWords,
   t3Refusal,
   type BusyOf,
+  type Cannot,
   type FolderRefusal,
 } from "../row/launch.ts";
 import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
@@ -193,6 +201,22 @@ export function TaskList({
   const [receipts, setReceipts] = useState<ReadonlyMap<string, readonly Receipt[]>>(new Map());
   /** What busies each task's agent apps on this machine, as the service last said. */
   const [busy, setBusy] = useState<ReadonlyMap<string, BusyOf>>(new Map());
+  /** The agents the space last opened a task in and ran one with here: Open's and Run's default. */
+  const [last, setLast] = useState<LastUsed>({});
+  const used = useCallback((next: LastUsed) => {
+    setLast((before) => (before.open === next.open && before.run === next.run ? before : next));
+  }, []);
+  /** Why an instance refused its last Open from here: its menu item says so until one goes through. */
+  const [cannot, setCannot] = useState<Cannot>(new Map());
+  const refusedIn = useCallback((instance: string, why: string | undefined) => {
+    setCannot((before) => {
+      if (before.get(instance) === why) return before;
+      const next = new Map(before);
+      if (why === undefined) next.delete(instance);
+      else next.set(instance, why);
+      return next;
+    });
+  }, []);
   const busyReads = useRef(new Latest());
   /** A failed read of busy is tried again: the timer and how many tries failed in a row. */
   const busyRetry = useRef<{ timer?: ReturnType<typeof setTimeout>; failed: number }>({
@@ -362,9 +386,11 @@ export function TaskList({
       const newest = busyReads.current.begin("busy");
       api
         .busy()
-        .then((list) => {
+        .then((reply) => {
           retry.failed = 0;
-          if (newest()) setBusy((known) => busyByTask(list, known));
+          if (!newest()) return;
+          setBusy((known) => busyByTask(reply.busy, known));
+          used(reply.last);
         })
         .catch((error: unknown) => {
           if (live.failed(error) || !newest()) return;
@@ -376,7 +402,7 @@ export function TaskList({
         });
     };
     read();
-  }, [api, live]);
+  }, [api, live, used]);
 
   // Whenever the tab is live, on mount and again after it was offline, it reads what busies the
   // agent apps: a launch may have started or ended while it heard nothing.
@@ -814,7 +840,7 @@ export function TaskList({
     };
     // What T3 Code's refusal offers: Start when it does not run (Pair needs its server), Pair when
     // TTasks is not paired, or the pairing ended or allows too little.
-    const t3Next = (why: string): ToastAction | undefined => {
+    const t3Next = (why: string, instance: string): ToastAction | undefined => {
       const act =
         why === "not_running"
           ? "start"
@@ -826,6 +852,7 @@ export function TaskList({
       return {
         label: { id: act === "start" ? "row.t3Start" : "row.t3Pair" },
         run: () => {
+          refusedIn(instance, undefined);
           api.t3(act).then(
             ({ opened }) => {
               say(t(answer, { opened: opened === true ? "yes" : String(opened) }));
@@ -888,6 +915,10 @@ export function TaskList({
               unansweredOpens.answered(name, id);
               refuse(task.id, undefined);
               shown(task, receipt);
+              refusedIn(
+                instance.key,
+                receipt.state === "failed" ? (receipt.reason ?? "") : undefined,
+              );
               loadBusy();
               const space = live.spaceId;
               if (text !== undefined && space !== undefined && opened.note !== undefined) {
@@ -916,7 +947,7 @@ export function TaskList({
               ) {
                 say(
                   t("row.openT3", { why: receipt.reason, label: instance.label }),
-                  t3Next(receipt.reason),
+                  t3Next(receipt.reason, instance.key),
                 );
               }
               // T3 Code made the thread and did not come forward: the same thread, brought up.
@@ -966,12 +997,17 @@ export function TaskList({
               const t3Why = t3Refusal(error);
               if (t3Why !== undefined) {
                 refuse(task.id, undefined);
-                say(t("row.openT3", { why: t3Why, label: instance.label }), t3Next(t3Why));
+                refusedIn(instance.key, t3Why);
+                say(
+                  t("row.openT3", { why: t3Why, label: instance.label }),
+                  t3Next(t3Why, instance.key),
+                );
                 return undefined;
               }
               const cannot = instanceRefusal(error);
               if (cannot !== undefined) {
                 refuse(task.id, undefined);
+                refusedIn(instance.key, cannot);
                 say(
                   t(REFUSED_WORDS[cannot], {
                     label: instance.label,
@@ -1094,6 +1130,9 @@ export function TaskList({
             unansweredRuns.answered(name, id);
             refuse(task.id, undefined);
             showRun(task.id, run);
+            setLast((before) =>
+              before.run === instance.key ? before : { ...before, run: instance.key },
+            );
             // A press again answered with a run that already ended: that request was taken
             // before. The words stay, and the next press is a new run.
             if (again && run.ended_at !== null) {
@@ -1187,6 +1226,7 @@ export function TaskList({
     chosen,
     collapse,
     refuse,
+    refusedIn,
     say,
     shown,
     showRun,
@@ -1218,6 +1258,8 @@ export function TaskList({
       slot={item.slot}
       project={item.project}
       instances={state.instances}
+      last={last}
+      cannot={cannot}
       receipts={receipts.get(item.key) ?? NO_RECEIPTS}
       busy={busy.get(item.key)}
       runs={withStops(runs.get(item.key) ?? NO_RUNS, stops)}
