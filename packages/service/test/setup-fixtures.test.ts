@@ -167,11 +167,14 @@ async function viewOf(w: World, a: Adapter): Promise<HomeView> {
   return found;
 }
 
-async function apply(w: World, a: Adapter) {
+async function apply(w: World, a: Adapter, input: SetupInput = w.input) {
   const view = await viewOf(w, a);
-  const [item] = planOf(w.input, [view], SPACE);
-  return applyHome(w.input, view, SPACE, w.rows, item?.change);
+  const [item] = planOf(input, [view], SPACE);
+  return applyHome(input, view, SPACE, w.rows, item?.change);
 }
+
+/** The world's input with the service's live rows read, as the command line and the page read them. */
+const known = (w: World): SetupInput => ({ ...w.input, rows: w.rows.live });
 
 async function remove(w: World, a: Adapter) {
   return removeHome(w.input, await viewOf(w, a), w.rows);
@@ -586,7 +589,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         const [item] = planOf(w.input, [view], SPACE);
         const newer = a.format === "json" ? '{"k": 2}\n' : "k = 2\n";
         writeFileSync(file, newer);
-        const outcome = await applyHome(w.input, view, SPACE, w.rows, item?.change);
+        const outcome = await applyHome(known(w), view, SPACE, w.rows, item?.change);
         if (a.app === "claude-code") {
           // Claude Code rewrites its file while a session runs: the entry joins the newer bytes.
           expect(outcome).toMatchObject({ result: "applied", access: "on" });
@@ -642,7 +645,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
       const heldFile = a.file(held);
       seed(heldFile, "{}\n");
       mkdirSync(`${heldFile}.lock`);
-      expect(await apply(held, a)).toMatchObject({
+      expect(await apply(held, a, known(held))).toMatchObject({
         result: "failed",
         reason: "busy",
         access: "off",
@@ -712,7 +715,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         const before = readFileSync(file);
         const restore = unwritable(file);
         try {
-          expect(await apply(w, a), a.app).toMatchObject({
+          expect(await apply(w, a, known(w)), a.app).toMatchObject({
             result: "failed",
             reason: "unwritable",
             access: "off",
@@ -997,7 +1000,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
                     throw Object.assign(new Error("no space"), { code: "ENOSPC" });
                   },
                 },
-            () => apply(w, a),
+            () => apply(w, a, known(w)),
           );
           expect(outcome, what).toMatchObject({ result: "failed", access: "off" });
           expect(existsSync(file), what).toBe(false);
@@ -1402,6 +1405,41 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
   );
 
   test.skipIf(root)(
+    "an add that writes nothing says the access as it is: still on for a live grant whose record was lost, off when there is none, unknown when the service was not asked",
+    async () => {
+      const codex = ADAPTERS[1] as Adapter;
+      for (const live of [true, false, undefined]) {
+        const w = await world();
+        const file = codex.file(w);
+        seed(file, "");
+        if (live === true) {
+          w.rows.live.push({
+            app: "codex",
+            home: dirname(file),
+            instance: "codex-work",
+            space: SPACE,
+            grant: "gr_00000000000000000000000009",
+          });
+        }
+        const restore = unwritable(file);
+        try {
+          const input = live === undefined ? w.input : known(w);
+          expect(await apply(w, codex, input), String(live)).toMatchObject({
+            result: "failed",
+            reason: "unwritable",
+            access: live === true ? "on" : live === false ? "off" : "unknown",
+          });
+        } finally {
+          restore();
+        }
+        expect(w.rows.asked, String(live)).toEqual([]);
+        expect(w.rows.live, String(live)).toHaveLength(live === true ? 1 : 0);
+      }
+    },
+    SLOW,
+  );
+
+  test.skipIf(root)(
     "one of the two files cannot be written: the other is given back as it was, and no access is given",
     async () => {
       const w = await world();
@@ -1412,7 +1450,7 @@ describe("[A3.3.13.setup.home-files] Claude Code's default folder has a settings
       const restore = unwritable(explicit);
       let outcome;
       try {
-        outcome = await applyDefault(w);
+        outcome = await applyDefault(w, known(w));
       } finally {
         restore();
       }

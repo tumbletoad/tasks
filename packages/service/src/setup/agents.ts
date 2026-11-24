@@ -267,9 +267,9 @@ export interface Outcome {
   readonly result: "applied" | "removed" | "unchanged" | "left" | "failed";
   readonly reason?: OutcomeReason;
   /**
-   * The home's access as this action left it, apart from its file: `on` once its row was given;
-   * `off` when none was given or it was taken back; `unknown` when a revoke was asked for and the
-   * service did not confirm it, so its entry stays too. Absent when the action did not touch it.
+   * The home's access as this action left it, apart from its files, as far as it is known: `on`
+   * while its row is live, `off` when it has none, `unknown` when the service was asked and did not
+   * confirm, or was not there to ask. Absent when the action did not touch the home.
    */
   readonly access?: "on" | "off" | "unknown";
   /** A removal that left an entry in the file: TTasks's own (`reason` says why), or one the person changed. */
@@ -1913,6 +1913,12 @@ function isDefaultFile(input: SetupInput, home: AgentHome, file: string): boolea
 const ownFiles = (view: HomeView): string[] =>
   view.files.filter((f) => f.state === "own").map((f) => f.file);
 
+/** A home's access as the plan read it, in an outcome's words. */
+const knownAccess = (input: SetupInput, view: HomeView): "on" | "off" | "unknown" => {
+  const known = accessOf(input, view);
+  return known === "live" ? "on" : known;
+};
+
 /**
  * Turns a home's tools on as its answer (toolsOf) offers it from `space`, and does nothing it does
  * not offer: a new entry into each of its files, then its access once the entries are in place
@@ -1958,7 +1964,7 @@ export async function applyHome(
       const change = typeof planned === "object" ? planned : planChange(input, view, space);
       if (typeof change === "string") return { home, result: "left", reason: change };
       const written = await writeEntries(input, view, space, change);
-      if (!("entry" in written)) return { home, ...written, access: "off" };
+      if (!("entry" in written)) return { home, ...written, access: knownAccess(input, view) };
       const expected = change.writes.map((w) => w.file);
       return giveAccess(input, home, written, space, access, false, expected);
     }
