@@ -346,7 +346,8 @@ function historyOf(kind: "undo" | "redo", found: Found): Decision<HistoryResult>
     as_of: found.as_of,
     ...(found.passed_over === undefined ? {} : { passed_over: found.passed_over }),
     ...(found.newer_work === undefined ? {} : { newer_work: found.newer_work }),
-    ...(op?.levels === true ? { levels: true } : {}),
+    ...(op?.levels === undefined ? {} : { levels: op.levels }),
+    ...(op?.lifecycles === undefined ? {} : { lifecycles: op.lifecycles }),
     ...(op?.off_list === undefined ? {} : { off_list: op.off_list }),
     ...(partial
       ? {
@@ -464,16 +465,42 @@ function listText({ shown, more }: ShortList, name: (item: string) => string | M
   return { id: "toast.list", values: { count: shown.length + more, a, b, c, rest: more } };
 }
 
-/** The toast of a change of the effort levels undone or redone, with the tasks it left off them. */
-function levelsText(
+/**
+ * The toast of a change of the effort levels undone or redone, composed of what it wrote and
+ * nothing else: the levels, the sizes put back, the sizes others' newer work kept, the tasks left
+ * off the levels. One that wrote nothing says so and offers nothing to take back.
+ */
+function levelsToast(
   kind: "undo" | "redo",
-  off: readonly { readonly tasks: readonly string[]; readonly count: number }[] = [],
-): Msg {
-  const tasks = off.flatMap((o) => o.tasks).join(", ");
-  return {
-    id: "toast.levels",
-    values: { kind, count: off.reduce((n, o) => n + o.count, 0), tasks },
+  result: {
+    readonly levels?: { readonly list: boolean; readonly tasks: number } | undefined;
+    readonly off_list?:
+      readonly { readonly tasks: readonly string[]; readonly count: number }[] | undefined;
+  },
+  action: NonNullable<Toast["action"]>,
+): Omit<Toast, "key"> {
+  const unresolved =
+    (result as { unresolved?: readonly { entity: string; field: string; by: string }[] })
+      .unresolved ?? [];
+  // The list held by someone else's later change: none of the step came back, and it is gone.
+  const list = unresolved.find((u) => u.entity === "preferences");
+  if (list !== undefined) {
+    return { kind: "error", text: { id: "toast.levelsNotUndone", values: whoOf(list.by) } };
+  }
+  const kept = unresolved.filter((u) => u.field === "effort").length;
+  const { levels } = result;
+  if (levels === undefined || (!levels.list && levels.tasks === 0)) {
+    return { kind: "info", text: { id: "toast.levelsNothing", values: { kind, kept } } };
+  }
+  const off = result.off_list ?? [];
+  const values = {
+    kind,
+    list: levels.list ? "yes" : "no",
+    kept,
+    count: off.reduce((n, o) => n + o.count, 0),
+    tasks: off.flatMap((o) => o.tasks).join(", "),
   };
+  return { kind: "undo", text: { id: "toast.levels", values }, action };
 }
 
 /**
@@ -1141,28 +1168,22 @@ export class Edits {
         return;
       }
       const result = decision.value;
-      // A change of the levels changes no task's lifecycle: no checked row comes back. While
-      // another's change holds its list, none of it comes back: the toast says so, with no Redo.
-      if (result.levels !== true) this.#undone(result.tasks, true);
-      const unresolved = (result as { unresolved?: readonly { entity: string; by: string }[] })
-        .unresolved;
-      const list = (unresolved ?? []).find((u) => u.entity === "preferences");
-      if (result.levels === true && list !== undefined) {
-        say({ kind: "error", text: { id: "toast.levelsNotUndone", values: whoOf(list.by) } });
+      // Only a row whose check-off this undid comes back unchecked.
+      this.#undone(result.lifecycles ?? [], true);
+      const redo = {
+        label: { id: "toast.redo" },
+        run: () => {
+          void this.redo(result.commit);
+        },
+      } as const;
+      if (result.levels !== undefined) {
+        say(levelsToast("undo", result, redo));
         return;
       }
       say({
         kind: "undo",
-        text:
-          result.levels === true
-            ? levelsText("undo", result.off_list)
-            : { id: result.result === "partial" ? "toast.undoneRest" : "toast.undone" },
-        action: {
-          label: { id: "toast.redo" },
-          run: () => {
-            void this.redo(result.commit);
-          },
-        },
+        text: { id: result.result === "partial" ? "toast.undoneRest" : "toast.undone" },
+        action: redo,
       });
     });
   }
@@ -1175,27 +1196,32 @@ export class Edits {
         return;
       }
       const result = decision.value;
-      for (const ref of result.tasks) this.#redone.set(ref, result.commit);
-      if (result.levels !== true) this.#undone(result.tasks, false);
+      // A checked row's box undoes only the commit that checked that task off: a redo of anything
+      // else names the task too, and never becomes its target or ends its hold.
+      for (const ref of result.lifecycles ?? []) this.#redone.set(ref, result.commit);
+      this.#undone(result.lifecycles ?? [], false);
       // Older changes it passed over stay for the next Redo: who changed which tasks since.
       const passed = (result as { passed_over?: readonly string[] }).passed_over ?? [];
       const newer = newerValues(newerOf(result.newer_work));
+      const undo = {
+        label: { id: "toast.undo" },
+        run: () => {
+          void this.undo(result.commit);
+        },
+      } as const;
+      if (passed.length === 0 && result.levels !== undefined) {
+        say(levelsToast("redo", result, undo));
+        return;
+      }
       say({
         kind: "undo",
         text:
           passed.length === 0
-            ? result.levels === true
-              ? levelsText("redo", result.off_list)
-              : { id: "toast.redone" }
+            ? { id: "toast.redone" }
             : newer === undefined
               ? { id: "toast.redonePassedOwn" }
               : { id: "toast.redonePassed", values: newer },
-        action: {
-          label: { id: "toast.undo" },
-          run: () => {
-            void this.undo(result.commit);
-          },
-        },
+        action: undo,
       });
     });
   }
