@@ -1354,8 +1354,9 @@ ${instance}`;
       renderBrief({
         kind: choice.kind,
         task: task.ref,
-        // A link is the one route that keeps the title out: it would stand in a URL.
-        ...(choice.route === "link" ? {} : { title: task.title }),
+        // A brief that travels in a URL keeps the title out: a link route's, and T3's, whose
+        // thread link carries the brief as its prompt (the thread's own name has the title).
+        ...(choice.route === "link" || choice.route === "t3-mcp" ? {} : { title: task.title }),
         space,
         reference,
         composer: request.composer,
