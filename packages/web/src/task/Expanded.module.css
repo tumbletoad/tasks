@@ -836,8 +836,10 @@ a + .muted,
   color: var(--k-muted);
 }
 
+/* Narrow, Run and Copy are their icons, so Open keeps the name of its agent. */
 @media (max-width: 599px) {
-  .strip .hint {
+  .strip .hint,
+  .strip .wide {
     display: none;
   }
 }

@@ -78,6 +78,7 @@ const styles = classes(css, [
   "agents",
   "agent",
   "why",
+  "wide",
   "limit",
 ]);
 const noteLine = classes(keptCss, ["line", "why", "act", "value"]);
@@ -701,6 +702,7 @@ export function Composer({ task, busy, instances, opened, ran, actions }: Compos
               className={styles.button}
               data-part="run"
               data-ring={runner.ring}
+              aria-label={t("composer.run", { label: runner.label })}
               aria-disabled={runningFrom}
               aria-keyshortcuts={ariaKeys(runKeys, mac)}
               aria-description={runTip(runner)}
@@ -716,7 +718,7 @@ export function Composer({ task, busy, instances, opened, ran, actions }: Compos
               }}
             >
               <RunIcon />
-              <span className={styles.label}>
+              <span className={`${styles.label} ${styles.wide}`} aria-hidden="true">
                 <span>{t("composer.run", { label: runner.label })}</span>
               </span>
               {runKeys[0] === undefined ? null : (
@@ -754,7 +756,7 @@ export function Composer({ task, busy, instances, opened, ran, actions }: Compos
           onClick={copy}
         >
           <CopyIcon />
-          {t("row.copy")}
+          <span className={styles.wide}>{t("row.copy")}</span>
         </button>
       </Toolbar>
     </>

@@ -21,7 +21,7 @@ import { SLOW_MS, startWorld, type World } from "./world.ts";
 
 /** Four agents beside the fake agent: two more Claude Code accounts and two Codex homes. */
 const FIVE: readonly FakeAgent[] = [
-  { key: "claude-work", target: "claude-cli", label: "Claude Code · work" },
+  { key: "claude-team", target: "claude-cli", label: "Claude Code · team" },
   { key: "codex-home", target: "codex-cli", label: "Codex · home" },
   { key: "claude-lab", target: "claude-cli", label: "Claude Code · lab" },
   { key: "codex-studio", target: "codex-cli", label: "Codex · studio" },
@@ -88,7 +88,7 @@ test.describe("[M6.e2e.open-choice] One Open button names its agent; the others 
       await expect(menu(page).getByRole("group")).toHaveCount(2);
       await expect(menu(page).getByRole("menuitemradio")).toHaveText([
         /Claude Code$/u,
-        /Claude Code · work$/u,
+        /Claude Code · team$/u,
         /Claude Code · lab$/u,
         /Codex · home$/u,
         /Codex · studio$/u,
