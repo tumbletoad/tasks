@@ -495,9 +495,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - An editor that had the configuration file open while TTasks recorded a space, and saves it
   afterwards, writes its own list of spaces back, and the next start follows that list.
 - Rolled back to an earlier version, which knows one settings file per agent home, turning Claude
-  Code's tools off takes the access away and the entry out of the file that version wrote first
-  only; the entry left in the other reaches nothing while the access is off, and this version, once
-  back, offers to take it out.
+  Code's tools off takes the access away and can leave an entry that version does not know, in
+  either of the two files. That entry starts nothing that reaches TTasks while the access is off,
+  and this version, once back, takes it out when the tools are turned off.
 - Claude Code started with `~/.claude` as its home may read an older settings file of its own there
   (`.config.json`) in place of `.claude.json`. Setup does not write that file, so a program that
   starts Claude Code that way may get no tools.
