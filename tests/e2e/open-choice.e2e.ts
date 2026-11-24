@@ -59,6 +59,25 @@ async function opensWith(page: Page, act: () => Promise<void>): Promise<string> 
   return ((await sent).postDataJSON() as { instance: string }).instance;
 }
 
+/** Whether the process is still there. */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Every agent the world's terminal started has ended: its folder can go. */
+async function agentsEnded(world: World): Promise<void> {
+  await expect
+    .poll(() => world.terminal().filter((c) => c.pid !== undefined && alive(c.pid)).length, {
+      timeout: SLOW_MS,
+    })
+    .toBe(0);
+}
+
 /** Nothing on the page scrolls sideways. */
 const sideways = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -138,6 +157,7 @@ test.describe("[M6.e2e.open-choice] One Open button names its agent; the others 
       }
       expect(await violations(page)).toEqual([]);
     } finally {
+      await agentsEnded(world);
       await world.close();
     }
   });
@@ -156,12 +176,12 @@ test.describe("[M6.e2e.open-choice] One Open button names its agent; the others 
         const ref = await addTask(world, "Plan the move");
         for (const theme of themes()) {
           await world.machine("ui.theme", theme);
+          await page.setViewportSize({ width: 1440, height: 900 });
+          await openTask(page, world, ref);
           for (const width of [1440, 390]) {
             await page.setViewportSize({ width, height: 900 });
-            await openTask(page, world, ref);
-            const row = rowOf(page, ref);
             await stripOf(page, ref).scrollIntoViewIfNeeded();
-            await picture(row, `open-${name}-${theme}-${String(width)}.png`);
+            await picture(rowOf(page, ref), `open-${name}-${theme}-${String(width)}.png`);
             if (agents.length > 0) {
               await menuButton(page, ref).click();
               await expect(menu(page)).toBeVisible();
