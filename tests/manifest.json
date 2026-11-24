@@ -2234,7 +2234,7 @@
     },
     {
       "id": "A1.5.history.alone",
-      "title": "Property test of one person working alone: they create, file, move and reorder tasks, check them off, reopen, archive, move them to the Trash and back, add notes, folders and tickets, make, move and remove areas and projects, often several in one request, and queue runs, stop them while queued and open sessions in between and between their undos and redos; then they undo until nothing is left and redo until nothing is left. Every Undo and Redo applies whole, each Undo gives back the space before the step it took back and each Redo the space after it, every position and the order of every list included, the rules every write keeps hold after every write, and every way this once failed runs first as a fixed case",
+      "title": "Property test of one person working alone: they create, file, move and reorder tasks, edit them and add to their context and log, check them off, reopen, archive, move them to the Trash and back, add notes and take them back and put them back, set folders, link tickets and unlink and relink them, make, rename, move, archive and remove areas and projects, often several in one request, and queue runs, stop them while queued and open sessions in between and between their undos and redos; then they undo until nothing is left and redo until nothing is left. Every Undo and Redo applies whole, each Undo gives back the space before the step it took back and each Redo the space after it, every position and the order of every list included, the rules every write keeps hold after every write, and every way this once failed runs first as a fixed case",
       "source": "A1 3.10, A1 3.10.1",
       "owner": "M3",
       "kind": "ci",

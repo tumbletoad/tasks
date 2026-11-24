@@ -1,16 +1,17 @@
 // A person working alone can always undo everything they did, one step at a time, and redo it
 // (A1 3.10.1). One person creates tasks, files them into areas and projects, moves and reorders
-// them, checks them off, reopens and archives them, moves them to the Trash and back, adds notes,
-// folders and tickets, makes areas and projects and moves and removes them, often several of
-// these in one request. In between, and between their undos and redos, they queue runs, stop
-// them and open sessions, which are no steps on their stack. No one else writes. Then they undo
-// until nothing is left and redo until nothing is left: every Undo and Redo applies whole, each
-// Undo gives back the space before the step it took back and each Redo the space after it, every
-// position and the order of every list included. The rules every write keeps (space-rules.ts) are
-// checked after every write. A run keeps its task's create (undo-runs.test.ts), so runs go on the tasks that
-// were there before the first step. Each ticket goes to one task: while two tasks hold one key,
-// an Undo or Redo never brings a link of it back, also when the person linked both, a limit for
-// now. Fixture text and paths only.
+// them, edits them, adds to their context and log, checks them off, reopens and archives them,
+// moves them to the Trash and back, adds notes and takes them back and puts them back, sets
+// folders, links tickets and unlinks and relinks them, makes, renames, moves, archives and removes
+// areas and projects, often several of these in one request. In between, and between their undos
+// and redos, they queue runs, stop them and open sessions, which are no steps on their stack. No
+// one else writes. Then they undo until nothing is left and redo until nothing is left: every Undo
+// and Redo applies whole, each Undo gives back the space before the step it took back and each
+// Redo the space after it, every position and the order of every list included. The rules every
+// write keeps (space-rules.ts) are checked after every write. A run keeps its task's create
+// (undo-runs.test.ts), so runs go on the tasks that were there before the first step. Each ticket
+// goes to one task: while two tasks hold one key, an Undo or Redo never brings a link of it back,
+// also when the person linked both, a limit for now. Fixture text and paths only.
 import fc from "fast-check";
 import { afterAll, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
@@ -36,6 +37,14 @@ type Forward =
   | { kind: "move"; t: number; to: number }
   | { kind: "beside"; t: number; s: number; side: "before" | "after" }
   | { kind: "complete" | "reopen" | "archive" | "delete" | "restore" | "note"; t: number }
+  /** A task's summary and priority, its context, a log entry. */
+  | { kind: "patch"; t: number; v: number }
+  | { kind: "context" | "log"; t: number }
+  /** One of the task's notes taken back or put back, its ticket's link removed or brought back. */
+  | { kind: "note_delete" | "note_restore" | "unlink" | "relink"; t: number }
+  /** An area's or a project's title, or its archive. */
+  | { kind: "group_patch"; p: number; area: boolean; v: number }
+  | { kind: "group_archive"; p: number; area: boolean; undo: boolean }
   | { kind: "folder"; owner: "task" | "project"; at: number; path: number; clear: boolean }
   /** The task's own ticket, linked once more or for the first time. */
   | { kind: "ticket"; t: number }
@@ -90,6 +99,39 @@ const forward: fc.Arbitrary<Forward> = fc.oneof(
       t: n,
     }),
     weight: 6,
+  },
+  { arbitrary: fc.record({ kind: fc.constant("patch" as const), t: n, v: n }), weight: 2 },
+  {
+    arbitrary: fc.record({
+      kind: fc.constantFrom(
+        "context" as const,
+        "log" as const,
+        "note_delete" as const,
+        "note_restore" as const,
+        "unlink" as const,
+        "relink" as const,
+      ),
+      t: n,
+    }),
+    weight: 4,
+  },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("group_patch" as const),
+      p: n,
+      area: fc.boolean(),
+      v: n,
+    }),
+    weight: 1,
+  },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("group_archive" as const),
+      p: n,
+      area: fc.boolean(),
+      undo: fc.boolean(),
+    }),
+    weight: 2,
   },
   {
     arbitrary: fc.record({
@@ -182,6 +224,25 @@ const CASES: readonly Plan[] = [
       { at: 1, aside: { kind: "run", t: 1 } },
       { at: 1, aside: { kind: "stop", t: 1 } },
     ],
+  },
+  // A note taken back and put back, a ticket's link removed and brought back, a task's fields,
+  // context and log, an area's title, and a project archived and brought back.
+  {
+    steps: [
+      { kind: "note", t: 0 },
+      { kind: "note_delete", t: 0 },
+      { kind: "note_restore", t: 0 },
+      { kind: "ticket", t: 1 },
+      { kind: "unlink", t: 0 },
+      { kind: "relink", t: 0 },
+      { kind: "patch", t: 2, v: 1 },
+      { kind: "context", t: 2 },
+      { kind: "log", t: 2 },
+      { kind: "group_patch", p: 0, area: true, v: 1 },
+      { kind: "group_archive", p: 1, area: false, undo: false },
+      { kind: "group_archive", p: 1, area: false, undo: true },
+    ],
+    between: [],
   },
   // Moved to the Trash, the move undone, a session opened, the move redone.
   { steps: [{ kind: "delete", t: 2 }], between: [{ at: 1, aside: { kind: "session", t: 2 } }] },
@@ -392,6 +453,57 @@ function opsOf(w: World, s: Forward): Operation[] {
       return [{ kind: "task.restore", task: task(s.t) }];
     case "note":
       return [{ kind: "note.add", task: task(s.t), body: "Fixture note." }];
+    case "patch":
+      return [
+        {
+          kind: "task.patch",
+          task: task(s.t),
+          set: { summary: `Fixture summary ${String(s.v % 3)}`, priority: (s.v % 4) + 1 },
+        },
+      ];
+    case "context":
+      return [{ kind: "task.context_append", task: task(s.t), text: "Fixture context." }];
+    case "log":
+      return [{ kind: "log.add", task: task(s.t), body: "Fixture entry." }];
+    case "note_delete":
+    case "note_restore": {
+      const gone = s.kind === "note_restore" ? "NOT NULL" : "NULL";
+      const notes = w.fx.reader
+        .prepare(`SELECT task_id, ordinal FROM notes WHERE deleted_at IS ${gone} ORDER BY id`)
+        .all();
+      if (notes.length === 0) return [];
+      const note = nth(notes, s.t);
+      const kind = s.kind === "note_restore" ? "note.restore" : "note.delete";
+      return [{ kind, task: String(note["task_id"]), ordinal: Number(note["ordinal"]) }];
+    }
+    case "unlink":
+    case "relink": {
+      const gone = s.kind === "relink" ? "NOT NULL" : "NULL";
+      const links = w.fx.reader
+        .prepare(
+          `SELECT task_id, source_id FROM task_sources WHERE removed_at IS ${gone} ` +
+            "ORDER BY task_id, source_id",
+        )
+        .all();
+      if (links.length === 0) return [];
+      const link = nth(links, s.t);
+      const kind = s.kind === "relink" ? "source.relink" : "source.unlink";
+      return [
+        { kind, task: String(link["task_id"]), source: String(link["source_id"]) as Id<"s"> },
+      ];
+    }
+    case "group_patch": {
+      const title = `Fixture title ${String(s.v % 3)}`;
+      return s.area
+        ? [{ kind: "area.patch", area: nth(w.areas, s.p), set: { title } }]
+        : [{ kind: "project.patch", project: nth(w.projects, s.p), set: { title } }];
+    }
+    case "group_archive": {
+      const how = s.undo ? "unarchive" : "archive";
+      return s.area
+        ? [{ kind: `area.${how}`, area: nth(w.areas, s.p) }]
+        : [{ kind: `project.${how}`, project: nth(w.projects, s.p) }];
+    }
     case "folder": {
       if (s.owner === "task") {
         const t = task(s.at);
@@ -494,6 +606,7 @@ const ROWS = {
   areas: "SELECT id AS key, * FROM areas",
   projects: "SELECT id AS key, * FROM projects",
   notes: "SELECT id AS key, * FROM notes",
+  log_entries: "SELECT id AS key, * FROM log_entries",
   sources: "SELECT id AS key, * FROM sources",
   task_sources: "SELECT task_id || '|' || source_id AS key, * FROM task_sources",
   folders: "SELECT id AS key, * FROM folders",
@@ -505,6 +618,7 @@ const GONE: Readonly<Record<keyof typeof ROWS, string>> = {
   areas: "deleted_at",
   projects: "deleted_at",
   notes: "deleted_at",
+  log_entries: "deleted_at",
   sources: "deleted_at",
   task_sources: "removed_at",
   folders: "deleted_at",
