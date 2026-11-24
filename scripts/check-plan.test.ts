@@ -43,6 +43,7 @@ const sources: Record<string, string> = {
   "packages/web/src/main.tsx": 'import "./views/Today.tsx";',
   "packages/web/src/views/Today.tsx": "export {};",
   "packages/web/src/views/Upcoming.tsx": "export {};",
+  "packages/web/test/build.test.ts": "buildWeb(out);",
   "packages/web/test/catalogue.test.ts": "readdirSync(SRC);",
   "packages/web/test/styles.test.ts": "readdirSync(SRC);",
   "packages/projection/test/model.test.ts": 'import "../../a/src/core.ts";',
@@ -157,6 +158,7 @@ describe("[A7.3.3.check.selection] pnpm check selects the tests a change can rea
 
   test("tests that scan a folder are selected by a change inside it", () => {
     expect(selected(["packages/web/src/views/Upcoming.tsx"])).toEqual([
+      "packages/web/test/build.test.ts",
       "packages/web/test/catalogue.test.ts",
       "packages/web/test/styles.test.ts",
     ]);
