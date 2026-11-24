@@ -530,6 +530,54 @@ describe("[A7.3.12.m5-12.page-status] The tools switch is on only while the tool
   );
 
   it(
+    "an Open row whose ID a broken entry in machine.toml holds fails with its field, and the others go in",
+    async () => {
+      const toml = join(configOf(w.home), "machine.toml");
+      const before = existsSync(toml) ? readFileSync(toml, "utf8") : undefined;
+      // A third Codex home of its own, whose proposed ID an entry the reader drops (it names no
+      // target) holds in the file.
+      const third = join(w.user, ".codex-third");
+      mkdirSync(third);
+      writeFileSync(join(third, "config.toml"), "");
+      appendFileSync(toml, '\n[[instance]]\nid = "codex-third"\nlabel = "Broken"\n');
+      try {
+        const seen = await look();
+        const claude = row(seen, "claude-code");
+        const codex = seen.rows.find((r) => r.app === "codex" && r.home?.endsWith("third"));
+        if (codex === undefined) throw new Error("no third Codex row");
+        expect([claude.open?.change, codex.open?.change]).toEqual(["add", "add"]);
+        const applied = await call<Applied & { outcomes: { field?: string; reason?: string }[] }>(
+          w,
+          "/api/v1/machine/apps_apply",
+          {
+            space,
+            changes: [claude, codex].map((r) => ({
+              key: r.key,
+              part: "open",
+              on: true,
+              plan: r.open?.plan,
+            })),
+          },
+        );
+        expect(applied.result.outcomes).toMatchObject([
+          { result: "done" },
+          { result: "failed", reason: "invalid_input", field: "id" },
+        ]);
+      } finally {
+        if (before === undefined) rmSync(toml, { force: true });
+        else writeFileSync(toml, before);
+        rmSync(third, { recursive: true });
+      }
+      const back = row(await look(), "claude-code");
+      await call(w, "/api/v1/machine/apps_apply", {
+        space,
+        changes: [{ key: back.key, part: "open", on: false, plan: back.open?.plan }],
+      });
+    },
+    SLOW,
+  );
+
+  it(
     "an entry someone took out shows off even while its access is live, and turning it on writes it again",
     async () => {
       expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
@@ -546,6 +594,31 @@ describe("[A7.3.12.m5-12.page-status] The tools switch is on only while the tool
       expect(row(await look(), "claude-code").tools).toMatchObject({ on: true, change: "remove" });
       expect(claudeEntry(w.user)).toBeDefined();
       await turn("claude-code", false);
+    },
+    SLOW,
+  );
+});
+
+describe("[A7.3.12.m5-12.page-status] A home the person's environment selects is one they use", () => {
+  it(
+    "CODEX_HOME naming a second home with no settings file yet: it is not found by its name alone",
+    async () => {
+      const w = await world("selected", (root) => ({
+        CODEX_HOME: join(root, "u", ".codex-active"),
+      }));
+      try {
+        mkdirSync(join(w.user, ".codex-active"));
+        mkdirSync(join(w.user, ".codex-backup"));
+        const space = (await call<{ id: string }>(w, "/api/v1/space/create", { name: "Mira" }))
+          .result.id;
+        const seen = (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+        const of = (end: string) =>
+          seen.rows.find((r) => r.app === "codex" && r.home?.endsWith(end));
+        expect(of("active")).not.toHaveProperty("byName");
+        expect(of("backup")).toMatchObject({ byName: true });
+      } finally {
+        await w.close();
+      }
     },
     SLOW,
   );

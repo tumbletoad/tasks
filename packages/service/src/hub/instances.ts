@@ -381,9 +381,10 @@ function addInstances(host: InstancesHost, params: JsonObject): unknown {
   if (!prepared.ok) throw editRefused(prepared.reason);
   // The file decides, as it holds the instances written by hand too; the live list follows it.
   const named = instanceIds(prepared.edit.before?.toString("utf8") ?? "");
-  if (ids.some((id) => named.includes(id))) {
+  const taken = ids.findIndex((id) => named.includes(id));
+  if (taken !== -1) {
     throw invalid(
-      "entries",
+      `entries.${String(taken)}.id`,
       "This machine has an instance with this ID already",
       "Run ttasks setup instances again.",
     );
