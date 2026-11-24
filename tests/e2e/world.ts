@@ -5,6 +5,7 @@
 // `ui/mint_code` over the socket, in the URL's fragment. The fake agent writes through the socket
 // as an agent does (class `cli-agent`).
 // Fixture data only. Tests only.
+import { spawnSync } from "node:child_process";
 import {
   appendFileSync,
   existsSync,
@@ -669,7 +670,21 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         }
         await stop().catch(() => services.stopAll());
         removeRuntimeDir(json);
-        temp.cleanup();
+        try {
+          temp.cleanup();
+        } catch (error) {
+          if (process.platform === "win32" && process.env["GITHUB_ACTIONS"] === "true") {
+            const probe = fileURLToPath(new URL("./windows-open-files.py", import.meta.url));
+            const result = spawnSync("python", ["-I", "-S", probe, temp.root], {
+              stdio: ["ignore", "inherit", "inherit"],
+              windowsHide: true,
+              timeout: 15_000,
+            });
+            if (result.status !== 0)
+              process.stderr.write("The open-handle query did not finish.\n");
+          }
+          throw error;
+        }
       },
     };
   } catch (error) {
