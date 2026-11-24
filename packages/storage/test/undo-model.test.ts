@@ -12,14 +12,17 @@
 // A reference model predicts every outcome from A1 3.10 and 3.10.1's rules alone: which commit an
 // undo takes (the step applied last) and which a redo redoes (the oldest undone step it can, the
 // older ones passed over and kept), which of its rows pass their guards (provenance; a key or a
-// slug another live row holds; newer work by another on a row the step would hide; a live child of
-// a row it would un-create; two active holders of one key; a row or its owner out of sight), what
-// each field holds with its fv and its fp after each step, and each stack commit's status. On top
-// of the prediction, each undo and redo is checked against the space itself: the only task fields
-// it changes are rows of the inverted commit whose provenance was the guard; a redo brings back
+// slug another live row holds; newer work by another on a row the step would hide, or on a task
+// it would take out of the open list; a live child of a row it would un-create; two active holders
+// of one key; a row or its owner out of sight), what each field holds with its fv and its fp after
+// each step, and each stack commit's status. When a step and each row of it was last applied, the
+// model records as it acts, so it checks the writer's choice instead of repeating it. On top of
+// the prediction, each undo and redo is checked against the space itself: the only task fields it
+// changes are rows of the inverted commit whose provenance was the guard; a redo brings back
 // exactly the after-values and the provenance of the commit it redoes; and no field's fv ever
-// moves back. Each run ends with A1's history invariants (write-helpers.ts: checkHistory), among
-// them that every field holds the value its provenance commit wrote.
+// moves back. After every step, the rules every write keeps (space-rules.ts), and each run ends
+// with A1's history invariants (write-helpers.ts: checkHistory), among them that every field holds
+// the value its provenance commit wrote.
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, describe, expect, test } from "vitest";
@@ -98,11 +101,16 @@ interface ModelCommit {
   /** Who wrote it, and as what: a run's commits are the first human's. */
   by: number;
   kind: "write" | "undo" | "redo" | "run";
-  /** A redo's commit. */
-  redoOf?: number;
   /** A run's task. */
   runTask?: number;
   rows: ModelChange[];
+  /**
+   * For a stack commit, when it was last applied, recorded as the model acts: its own seq, then
+   * each redo of it, also one that wrote nothing.
+   */
+  last: number;
+  /** When it last wrote each row's field, by `field` (a create's by its tombstone): its seq, or a redo that wrote that field again. */
+  wrote: Map<string, number>;
 }
 
 type Patchable = "summary" | "priority" | "status" | "due";
@@ -153,12 +161,13 @@ type Step =
    * agent takes the area's slug; or links a task to a new source and another task to it, undoes
    * both, and an agent takes the key. Then the human redoes. Or (`held`) a human removes and
    * restores a task, an agent adds a note, and the human's partial undo of the restore leaves it,
-   * a redo brings nothing back, and an undo tries again.
+   * a redo brings nothing back, and an undo tries again. Or (`finish`) a human checks a task off or
+   * reopens it, undoes that, an agent adds a note, and the human redoes.
    */
   | {
       kind: "story";
       who: number;
-      story: "trash" | "groups" | "links" | "held";
+      story: "trash" | "groups" | "links" | "held" | "finish";
       task: number;
       slot: number;
     };
@@ -261,6 +270,7 @@ const step: fc.Arbitrary<Step> = fc.oneof(
         "groups" as const,
         "links" as const,
         "held" as const,
+        "finish" as const,
       ),
       task,
       slot,
@@ -301,6 +311,14 @@ function expand(s: Step): Step[] {
         ...redo,
       ];
     }
+    if (s.story === "finish") {
+      return [
+        { kind: "lifecycle", actor: s.who, task: s.task },
+        { kind: "undo", who: s.who, partial: false },
+        { kind: "note", actor: 1, task: s.task },
+        { kind: "redo", who: s.who },
+      ];
+    }
     if (s.story === "held") {
       return [
         { kind: "remove", actor: s.who, task: s.task },
@@ -334,6 +352,10 @@ function expand(s: Step): Step[] {
 /** A cell's key: a task's field, or another row's tombstone. */
 const key = (entity: Entity, id: number, field: string): string =>
   `${entity}|${String(id)}|${field}`;
+
+/** The cell a change row writes: a create's is its row's tombstone. */
+const fieldKey = (row: ModelChange): string =>
+  key(row.entity, row.id, row.create === true ? TOMBSTONE[row.entity] : row.field);
 
 const START: Readonly<Record<Field, string>> = {
   summary: "",
@@ -432,6 +454,8 @@ class Model {
       by,
       kind,
       rows,
+      last: seq,
+      wrote: new Map(),
     };
     this.commits.set(seq, commit);
     this.lastSeq = seq;
@@ -596,36 +620,23 @@ class Model {
     return { commit: this.#stack(seq, owner, rows, by), source, made: found === undefined };
   }
 
-  /** The step applied last: by its newest redo, else its own seq (A1 3.10.1). */
-  lastApplied(commit: ModelCommit): number {
-    let last = commit.seq;
-    for (const c of this.commits.values()) {
-      if (c.kind === "redo" && c.redoOf === commit.seq) last = Math.max(last, c.seq);
-    }
-    return last;
-  }
-
-  /**
-   * When `commit` last wrote `row`'s field: by the newest redo of it that wrote that field again,
-   * else by its own seq. A redo writes again only what its undo took back.
-   */
+  /** When `commit` last wrote `row`'s field, as recorded when it did (`ModelCommit.wrote`). */
   rowApplied(commit: ModelCommit, row: ModelChange): number {
-    const field = row.create === true ? TOMBSTONE[row.entity] : row.field;
-    let last = commit.seq;
-    for (const c of this.commits.values()) {
-      if (c.kind !== "redo" || c.redoOf !== commit.seq) continue;
-      if (c.rows.some((r) => r.entity === row.entity && r.id === row.id && r.field === field)) {
-        last = Math.max(last, c.seq);
-      }
-    }
-    return last;
+    return commit.wrote.get(fieldKey(row)) ?? commit.seq;
   }
 
+  /** A redo of `target` as commit `redo`: the step is applied again, and so is each row it wrote. */
+  redone(target: ModelCommit, redo: ModelCommit): void {
+    target.last = redo.seq;
+    for (const row of redo.rows) target.wrote.set(fieldKey(row), redo.seq);
+  }
+
+  /** The step applied last (A1 3.10.1). */
   undoTarget(owner: number): ModelCommit | undefined {
     let newest: ModelCommit | undefined;
     for (const c of this.commits.values()) {
       if (c.owner !== owner || c.status !== "done") continue;
-      if (newest === undefined || this.lastApplied(c) > this.lastApplied(newest)) newest = c;
+      if (newest === undefined || c.last > newest.last) newest = c;
     }
     return newest;
   }
@@ -664,7 +675,8 @@ class Model {
 
   /**
    * The rows of `rows` that do not pass their guards, and with `partial` their lifecycle or wrap
-   * partner; and what the writer names for a plain task field, as task|field keys.
+   * partner; what the writer names for a plain task field, as task|field keys, which is all it
+   * names unless newer work keeps a task open (`open`): that work is named instead.
    */
   failing(
     rows: readonly ModelChange[],
@@ -675,9 +687,10 @@ class Model {
       since: (row: ModelChange) => number;
       principal: number;
     },
-  ): { failed: Set<ModelChange>; named: Named[] } {
+  ): { failed: Set<ModelChange>; named: Named[]; open: Set<number> } {
     const failed = new Set<ModelChange>();
     const named: Named[] = [];
+    const open = new Set<number>();
     for (const r of rows) {
       const tomb = TOMBSTONE[r.entity];
       if (r.create === true) {
@@ -701,6 +714,15 @@ class Model {
         named.push(key(r.entity, r.id, r.field));
         continue;
       }
+      if (r.field === "lifecycle") {
+        // An open task done again stays open when another changed anything of it since.
+        const hides = r.before !== "active" && this.cell("tasks", r.id, r.field).value === "active";
+        if (hides && this.newer(r, options.since(r), options.principal)) {
+          failed.add(r);
+          open.add(r.id);
+        }
+        continue;
+      }
       if (r.field !== tomb) continue;
       if (r.before === "") {
         const row = this.row(r.entity, r.id);
@@ -715,6 +737,8 @@ class Model {
         failed.add(r);
       }
     }
+    // A task kept open keeps its wrap-up, unnamed: the work that keeps it is the conflict.
+    for (const r of rows) if (r.field === "wrap" && open.has(r.id)) failed.add(r);
     if (options.partial) {
       for (const r of rows) {
         const partner =
@@ -726,7 +750,7 @@ class Model {
         }
       }
     }
-    return { failed, named };
+    return { failed, named, open };
   }
 
   /** The cells as the inversion of `rows` but `skip` would leave them. */
@@ -884,6 +908,8 @@ class Model {
       by,
       kind,
       rows: inverted,
+      last: seq,
+      wrote: new Map(),
     };
     this.commits.set(seq, commit);
     this.lastSeq = seq;
@@ -1326,19 +1352,18 @@ const property = (seen: Seen) =>
           if (!s.partial && (guard.failed.size > 0 || broken.size > 0)) {
             expect(result.status).toBe("conflict");
             expect(result.error?.code).toBe("UNDO_CONFLICT");
-            if (plain(target.rows)) {
+            if (plain(target.rows) && guard.open.size === 0) {
               expect(named(ids.tasks, result.conflicts)).toEqual(sorted(guard.named));
             }
             count(seen, creates ? "create kept" : "undo conflict");
+            if (guard.open.size > 0) count(seen, "kept open by newer work");
             if (target.rows.some((r) => r.field === "deleted" && r.before === "")) {
               count(seen, "undo of a restore kept by newer work");
             }
             // Kept by work from before the step's newest redo, which did not bring that row back.
             if (
               [...guard.failed].some(
-                (r) =>
-                  r.field === TOMBSTONE[r.entity] &&
-                  model.rowApplied(target, r) < model.lastApplied(target),
+                (r) => r.field === TOMBSTONE[r.entity] && model.rowApplied(target, r) < target.last,
               )
             ) {
               count(seen, "undo kept past a redo that left the row");
@@ -1359,10 +1384,10 @@ const property = (seen: Seen) =>
             broken = model.broken(target.rows, skip, { redo: false });
           }
           expect(result.status, JSON.stringify(result.error)).toBe("applied");
-          if (plain(target.rows)) {
-            expect(named(ids.tasks, result.conflicts)).toEqual(
-              sorted(model.failing(target.rows, options).named),
-            );
+          const left = model.failing(target.rows, options);
+          if (left.open.size > 0) count(seen, "kept open by newer work");
+          if (plain(target.rows) && left.open.size === 0) {
+            expect(named(ids.tasks, result.conflicts)).toEqual(sorted(left.named));
           }
           const u = model.invert(target.rows, skip, s.who, "undo");
           target.status = "undone";
@@ -1403,6 +1428,8 @@ const property = (seen: Seen) =>
           // The oldest undone step the guards and the rules across rows let through.
           const passed: ModelCommit[] = [];
           const names: Named[] = [];
+          /** Tasks newer work kept open: that work is named, not their fields. */
+          let open = 0;
           let redone: { target: ModelCommit; undone: ModelCommit } | undefined;
           for (const target of tried) {
             const undone = model.commits.get(target.undoneBy ?? 0);
@@ -1424,6 +1451,7 @@ const property = (seen: Seen) =>
             }
             passed.push(target);
             names.push(...guard.named);
+            open += guard.open.size;
           }
           const all = passed.flatMap((c) => model.commits.get(c.undoneBy ?? 0)?.rows ?? []);
           if (passed.length > 0)
@@ -1441,7 +1469,10 @@ const property = (seen: Seen) =>
             count(seen, "redo of a removal kept by newer work");
           }
           expect(result.passed ?? []).toEqual(passed.map((c) => commitId(c.seq)));
-          if (plain(all)) expect(named(ids.tasks, result.conflicts)).toEqual(sorted(names));
+          if (open > 0) count(seen, "kept open by newer work");
+          if (plain(all) && open === 0) {
+            expect(named(ids.tasks, result.conflicts)).toEqual(sorted(names));
+          }
           if (redone === undefined) {
             expect(result.status).toBe("conflict");
             expect(result.error?.code).toBe("UNDO_CONFLICT");
@@ -1451,7 +1482,7 @@ const property = (seen: Seen) =>
           expect(result.status, JSON.stringify(result.error)).toBe("applied");
           expect(result.results[0]?.id).toBe(commitId(target.seq));
           const r = model.invert(undone.rows, new Set(), s.who, "redo");
-          r.redoOf = target.seq;
+          model.redone(target, r);
           target.status = "done";
           target.undoneBy = null;
           expect(result.seq).toBe(r.seq);
@@ -1515,6 +1546,7 @@ describe("[A1.5.history.property] undo and redo against a reference model", () =
       "project",
       "run",
       "create kept by a run",
+      "kept open by newer work",
     ]) {
       expect(seen[outcome] ?? 0, outcome).toBeGreaterThan(3);
     }

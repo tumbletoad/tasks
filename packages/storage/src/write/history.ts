@@ -22,12 +22,14 @@
 //   its create. The tombstone is a write of its own (after_prov is the inverting commit), so a
 //   redo clears it under that guard.
 // - Setting a tombstone back (a redo of a removal, the undo of a restore) puts a row out of sight
-//   again, a step the person decided before anything done to the row since. Another's change to
-//   the row after the step last wrote it (its commit, or a redo of it since that wrote the row
-//   again: one after a partial undo writes only what that undo took back), and for a task to
-//   anything on it (a field, a note, a log entry, a link, a run, a folder), keeps it in sight, as a
-//   conflict that names the newest such change. The principal's own steps (its undoable writes,
-//   undos and redos) do not count: the person made them.
+//   again, and setting an open task's lifecycle back to done or archived (a redo of a check-off or
+//   an archive, the undo of a reopen) takes it out of the open list: a step the person decided
+//   before anything done to the row since. Another's change to the row after the step last wrote
+//   it (its commit, or a redo of it since that wrote the row again: one after a partial undo
+//   writes only what that undo took back), and for a task to anything on it (a field, a note, a
+//   log entry, a link, a run, a folder), keeps it in sight, as a conflict that names the newest
+//   such change; a task kept open keeps its wrap-up too. The principal's own steps (its undoable
+//   writes, undos and redos) do not count: the person made them.
 // - Clearing a tombstone (a redo of a create's undo, or the undo of a delete) brings a row back. A
 //   source whose key, or a place whose owner and machine, another live row holds now stays
 //   tombstoned, and that row is the conflict: the unique indexes allow one live row each.
@@ -756,6 +758,8 @@ export function planInversions(
   const refOf = refsOf(conn, options.refPrefix);
   const rows = new Map<string, RowState>();
   const kids = liveChildren(conn, changes);
+  /** The tasks newer work keeps open. */
+  const kept = new Set<string>();
   /**
    * Each (row, field) is named once: a child row of a create can block both its own create and
    * its parent's. The first naming stays, completed by what a later one knows (`wrote`).
@@ -853,10 +857,13 @@ export function planInversions(
         );
         continue;
       }
-      if (field === table.tombstone && !isLive(parsed(restore))) {
+      if (hides(entity, row, field, restore)) {
         const newer = newerWork(conn, entity, id, applied, options.principal);
         for (const work of newer) blocked(conflict(work.where, work.version));
-        if (newer.length > 0) continue;
+        if (newer.length > 0) {
+          if (field === "lifecycle") kept.add(id);
+          continue;
+        }
       }
       plan.inversions.push({
         kind: "restore",
@@ -931,6 +938,10 @@ export function planInversions(
       applied,
     });
   }
+  // A task newer work keeps open keeps its wrap-up too: that work is the conflict that says why.
+  plan.inversions = plan.inversions.filter(
+    (i) => !(i.entity === "tasks" && i.field === "wrap" && kept.has(i.id)),
+  );
   if (options.partial) keepTogether(plan, read);
   keepActiveUnwrapped(plan, read, (where, version) => {
     blocked(conflict(where, version));
@@ -1083,6 +1094,20 @@ export function newerWorkOf(
     }
   }
   return { work: [...work.values()] };
+}
+
+/**
+ * Whether setting `field` of `row` back to `restore` takes the row out of sight (its tombstone),
+ * or an open task out of the open list: done or archived again.
+ */
+function hides(entity: InvertibleEntity, row: RowState, field: string, restore: string): boolean {
+  if (field === TABLES[entity].tombstone) return !isLive(parsed(restore));
+  return (
+    entity === "tasks" &&
+    field === "lifecycle" &&
+    row.raw["lifecycle"] === "active" &&
+    columnOf(restore, "lifecycle") !== "active"
+  );
 }
 
 /** Whether a tombstone field's value says the row is live: every column null. */

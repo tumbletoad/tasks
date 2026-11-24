@@ -22,7 +22,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   value and set it back. Redo passes over a change of yours it cannot bring back and redoes the
   next one. The change it passed over stays, and a later Redo tries it again.
 - Your undo history survives a restart and is shared by your windows and the command line.
-- Checking off a task completes it at once and can be undone.
+- Checking off a task completes it at once and can be undone. Neither Undo nor Redo checks a task
+  off or archives it again when someone else added to it or changed it since.
 - Wrapping up a task keeps its context, notes, activity and sources. Reopening keeps the earlier
   outcome and what was learned.
 - Moving a task to the Trash deletes nothing: its notes, log, sources and history stay, nothing
