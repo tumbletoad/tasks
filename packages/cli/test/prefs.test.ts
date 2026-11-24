@@ -124,13 +124,13 @@ describe("[A3.3.4.prefs.set] ttasks prefs set", () => {
     expect(got.stdout).not.toContain("  Two weeks");
     const added = await tasks(["add", "Fixture sized task", "--effort", "Two weeks", "--json"]);
     expect(added.code).toBe(0);
-    const ref = (JSON.parse(added.stdout) as { tasks: { ref: string }[] }).tasks[0]?.ref ?? "";
-    // Dropping the level the new task holds is refused, naming it.
+    // Dropping the level the new task holds is refused, saying how to take it along.
     const dropped = await tasks(["prefs", "set", "tasks.effort_scale", "XS,S,M,L,XL"]);
     expect(dropped.code).toBe(EXIT_CODES.usage);
     expect(dropped.stderr).toContain(
-      `Active tasks hold an effort this change removes: ${ref} (Two weeks).`,
+      "Tasks hold a size this change removes: Two weeks (1 active). Nothing was changed.",
     );
+    expect(dropped.stderr).toContain('--move "Two weeks=<level>"');
     // A new name longer than a level's name may be is refused, saying so.
     const long = await tasks([
       "prefs",
@@ -242,5 +242,35 @@ describe("[A3.3.4.prefs.set] ttasks prefs set", () => {
       const found = await tasks(["find", `effort:"${longest}"`]);
       expect(found.stdout).toContain(`${ref} · open · ${longest} · Fixture longest size`);
     }
+  });
+});
+
+describe("[A3.3.4.prefs.move] ttasks prefs set --move", () => {
+  test("--dry-run says how many tasks would move; --move moves them with the change; X= takes the size off", async () => {
+    const levels = async (): Promise<string[]> =>
+      (
+        JSON.parse((await tasks(["prefs", "get", "tasks.effort_scale", "--json"])).stdout) as {
+          prefs: { value: { key: string }[] }[];
+        }
+      ).prefs[0]?.value.map((level) => level.key) ?? [];
+    const before = await levels();
+    const added = await tasks(["add", "Fixture later task", "--effort", "Later", "--json"]);
+    const ref = (JSON.parse(added.stdout) as { tasks: { ref: string }[] }).tasks[0]?.ref ?? "";
+    const renamed = before.map((name) => (name === "Later" ? "Soon" : name)).join(",");
+    const set = ["prefs", "set", "tasks.effort_scale", renamed, "--move", "Later=Soon"];
+    const dry = await tasks([...set, "--dry-run"]);
+    expect([dry.code, dry.stdout]).toEqual([
+      0,
+      "Would move 1 task from Later to Soon. Nothing was changed.\n",
+    ]);
+    expect(await levels()).toEqual(before);
+    const moved = await tasks(set);
+    expect(moved.code).toBe(0);
+    expect(moved.stdout).toContain("1 task moved from Later to Soon.\n");
+    expect((await tasks(["find", "effort:Soon"])).stdout).toContain(ref);
+    const dropped = before.filter((name) => name !== "Later").join(",");
+    const off = await tasks(["prefs", "set", "tasks.effort_scale", dropped, "--move", "Soon="]);
+    expect(off.code).toBe(0);
+    expect(off.stdout).toContain("1 task moved from Soon to no size.\n");
   });
 });

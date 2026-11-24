@@ -767,7 +767,9 @@
           "type": "boolean"
         }
       ],
-      "inputOnly": [],
+      "inputOnly": [
+        "set[].moves"
+      ],
       "item": "set",
       "kind": "write",
       "positionals": [

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { WriteAsOf, idPattern, patterns, Replayed, RequestId, TaskRef } from "../schemas.ts";
 import { AS_OF_NEXT, requestId } from "./fixture.ts";
+import { OffList } from "./prefs-manage.ts";
 
 /** A commit (`op_` ID): what the feed's events and a write's receipt name. */
 export const CommitId = z.string().regex(idPattern("op")).describe("A change's commit ID");
@@ -23,8 +24,10 @@ export const Unresolved = z.strictObject({
   id: z
     .string()
     .max(60)
-    .regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\|(?:s|lb)_[0-9a-hjkmnp-tv-z]{26})?$/u)
-    .describe("A row other than the task: its ID, or task_id|source_id for a link")
+    .regex(
+      /^(?:[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\|(?:s|lb)_[0-9a-hjkmnp-tv-z]{26})?|tasks\.effort_scale)$/u,
+    )
+    .describe("A row other than the task: its ID, task_id|source_id, or tasks.effort_scale")
     .optional(),
   task: TaskRef.optional(),
   field: z
@@ -56,6 +59,8 @@ export const HistoryResultFields = {
   tasks: z.array(TaskRef).max(50).describe("The tasks it changed, the first 50"),
   // A space never holds more tasks than its references number.
   task_count: z.int().min(0).max(9_999_999_999).describe("How many tasks it changed"),
+  levels: z.literal(true).describe("It was a change of the effort levels").optional(),
+  off_list: OffList.optional(),
   as_of: WriteAsOf,
   replayed: Replayed.optional(),
 };

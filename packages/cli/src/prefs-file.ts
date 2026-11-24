@@ -9,6 +9,7 @@ import { patterns } from "@ttasks/contracts";
 import { UsageError, type Globals, type VerbSpec } from "./args.ts";
 import type { ConnectOptions } from "./connect.ts";
 import type { Io } from "./io.ts";
+import { movedText } from "./output.ts";
 import { runVerb } from "./verbs.ts";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -31,7 +32,45 @@ function valueOf(json: unknown, key: string): { value: unknown; base?: string } 
   return { value: row["value"], base };
 }
 
-/** `ttasks prefs` with `--file <file>` taken out and read first. */
+type Move = { from: string; to: string | null };
+
+/** Each `--move <size>=<level>` taken out of `args`; `<size>=` takes the size off. */
+function takeMoves(args: string[]): Move[] {
+  const moves: Move[] = [];
+  for (let at = args.indexOf("--move"); at !== -1; at = args.indexOf("--move")) {
+    const given = args.splice(at, 2)[1] ?? "";
+    const cut = given.indexOf("=");
+    if (cut < 1) throw new UsageError("--move takes <size>=<level>, or <size>= for no size");
+    const to = given.slice(cut + 1).trim();
+    moves.push({ from: given.slice(0, cut).trim(), to: to === "" ? null : to });
+  }
+  return moves;
+}
+
+/** `--dry-run`: what the moves would move, from a read of the key, and nothing written. */
+function preview(
+  io: Io,
+  globals: Globals,
+  verb: VerbSpec,
+  head: readonly string[],
+  moves: readonly Move[],
+  options: ConnectOptions,
+): Promise<number> {
+  const key = head[0] === "set" ? head[1] : undefined;
+  if (key === undefined) throw new UsageError("--dry-run goes with set and a key");
+  return runVerb(io, globals, verb, ["get", key], options, (result, printed) => {
+    const pref = (result["prefs"] as Record<string, unknown>[] | undefined)?.[0];
+    const held = (pref?.["held"] ?? []) as { effort: string }[];
+    const lines = moves.map((move) => {
+      const counts = held.find((h) => h.effort === move.from) ?? {};
+      return `Would move ${movedText({ active: 0, finished: 0, trash: 0, ...counts, ...move })}.`;
+    });
+    io.stdout(globals.json ? printed : `${lines.join("\n")} Nothing was changed.\n`);
+    return Promise.resolve();
+  });
+}
+
+/** `ttasks prefs` with `--move`, `--dry-run` and `--file <file>` taken out, the file read first. */
 export async function prefsVerb(
   io: Io,
   globals: Globals,
@@ -41,8 +80,22 @@ export async function prefsVerb(
 ): Promise<number> {
   const end = args.indexOf("--");
   const head = end === -1 ? [...args] : args.slice(0, end);
+  const moves = takeMoves(head);
+  const dry = head.indexOf("--dry-run");
+  if (dry !== -1) return preview(io, globals, verb, head.toSpliced(dry, 1), moves, options);
+  const withMoves = (input: Record<string, unknown>): void => {
+    const item = (input["set"] as Record<string, unknown>[] | undefined)?.[0];
+    if (moves.length === 0) return;
+    if (input["action"] !== "set" || item === undefined) {
+      throw new UsageError("--move goes with set and a key");
+    }
+    item["moves"] = moves;
+  };
   const at = head.findIndex((a) => a === "--file" || a.startsWith("--file="));
-  if (at === -1) return runVerb(io, globals, verb, args, options);
+  if (at === -1) {
+    const rest = [...head, ...(end === -1 ? [] : args.slice(end))];
+    return runVerb(io, globals, verb, rest, options, undefined, { input: withMoves });
+  }
   const given = head[at] ?? "";
   const path = given.startsWith("--file=") ? given.slice("--file=".length) : head[at + 1];
   if (path === undefined || path === "") throw new UsageError("--file needs a file");
@@ -73,6 +126,7 @@ export async function prefsVerb(
       const { value, base } = valueOf(json, String(item["key"]));
       item["value"] = value;
       if (base !== undefined && input["base"] === undefined) input["base"] = base;
+      withMoves(input);
     },
   });
 }

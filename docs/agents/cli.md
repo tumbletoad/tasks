@@ -191,6 +191,8 @@ Usage: `ttasks prefs <action> [<key>] [<value>] [flags]`
 | `--mode` | `mode` | "apply" | Always apply in this build |
 | `--reset` | `set[].reset` | boolean | Put the key back to its default, instead of a value |
 
+Only through `--input`: `set[].moves`.
+
 ## `ttasks receipt`
 
 The stored result of a write, by its request_id, in the caller's own writer scope.

@@ -397,6 +397,9 @@ export function resultFailure(
   if (path !== undefined && problem !== undefined) {
     base = { ...base, data: { ...base.data, issues: [{ path, message: problem.message }] } };
   }
+  if (problem?.holders !== undefined) {
+    base = { ...base, data: { ...base.data, holders: problem.holders } };
+  }
   if (result.status !== "conflict") {
     return new AppError(result.replayed === true ? withReplay(base) : base);
   }

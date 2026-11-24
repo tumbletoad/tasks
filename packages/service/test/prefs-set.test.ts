@@ -197,13 +197,30 @@ describe("[A3.3.4.prefs.set] the person changes a space's settings, and everythi
     }
   });
 
-  test("a change that drops a size active tasks hold is refused naming them, and nothing changes", async () => {
-    const [large] = await add([{ title: "Fixture large", effort: "L" }]);
+  test("a change that drops a size tasks hold, without a move, is refused with how many hold it, and nothing changes", async () => {
+    const [, done] = await add([
+      { title: "Fixture large", effort: "L" },
+      { title: "Fixture large done", effort: "L" },
+      { title: "Fixture tiny", effort: "XS" },
+    ]);
+    await call(script, "task.finish", {
+      task: done ?? "",
+      outcome: "Fixture outcome",
+      base: await asOf(),
+      request_id: rid(),
+    });
     const effort = await refusal(set(person, "tasks.effort_scale", "S,M"));
     expect(effort).toMatchObject({
       code: "invalid_input",
-      message: `Active tasks hold an effort this change removes: ${large ?? ""} (L). Nothing was changed.`,
-      data: { tasks: [large], task_count: 1 },
+      message:
+        "Tasks hold a size this change removes: XS (1 active), L (1 active, 1 finished). Nothing was changed.",
+      hint: "Move their tasks with the change: --move XS=<level>, or --move XS= to take the size off.",
+      data: {
+        holders: [
+          { effort: "XS", active: 1, finished: 0, trash: 0 },
+          { effort: "L", active: 1, finished: 1, trash: 0 },
+        ],
+      },
     });
     expect(await get("tasks.effort_scale")).toEqual(EFFORT_LEVELS);
   });
@@ -270,5 +287,85 @@ describe("[A3.3.4.prefs.set] the person changes a space's settings, and everythi
     }
     expect(await asOf()).toBe(before);
     expect(await get("tasks.effort_scale")).toEqual(EFFORT_LEVELS);
+  });
+});
+
+describe("[A3.3.4.prefs.moves] a change of the effort levels moves its tasks, and says how many", () => {
+  const levels = (base: string, value: string, moves: Json[]) =>
+    call(person, "prefs.manage", {
+      action: "set",
+      set: [{ key: "tasks.effort_scale", value, moves }],
+      base,
+      request_id: rid(),
+    });
+
+  test("a rename by name carries its tasks and the level's time and line; a merge keeps the destination's", async () => {
+    const [first, second] = await add([
+      { title: "Fixture medium", effort: "M" },
+      { title: "Fixture medium too", effort: "M" },
+      { title: "Fixture large", effort: "L" },
+    ]);
+    const read = PrefsReadResult.parse(
+      await call(person, "prefs.manage", { action: "get", keys: ["tasks.effort_scale"] }),
+    );
+    expect(read.prefs[0]?.held).toEqual([
+      { effort: "M", active: 2, finished: 0, trash: 0 },
+      { effort: "L", active: 1, finished: 0, trash: 0 },
+    ]);
+    const medium = { ...EFFORT_LEVELS[2], key: "Medium" };
+    const renamed = PrefsManageResult.parse(
+      await levels(read.as_of, "XS,S,Medium,L,XL", [{ from: "M", to: "Medium" }]),
+    );
+    expect(renamed).toMatchObject({
+      result: "updated",
+      moved: [{ from: "M", to: "Medium", active: 2, finished: 0, trash: 0 }],
+    });
+    expect(renamed.off_list).toBeUndefined();
+    expect((await get("tasks.effort_scale")) as Json[]).toContainEqual(medium);
+    expect([await effortOf(first ?? ""), await effortOf(second ?? "")]).toEqual([
+      "Medium",
+      "Medium",
+    ]);
+    const merged = PrefsManageResult.parse(
+      await levels(await asOf(), "XS,S,L,XL", [{ from: "Medium", to: "L" }]),
+    );
+    expect(merged.moved).toEqual([{ from: "Medium", to: "L", active: 2, finished: 0, trash: 0 }]);
+    expect(await get("tasks.effort_scale")).toEqual([
+      EFFORT_LEVELS[0],
+      EFFORT_LEVELS[1],
+      EFFORT_LEVELS[3],
+      EFFORT_LEVELS[4],
+    ]);
+  });
+
+  test("moves go with the effort levels alone", async () => {
+    const before = await asOf();
+    expect(
+      await refusal(
+        call(person, "prefs.manage", {
+          action: "set",
+          set: [
+            { key: "tasks.effort_scale", value: "XS,S,M,L,XL,XXL" },
+            { key: "tasks.dedupe_window_days", value: "14" },
+          ],
+          base: before,
+          request_id: rid(),
+        }),
+      ),
+    ).toMatchObject({
+      code: "invalid_input",
+      message: "Set the effort levels in a call of their own.",
+    });
+    expect(
+      await refusal(
+        call(person, "prefs.manage", {
+          action: "set",
+          set: [{ key: "tasks.dedupe_window_days", value: "14", moves: [{ from: "M", to: "L" }] }],
+          base: before,
+          request_id: rid(),
+        }),
+      ),
+    ).toMatchObject({ code: "invalid_input", message: "Only the effort levels move tasks." });
+    expect(await asOf()).toBe(before);
   });
 });

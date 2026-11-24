@@ -6033,6 +6033,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.4.prefs.moves",
+      "title": "prefs.manage set moves the tasks on a size with a change of the effort levels: get says how many tasks hold each size by state, the answer how many each move moved, a names-only rename carries the level's time and line, a merge keeps the destination's, a drop without a move is refused with the counts and the move that takes them along, and moves go with the levels alone",
+      "source": "A1 3.16, A3 3.4.11",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.prefs.move",
+      "title": "ttasks prefs set --move <size>=<level> moves a size's tasks with the change and says how many, <size>= takes the size off, and --dry-run says how many would move and changes nothing",
+      "source": "A3 3.4.11",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.4.prefs.file",
       "title": "ttasks prefs get --json gives the effort levels whole with the as_of they were read at; set --file takes that output edited, or the value alone, and refuses the file again once a change was made after its read, saying to read the setting again and make the change there; that output without a valid as_of is refused and the newer change stays",
       "source": "A1 3.16, A3 3.4.11",

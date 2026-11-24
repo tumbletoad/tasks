@@ -131,7 +131,7 @@ import {
   type ReceiptLookup,
 } from "./receipts.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "./row-state.ts";
-import { inTrashSql } from "./trash.ts";
+import { EFFORT_HOLDERS_SQL, inTrashSql } from "./trash.ts";
 import {
   checkRequest,
   FOLDER_OPERATIONS,
@@ -703,13 +703,6 @@ const SQL = {
   statusInUse:
     "SELECT 1 FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL " +
     "AND status IN (SELECT value FROM json_each($keys)) LIMIT 1",
-  // The tasks that hold a size: live ones and those in the Trash. One whose creation was undone
-  // holds nothing; Redo may bring it back on a size the levels lack, which is reported.
-  effortHolders:
-    "SELECT effort, sum(deleted_at IS NULL AND lifecycle = 'active') AS active, " +
-    "sum(deleted_at IS NULL AND lifecycle <> 'active') AS finished, " +
-    "sum(deleted_at IS NOT NULL) AS trash FROM tasks t " +
-    `WHERE effort IS NOT NULL AND (deleted_at IS NULL OR ${inTrashSql("t")}) GROUP BY effort`,
   effortMovers:
     "SELECT id, effort, deleted_at IS NOT NULL AS trash, lifecycle = 'active' AS active " +
     "FROM tasks t WHERE effort IN (SELECT value FROM json_each($from)) " +
@@ -942,7 +935,7 @@ function stageMoves(
 ): Mover[] {
   const counts = new Map(
     conn
-      .prepare(SQL.effortHolders)
+      .prepare(EFFORT_HOLDERS_SQL)
       .all()
       .map((r): [string, EffortCount] => [
         String(r["effort"]),

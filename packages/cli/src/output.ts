@@ -51,6 +51,38 @@ function levelLines(value: unknown): string[] {
   });
 }
 
+const tasksText = (n: number): string => `${String(n)} task${n === 1 ? "" : "s"}`;
+
+/** A move of a change of levels: "3 tasks from M to L (1 finished)". */
+export function movedText(m: {
+  from: string;
+  to: string | null;
+  active: number;
+  finished: number;
+  trash: number;
+}): string {
+  const out = [
+    m.finished > 0 ? `${String(m.finished)} finished` : "",
+    m.trash > 0 ? `${String(m.trash)} in the Trash` : "",
+  ].filter((part) => part !== "");
+  const where = `from ${m.from} to ${m.to ?? "no size"}`;
+  return `${tasksText(m.active + m.finished + m.trash)} ${where}${out.length === 0 ? "" : ` (${out.join(", ")})`}`;
+}
+
+/** What a change of the effort levels moved, and the tasks it left on a size that is no level. */
+function levelsReport(result: Result): string[] {
+  const moved = (result["moved"] ?? []) as Parameters<typeof movedText>[0][];
+  const off = (result["off_list"] ?? []) as { effort: string; tasks: string[]; count: number }[];
+  return [
+    ...moved.map((m) => movedText(m).replace(/^(\d+ tasks?) /u, "$1 moved ") + "."),
+    ...off.map(({ effort, tasks, count }) => {
+      const more = count > tasks.length ? ` and ${String(count - tasks.length)} more` : "";
+      const are = count === 1 ? "is" : "are";
+      return `${tasksText(count)} ${are} on ${effort}, which is not a level now: ${tasks.join(", ")}${more}.`;
+    }),
+  ];
+}
+
 /** Any failure as A3's error body. A JSON-RPC protocol error is the service's `internal`. */
 export function bodyOf(error: unknown): ErrorBody {
   if (error instanceof AppError) return error.toBody();
@@ -809,7 +841,8 @@ export function render(entry: string, result: Result, space: string, asked: Aske
             ...levelLines(change["to"]),
           );
         }
-        if (result["changed"].length > 0) break;
+        lines.push(...levelsReport(result));
+        if (result["changed"].length > 0 || result["moved"] !== undefined) break;
         lines.push("Nothing changed: the value was so already.");
       }
       for (const pref of (result["prefs"] as Result[] | undefined) ?? []) {
