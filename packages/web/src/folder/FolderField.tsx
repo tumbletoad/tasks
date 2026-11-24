@@ -276,9 +276,7 @@ export function FolderField({
               )}
               {choice.project === undefined ? null : (
                 <span className={styles.mark} dir="auto">
-                  {typeof choice.project === "string"
-                    ? t("folder.near", { project: choice.project })
-                    : t("folder.project", { project: choice.project.name })}
+                  {t("folder.near", { project: choice.project })}
                 </span>
               )}
             </li>

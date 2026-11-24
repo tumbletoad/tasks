@@ -11,6 +11,7 @@ import {
   Cwd,
   FolderInput,
   idPattern,
+  AlsoProjects,
   InsideFolders,
   Mode,
   ProjectArea,
@@ -143,7 +144,7 @@ export const GroupManageResult = z.strictObject({
       "no_change",
       "proposed",
     ])
-    .describe("A write: what happened; exists: another project has this folder")
+    .describe("A write: what happened; exists: from an earlier build only")
     .optional(),
   group: z
     .strictObject({
@@ -155,6 +156,7 @@ export const GroupManageResult = z.strictObject({
     })
     .describe("A write: the group it changed")
     .optional(),
+  also: AlsoProjects.optional(),
   ...InsideFolders,
   proposal: ProposalId.optional(),
   replayed: Replayed.optional(),

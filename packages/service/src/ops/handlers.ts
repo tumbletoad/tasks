@@ -129,6 +129,7 @@ import {
   openPath,
   osOf,
   reservedBy,
+  sharers,
   storedForm,
   type BindFacts,
   type Folder,
@@ -179,6 +180,7 @@ import {
   readEffortHeld,
   readTaskKeys,
   readEffortLevels,
+  readTaskProject,
   readTaskRef,
   readTitles,
   logOf,
@@ -1187,7 +1189,7 @@ function draftPathOf(
   };
 }
 
-/** `refs` as a sentence lists them: "M-20", "M-20 and M-21", "M-20, M-21 and M-22". */
+/** Names as a sentence lists them: "M-20", "M-20 and M-21", "M-20, M-21 and M-22". */
 const listed = (refs: readonly string[]): string =>
   refs.length < 2 ? refs.join("") : `${refs.slice(0, -1).join(", ")} and ${refs.at(-1) ?? ""}`;
 
@@ -1605,10 +1607,7 @@ function folderOf(
   return form;
 }
 
-/**
- * The folder a task's field names, in its stored form and checked at bind (folders.ts). TTasks may
- * share a folder, so no project's folder is in the way.
- */
+/** The folder a task's field names, in its stored form and checked at bind (folders.ts). */
 async function taskFolder(
   call: Call,
   value: string,
@@ -1617,30 +1616,27 @@ async function taskFolder(
 ): Promise<Folder> {
   const folder = folderOf(call, value, at, facts);
   const problem = await checkFolder(folder, facts);
-  if (problem !== undefined) throw folderRefused(at, problem.reason);
+  if (problem !== undefined) throw folderRefused(at, problem);
   return folder;
 }
 
 /**
- * The checks at bind of `project`'s folder on this machine (folders.ts). `taken`: another live
- * project has the folder here.
+ * The checks at bind of `project`'s folder on this machine (folders.ts), and the other projects
+ * that have the folder here too.
  */
 async function projectFolderChecked(
   facts: BindFacts & { readonly home: string },
   project: string,
   folder: Folder,
   read: BindRead,
-): Promise<{ readonly taken?: ProjectFolderRow }> {
-  const others = read.projects.filter((p) => p.project !== project);
-  const problem = await checkFolder(folder, { ...facts, projects: others });
-  if (problem?.reason === "folder_taken" && problem.project !== undefined) {
-    const holder = problem.project;
-    return {
-      taken: others.find((p) => p.project === holder.project) ?? { ...holder, archived: false },
-    };
-  }
-  if (problem !== undefined) throw folderRefused("folder", problem.reason);
-  return {};
+): Promise<ProjectFolderRow[]> {
+  const problem = await checkFolder(folder, facts);
+  if (problem !== undefined) throw folderRefused("folder", problem);
+  return sharers(
+    folder,
+    read.projects.filter((p) => p.project !== project),
+    facts,
+  );
 }
 
 const NO_MOVE: Move = { moved: [], stayed: [] };
@@ -1803,23 +1799,23 @@ async function bindRead(call: Call, kind: "project" | "task", id: string): Promi
   }
 }
 
-/** Refuses a project's folder that another live project has here, naming that project. */
-const takenBy = (holder: ProjectFolderRow): AppError =>
-  folderRefused("folder", "folder_taken", { project: { id: holder.project, name: holder.name } });
-
 /** The drafts with the projects their folders file them in, and their folders' operations. */
 interface DraftFolders {
   readonly list: Record<string, unknown>[];
   /** `task.folder_set` for each draft that keeps a folder of its own: after every other operation. */
   readonly ops: Operation[];
   readonly warnings: string[];
+  /** By draft index: the projects that share the folder of a draft that joined none of them. */
+  readonly shared: Record<string, string[]>;
 }
 
 /**
  * The folders of new tasks. A draft that names no area and no project goes to the project whose
  * folder holds its folder most closely (`deepestProject`), and keeps a folder of its own only when
- * it is not that project's folder itself. A folder in an archived project's folder files the task
- * in no project, and the result says so. `ids` are the drafts' task IDs.
+ * it is not that project's folder itself. When several live projects have that folder, the task
+ * goes to the project of the session's task if it is one of them, else to none, and `shared`
+ * keeps them, so the answer names them as data. Archived projects count only when no live one has it: the task is in no project,
+ * and the result says so. `ids` are the drafts' task IDs.
  */
 async function draftFolders(
   call: Call,
@@ -1827,7 +1823,7 @@ async function draftFolders(
   ids: readonly string[],
   path: (k: number) => string,
 ): Promise<DraftFolders> {
-  const none = (): DraftFolders => ({ list: [...list], ops: [], warnings: [] });
+  const none = (): DraftFolders => ({ list: [...list], ops: [], warnings: [], shared: {} });
   if (!list.some((draft) => typeof draft["folder"] === "string")) {
     return none();
   }
@@ -1835,8 +1831,11 @@ async function draftFolders(
   const out = [...list];
   const ops: Operation[] = [];
   const warnings: string[] = [];
+  const shared: Record<string, string[]> = {};
   let projects: readonly ProjectFolderRow[] | undefined;
+  let bound: Promise<string | undefined> | undefined;
   const looks = new Map<string, Promise<string | undefined>>();
+  const agent = call.principal.actorKind !== "human";
   for (const [k, draft] of list.entries()) {
     const value = draft["folder"];
     if (typeof value !== "string") continue;
@@ -1850,18 +1849,36 @@ async function draftFolders(
         throw storageFailure(error);
       }
       const found = await deepestProject(folder, projects, facts, looks);
-      if (found?.project.archived === true) {
+      const live = found?.projects.filter((p) => !p.archived) ?? [];
+      let chosen = live.length === 1 ? live[0] : undefined;
+      if (live.length > 1) {
+        const task = sessionIn(call)?.task;
+        bound ??=
+          task === undefined
+            ? Promise.resolve(undefined)
+            : readTaskProject(readerOf(call.space), task).catch(() => undefined);
+        const project = await bound;
+        chosen = live.find((p) => p.project === project);
+        if (chosen === undefined) {
+          const where = toInbox(draft, agent) ? "in the Inbox" : "in no project";
+          shared[String(k)] = live.map((p) => p.project);
+          warnings.push(
+            `${at}: several projects have the folder, so the task is ${where}. Name one of them as its project to file it there.`,
+          );
+        }
+      } else if (found !== undefined && live.length === 0) {
         warnings.push(
           `${at}: the folder is in an archived project's folder, so the task is in no project. Unarchive the project to file tasks there.`,
         );
-      } else if (found !== undefined) {
-        out[k] = { ...draft, project: found.project.project };
+      }
+      if (chosen !== undefined && found !== undefined) {
+        out[k] = { ...draft, project: chosen.project };
         own = !found.exact;
       }
     }
     if (own) ops.push({ kind: "task.folder_set", task: ids[k] ?? "", path: folder.stored });
   }
-  return { list: out, ops, warnings };
+  return { list: out, ops, warnings, shared };
 }
 
 /**
@@ -2296,12 +2313,21 @@ async function draftRows(
   const outcomes = drafts.map((d) => draftOutcome(result, d.first));
   const ids = outcomes.flatMap((o) => (o.id === undefined ? [] : [o.id]));
   const titles = ids.length === 0 ? undefined : await now(view, (r) => readTitles(r, ids));
+  // The projects that share the folder of a draft that joined none of them: their names now.
+  const shared = (result.answer?.["shared"] ?? {}) as Record<string, string[] | undefined>;
+  const groups = Object.keys(shared).length === 0 ? undefined : await now(view, readGroups);
   return drafts.map((d, k) => {
     const outcome = outcomes[k] ?? draftOutcome(result, d.first);
-    const title = titles?.get(outcome.id ?? "");
+    const read = titles?.get(outcome.id ?? "");
+    const folderOf = (shared[String(k)] ?? []).flatMap((id) => {
+      const { name } = groupNow(groups, "project", id);
+      return name === undefined ? [] : [name];
+    });
     return {
       ...outcome,
-      ...(title === undefined ? {} : { title }),
+      ...(read === undefined ? {} : { title: read.title }),
+      ...(read?.project === undefined ? {} : { project: read.project }),
+      ...(folderOf.length === 0 ? {} : { folder_of: folderOf }),
       ...draftLog(result, d),
       ...heldOf(result, d.sources, d.at),
     };
@@ -2431,6 +2457,8 @@ const finishAnswer: Answer = async (view, stored) => {
       result: row["result"],
       ...(row["ref"] === undefined ? {} : { ref: row["ref"] }),
       ...(row["title"] === undefined ? {} : { title: row["title"] }),
+      ...(row["project"] === undefined ? {} : { project: row["project"] }),
+      ...(row["folder_of"] === undefined ? {} : { folder_of: row["folder_of"] }),
       ...(row["result"] === "exists" ? { lifecycle: row["lifecycle"] } : {}),
       ...(row["ambiguous"] === undefined ? {} : { ambiguous: row["ambiguous"] }),
       log_added: row["log_added"],
@@ -2577,9 +2605,38 @@ function groupNow(
 }
 
 /**
+ * The other projects with a project's new folder, by ID, for its record: those that had it, and
+ * those whose folder the write moves along to it.
+ */
+function alsoOf(
+  also: readonly ProjectFolderRow[],
+  move: Move = NO_MOVE,
+  folder?: string,
+): { also?: string[] } {
+  const carried = move.moved.filter((f) => f.kind === "project" && f.to === folder);
+  const ids = [...new Set([...also.map((p) => p.project), ...carried.map((f) => f.owner)])];
+  return ids.length === 0 ? {} : { also: ids };
+}
+
+/** A record's `also` as an answer names it: each project by ID and its name now. */
+function alsoNow(
+  record: Record<string, unknown>,
+  read: Parameters<typeof groupNow>[0],
+): { also?: { id: string; name: string }[] } {
+  const ids = record["also"];
+  if (!Array.isArray(ids)) return {};
+  const also = ids.flatMap((id) => {
+    const { name } = groupNow(read, "project", String(id));
+    return name === undefined ? [] : [{ id: String(id), name }];
+  });
+  return also.length === 0 ? {} : { also };
+}
+
+/**
  * What organize's write did, from its record (`groupWrite`): the action, the word for what the
- * call decided (`exists`) or for a write that applied (`done`), the group by kind, ID and folder.
- * Its name and area, and the list, are read now, in one snapshot.
+ * call decided (`exists`, in a record of an earlier build) or for a write that applied (`done`),
+ * the group by kind, ID and folder, and the other projects with that folder here (`also`). Names
+ * and areas, and the list, are read now, in one snapshot.
  */
 const groupAnswer: Answer = async (view, stored) => {
   const record = stored.answer ?? {};
@@ -2592,6 +2649,7 @@ const groupAnswer: Answer = async (view, stored) => {
     as_of: stored.as_of,
     result: record["result"] ?? (changed ? (record["done"] ?? GROUP_DONE[action]) : "no_change"),
     group: { ...written, ...groupNow(read, written.kind, written.id) },
+    ...alsoNow(record, read),
     ...movedOf(stored, read === undefined ? undefined : projectNames(read.projects)),
     ...replayed(stored),
   };
@@ -2606,8 +2664,8 @@ const groupAnswer: Answer = async (view, stored) => {
 
 /**
  * What folder.manage's write did, from its record: the action, the owner by kind and ID, the
- * folder it set, or the project that has it already (`exists`). A project's name and area are
- * read now.
+ * folder it set and the other projects with that folder here (`also`), or the project of that
+ * name that has it already (`exists`). Projects' names and areas are read now.
  */
 const folderAnswer: Answer = async (view, stored) => {
   const record = stored.answer ?? {};
@@ -2634,6 +2692,7 @@ const folderAnswer: Answer = async (view, stored) => {
       result: changed ? "created" : "no_change",
       owner: { kind: "project", id: project, ...groupNow(read, "project", project) },
       ...(typeof folder === "string" ? { folder } : {}),
+      ...alsoNow(record, read),
       ...dated,
       ...replayed(stored),
     };
@@ -2652,6 +2711,7 @@ const folderAnswer: Answer = async (view, stored) => {
       ...(done?.ref === undefined ? {} : { ref: done.ref }),
     },
     ...(action === "set" && typeof folder === "string" ? { folder } : {}),
+    ...alsoNow(record, read),
     ...movedOf(stored, read === undefined ? undefined : projectNames(read.projects)),
     ...dated,
     ...replayed(stored),
@@ -2968,7 +3028,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const pathOf = draftPathOf(ops, ids, at, sourcePaths);
     const submitted = await submit(call, [...named.groups, ...ops], {
       warnings: [...duplicates, ...folders.warnings],
-      answer: { made: named.made, paths: pathsOf(ops, pathOf) },
+      answer: { made: named.made, paths: pathsOf(ops, pathOf), shared: folders.shared },
       inserted: { at: 0, count: named.groups.length },
       pathOf,
     });
@@ -3256,7 +3316,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ...(own > 1 ? { wrapUp: 1 } : {}),
       inserted: { at: own, count: groups.length },
       warnings: folders.warnings,
-      answer: { made: named.made, paths: pathsOf(ops, pathOf) },
+      answer: { made: named.made, paths: pathsOf(ops, pathOf), shared: folders.shared },
       pathOf,
     });
     await markersAfter(call, ops, ownResults(submitted));
@@ -3763,13 +3823,7 @@ async function folderWrite(
     }
     const projectId = newId("p");
     const read = await bindRead(call, "project", projectId);
-    const { taken } = await projectFolderChecked(facts, projectId, folder, read);
-    // A folder another live project has here: that project, rather than a second one for it. The
-    // request writes nothing, and its receipt keeps the project the call found.
-    if (taken !== undefined) {
-      const exists = { id: taken.project, folder: taken.stored };
-      return answerOf(call, await submit(call, [], { answer: { action, exists } }));
-    }
+    const also = await projectFolderChecked(facts, projectId, folder, read);
     const ops: Operation[] = [];
     let area: string | undefined;
     if (typeof input["area"] === "string") {
@@ -3778,6 +3832,17 @@ async function folderWrite(
         area = newId("a");
         ops.push({ kind: "area.create", id: area as Id<"a">, title: input["area"].trim() });
       }
+    }
+    // A project of this name in this area that has the folder already is the one asked for. The
+    // request writes nothing, and its receipt keeps the project the call found.
+    const same = also.find(
+      (p) =>
+        fold(p.name) === fold(name) &&
+        (names.projects.find((n) => n.id === p.project)?.area ?? undefined) === area,
+    );
+    if (same !== undefined) {
+      const exists = { id: same.project, folder: same.stored };
+      return answerOf(call, await submit(call, [], { answer: { action, exists } }));
     }
     ops.push(
       {
@@ -3788,7 +3853,9 @@ async function folderWrite(
       },
       { kind: "project.folder_set", project: projectId, path: folder.stored },
     );
-    const result = await submit(call, ops, { answer: { action, folder: folder.stored } });
+    const result = await submit(call, ops, {
+      answer: { action, folder: folder.stored, ...alsoOf(also) },
+    });
     await markersAfter(call, ops, result);
     return answerOf(call, result);
   }
@@ -3799,19 +3866,19 @@ async function folderWrite(
       ? { kind: "project", id: projectNamed(names, input["project"]).id }
       : { kind: "task", id: String(input["task"]) };
   let move = NO_MOVE;
+  let also: readonly ProjectFolderRow[] = [];
   if (action === "set") {
     const folder = must(stored);
     if (owner.kind === "project") {
-      const checked = await projectFolderChecked(
+      also = await projectFolderChecked(
         facts,
         owner.id,
         folder,
         await bindRead(call, "project", owner.id),
       );
-      if (checked.taken !== undefined) throw takenBy(checked.taken);
     } else {
       const problem = await checkFolder(folder, facts);
-      if (problem !== undefined) throw folderRefused("folder", problem.reason);
+      if (problem !== undefined) throw folderRefused("folder", problem);
     }
     move = await folderMove(call, facts, owner, folder);
   }
@@ -3831,6 +3898,7 @@ async function folderWrite(
       owner,
       ...(action === "set" ? { folder: must(stored).stored } : {}),
       ...stayedOf(move),
+      ...alsoOf(also, move, stored?.stored),
     },
   });
   await markersAfter(call, [op], result, { cleared });
@@ -3914,9 +3982,8 @@ interface WrittenGroup {
  * organize's writes (A3 3.4.10): create an area, or a project in an area (a new area too), with
  * its folder here; rename, move a project to another area, archive and unarchive; set and clear a
  * project's folder here. A name resolves as a draft's does (groups.ts): a name close to another is
- * refused with the close ones, a group that exists is `no_change` for create. A project created
- * with a folder another project has answers `exists` with that project, and writes nothing. The
- * answer (`groupAnswer`) lists the groups as they are when it is made.
+ * refused with the close ones, a group that exists is `no_change` for create. The answer
+ * (`groupAnswer`) lists the groups as they are when it is made.
  */
 async function groupWrite(call: Call, action: string): Promise<unknown> {
   const { input } = call;
@@ -3971,6 +4038,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   let group: WrittenGroup;
   let done = GROUP_DONE[action] ?? "no_change";
   let move = NO_MOVE;
+  let also: readonly ProjectFolderRow[] = [];
   let cleared: Cleared | undefined;
   if (action === "create") {
     if (path.area === undefined) {
@@ -4017,17 +4085,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
             "Change it with action set_folder and base.",
           );
         } else {
-          const { taken } = await projectFolderChecked(facts, project, folder, read);
-          // A folder another live project has here: that project, rather than a second one for it.
-          if (taken !== undefined) {
-            const holder: WrittenGroup = {
-              kind: "project",
-              id: taken.project,
-              folder: taken.stored,
-            };
-            const said = record({ result: "exists", group: holder });
-            return answerOf(call, await submit(call, [], { answer: said }));
-          }
+          also = await projectFolderChecked(facts, project, folder, read);
           ops.push({ kind: "project.folder_set", project, path: folder.stored });
           group = { ...group, folder: folder.stored };
           if (exists) done = "folder_set";
@@ -4057,13 +4115,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
       }
       ops.push({ kind: "project.move", project: id, area: target });
     } else if (action === "set_folder" && folder !== undefined && facts !== undefined) {
-      const checked = await projectFolderChecked(
-        facts,
-        id,
-        folder,
-        await bindRead(call, "project", id),
-      );
-      if (checked.taken !== undefined) throw takenBy(checked.taken);
+      also = await projectFolderChecked(facts, id, folder, await bindRead(call, "project", id));
       move = await folderMove(call, facts, { kind: "project", id }, folder);
       ops.push({
         kind: "project.folder_set",
@@ -4087,7 +4139,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   // A group that exists already changes nothing, and its receipt is kept all the same: a retry
   // after an undo removed the group says so again, and brings nothing back.
   const result = await submit(call, ops, {
-    answer: record({ done, group, ...stayedOf(move) }),
+    answer: record({ done, group, ...stayedOf(move), ...alsoOf(also, move, folder?.stored) }),
   });
   await markersAfter(call, ops, result, { cleared });
   return answerOf(call, result);

@@ -216,7 +216,8 @@ export interface ExactFolder {
   /** The name a project made from it gets: none for a drive or a root. */
   readonly name?: string;
   readonly repo?: string;
-  readonly project?: FolderProject;
+  /** The projects whose folder this is, oldest first. */
+  readonly projects?: readonly FolderProject[];
 }
 
 /** What the folder chooser shows for a text (the service's ops/listing.ts `Listing`). */
@@ -237,7 +238,6 @@ export type FolderListing =
       readonly folders: readonly {
         readonly name: string;
         readonly link?: true;
-        readonly project?: FolderProject;
       }[];
       readonly more: boolean;
       readonly exact?: ExactFolder;

@@ -825,17 +825,28 @@ const BOUND: Statement = {
 };
 
 const TITLES: Statement = {
-  sql: "SELECT id, title FROM tasks WHERE id IN (SELECT value FROM json_each($ids))",
+  sql:
+    "SELECT t.id, t.title, p.title AS project FROM tasks t LEFT JOIN projects p " +
+    "ON p.id = t.project_id AND p.deleted_at IS NULL " +
+    "WHERE t.id IN (SELECT value FROM json_each($ids))",
   mode: "all",
 };
 
-/** The titles of the tasks `ids` names, by ID. */
+/** The titles of the tasks `ids` names, and the names of their projects, by ID. */
 export async function readTitles(
   reader: WorkerConnection,
   ids: readonly string[],
-): Promise<Map<string, string>> {
+): Promise<Map<string, { title: string; project?: string }>> {
   const [rows] = await snapshot(reader, [TITLES], { ids: JSON.stringify(ids) });
-  return new Map((rows as Row[]).map((row) => [String(row["id"]), String(row["title"])]));
+  return new Map(
+    (rows as Row[]).map((row) => [
+      String(row["id"]),
+      {
+        title: String(row["title"]),
+        ...(typeof row["project"] === "string" ? { project: row["project"] } : {}),
+      },
+    ]),
+  );
 }
 
 /** A task's reference by its ID, or undefined when there is no such task. */
@@ -846,6 +857,21 @@ export async function readTaskRef(
   const [space, row] = await snapshot(reader, [SPACE, BOUND], { bound: id });
   const ref = isPlain(row) ? row["ref"] : undefined;
   return typeof ref === "number" ? formatTaskRef(spaceFacts(space).refPrefix, ref) : undefined;
+}
+
+const TASK_PROJECT: Statement = {
+  sql: "SELECT project_id FROM tasks WHERE id = $id",
+  mode: "get",
+};
+
+/** The project a task is in now, or undefined when it is in none or there is no such task. */
+export async function readTaskProject(
+  reader: WorkerConnection,
+  id: string,
+): Promise<string | undefined> {
+  const [row] = await snapshot(reader, [TASK_PROJECT], { id });
+  const project = isPlain(row) ? row["project_id"] : undefined;
+  return typeof project === "string" ? project : undefined;
 }
 
 // ---------------------------------------------------------------------------------------------

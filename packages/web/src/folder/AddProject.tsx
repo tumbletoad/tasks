@@ -1,8 +1,9 @@
-// New project: choose its folder, see the name it gets (the folder's, changeable) and the
-// repository a checkout holds, choose or name its area, done. A folder that is another project's
-// already opens that project instead. A project without a folder is one click away. Where the
-// project went is what the service's answer says: a name can resolve to an archived area in ways the
-// dialog does not foresee, and an area can be archived before the write lands.
+// New project: choose its folder, see the name it gets (the folder's, changeable), the repository
+// a checkout holds and the projects that have the folder too, choose or name its area, done. A
+// project of that name in that area that has the folder already opens instead. A project without a
+// folder is one click away. Where the project went is what the service's answer says: a name can
+// resolve to an archived area in ways the dialog does not foresee, and an area can be archived
+// before the write lands.
 import { useNavigate } from "@tanstack/react-router";
 import { useContext, useId, useMemo, useState, type SyntheticEvent } from "react";
 import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
@@ -143,6 +144,7 @@ export function AddProject({
         ...(withFolder && folder !== undefined ? { folder } : {}),
         name: named,
         area: sent,
+        told: (exact?.projects?.length ?? 0) > 0,
       })
       .then(
         async (written) => {
@@ -203,32 +205,7 @@ export function AddProject({
               onLook={setLook}
               autoFocus
             />
-            {exact?.project === undefined ? (
-              <FolderFacts look={look} text={text} />
-            ) : (
-              <p className={sheet.note} data-part="folder-facts">
-                {t("folder.taken", { project: exact.project.name })}
-                <Button
-                  className={sheet.quiet}
-                  onPress={() => {
-                    const project = exact.project;
-                    if (project === undefined) return;
-                    const areaOf = live.getState().projects.get(project.id)?.area_id;
-                    if (areaOf !== undefined) {
-                      open(project.id, areaOf);
-                      return;
-                    }
-                    onClose();
-                    void navigate({
-                      to: "/s/$space/project/$project",
-                      params: { space, project: project.id },
-                    });
-                  }}
-                >
-                  {t("project.open", { project: exact.project.name })}
-                </Button>
-              </p>
-            )}
+            <FolderFacts look={look} text={text} />
             <div className={sheet.field}>
               <label className={sheet.label} htmlFor={nameId}>
                 {t("project.name")}
