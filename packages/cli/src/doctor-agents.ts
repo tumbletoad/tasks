@@ -61,6 +61,7 @@ import {
   entryInstance,
   manualRemoval,
   readBlockRecords,
+  homeGroups,
   readRecords,
   readsHome,
   recordArgv,
@@ -108,7 +109,20 @@ const LIVE_PROMPT = `Call the ${MCP_SERVER_KEY} MCP tool "status" once, with no 
 /** The tool names this build lists (contracts' generated list). */
 const TOOL_NAMES: readonly string[] = generatedTools.tools.map((t) => t.name);
 
-const name = (view: HomeView): string => `${appLabel(view.home.app)} (${view.home.instance})`;
+/**
+ * A home's file by its app and setup's instance for it; a home's further settings file (Claude
+ * Code's default folder has two) also by which `.claude.json` it is, never by its path.
+ */
+const name = (view: HomeView): string =>
+  `${appLabel(view.home.app)} (${view.home.instance}${view.home.further === true ? `, ${claudeFile(view.home.isDefault)}` : ""})`;
+
+/** Which of Claude Code's default folder's two settings files, in a row's words. */
+const claudeFile = (plain: boolean): string =>
+  plain ? "the user's .claude.json" : "the .claude.json inside its folder";
+
+/** A check's ID for a home's file: the home's instance, and `.further` for a further file. */
+const fileId = (kind: string, view: HomeView): string =>
+  `${kind}.${view.home.instance}${view.home.further === true ? ".further" : ""}`;
 
 type Call = (method: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
@@ -257,23 +271,6 @@ export async function agentChecks(
     ];
   }
   checks.push(instancesCheck(io, records, options));
-  if (records.length === 0) {
-    return [
-      ...checks,
-      {
-        id: "agents",
-        status: "warn",
-        detail: `No agent app has ${PRODUCT_NAME}'s MCP entry yet, so agents cannot reach it. Run: ${CLI_NAME} setup agents`,
-      },
-      await blockCheck(io, state, options),
-      ...SKIPPED_ROWS,
-      liveSkipped(live, "No agent home is registered."),
-    ];
-  }
-
-  const { input } = await setupInputOf(io, options);
-  const resolve = (argv: readonly string[]) => options.agents?.resolve?.(argv) ?? argv;
-  const views = (await survey(input)).filter((view) => view.record !== undefined);
   let session: Session | undefined;
   try {
     session = await connectService(io, options);
@@ -295,11 +292,32 @@ export async function agentChecks(
     } catch {
       rows = undefined;
     }
+    // Nothing recorded and no live row: no agent can reach the service, and no home is read. A
+    // live row whose record was lost is checked as what it is, below.
+    if (records.length === 0 && (rows ?? []).length === 0) {
+      return [
+        ...checks,
+        {
+          id: "agents",
+          status: "warn",
+          detail: `No agent app has ${PRODUCT_NAME}'s MCP entry yet, so agents cannot reach it. Run: ${CLI_NAME} setup agents`,
+        },
+        await blockCheck(io, state, options),
+        ...SKIPPED_ROWS,
+        liveSkipped(live, "No agent home is registered."),
+      ];
+    }
+    const { input } = await setupInputOf(io, options);
+    const surveyed = await survey(input);
+    const resolve = (argv: readonly string[]) => options.agents?.resolve?.(argv) ?? argv;
+    const views = surveyed.filter((view) => view.record !== undefined);
     const rowOf = (view: HomeView) =>
       rows?.find(
         (r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home),
       );
 
+    // One bridge's round trip per home: its files' entries run the same instance.
+    const bridged = new Set<string>();
     for (const view of views) {
       checks.push(
         await mcpCheck(
@@ -312,7 +330,9 @@ export async function agentChecks(
       if (view.home.app === "codex" && view.state === "registered") {
         checks.push(await enginesCheck(input, view, resolve));
       }
-      if (view.state === "registered") {
+      const home = JSON.stringify([view.home.app, view.home.home]);
+      if (view.state === "registered" && !bridged.has(home)) {
+        bridged.add(home);
         checks.push(
           session === undefined
             ? {
@@ -335,7 +355,6 @@ export async function agentChecks(
       }
     }
     checks.push(grantsCheck(input, views, rows));
-    const surveyed = await survey(input);
     checks.push(manualCheck(surveyed));
     checks.push(t3Check(input, surveyed));
     checks.push(await blockCheck(io, state, options, input));
@@ -430,7 +449,7 @@ async function mcpCheck(
   row: Row | null | undefined,
   resolve: (argv: readonly string[]) => readonly string[],
 ): Promise<Check> {
-  const id = `mcp.${view.home.instance}`;
+  const id = fileId("mcp", view);
   const fix = `${CLI_NAME} setup agents --remove, then ${CLI_NAME} setup agents and the apply it prints`;
   const record = view.record;
   if (record === undefined) return { id, status: "skip", detail: "Not registered by setup." };
@@ -612,7 +631,12 @@ function grantsCheck(
   rows: readonly Row[] | undefined,
 ): Check {
   if (rows === undefined) return { id: "grants", status: "skip", detail: "No service to ask." };
-  const registered = views.filter((v) => v.record?.state === "applied");
+  // One grant per home: a home is named once, whatever number of its files are registered.
+  const registered = homeGroups(
+    input.platform,
+    views.filter((v) => v.record?.state === "applied"),
+    (v) => v.home,
+  ).flatMap((files) => files.slice(0, 1));
   const without = registered.filter(
     (v) => !rows.some((r) => r.app === v.home.app && samePath(input.platform, r.home, v.home.home)),
   );
@@ -717,15 +741,14 @@ function t3Check(input: SetupInput, views: readonly HomeView[]): Check {
       `Passed over, ${T3_SKIP_TEXT.unknown_driver}: ${unknown.map((s) => plain(s.id)).join(", ")}.`,
     );
   }
-  // A provider instance that names Claude Code's default folder by its path reads `.claude.json`
-  // inside it, not the user's `~/.claude.json` the default home's entry is in (readsHome).
-  const elsewhere = homes.filter((t3) =>
-    views.some(
-      (v) =>
-        v.home.app === t3.app &&
-        samePath(input.platform, v.home.home, t3.home) &&
-        !readsHome(input.platform, t3, v.home.app, v.home.home, v.home.isDefault),
-    ),
+  // A provider instance whose Claude Code reads one of the default folder's two settings files
+  // that Claude Code has not made yet: the home has files, and none is that reader's (readsHome).
+  const reads = (t3: (typeof homes)[number], v: HomeView) =>
+    readsHome(input.platform, t3, v.home.app, v.home.home, v.home.isDefault);
+  const elsewhere = homes.filter(
+    (t3) =>
+      views.some((v) => v.home.app === t3.app && samePath(input.platform, v.home.home, t3.home)) &&
+      !views.some((v) => reads(t3, v)),
   );
   const gaps = homes.filter((t3) => {
     if (elsewhere.includes(t3)) return false;
@@ -767,10 +790,9 @@ function t3Check(input: SetupInput, views: readonly HomeView[]): Check {
   }
   parts.push(...notes);
   parts.push(
-    ...elsewhere.map((t3) =>
-      t3.isDefault
-        ? `T3 Code's provider instance ${label(t3)} uses Claude Code's default home, so Claude Code reads the user's .claude.json, while machine.toml names that folder by its variable and setup's entry is inside it: set the instance's home path in T3 Code's settings to that folder.`
-        : `T3 Code's provider instance ${label(t3)} names Claude Code's default folder as its home path, so Claude Code reads the configuration inside that folder, where setup wrote no entry: in T3 Code's settings, clear the instance's home path so it uses the default home as the CLI does.`,
+    ...elsewhere.map(
+      (t3) =>
+        `T3 Code's provider instance ${label(t3)} starts Claude Code so that it reads ${claudeFile(t3.isDefault)}, which Claude Code has not made yet. Start Claude Code that way once, then run: ${CLI_NAME} setup agents --app t3`,
     ),
   );
   if (gaps.length > 0) {
