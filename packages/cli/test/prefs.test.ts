@@ -278,3 +278,25 @@ describe("[A3.3.4.prefs.move] ttasks prefs set --move", () => {
     expect(off.stdout).toContain("1 task moved from Soon to no size.\n");
   });
 });
+
+describe("[A3.3.4.prefs.move-preview] ttasks prefs set --dry-run answers as the write would", () => {
+  test("a move the write refuses is refused, and a move to the same name moves nothing, in the preview and the answer", async () => {
+    const read = await tasks(["prefs", "get", "tasks.effort_scale", "--json"]);
+    const names =
+      (JSON.parse(read.stdout) as { prefs: { value: { key: string }[] }[] }).prefs[0]?.value.map(
+        (level) => level.key,
+      ) ?? [];
+    const [first = ""] = names;
+    const set = ["prefs", "set", "tasks.effort_scale", names.join(",")];
+    const missing = await tasks([...set, "--move", `${first}=Missing`, "--dry-run"]);
+    expect(missing.code).toBe(EXIT_CODES.usage);
+    expect(missing.stderr).toContain("A move goes to a level of the new list, or to no size.");
+    const same = await tasks([...set, "--move", `${first}=${first}`, "--dry-run"]);
+    expect([same.code, same.stdout]).toEqual([
+      0,
+      `Would move 0 tasks from ${first} to ${first}. Nothing was changed.\n`,
+    ]);
+    const applied = await tasks([...set, "--move", `${first}=${first}`]);
+    expect(applied.stdout).toContain(`0 tasks moved from ${first} to ${first}.`);
+  });
+});
