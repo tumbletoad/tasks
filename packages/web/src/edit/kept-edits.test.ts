@@ -9,6 +9,7 @@ import {
   changeOf,
   dueChange,
   effortChange,
+  levelsKey,
   groupingChange,
   priorityChange,
   starChange,
@@ -76,6 +77,7 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
       priorityChange(1),
       priorityChange(4),
       effortChange("L"),
+      effortChange("M", levelsKey([{ key: "S" }, { key: "M" }])),
       effortChange(undefined),
       dueChange("2026-11-20", "Fri 20 Nov"),
       dueChange(undefined, undefined),
@@ -106,6 +108,8 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
         ...(original.by === undefined ? {} : { by: original.by, at: original.at }),
       });
       expect(effect(found?.change), original.task).toEqual(effect(original.change));
+      // A size keeps the levels it was chosen from, so a change of them since is seen.
+      expect(found?.change.source, original.task).toEqual(original.change.source);
     }
     // Kept per space: another space's page reads none of them.
     expect(unsavedKeeper(OTHER).load()).toEqual([]);

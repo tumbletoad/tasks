@@ -14,6 +14,7 @@ import {
   formatAsOf,
   formatTaskRef,
   appliedSql,
+  EFFORT_HOLDERS_SQL,
   inTrashSql,
   isId,
   RECEIPT_SQL,
@@ -1271,42 +1272,24 @@ export async function readTaskKeys(
   };
 }
 
-/** How many active tasks a refusal names at most. */
-const HOLDERS_SHOWN = 10;
-
-/**
- * The active tasks whose status or effort is one of `keys`, by reference, at most HOLDERS_SHOWN,
- * and how many there are.
- */
-export async function readKeyHolders(
+/** How many tasks hold each effort size, by state: the levels' sizes first, in their order. */
+export async function readEffortHeld(
   reader: WorkerConnection,
-  field: "status" | "effort",
-  keys: readonly string[],
-): Promise<{ tasks: { ref: string; key: string }[]; count: number }> {
-  if (keys.length === 0) return { tasks: [], count: 0 };
-  const held =
-    `FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL ` +
-    `AND ${field} IN (SELECT value FROM json_each($keys))`;
-  const [space, rows, count] = await snapshot(
-    reader,
-    [
-      SPACE,
-      {
-        sql: `SELECT ref, ${field} AS key ${held} ORDER BY ref LIMIT ${String(HOLDERS_SHOWN)}`,
-        mode: "all",
-      },
-      { sql: `SELECT count(*) AS n ${held}`, mode: "get" },
-    ],
-    { keys: JSON.stringify(keys) },
-  );
-  const prefix = spaceFacts(space).refPrefix;
-  return {
-    tasks: (rows as Row[]).map((row) => ({
-      ref: formatTaskRef(prefix, Number(row["ref"])),
-      key: String(row["key"]),
-    })),
-    count: Number((count as Row)["n"]),
-  };
+): Promise<{ effort: string; active: number; finished: number; trash: number }[]> {
+  const [scale, rows] = await snapshot(reader, [
+    EFFORT_SCALE,
+    { sql: EFFORT_HOLDERS_SQL, mode: "all" },
+  ]);
+  const order = keysOf("tasks.effort_scale", scale);
+  const rank = (effort: string) => (order.includes(effort) ? order.indexOf(effort) : order.length);
+  return (rows as Row[])
+    .map((row) => ({
+      effort: String(row["effort"]),
+      active: Number(row["active"]),
+      finished: Number(row["finished"]),
+      trash: Number(row["trash"]),
+    }))
+    .sort((a, b) => rank(a.effort) - rank(b.effort));
 }
 
 /** space.status for a connection that is not bound (A3 3.4.2). */

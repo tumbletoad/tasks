@@ -411,6 +411,78 @@ const withDefaultMeanings = (levels: readonly EffortLevel[]): EffortLevel[] =>
 export const effortNamesFit = (next: readonly string[], held: readonly string[]): boolean =>
   next.every((name) => name.length <= EFFORT_NAME_MAX || held.includes(name));
 
+/** How many tasks hold a size, by state. */
+export interface EffortHeld {
+  readonly effort: string;
+  readonly active: number;
+  readonly finished: number;
+  readonly trash: number;
+}
+
+/** Why a change of levels is refused: where in its input, and the tasks a dropped size holds. */
+export interface MovesProblem {
+  readonly field: string;
+  readonly message: string;
+  readonly holders?: EffortHeld[];
+}
+
+/**
+ * The rules of a change of the effort levels from `now` to `next` (A1 3.16), the writer's and a
+ * preview's alike: each size moves once, from a level now or a size tasks hold (`held`), to a level
+ * of `next` or to none; a level `next` drops that tasks hold needs a move.
+ */
+export function checkEffortMoves(
+  now: readonly string[],
+  next: readonly string[],
+  held: readonly EffortHeld[],
+  moves: readonly { readonly from: string; readonly to: string | null }[],
+): MovesProblem | undefined {
+  const holders = new Map(held.map((h) => [h.effort, h]));
+  const from = new Set<string>();
+  for (const [k, move] of moves.entries()) {
+    const at = `moves.${String(k)}`;
+    if (from.has(move.from)) return { field: `${at}.from`, message: "A size moves once" };
+    if (!now.includes(move.from) && !holders.has(move.from)) {
+      return { field: `${at}.from`, message: "A move is from a level or a size tasks hold" };
+    }
+    if (move.to !== null && !next.includes(move.to)) {
+      return {
+        field: `${at}.to`,
+        message: "A move goes to a level of the new list, or to no size",
+      };
+    }
+    from.add(move.from);
+  }
+  const stranded = now.flatMap((key) => {
+    const h = holders.get(key);
+    return h === undefined || next.includes(key) || from.has(key) ? [] : [h];
+  });
+  if (stranded.length === 0) return undefined;
+  return {
+    field: "value",
+    message: "Tasks hold a size this change removes: give them a level with a move",
+    holders: stranded,
+  };
+}
+
+/** A refusal over sizes tasks hold, in a person's words, with the move that takes them along. */
+export function sizesHeldText(holders: readonly EffortHeld[]): { message: string; hint: string } {
+  const named = holders.map(({ effort, active, finished, trash }) => {
+    const parts = [
+      active > 0 ? `${String(active)} active` : "",
+      finished > 0 ? `${String(finished)} finished` : "",
+      trash > 0 ? `${String(trash)} in the Trash` : "",
+    ];
+    return `${effort} (${parts.filter((part) => part !== "").join(", ")})`;
+  });
+  const first = holders[0]?.effort ?? "";
+  const arg = (text: string) => (text.includes(" ") ? `"${text}"` : text);
+  return {
+    message: `Tasks hold a size this change removes: ${named.join(", ")}. Nothing was changed.`,
+    hint: `Move their tasks with the change: --move ${arg(`${first}=<level>`)}, or --move ${arg(`${first}=`)} to take the size off.`,
+  };
+}
+
 /** A level's time in words: "10 minutes", "1 hour". */
 export function effortTimeText(time: EffortTime): string {
   return `${String(time.amount)} ${time.amount === 1 ? time.unit.slice(0, -1) : time.unit}`;

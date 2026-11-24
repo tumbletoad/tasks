@@ -13,3 +13,13 @@ export const removalSeqSql = (t: string): string =>
 export const inTrashSql = (t: string): string =>
   `(${t}.deleted_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM commits trash_c WHERE ` +
   `trash_c.seq = ${removalSeqSql(t)} AND trash_c.undo_of IS NOT NULL))`;
+
+/**
+ * How many tasks hold each effort size, by state: live ones and those in the Trash. One whose
+ * creation was undone holds nothing, and Redo may bring it back on a size the levels lack.
+ */
+export const EFFORT_HOLDERS_SQL =
+  "SELECT effort, sum(deleted_at IS NULL AND lifecycle = 'active') AS active, " +
+  "sum(deleted_at IS NULL AND lifecycle <> 'active') AS finished, " +
+  "sum(deleted_at IS NOT NULL) AS trash FROM tasks t " +
+  `WHERE effort IS NOT NULL AND (deleted_at IS NULL OR ${inTrashSql("t")}) GROUP BY effort`;

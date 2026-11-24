@@ -28,11 +28,14 @@
 // the service, or in-thread in tests and the sample generator. It is synchronous.
 import {
   EFFORT_NAME_MAX,
+  checkEffortMoves,
   effortNamesFit,
   mayWrite,
   PREFERENCES,
   preferenceSpec,
   samePrefValue,
+  type PreferenceSpec,
+  type PrefValue,
 } from "@ttasks/contracts/preferences";
 import type { Connection, Row, SqlValue } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
@@ -86,6 +89,7 @@ import {
   groupBreaks,
   newerWorkOf,
   type Held,
+  levelsStep,
   planInversions,
   readChanges,
   redoSteps,
@@ -129,7 +133,7 @@ import {
   type ReceiptLookup,
 } from "./receipts.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "./row-state.ts";
-import { inTrashSql } from "./trash.ts";
+import { EFFORT_HOLDERS_SQL, inTrashSql } from "./trash.ts";
 import {
   checkRequest,
   FOLDER_OPERATIONS,
@@ -148,11 +152,15 @@ import {
   type CheckedRequest,
   type ConflictEntity,
   type Due,
+  type EffortCount,
+  type EffortMove,
   type FieldConflict,
   type InsideFolder,
+  type OffList,
   type HistoryOperation,
   type OpResult,
   type Operation,
+  type PrefSet,
   type Placement,
   type SourceFields,
   type TaskLifecycle,
@@ -417,6 +425,8 @@ interface StagedOp {
   held?: { source: Id<"s">; by: Id<"t"> }[];
   /** `task.wrap_up`: the IDs of the learnings it adds, one per text of `learnings.add`. */
   learnings?: Id<"lr">[];
+  /** A change of the effort levels: the tasks its moves move, as the request found them. */
+  movers?: Mover[];
   /**
    * No write: `task.wrap_up` with `once` on a task wrapped already that it would not change, a
    * matched draft's `log.add` whose entry the task has already, a `task.delete` or
@@ -695,9 +705,13 @@ const SQL = {
   statusInUse:
     "SELECT 1 FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL " +
     "AND status IN (SELECT value FROM json_each($keys)) LIMIT 1",
-  effortInUse:
-    "SELECT 1 FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL " +
-    "AND effort IN (SELECT value FROM json_each($keys)) LIMIT 1",
+  effortMovers:
+    "SELECT id, effort, deleted_at IS NOT NULL AS trash, lifecycle = 'active' AS active " +
+    "FROM tasks t WHERE effort IN (SELECT value FROM json_each($from)) " +
+    `AND (deleted_at IS NULL OR ${inTrashSql("t")}) ORDER BY id`,
+  offList:
+    "SELECT effort, ref FROM tasks WHERE deleted_at IS NULL AND effort IS NOT NULL " +
+    "AND effort NOT IN (SELECT value FROM json_each($keys)) ORDER BY effort, ref",
   areaRow: "SELECT * FROM areas WHERE id = $id",
   projectRow: "SELECT * FROM projects WHERE id = $id",
   lastArea: "SELECT max(position) AS p FROM areas",
@@ -901,6 +915,76 @@ type ScaleKey = "tasks.statuses" | "tasks.effort_scale";
 
 const isScaleKey = (key: string): key is ScaleKey =>
   key === "tasks.statuses" || key === "tasks.effort_scale";
+
+/** A task a change of levels moves: the size it held, and where it is. */
+interface Mover {
+  id: Id<"t">;
+  from: string;
+  state: keyof EffortCount;
+}
+
+/**
+ * The tasks a change of the effort levels moves, each by the size it held before the change, as
+ * the rules of a change of levels allow it (checkEffortMoves). A move to the same name moves none.
+ */
+function stageMoves(
+  conn: Connection,
+  i: number,
+  moves: readonly EffortMove[],
+  now: readonly string[],
+  next: readonly string[],
+): Mover[] {
+  const held = conn
+    .prepare(EFFORT_HOLDERS_SQL)
+    .all()
+    .map((r) => ({
+      effort: String(r["effort"]),
+      active: Number(r["active"]),
+      finished: Number(r["finished"]),
+      trash: Number(r["trash"]),
+    }));
+  const refused = checkEffortMoves(now, next, held, moves);
+  if (refused !== undefined) {
+    throw new RequestProblem({ code: "VALIDATION_FAILED", op: i, ...refused });
+  }
+  const from = new Set(moves.filter((move) => move.to !== move.from).map((move) => move.from));
+  if (from.size === 0) return [];
+  return conn
+    .prepare(SQL.effortMovers)
+    .all({ from: JSON.stringify([...from]) })
+    .map((r) => ({
+      id: new RowReader("tasks", r).id("id", "t"),
+      from: String(r["effort"]),
+      state: Number(r["trash"]) === 1 ? "trash" : Number(r["active"]) === 1 ? "active" : "finished",
+    }));
+}
+
+/** How many tasks each move moved, by state, in the order of the moves. */
+const movedOf = (moves: readonly EffortMove[], movers: readonly Mover[]) =>
+  moves.map((move) => {
+    const count: EffortCount = { active: 0, finished: 0, trash: 0 };
+    for (const m of movers) if (m.from === move.from) count[m.state] += 1;
+    return { ...move, ...count };
+  });
+
+/** Most references of tasks on one size off the levels that an answer names. */
+const OFF_LIST_TASKS = 10;
+
+/** The live tasks on a size the effort levels lack now, by size (OpResult.off_list). */
+export function offList(conn: Connection, refPrefix: string): { off_list?: OffList[] } {
+  const keys = listPreference(conn, "tasks.effort_scale");
+  const found = new Map<string, OffList>();
+  for (const r of conn.prepare(SQL.offList).all({ keys: JSON.stringify(keys) })) {
+    const effort = String(r["effort"]);
+    const entry = found.get(effort) ?? { effort, tasks: [], count: 0 };
+    found.set(effort, entry);
+    entry.count += 1;
+    if (entry.tasks.length < OFF_LIST_TASKS) {
+      entry.tasks.push(formatTaskRef(refPrefix, new RowReader("tasks", r).int("ref", "taskRef")));
+    }
+  }
+  return found.size === 0 ? {} : { off_list: [...found.values()] };
+}
 
 /** A scale's keys from its value: a list of keys, or of `{key}` objects. */
 function scaleKeys(value: unknown): string[] {
@@ -1214,6 +1298,35 @@ export class SpaceWriter {
       return refused("rejected", this.asOf(), error.problem);
     }
     const fingerprint = requestFingerprint(request);
+    if (request.dry_run === true) {
+      // Decided whole, its receipt included, then rolled back by the throw: nothing stays. Its
+      // answer says the space as it is, so a later change makes it stale, as it does a read.
+      let decided: WriteResult | undefined;
+      try {
+        conn.transaction("immediate", () => {
+          const asOf = readAsOf(conn);
+          const versions = request.ops.map((op) => {
+            const row =
+              op.kind === "pref.set"
+                ? conn.prepare(SQL.preferenceRow).get({ id: op.key })
+                : undefined;
+            return row === undefined ? 0 : new RowReader("preferences", row).int("version", "seq");
+          });
+          const would = this.#decide(conn, request, fingerprint);
+          decided = {
+            ...would,
+            as_of: formatAsOf(asOf),
+            ...asOf,
+            results: would.results.map((r) => ({ ...r, version: versions[r.i] ?? 0 })),
+          };
+          delete decided.commit;
+          throw DRY_RUN;
+        });
+      } catch (error) {
+        if (error !== DRY_RUN) throw error;
+      }
+      return must(decided, "A dry run is decided before it is rolled back");
+    }
     const at = this.#seams.at;
     const result = conn.transaction("immediate", () => {
       const decided = this.#decide(conn, request, fingerprint);
@@ -1457,7 +1570,8 @@ export class SpaceWriter {
       if (values.status !== undefined && !statuses.includes(values.status)) {
         problem("VALIDATION_FAILED", "Not a status of this space", i, "status");
       }
-      if (typeof values.effort === "string" && !efforts.includes(values.effort)) {
+      const offLevels = typeof values.effort === "string" && !efforts.includes(values.effort);
+      if (offLevels && op.kind !== "task.patch") {
         problem("VALIDATION_FAILED", "Not an effort of this space", i, "effort");
       }
       /** The task `given` names. Only `task.restore` (`restoring`) may name a deleted one. */
@@ -1627,6 +1741,16 @@ export class SpaceWriter {
         }
         case "task.patch": {
           const target = task(op.task, "task");
+          // A size the levels lack, sent from a read older than the task's size, is a stale
+          // write: its conflict says so (preconditions), and a read shows the size it has now.
+          const read = tasks.get(target);
+          const stale =
+            read !== undefined &&
+            request.base !== undefined &&
+            versionOf(read, "effort") > request.base.seq;
+          if (offLevels && !stale) {
+            problem("VALIDATION_FAILED", "Not an effort of this space", i, "effort");
+          }
           const fields = [...Object.keys(op.set ?? {}), ...(op.unset ?? [])];
           return {
             i,
@@ -2351,7 +2475,8 @@ export class SpaceWriter {
             request.actor.actor_kind === "system" &&
             spec.stored === true &&
             (row === undefined || row["value"] === "null") &&
-            samePrefValue(op.value, spec.default);
+            samePrefValue(op.value, spec.default) &&
+            op.moves === undefined;
           if (!fills && !mayWrite(spec, request.actor.actor_kind)) {
             problem("PREFERENCE_FORBIDDEN", "Only the user changes this preference", i, "key");
           }
@@ -2368,44 +2493,82 @@ export class SpaceWriter {
               "key",
             );
           }
-          // A task keeps its status and effort whatever the scale says, so a scale never drops a
-          // key an active task holds: the person moves those tasks first and loses nothing.
-          if (isScaleKey(op.key)) {
+          const start =
+            row === undefined ? undefined : rowState("preferences", row, CHILD_FIELDS.preferences);
+          const levels = op.key === "tasks.effort_scale" && !fills;
+          // The levels a change replaces are the ones its person read, also on a space that never
+          // stored them: a first setter racing another meets the other's row as a conflict.
+          if (levels && row === undefined && request.base === undefined) {
+            problem(
+              "BASE_REQUIRED",
+              "This change needs the as_of of a read as its base",
+              i,
+              "base",
+            );
+          }
+          // A base older than the list's last change is a conflict (preconditions), whatever the
+          // change says of a list its person never saw.
+          const stale =
+            start !== undefined &&
+            request.base !== undefined &&
+            versionOf(start, "value") > request.base.seq;
+          let movers: Mover[] | undefined;
+          if (isScaleKey(op.key) && !stale) {
             const next = scaleKeys(op.value ?? spec.default);
             const kept = new Set(next);
             const held = listPreference(conn, op.key);
-            if (op.key === "tasks.effort_scale" && !effortNamesFit(next, held)) {
-              problem(
-                "VALIDATION_FAILED",
-                `A new level's name has at most ${String(EFFORT_NAME_MAX)} characters`,
-                i,
-                "value",
-              );
-            }
-            const removed = held.filter((key) => !kept.has(key));
-            const inUse = op.key === "tasks.statuses" ? SQL.statusInUse : SQL.effortInUse;
-            if (
-              removed.length > 0 &&
-              conn.prepare(inUse).get({ keys: JSON.stringify(removed) }) !== undefined
-            ) {
-              problem(
-                "VALIDATION_FAILED",
-                "Active tasks hold a key this change removes: give them another first",
-                i,
-                "value",
-              );
+            if (op.key === "tasks.statuses") {
+              // A task keeps its status whatever the scale says: a scale never drops a status an
+              // active task holds.
+              const removed = held.filter((key) => !kept.has(key));
+              if (
+                removed.length > 0 &&
+                conn.prepare(SQL.statusInUse).get({ keys: JSON.stringify(removed) }) !== undefined
+              ) {
+                problem(
+                  "VALIDATION_FAILED",
+                  "Active tasks hold a key this change removes: give them another first",
+                  i,
+                  "value",
+                );
+              }
+            } else {
+              if (!effortNamesFit(next, held)) {
+                problem(
+                  "VALIDATION_FAILED",
+                  `A new level's name has at most ${String(EFFORT_NAME_MAX)} characters`,
+                  i,
+                  "value",
+                );
+              }
+              if (levels) movers = stageMoves(conn, i, op.moves ?? [], held, next);
             }
           }
           const touches: Touch[] = [];
-          if (row !== undefined) {
+          if (start !== undefined) {
             // Changing a stored value, or resetting it, needs a base (A1 3.5).
             const key = rowKey("preferences", op.key);
             if (!starts.has(key)) {
-              starts.set(key, rowState("preferences", row, CHILD_FIELDS.preferences));
+              starts.set(key, start);
               touches.push({ entity: "preferences", id: op.key, field: "value", task: null });
             }
           }
-          return { i, op, target: op.key, task: null, touches, record: inputOf(op) };
+          return {
+            i,
+            op,
+            target: op.key,
+            task: null,
+            touches,
+            // A change of the levels records the write of the list it found, which its Undo and
+            // Redo are guarded by when the change leaves the list's value as it was (history.ts).
+            record: levels
+              ? {
+                  ...inputOf(op),
+                  list_from: start === undefined ? 0 : provenanceOf(start, "value"),
+                }
+              : inputOf(op),
+            ...(movers === undefined ? {} : { movers }),
+          };
         }
         case "area.create":
         case "project.create": {
@@ -2810,7 +2973,9 @@ export class SpaceWriter {
       if (inverted < space.undoFloorSeq) {
         problem("UNDO_BEFORE_FLOOR", "The change is older than the space's last format change", 0);
       }
-      const plan = planInversions(conn, readChanges(conn, inverted), {
+      const inverting = readChanges(conn, inverted);
+      const levels = levelsStep(conn, target.seq);
+      const plan = planInversions(conn, inverting, {
         creating: new Set([target.seq]),
         refPrefix: space.refPrefix,
         partial,
@@ -2819,6 +2984,7 @@ export class SpaceWriter {
         // A redo applies the step's undo again; an undo takes back each row as the step, or a redo
         // of it, last wrote it.
         applied: undo ? appliedRows(conn, target.seq) : () => inverted,
+        ...(levels === undefined ? {} : { levels }),
       });
       const pass = (): void => {
         passed.push(target.id);
@@ -2833,7 +2999,8 @@ export class SpaceWriter {
         continue;
       }
       const commitId = newId("op", this.#random);
-      let tasks: { tasks?: string[]; task_count?: number } = {};
+      let tasks: { tasks?: string[]; task_count?: number; lifecycles?: string[] } = {};
+      const wrote = { list: false, tasks: 0 };
       conn.exec("SAVEPOINT exec");
       try {
         // The inversions first: the rules across rows are decided on the state they make (A1 3.10).
@@ -2882,7 +3049,15 @@ export class SpaceWriter {
         });
         const changes = applied.changes.map((c) => ({ ...c, action: "set" as const }));
         insertChanges(conn, seq, changes);
-        if (request.intent !== undefined) tasks = changedTasks(conn, space.refPrefix, changes);
+        if (request.intent !== undefined) {
+          tasks = changedTasks(conn, space.refPrefix, changes);
+          // The tasks it checked off or reopened: only those are a checkbox's to undo again.
+          const turned = changes.filter((c) => c.entity === "tasks" && c.field === "lifecycle");
+          if (turned.length > 0)
+            tasks.lifecycles = changedTasks(conn, space.refPrefix, turned).tasks;
+        }
+        wrote.list = changes.some((c) => c.entity === "preferences");
+        wrote.tasks = changes.filter((c) => c.entity === "tasks" && c.field === "effort").length;
         // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
         // its children's, a restore brings them back, a field set back rewrites its document.
         if (this.#search) indexChanges(conn, seq, changes);
@@ -2903,7 +3078,18 @@ export class SpaceWriter {
       return {
         ...accepted("applied", { ...asOf, seq }),
         commit: commitId,
-        results: [{ i: 0, status: "updated", id: target.id, version: seq, ...tasks }],
+        results: [
+          {
+            i: 0,
+            status: "updated",
+            id: target.id,
+            version: seq,
+            ...tasks,
+            // A change of the effort levels, undone or redone: the tasks it leaves on a size the
+            // levels lack are said, never a reason to refuse.
+            ...(levels === undefined ? {} : { levels: wrote, ...offList(conn, space.refPrefix) }),
+          },
+        ],
         // What a partial undo left as others set it, or why a redo passed over the steps before
         // the one it redid (WriteResult.conflicts).
         conflicts,
@@ -2928,6 +3114,7 @@ export class SpaceWriter {
         conflicts,
       ),
       target: first.id,
+      ...(levelsStep(conn, first.seq) === undefined ? {} : { levels: true }),
       ...(undo ? {} : { passed }),
       newer: newerWorkOf(conn, held, principal),
     };
@@ -2943,6 +3130,9 @@ export class SpaceWriter {
 
 // ---------------------------------------------------------------------------------------------
 // Results
+
+/** What a dry run throws to roll its transaction back. */
+const DRY_RUN = new Error("dry run");
 
 function refused(
   status: "rejected" | "conflict",
@@ -3196,6 +3386,12 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           status,
           id: staged.target,
           version: row === undefined ? 0 : new RowReader("preferences", row).int("version", "seq"),
+          ...(staged.movers === undefined
+            ? {}
+            : {
+                moved: movedOf(op.moves ?? [], staged.movers),
+                ...offList(conn, run.plan.refPrefix),
+              }),
         };
       }
       case "area.create":
@@ -4444,6 +4640,10 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         value: value === null ? "null" : canonicalJson(value),
         schema_ver: spec.schemaVer,
       };
+      if (staged.movers !== undefined && value !== null) {
+        changeLevels(conn, run, { i, op, spec, value, movers: staged.movers });
+        return;
+      }
       // An earlier operation of the request may have created the row: read it as it is now.
       if (conn.prepare(SQL.preferenceRow).get({ id: op.key }) === undefined) {
         // Nothing is set: a reset changes nothing.
@@ -4677,6 +4877,57 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "undo":
     case "redo":
       throw misuse("A request of its own is never executed here");
+  }
+}
+
+/**
+ * A change of the effort levels (A1 3.16): the list, then each task on a moved size, through the
+ * field path. Where no list was stored, the list as it read goes in first, as a row from before any
+ * commit: the list its Undo stores, or the one its Undo finds unchanged, which a space's opening
+ * keeps, never a missing row the opening fills with a write of its own.
+ */
+function changeLevels(
+  conn: Connection,
+  run: Execution,
+  change: {
+    i: number;
+    op: PrefSet;
+    spec: PreferenceSpec;
+    value: PrefValue;
+    movers: readonly Mover[];
+  },
+): void {
+  const { i, op, spec, value } = change;
+  const now = readSpacePreference(conn, op.key);
+  if (conn.prepare(SQL.preferenceRow).get({ id: op.key }) === undefined) {
+    conn.prepare(SQL.insertPreference).run({
+      id: op.key,
+      value: canonicalJson(now.value),
+      schema_ver: spec.schemaVer,
+      policy: spec.policy ? 1 : 0,
+      seq: 0,
+    });
+    const made = conn.prepare(SQL.preferenceRow).get({ id: op.key });
+    if (made === undefined) throw misuse("A preference row just inserted is there");
+    run.plan.starts.set(
+      rowKey("preferences", op.key),
+      rowState("preferences", made, CHILD_FIELDS.preferences),
+    );
+  }
+  if (!samePrefValue(now.value, value)) {
+    conn
+      .prepare(SQL.updatePreference)
+      .run({ id: op.key, value: canonicalJson(value), schema_ver: spec.schemaVer });
+    wrote(run, i, "preferences", op.key, null, ["value"]);
+  }
+  const to = new Map((op.moves ?? []).map((move) => [move.from, move.to]));
+  for (const mover of change.movers) {
+    const effort = to.get(mover.from);
+    if (effort === undefined) throw misuse("A mover follows a move");
+    if (effort === mover.from) continue;
+    ensureStart(conn, run, "tasks", mover.id);
+    update(conn, mover.id, { effort });
+    wrote(run, i, "tasks", mover.id, mover.id, ["effort"]);
   }
 }
 

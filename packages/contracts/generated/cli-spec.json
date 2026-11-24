@@ -748,6 +748,15 @@
           "type": "string"
         },
         {
+          "field": "dry_run",
+          "flag": "--dry-run",
+          "help": "Decide a set as it would be written, and write nothing",
+          "repeat": false,
+          "required": false,
+          "type": "boolean",
+          "userOnly": true
+        },
+        {
           "field": "mode",
           "flag": "--mode",
           "help": "Always apply in this build",
@@ -767,7 +776,9 @@
           "type": "boolean"
         }
       ],
-      "inputOnly": [],
+      "inputOnly": [
+        "set[].moves"
+      ],
       "item": "set",
       "kind": "write",
       "positionals": [

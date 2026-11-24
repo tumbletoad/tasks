@@ -175,7 +175,7 @@ export type {
   QueryResult,
 } from "./worker/protocol.ts";
 export { OPEN_RUN, RUN_WAITS, runAsked, WAITS } from "./questions.ts";
-export { inTrashSql, removalSeqSql } from "./write/trash.ts";
+export { EFFORT_HOLDERS_SQL, inTrashSql, removalSeqSql } from "./write/trash.ts";
 export { appliedSql, UNDO_TARGET_SQL } from "./write/history.ts";
 // One writer per space across processes (A2 3.4): writer.lock and writer.json, which every
 // StorageWorker route that opens a space for writing takes. takeFileLock is the same technique for
@@ -342,6 +342,7 @@ export {
   type Credential,
   type DedupeMode,
   type Due,
+  type EffortMove,
   type FieldConflict,
   type Intent,
   type LaunchCreate,

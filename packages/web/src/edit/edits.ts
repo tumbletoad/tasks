@@ -146,6 +146,8 @@ export interface EditDeps {
   readonly onChanges: (listener: (changes: Changes) => void) => () => void;
   /** The live row of a task, by its reference (a conflict names tasks by reference). */
   readonly rowOf: (ref: string) => TaskRow | undefined;
+  /** The effort levels the screen shows, keyed as a kept size remembers them (levelsKey). */
+  readonly levels?: () => string;
   readonly newRequest: () => string;
   /** False once the tab's session stopped: an unanswered request is not asked about any more. */
   readonly alive?: () => boolean;
@@ -244,6 +246,8 @@ interface Problem {
   readonly newer: readonly NewerWorkEntry[];
   /** A refused redo's: every change it tried. */
   readonly passed: readonly string[];
+  /** The commit an undo or redo met is a change of the effort levels. */
+  readonly levels: boolean;
 }
 
 /**
@@ -304,6 +308,7 @@ function problemOf(error: unknown): Problem | undefined {
     conflicts,
     ...(typeof commit === "string" && commit !== "" ? { commit } : {}),
     newer: newerOf(record["newer_work"]),
+    levels: record["levels"] === true,
     passed: Array.isArray(record["passed_over"]) ? record["passed_over"].map(String) : [],
   };
 }
@@ -332,6 +337,7 @@ function historyOf(kind: "undo" | "redo", found: Found): Decision<HistoryResult>
   const commit = found.results[0]?.id;
   if (commit === undefined) return undefined;
   const partial = kind === "undo" && (found.conflicts?.length ?? 0) > 0;
+  const op = found.results[0];
   const value = {
     result: kind === "redo" ? "redone" : partial ? "partial" : "undone",
     commit,
@@ -340,6 +346,19 @@ function historyOf(kind: "undo" | "redo", found: Found): Decision<HistoryResult>
     as_of: found.as_of,
     ...(found.passed_over === undefined ? {} : { passed_over: found.passed_over }),
     ...(found.newer_work === undefined ? {} : { newer_work: found.newer_work }),
+    ...(op?.levels === undefined ? {} : { levels: op.levels }),
+    ...(op?.lifecycles === undefined ? {} : { lifecycles: op.lifecycles }),
+    ...(op?.off_list === undefined ? {} : { off_list: op.off_list }),
+    ...(partial
+      ? {
+          unresolved: (found.conflicts ?? []).map((c) => ({
+            entity: c.entity,
+            field: c.field,
+            by: c.by.origin === "import" ? "import" : c.by.kind === "human" ? "user" : c.by.label,
+            at: c.at,
+          })),
+        }
+      : {}),
   };
   return { ok: true, value: value as HistoryResult };
 }
@@ -444,6 +463,44 @@ export const whoOf = (by: string): { who: string; by: string } => ({
 function listText({ shown, more }: ShortList, name: (item: string) => string | Msg): Msg {
   const [a = "", b = "", c = ""] = shown.map(name);
   return { id: "toast.list", values: { count: shown.length + more, a, b, c, rest: more } };
+}
+
+/**
+ * The toast of a change of the effort levels undone or redone, composed of what it wrote and
+ * nothing else: the levels, the sizes put back, the sizes others' newer work kept, and whenever
+ * the answer names them, the tasks left off the levels. One that wrote nothing says so and offers
+ * nothing to take back.
+ */
+function levelsToast(
+  kind: "undo" | "redo",
+  result: {
+    readonly levels?: { readonly list: boolean; readonly tasks: number } | undefined;
+    readonly off_list?:
+      readonly { readonly tasks: readonly string[]; readonly count: number }[] | undefined;
+  },
+  action: NonNullable<Toast["action"]>,
+): Omit<Toast, "key"> {
+  const unresolved =
+    (result as { unresolved?: readonly { entity: string; field: string; by: string }[] })
+      .unresolved ?? [];
+  const offList = result.off_list ?? [];
+  const off = {
+    count: offList.reduce((n, o) => n + o.count, 0),
+    tasks: offList.flatMap((o) => o.tasks).join(", "),
+  };
+  // The list held by someone else's later change: none of the step came back.
+  const list = unresolved.find((u) => u.entity === "preferences");
+  if (list !== undefined) {
+    const values = { ...whoOf(list.by), ...off };
+    return { kind: "error", text: { id: "toast.levelsNotUndone", values } };
+  }
+  const newer = unresolved.filter((u) => u.field === "effort").length;
+  const { levels } = result;
+  if (levels === undefined || (!levels.list && levels.tasks === 0)) {
+    return { kind: "info", text: { id: "toast.levelsNothing", values: { kind, newer, ...off } } };
+  }
+  const values = { kind, list: levels.list ? "yes" : "no", newer, ...off };
+  return { kind: "undo", text: { id: "toast.levels", values }, action };
 }
 
 /**
@@ -706,6 +763,15 @@ export class Edits {
    * build). No base makes sending it again an informed choice, so it is not sent:
    * its value can be copied or discarded.
    */
+  /** Whether a kept size was chosen from effort levels the screen no longer shows (levelsKey). */
+  relevelled(unsaved: Unsaved): boolean {
+    const { source } = unsaved.change;
+    const now = this.#deps.levels?.();
+    if (source?.kind !== "effort" || source.effort === undefined || now === undefined) return false;
+    // A size kept by an earlier build does not say its levels: it is chosen again.
+    return source.levels !== now;
+  }
+
   restored(unsaved: Unsaved): boolean {
     if (unsaved.base === undefined) return unsaved.reason === "failed";
     const now = this.#deps.asOf();
@@ -715,7 +781,7 @@ export class Edits {
   /** "Apply mine" or "Try again": this tab's kept value of the field, sent again (`#again`). */
   apply(task: string, field: Field): void {
     const unsaved = this.unsaved(task, field);
-    if (unsaved === undefined || this.restored(unsaved)) return;
+    if (unsaved === undefined || this.restored(unsaved) || this.relevelled(unsaved)) return;
     this.#again({ id: unsaved.task, ref: unsaved.ref }, unsaved.change, [unsaved]);
   }
 
@@ -1102,16 +1168,22 @@ export class Edits {
         return;
       }
       const result = decision.value;
-      this.#undone(result.tasks, true);
+      // Only a row whose check-off this undid comes back unchecked.
+      this.#undone(result.lifecycles ?? [], true);
+      const redo = {
+        label: { id: "toast.redo" },
+        run: () => {
+          void this.redo(result.commit);
+        },
+      } as const;
+      if (result.levels !== undefined) {
+        say(levelsToast("undo", result, redo));
+        return;
+      }
       say({
         kind: "undo",
         text: { id: result.result === "partial" ? "toast.undoneRest" : "toast.undone" },
-        action: {
-          label: { id: "toast.redo" },
-          run: () => {
-            void this.redo(result.commit);
-          },
-        },
+        action: redo,
       });
     });
   }
@@ -1124,26 +1196,34 @@ export class Edits {
         return;
       }
       const result = decision.value;
-      for (const ref of result.tasks) this.#redone.set(ref, result.commit);
-      this.#undone(result.tasks, false);
+      // A checked row's box undoes only the commit that checked that task off: a redo of anything
+      // else names the task too, and never becomes its target or ends its hold.
+      for (const ref of result.lifecycles ?? []) this.#redone.set(ref, result.commit);
+      this.#undone(result.lifecycles ?? [], false);
       // Older changes it passed over stay for the next Redo: who changed which tasks since.
       const passed = (result as { passed_over?: readonly string[] }).passed_over ?? [];
       const newer = newerValues(newerOf(result.newer_work));
-      say({
-        kind: "undo",
-        text:
-          passed.length === 0
-            ? { id: "toast.redone" }
-            : newer === undefined
-              ? { id: "toast.redonePassedOwn" }
-              : { id: "toast.redonePassed", values: newer },
-        action: {
-          label: { id: "toast.undo" },
-          run: () => {
-            void this.undo(result.commit);
-          },
+      const undo = {
+        label: { id: "toast.undo" },
+        run: () => {
+          void this.undo(result.commit);
         },
-      });
+      } as const;
+      const redone: Omit<Toast, "key"> =
+        result.levels === undefined
+          ? { kind: "undo", text: { id: "toast.redone" }, action: undo }
+          : levelsToast("redo", result, undo);
+      say(
+        passed.length === 0
+          ? redone
+          : {
+              ...redone,
+              text:
+                newer === undefined
+                  ? { id: "toast.redonePassedOwn", values: { redone: redone.text } }
+                  : { id: "toast.redonePassed", values: { ...newer, redone: redone.text } },
+            },
+      );
     });
   }
 
@@ -1474,10 +1554,17 @@ export class Edits {
         : { id: "toast.notDone", values: { kind, ...newer } };
     // Undo the rest only where the page knows the step has a field that does not conflict: its
     // own step's fields. The service then undoes the fields that pass when it is asked, and keeps
-    // the others as they are; a page that does not know the step offers nothing.
+    // the others as they are; a page that does not know the step offers nothing, but for a change
+    // of the effort levels, made anywhere, as the refusal says: its rest is the list and the tasks
+    // nobody changed, or, when the list itself was changed since, nothing, and the step leaves.
     const fields = new Set(conflicts.map((c) => c.field));
     const known = commit === undefined ? undefined : this.#fieldsOf.get(commit);
-    if (kind !== "undo" || commit === undefined || !known?.some((f) => !fields.has(f))) {
+    const levels = known === undefined && problem.levels;
+    if (
+      kind !== "undo" ||
+      commit === undefined ||
+      !(levels || known?.some((f) => !fields.has(f)))
+    ) {
       say({ kind: "error", text });
       return;
     }
@@ -1688,7 +1775,7 @@ export class Edits {
           const again = joinChanges(waiting);
           const kept = waiting.flatMap((part) => lines.get(part) ?? []);
           if (again === undefined || kept.length === 0) return;
-          if (kept.some((line) => this.restored(line))) return;
+          if (kept.some((line) => this.restored(line) || this.relevelled(line))) return;
           this.#again(task, again, kept);
         },
       },

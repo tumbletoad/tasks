@@ -54,6 +54,46 @@ const PrefValue = z.union([
   z.array(z.union([z.string().max(STRING_MAX), Level])).max(LIST_MAX),
 ]);
 
+const Size = z.string().max(EFFORT_KEY_MAX);
+const SizeOrNone = z.union([Size, z.null()]);
+const Count = z.int().min(0).max(9_999_999_999);
+/** How many tasks, by state. */
+const Counts = {
+  active: Count.describe("Open tasks"),
+  finished: Count.describe("Completed or archived tasks"),
+  trash: Count.describe("Tasks in the Trash"),
+};
+
+/** The live tasks on a size the effort levels lack: reported, never refused. */
+export const OffList = z
+  .array(
+    z.strictObject({
+      effort: Size.describe("The size"),
+      tasks: z.array(z.string()).max(10).describe("Their references, the first 10"),
+      count: Count.describe("How many"),
+    }),
+  )
+  .describe("Live tasks on a size that is not a level now: give each of them a level");
+
+/** A change of the effort levels: the tasks each move moved, by state. */
+export const Moved = z
+  .array(
+    z.strictObject({
+      from: Size.describe("The size it moved from"),
+      to: SizeOrNone.describe("The level it moved to, or null for no size"),
+      ...Counts,
+    }),
+  )
+  .describe("A change of the effort levels: the tasks each move moved, by state");
+
+/** What an undo or redo of a change of the effort levels wrote: never more than this. */
+export const LevelsWritten = z
+  .strictObject({
+    list: z.boolean().describe("It wrote the list of levels"),
+    tasks: Count.describe("How many sizes of tasks it wrote"),
+  })
+  .describe("A change of the effort levels: what it wrote");
+
 /** A stored or default value in a result: null is a default of none. */
 const PrefValueOutput = z.union([
   z.string(),
@@ -82,11 +122,27 @@ export const PrefsManageInput = z.strictObject({
           .boolean()
           .describe("Put the key back to its default, instead of a value")
           .optional(),
+        moves: z
+          .array(
+            z.strictObject({
+              from: Size.describe("A level, or a size tasks hold"),
+              to: SizeOrNone.describe("A level of the new list, or null for no size"),
+            }),
+          )
+          .max(LIST_MAX)
+          .describe(
+            "tasks.effort_scale only, set alone: the tasks on each size move with the change",
+          )
+          .optional(),
       }),
     )
     .min(1)
     .max(10)
     .describe("set: the keys and their new values")
+    .optional(),
+  dry_run: z
+    .boolean()
+    .describe("Decide a set as it would be written, and write nothing")
     .optional(),
   base: Base.optional(),
   request_id: RequestId.optional(),
@@ -106,6 +162,10 @@ const PrefRow = z.strictObject({
   in_force: PrefValueOutput.describe(
     "What this build does whatever the key says: it does not act on the key yet",
   ).optional(),
+  held: z
+    .array(z.strictObject({ effort: Size.describe("The size"), ...Counts }))
+    .describe("tasks.effort_scale (get): the tasks on each size, by state")
+    .optional(),
 });
 
 export const PrefsManageResult = z.strictObject({
@@ -128,6 +188,8 @@ export const PrefsManageResult = z.strictObject({
     )
     .describe("The keys a change changed")
     .optional(),
+  moved: Moved.optional(),
+  off_list: OffList.optional(),
   proposal: ProposalId.optional(),
   replayed: Replayed.optional(),
 });
@@ -166,6 +228,7 @@ export const prefsManage = defineEntry({
     },
   },
   budget: { typical: 600, max: 2000 },
+  agent: { hidden: ["dry_run"] },
   errors: [
     "invalid_input",
     "forbidden",
@@ -212,6 +275,7 @@ export const prefsManage = defineEntry({
             default: [...EFFORT_LEVELS],
             is_default: false,
             writable: true,
+            held: [],
           },
         ],
         result: "updated",

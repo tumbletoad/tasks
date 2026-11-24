@@ -479,6 +479,14 @@ Redo the change you undid last, as long as nobody changed its fields since.
 | `commit` | string | yes | The change undone or redone |
 | `tasks` | string[], max 50 items | yes | The tasks it changed, the first 50 |
 | `task_count` | integer, 0 to 9999999999 | yes | How many tasks it changed |
+| `levels` | object | no | A change of the effort levels: what it wrote |
+| `levels.list` | boolean | yes | It wrote the list of levels |
+| `levels.tasks` | integer, 0 to 9999999999 | yes | How many sizes of tasks it wrote |
+| `lifecycles` | string[], max 50 items | no | The tasks it checked off or reopened, the first 50 |
+| `off_list` | object[] | no | Live tasks on a size that is not a level now: give each of them a level |
+| `off_list[].effort` | string, max 20 | yes | The size |
+| `off_list[].tasks` | string[], max 10 items | yes | Their references, the first 10 |
+| `off_list[].count` | integer, 0 to 9999999999 | yes | How many |
 | `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `passed_over` | string[] | no | Older changes it could not redo: they stay, and the next redo tries them again |
@@ -545,11 +553,19 @@ Undo your newest change in the space, field by field as long as nobody changed i
 | `commit` | string | yes | The change undone or redone |
 | `tasks` | string[], max 50 items | yes | The tasks it changed, the first 50 |
 | `task_count` | integer, 0 to 9999999999 | yes | How many tasks it changed |
+| `levels` | object | no | A change of the effort levels: what it wrote |
+| `levels.list` | boolean | yes | It wrote the list of levels |
+| `levels.tasks` | integer, 0 to 9999999999 | yes | How many sizes of tasks it wrote |
+| `lifecycles` | string[], max 50 items | no | The tasks it checked off or reopened, the first 50 |
+| `off_list` | object[] | no | Live tasks on a size that is not a level now: give each of them a level |
+| `off_list[].effort` | string, max 20 | yes | The size |
+| `off_list[].tasks` | string[], max 10 items | yes | Their references, the first 10 |
+| `off_list[].count` | integer, 0 to 9999999999 | yes | How many |
 | `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `unresolved` | object[] | no | Fields left as others set them |
 | `unresolved[].entity` | string, max 20 | yes | Table of the row: tasks, or a child such as notes or log_entries |
-| `unresolved[].id` | string, max 60 | no | A row other than the task: its ID, or task_id\|source_id for a link |
+| `unresolved[].id` | string, max 60 | no | A row other than the task: its ID, task_id\|source_id, or tasks.effort_scale |
 | `unresolved[].task` | string | no | Task reference |
 | `unresolved[].field` | string, max 40 | yes | Logical field; deleted or removed for a child row, state for a run |
 | `unresolved[].by` | string | yes | Who changed it since: user, import or the actor's label |
@@ -793,6 +809,10 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `set[].value[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
 | `set[].value[].about` | string, max 280 | no | One line on what belongs on it, in the user's words |
 | `set[].reset` | boolean | no | Put the key back to its default, instead of a value |
+| `set[].moves` | object[], max 20 items | no | tasks.effort_scale only, set alone: the tasks on each size move with the change |
+| `set[].moves[].from` | string, max 20 | yes | A level, or a size tasks hold |
+| `set[].moves[].to` | string, max 20 \| null | yes | A level of the new list, or null for no size |
+| `dry_run` | boolean | no, user only | Decide a set as it would be written, and write nothing |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 
@@ -828,6 +848,11 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `prefs[].in_force[].time.amount` | integer, 1 to 999 | yes | How many units |
 | `prefs[].in_force[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
 | `prefs[].in_force[].about` | string, max 280 | no | One line on what belongs on it, in the user's words |
+| `prefs[].held` | object[] | no | tasks.effort_scale (get): the tasks on each size, by state |
+| `prefs[].held[].effort` | string, max 20 | yes | The size |
+| `prefs[].held[].active` | integer, 0 to 9999999999 | yes | Open tasks |
+| `prefs[].held[].finished` | integer, 0 to 9999999999 | yes | Completed or archived tasks |
+| `prefs[].held[].trash` | integer, 0 to 9999999999 | yes | Tasks in the Trash |
 | `result` | "updated" \| "no_change" | no | What a change did |
 | `changed` | object[] | no | The keys a change changed |
 | `changed[].key` | string | yes | The key |
@@ -843,6 +868,16 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `changed[].to[].time.amount` | integer, 1 to 999 | yes | How many units |
 | `changed[].to[].time.unit` | "minutes" \| "hours" \| "days" \| "weeks" | yes | The unit |
 | `changed[].to[].about` | string, max 280 | no | One line on what belongs on it, in the user's words |
+| `moved` | object[] | no | A change of the effort levels: the tasks each move moved, by state |
+| `moved[].from` | string, max 20 | yes | The size it moved from |
+| `moved[].to` | string, max 20 \| null | yes | The level it moved to, or null for no size |
+| `moved[].active` | integer, 0 to 9999999999 | yes | Open tasks |
+| `moved[].finished` | integer, 0 to 9999999999 | yes | Completed or archived tasks |
+| `moved[].trash` | integer, 0 to 9999999999 | yes | Tasks in the Trash |
+| `off_list` | object[] | no | Live tasks on a size that is not a level now: give each of them a level |
+| `off_list[].effort` | string, max 20 | yes | The size |
+| `off_list[].tasks` | string[], max 10 items | yes | Their references, the first 10 |
+| `off_list[].count` | integer, 0 to 9999999999 | yes | How many |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 
 ### Examples
@@ -989,7 +1024,8 @@ Result:
         }
       ],
       "is_default": false,
-      "writable": true
+      "writable": true,
+      "held": []
     }
   ],
   "result": "updated",
@@ -1128,6 +1164,20 @@ When `found` is `true`:
 | `results[].matched_by` | "source_key" | no | A task draft that matched an existing task: how |
 | `results[].lifecycle` | "active" \| "completed" \| "archived" | no | The matched task's lifecycle |
 | `results[].ambiguous` | string[] | no | Several active tasks matched, the named one first |
+| `results[].levels` | object | no | A change of the effort levels: what it wrote |
+| `results[].levels.list` | boolean | yes | It wrote the list of levels |
+| `results[].levels.tasks` | integer, 0 to 9999999999 | yes | How many sizes of tasks it wrote |
+| `results[].lifecycles` | string[], max 50 items | no | An undo or redo: the tasks it checked off or reopened |
+| `results[].moved` | object[] | no | A change of the effort levels: the tasks each move moved, by state |
+| `results[].moved[].from` | string, max 20 | yes | The size it moved from |
+| `results[].moved[].to` | string, max 20 \| null | yes | The level it moved to, or null for no size |
+| `results[].moved[].active` | integer, 0 to 9999999999 | yes | Open tasks |
+| `results[].moved[].finished` | integer, 0 to 9999999999 | yes | Completed or archived tasks |
+| `results[].moved[].trash` | integer, 0 to 9999999999 | yes | Tasks in the Trash |
+| `results[].off_list` | object[] | no | Live tasks on a size that is not a level now: give each of them a level |
+| `results[].off_list[].effort` | string, max 20 | yes | The size |
+| `results[].off_list[].tasks` | string[], max 10 items | yes | Their references, the first 10 |
+| `results[].off_list[].count` | integer, 0 to 9999999999 | yes | How many |
 | `results_more` | integer, 1 to 1000000 | no | An import's results beyond those 50 |
 | `conflicts` | object[] | no | Every conflicting field, without its value: read again |
 | `conflicts[].op` | integer, 0 to 999999 | yes | Index of the operation in the request |

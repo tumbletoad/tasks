@@ -35,6 +35,10 @@ function levelsIn(value: unknown): EffortLevel[] | undefined {
     : undefined;
 }
 
+/** A set's change of one key: its value from and to, a list of levels by their names. */
+export const prefChangeText = (change: { key?: unknown; from?: unknown; to?: unknown }): string =>
+  `${str(change.key)}: ${prefShown(change.from)} → ${prefShown(change.to)}`;
+
 /** A preference's value on one line: JSON, and a list of levels by their names. */
 function prefShown(value: unknown): string {
   return JSON.stringify(levelsIn(value)?.map((level) => level.key) ?? value);
@@ -49,6 +53,38 @@ function levelLines(value: unknown): string[] {
     ].filter((part) => part !== undefined);
     return said.length === 0 ? [] : [`  ${level.key}: ${said.join(". ")}`];
   });
+}
+
+const tasksText = (n: number): string => `${String(n)} task${n === 1 ? "" : "s"}`;
+
+/** A move of a change of levels: "3 tasks from M to L (1 finished)". */
+export function movedText(m: {
+  from: string;
+  to: string | null;
+  active: number;
+  finished: number;
+  trash: number;
+}): string {
+  const out = [
+    m.finished > 0 ? `${String(m.finished)} finished` : "",
+    m.trash > 0 ? `${String(m.trash)} in the Trash` : "",
+  ].filter((part) => part !== "");
+  const where = `from ${m.from} to ${m.to ?? "no size"}`;
+  return `${tasksText(m.active + m.finished + m.trash)} ${where}${out.length === 0 ? "" : ` (${out.join(", ")})`}`;
+}
+
+/** What a change of the effort levels moved, and the tasks it left on a size that is no level. */
+function levelsReport(result: Result): string[] {
+  const moved = (result["moved"] ?? []) as Parameters<typeof movedText>[0][];
+  const off = (result["off_list"] ?? []) as { effort: string; tasks: string[]; count: number }[];
+  return [
+    ...moved.map((m) => movedText(m).replace(/^(\d+ tasks?) /u, "$1 moved ") + "."),
+    ...off.map(({ effort, tasks, count }) => {
+      const more = count > tasks.length ? ` and ${String(count - tasks.length)} more` : "";
+      const are = count === 1 ? "is" : "are";
+      return `${tasksText(count)} ${are} on ${effort}, which is not a level now: ${tasks.join(", ")}${more}.`;
+    }),
+  ];
 }
 
 /** Any failure as A3's error body. A JSON-RPC protocol error is the service's `internal`. */
@@ -567,7 +603,21 @@ export function render(entry: string, result: Result, space: string, asked: Aske
             : tasks.length > 0 || result["tasks"] === undefined
               ? "Undid part of your change"
               : "Nothing of your change was left to undo";
-      lines.push(`${done}${which} in ${space}${replay(result)}`);
+      // A change of the levels: what the step wrote says what was undone or redone, nothing else.
+      const levels = result["levels"] as { list: boolean; tasks: number } | undefined;
+      const again = result["result"] === "redone" ? "redo" : "undo";
+      const sizes = `the size${levels?.tasks === 1 ? "" : "s"} of ${tasksText(levels?.tasks ?? 0)}`;
+      const said =
+        levels === undefined
+          ? `${done}${which}`
+          : levels.list
+            ? `${again === "redo" ? "Redid" : "Undid"} your change to the effort levels${levels.tasks > 0 ? ` and ${tasksText(levels.tasks)}` : ""}`
+            : levels.tasks > 0
+              ? again === "redo"
+                ? `Changed ${sizes} again`
+                : `Put back ${sizes}`
+              : `Nothing of your change to the effort levels was left to ${again}`;
+      lines.push(`${said} in ${space}${replay(result)}`, ...levelsReport(result));
       const kept = (result["unresolved"] as Result[] | undefined) ?? [];
       // What a partial undo left, or the older changes a redo passed over: who changed what since.
       const newer = newerOf(result);
@@ -804,12 +854,10 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       // it changed from and to, or that the value was so already.
       if (result["action"] === "set" && Array.isArray(result["changed"])) {
         for (const change of result["changed"] as Result[]) {
-          lines.push(
-            `${str(change["key"])}: ${prefShown(change["from"])} → ${prefShown(change["to"])}`,
-            ...levelLines(change["to"]),
-          );
+          lines.push(prefChangeText(change), ...levelLines(change["to"]));
         }
-        if (result["changed"].length > 0) break;
+        lines.push(...levelsReport(result));
+        if (result["changed"].length > 0 || result["moved"] !== undefined) break;
         lines.push("Nothing changed: the value was so already.");
       }
       for (const pref of (result["prefs"] as Result[] | undefined) ?? []) {

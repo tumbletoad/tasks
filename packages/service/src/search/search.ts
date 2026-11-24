@@ -103,8 +103,11 @@ const HAS_FOLDERS: SqlQuery = {
   mode: "get",
 };
 
-/** The vocabulary's reads, with the folders' stamp when the space has its folders. */
-const vocabulary = (folders: boolean): SqlQuery[] => [
+/**
+ * The vocabulary's reads, with the folders' stamp when the space has its folders, and for an
+ * `effort:` filter the sizes tasks hold, which the list may lack.
+ */
+const vocabulary = (folders: boolean, held: boolean): SqlQuery[] => [
   SPACE,
   { sql: "SELECT value, schema_ver FROM preferences WHERE key = 'tasks.statuses'", mode: "get" },
   {
@@ -128,6 +131,12 @@ const vocabulary = (folders: boolean): SqlQuery[] => [
       ? "SELECT count(*) AS n, coalesce(max(version), 0) AS v FROM folders"
       : "SELECT 0 AS n, 0 AS v",
     mode: "get",
+  },
+  {
+    sql: held
+      ? "SELECT DISTINCT effort FROM tasks WHERE effort IS NOT NULL ORDER BY effort"
+      : "SELECT NULL AS effort WHERE 0",
+    mode: "all",
   },
 ];
 
@@ -169,7 +178,7 @@ interface Known {
 }
 
 function vocabularyOf(results: readonly unknown[]): Known {
-  const [space, statuses, efforts, areas, projects, machines, indexed, folders] = results;
+  const [space, statuses, efforts, areas, projects, machines, indexed, folders, held] = results;
   const decoded = decodeSpaceRow(space as Row);
   const groups = (value: unknown) =>
     rows(value).map((r) => ({ id: str(r["id"]), slug: str(r["slug"]), title: str(r["title"]) }));
@@ -181,6 +190,7 @@ function vocabularyOf(results: readonly unknown[]): Known {
       refPrefix: decoded.refPrefix,
       statuses: keysOf("tasks.statuses", statuses),
       efforts: keysOf("tasks.effort_scale", efforts),
+      heldEfforts: rows(held).map((r) => str(r["effort"])),
       areas: groups(areas),
       projects: groups(projects),
       machines: rows(machines).map((r) => ({ id: str(r["id"]), name: str(r["name"]) })),
@@ -248,7 +258,10 @@ export async function runSearch(
   // and every change to them changes the stamp. Which tasks a project holds is read at S.
   const [hasFolders] = await reader.transaction("deferred", [HAS_FOLDERS]);
   const folders = Number((hasFolders as Row | null)?.["n"] ?? 0) > 0;
-  const VOCABULARY = vocabulary(folders);
+  const VOCABULARY = vocabulary(
+    folders,
+    termsOf(query).some((t) => t.type === "filter" && t.key === "effort"),
+  );
   let known = vocabularyOf(await reader.transaction("deferred", [...VOCABULARY]));
   let here = cwd === undefined ? undefined : await env.here(cwd);
   let settled: { space: SpaceRow; plan: SearchPlan; ranked: unknown } | undefined;

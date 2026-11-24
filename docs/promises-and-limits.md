@@ -35,9 +35,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   comes back in its area, or the Inbox. A task someone changed since you looked is not moved, and
   neither Undo nor Redo puts a task back in the Trash when someone else added to it or changed it
   since.
-- A task in the Trash changes only by Restore: its card is for reading, and what you typed for it
-  stays as you typed it. A task whose creation you undid is not in the Trash: Redo brings it back
-  whole.
+- A task in the Trash changes only by Restore, and by a change of the effort levels that moves its
+  size: its card is for reading, and what you typed for it stays as you typed it. A task whose
+  creation you undid is not in the Trash: Redo brings it back whole.
 - A restored task never takes a source back from a task that took it meanwhile: captures go on
   there, and the restored task lists the source as removed, saying where captures go.
 - A run working on a task you move to the Trash goes on, and stays on the Agents page with its Stop
@@ -131,6 +131,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   Every space holds its own list: a new space, or one without levels, has the five default
   levels stored when it opens, so each such version offers the same levels for it.
 - Agents read your effort levels, with their times and descriptions, and never change them.
+- Renaming, merging or removing an effort level moves the tasks on it in the same change, finished
+  ones and those in the Trash too, and one Undo takes the whole change back. A level that tasks
+  hold is never dropped without saying where they go. Your other settings are not on Undo.
 
 ## Your spaces on this machine
 
@@ -439,6 +442,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   nothing from before the last upgrade that changed the data format can be undone.
 - Undo keeps a task you queued a run on: the run holds your request. Undo and Redo do not link a
   ticket to a task again while another open task holds it, also when you linked both yourself.
+- After an Undo or Redo of a change of the effort levels, a task someone gave a size in between
+  can be on a size that is no level any more. TTasks says which tasks, and they keep that size
+  until you give them a level. While someone else's later change holds the levels, Undo leaves
+  that change of yours as it is.
 - After an Undo, a task can share its place in a list with one that arrived meanwhile. The two keep
   a fixed order, and a task then placed before or after one of them through the tools can land
   beside the pair instead of between them.
