@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { instanceLabel, LABEL_MAX } from "@ttasks/launch";
+import { t3Proposals } from "@ttasks/service/setup";
 import { configOf, stateOf } from "@ttasks/service/test/harness";
 import { httpWorld, openFeed, signIn, type HttpWorld } from "@ttasks/service/test/http-world";
 import { installFakeAgents, type FakeAgents } from "@ttasks/testkit/fake-agents";
@@ -342,5 +343,31 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
     expect(long.startsWith("Claude Code · aaa")).toBe(true);
     expect(instanceLabel("Codex", "\u{1F600}".repeat(20)).length).toBeLessThanOrEqual(LABEL_MAX);
     expect(instanceLabel("Codex", "\u{1F600}".repeat(20))).not.toMatch(/[\uD800-\uDBFF]$/u);
+    // Two homes whose long names differ at their ends keep labels apart: the middle is cut.
+    const one = instanceLabel("Claude Code", `${"x".repeat(30)}-one`);
+    const two = instanceLabel("Claude Code", `${"x".repeat(30)}-two`);
+    expect(one).not.toBe(two);
+    expect([one.length, two.length]).toEqual([LABEL_MAX, LABEL_MAX]);
+    // A long name keeps room for what tells it from the home beside it.
+    const t3 = instanceLabel("n".repeat(39), "T3 Code");
+    expect(t3.endsWith(" · T3 Code")).toBe(true);
+    expect(t3.length).toBeLessThanOrEqual(LABEL_MAX);
+  });
+
+  test("T3 Code's provider instances without a name are told apart by their key", () => {
+    const instance = (id: string) => ({
+      id,
+      driver: "codex" as const,
+      app: "codex" as const,
+      listed: true,
+      home: join("scratch", ".codex"),
+      isDefault: true,
+    });
+    const labels = t3Proposals(
+      { file: "read", instances: [instance("codex"), instance("codex_2")], off: [], skipped: [] },
+      { id: "t3", target: "t3", label: "T3 Code", account: "default", source: "app", needs: [] },
+      process.platform,
+    ).map((p) => p.label);
+    expect(labels).toEqual(["Codex · T3 Code", "Codex (codex_2) · T3 Code"]);
   });
 });

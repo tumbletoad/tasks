@@ -484,7 +484,11 @@ export function t3Proposals(
   for (const instance of settings.instances) {
     const own = settings.defaultModel?.instance === instance.id ? settings.defaultModel.model : "";
     const model = own !== "" ? own : (models[instance.driver] ?? "");
-    const name = instance.displayName ?? (instance.driver === "codex" ? "Codex" : "Claude");
+    // Without a display name, a provider instance other than the driver's own is told apart by
+    // its key, which stays as long as T3's settings keep it.
+    const driver = instance.driver === "codex" ? "Codex" : "Claude";
+    const builtIn = instance.id === "codex" || instance.id === "claudeAgent";
+    const name = instance.displayName ?? (builtIn ? driver : `${driver} (${instance.id})`);
     proposals.push({
       id: t3ProposalId(instance),
       target: "t3",

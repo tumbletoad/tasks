@@ -145,19 +145,33 @@ export const MANUAL_INSTANCE = "manual";
 export const LABEL_MAX = 40;
 
 /**
- * An instance's label within LABEL_MAX: `head`, or `head · tail` with the tail shortened to fit,
- * never cut inside a surrogate pair. The same head and tail give the same label wherever it is made.
+ * An instance's label within LABEL_MAX: `head`, or `head · tail`. What is too long is shortened in
+ * its middle, so its start and its end stay (two homes whose names differ at their ends keep
+ * labels apart), and the tail keeps room beside a long head. Never cut inside a surrogate pair.
+ * The same head and tail give the same label wherever it is made.
  */
 export function instanceLabel(head: string, tail = ""): string {
-  const cut = (text: string, max: number) =>
-    text
-      .slice(0, max)
-      .replace(/[\uD800-\uDBFF]$/u, "")
-      .trim();
-  const name = cut(head, LABEL_MAX);
-  const room = LABEL_MAX - name.length - " · ".length;
-  const rest = room > 0 ? cut(tail, room) : "";
-  return rest === "" ? name : `${name} · ${rest}`;
+  const name = head.trim();
+  const rest = tail.trim();
+  if (rest === "") return shorten(name, LABEL_MAX);
+  const room = LABEL_MAX - " · ".length;
+  if (name.length + rest.length <= room) return `${name} · ${rest}`;
+  // Each part keeps at least half the room, and a short one gives the other what it leaves.
+  const half = Math.floor(room / 2);
+  const headRoom = Math.max(half, room - rest.length);
+  const short = shorten(name, Math.min(name.length, headRoom));
+  return `${short} · ${shorten(rest, room - short.length)}`;
+}
+
+/** `text` within `max` UTF-16 units: its start and end around `…`, no surrogate pair split. */
+function shorten(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const keep = max - 1;
+  let start = text.slice(0, Math.ceil(keep / 2));
+  let end = text.slice(text.length - Math.floor(keep / 2));
+  start = start.replace(/[\uD800-\uDBFF]$/u, "");
+  end = end.replace(/^[\uDC00-\uDFFF]/u, "");
+  return `${start.trimEnd()}…${end.trimStart()}`;
 }
 
 /** An environment variable name an instance may add. */
