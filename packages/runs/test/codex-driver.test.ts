@@ -197,15 +197,29 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
       [
         "read-only",
         "execCommandApproval",
-        { callId: "c1", command: ["echo", "hi"] },
-        "Codex asks to run a command.\n~~~\necho hi\n~~~",
+        { callId: "c1", command: ["echo", "two words", "it's"] },
+        "Codex asks to run a command.\n~~~\necho 'two words' 'it'\\''s'\n~~~",
       ],
-      ["read-only", "applyPatchApproval", { callId: "c2" }, "Codex asks to change files."],
+      [
+        "read-only",
+        "item/commandExecution/requestApproval",
+        { itemId: "exec-2", command: "cat <<X\n~~~\n```\n~~~~\nX" },
+        "Codex asks to run a command.\n~~~~~\ncat <<X\n~~~\n```\n~~~~\nX\n~~~~~",
+      ],
+      [
+        "read-only",
+        "applyPatchApproval",
+        { callId: "c2", fileChanges: { "/work/notes.md": {} }, grantRoot: "/work" },
+        "Codex asks to change files.\n~~~\n/work/notes.md\n/work (all of it)\n~~~",
+      ],
       [
         "auto-edit",
         "item/permissions/requestApproval",
-        { itemId: "exec-3", permissions: { network: { enabled: true } } },
-        "Codex asks for more permissions.",
+        {
+          itemId: "exec-3",
+          permissions: { network: { enabled: true }, fileSystem: { write: ["/work/out"] } },
+        },
+        "Codex asks for more permissions.\n~~~\nnetwork access\nwrite /work/out\n~~~",
       ],
     ];
     for (const [permission, method, params, text] of asked) {
@@ -227,7 +241,12 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
     expect(answerTo(full.fake, 0)?.["result"]).toEqual({ decision: "accept" });
     const narrow = bench({ fixture: "windows-approval-file" }, { permission: "read-only" });
     expect(await narrow.driver.settled).toEqual(
-      done({ ok: false, outcome: "needs_input", text: "Codex asks to change files." }),
+      done({
+        ok: false,
+        outcome: "needs_input",
+        // The file is the one the recorded change names just before it asks.
+        text: "Codex asks to change files.\n~~~\nC:\\fixture\\path-3\n~~~",
+      }),
     );
     expect(answerTo(narrow.fake, 0)).toBeUndefined();
     await until("the turn interrupted", () => sent(narrow.fake, "turn/interrupt").length === 1);

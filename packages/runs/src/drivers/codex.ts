@@ -42,7 +42,17 @@ import {
 } from "@ttasks/contracts/runs";
 import { realpath } from "node:fs/promises";
 import { MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
-import { array, capText, count, nativeId, record, string, type Json } from "../streams/values.ts";
+import { shellLine } from "@ttasks/launch/shell-line";
+import {
+  array,
+  capText,
+  codeBlock,
+  count,
+  nativeId,
+  record,
+  string,
+  type Json,
+} from "../streams/values.ts";
 import { LineRpc, NO_ANSWER, RPC_ERRORS, RpcClosed, RpcError } from "./json-rpc.ts";
 import type { DriverSession, OpenDriver, Work } from "./types.ts";
 
@@ -170,19 +180,61 @@ const APPROVALS: Readonly<Record<string, string>> = {
   "item/permissions/requestApproval": "Codex asks for more permissions",
 };
 
-/** Words of an approval the run's permission does not give: what Codex asks, why, and its command. */
-function approvalText(method: string, params: Json): string {
+/**
+ * Words of an approval the run's permission does not give: what Codex asks and why, and what the
+ * person decides on: the command, the files (`files`: those of the item it asks about), or the
+ * permissions.
+ */
+function approvalText(method: string, params: Json, files: readonly string[]): string {
   const reason = string(params["reason"]) ?? "";
   const asks = `${APPROVALS[method] ?? "Codex asks for approval"}${reason === "" ? "." : `: ${reason}`}`;
-  const given = params["command"];
-  const command = Array.isArray(given)
-    ? given.map((part) => string(part) ?? "").join(" ")
-    : (string(given) ?? "");
-  if (command === "") return asks;
-  // As code, so a command's characters show as they are where the text is read as Markdown; the
-  // fence is one no line of it closes.
-  const fence = /^\s*~~~/mu.test(command) ? "```" : "~~~";
-  return `${asks}\n${fence}\n${command}\n${fence}`;
+  const details = approvalDetails(method, params, files);
+  return details === "" ? asks : `${asks}\n${codeBlock(details)}`;
+}
+
+function approvalDetails(method: string, params: Json, files: readonly string[]): string {
+  switch (method) {
+    case "item/commandExecution/requestApproval":
+    case "execCommandApproval": {
+      const command = params["command"];
+      if (!Array.isArray(command)) return string(command) ?? "";
+      // Each argument as a POSIX shell reads it, so one with a space stays one.
+      const words = command.map((part) => string(part) ?? "");
+      return shellLine("linux", words) ?? words.map((word) => JSON.stringify(word)).join(" ");
+    }
+    case "item/fileChange/requestApproval":
+    case "applyPatchApproval": {
+      const named = Object.keys(record(params["fileChanges"]) ?? {});
+      const root = string(params["grantRoot"]);
+      return [...files, ...named, ...(root === undefined ? [] : [`${root} (all of it)`])].join(
+        "\n",
+      );
+    }
+    case "item/permissions/requestApproval":
+      return permissionsText(record(params["permissions"]) ?? {});
+    default:
+      return "";
+  }
+}
+
+/** The permissions a request asks for: network access, folders to read or write, by name else. */
+function permissionsText(permissions: Json): string {
+  const lines: string[] = [];
+  for (const [name, value] of Object.entries(permissions)) {
+    const given = record(value);
+    if (name === "network") {
+      if (given?.["enabled"] === true) lines.push("network access");
+    } else if (name === "fileSystem" && given !== undefined) {
+      for (const way of ["read", "write"]) {
+        for (const path of array(given[way]) ?? []) {
+          if (typeof path === "string") lines.push(`${way} ${path}`);
+        }
+      }
+    } else if (value !== null && value !== undefined) {
+      lines.push(name);
+    }
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -380,6 +432,8 @@ export function codexDriver(session: CodexSession): OpenDriver {
     };
     /** Threads of agents the run's agent started that are working. */
     const children = new Set<string>();
+    /** The files of each file change under way, by item: an approval of it names them. */
+    const changing = new Map<string, string[]>();
     /** Whether a message is about the run's own thread, not one of an agent it started. */
     const ours = (params: Json): boolean => {
       const thread = string(params["threadId"]);
@@ -535,7 +589,10 @@ export function codexDriver(session: CodexSession): OpenDriver {
       const helper = !ours(params);
       const full = session.permission === "full-access";
       const edits = full || session.permission === "auto-edit";
-      const ask = (): typeof NO_ANSWER => needsPerson(approvalText(method, params));
+      const ask = (): typeof NO_ANSWER =>
+        needsPerson(
+          approvalText(method, params, changing.get(string(params["itemId"]) ?? "") ?? []),
+        );
       switch (method) {
         case "item/commandExecution/requestApproval":
           return full ? { decision: "accept" } : ask();
@@ -609,6 +666,13 @@ export function codexDriver(session: CodexSession): OpenDriver {
               });
             }
           }
+          if (item["type"] === "fileChange" && id !== undefined) {
+            const paths = (array(item["changes"]) ?? []).map((c) => string(record(c)?.["path"]));
+            changing.set(
+              id,
+              paths.filter((p): p is string => p !== undefined),
+            );
+          }
           if (
             item["type"] === "agentMessage" &&
             id !== undefined &&
@@ -626,7 +690,10 @@ export function codexDriver(session: CodexSession): OpenDriver {
           const item = record(params["item"]);
           if (item === undefined) return;
           const id = string(item["id"]);
-          if (id !== undefined) running.delete(id);
+          if (id !== undefined) {
+            running.delete(id);
+            changing.delete(id);
+          }
           if (item["status"] === "declined") state.declined += 1;
           if (item["type"] === "agentMessage" && ours(params) && now(params)) {
             complete(item);
