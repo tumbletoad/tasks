@@ -439,6 +439,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   nothing from before the last upgrade that changed the data format can be undone.
 - Undo keeps a task you queued a run on: the run holds your request. Undo and Redo do not link a
   ticket to a task again while another open task holds it, also when you linked both yourself.
+- After an Undo, a task can share its place in a list with one that arrived meanwhile. The two keep
+  a fixed order, and a task then placed before or after one of them through the tools can land
+  beside the pair instead of between them.
 - One copy of a space at a time holds for one TTasks service. Two services with homes of their own
   on one machine each keep their own list of spaces, and each can open a copy of the same space.
 - Two copies of one space that both take changes, such as a restored copy and its original used
