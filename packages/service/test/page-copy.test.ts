@@ -184,6 +184,10 @@ describe("[A2.3.10.5.copies.page] a tab shows one copy of its space and writes o
       expect((await page("/api/v1/op/task.get", { task: "M-1" }, loadedNow)).error?.code).toBe(
         "space_unavailable",
       );
+      expect((await page("/api/v1/launch/busy", {}, loadedNow)).error).toMatchObject({
+        code: "space_unavailable",
+        data: { reason: "closed" },
+      });
     },
   );
 });
