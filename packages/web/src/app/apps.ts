@@ -18,8 +18,13 @@ export interface Part {
   readonly plan: string;
   /** tools: the space its entry names. */
   readonly space: { readonly id: string; readonly name: string | null } | undefined;
-  /** tools that show off while their access may be live: turning them off all the same. */
-  readonly off: { readonly detail: readonly string[]; readonly plan: string } | undefined;
+  /**
+   * tools that show off while their access may be live, or setup's entry is still there: turning
+   * them off all the same; `access`, whether that takes the access away too.
+   */
+  readonly off:
+    | { readonly detail: readonly string[]; readonly plan: string; readonly access: boolean }
+    | undefined;
   /** tools that show on while a settings file still needs its entry: writing it there. */
   readonly more: { readonly detail: readonly string[]; readonly plan: string } | undefined;
   /** tools of a home with several settings files: each that needs something, and why. */
@@ -91,6 +96,14 @@ const action = (value: unknown) =>
     ? { detail: lines(value["detail"]), plan: value["plan"] }
     : undefined;
 
+/** Turning off beside a switch that shows off: its lines, its token, and whether access goes. */
+const offAction = (value: unknown) => {
+  const found = action(value);
+  return found === undefined
+    ? undefined
+    : { ...found, access: !isRecord(value) || value["access"] !== false };
+};
+
 /** Files of a home with what each needs, a few at most. */
 const fileNeeds = (value: unknown): FileNeed[] =>
   (Array.isArray(value) ? value : []).slice(0, 8).flatMap((f): FileNeed[] => {
@@ -123,7 +136,7 @@ function partOf(value: unknown): Part | undefined {
     detail: lines(detail),
     plan,
     space: named,
-    off: action(off),
+    off: offAction(off),
     more: action(more),
     files: fileNeeds(files),
   };

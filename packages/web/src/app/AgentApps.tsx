@@ -451,7 +451,12 @@ function Switch({
       )}
       {found.files.map((f) => (
         <p key={f.file} className={styles.why} data-part="file">
-          {t("apps.fileWhy", { file: f.file, why: f.why ?? "none", on: f.on ?? "none" })}
+          {t("apps.fileWhy", {
+            file: f.file,
+            why: f.why ?? "none",
+            // With the tools on, the button below writes it.
+            on: found.on ? "none" : (f.on ?? "none"),
+          })}
         </p>
       ))}
       {found.off === undefined ? null : (
@@ -463,7 +468,10 @@ function Switch({
             onOff(!offChosen);
           }}
         >
-          {t(offChosen ? "apps.keepAccess" : "apps.turnOff", { label: row.label })}
+          {t(offChosen ? "apps.keepAccess" : "apps.turnOff", {
+            label: row.label,
+            access: found.off.access ? "yes" : "no",
+          })}
         </Button>
       )}
       {found.more === undefined || !found.on ? null : (

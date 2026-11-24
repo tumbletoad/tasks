@@ -101,6 +101,7 @@ const SAMPLE = {
   off: "yes",
   unconfirmed: "yes",
   several: "yes",
+  access: "yes",
   apps: "Codex",
   of: "project",
   owners: "the project Billing",

@@ -57,6 +57,7 @@ import {
   SetupStateUnsafe,
   settleHomes,
   survey,
+  accessOf,
   homeAnswer,
   homeGroups,
   toolsOf,
@@ -118,7 +119,12 @@ export interface Part {
    * tools that show off while their access may be live (the entry or the program it runs is gone):
    * turning them off all the same, what it takes out and its token.
    */
-  readonly off?: { readonly detail: readonly string[]; readonly plan: string };
+  readonly off?: {
+    readonly detail: readonly string[];
+    readonly plan: string;
+    /** The access may be live: turning off takes it away, not only setup's entry. */
+    readonly access: boolean;
+  };
   /**
    * tools that show on while a settings file still needs something (an entry, or a repair to this
    * install's command): turning that on, what it writes and its token.
@@ -567,7 +573,8 @@ function toolsPart(
       ? { ...base, change: "remove", ...removing, ...more }
       : { ...base, change: null, detail: [], plan: plan(why ?? "on"), ...more };
   }
-  const off = home.off ? { off: removing } : {};
+  const live = first === undefined ? "unknown" : accessOf(input, first.item.view.home);
+  const off = home.off ? { off: { ...removing, access: live !== "off" } } : {};
   if (turning.length === 0) {
     return { ...base, change: null, detail: [], plan: plan(why ?? "off"), ...off };
   }
