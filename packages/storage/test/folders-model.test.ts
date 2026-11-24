@@ -329,6 +329,25 @@ const GROUP_CASES: readonly (readonly Step[])[] = [
       ],
     },
   ],
+  // A project restored after its area's creation was undone, a task in it that an agent brought
+  // back since: the Undo of the restore is refused, naming the agent's restore, not the step's own
+  // write (seed 1555371678, path "354:2:2:4:4:4:4:4:4:9:10:10:12:13:18:18:16:16:16:16:16:16:16:16:16:16:16").
+  [
+    {
+      kind: "batch",
+      who: "human",
+      m: 0,
+      steps: [
+        { kind: "file", who: "human" },
+        { kind: "move", who: "human", t: 0, p: 0 },
+        { kind: "task_delete", who: "human", t: 4, restore: false },
+      ],
+    },
+    { kind: "undo", partial: false },
+    { kind: "restore", who: "human", p: 0 },
+    { kind: "task_delete", who: "agent", t: 4, restore: true },
+    { kind: "undo", partial: false },
+  ],
 ];
 
 interface FolderState {

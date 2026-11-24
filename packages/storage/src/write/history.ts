@@ -1681,7 +1681,7 @@ const LIVE_IN_DELETED_AREAS =
  * last applied (Inversion.applied) is as it was before it: the plan brings back what a person had,
  * also a break that an earlier version let in. The other side is named by its newest change since
  * then, with who made it: who filed a task into the project, or who brought it back. A side the
- * step itself wrote is not named: the conflict that kept that row is.
+ * plan itself writes is not named: the conflict that kept that row is.
  */
 function groupRules(
   conn: Connection,
@@ -1797,8 +1797,12 @@ function groupRules(
     const [held, other] = own.length > 0 ? [own, child] : [brought, group];
     if (held.length === 0) continue;
     undo(held);
-    const newest = other.reduce((a, b) => (versionAt(b) > versionAt(a) ? b : a));
-    if (versionAt(newest) <= since) continue;
+    const theirs = other.filter((side) => versionAt(side) !== seq);
+    const newest = theirs.reduce<Side | undefined>(
+      (a, b) => (a === undefined || versionAt(b) > versionAt(a) ? b : a),
+      undefined,
+    );
+    if (newest === undefined || versionAt(newest) <= since) continue;
     const [entity, id, field] = newest;
     broken.named.push({ entity, id, task: entity === "tasks" ? (id as Id<"t">) : null, field });
   }
