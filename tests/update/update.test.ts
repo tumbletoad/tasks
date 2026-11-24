@@ -41,6 +41,7 @@ import {
   updateFromArchive,
   UpdateError,
   type UpdateOptions,
+  type SpaceNote,
   type UpdatePoint,
 } from "../../packages/service/src/version/update.ts";
 import { SUMS_FILE } from "../../scripts/build/signing.ts";
@@ -1036,6 +1037,210 @@ describe("[A2.3.12.6.update.lock] a second update waits for the first and then f
     }
   });
 });
+
+describe("[A2.3.12.6.update.restart-consent] the service is restarted only on the decision taken at the switch", () => {
+  /** A self-test during which another terminal starts the service, which was stopped. */
+  const startedMeanwhile =
+    (w: Awaited<ReturnType<typeof world>>) =>
+    (folder: string): ReturnType<typeof w.selfTest> => {
+      w.control.version = "0.1.0";
+      return w.selfTest(folder);
+    };
+
+  test("a service that started after the first look is asked about; declined, the update stops before the switch and restarts nothing", async () => {
+    const w = await world("consent-no", false);
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    let asked = 0;
+    const stopped = await refusal(
+      updateFromArchive(release.archive, {
+        ...w.options,
+        selfTest: startedMeanwhile(w),
+        agreeRestart: () => {
+          asked += 1;
+          return Promise.resolve(false);
+        },
+      }),
+    );
+    expect(asked).toBe(1);
+    expect(stopped.exitCode).toBe(2);
+    expect(stopped.message).toMatch(/Nothing was changed/);
+    expect(w.control.calls).toEqual([]);
+    expect(w.control.version).toBe("0.1.0");
+    expect(currentOf(w.root, os)).toBe("0.1.0");
+    expect(existsSync(join(w.state, UPDATE_JOURNAL))).toBe(false);
+  });
+
+  test("agreed at the switch, its runs are held and waited for, then it is restarted on the new version", async () => {
+    const w = await world("consent-yes", false);
+    w.control.runs = new FakeRuns([]);
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    let asked = 0;
+    const result = await updateFromArchive(release.archive, {
+      ...w.options,
+      selfTest: startedMeanwhile(w),
+      agreeRestart: () => {
+        asked += 1;
+        return Promise.resolve(true);
+      },
+      runs: { decide: () => Promise.resolve("give_up") },
+    });
+    expect(result).toMatchObject({ outcome: "updated", to: "0.2.0" });
+    expect(asked).toBe(1);
+    const restart = windows ? "restart supervisor" : "restart";
+    expect(w.control.calls).toEqual(["hold", restart, "wait 0.2.0", "release"]);
+  });
+
+  test("a service that runs at the switch is asked about once; one stopped throughout is neither asked about nor started", async () => {
+    const w = await world("consent-once");
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    let asked = 0;
+    const agreeRestart = () => {
+      asked += 1;
+      return Promise.resolve(true);
+    };
+    await updateFromArchive(release.archive, { ...w.options, agreeRestart });
+    expect(asked).toBe(1);
+    expect(w.control.version).toBe("0.2.0");
+
+    const quiet = await world("consent-quiet", false);
+    const r2 = fixtureRelease(join(quiet.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    let quietAsked = 0;
+    await updateFromArchive(r2.archive, {
+      ...quiet.options,
+      agreeRestart: () => {
+        quietAsked += 1;
+        return Promise.resolve(true);
+      },
+    });
+    expect(quietAsked).toBe(0);
+    expect(quiet.control.calls).toEqual([]);
+    expect(currentOf(quiet.root, os)).toBe("0.2.0");
+  });
+});
+
+describe("[A2.3.12.6.update.spaces] an update ends by saying, for every space, whether it is as usable as before", () => {
+  const open = (id: string, name: string): SpaceNote => ({
+    registered: id,
+    id,
+    name,
+    state: "open",
+  });
+  const FAILED =
+    "The update of this space from schema 3 to 4 failed (BACKUP_FAILED): nothing in it changed. The backup taken before it: fixture-barrier.sqlite.";
+  const OPEN_FAILED = "The space could not be opened. Try again with: ttasks space open <folder>.";
+
+  test("a writable space that is read-only after a failed migration and one that did not open are named in the service's words; spaces as before are counted", async () => {
+    const w = await world("spaces-worse");
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    w.control.spaces = [
+      open("sp_work", "Work"),
+      open("sp_home", "Home"),
+      open("sp_notes", "Notes"),
+      { registered: "sp_copy", id: "sp_copy", name: "Copy", state: "read_only", reason: "read_only_copy" },
+      { registered: "sp_shut", state: "closed" },
+    ];
+    const settled: SpaceNote[] = [
+      {
+        registered: "sp_work",
+        id: "sp_work",
+        name: "Work",
+        state: "read_only",
+        reason: "migration_failed",
+        message: FAILED,
+      },
+      { registered: "sp_home", state: "unavailable", reason: "open_failed", message: OPEN_FAILED },
+      open("sp_notes", "Notes"),
+      { registered: "sp_copy", id: "sp_copy", name: "Copy", state: "read_only", reason: "read_only_copy" },
+      { registered: "sp_shut", state: "closed" },
+    ];
+    // The restarted service names no space at first, then each one opening, then how they opened.
+    w.control.spacesAfter = [
+      [],
+      settled.map((space) => ({ registered: space.registered, state: "opening" })),
+      settled,
+    ];
+    const result = await updateFromArchive(release.archive, w.options);
+    expect(result).toMatchObject({ outcome: "updated", from: "0.1.0", to: "0.2.0" });
+    if (result.outcome !== "updated") throw new Error("not updated");
+    expect(
+      result.spaces?.spaces.map((s) => ({
+        name: s.name,
+        verdict: s.verdict,
+        before: s.before?.state,
+        after: s.after?.state,
+        message: s.after?.message,
+      })),
+    ).toEqual([
+      { name: "Work", verdict: "worse", before: "open", after: "read_only", message: FAILED },
+      { name: "Home", verdict: "worse", before: "open", after: "unavailable", message: OPEN_FAILED },
+      { name: "Notes", verdict: "as_before", before: "open", after: "open", message: undefined },
+      { name: "Copy", verdict: "as_before", before: "read_only", after: "read_only", message: undefined },
+    ]);
+  });
+
+  test("a space still opening when the bound runs out is named as not settled; with no space, nothing is said about spaces", async () => {
+    const w = await world("spaces-slow");
+    const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    w.control.spaces = [open("sp_big", "Big")];
+    w.control.spacesAfter = [[{ registered: "sp_big", state: "opening" }]];
+    const result = await updateFromArchive(release.archive, { ...w.options, settleWaitMs: 1_500 });
+    if (result.outcome !== "updated") throw new Error("not updated");
+    expect(result.spaces?.boundMs).toBe(1_500);
+    expect(result.spaces?.spaces.map((s) => [s.name, s.verdict])).toEqual([["Big", "unsettled"]]);
+
+    const none = await world("spaces-none");
+    const r2 = fixtureRelease(join(none.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    expect(await updateFromArchive(r2.archive, none.options)).toEqual({
+      outcome: "updated",
+      from: "0.1.0",
+      to: "0.2.0",
+    });
+  });
+});
+
+const CUT_CHILD = fileURLToPath(new URL("./cut-child.ts", import.meta.url));
+
+describe("[A2.3.12.6.update.way-back] an update cut off at any step and run again keeps the way back", () => {
+  /** Every step an update without a service reaches (the launchers' only where they change). */
+  const steps: UpdatePoint[] = [
+    "locked",
+    "prepared",
+    "unpacked",
+    "placed",
+    "tested",
+    "staged",
+    "current",
+    "switched",
+    ...(windows ? (["launcher"] as const) : []),
+    "launchers_done",
+    "recorded",
+    "done",
+  ];
+
+  test.each(steps)(
+    "cut off at %s, then run again twice: the version before it stays the one --rollback goes back to",
+    async (step) => {
+      const w = await world(`way-${step}`);
+      const release = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+      const child = fork(CUT_CHILD, [], { stdio: ["ignore", "ignore", "pipe", "ipc"] });
+      const code = await new Promise<number | null>((resolve) => {
+        child.once("exit", resolve);
+        child.send({ archive: release.archive, facts: w.options.facts, keys: KEYS, cut: step });
+      });
+      expect(code, "the child was cut at its step").toBe(9);
+      for (const run of [1, 2]) {
+        const again = await updateFromArchive(release.archive, w.options);
+        expect(again.outcome, `run ${String(run)}`).toMatch(/^(updated|current)$/);
+        expect(currentOf(w.root, os), `run ${String(run)}`).toBe("0.2.0");
+        expect(readInstallRecord(w.state)?.["previous"], `run ${String(run)}`).toBe("0.1.0");
+      }
+      expect(existsSync(join(w.state, UPDATE_JOURNAL))).toBe(false);
+      expect(await rollbackUpdate(w.options)).toMatchObject({ from: "0.2.0", to: "0.1.0" });
+      expect(currentOf(w.root, os)).toBe("0.1.0");
+    },
+  );
+});
+
 
 // ---------------------------------------------------------------------------------------------
 

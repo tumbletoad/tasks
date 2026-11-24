@@ -26,6 +26,7 @@ import { PRODUCT_ID } from "@ttasks/brand";
 import { canonicalStatePath, installId, type HostFacts } from "../hub/paths.ts";
 import { writeVersionManifest } from "./folder.ts";
 import { finishInstall, InstallError, installTarget, type InstallRecord } from "./install.ts";
+import { rollbackUpdate } from "./update.ts";
 
 const windows = process.platform === "win32";
 const RACER = fileURLToPath(new URL("../../test/lock-racer.ts", import.meta.url));
@@ -410,6 +411,40 @@ describe("[A2.3.12.6.install.finish] ttasks install --finish switches current on
       await new Promise((resolve) => racer.once("exit", resolve));
     }
     await finishInstall({ versionFolder: folder, facts: facts(root) });
+    expect(currentOf(root)).toBe(windows ? "0.1.0" : "versions/0.1.0");
+  });
+});
+
+const CUT = fileURLToPath(new URL("../../test/finish-cut.ts", import.meta.url));
+
+/** Runs the switch in a child that ends at `cut`, as a closed terminal ends an install there. */
+async function cutFinish(root: string, versionFolder: string, cut: "switch" | number) {
+  const child = fork(CUT, [], { stdio: ["ignore", "ignore", "pipe", "ipc"] });
+  const code = await new Promise<number | null>((resolve) => {
+    child.once("exit", resolve);
+    child.send({ versionFolder, facts: facts(root), cut });
+  });
+  expect(code, "the child ended at its cut").toBe(9);
+}
+
+describe("[A2.3.12.6.update.way-back] an install cut off and run again keeps the way back", () => {
+  test("cut off after its switch, then run again twice, the version before it stays the one --rollback goes back to", async () => {
+    const { root, folder } = install();
+    await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+    const next = addVersion(root, "0.2.0", "launcher two");
+    await cutFinish(root, next, "switch");
+    expect(currentOf(root)).toBe(windows ? "0.2.0" : "versions/0.2.0");
+    for (const run of [1, 2]) {
+      await finishInstall({ versionFolder: next, facts: facts(root) });
+      expect(record(root).previous, `run ${String(run)}`).toBe("0.1.0");
+    }
+    expect(record(root).versions).toEqual(["0.1.0", "0.2.0"]);
+    const back = await rollbackUpdate({
+      facts: facts(root),
+      keys: [],
+      selfTest: () => Promise.resolve({ ok: true, failed: [] }),
+    });
+    expect(back).toMatchObject({ outcome: "updated", from: "0.2.0", to: "0.1.0" });
     expect(currentOf(root)).toBe(windows ? "0.1.0" : "versions/0.1.0");
   });
 });

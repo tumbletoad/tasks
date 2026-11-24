@@ -5078,6 +5078,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.2.3.service-db.newer",
+      "title": "A service.sqlite that a newer version marked with a format this build does not know is refused before anything is written, with a reason that names both formats; a file of its own format opens again with what it holds",
+      "source": "A2 3.2.3",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.spaces",
+      "title": "An update or a rollback that restarts the service notes how each space the service serves is before the switch, waits up to its stated bound for each to open or fail to, and names each space that is less usable than before, in the service's own words, with the rollback and the backup from just before a migration, and exits 8; one that did not settle in time is named too; spaces as before get one summary line",
+      "source": "A2 3.12.6",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.restart-consent",
+      "title": "An update restarts the service only on the decision taken at the switch: a service that started after the first look is asked about, and declined, or with nobody to ask, the update stops before the switch with nothing changed; agreed, its runs are held and waited for before the restart",
+      "source": "A2 3.12.6",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.way-back",
+      "title": "However often an update or an install cut off at any of its steps is run again, install.json keeps the version that was current before it as the one --rollback goes back to, and --rollback goes there",
+      "source": "A2 3.12.6, A2 3.2.3",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.12.6.update.verify",
       "title": "ttasks update verifies a release with the installed version's own keys before anything of it is unpacked or run: no trusted key, another key, a swapped archive, a rewritten or missing SHA256SUMS signature, another name or platform, and signed archives with entries that leave the folder, links, device names or files the manifest does not list are refused with the install unchanged and no self-test run",
       "source": "A2 3.12.4, A2 3.12.5, A2 3.12.6, SL-13, A7 3.13 M6.12",
