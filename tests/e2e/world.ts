@@ -48,6 +48,7 @@ import {
 } from "./bulk.ts";
 import type { FakeCodexCase } from "./codex-cases.ts";
 import {
+  failAgentFile,
   fakeInstanceToml,
   refuseFile,
   type FakeAgent,
@@ -136,11 +137,9 @@ export interface World {
   openGate(ref: string): void;
   /** The fake terminal refuses the next launch of this task (its ID), as one that would not start. */
   refuseNextOpen(task: string): void;
-  /**
-   * The fake agents started on this task from now on run until `release`, or with `exit` end at
-   * once with that code, as an agent that cannot start.
-   */
-  hold(ref: string, exit?: number): void;
+  failNextAgent(): void;
+  /** The fake agents started on this task run until `release`. */
+  hold(ref: string): void;
   /** The held agents of this task end, as an agent the person quits. */
   release(ref: string): void;
   /** The PIDs of the held agents started on this task, oldest first. */
@@ -519,8 +518,11 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       refuseNextOpen: (task) => {
         appendFileSync(refuseFile(record), `${task}\n`);
       },
-      hold: (ref, exit) => {
-        writeFileSync(join(holds, ref), exit === undefined ? "" : `exit ${String(exit)}`);
+      failNextAgent: () => {
+        writeFileSync(failAgentFile(record), "");
+      },
+      hold: (ref) => {
+        writeFileSync(join(holds, ref), "");
       },
       release: (ref) => {
         rmSync(join(holds, ref), { force: true });
