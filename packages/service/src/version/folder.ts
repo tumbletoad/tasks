@@ -3,7 +3,8 @@
 // so the writer and every checker agree on it.
 //
 // manifest.json names the build (version, build, platform, the Node and SQLite it ships, the
-// protocol range) and the SHA-256 of every other file in the folder. Its `files` map holds one entry
+// protocol range, whether its service notes that it was seen working) and the SHA-256 of every
+// other file in the folder. Its `files` map holds one entry
 // per line, `    "<path>": "<hex>",`, sorted, so the POSIX install script can read it with sed.
 // A path holds only `[A-Za-z0-9._-]` segments joined by `/`: no `.` or `..` segment, no leading
 // slash, nothing an install script would have to quote.
@@ -42,6 +43,12 @@ export interface VersionManifest {
   readonly sqlite: string;
   /** ttasks-local/1's protocol range of this build's service (A2 3.6.6). */
   readonly protocol: { readonly min: number; readonly max: number };
+  /**
+   * This build's service notes in install.json's `seen_working` when it is ready, so a version
+   * without that note never ran (switch.ts). Absent in a build from before the note, which cannot
+   * say, and an older checker ignores it.
+   */
+  readonly notes_seen_working?: true;
   /** Every other file of the folder: relative path to lowercase hex SHA-256. */
   readonly files: Readonly<Record<string, string>>;
 }
@@ -78,6 +85,7 @@ export function serializeManifest(manifest: VersionManifest): string {
     node: manifest.node,
     sqlite: manifest.sqlite,
     protocol: { min: manifest.protocol.min, max: manifest.protocol.max },
+    ...(manifest.notes_seen_working === true ? { notes_seen_working: true } : {}),
     files,
   };
   return `${JSON.stringify(ordered, null, 2)}\n`;
@@ -127,6 +135,7 @@ export function parseManifest(text: string): VersionManifest {
     node: node as string,
     sqlite: sqlite as string,
     protocol: { min: protocol["min"] as number, max: protocol["max"] as number },
+    ...(json["notes_seen_working"] === true ? { notes_seen_working: true as const } : {}),
     files: listed,
   };
 }
@@ -188,7 +197,11 @@ export function listFolder(folder: string): FolderListing {
   return { files, problems };
 }
 
-export type ManifestFields = Omit<VersionManifest, "format" | "name" | "files">;
+/** What a build says of itself; the writer adds the rest, this build's `notes_seen_working` too. */
+export type ManifestFields = Omit<
+  VersionManifest,
+  "format" | "name" | "notes_seen_working" | "files"
+>;
 
 /**
  * Hashes every file of `folder` and writes its manifest.json. The folder must hold no link and no
@@ -209,6 +222,7 @@ export function writeVersionManifest(folder: string, fields: ManifestFields): Ve
     name: PRODUCT_ID,
     ...fields,
     protocol: { min: fields.protocol.min, max: fields.protocol.max },
+    notes_seen_working: true,
     files,
   };
   // Checked by the same parser every reader uses, so the build never writes what they refuse.
@@ -273,9 +287,14 @@ const isDailyRoot = (root: string): boolean =>
  * and on Windows, once the command folder exists, both stable launchers must be in it: `<root>\bin`
  * of a TTASKS_HOME install (it holds home.marker), else `~\.local\bin` beside `share` when the root
  * is `share\ttasks`. An update journal is doctor's `update` row (M6.12): during an update the
- * candidate's own self-test runs beside it. Returns one message per problem.
+ * candidate's own self-test runs beside it. Returns one message per problem. `launchers: false`
+ * leaves the stable launchers out: `install --finish` puts them in place itself, after its check.
  */
-export function checkInstallAround(versionFolder: string, platform: NodeJS.Platform): string[] {
+export function checkInstallAround(
+  versionFolder: string,
+  platform: NodeJS.Platform,
+  options: { readonly launchers?: boolean } = {},
+): string[] {
   const versions = dirname(versionFolder);
   if (basename(versions) !== "versions") return [];
   const root = dirname(versions);
@@ -310,7 +329,7 @@ export function checkInstallAround(versionFolder: string, platform: NodeJS.Platf
     : isDailyRoot(root)
       ? join(dirname(dirname(root)), "bin")
       : undefined;
-  if (platform === "win32" && bin !== undefined && existsSync(bin)) {
+  if (options.launchers !== false && platform === "win32" && bin !== undefined && existsSync(bin)) {
     for (const launcher of [`${PRODUCT_ID}.exe`, `${PRODUCT_ID}w.exe`]) {
       if (!existsSync(join(bin, launcher))) {
         problems.push(`missing stable launcher: bin/${launcher}`);

@@ -355,6 +355,48 @@ interface Status {
 }
 
 /**
+ * The spaces row: each space's state, with the service's own words for it. A space the person
+ * closed, and a restored copy or another machine's space that is read-only by design, are as they
+ * should be. One that did not open, is read-only because its migration failed, or whose backups
+ * are not working is a warning. The migrations the service ran since `startedMs` are named.
+ */
+export function spacesCheck(spaces: NonNullable<Status["spaces"]>, startedMs: number): Check {
+  const bad = spaces.filter(
+    (s) =>
+      (s.state !== "open" && s.state !== "read_only" && s.state !== "closed") ||
+      (s.state === "read_only" && s.reason === "migration_failed") ||
+      s.backup !== undefined,
+  );
+  // A space's way out names `<folder>`, which ttasks space list shows: this row holds no path.
+  const folders = spaces.some(
+    (s) =>
+      s.message?.includes("<folder>") === true || s.backup?.message?.includes("<folder>") === true,
+  )
+    ? " Run ttasks space list to see each space's folder."
+    : "";
+  return {
+    id: "spaces",
+    status: bad.length > 0 ? "warn" : "ok",
+    detail:
+      spaces.length === 0
+        ? "No spaces."
+        : spaces
+            .map((s) => {
+              const name = s.name ?? s.id ?? `entry ${String(s.entry)}`;
+              const reason = s.reason === undefined ? "" : ` (${s.reason})`;
+              const message = s.message === undefined ? "" : `. ${s.message}`;
+              const migrated =
+                s.migrated !== undefined && migratedSince(s.migrated, startedMs)
+                  ? `. ${migratedLine(s.migrated)}`
+                  : "";
+              const backup = s.backup?.message === undefined ? "" : `. ${s.backup.message}`;
+              return `${name}: ${s.state}${reason}${message}${migrated}${backup}`;
+            })
+            .join("; ") + folders,
+  };
+}
+
+/**
  * The request path, end to end: `op/list` names the entry of every verb this CLI has, and
  * `space.status` answers through `op/call` for each served space, so a service whose status
  * answers while its operations fail does not pass. One folder serves a space at a time, so each
@@ -433,6 +475,26 @@ async function socketBlocked(
   }
 }
 
+/**
+ * Why the service's last start stopped, when no start was ready after it and another start would
+ * meet the same: a service.sqlite a newer version wrote, with both formats, in the service's words.
+ */
+async function refusedStart(layout: Layout): Promise<string | undefined> {
+  const events = readJsonLines(join(layout.logs, "service.log"));
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (event?.["ev"] === "service.ready") return undefined;
+    if (event?.["ev"] !== "service.refused") continue;
+    const { reason, format, knows } = event;
+    if (reason !== "newer_format" || typeof format !== "number" || typeof knows !== "number") {
+      return undefined;
+    }
+    const { newerFormatMessage } = await import("@ttasks/service/http");
+    return newerFormatMessage(format, knows);
+  }
+  return undefined;
+}
+
 /** The checks that talk to the service. */
 async function serviceChecks(
   io: Io,
@@ -445,15 +507,18 @@ async function serviceChecks(
   const launch = await import("./doctor-launch.ts");
   const record = readServiceRecord(state);
   if (record === undefined) {
-    const blocked = await socketBlocked(io, layout, state);
+    const refused = await refusedStart(layout);
+    const blocked = refused === undefined ? await socketBlocked(io, layout, state) : undefined;
     return [
       {
         id: "service",
         status: "fail",
         detail:
-          blocked === undefined
-            ? "Not running. Start it with: ttasks service start"
-            : `Not running. ${blocked}`,
+          refused !== undefined
+            ? `Not running: it refused to start. ${refused}`
+            : blocked === undefined
+              ? "Not running. Start it with: ttasks service start"
+              : `Not running. ${blocked}`,
       },
       { id: "endpoint", status: "skip", detail: "No service to reach." },
       { id: "spaces", status: "skip", detail: "No service to ask." },
@@ -480,43 +545,8 @@ async function serviceChecks(
     });
     checks.push({ id: "endpoint", status: "ok", detail: "The handshake verified with ipc.key." });
     const spaces = status.spaces ?? [];
-    // A space the person closed is as they left it, not a problem. One whose backups are not
-    // working is.
-    const bad = spaces.filter(
-      (s) =>
-        (s.state !== "open" && s.state !== "read_only" && s.state !== "closed") ||
-        s.backup !== undefined,
-    );
-    // A space's way out names `<folder>`, which ttasks space list shows: this row holds no path.
-    const folders = spaces.some(
-      (s) =>
-        s.message?.includes("<folder>") === true ||
-        s.backup?.message?.includes("<folder>") === true,
-    )
-      ? " Run ttasks space list to see each space's folder."
-      : "";
     // What this run of the service migrated: an update shows here until the next restart.
-    const started = Date.now() - (status.uptime_ms ?? 0);
-    checks.push({
-      id: "spaces",
-      status: bad.length > 0 ? "warn" : "ok",
-      detail:
-        spaces.length === 0
-          ? "No spaces."
-          : spaces
-              .map((s) => {
-                const name = s.name ?? s.id ?? `entry ${String(s.entry)}`;
-                const reason = s.reason === undefined ? "" : ` (${s.reason})`;
-                const message = s.message === undefined ? "" : `. ${s.message}`;
-                const migrated =
-                  s.migrated !== undefined && migratedSince(s.migrated, started)
-                    ? `. ${migratedLine(s.migrated)}`
-                    : "";
-                const backup = s.backup?.message === undefined ? "" : `. ${s.backup.message}`;
-                return `${name}: ${s.state}${reason}${message}${migrated}${backup}`;
-              })
-              .join("; ") + folders,
-    });
+    checks.push(spacesCheck(spaces, Date.now() - (status.uptime_ms ?? 0)));
     checks.push(await requestCheck(session, spaces));
     checks.push(await httpCheck(status.http, io.platform, io.env));
     checks.push(runsCheck(status.runs));
@@ -583,7 +613,8 @@ const VERSION_WORD = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
  * install.json, a rolled-back one with its reason.
  */
 function updateCheck(state: string, installFile: string): Check {
-  if (existsSync(join(state, "update.json"))) {
+  // An update's journal, or an install's (service/src/version/journal.ts).
+  if (["update.json", "install-update.json"].some((file) => existsSync(join(state, file)))) {
     return {
       id: "update",
       status: "warn",
@@ -633,12 +664,15 @@ const named = (problems: readonly string[]): string =>
 /**
  * The version folder's rows (A2 3.13): integrity, and the runtime gate of A2 3.12.1 against the
  * manifest's pins. Both load their modules only here: the gate loads storage's start-up check,
- * which probes in-memory databases only, and nothing else of the CLI needs either.
+ * which probes in-memory databases only, and nothing else of the CLI needs either. `launchers`
+ * false leaves out whether bin holds both stable launchers: `install --finish` checks the version
+ * it installs, and putting those launchers in place is its own next step.
  */
 export async function versionChecks(
   io: Io,
   versionFolder: string | undefined,
   gateFacts?: GateFacts,
+  options: { readonly launchers?: boolean } = {},
 ): Promise<Check[]> {
   if (versionFolder === undefined) {
     return [
@@ -667,7 +701,7 @@ export async function versionChecks(
   }
   const problems = [
     ...folder.checkVersionFolder(versionFolder),
-    ...folder.checkInstallAround(versionFolder, io.platform),
+    ...folder.checkInstallAround(versionFolder, io.platform, options),
   ];
   const integrity: Check =
     problems.length === 0

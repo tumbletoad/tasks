@@ -166,6 +166,7 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
         "Migration to 0.6 failed (STORAGE_SQL). Your data is unchanged. The space stays at 0.1. " +
         `Backup: ${backup?.name ?? "?"}. It is tried again after an update, or now with: ` +
         "ttasks space open <folder> --retry-migration",
+      migration_backup: backup?.name,
       id: bad.space.spaceId,
     });
     expect(JSON.stringify(readLog(home))).not.toContain("Your data is unchanged");

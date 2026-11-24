@@ -28,6 +28,7 @@ import type {
   RunningService,
   SelfTest,
   ServiceControl,
+  SpaceNote,
 } from "../../packages/service/src/version/update.ts";
 import { writeTarGz, writeZip, type FileEntry } from "../../scripts/build/archive.ts";
 import { opensshPublicKey, signSums, writeSums } from "../../scripts/build/signing.ts";
@@ -184,6 +185,17 @@ export class FakeControl implements ServiceControl {
   /** When set, a restart throws it (as a service command that fails does). */
   restartError: Error | undefined;
   readonly calls: string[] = [];
+  /** The spaces the service's status names, as it runs now. */
+  spaces: SpaceNote[] = [];
+  /**
+   * What a restarted service's status names, one list for each time it is asked; the last one
+   * stays. Without it, a restarted service names `spaces`.
+   */
+  spacesAfter: SpaceNote[][] | undefined;
+  /** When set, a restarted service stops answering after it answered this many times. */
+  answersAfterRestart: number | undefined;
+  #settling: SpaceNote[][] = [];
+  #answers: number | undefined;
   readonly #root: string;
   readonly #os: NodeJS.Platform;
 
@@ -194,9 +206,14 @@ export class FakeControl implements ServiceControl {
   }
 
   running(): Promise<RunningService | undefined> {
-    return Promise.resolve(
-      this.version === undefined ? undefined : { version: this.version, manager: "manual" },
-    );
+    if (this.version === undefined) return Promise.resolve(undefined);
+    if (this.#answers !== undefined) {
+      if (this.#answers <= 0) return Promise.resolve(undefined);
+      this.#answers -= 1;
+    }
+    const next = this.#settling.length > 1 ? this.#settling.shift() : this.#settling[0];
+    if (next !== undefined) this.spaces = next;
+    return Promise.resolve({ version: this.version, manager: "manual", spaces: this.spaces });
   }
 
   restart(options: { readonly supervisorChanged: boolean }): Promise<void> {
@@ -206,6 +223,8 @@ export class FakeControl implements ServiceControl {
       return Promise.reject(this.restartError);
     }
     this.version = this.failRestarts ? undefined : currentVersion(this.#root, this.#os);
+    this.#settling = [...(this.spacesAfter ?? [])];
+    this.#answers = this.answersAfterRestart;
     return Promise.resolve();
   }
 

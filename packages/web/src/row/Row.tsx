@@ -43,6 +43,7 @@ import {
   pageLeaving,
   readTitleDraft,
   TITLE_MAX,
+  type TitleDraft,
   useHasDraft,
 } from "../unsent.ts";
 import {
@@ -333,10 +334,13 @@ function Slots({
 function TitleEditor({
   task,
   label,
+  brought,
   onDone,
 }: {
   readonly task: TaskRow;
   readonly label: string;
+  /** The kept words the card opened this editor for, as the card read them. */
+  readonly brought: TitleDraft | undefined;
   readonly onDone: () => void;
 }) {
   const t = useT();
@@ -348,9 +352,13 @@ function TitleEditor({
   // Taken once, as the editor opens: the save's base is the title the person began to change, also
   // when a reload brought back what they typed.
   const [opened] = useState(() => {
+    // The words the card opened this editor for are brought back whatever the title became since
+    // the card read them, as long as they are still the kept ones: what the person typed or
+    // discarded since is what counts. Other kept words that already show as the title are a save
+    // on its way: the editor starts from the title.
     const found = readTitleDraft(space, task.id);
-    // Words whose save is still on its way are the title shown: the editor starts from it.
-    const kept = found?.typed.trim() === task.title ? undefined : found;
+    const cards = brought !== undefined && found?.typed === brought.typed;
+    const kept = !cards && found?.typed.trim() === task.title ? undefined : found;
     return {
       base: kept === undefined ? edits.seen(task, ["title"]) : kept.base,
       mark: edits.mark(),
@@ -585,8 +593,9 @@ function RowView({
     actions.toggle(task);
   };
   // The title edits in place, for typo fixes (A5 3.7): only an open task's, the one kind the
-  // service changes. Editing expands the row, so the card is what is being edited.
-  const [editing, setEditing] = useState(false);
+  // service changes. Editing expands the row, so the card is what is being edited. The card opens
+  // it for kept words with those words, so the editor works from what the card read.
+  const [editing, setEditing] = useState<false | { readonly brought?: TitleDraft }>(false);
   // In the Trash the title is read, never edited: a kept one waits there with Copy and Discard.
   const editable = active && !still;
   // The row the person moved out of the view (A5 3.5): while focus holds it there with the data it
@@ -595,18 +604,21 @@ function RowView({
   const edit = () => {
     if (!editable) return;
     if (!expanded) actions.expand(task);
-    setEditing(true);
+    setEditing({});
   };
   // A title the person was typing when the page went away comes back in its editor with the card,
-  // unless the service took it before the page went: the title shows it, and no save is on its way.
+  // unless the title shows it: the service took it before the page went, or this tab's save of it is
+  // on its way and that save's answer lets the words go.
   const space = live.spaceId ?? "";
   const edits = useEdits();
   useEffect(() => {
     const kept = readTitleDraft(space, task.id);
     if (!expanded || kept === undefined) return;
-    if (kept.typed.trim() === task.title && !edits.sending(task.id)) {
+    if (kept.typed.trim() !== task.title) {
+      if (editable) setEditing({ brought: kept });
+    } else if (!edits.sending(task.id)) {
       letGo(space, { kind: "title", task: task.id, text: kept.typed });
-    } else if (editable) setEditing(true);
+    }
     // The title is read as the card opens, not again as it changes.
   }, [expanded, space, task.id, editable, edits]);
   // The offset is a custom property set through the CSSOM (React's style object), which the CSP's
@@ -668,10 +680,11 @@ function RowView({
         </span>
         <div className={styles.main}>
           <div className={styles.tline}>
-            {editing && editable ? (
+            {editing !== false && editable ? (
               <TitleEditor
                 task={task}
                 label={t("task.title")}
+                brought={editing.brought}
                 onDone={() => {
                   setEditing(false);
                 }}

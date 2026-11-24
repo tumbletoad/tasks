@@ -10,6 +10,7 @@
 import { closeSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_DRIVER, StorageWorker, type Row, type WorkerConnection } from "@ttasks/storage";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { createFile } from "../hub/files.ts";
 import { GRANT_KINDS, type Grant, type GrantKind } from "../local/index.ts";
 
@@ -41,6 +42,23 @@ CREATE TABLE IF NOT EXISTS port_holders (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS port_holders_port ON port_holders(port);
 `;
+
+/**
+ * A service.sqlite marked with a format this build does not know: a newer version wrote it, and
+ * this one, after a rollback, must not write into what it cannot read. The message is for people.
+ */
+export class NewerServiceDb extends Error {
+  override readonly name = "NewerServiceDb";
+  readonly format: number;
+  constructor(format: number) {
+    super(newerFormatMessage(format, SERVICE_DB_VERSION));
+    this.format = format;
+  }
+}
+
+/** Why a build that knows format `knows` does not start on a service.sqlite in `format`. */
+export const newerFormatMessage = (format: number, knows: number): string =>
+  `${PRODUCT_NAME}'s service.sqlite is in format ${String(format)}, which a newer version of ${PRODUCT_NAME} wrote; this version knows format ${String(knows)}, so the service does not start, and starting it again does not help. Run that version again, or a newer one: after a rollback, ${CLI_NAME} update --rollback goes back to it.`;
 
 /** How often a service.sqlite that goes away between its creation and the open is made again. */
 const GONE_TRIES = 3;
@@ -146,11 +164,14 @@ export class ServiceDb {
     )();
     try {
       const conn = await openCreated(worker, join(stateDir, SERVICE_DB));
-      await conn.pragma("journal_mode", "wal");
+      // Read before the first write, the journal mode's included.
       const version = Number(await conn.pragma("user_version"));
       if (version > SERVICE_DB_VERSION) {
-        // A newer build's file: its tables are a superset, and this build touches only its own.
-      } else if (version < SERVICE_DB_VERSION) {
+        await conn.close().catch(() => undefined);
+        throw new NewerServiceDb(version);
+      }
+      await conn.pragma("journal_mode", "wal");
+      if (version < SERVICE_DB_VERSION) {
         await conn.exec(SCHEMA_1);
         await conn.pragma("user_version", SERVICE_DB_VERSION);
       }

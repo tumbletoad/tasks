@@ -6,10 +6,12 @@
 //      the raw Ed25519 signature of SHA256SUMS beside the archive, then the archive's SHA-256 against
 //      its line there (release.ts). Nothing of the archive is unpacked, loaded or run before that.
 //   3. The archive's entries pass the install scripts' rule (archive.ts checkEntries) before
-//      anything is written. Background runs end with the service, so while it runs the update now
-//      holds new runs back, waits up to 15 minutes for the running ones, and then asks: stop them,
-//      or give the update up with nothing changed (waitForRuns). Then the journal is written; it
-//      names the staging folder before that folder is made.
+//      anything is written. A service that runs is restarted only on the person's decision, taken
+//      once and before anything is held or stopped (Decision): declined, nothing is changed.
+//      Background runs end with the service, so while it runs the update now holds new runs back,
+//      waits up to 15 minutes for the running ones, and then asks: stop them, or give the update
+//      up with nothing changed (waitForRuns). Then the journal is written; it names the staging
+//      folder before that folder is made.
 //   4. The archive is unpacked into `versions/.staging-<random>`, every file is checked against its
 //      manifest.json, and the folder is renamed to `versions/<v>`, or a folder already there must
 //      equal it.
@@ -17,20 +19,29 @@
 //      (`versions/<v>/bin/ttasks doctor --self-test --json`): integrity, the runtime gate and the
 //      candidate's checks. Authenticity was settled in step 2; this is the functional half.
 //   6. The journal records each stable launcher the switch changes, with its old and new SHA-256
-//      (phase `staged`), and on Windows each one is staged as `bin\<name>.new` (checked, flushed)
-//      before `current` changes. Then `current` is switched atomically
+//      (phase `staged`), and on Windows each one is staged as `bin\<name>.new` (checked, flushed).
+//   7. Right before `current` changes, the restart is decided on what is so then: a service that
+//      runs without the person's agreement stops the update here, with the unpacked version
+//      removed and nothing changed; one that runs with it has its runs held and waited for. The
+//      spaces of the service the update restarts are noted then, in memory only, as late as can
+//      be: the note only leaves out of the report a space that was so already. Then `current` is
+//      switched atomically
 //      (`switched`), then each changed launcher is swapped for its staged copy, one at a time,
 //      `ttasks.exe` first: by one rename where Windows allows it, else by renaming the running one
 //      aside and the new one in (switch.ts placeLauncher; `launchers_done`), and install.json
 //      records the version.
-//   7. The service is restarted through the OS: a supervised service is asked for
+//   8. The service is restarted through the OS: a supervised service is asked for
 //      `service/shutdown {restart: true}` and its manager starts it again from the new current;
 //      one nobody supervises is stopped and started. The update waits up to 30 s for a handshake
 //      that names the new version. Sessions keep running in their own processes and reconnect;
 //      background runs were settled in step 3.
-//   8. The journal goes and the lock is let go. A failure after the switch rolls back through the
-//      same repair: phase `rolling_back`, current and the launchers back, the old service again,
-//      the reason in install.json for doctor.
+//   9. The journal goes. A failure after the switch rolls back through the same repair: phase
+//      `rolling_back`, current and the launchers back, the old service again, the reason in
+//      install.json for doctor.
+//  10. Every update ends, also one that finds its version current already or a repair, by asking
+//      the service that runs the current version for its spaces, up to SETTLE_MS until each has
+//      opened or failed to: the result names each that is not usable now, in the service's words
+//      (checkSpaces). Then the lock is let go.
 // It never removes a version folder and never touches a person's data: spaces, `<config>` and
 // `<state>` beyond its own files (update.lock, update.json, install.json, and the self-test's
 // folders in `<state>/tmp/`). A migration, if the new version needs one, runs later, when the new
@@ -77,6 +88,7 @@ import {
   writeJournal,
   type Journal,
   type LauncherChange,
+  type UpdateJournal,
 } from "./journal.ts";
 import { hostPlatform, ReleaseError, verifyRelease, type VerifiedRelease } from "./release.ts";
 import {
@@ -90,10 +102,10 @@ import {
   cleanLaunchers,
   currentFor,
   currentVersion,
-  digestOf,
   exists,
   InstallError,
   isInstalled,
+  launcherChanges,
   placeLauncher,
   placeStable,
   readInstallRecord,
@@ -112,6 +124,15 @@ import {
 export const LOCK_WAIT_MS = 10 * 60_000;
 /** How long the update waits for the restarted service to name the new version (A2 3.12.6 step 12). */
 export const RESTART_WAIT_MS = 30_000;
+/**
+ * How long the update waits, once the restarted service names the new version, for every space
+ * it served before to open or fail to: a migration behind its backup can take a while.
+ */
+export const SETTLE_MS = 120_000;
+/** How often the update asks the restarted service how its spaces are while it waits. */
+const SETTLE_POLL_MS = 500;
+/** After this long waiting for the spaces, the update says that it waits, and how long at most. */
+const SETTLE_TELL_MS = 5_000;
 /** How long the update waits for running background runs before it asks what to do. */
 export const RUNS_WAIT_MS = 15 * 60_000;
 /** The self-test's bound: a space, an endpoint and the bridge, each in a folder of its own. */
@@ -160,10 +181,32 @@ export { InstallError as UpdateError } from "./switch.ts";
 // ---------------------------------------------------------------------------------------------
 // The service, through the OS
 
+/**
+ * A space's entry as the service's status names it (hub/spaces.ts SpaceView): its state and the
+ * service's own words for it, which doctor and the page show too. Its name is for people, never
+ * the log.
+ */
+export interface SpaceNote {
+  /** The entry's index in machine.toml's list: the same before and after a restart. */
+  readonly entry?: number;
+  /** The ID its entry names: the same before and after a restart. */
+  readonly registered?: string;
+  readonly id?: string;
+  readonly name?: string;
+  readonly state: string;
+  readonly reason?: string;
+  /** Why it is read-only or unavailable, and what to run (hub/space-ways.ts). */
+  readonly message?: string;
+  /** The barrier backup of the space's failed migration, which `message` names too. */
+  readonly migration_backup?: string;
+}
+
 /** The running service as an update sees it. */
 export interface RunningService {
   readonly version: string;
   readonly manager: string;
+  /** Its spaces, as its status names them. */
+  readonly spaces: readonly SpaceNote[];
 }
 
 /**
@@ -210,7 +253,11 @@ export function osServiceControl(ctx: ServiceContext, env: Env): ServiceControl 
     running: async () => {
       const probe = await ctx.probe();
       return probe.answers
-        ? { version: probe.status.version, manager: probe.status.manager }
+        ? {
+            version: probe.status.version,
+            manager: probe.status.manager,
+            spaces: spaceNotes(probe.status.spaces),
+          }
         : undefined;
     },
     restart: async ({ supervisorChanged }) => {
@@ -241,6 +288,36 @@ export function osServiceControl(ctx: ServiceContext, env: Env): ServiceControl 
     holdRuns: () => holdRuns(ctx.layout.state, ctx.installId, env),
     delegateUnit: () => delegateUnit(ctx),
   };
+}
+
+const text = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined;
+
+/** The spaces of a status, which another version's service may have written: checked here. */
+export function spaceNotes(value: unknown): SpaceNote[] {
+  if (!Array.isArray(value)) return [];
+  const notes: SpaceNote[] = [];
+  for (const item of value as unknown[]) {
+    if (typeof item !== "object" || item === null) continue;
+    const row = item as Record<string, unknown>;
+    const state = text(row["state"]);
+    if (state === undefined) continue;
+    const entry = row["entry"];
+    const fields: [string, string | undefined][] = [
+      ["registered", text(row["registered"])],
+      ["id", text(row["id"])],
+      ["name", text(row["name"])],
+      ["reason", text(row["reason"])],
+      ["message", text(row["message"])],
+      ["migration_backup", text(row["migration_backup"])],
+    ];
+    notes.push({
+      state,
+      ...(Number.isSafeInteger(entry) ? { entry: entry as number } : {}),
+      ...Object.fromEntries(fields.filter(([, v]) => v !== undefined)),
+    });
+  }
+  return notes;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -332,6 +409,15 @@ export interface UpdateOptions {
   readonly say?: (line: string) => void;
   readonly lockWaitMs?: number;
   readonly restartWaitMs?: number;
+  /** How long the update waits for the restarted service's spaces. Default: SETTLE_MS. */
+  readonly settleWaitMs?: number;
+  /**
+   * Whether the person agrees to restart the service, asked when one runs and a restart needs the
+   * answer: before anything is held or stopped, at the switch, or before a repair restarts it.
+   * The update asks it at most once and keeps the answer (Decision). Without it a service that
+   * runs is restarted, as the caller decided already.
+   */
+  readonly agreeRestart?: () => Promise<boolean>;
   readonly now?: () => Date;
   /**
    * What to do about background runs a restart would cut short, once the wait for them is over:
@@ -344,10 +430,68 @@ export interface UpdateOptions {
   };
 }
 
+/** How a space is at the end of an update, by what the service says of it then. */
+export type SpaceVerdict =
+  /** Open, or read-only as it is meant to be: a restored copy, another machine's space. */
+  | "usable"
+  /** Not usable, and so already, for the same reason, in the note from right before the switch. */
+  | "as_before"
+  /** Read-only otherwise (its migration failed, its folder), or unavailable. */
+  | "not_usable"
+  /** Still opening or closing when the bound ran out, or not listed. */
+  | "unsettled";
+
+export interface SpaceAtEnd {
+  readonly id: string;
+  /** Its name, else its ID. For people, never the log. */
+  readonly name: string;
+  readonly verdict: SpaceVerdict;
+  /**
+   * The entry the space is judged by, as the service last named it: the folder that serves it,
+   * else the one that served it before. Undefined when the service did not list it.
+   */
+  readonly now: SpaceNote | undefined;
+  /** The same space in the note from right before the switch; undefined without one. */
+  readonly before: SpaceNote | undefined;
+}
+
+/** The spaces of the service that runs the current version, at the end of an update. */
+export interface SpacesReport {
+  /** How long the update waited at most for them to open or fail to. */
+  readonly boundMs: number;
+  /** Whether a note from right before the switch was there to leave out what was so already. */
+  readonly noted: boolean;
+  /**
+   * `answered` to the end; `stopped_answering` when it stopped, or never answered once the update
+   * had seen it run the version (`now` is then what it said last); `not_running` when no service
+   * ran at the end and none was seen during the update: then nothing was checked.
+   */
+  readonly service: "answered" | "stopped_answering" | "not_running";
+  /** The version `ttasks update --rollback` goes back to, when there is one. */
+  readonly wayBack: string | undefined;
+  readonly spaces: readonly SpaceAtEnd[];
+}
+
+/**
+ * `spaces`: undefined when the service that runs is of another version, or it serves no space.
+ * `running`: a repair left the service on this other version, by the person's decision; what was
+ * repaired takes effect at its next start.
+ */
 export type UpdateResult =
-  | { readonly outcome: "updated"; readonly from: string; readonly to: string }
-  | { readonly outcome: "current"; readonly version: string }
-  | { readonly outcome: "repaired"; readonly repair: RepairOutcome; readonly current: string };
+  | {
+      readonly outcome: "updated";
+      readonly from: string;
+      readonly to: string;
+      readonly spaces?: SpacesReport;
+    }
+  | { readonly outcome: "current"; readonly version: string; readonly spaces?: SpacesReport }
+  | {
+      readonly outcome: "repaired";
+      readonly repair: RepairOutcome;
+      readonly current: string;
+      readonly running?: string;
+      readonly spaces?: SpacesReport;
+    };
 
 interface Install {
   readonly layout: Layout;
@@ -384,6 +528,23 @@ function openInstall(facts: HostFacts): Install {
 const say = (options: UpdateOptions, line: string) => {
   options.say?.(line);
 };
+
+/**
+ * The person's decision about restarting the service, for one run of a command: asked at most
+ * once, when a service runs and a restart needs the answer, and kept. Apart from any look at the
+ * service: a service that comes and goes changes what is restarted, never what was agreed.
+ */
+interface Decision {
+  agreed?: boolean;
+}
+
+async function agree(options: UpdateOptions, decision: Decision): Promise<boolean> {
+  decision.agreed ??= (await options.agreeRestart?.()) ?? true;
+  return decision.agreed;
+}
+
+const NOT_AGREED =
+  "Restarting the service was not agreed, so the update stopped before the switch. Nothing was changed. Run it again; with --yes it restarts the service without a question.";
 
 /**
  * Takes update.lock, waiting while another update holds it (A7 3.13 M6.12): one line says whose it
@@ -428,16 +589,19 @@ async function lockForUpdate(install: Install, options: UpdateOptions): Promise<
   }
 }
 
+const what = (journal: Journal): string =>
+  journal.kind === "install" ? `install of ${journal.to}` : `update to ${journal.to}`;
+
 /** Reports a repair the update had to make before it could begin. */
 function sayRepair(options: UpdateOptions, repair: RepairOutcome): void {
   switch (repair.kind) {
     case "rolled_forward":
-      say(options, `An interrupted update to ${repair.journal.to} was finished.`);
+      say(options, `An interrupted ${what(repair.journal)} was finished.`);
       return;
     case "rolled_back":
       say(
         options,
-        `An interrupted update to ${repair.journal.to} was rolled back to ${repair.journal.from}.`,
+        `An interrupted ${what(repair.journal)} was rolled back to ${repair.journal.from}.`,
       );
       return;
     case "kept":
@@ -489,19 +653,22 @@ async function bringBack(
 
 /**
  * Finishes or rolls back an interrupted update (repair.ts), with update.lock held, and brings the
- * service back on what current names when that update had found it running (its journal's
- * `service`) and it does not run that version now, or when the repair may have replaced the
- * supervisor (ttasksw.exe, repair.ts supervisorReplaced), which an old supervisor may have outlived
- * even when the service it restarted names current; with `always`, also a service that runs
- * another version than current without any journal. The journal goes only after that, so a kill
- * before it leaves the next run what it needs to bring the service back. A `stuck` outcome
- * changes nothing and is returned for the caller to report.
+ * service back on what current names when it does not run that version now, or when the repair
+ * may have replaced the supervisor (ttasksw.exe, repair.ts supervisorReplaced), which an old
+ * supervisor may have outlived even when the service it restarted names current; with `always`,
+ * also a service that runs another version than current without any journal. A service that is
+ * not running is started only when the person agreed in the update that was cut off (its
+ * journal's `service`); one that runs is restarted on that agreement, or on the person's decision
+ * now, and otherwise runs on: the repaired version takes effect at its next start. The journal
+ * goes only after that, so a kill before it leaves the next run what it needs to bring the service
+ * back. A `stuck` outcome changes nothing and is returned for the caller to report.
  */
 async function repairFirst(
   install: Install,
   options: UpdateOptions,
   always: boolean,
-): Promise<RepairOutcome> {
+  decision: Decision,
+): Promise<Repaired> {
   const repair = repairLocked({
     root: install.root,
     state: install.state,
@@ -509,35 +676,56 @@ async function repairFirst(
     ...repairSeams(options),
     keepJournal: true,
   });
-  if (repair.kind === "stuck") return repair;
-  const journaled = repair.kind === "rolled_forward" || repair.kind === "rolled_back";
+  if (repair.kind === "stuck") return { repair, seen: false };
+  const journal =
+    repair.kind === "rolled_forward" || repair.kind === "rolled_back" ? repair.journal : undefined;
+  const agreedThen = journal?.service === true;
   const supervisorChanged = supervisorReplaced(repair);
   try {
     const control = options.control;
     const current = currentVersion(install.root, install.platform);
     if (
-      control !== undefined &&
-      current !== undefined &&
-      (journaled || always || supervisorChanged)
+      control === undefined ||
+      current === undefined ||
+      !(journal !== undefined || always || supervisorChanged)
     ) {
-      const running = await control.running();
-      const wanted = running !== undefined || (journaled && repair.journal.service);
-      if (wanted && (running?.version !== current || supervisorChanged)) {
-        // A service that runs may have started runs since the update was cut off: they are
-        // waited for, or stopped once the person says so, as before any restart.
-        const held = running === undefined ? undefined : await heldForRepair(options, current);
-        try {
-          await bringBack(control, options, current, supervisorChanged);
-        } finally {
-          held?.release();
-        }
-      }
+      return { repair, seen: false };
     }
+    const running = await control.running();
+    const due =
+      running === undefined ? agreedThen : running.version !== current || supervisorChanged;
+    if (!due) return { repair, seen: running?.version === current };
+    if (running !== undefined && !agreedThen && !(await agree(options, decision))) {
+      const what = running.version === current ? `The new ${WINDOWS_LAUNCHERS[1]}` : current;
+      say(
+        options,
+        `The service was not restarted and runs ${running.version}: ${what} takes effect at its next start (${PRODUCT_ID} service restart).`,
+      );
+      return { repair, seen: running.version === current, running: running.version };
+    }
+    // A service that runs may have started runs since the update was cut off: they are waited
+    // for, or stopped once the person says so, as before any restart.
+    const held = running === undefined ? undefined : await heldForRepair(options, current);
+    try {
+      await bringBack(control, options, current, supervisorChanged);
+    } finally {
+      held?.release();
+    }
+    writeInstallRecord(install.state, install.root, install.platform, { seen: [current] });
+    return { repair, seen: true };
   } finally {
-    // Brought back, or tried: the install is complete either way.
-    if (journaled) removeJournal(install.state);
+    // Brought back, tried, or left as the person decided: the install is complete either way.
+    if (journal !== undefined) removeJournal(install.state, journal.kind);
   }
-  return repair;
+}
+
+/** What repairFirst did, and what it saw of the service. */
+interface Repaired {
+  readonly repair: RepairOutcome;
+  /** The service answered on the version current names, when looked at or brought back. */
+  readonly seen: boolean;
+  /** The service was left on this version by the person's decision, not restarted. */
+  readonly running?: string;
 }
 
 /**
@@ -644,13 +832,13 @@ function unpack(entries: readonly ReadEntry[], dir: string, platform: NodeJS.Pla
  * Puts the verified staging folder in place as `versions/<v>`, or, when that folder is there
  * already, requires it to be exactly this release (A2 3.12.4 step 7): a plain folder no other
  * account can change, its manifest.json byte for byte the staged one, every file checked against
- * it. The staging folder is gone afterwards either way.
+ * it. The staging folder is gone afterwards either way. True when this update put the folder there.
  */
-function place(staging: string, target: string): void {
+function place(staging: string, target: string): boolean {
   if (!exists(target)) {
     try {
       renameSync(staging, target);
-      return;
+      return true;
     } catch (error) {
       // Another install put the same version there in between: compared below.
       if (!exists(target)) throw error;
@@ -674,23 +862,23 @@ function place(staging: string, target: string): void {
   } finally {
     rmSync(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
+  return false;
 }
 
-/** The launchers the switch to `target` changes (Windows), with their old and new SHA-256. */
-function launcherChanges(
-  root: string,
-  target: string,
-  platform: NodeJS.Platform,
-): LauncherChange[] {
-  if (platform !== "win32") return [];
-  const changes: LauncherChange[] = [];
-  for (const name of WINDOWS_LAUNCHERS) {
-    const next = digestOf(join(target, "bin", name));
-    if (next === null) throw new InstallError(`The new version has no bin/${name}.`, 1);
-    const old = digestOf(join(root, "bin", name));
-    if (old !== next) changes.push({ name, old, new: next });
+/**
+ * Takes away a version folder this update put in place and that never became current, once the
+ * update stops before the switch: nothing ran from it but its self-test, which has ended. It is
+ * renamed aside first, so a removal that fails halfway never leaves a partial `versions/<v>` that
+ * the next update of that version would refuse. One that cannot be renamed stays whole.
+ */
+function discard(target: string): void {
+  const aside = join(dirname(target), `.discard-${randomBytes(8).toString("hex")}`);
+  try {
+    renameSync(target, aside);
+  } catch {
+    return;
   }
-  return changes;
+  rmSync(aside, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -791,7 +979,164 @@ async function waitForRuns(options: UpdateOptions): Promise<RunsHold | undefined
 interface Switch {
   readonly install: Install;
   readonly options: UpdateOptions;
-  journal: Journal;
+  journal: UpdateJournal;
+  readonly decision: Decision;
+  /** The hold on the service's runs; the caller lets it go once the update is over. */
+  held: RunsHold | undefined;
+  /** The version folder this update put in place: taken away again if it stops before the switch. */
+  readonly placed: string | undefined;
+}
+
+/**
+ * Right before `current` changes, on what is so then: a service that runs is restarted only on
+ * the person's agreement (asked now if it was not yet), its runs held and waited for first; one
+ * that ran when the journal was written, on the person's agreement, and has stopped since is
+ * brought back. Otherwise a service that runs stops the update here. Returns the journal with
+ * that decision, and the spaces of the service it restarts, noted after every wait: the report
+ * leaves out a space that was so already.
+ */
+async function decideAtSwitch(run: Switch): Promise<{
+  journal: UpdateJournal;
+  note: readonly SpaceNote[] | undefined;
+  /** The version the service that runs answered with. */
+  seen: string | undefined;
+}> {
+  const { options } = run;
+  const running = await options.control?.running();
+  if (running === undefined) return { journal: run.journal, note: undefined, seen: undefined };
+  if (!run.journal.service && !(await agree(options, run.decision))) {
+    throw new InstallError(NOT_AGREED, 2);
+  }
+  if (run.held !== undefined && !run.held.held) {
+    // The service that was held has ended since: the one that runs now holds runs of its own.
+    run.held.release();
+    run.held = undefined;
+  }
+  run.held ??= await waitForRuns(options);
+  const noted = await options.control?.running();
+  return {
+    journal: { ...run.journal, service: true },
+    note: noted?.spaces,
+    seen: running.version,
+  };
+}
+
+const duration = (ms: number): string =>
+  ms >= 60_000
+    ? `${String(Math.round(ms / 60_000))} minutes`
+    : `${String(Math.round(ms / 1000))} s`;
+
+/** A space by the ID its entry names: the same before and after a restart, for each copy. */
+const idOf = (space: SpaceNote): string | undefined => space.registered ?? space.id;
+
+/** Whether an entry serves its space now, or is on its way there or back. */
+const serves = (space: SpaceNote): boolean =>
+  space.state !== "unavailable" && space.state !== "closed";
+
+/** Read-only as a space is meant to be: a restored copy to look inside, another machine's space. */
+const MEANT_READ_ONLY: readonly (string | undefined)[] = ["read_only_copy", "not_authority"];
+
+/**
+ * The entry a space is judged by: the folder that serves it, else the one that served it before,
+ * else one that is not closed. A closed copy never stands in for the space.
+ */
+const judgedEntry = (
+  entries: readonly SpaceNote[],
+  before: SpaceNote | undefined,
+): SpaceNote | undefined =>
+  entries.find(serves) ??
+  entries.find(
+    (e) => before?.entry !== undefined && e.entry === before.entry && e.state !== "closed",
+  ) ??
+  entries.find((e) => e.state !== "closed");
+
+function verdictOf(now: SpaceNote | undefined, before: SpaceNote | undefined): SpaceVerdict {
+  if (now === undefined || now.state === "opening" || now.state === "closing") return "unsettled";
+  if (now.state === "open" || (now.state === "read_only" && MEANT_READ_ONLY.includes(now.reason))) {
+    return "usable";
+  }
+  return before?.state === now.state && before.reason === now.reason ? "as_before" : "not_usable";
+}
+
+/**
+ * Every space the service lists, and every one the note lists, judged by what the service says of
+ * it now. A space whose every entry is closed is closed by the person and is left out.
+ */
+function judge(listed: readonly SpaceNote[], note: readonly SpaceNote[] | undefined): SpaceAtEnd[] {
+  const ids: string[] = [];
+  for (const space of [...listed, ...(note ?? [])]) {
+    const id = idOf(space);
+    if (id !== undefined && !ids.includes(id)) ids.push(id);
+  }
+  return ids.flatMap((id): SpaceAtEnd[] => {
+    const entries = listed.filter((space) => idOf(space) === id);
+    const noted = (note ?? []).filter((space) => idOf(space) === id);
+    const closed = (list: readonly SpaceNote[]) => list.every((space) => space.state === "closed");
+    if (entries.length > 0 ? closed(entries) : closed(noted)) return [];
+    const before = judgedEntry(noted, undefined) ?? noted[0];
+    const now = judgedEntry(entries, before);
+    const name = [now, before, ...entries, ...noted].find((s) => s?.name !== undefined)?.name ?? id;
+    return [{ id, name, verdict: verdictOf(now, before), now, before }];
+  });
+}
+
+/**
+ * The end of every update: asks the service that runs `version` for its spaces until each one it
+ * lists, and each one in the note, has opened or failed to, at most `settleWaitMs`, and judges
+ * them. Once the update has seen that service run (`seen`: it restarted it, brought it back or
+ * found it; always with a note), a service that does not answer was lost, at its first answer or
+ * a later one, and is waited for too. Otherwise no service at the first look is `not_running`,
+ * and one of another version is not asked: undefined. Also undefined when the service answers
+ * and serves no space.
+ */
+async function checkSpaces(
+  install: Install,
+  options: UpdateOptions,
+  version: string,
+  note: readonly SpaceNote[] | undefined,
+  seen: boolean,
+): Promise<SpacesReport | undefined> {
+  const control = options.control;
+  if (control === undefined) return undefined;
+  const boundMs = options.settleWaitMs ?? SETTLE_MS;
+  const start = Date.now();
+  let told = false;
+  let listed: readonly SpaceNote[] | undefined;
+  for (;;) {
+    const running = await control.running().catch(() => undefined);
+    const answers = running?.version === version;
+    if (answers) listed = running.spaces;
+    if (listed === undefined && note === undefined && !seen) {
+      if (running !== undefined) return undefined;
+      const wayBack = wayBackOf(install, version);
+      return { boundMs, noted: false, service: "not_running", wayBack, spaces: [] };
+    }
+    const spaces = judge(listed ?? [], note);
+    const settled = answers && spaces.every((space) => space.verdict !== "unsettled");
+    if (settled || Date.now() - start >= boundMs) {
+      if (answers && spaces.length === 0) return undefined;
+      return {
+        boundMs,
+        noted: note !== undefined,
+        service: answers ? "answered" : "stopped_answering",
+        wayBack: wayBackOf(install, version),
+        spaces,
+      };
+    }
+    if (!told && Date.now() - start >= SETTLE_TELL_MS) {
+      say(options, `Waiting up to ${duration(boundMs)} for the spaces to open.`);
+      told = true;
+    }
+    await pause(Math.max(1, Math.min(SETTLE_POLL_MS, start + boundMs - Date.now())));
+  }
+}
+
+/** The version `--rollback` goes to from `current`, when install.json names an installed one. */
+function wayBackOf(install: Install, current: string): string | undefined {
+  const previous = readInstallRecord(install.state)?.["previous"];
+  return typeof previous === "string" && previous !== current && isInstalled(install.root, previous)
+    ? previous
+    : undefined;
 }
 
 const at = async (options: UpdateOptions, point: UpdatePoint): Promise<void> => {
@@ -800,41 +1145,53 @@ const at = async (options: UpdateOptions, point: UpdatePoint): Promise<void> => 
 
 /**
  * From a candidate that passed its self-test to the complete new version, or back to the complete
- * old one. The journal is written before each step that a repair needs it for.
+ * old one. The journal is written before each step that a repair needs it for. Whatever stops the
+ * update before `current` changes leaves nothing of it: the staged launchers, the journal and the
+ * version folder this update put in place go.
  */
 async function switchTo(run: Switch): Promise<UpdateResult> {
   const { install, options } = run;
   const { root, state, platform } = install;
   const { from, to } = run.journal;
   const target = join(root, VERSIONS, to);
-  const write = (journal: Journal) => {
+  const write = (journal: UpdateJournal) => {
     run.journal = journal;
     writeJournal(state, journal);
   };
-  const plan = stablePlan(root, target, platform);
-  let launchers: LauncherChange[];
-  try {
-    // A stable command that is not what an install writes stops the update before current
-    // changes, and nothing is left to repair.
-    checkStable(plan);
-    launchers = launcherChanges(root, target, platform);
-  } catch (error) {
-    removeJournal(state);
-    throw error;
-  }
-  // The candidate passed its self-test before switchTo (an update's, or --rollback's own).
-  write({ ...run.journal, phase: "staged", tested: true, launchers });
   const bin = (name: string) => join(root, "bin", name);
   const seam = (name: string) => (point: LauncherPoint) => {
     options.seams?.launcher?.(point, name);
   };
-  // A2 3.12.6 step 8: each changed launcher is staged beside the stable one, checked and flushed,
-  // all before current changes. A failure here is a failure before the switch: nothing changed.
+  const plan = stablePlan(root, target, platform);
+  let launchers: LauncherChange[] = [];
+  let note: readonly SpaceNote[] | undefined;
+  let seen: string | undefined;
   try {
-    for (const launcher of launchers) {
-      stageLauncher(bin(launcher.name), join(target, "bin", launcher.name), launcher.new);
-      seam(launcher.name)("staged");
+    // A stable command that is not what an install writes stops the update before current
+    // changes.
+    checkStable(plan);
+    launchers = launcherChanges(root, target, platform);
+    // The candidate passed its self-test before switchTo (an update's, or --rollback's own).
+    write({ ...run.journal, phase: "staged", tested: true, launchers });
+    // A2 3.12.6 step 8: each changed launcher is staged beside the stable one, checked and
+    // flushed, all before current changes.
+    try {
+      for (const launcher of launchers) {
+        stageLauncher(bin(launcher.name), join(target, "bin", launcher.name), launcher.new);
+        seam(launcher.name)("staged");
+      }
+    } catch (error) {
+      if (error instanceof InstallError) throw error;
+      throw new InstallError(
+        `The new launchers could not be staged in bin (${codeOf(error)}). current was not changed.`,
+        1,
+      );
     }
+    await at(options, "staged");
+    const decided = await decideAtSwitch(run);
+    note = decided.note;
+    seen = decided.seen;
+    if (decided.journal.service !== run.journal.service) write(decided.journal);
   } catch (error) {
     for (const launcher of launchers) {
       try {
@@ -844,13 +1201,9 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
       }
     }
     removeJournal(state);
-    if (error instanceof InstallError) throw error;
-    throw new InstallError(
-      `The new launchers could not be staged in bin (${codeOf(error)}). current was not changed.`,
-      1,
-    );
+    if (run.placed !== undefined) discard(run.placed);
+    throw error;
   }
-  await at(options, "staged");
   let restarted = false;
   try {
     writeCurrent(root, currentFor(to, platform), platform);
@@ -883,7 +1236,7 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
     if (await control?.delegateUnit?.().catch(() => false)) {
       say(options, "The service's systemd unit now has Delegate=yes, which background runs need.");
     }
-    if (control !== undefined && (run.journal.service || (await control.running()) !== undefined)) {
+    if (control !== undefined && run.journal.service) {
       write({ ...run.journal, phase: "restarted" });
       restarted = true;
       say(options, `Restarting the service on ${to}. Sessions keep running and reconnect.`);
@@ -897,12 +1250,24 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
           `The service did not come back on ${to} within ${String(Math.round((options.restartWaitMs ?? RESTART_WAIT_MS) / 1000))} s.`,
         );
       }
+    } else {
+      // Started after the decision: it is not restarted unasked. The probe says which version.
+      const late = await control?.running();
+      if (late !== undefined && late.version !== to) {
+        say(
+          options,
+          `The service started during the update and still runs ${late.version}. To run ${to}, restart it: ${PRODUCT_ID} service restart`,
+        );
+      }
     }
   } catch (error) {
     return await rollBack(run, error, restarted);
   }
+  // The service ran `from` at the switch, and answered on `to` after its restart: both are seen
+  // working, and the way back follows (switch.ts writeInstallRecord).
   writeInstallRecord(state, root, platform, {
-    previous: from,
+    switched: { from, to },
+    seen: [seen, restarted ? to : undefined],
     lastUpdate: {
       kind: run.journal.kind,
       outcome: "completed",
@@ -914,7 +1279,8 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
   removeJournal(state);
   await at(options, "done");
   cleanLaunchers(root);
-  return { outcome: "updated", from, to };
+  const spaces = await checkSpaces(install, options, to, restarted ? note : undefined, restarted);
+  return { outcome: "updated", from, to, ...(spaces === undefined ? {} : { spaces }) };
 }
 
 /** A step of the switch that failed, with the reason install.json records. */
@@ -998,6 +1364,16 @@ async function rollBack(run: Switch, error: unknown, restarted: boolean): Promis
 // ---------------------------------------------------------------------------------------------
 // The commands
 
+/**
+ * Before anything is held or stopped: a service that runs is restarted only on the person's
+ * decision, and declined, the update stops with nothing changed. True when one runs.
+ */
+async function decideFirst(options: UpdateOptions, decision: Decision): Promise<boolean> {
+  if ((await options.control?.running()) === undefined) return false;
+  if (!(await agree(options, decision))) throw new InstallError(NOT_AGREED, 2);
+  return true;
+}
+
 /** `ttasks update --from <archive>`. */
 export async function updateFromArchive(
   archive: string,
@@ -1008,9 +1384,11 @@ export async function updateFromArchive(
   if (platform === undefined)
     throw new InstallError(`${PRODUCT_NAME} has no build for this machine.`, 1);
   const lock = await lockForUpdate(install, options);
+  const decision: Decision = {};
   try {
     await at(options, "locked");
-    sayRepair(options, await repairFirst(install, options, false));
+    const repaired = await repairFirst(install, options, false, decision);
+    sayRepair(options, repaired.repair);
     const from = currentInstalled(install);
     let release: VerifiedRelease;
     try {
@@ -1027,7 +1405,8 @@ export async function updateFromArchive(
     // Already current (also what a second update finds once the first made it so): nothing to do.
     if (release.version === from) {
       say(options, `${PRODUCT_NAME} ${from} is installed and current already.`);
-      return { outcome: "current", version: from };
+      const spaces = await checkSpaces(install, options, from, undefined, repaired.seen);
+      return { outcome: "current", version: from, ...(spaces === undefined ? {} : { spaces }) };
     }
     checkSelf(install, options, from);
     let entries: ReadEntry[];
@@ -1043,10 +1422,11 @@ export async function updateFromArchive(
         5,
       );
     }
-    const held = await waitForRuns(options);
+    const ran = await decideFirst(options, decision);
+    const held = ran ? await waitForRuns(options) : undefined;
+    let run: Switch | undefined;
     try {
-      const control = options.control;
-      const journal: Journal = {
+      const journal: UpdateJournal = {
         format: 1,
         kind: "update",
         from,
@@ -1055,7 +1435,7 @@ export async function updateFromArchive(
         pid: process.pid,
         started_at: (options.now?.() ?? new Date()).toISOString(),
         staging: `.staging-${randomBytes(8).toString("hex")}`,
-        service: control !== undefined && (await control.running()) !== undefined,
+        service: ran && (await options.control?.running()) !== undefined,
         tested: false,
         launchers: [],
       };
@@ -1063,6 +1443,7 @@ export async function updateFromArchive(
       await at(options, "prepared");
       const target = join(install.root, VERSIONS, release.version);
       const staging = join(install.root, VERSIONS, journal.staging ?? "");
+      let placed: string | undefined;
       try {
         unpack(entries, staging, install.platform);
         const manifest = readVersionManifest(staging);
@@ -1080,7 +1461,7 @@ export async function updateFromArchive(
           );
         }
         await at(options, "unpacked");
-        place(staging, target);
+        if (place(staging, target)) placed = target;
         writeJournal(install.state, { ...journal, staging: null });
         await at(options, "placed");
         say(options, `Self-test of ${release.version} through its own launcher:`);
@@ -1093,8 +1474,10 @@ export async function updateFromArchive(
         }
         await at(options, "tested");
       } catch (error) {
-        // Nothing was switched: the staging folder and the journal go, current stays.
+        // Nothing was switched: the staging folder, the version folder this update put in place
+        // and the journal go, current stays.
         rmSync(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+        if (placed !== undefined) discard(placed);
         removeJournal(install.state);
         if (error instanceof InstallError) throw error;
         throw new InstallError(
@@ -1102,9 +1485,11 @@ export async function updateFromArchive(
           1,
         );
       }
-      return await switchTo({ install, options, journal: { ...journal, staging: null } });
+      run = { install, options, journal: { ...journal, staging: null }, decision, held, placed };
+      return await switchTo(run);
     } finally {
-      held?.release();
+      if (run === undefined) held?.release();
+      else run.held?.release();
     }
   } finally {
     lock.release();
@@ -1115,9 +1500,10 @@ export async function updateFromArchive(
 export async function rollbackUpdate(options: UpdateOptions): Promise<UpdateResult> {
   const install = openInstall(options.facts);
   const lock = await lockForUpdate(install, options);
+  const decision: Decision = {};
   try {
     await at(options, "locked");
-    sayRepair(options, await repairFirst(install, options, false));
+    sayRepair(options, (await repairFirst(install, options, false, decision)).repair);
     const from = currentInstalled(install);
     checkSelf(install, options, from);
     const previous = readInstallRecord(install.state)?.["previous"];
@@ -1139,10 +1525,11 @@ export async function rollbackUpdate(options: UpdateOptions): Promise<UpdateResu
         1,
       );
     }
-    const held = await waitForRuns(options);
+    const ran = await decideFirst(options, decision);
+    const held = ran ? await waitForRuns(options) : undefined;
+    let run: Switch | undefined;
     try {
-      const control = options.control;
-      const journal: Journal = {
+      const journal: UpdateJournal = {
         format: 1,
         kind: "rollback",
         from,
@@ -1151,16 +1538,18 @@ export async function rollbackUpdate(options: UpdateOptions): Promise<UpdateResu
         pid: process.pid,
         started_at: (options.now?.() ?? new Date()).toISOString(),
         staging: null,
-        service: control !== undefined && (await control.running()) !== undefined,
+        service: ran && (await options.control?.running()) !== undefined,
         // Its self-test ran above.
         tested: true,
         launchers: [],
       };
       writeJournal(install.state, journal);
       await at(options, "prepared");
-      return await switchTo({ install, options, journal });
+      run = { install, options, journal, decision, held, placed: undefined };
+      return await switchTo(run);
     } finally {
-      held?.release();
+      if (run === undefined) held?.release();
+      else run.held?.release();
     }
   } finally {
     lock.release();
@@ -1169,19 +1558,27 @@ export async function rollbackUpdate(options: UpdateOptions): Promise<UpdateResu
 
 /**
  * `ttasks update --repair`: finishes or rolls back an interrupted update, then brings the service
- * back on what current names when it runs another version, or ran when the update began.
+ * back on what current names when it runs another version and the person agrees, or ran when the
+ * update began and the person agreed then.
  */
 export async function repairUpdate(options: UpdateOptions): Promise<UpdateResult> {
   const install = openInstall(options.facts);
   const lock = await lockForUpdate(install, options);
   try {
     await at(options, "locked");
-    const repair = await repairFirst(install, options, true);
+    const { repair, seen, running } = await repairFirst(install, options, true, {});
     if (repair.kind === "stuck") sayRepair(options, repair);
     const current = currentVersion(install.root, install.platform);
     if (current === undefined) throw new InstallError("current names no installed version.", 1);
     if (repair.kind === "nothing") cleanLaunchers(install.root);
-    return { outcome: "repaired", repair, current };
+    const spaces = await checkSpaces(install, options, current, undefined, seen);
+    return {
+      outcome: "repaired",
+      repair,
+      current,
+      ...(running === undefined ? {} : { running }),
+      ...(spaces === undefined ? {} : { spaces }),
+    };
   } finally {
     lock.release();
   }

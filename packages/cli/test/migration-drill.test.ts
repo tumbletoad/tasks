@@ -145,6 +145,8 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
     expect(message, space["message"]).not.toBeNull();
     const backupName = message?.[1] ?? "";
     expect(backupName.endsWith(`-s${String(fixture.lastSeq)}`)).toBe(true);
+    // A program reads the same backup without parsing the message.
+    expect(space["migration_backup"]).toBe(backupName);
     // The person sees the message in the list, through the build's own CLI when there is one.
     const listed = await world.tasks(["space", "list"]);
     expect(listed.code, listed.stderr).toBe(0);

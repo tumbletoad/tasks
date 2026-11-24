@@ -4,11 +4,14 @@
 // it is killed, or the service is killed and the updater goes on. Then the service starts again
 // through the stable command, and the install must be the complete old or the complete new
 // version: current names one, its folder matches its manifest, no journal or staging folder is
-// left, the Windows launchers are that version's, and the service names that version. On Windows
+// left, the Windows launchers are that version's, and the service names that version. Then the
+// update is run again, as a person runs it after a cut: it ends on the new version, and the
+// version the round started from is still the one --rollback goes back to. On Windows
 // the two versions' launchers differ, so every update here also swaps both stable launchers (A7
 // 3.13 M6.13). Each file has its own install (installed.ts); every round reads the version it
 // starts from.
 import { describe as suite, expect, test } from "vitest";
+import { readInstallRecord } from "../../packages/service/src/version/switch.ts";
 import { runsElevated } from "../../scripts/install/test/kit.ts";
 import { installedForFile } from "./installed.ts";
 
@@ -98,6 +101,15 @@ export function killRounds(mode: "updater" | "service", points: readonly Point[]
                 point === "restarted" ? from : w.other(from),
               );
             }
+            const again = await w.runChild("update", {
+              archive: w.archiveOf(w.other(from)),
+              selfTest: "pass",
+            });
+            expect(again.lines.at(-1), `${point}: run again`).toMatchObject({
+              done: expect.stringMatching(/^(updated|current)$/) as unknown,
+            });
+            expect(await w.expectComplete(`${point}: run again`)).toBe(w.other(from));
+            expect(readInstallRecord(w.state)?.["previous"], `${point}: the way back`).toBe(from);
           }
         },
         ROUNDS,

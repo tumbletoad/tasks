@@ -13,14 +13,25 @@
 //     update that had already decided to go back.
 // The other phases (`prepare`, `staged`, `switched`, `launchers_done`, `restarted`) say how far it
 // came, for doctor and for people; a repair decides from what is on disk.
-import { readFileSync, rmSync } from "node:fs";
+//
+// An install over another version (install.ts) keeps the same journal in a file of its own,
+// `<state>/install-update.json`: a service of a version from before it reads update.json in any
+// form and restarts after repairing it, and it must never do that unasked for an install.
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite } from "../hub/files.ts";
 import { isVersionName } from "./folder.ts";
 
 export const UPDATE_JOURNAL = "update.json";
+export const INSTALL_JOURNAL = "install-update.json";
 export const JOURNAL_FORMAT = 1;
 
+const KINDS = ["update", "rollback", "install"] as const;
+export type JournalKind = (typeof KINDS)[number];
+
+/** The file of a journal of `kind`. */
+const fileOf = (kind: JournalKind): string =>
+  kind === "install" ? INSTALL_JOURNAL : UPDATE_JOURNAL;
 export const PHASES = [
   "prepare",
   "staged",
@@ -40,8 +51,8 @@ export interface LauncherChange {
 
 export interface Journal {
   readonly format: typeof JOURNAL_FORMAT;
-  /** An update from an archive, or `ttasks update --rollback`. */
-  readonly kind: "update" | "rollback";
+  /** An update from an archive, `ttasks update --rollback`, or an install over another version. */
+  readonly kind: JournalKind;
   /** The version current named when it began. */
   readonly from: string;
   readonly to: string;
@@ -51,7 +62,10 @@ export interface Journal {
   readonly started_at: string;
   /** `versions/<staging>` while the archive is unpacked; null once it is gone or never made. */
   readonly staging: string | null;
-  /** Whether this install's service answered when it began: the update brings it back. */
+  /**
+   * Whether the update restarts this install's service, and a repair brings it back: it ran when
+   * the update began, or at the switch with the person's agreement. Always false for an install.
+   */
   readonly service: boolean;
   /**
    * Whether `to` passed its self-test: true from phase `staged` on (a `--rollback` tests its target
@@ -62,6 +76,9 @@ export interface Journal {
   readonly launchers: readonly LauncherChange[];
 }
 
+/** The journal of `ttasks update` itself: an update or a rollback, in update.json. */
+export type UpdateJournal = Journal & { readonly kind: "update" | "rollback" };
+
 const STAGING = /^\.staging-[0-9a-f]{16}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -71,8 +88,11 @@ export const isStagingName = (name: string): boolean => STAGING.test(name);
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** Parses a journal strictly. Undefined when it is not one this build wrote. */
-export function parseJournal(text: string): Journal | undefined {
+/**
+ * Parses a journal strictly. Undefined when it is not one this build wrote in that file: an
+ * install's in its own, an update's or a rollback's in update.json.
+ */
+function parseJournal(text: string, file: string): Journal | undefined {
   let json: unknown;
   try {
     json = JSON.parse(text);
@@ -82,7 +102,8 @@ export function parseJournal(text: string): Journal | undefined {
   if (!isRecord(json)) return undefined;
   const { format, kind, from, to, phase, pid, started_at, staging, service, tested } = json;
   if (format !== JOURNAL_FORMAT) return undefined;
-  if (kind !== "update" && kind !== "rollback") return undefined;
+  if (typeof kind !== "string" || !(KINDS as readonly string[]).includes(kind)) return undefined;
+  if (fileOf(kind as JournalKind) !== file) return undefined;
   if (typeof from !== "string" || !isVersionName(from)) return undefined;
   if (typeof to !== "string" || !isVersionName(to) || to === from) return undefined;
   if (typeof phase !== "string" || !(PHASES as readonly string[]).includes(phase)) return undefined;
@@ -103,7 +124,7 @@ export function parseJournal(text: string): Journal | undefined {
   }
   return {
     format: JOURNAL_FORMAT,
-    kind,
+    kind: kind as JournalKind,
     from,
     to,
     phase: phase as Phase,
@@ -116,30 +137,42 @@ export function parseJournal(text: string): Journal | undefined {
   };
 }
 
-/** What `<state>/update.json` holds: none, a journal, or a file no updater of this build wrote. */
+/**
+ * What the journals hold: none, a journal, or a file no updater of this build wrote (`of` names
+ * whose file it is). update.json first: an older version's update after an install was cut off is
+ * the later of the two.
+ */
 export type JournalRead =
   | { readonly kind: "none" }
   | { readonly kind: "journal"; readonly journal: Journal }
-  | { readonly kind: "invalid" };
+  | { readonly kind: "invalid"; readonly of: JournalKind };
 
 export function readJournal(state: string): JournalRead {
-  let text: string;
-  try {
-    text = readFileSync(join(state, UPDATE_JOURNAL), "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "none" };
-    return { kind: "invalid" };
+  for (const kind of ["update", "install"] as const) {
+    const file = fileOf(kind);
+    let text: string;
+    try {
+      text = readFileSync(join(state, file), "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      return { kind: "invalid", of: kind };
+    }
+    const journal = parseJournal(text, file);
+    return journal === undefined ? { kind: "invalid", of: kind } : { kind: "journal", journal };
   }
-  const journal = parseJournal(text);
-  return journal === undefined ? { kind: "invalid" } : { kind: "journal", journal };
+  return { kind: "none" };
 }
 
-/** Writes the journal: a new file, flushed, renamed over the old (0600). */
+/** Whether a journal of either kind is there: an update or an install runs, or was cut off. */
+export const journalPresent = (state: string): boolean =>
+  existsSync(join(state, UPDATE_JOURNAL)) || existsSync(join(state, INSTALL_JOURNAL));
+
+/** Writes a journal into its kind's file: a new file, flushed, renamed over the old (0600). */
 export function writeJournal(state: string, journal: Journal): void {
-  atomicWrite(join(state, UPDATE_JOURNAL), `${JSON.stringify(journal, null, 2)}\n`, 0o600);
+  atomicWrite(join(state, fileOf(journal.kind)), `${JSON.stringify(journal, null, 2)}\n`, 0o600);
 }
 
-/** Removes the journal: the install is a complete version again. */
-export function removeJournal(state: string): void {
-  rmSync(join(state, UPDATE_JOURNAL), { force: true });
+/** Removes the journal of `kind` (an update's by default): the install is complete again. */
+export function removeJournal(state: string, kind: JournalKind = "update"): void {
+  rmSync(join(state, fileOf(kind)), { force: true });
 }

@@ -97,6 +97,8 @@ export interface EndpointUi {
 /** A space as status names it (spaces.ts SpaceView has these fields and more). */
 export interface SpaceSummary {
   readonly entry: number;
+  /** The space its entry names, also before it has been served. */
+  readonly registered?: string;
   readonly id?: string;
   readonly name?: string;
   readonly ref_prefix?: string;

@@ -21,7 +21,7 @@
 // service.json, a stale socket file, a temporary file of an atomic write. A start that fails after
 // the lock removes its own service.json.
 import { randomBytes } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { CLI_NAME, envVar, PRODUCT_NAME } from "@ttasks/brand";
 import { nodeDetectHost, type Instance } from "@ttasks/launch";
@@ -35,6 +35,8 @@ import {
 } from "../config/machine-toml.ts";
 import { configRefusal, unsafeConfigMessage } from "../config/messages.ts";
 import {
+  NewerServiceDb,
+  SERVICE_DB_VERSION,
   openGrants,
   startHttp,
   type DurableGrants,
@@ -120,8 +122,13 @@ import {
 import { runsWith } from "../runs/drivers.ts";
 import { RunService, type RunOptions } from "../runs/service.ts";
 import { Bridges, sessionPort, type BindingEvent } from "../binding/index.ts";
-import { repairIfIdle, supervisorReplaced, type RepairOutcome } from "../version/repair.ts";
-import { UPDATE_JOURNAL } from "../version/journal.ts";
+import {
+  noteWorkingUntilDone,
+  repairIfIdle,
+  supervisorReplaced,
+  type RepairOutcome,
+} from "../version/repair.ts";
+import { journalPresent } from "../version/journal.ts";
 import { currentVersion } from "../version/switch.ts";
 import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
 import { homeGate } from "./home-gate.ts";
@@ -151,10 +158,19 @@ export const UPDATE_CHECK_MS = 10_000;
  * supervisorReplaced) and this service runs under it. That supervisor may still run from the old
  * file, renamed aside; before it starts the service again (after this exit 75, or after any other
  * exit, should this one die first) it sees that bin\ttasksw.exe is another file and starts that
- * one in its place (launcher.c hand_over). A service run from source names no version and never
- * restarts for this.
+ * one in its place (launcher.c hand_over). A service that is already `running` restarts only
+ * when the person agreed to it in the update that was cut off (its journal's `service`): an
+ * install, or an update whose person was not asked, takes effect at the next start. At a start
+ * nothing is served yet, so it restarts there. A service run from source names no version and
+ * never restarts for this.
  */
-function afterRepair(log: Logger, outcome: RepairOutcome | undefined, manager: Manager): boolean {
+export function afterRepair(
+  log: Logger,
+  outcome: RepairOutcome | undefined,
+  manager: Manager,
+  running: boolean,
+  build: { readonly version: string; readonly build: string } = BUILD,
+): boolean {
   if (outcome === undefined || outcome.kind === "nothing") return false;
   if (outcome.kind === "stuck") {
     log.log("update.repaired", { outcome: "stuck" });
@@ -167,9 +183,9 @@ function afterRepair(log: Logger, outcome: RepairOutcome | undefined, manager: M
       : { outcome: outcome.kind, from: outcome.journal.from, to: outcome.journal.to },
   );
   // The build stamps its own label (scripts/build/bundle.ts); from source it stays "source".
-  const build: string = BUILD.build;
-  if (build === "source") return false;
-  if (outcome.current !== BUILD.version) {
+  if (build.build === "source") return false;
+  if (running && (outcome.kind === "kept" || !outcome.journal.service)) return false;
+  if (outcome.current !== build.version) {
     log.log("update.restart", { version: outcome.current, why: "version" });
     return true;
   }
@@ -544,7 +560,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       log.log("update.repair_failed", code === undefined ? {} : { code });
       return undefined;
     });
-    if (afterRepair(log, atStart, manager)) throw new ServiceExit(EXIT.restart, "restart");
+    if (afterRepair(log, atStart, manager, false)) throw new ServiceExit(EXIT.restart, "restart");
     // An update that can be neither finished nor rolled back restarts nothing: its journal then
     // holds no run back.
     let repairStuck = atStart?.kind === "stuck";
@@ -618,7 +634,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       },
       // From the journal's write to its removal an update may restart the service, a repair
       // included, whether or not its updater still holds the queue.
-      updating: () => !repairStuck && existsSync(join(layout.state, UPDATE_JOURNAL)),
+      updating: () => !repairStuck && journalPresent(layout.state),
     });
     void runs.probe();
 
@@ -638,22 +654,44 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     let state: ServiceStatus["state"] = "starting";
     // The space manager is made once the instance ID is final (a taken pipe name changes it).
     const made: { spaces?: SpaceManager } = {};
+    // Whether the configuration's spaces are the manager's: until then, status and the request
+    // path name each of them as opening, so nobody reads a service without spaces from a start.
+    const spacesHanded = { done: false };
 
-    const status = (): ServiceStatus => ({
-      state,
-      pid: process.pid,
-      instance,
-      install_id: install,
-      version: BUILD.version,
-      build: BUILD.build,
-      uptime_ms: Date.now() - startedAt,
-      manager,
-      protocol: PROTOCOLS,
-      endpoint,
-      spaces: made.spaces?.described().filter((space) => space.forgotten !== true) ?? [],
-      http: httpRunning?.status() ?? null,
-      runs: runs.status(),
-    });
+    const status = (): ServiceStatus => {
+      const described = made.spaces?.described().filter((space) => !space.forgotten) ?? [];
+      const listed = new Set(described.map((space) => space.registered));
+      return {
+        state,
+        pid: process.pid,
+        instance,
+        install_id: install,
+        version: BUILD.version,
+        build: BUILD.build,
+        uptime_ms: Date.now() - startedAt,
+        manager,
+        protocol: PROTOCOLS,
+        endpoint,
+        spaces: spacesHanded.done
+          ? described
+          : [
+              ...described,
+              ...config.spaces.flatMap((space, entry) =>
+                listed.has(space.id)
+                  ? []
+                  : [
+                      {
+                        entry,
+                        registered: space.id,
+                        state: space.enabled ? "opening" : "closed",
+                      },
+                    ],
+              ),
+            ],
+        http: httpRunning?.status() ?? null,
+        runs: runs.status(),
+      };
+    };
     const serviceJson = join(layout.state, SERVICE_FILE);
     /** `beforeRename`: a last check right before the new file replaces the old (atomicWrite). */
     const writeServiceJson = (beforeRename?: () => void): void => {
@@ -706,7 +744,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // the configuration's are handed to it, and until then those of the configuration, opening,
     // beside any the manager has already. So a bind during startup settles the default and the only
     // space by registered ID, and a call right after it is told that space is still opening.
-    const spacesHanded = { done: false };
     const knownSpaces = (): ServedSpace[] => {
       const served = made.spaces?.served() ?? [];
       if (spacesHanded.done) return served;
@@ -963,7 +1000,20 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     const httpLog = (event: Parameters<typeof logHttp>[1]) => {
       logHttp(log, event);
     };
-    if (options.http !== undefined) grantsDb = await openGrants(layout.state, httpLog);
+    if (options.http !== undefined) {
+      try {
+        grantsDb = await openGrants(layout.state, httpLog);
+      } catch (error) {
+        if (!(error instanceof NewerServiceDb)) throw error;
+        // Both formats in the log, so doctor can name the refusal after the service exited.
+        log.log("service.refused", {
+          reason: "newer_format",
+          format: error.format,
+          knows: SERVICE_DB_VERSION,
+        });
+        throw refuse(say, "newer_format", error.message);
+      }
+    }
 
     // The launch folders hold each launch's plan, the command a shim starts (A4 3.6.3): their root
     // is judged before anything is read from it or made in it (A2 3.2.2 rule 5). On Linux it is in
@@ -1414,13 +1464,28 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       }
     });
 
+    // Ready, this version is seen working, which keeps it the way back after a later switch
+    // (install.json `seen_working`). While an update holds update.lock, or after a write that
+    // failed, the next 10 s check tries again. From source there is no version to note.
+    const built: string = BUILD.build;
+    const noteSeen =
+      built === "source"
+        ? () => Promise.resolve()
+        : noteWorkingUntilDone({ ...updateRepair, version: BUILD.version }, (error) => {
+            const code = errorCode(error);
+            log.log("update.repair_failed", code === undefined ? {} : { code });
+          });
+    void noteSeen();
+
     // While it runs, an update journal whose updater is gone is finished or rolled back within
     // 10 s (A2 3.12.6). A live updater holds update.lock, and then nothing is done. An update
-    // that cannot be repaired (stuck) or a repair that fails is logged once, not every 10 s.
+    // that cannot be repaired (stuck) or a repair that fails is logged once, not every 10 s. The
+    // service restarts itself after it only on the person's agreement (afterRepair).
     let repairing = false;
     let reported: string | undefined;
     update.timer = setInterval(() => {
       if (repairing || draining !== undefined || aborted) return;
+      void noteSeen();
       repairing = true;
       void repairIfIdle(updateRepair)
         .then(
@@ -1430,7 +1495,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
               if (reported === "stuck") return;
               reported = "stuck";
             } else if (outcome !== undefined) reported = undefined;
-            if (afterRepair(log, outcome, manager) && draining === undefined && !aborted) {
+            if (afterRepair(log, outcome, manager, true) && draining === undefined && !aborted) {
               void drain(EXIT.restart, "request");
             }
           },

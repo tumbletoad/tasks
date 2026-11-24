@@ -213,6 +213,7 @@ const failedNow = (id: Id<"sp">, backup: string) => ({
   message:
     "Migration to 0.2 failed (STORAGE_SQL). Your data is unchanged. The space stays at 0.1. " +
     `Backup: ${backup}. ${TRIED_AGAIN}`,
+  migration_backup: backup,
   id,
 });
 
@@ -225,6 +226,7 @@ const notTried = (id: Id<"sp">, backup: string) => ({
   message:
     "Migration to 0.2 failed with this version (MIGRATION_FAILED) and was not tried again. " +
     `Your data is unchanged. The space stays at 0.1. Backup: ${backup}. ${TRIED_AGAIN}`,
+  migration_backup: backup,
   id,
 });
 

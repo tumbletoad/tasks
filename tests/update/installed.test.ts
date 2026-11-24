@@ -12,11 +12,13 @@
 //             exercised in the kill rounds with its stand-in): a second update waits for the
 //             first, and the data folders are byte-identical before and after an update and after
 //             a rollback.
+//   spaces    An update that restarts the service reads its real status before and after, and
+//             finds a space it serves opened again as before.
 //
 // Nothing here touches a real install, autostart place, PATH or shell profile, and every process
 // it stops is one it started: the services this install's service.json names, the children.
 import { spawn } from "node:child_process";
-import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe as suite, expect, test } from "vitest";
 import { currentVersion, readInstallRecord } from "../../packages/service/src/version/switch.ts";
@@ -177,7 +179,8 @@ describe("[A2.3.12.6.update.installed] ttasks update through the installed stabl
           expect(currentVersion(w.root, process.platform)).toBe(from);
         },
       });
-      expect(first.lines.at(-1)).toEqual({ done: "updated" });
+      // No service runs here: the end says the spaces were not checked.
+      expect(first.lines.at(-1)).toEqual({ done: "updated", service: "not_running" });
       expect(await exited, out).toBe(0);
       expect(out).toMatch(
         new RegExp(`${to.replaceAll(".", "\\.")} is installed and current already`),
@@ -219,6 +222,55 @@ describe("[A2.3.12.6.update.installed] ttasks update through the installed stabl
           .sort(),
       ).toEqual([...w.versions].sort());
       rmSync(spaceDir, { recursive: true, force: true });
+    },
+    SLOW,
+  );
+});
+
+describe("[A2.3.12.6.update.spaces] an update reads how the real service's spaces came through its restart", () => {
+  test(
+    "the real service notes that its version works; a space the restarted service opens again for changes is usable",
+    async () => {
+      const w = install();
+      const spaceDir = join(w.work, "spaces", "report");
+      mkdirSync(join(w.work, "spaces"), { recursive: true });
+      const made = createSpace(await checkedDriver(), spaceDir, {
+        name: "Report",
+        ownerLabel: "Fixture Owner",
+        machineId: newId("m"),
+      });
+      const config = join(w.root, "config", "machine.toml");
+      mkdirSync(join(w.root, "config"), { recursive: true });
+      const kept = existsSync(config) ? readFileSync(config) : undefined;
+      writeFileSync(
+        config,
+        `[[spaces]]\nid = "${made.space.spaceId}"\npath = ${JSON.stringify(spaceDir)}\n`,
+      );
+      try {
+        // Started again, so it serves the space.
+        await w.stopService();
+        await w.startService();
+        const from = currentVersion(w.root, process.platform) ?? "";
+        // Once ready, the service notes that its version works: the way back keeps it.
+        const noted = () => {
+          const seen = readInstallRecord(w.state)?.["seen_working"];
+          return Array.isArray(seen) && seen.includes(from);
+        };
+        for (const end = Date.now() + 30_000; !noted() && Date.now() < end;) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        expect(noted(), "the service noted its version").toBe(true);
+        const run = await w.runChild("update", {
+          archive: w.archiveOf(w.other(from)),
+          selfTest: "pass",
+        });
+        expect(run.lines.at(-1)).toEqual({ done: "updated", spaces: [["Report", "usable"]] });
+      } finally {
+        await w.stopService();
+        if (kept === undefined) rmSync(config, { force: true });
+        else writeFileSync(config, kept);
+        rmSync(spaceDir, { recursive: true, force: true });
+      }
     },
     SLOW,
   );

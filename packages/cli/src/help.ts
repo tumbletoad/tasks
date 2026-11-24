@@ -57,13 +57,18 @@ checks the version and switches to it. A person does not run it.
 
 const UPDATE_HELP = `Usage: ${CLI_NAME} update --from <archive> [--yes] [--stop-runs]
        ${CLI_NAME} update --rollback [--yes] [--stop-runs]
-       ${CLI_NAME} update --repair [--stop-runs]
+       ${CLI_NAME} update --repair [--yes] [--stop-runs]
 
 Updates this install from a signed release archive, goes back to the version before the last
 update, or finishes an update that was cut off. It restarts the service, and asks once in a
-terminal before it does. The restart ends background runs, so new runs wait meanwhile and the
-update waits up to 15 minutes for the running ones; then it asks whether to stop them or give
-the update up.
+terminal before anything is stopped, also about a service that started while it ran. A repair
+that is not agreed leaves the service running: the new version takes effect at its next start.
+The restart ends background runs, so new runs wait meanwhile and the update waits up to 15
+minutes for the running ones; then it asks whether to stop them or give the update up.
+
+At the end it waits up to 2 minutes for the spaces to open, and names each one that is not
+usable now, in the service's words, and how to go back. Then it exits 8. With the service not
+running, it says the spaces were not checked and what to run once it runs.
 
   --from <archive>  The release archive to update from
   --rollback        Go back to the version before the last update

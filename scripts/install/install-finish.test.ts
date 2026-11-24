@@ -95,6 +95,20 @@ describe("[A2.3.12.4.install.replace] installing again, a newer version, and a f
     SLOW,
   );
 
+  test.runIf(windows)(
+    "a first install cut off after its first launcher finishes when the installer runs again",
+    () => {
+      const cut = join(homes, "cut-launchers");
+      expectInstalled(cut, install({ root: cut }));
+      // What the first install leaves when it is cut off after bin\ttasks.exe was put in place:
+      // current names the version, bin\ttasksw.exe and install.json are not there yet.
+      rmSync(join(cut, "bin", `${PRODUCT_ID}w.exe`));
+      rmSync(join(cut, "state", "install.json"));
+      expectInstalled(cut, install({ root: cut }));
+    },
+    SLOW,
+  );
+
   test(
     "while an update holds update.lock, the finish stops and the version folder this run put in place stays, for the update that may use it",
     async () => {
