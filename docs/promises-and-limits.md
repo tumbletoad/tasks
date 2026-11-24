@@ -134,6 +134,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Renaming, merging or removing an effort level moves the tasks on it in the same change, finished
   ones and those in the Trash too, and one Undo takes the whole change back. A level that tasks
   hold is never dropped without saying where they go. Your other settings are not on Undo.
+- Settings changes a space's effort levels only when this version can keep them: a list a newer
+  version wrote, or one it cannot read, shows there read-only and is never written over.
 
 ## Your spaces on this machine
 

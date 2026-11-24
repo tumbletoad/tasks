@@ -143,6 +143,12 @@ const SAMPLE = {
   about: "One long sitting",
   amount: 4,
   unit: "hours",
+  finished: 2,
+  trash: 1,
+  from: "M",
+  to: "L",
+  moved: 7,
+  how: "to",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

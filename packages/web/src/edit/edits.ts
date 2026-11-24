@@ -1234,12 +1234,12 @@ export class Edits {
    * The caller reads the answer, a refusal included, and says what a refusal means. Its base is
    * `base`, what a dialog showed when it opened, or else the screen's now, moved past the tab's own
    * commits since. When the answer was lost and its receipt decided it, the caller gets only the
-   * receipt's word (`WriteReceipt`).
+   * receipt's word (`WriteReceipt`). An `overlay` shows its effect at once, until the feed does.
    */
   write<T extends { as_of?: string; result?: unknown }>(
     send: (request: string, base: string | undefined) => Promise<T>,
     said: (value: T | WriteReceipt) => Msg | undefined,
-    options: { readonly base?: string | undefined } = {},
+    options: { readonly base?: string | undefined; readonly overlay?: Overlay } = {},
   ): Promise<T | WriteReceipt> {
     const seen = options.base ?? this.#deps.asOf();
     const ahead = allOf(this.#ahead());
@@ -1271,7 +1271,7 @@ export class Edits {
         made(undefined);
         throw error;
       }
-    });
+    }, options.overlay);
     this.#mine.add(sent.request);
     this.#gate = turn;
     this.#release(sent.answer, () => {
