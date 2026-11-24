@@ -16,7 +16,8 @@
 //   an authority the feed has not reached yet waits for it.
 // - refused: the service refused it, or the call failed. Nothing of it stays behind. A call that
 //   failed on the way may still have committed: the feed then brings its effect like anyone's.
-import type { Cursor, TaskRow } from "./rows.ts";
+import type { EffortLevel } from "@ttasks/contracts/preferences";
+import type { Cursor, Scales, TaskRow } from "./rows.ts";
 
 /** A task row's fields an overlay may change: every one but its ID. */
 export type TaskField = Exclude<keyof TaskRow, "id">;
@@ -32,6 +33,8 @@ export type TaskOverlay =
 
 export interface Overlay {
   readonly tasks: readonly TaskOverlay[];
+  /** The space's effort levels as the write sets them. */
+  readonly efforts?: readonly EffortLevel[];
 }
 
 /** Where the service said a write landed: `as_of`'s epoch, seq and incarnation tag (A1 3.5). */
@@ -201,5 +204,12 @@ export class Pending {
       }
     }
     return out;
+  }
+
+  /** The confirmed scales with the newest pending effort levels in place of the space's. */
+  scales(scales: Scales): Scales {
+    let efforts: readonly EffortLevel[] | undefined;
+    for (const { overlay } of this.#entries.values()) efforts = overlay.efforts ?? efforts;
+    return efforts === undefined ? scales : { ...scales, efforts };
   }
 }

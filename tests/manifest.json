@@ -5045,6 +5045,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.7.web.levels-write",
+      "title": "Each change the Settings grid makes of the effort levels gives the list and the moves a person expects (a rename carries its tasks, a removal moves them where chosen), a change to nothing writes nothing, a name used twice, with a character a name cannot have or too long is caught, and a removed level's tasks go to the next bigger level by default",
+      "source": "A5 3.7",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.7.web.levels-grid",
+      "title": "The effort levels' grid in Settings: each change saves at once with its list and moves and shows at once, typing saves nothing until Enter or leaving the field, a refused name says why and sends nothing, removing a level that tasks hold asks only where they go, the bounds show, Alt+Up and Alt+Down keep focus on the moved level, a refused save keeps the typed text, and levels a newer build wrote or that do not read show read-only with why",
+      "source": "A5 3.7",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.7.e2e.levels-grid",
+      "title": "In Chromium and Firefox against the real service, at 1,440 and 390 px, by keyboard and by mouse: add a level, rename one that tasks hold (the tasks follow), change a time, reorder, remove one with a move, Undo from the toast, each still so after a reload; axe finds nothing and nothing scrolls sideways",
+      "source": "A5 3.7",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.3.web.landing",
       "title": "What a new tab opens: the machine's default space when it is served, never another space in its place; without a default the one served space, else the person's choice; a space that is not open is named with why",
       "source": "A2 3.1, A5 3.3, A7 3.12 M5.01",
