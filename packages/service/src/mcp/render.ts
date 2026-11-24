@@ -820,10 +820,17 @@ function groupsRendered(result: Groups, organize: string): Rendered {
   const facts = (g: { archived?: true | undefined; ref?: string | undefined }) =>
     `${g.archived === true ? ", archived" : ""}${g.ref === undefined ? "" : `, id ${g.ref}`}`;
   // A folder is shortened, so the line of any group fits a page and no group is left out of the text.
-  const project = (p: Groups["projects"][number]) =>
+  const project = (p: NonNullable<Groups["projects"]>[number]) =>
     `${p.name}${p.repo === undefined ? "" : ` [${p.repo}]`} (${String(p.active)}${facts(p)}${p.folder === undefined ? "" : `, ${clip(p.folder, LIST_FOLDER)}`})`;
   const { counts: insideCounts, lines: insideLines } = insideOf(result);
-  const head = `${String(result.total_areas)} area${result.total_areas === 1 ? "" : "s"} · ${String(result.total_projects)} project${result.total_projects === 1 ? "" : "s"} · as_of ${result.as_of}${replayed(result)}`;
+  const areas = result.areas ?? [];
+  const projects = result.projects ?? [];
+  // A write whose list could not be read has none: it says so rather than count nothing.
+  const counted =
+    result.total_areas === undefined || result.total_projects === undefined
+      ? "list not read"
+      : `${String(result.total_areas)} area${result.total_areas === 1 ? "" : "s"} · ${String(result.total_projects)} project${result.total_projects === 1 ? "" : "s"}`;
+  const head = `${counted} · as_of ${result.as_of}${replayed(result)}`;
   const done =
     result.result === undefined
       ? undefined
@@ -840,12 +847,12 @@ function groupsRendered(result: Groups, organize: string): Rendered {
         data: true,
         units: [
           ...insideLines,
-          ...result.areas.flatMap((area) => [
+          ...areas.flatMap((area) => [
             [`${area.name} (${String(area.active)}${facts(area)})`],
             ...area.projects.map((p) => [`  ${project(p)}`]),
           ]),
-          ...(result.projects.length === 0 ? [] : [["No area:"]]),
-          ...result.projects.map((p) => [`  ${project(p)}`]),
+          ...(projects.length === 0 ? [] : [["No area:"]]),
+          ...projects.map((p) => [`  ${project(p)}`]),
         ],
       },
       ...(result.cursor === undefined
@@ -868,7 +875,8 @@ type Prefs = OutputOf<"prefs.manage">;
 const prefText = (value: unknown): string => JSON.stringify(value);
 
 function prefsRendered(result: Prefs): Rendered {
-  const row = (p: Prefs["prefs"][number]): string[] => {
+  const prefs = result.prefs ?? [];
+  const row = (p: NonNullable<Prefs["prefs"]>[number]): string[] => {
     const who =
       p.fixed === true
         ? "fixed in this build"
@@ -895,10 +903,12 @@ function prefsRendered(result: Prefs): Rendered {
         `${join(
           result.result,
           result.proposal !== undefined && `proposal ${result.proposal}`,
-          `${String(result.prefs.length)} key${result.prefs.length === 1 ? "" : "s"}`,
+          result.prefs === undefined
+            ? "keys not read"
+            : `${String(prefs.length)} key${prefs.length === 1 ? "" : "s"}`,
         )}${replayed(result)}`,
       ),
-      { data: true, units: [...changed, ...result.prefs.map(row)] },
+      { data: true, units: [...changed, ...prefs.map(row)] },
     ],
     more: "Ask for fewer keys.",
   };

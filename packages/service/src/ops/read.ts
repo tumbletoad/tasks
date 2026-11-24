@@ -815,14 +815,14 @@ const TITLES: Statement = {
   mode: "all",
 };
 
-/** The stored titles of the tasks `ids` names, by ID. */
-export async function readTaskTitles(
+/** The titles of the tasks `ids` names, by ID, and the space's `as_of` they are read at. */
+export async function readTitlesAt(
   reader: WorkerConnection,
   ids: readonly string[],
-): Promise<Map<string, string>> {
-  if (ids.length === 0) return new Map();
-  const [rows] = await snapshot(reader, [TITLES], { ids: JSON.stringify(ids) });
-  return new Map((rows as Row[]).map((row) => [String(row["id"]), String(row["title"])]));
+): Promise<{ asOf: string; titles: Map<string, string> }> {
+  const [space, rows] = await snapshot(reader, [SPACE, TITLES], { ids: JSON.stringify(ids) });
+  const titles = new Map((rows as Row[]).map((row) => [String(row["id"]), String(row["title"])]));
+  return { asOf: spaceFacts(space).asOf, titles };
 }
 
 /** A task's reference by its ID, or undefined when there is no such task. */
@@ -1744,6 +1744,35 @@ export async function readGroups(
   return { space: spaceFacts(space), areas: areas as Row[], projects: projects as Row[] };
 }
 
+/**
+ * The groups as `readGroups` reads them, and each live project's folder on `machine`, in one
+ * snapshot. A space whose schema has no folders has none.
+ */
+export async function readGroupsAt(
+  reader: WorkerConnection,
+  machine: string,
+): Promise<{
+  space: SpaceFacts;
+  areas: Row[];
+  projects: Row[];
+  folders: ProjectFolderRow[];
+}> {
+  const folders = await hasFolderTable(reader);
+  const [space, areas, projects, here] = await snapshot(
+    reader,
+    folders
+      ? [SPACE, AREA_LIST, PROJECT_LIST, PROJECT_FOLDERS_HERE]
+      : [SPACE, AREA_LIST, PROJECT_LIST],
+    { machine },
+  );
+  return {
+    space: spaceFacts(space),
+    areas: areas as Row[],
+    projects: projects as Row[],
+    folders: ((here ?? []) as Row[]).map(projectFolderRow),
+  };
+}
+
 /** One area or project as a name resolves against it (groups.ts). */
 export interface GroupName {
   readonly id: string;
@@ -1866,21 +1895,6 @@ export async function readLaunchFolder(
   const projectRows = (project as Row[]).map(ownerFolder);
   const names = new Map([...ownRows, ...projectRows].map((f) => [f.machine, f.machineName]));
   return decideLaunchFolder(ownRows, projectRows, machine, (id) => names.get(id));
-}
-
-const FOLDER_OWNER: Statement = {
-  sql: "SELECT owner_id FROM folders WHERE id = $id",
-  mode: "get",
-};
-
-/** The owner of a folder row, by the row's ID. */
-export async function readFolderOwner(
-  reader: WorkerConnection,
-  id: string,
-): Promise<string | undefined> {
-  const [row] = await snapshot(reader, [FOLDER_OWNER], { id });
-  const owner = (row as Row | null | undefined)?.["owner_id"];
-  return typeof owner === "string" ? owner : undefined;
 }
 
 /** A live project's live folder on one machine. */

@@ -10,11 +10,12 @@ the behaviour it describes, and keep each one to a sentence or two.
   shown both values and choose.
 - Changes sent together are saved together, or not at all.
 - A change that was reported as saved survives a crash of TTasks.
-- A change sent again with the same request ID after a lost reply is applied once, and answered as
-  it was the first time, also when it changed nothing or when the space changed since: for an
-  agent, through the same connection, or through the tools and the shell of one agent TTasks
-  opened. The page and the agent tools resend that way by themselves. At the command line, repeat
-  the command with the `--request-id` that the failed command named.
+- A change sent again with the same request ID after a lost reply is applied once, and its answer
+  says what that change did, also when it changed nothing or the space changed since; the names
+  and lists in it are as they are now: for an agent, through the same connection, or through the
+  tools and the shell of one agent TTasks opened. The page and the agent tools resend that way by
+  themselves. At the command line, repeat the command with the `--request-id` that the failed
+  command named. A change that was refused saved nothing: sent again, it is decided again.
 - Every change keeps what changed and who made it: you, an agent, or a script.
 - Undo and redo never replace someone else's work that came in between, also when that work set a
   value and set it back. Redo passes over a change of yours it cannot bring back and redoes the
@@ -378,9 +379,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   other has. A restore over a space, or a claim of a copy, goes on from the backup's counter when
   the earlier space's database cannot be read at all.
 - A command repeated without its request ID is a new change: a note added twice is there twice.
-- A change saved by a build before this one, saved just before TTasks stopped and before its
-  answer was kept, or whose first answer had to leave something out, is answered again from what
-  was saved: such an answer can name a title or a group as it is now.
+- A change saved by a build before this one and sent again in a form this build no longer takes is
+  answered with what it did, marked as not compared: TTasks cannot tell it from another change
+  under the same request ID. Such a retry's answer can leave out a detail that build did not keep.
 - A project that is moved or reordered past the place a list of areas and projects has reached,
   while that list is read page by page, can be listed twice or not at all.
 - Everything started inside a terminal agent while it runs counts as that task's session: a new
