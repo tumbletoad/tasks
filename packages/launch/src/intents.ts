@@ -151,6 +151,10 @@ export const FAIL_REASONS = [
   "agent_exited",
   /** T3: the thread's folder is not the resolved folder. */
   "folder_mismatch",
+  /** T3 does not offer the instance's model, and made no thread. */
+  "model_unavailable",
+  /** T3's pairing does not allow what the launch asks (read only, or a narrower mode): no thread. */
+  "pairing_denied",
   /** Clipboard: the service stopped before the copy was reported. */
   "interrupted",
   /**

@@ -102,7 +102,8 @@ describe("[A4.3.4.1.t3.pairing] pairing with T3 by OAuth and PKCE", () => {
       expect(await fake.approveInBrowser(attempt.url)).toBe(200);
       const grant = await attempt.wait();
       expect(grant.accessToken).toMatch(/^fake-at-/u);
-      expect(grant.refreshToken).toMatch(/^fake-rt-/u);
+      // T3 gives no refresh token: the pairing lasts as long as its token.
+      expect(grant.refreshToken).toBeUndefined();
       expect(grant.expiresAt).toBeTypeOf("number");
       expect(fake.tokenRequests).toBe(1);
       // The attempt is over: a second callback with the same state changes nothing.
@@ -200,6 +201,11 @@ describe("[A4.3.4.1.t3.pairing] pairing with T3 by OAuth and PKCE", () => {
         expect(await readT3Origin(other)).toEqual({ status: "not_running" });
       }
       expect(await readT3Origin(join(base, "nowhere"))).toEqual({ status: "not_running" });
+      // A file a killed T3 left behind: its process is gone, so T3 does not run.
+      writeFileSync(runtime, JSON.stringify({ origin: fake.origin, pid: 2_147_483_646 }), {
+        mode: 0o600,
+      });
+      expect(await readT3Origin(other)).toEqual({ status: "not_running" });
       if (process.platform !== "win32") {
         writeFileSync(runtime, JSON.stringify({ origin: fake.origin }));
         chmodSync(runtime, 0o666);

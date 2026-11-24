@@ -185,6 +185,52 @@ describe("[A5.3.9.web.thread-request] a launch's request shows in the thread as 
   });
 });
 
+describe("[A4.3.4.1.t3.open] a T3 Code launch's entry brings its thread up in T3 Code", () => {
+  test("Open in T3 on a thread T3 made, none on one that did not open; the two refusals T3 gives say why", () => {
+    const t3 = (id: string, state: ReceiptState, reason: string | null = null): Receipt => ({
+      ...receipt(id, `L${id.slice(-5).toUpperCase()}`, state, AT),
+      instance: "t3",
+      route: "t3-mcp",
+      reason,
+    });
+    const asked: string[] = [];
+    act(() => {
+      root ??= createRoot(host);
+      root.render(
+        <I18n>
+          <Thread
+            notes={[]}
+            log={[]}
+            receipts={[
+              t3("la_t3000", "confirmed"),
+              t3("la_t3001", "failed", "model_unavailable"),
+              t3("la_t3002", "failed", "pairing_denied"),
+            ]}
+            instances={[{ key: "t3", label: "T3 Code", glyph: "T3", ring: 2, route: "t3-mcp" }]}
+            partial={false}
+            onOpenInT3={(launch) => asked.push(launch)}
+          />
+        </I18n>,
+      );
+    });
+    const buttons = [...host.querySelectorAll<HTMLButtonElement>("[data-part='open-in-t3']")];
+    expect(buttons.map((b) => b.closest("[data-entry]")?.getAttribute("data-entry-key"))).toEqual([
+      "r:la_t3000",
+    ]);
+    act(() => {
+      buttons[0]?.click();
+    });
+    expect(asked).toEqual(["la_t3000"]);
+    const text = entries().map((e) => e.querySelector("[data-part='entry-text']")?.textContent);
+    expect(text).toContain(
+      "Did not open: T3 Code does not offer this instance's model: set its t3_model to one T3 Code offers",
+    );
+    expect(text).toContain(
+      "Did not open: the pairing with T3 Code does not allow it: pair again, choosing Full access",
+    );
+  });
+});
+
 describe("[A5.while-away.web.thread-older] Earlier shows what the page holds, then Older entries reads further", () => {
   test("Earlier reveals the held entries; then Older entries asks once, says it reads, and goes with the last of them", () => {
     const notes = [1, 2, 3, 4, 5, 6, 7, 8].map((i) =>

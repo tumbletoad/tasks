@@ -15,7 +15,7 @@
 //                               (Open and Copy are `launch.open`, A4 3.4, 3.15)
 //   POST /api/v1/launch/…       the agent apps busy here, a task's launch receipts, Run, a
 //                               task's runs and Stop, and its folder shown in this computer's
-//                               file manager (launches.ts)
+//                               file manager, and T3 Code's Start, Pair and Open in T3 (launches.ts)
 //   POST /api/v1/space/list     this machine's spaces and its default space (the space switcher)
 //   POST /api/v1/space/default  Make default: machine.toml's `[service] default_space`
 //   POST /api/v1/machine/pref    Settings: set or reset a machine preference of the page's
@@ -812,8 +812,9 @@ export class HttpApp {
    * `POST /api/v1/launch/<action>` (checks.ts admits these only): `busy`, the agent apps busy
    * with a task on this machine; `list`, a task's receipts; `run`, the person's Run; `runs`, a
    * task's runs; `stop`, the person's Stop of a run; `folder`, the task's folder in the file
-   * manager. The UI's grant is the person, the only one who starts or stops a run or opens a
-   * folder from here.
+   * manager; `t3_start`, `t3_pair` and `t3_open`, T3 Code started, paired or showing a thread. The
+   * UI's grant is the person, the only one who starts or stops a run or opens a folder or an app
+   * from here.
    */
   async #launch(
     res: ServerResponse,
@@ -828,8 +829,9 @@ export class HttpApp {
       return;
     }
     try {
-      const result =
-        action === "folder"
+      const result = action.startsWith("t3_")
+        ? await this.launches.t3(action, space, input, copy)
+        : action === "folder"
           ? await this.launches.showFolder(space, input, copy)
           : action === "run"
             ? { run: await this.launches.run(space, input, copy) }

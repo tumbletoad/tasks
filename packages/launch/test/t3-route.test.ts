@@ -1,8 +1,8 @@
 // The T3 primary route against a fake T3 server (A4 3.4.1, 3.9.2, 3.9.3, A4 5.1 "Fake T3 server",
 // A7 3.9 M2.11). The Verify line: a lost reply, then the repeat, returns the same thread across an
 // HTTP reconnect and across a T3 restart; after an OAuth reauthorization the intent is Unknown and
-// no thread is created; a 401 leads to "Reconnect T3"; a nested folder asks and never uses the
-// containing project. The launch machine runs on the in-memory store with the route as its T3 step
+// no thread is created; a 401 leads to "Reconnect T3"; a nested folder becomes a project of its own
+// and the containing project is never used. The launch machine runs on the in-memory store with the route as its T3 step
 // and recovery, as the service will compose them. Fixture text, a temporary folder and a fake T3 on
 // a loopback port the OS assigns; nothing here reaches a real T3.
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
@@ -14,7 +14,7 @@ import { LaunchMachine, type RecoverySteps } from "../src/machine.ts";
 import { resolvePlace, type RootFolder } from "../src/places.ts";
 import type { LaunchIntent } from "../src/store.ts";
 import { T3_TEXT, T3Route, type T3Prepared } from "../src/t3-route.ts";
-import { MemoryT3Files, NOT_NOW_MS, readPairing } from "../src/t3-state.ts";
+import { MemoryT3Files, readPairing } from "../src/t3-state.ts";
 import { MemoryDurable, MemoryExecutionStore, randomId } from "./memory-store.ts";
 import { MACHINE } from "./stores.ts";
 
@@ -79,19 +79,21 @@ function folder(...parts: string[]): string {
 }
 
 /** The Prepared step for a place under the `work` root. */
-async function prepare(
-  path: string,
-  name = path,
-): Promise<{ prepared: T3Prepared; place: string }> {
+async function prepare(path: string, name = path): Promise<{ prepared: T3Prepared }> {
   const resolution = await resolvePlace({ root: "work", path }, roots);
   if (resolution.status !== "ok") throw new Error(`fixture place: ${resolution.reason}`);
-  const place = `pl-${path.replaceAll("/", "-")}`;
   const prepared = await route.prepare({
-    place,
     folder: { path: resolution.folder, identity: resolution.identity },
     name,
   });
-  return { prepared, place };
+  return { prepared };
+}
+
+/** Pairs again with a fake that gives refresh tokens, as T3 does not: for the refresh path's tests. */
+async function pairWithRefresh(): Promise<void> {
+  fake.refreshTokens = true;
+  fake.expiresIn = 3600;
+  await pair();
 }
 
 let clicks = 0;
@@ -175,10 +177,62 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
       const link = await route.openThread(confirmed as LaunchIntent, BRIEF);
       expect(link).toEqual({ opened: true, prompt: true });
       const url = new URL(opened[0] ?? "");
-      expect(`${url.protocol}//${url.host}${url.pathname}`).toBe(
+      expect(`${url.protocol}//${url.host}${decodeURIComponent(url.pathname)}`).toBe(
         `t3code://threads/${fake.environmentId}/${thread}`,
       );
       expect(url.searchParams.get("prompt")).toBe(BRIEF);
+      // Opened again later: the thread alone, so a draft the person changed in T3 stays.
+      await route.openThread(confirmed as LaunchIntent, undefined);
+      expect(new URL(opened[1] ?? "").search).toBe("");
+    },
+    SLOW,
+  );
+
+  test(
+    "T3's refusal of the model, a narrower mode or a read-only pairing is Failed with its reason at once: no repeat, no thread",
+    async () => {
+      fake.addProject(folder("lumen"));
+      fake.models = ["another-model"];
+      const model = await launch(machine(), "lumen");
+      expect(model.dispatched?.state).toBe("failed");
+      expect(model.dispatched?.reason).toBe("model_unavailable");
+      fake.models = undefined;
+      // The person approved less than full access: an instance with full access asks for more.
+      fake.access = "auto-accept-edits";
+      await pair();
+      const mode = await launch(machine(), "lumen");
+      expect(mode.dispatched?.state).toBe("failed");
+      expect(mode.dispatched?.reason).toBe("pairing_denied");
+      // Read only: T3 lists the projects and makes no thread.
+      fake.access = "read-only";
+      await pair();
+      const read = await launch(machine(), "lumen");
+      expect(read.dispatched?.state).toBe("failed");
+      expect(read.dispatched?.reason).toBe("pairing_denied");
+      expect(fake.threads.size).toBe(0);
+      for (const { intent } of [model, mode, read]) {
+        const calls = fake.callsOf("t3_thread_launch");
+        expect(calls.filter((c) => c.clientRequestId === intent.id)).toHaveLength(1);
+      }
+    },
+    SLOW,
+  );
+
+  test(
+    "a pairing ends with its 30-day token: Reconnect T3, and nothing is sent",
+    async () => {
+      fake.addProject(folder("lumen"));
+      const pairing = readPairing(files);
+      expect(pairing?.refreshToken).toBeUndefined();
+      expect((pairing?.expiresAt ?? 0) - now).toBe(30 * 24 * 60 * 60_000);
+      now = (pairing?.expiresAt ?? now) + 1;
+      const before = fake.calls.length;
+      expect(await route.availability()).toEqual({ state: "reconnect" });
+      expect((await prepare("lumen")).prepared).toEqual({
+        kind: "unavailable",
+        reason: "reconnect",
+      });
+      expect(fake.calls.length).toBe(before);
     },
     SLOW,
   );
@@ -240,6 +294,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   test(
     "a 401 for a token that ran out during the call keeps the pairing: the next call refreshes",
     async () => {
+      await pairWithRefresh();
       fake.addProject(folder("lumen"));
       // The token is valid when the launch starts and runs out before its request reaches T3.
       fake.beforeNext("t3_thread_launch", () => {
@@ -330,6 +385,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   test(
     "recovery after the token ran out sends nothing: the intent is Unknown and the pairing still refreshes",
     async () => {
+      await pairWithRefresh();
       fake.addProject(folder("lumen"));
       fake.dropNext("t3_thread_launch", "after");
       const first = machine({
@@ -478,44 +534,33 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   );
 
   test(
-    "a nested folder asks and never uses the containing project; Not now holds for 30 days; Register titles it by the project",
+    "a nested folder becomes a T3 project of its own without a question, and the containing project is never used",
     async () => {
       const lumen = fake.addProject(folder("lumen"), "lumen");
       folder("lumen", "docs");
-      const asked = await prepare("lumen/docs", "Docs");
-      expect(asked.prepared).toEqual({
-        kind: "ask",
-        question: "register",
-        text: "Register Docs as a T3 project?",
-      });
-
-      route.notNow(asked.place);
-      expect((await prepare("lumen/docs")).prepared).toEqual({
-        kind: "unavailable",
-        reason: "not_registered",
-      });
-      expect(T3_TEXT.not_registered).toBe("T3 opens only registered folders.");
-      now += NOT_NOW_MS;
-      expect((await prepare("lumen/docs")).prepared.kind).toBe("ask");
-
-      // Register: a project for exactly the folder, then the exact root binds.
       const resolution = await resolvePlace({ root: "work", path: "lumen/docs" }, roots);
       if (resolution.status !== "ok") throw new Error("fixture");
-      const registered = await route.register({
-        place: asked.place,
-        folder: { path: resolution.folder, identity: resolution.identity },
-        name: "Docs",
-      });
-      expect(registered).toMatchObject({ kind: "bound", strategy: { type: "root" } });
-      // The T3 project takes the title of the task's project, not the folder's name.
+      const { prepared } = await prepare("lumen/docs", "docs");
       const docs = [...fake.projects.values()].find((p) => p.workspaceRoot === resolution.folder);
-      expect(docs?.title).toBe("Docs");
-      expect(registered).toMatchObject({ projectId: docs?.id });
-      const { dispatched } = await launch(machine(), "lumen/docs");
-      expect(dispatched?.state).toBe("dispatched");
+      expect(docs?.title).toBe("docs");
+      expect(prepared).toEqual({ kind: "bound", projectId: docs?.id, strategy: { type: "root" } });
+      const m = machine();
+      const { dispatched } = await launch(m, "lumen/docs");
       expect(fake.threads.get(dispatched?.evidence.thread ?? "")?.projectId).toBe(docs?.id);
-      // The containing project was never used for a thread.
+      // Confirmed from the project T3 holds by ID, without listing every project again.
+      const lists = fake.callsOf("t3_project_list").length;
+      expect((await route.confirm(dispatched as LaunchIntent)).kind).toBe("confirmed");
+      expect(fake.callsOf("t3_project_list")).toHaveLength(lists);
       expect(fake.callsOf("t3_thread_launch").some((c) => c.projectId === lumen)).toBe(false);
+
+      // A pairing below full access cannot register: pair again, choosing Full access.
+      folder("lumen", "notes");
+      fake.access = "auto";
+      await pair();
+      expect((await prepare("lumen/notes")).prepared).toEqual({
+        kind: "unavailable",
+        reason: "pairing_denied",
+      });
     },
     SLOW,
   );
@@ -592,6 +637,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   test(
     "answers as an SSE stream read the same, and a token refresh starts a new grant",
     async () => {
+      await pairWithRefresh();
       fake.addProject(folder("lumen"));
       fake.sse = true;
       const first = await launch(machine(), "lumen");

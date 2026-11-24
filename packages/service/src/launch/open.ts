@@ -26,6 +26,7 @@ import {
   type RouteDef,
   SETTINGS,
   type Setting,
+  type T3Unavailable,
 } from "@ttasks/launch";
 import { decodeConfig, parseToml, readConfigFile } from "../config/toml.ts";
 import type { SpaceWriterHandle } from "@ttasks/storage";
@@ -52,6 +53,8 @@ export const UNAVAILABLE_REASONS = [
   "too_long",
   /** The agent's home is registered for another space: its agent could not use TTasks here. */
   "other_space",
+  /** T3 Code cannot open it now: the error names why (T3Unavailable). */
+  "t3",
 ] as const;
 export type UnavailableReason = (typeof UNAVAILABLE_REASONS)[number];
 
@@ -129,10 +132,13 @@ export class LaunchUnavailable extends Error {
   readonly reason: UnavailableReason;
   /** `other_space`: the name of the space the home is registered for, when it is served. */
   readonly works: string | undefined;
-  constructor(reason: UnavailableReason, works?: string) {
+  /** `t3`: why T3 Code cannot open it now. */
+  readonly t3: T3Unavailable | undefined;
+  constructor(reason: UnavailableReason, works?: string, t3?: T3Unavailable) {
     super(`This instance cannot open the task here: ${reason}`);
     this.reason = reason;
     this.works = works;
+    this.t3 = t3;
   }
 }
 
@@ -213,6 +219,8 @@ export interface OpenTaskResult {
   readonly note?: string;
   /** The sanitiser removed something from the composer text (A4 3.15.6's quiet notice). */
   readonly removed: boolean;
+  /** T3 Code: whether the thread came up; false when it exists and its link did not open. */
+  readonly linkOpened?: boolean;
 }
 
 /** The route an instance takes for a click, and its brief. */
@@ -289,6 +297,12 @@ export function chooseRoute(
     throw new LaunchUnavailable("not_set_up");
   }
   if (!servesSpace(instance, options.space)) throw new LaunchUnavailable("not_for_space");
+  // T3 Code opens through its own paired route, with the brief in the thread's composer and the
+  // permission as the thread's runtime mode; whether T3 can open it now is the click's to ask.
+  const t3 = instance.target === "t3" ? routeOf("t3", "t3-mcp") : undefined;
+  if (t3 !== undefined) {
+    return { route: "t3-mcp", kind: "prefilled", budget: t3.budget, copy: false, leftOut: [] };
+  }
   const settings = settingsOf(instance, options.home, options.platform);
   const lost = (route: RouteDef): Setting[] => settings.filter((s) => !route.carries.includes(s));
   const target = targetDef(instance.target);
