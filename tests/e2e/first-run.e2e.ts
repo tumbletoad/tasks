@@ -301,13 +301,27 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
     await expect(page.getByText("The entry is gone from the app's settings")).toBeVisible();
     await widths(page, "settings-apps-missing");
+    // Its access is still on: beside the switch it can be taken away, and that choice taken back.
+    await page.getByRole("button", { name: "Take Codex's access away" }).click();
+    await expect(page.locator('[data-part="changes"]')).toContainText(
+      `Codex no longer has the ${PRODUCT_NAME} tools`,
+    );
+    await widths(page, "settings-apps-missing-turn-off");
+    await page.getByRole("button", { name: "Keep Codex's access" }).click();
+    await expect(page.locator('[data-part="changes"]')).toHaveCount(0);
     await flip(page, toolsFor("Codex"), true);
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
     expect(fresh.codexConfig()).toBe(registered);
-    await flip(page, toolsFor("Codex"), false);
+    // Taken out again: this time its access is taken away from beside the switch.
+    fresh.writeCodex(bare);
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
+    await page.getByRole("button", { name: "Take Codex's access away" }).click();
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
+    await expect(page.getByRole("button", { name: "Take Codex's access away" })).toHaveCount(0);
+    await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
     expect(fresh.codexConfig()).toBe(bare);
 
     // A file setup cannot replace: that row is named with its home and why, and stays off.
