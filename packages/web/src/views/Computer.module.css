@@ -112,6 +112,7 @@
   flex-wrap: wrap;
   gap: 0 6px;
   min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 0.8125rem;
   line-height: 1.125rem;
   color: var(--k-muted);
