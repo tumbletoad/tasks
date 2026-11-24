@@ -9,6 +9,7 @@ import { createInterface } from "node:readline/promises";
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { blockedMessage, movedMessage, portUnsaved, unsavedMessage } from "../http/messages.ts";
 import {
+  autostartLine,
   applyPlan,
   NO_UNIT_LINE,
   planInstall,
@@ -319,38 +320,11 @@ export function statusText(ctx: ServiceContext, report: StatusReport): string {
     `${PRODUCT_NAME} service, for ${whichInstall(ctx)}`,
     `  Entry:    ${where}: ${state}`,
   ];
+  lines.push(`  Autostart: ${autostartLine(report.starts)}`);
   const a = report.autostart;
-  switch (a.kind) {
-    case "systemd": {
-      // What linger means for the service holds only for this install's own unit: without one,
-      // nothing starts the service at sign-in or boot, linger or not.
-      const unit = entry.state === "ours";
-      lines.push(
-        !a.user_manager
-          ? "  systemd:  no user manager on this machine: nothing starts the service at login"
-          : unit
-            ? `  systemd:  ${a.enabled ?? "unknown"}, ${a.active ?? "unknown"}`
-            : `  systemd:  no unit of this install, so nothing starts the service at sign-in or boot. To have it start by itself: ${CLI_NAME} service install`,
-        a.linger === "unknown"
-          ? "  Linger:   unknown"
-          : !unit || !a.user_manager
-            ? `  Linger:   ${a.linger === "yes" ? "on" : "off"}`
-            : a.linger === "yes"
-              ? "  Linger:   on: the service starts at boot, before you sign in"
-              : "  Linger:   off: the service starts when you sign in. To start it at boot: loginctl enable-linger",
-      );
-      break;
-    }
-    case "run":
-      lines.push(
-        a.startup_apps === "off"
-          ? `  Startup apps: off. ${PRODUCT_NAME} is turned off in Startup apps (Task Manager), so Windows does not start it at sign-in`
-          : `  Startup apps: on${a.startup_apps === "not_set" ? " (no choice recorded)" : ""}`,
-      );
-      break;
-    case "launchd":
-      lines.push(`  launchd:  ${a.loaded ? "loaded" : "not loaded"}`);
-      break;
+  // The unit's own state, beside the answer: whether it runs now is not whether it starts.
+  if (a.kind === "systemd" && a.user_manager && entry.state === "ours") {
+    lines.push(`  systemd:  ${a.enabled ?? "unknown"}, ${a.active ?? "unknown"}`);
   }
   const s = report.service;
   lines.push(

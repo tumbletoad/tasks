@@ -2,12 +2,14 @@
 // service, it tells an untrusted endpoint from a stopped service, and with a running service it
 // reports its version, protocol and spaces, and recent crash files. Fixture text only.
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { RpcError } from "@ttasks/bridge/protocol";
 import { endpointRoot, listen } from "@ttasks/bridge/test/endpoint";
+import { runKeys, serviceEntry } from "@ttasks/service/install";
 import { tempRoot } from "@ttasks/service/test/harness";
+import { captureIO, fakeContext, MemoryRegistry } from "@ttasks/service/test/install-fakes";
 import { CLI_SPEC } from "../src/args.ts";
 import type { Session } from "../src/connect.ts";
 import { requestCheck } from "../src/doctor.ts";
@@ -68,6 +70,51 @@ describe("[A2.3.13.cli.doctor] ttasks doctor --self-test", () => {
       expect(status(report, "sessions")).toBe("skip");
       const text = await runMain(["doctor"], { home: join(temp.root, "h") });
       expect(text.stdout).toMatch(/^fail {2}paths:/m);
+    } finally {
+      temp.cleanup();
+    }
+  });
+
+  test("the autostart row is service status's answer, and a warning only when it was asked for and will not happen", async () => {
+    const temp = tempRoot("da");
+    try {
+      // Windows's flow on every OS: an in-memory registry, never a real Run value.
+      const registry = new MemoryRegistry();
+      const fake = fakeContext({ platform: "win32", dir: temp.root, registry });
+      const main = { serviceContext: () => fake.ctx };
+      const row = async () => {
+        const ran = await runMain(["doctor", "--json"], { home: join(temp.root, "h"), main });
+        return (JSON.parse(ran.stdout) as Report).checks.find((c) => c.id === "autostart");
+      };
+      const statusLine = async () => {
+        const ran = await runMain(["service", "status"], { home: join(temp.root, "h"), main });
+        return /^ {2}Autostart: (.*)$/m.exec(ran.stdout)?.[1];
+      };
+      // Never set up: what is so, and how to turn it on.
+      expect(await row()).toEqual({
+        id: "autostart",
+        status: "info",
+        detail:
+          "off: this install has no entry, so Windows does not start the service at sign-in. To have it start by itself: ttasks service install",
+      });
+      expect(await statusLine()).toBe((await row())?.detail);
+      const io = captureIO();
+      expect(await serviceEntry("install", { yes: true }, io.io, () => fake.ctx)).toBe(0);
+      expect(await row()).toEqual({
+        id: "autostart",
+        status: "ok",
+        detail: "on: Windows starts the service when you sign in",
+      });
+      expect(await statusLine()).toBe((await row())?.detail);
+      // Switched off in Task Manager: the person's choice, not a warning.
+      const approved = runKeys(fake.ctx.roots.registryRoot).approved;
+      const off = { name: fake.ctx.names.runValue, kind: "REG_BINARY", data: "03" } as const;
+      registry.set(approved, off);
+      expect((await row())?.status).toBe("info");
+      // The entry is there and its launcher is gone: asked for, and it will not happen.
+      rmSync(fake.ctx.program);
+      expect(await row()).toMatchObject({ status: "warn" });
+      expect((await row())?.detail).toContain("the program the entry starts is gone");
     } finally {
       temp.cleanup();
     }

@@ -191,6 +191,35 @@ const groupStep: fc.Arbitrary<Step> = fc.oneof(
   { arbitrary: fc.record({ kind: fc.constant("redo" as const) }), weight: 2 },
 );
 
+/**
+ * Counterexamples the random runs found, run every time: an undo held back by an agent's change, a
+ * redo of it that wrote nothing again, and an undo after that.
+ */
+const GROUP_CASES: readonly (readonly Step[])[] = [
+  // seed 565489635, path "52:3:2:3:8:8:8:8:10:6:9:11:14:14:14:11:11:11:11:11:11:11:11:11:11:11:11:11"
+  [
+    { kind: "move", who: "human", t: 0, p: 1 },
+    { kind: "regroup", who: "agent", p: 0, a: 1 },
+    { kind: "undo", partial: true },
+    { kind: "redo" },
+    { kind: "undo", partial: false },
+    { kind: "move", who: "human", t: 0, p: 0 },
+    { kind: "regroup", who: "human", p: 0, a: 0 },
+    { kind: "move", who: "human", t: 0, p: 0 },
+    { kind: "undo", partial: false },
+  ],
+  // seed -1539344306, path "0:6:7:12:12:7:8:8:7:7"
+  [
+    { kind: "regroup", who: "human", p: 3, a: 0 },
+    { kind: "move", who: "agent", t: 0, p: 3 },
+    { kind: "undo", partial: false },
+    { kind: "regroup", who: "human", p: 0, a: 0 },
+    { kind: "undo", partial: true },
+    { kind: "redo" },
+    { kind: "undo", partial: false },
+  ],
+];
+
 interface FolderState {
   id: string;
   kind: string;
@@ -546,6 +575,7 @@ describe("[A1.5.write.folders-model] random folder operations, deletes, restores
   }, 300_000);
 
   test("a deleted project never holds a live task or folder, and a task stays in its project's area, with an agent working in between", async () => {
+    for (const steps of GROUP_CASES) await run(steps);
     await fc.assert(
       fc.asyncProperty(fc.array(groupStep, { minLength: 5, maxLength: 30 }), async (steps) => {
         await run(steps);

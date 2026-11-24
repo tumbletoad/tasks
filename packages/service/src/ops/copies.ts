@@ -39,7 +39,7 @@ export function isAmbiguity<S extends Copy>(found: Found<S>): found is Ambiguity
 }
 
 /** Whether the folder serves its space now, or is about to (opening) or just was (closing). */
-const isServed = (copy: Copy): boolean =>
+export const isServed = (copy: Copy): boolean =>
   copy.state === "open" ||
   copy.state === "read_only" ||
   copy.state === "opening" ||

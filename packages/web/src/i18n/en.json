@@ -7,6 +7,7 @@
   "app.reload": "Reload",
   "app.noSpace": "This space is not open on this machine. {cli} space list says why and what to run.",
   "app.pickSpace": "Choose a space.",
+  "app.unknownSpace": "This link names a space this machine does not have, so no space was opened.",
   "app.skip": "Skip to the list",
   "app.title": "{view} · {space}",
 
