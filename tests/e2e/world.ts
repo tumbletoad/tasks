@@ -5,22 +5,12 @@
 // `ui/mint_code` over the socket, in the URL's fragment. The fake agent writes through the socket
 // as an agent does (class `cli-agent`).
 // Fixture data only. Tests only.
-import { spawnSync } from "node:child_process";
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RpcError, type RpcSession } from "../../packages/bridge/src/protocol/index.ts";
 import { findEntry, readsOnly, type ErrorBody } from "../../packages/contracts/src/index.ts";
 import { atomicWrite } from "../../packages/files/src/index.ts";
-import { startTimes } from "../../packages/launch/src/process.ts";
 import { openSpace, type Id } from "../../packages/storage/src/index.ts";
 import {
   instanceToml,
@@ -49,14 +39,11 @@ import {
 } from "./bulk.ts";
 import type { FakeCodexCase } from "./codex-cases.ts";
 import {
-  failAgentFile,
+  FakeTerminal,
   fakeInstanceToml,
-  refuseFile,
   type FakeAgent,
   type TerminalCall,
 } from "./fake-terminal.ts";
-
-const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
 
 /** The service runs as the sample's machine, so that machine's folders take this OS's form. */
 const OS =
@@ -220,6 +207,7 @@ const FAKE_CODEX = fileURLToPath(new URL("./fake-codex.ts", import.meta.url));
 export async function startWorld(ui: string, options: WorldOptions = {}): Promise<World> {
   const temp = tempRoot("e2e");
   const services = new Services();
+  const terminal = new FakeTerminal();
   let json: ServiceJson | undefined;
   const sessions: RpcSession[] = [];
   try {
@@ -343,8 +331,6 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     const links = join(temp.root, "links.txt");
     writeFileSync(links, "");
 
-    const record = join(temp.root, "terminal.jsonl");
-    writeFileSync(record, "");
     const shown = join(temp.root, "folders.txt");
     writeFileSync(shown, "");
     const monitor = join(temp.root, "monitor.txt");
@@ -359,15 +345,11 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       )?.home ?? "";
     /** One life of the service: its process, its page's origin and its two sessions. */
     const boot = async () => {
-      const proc = services.start(home, {
-        script: ENTRY,
-        env: {
-          E2E_UI: ui,
-          E2E_TERMINAL: record,
-          E2E_FOLDERS: shown,
-          ...(options.monitor === true ? { E2E_MONITOR: monitor } : {}),
-          ...(options.t3 === undefined ? {} : { T3CODE_HOME: options.t3, E2E_LINKS: links }),
-        },
+      const proc = terminal.startService(services, home, {
+        E2E_UI: ui,
+        E2E_FOLDERS: shown,
+        ...(options.monitor === true ? { E2E_MONITOR: monitor } : {}),
+        ...(options.t3 === undefined ? {} : { T3CODE_HOME: options.t3, E2E_LINKS: links }),
       });
       json = await waitReady(home, proc.pid);
       const endpoint = json.endpoint?.path;
@@ -503,11 +485,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         const file = join(cases, `${task}.json`);
         return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as FakeCodexCase[]) : [];
       },
-      terminal: () =>
-        readFileSync(record, "utf8")
-          .split("\n")
-          .filter((line) => line !== "")
-          .map((line) => JSON.parse(line) as TerminalCall),
+      terminal: () => [...terminal.calls],
       folders: () =>
         readFileSync(shown, "utf8")
           .split("\n")
@@ -517,10 +495,10 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           .split("\n")
           .filter((line) => line !== ""),
       refuseNextOpen: (task) => {
-        appendFileSync(refuseFile(record), `${task}\n`);
+        terminal.refuse.push(task);
       },
       failNextAgent: () => {
-        writeFileSync(failAgentFile(record), "");
+        terminal.failNextAgent = true;
       },
       hold: (ref) => {
         writeFileSync(join(holds, ref), "");
@@ -646,49 +624,18 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         }
       },
       close: async () => {
-        // The shims are detached, as a terminal's are, and work in the world's folders. Every held
-        // agent ends, and each shim reports its agent's end while the service still runs, and goes.
         for (const name of readdirSync(holds)) {
           if (!name.endsWith(".pids")) rmSync(join(holds, name), { force: true });
         }
-        // A shim is known by its PID and start time, so a PID the OS gave to another process since
-        // is not waited for.
-        const shims = readFileSync(record, "utf8")
-          .split("\n")
-          .filter((line) => line !== "")
-          .map((line) => JSON.parse(line) as TerminalCall)
-          .flatMap((call) =>
-            call.pid === undefined || call.start === undefined
-              ? []
-              : [{ pid: call.pid, start: call.start }],
-          );
-        const until = Date.now() + SLOW_MS;
-        while (shims.length > 0 && Date.now() < until) {
-          const live = await startTimes(shims.map((s) => s.pid)).catch(() => undefined);
-          if (live !== undefined && !shims.some((s) => live.get(s.pid) === s.start)) break;
-          await new Promise((resolve) => setTimeout(resolve, 250));
-        }
+        await within(terminal.close(), SLOW_MS, "the fake terminal did not close");
         await stop().catch(() => services.stopAll());
         removeRuntimeDir(json);
-        try {
-          temp.cleanup();
-        } catch (error) {
-          if (process.platform === "win32" && process.env["GITHUB_ACTIONS"] === "true") {
-            const probe = fileURLToPath(new URL("./windows-open-files.py", import.meta.url));
-            const result = spawnSync("python", ["-I", "-S", probe, temp.root], {
-              stdio: ["ignore", "inherit", "inherit"],
-              windowsHide: true,
-              timeout: 15_000,
-            });
-            if (result.status !== 0)
-              process.stderr.write("The open-handle query did not finish.\n");
-          }
-          throw error;
-        }
+        temp.cleanup();
       },
     };
   } catch (error) {
     for (const s of sessions.splice(0)) s.close();
+    await terminal.close();
     await services.stopAll();
     removeRuntimeDir(json);
     if (existsSync(temp.root)) temp.cleanup();

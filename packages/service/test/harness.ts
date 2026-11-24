@@ -94,6 +94,7 @@ export class Services {
       spaces?: string[];
       env?: Record<string, string>;
       script?: string;
+      ipc?: boolean;
       command?: readonly [string, ...string[]];
     } = {},
   ): Proc {
@@ -101,17 +102,19 @@ export class Services {
     if (options.spaces !== undefined) registerSpaces(home, options.spaces);
     const child = spawn(file, args, {
       env: serviceEnv(home, options.env),
-      stdio: ["pipe", "ignore", "pipe"],
+      stdio: options.ipc === true ? ["pipe", "ignore", "pipe", "ipc"] : ["pipe", "ignore", "pipe"],
       windowsHide: true,
     });
     const pid = child.pid;
-    if (pid === undefined) throw new Error("the service did not start");
+    const { stdin, stderr } = child;
+    if (pid === undefined || stdin === null || stderr === null)
+      throw new Error("the service did not start");
     let err = "";
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => {
+    stderr.setEncoding("utf8");
+    stderr.on("data", (chunk: string) => {
       err += chunk;
     });
-    child.stdin.on("error", () => undefined);
+    stdin.on("error", () => undefined);
     const exit = new Promise<Exit>((resolve) => {
       child.once("exit", (code, signal) => {
         resolve({ code, signal });
@@ -123,7 +126,7 @@ export class Services {
       exit,
       stderr: () => err,
       send: (line) => {
-        child.stdin.write(`${line}\n`);
+        stdin.write(`${line}\n`);
       },
     };
     this.#started.push(proc);

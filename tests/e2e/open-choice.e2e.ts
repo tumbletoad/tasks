@@ -59,25 +59,6 @@ async function opensWith(page: Page, act: () => Promise<void>): Promise<string> 
   return ((await sent).postDataJSON() as { instance: string }).instance;
 }
 
-/** Whether the process is still there. */
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Every agent the world's terminal started has ended: its folder can go. */
-async function agentsEnded(world: World): Promise<void> {
-  await expect
-    .poll(() => world.terminal().filter((c) => c.pid !== undefined && alive(c.pid)).length, {
-      timeout: SLOW_MS,
-    })
-    .toBe(0);
-}
-
 /** Nothing on the page scrolls sideways. */
 const sideways = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -170,7 +151,6 @@ test.describe("[M6.e2e.open-choice] One Open button names its agent; the others 
       }
       expect(await violations(page)).toEqual([]);
     } finally {
-      await agentsEnded(world);
       await world.close();
     }
   });

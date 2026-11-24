@@ -13,7 +13,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { CLI_NAME } from "../../packages/brand/src/index.ts";
 import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
 import {
@@ -29,8 +28,7 @@ import {
 import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { installFakeAgents } from "../../packages/testkit/src/fake-agents.ts";
-
-const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
+import { FakeTerminal } from "./fake-terminal.ts";
 
 /** Generous bounds: a loaded machine must not fail a test that is only slow. */
 export const SLOW_MS = 120_000;
@@ -84,6 +82,7 @@ export interface FreshWorld {
 export async function startFresh(ui: string): Promise<FreshWorld> {
   const temp = tempRoot("e2e-fresh");
   const services = new Services();
+  const terminal = new FakeTerminal();
   let json: ServiceJson | undefined;
   const sessions: RpcSession[] = [];
   try {
@@ -99,17 +98,11 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
       join(home, "bin", process.platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME),
       "",
     );
-    const record = join(temp.root, "terminal.jsonl");
-    writeFileSync(record, "");
-    const proc = services.start(home, {
-      script: ENTRY,
-      env: {
-        E2E_UI: ui,
-        E2E_TERMINAL: record,
-        E2E_FOLDERS: join(temp.root, "folders.txt"),
-        E2E_AGENT_HOME: agentHome,
-        E2E_AGENT_ENV: JSON.stringify(fakes.env),
-      },
+    const proc = terminal.startService(services, home, {
+      E2E_UI: ui,
+      E2E_FOLDERS: join(temp.root, "folders.txt"),
+      E2E_AGENT_HOME: agentHome,
+      E2E_AGENT_ENV: JSON.stringify(fakes.env),
     });
     json = await waitReady(home, proc.pid);
     const endpoint = json.endpoint?.path;
@@ -226,6 +219,7 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
       },
       machineToml: () => read(join(configOf(home), "machine.toml")),
       close: async () => {
+        await within(terminal.close(), SLOW_MS, "the fake terminal did not close");
         for (const s of sessions.splice(0)) s.close();
         proc.send("stop");
         await within(proc.exit, SLOW_MS, "the service did not stop").catch(() =>
@@ -237,6 +231,7 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
     };
   } catch (error) {
     for (const s of sessions.splice(0)) s.close();
+    await terminal.close();
     await services.stopAll();
     removeRuntimeDir(json);
     if (existsSync(temp.root)) temp.cleanup();
