@@ -260,6 +260,7 @@ export const prefsManage = defineEntry({
             default: [...EFFORT_LEVELS],
             is_default: false,
             writable: true,
+            held: [],
           },
         ],
         result: "updated",

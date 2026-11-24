@@ -1017,7 +1017,8 @@ Result:
         }
       ],
       "is_default": false,
-      "writable": true
+      "writable": true,
+      "held": []
     }
   ],
   "result": "updated",

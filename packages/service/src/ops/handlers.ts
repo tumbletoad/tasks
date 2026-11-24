@@ -2662,6 +2662,7 @@ const prefsAnswer: Answer = async (view, stored) => {
   const sets = (stored.answer?.["changed"] ?? []) as { key: string }[];
   const keys = new Set(sets.map((s) => s.key));
   const read = await now(view, readSpacePreferences);
+  const held = keys.has(EFFORT_SCALE_KEY) ? await now(view, readEffortHeld) : undefined;
   const asked = TOOL_PREFERENCES.filter((p) => keys.has(p.key));
   return {
     action: "set",
@@ -2669,7 +2670,7 @@ const prefsAnswer: Answer = async (view, stored) => {
     ...(read === undefined
       ? {}
       : {
-          prefs: asked.map((p) => prefRow(p, "get", read.reads.get(p.key), view.principal)),
+          prefs: asked.map((p) => prefRow(p, "get", read.reads.get(p.key), view.principal, held)),
         }),
     result: stored.status === "applied" ? "updated" : "no_change",
     changed: sets.filter((_, k) => stored.results[k]?.status !== "unchanged"),
@@ -3646,10 +3647,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     return {
       action,
       as_of: read.space.asOf,
-      prefs: declared.map((p) => ({
-        ...prefRow(p, action, read.reads.get(p.key), call.principal),
-        ...(p.key === EFFORT_SCALE_KEY && held !== undefined ? { held } : {}),
-      })),
+      prefs: declared.map((p) => prefRow(p, action, read.reads.get(p.key), call.principal, held)),
     };
   },
 
@@ -4663,6 +4661,7 @@ function prefRow(
   action: string,
   read: PreferenceRead | undefined,
   principal: Principal,
+  held?: Awaited<ReturnType<typeof readEffortHeld>>,
 ): Record<string, unknown> {
   const value = read?.value ?? p.default;
   const fallback = p.default;
@@ -4676,6 +4675,7 @@ function prefRow(
     ...(p.policy ? { policy: true } : {}),
     ...(laterSet(p) === undefined ? {} : { fixed: true }),
     ...(later === undefined ? {} : { in_force: later.inForce }),
+    ...(action === "get" && p.key === EFFORT_SCALE_KEY && held !== undefined ? { held } : {}),
   };
 }
 
