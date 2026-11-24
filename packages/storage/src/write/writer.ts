@@ -33,6 +33,8 @@ import {
   PREFERENCES,
   preferenceSpec,
   samePrefValue,
+  type PreferenceSpec,
+  type PrefValue,
 } from "@ttasks/contracts/preferences";
 import type { Connection, Row, SqlValue } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
@@ -148,11 +150,15 @@ import {
   type CheckedRequest,
   type ConflictEntity,
   type Due,
+  type EffortCount,
+  type EffortMove,
   type FieldConflict,
   type InsideFolder,
+  type OffList,
   type HistoryOperation,
   type OpResult,
   type Operation,
+  type PrefSet,
   type Placement,
   type SourceFields,
   type TaskLifecycle,
@@ -417,6 +423,8 @@ interface StagedOp {
   held?: { source: Id<"s">; by: Id<"t"> }[];
   /** `task.wrap_up`: the IDs of the learnings it adds, one per text of `learnings.add`. */
   learnings?: Id<"lr">[];
+  /** A change of the effort levels: the tasks its moves move, as the request found them. */
+  movers?: Mover[];
   /**
    * No write: `task.wrap_up` with `once` on a task wrapped already that it would not change, a
    * matched draft's `log.add` whose entry the task has already, a `task.delete` or
@@ -695,9 +703,20 @@ const SQL = {
   statusInUse:
     "SELECT 1 FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL " +
     "AND status IN (SELECT value FROM json_each($keys)) LIMIT 1",
-  effortInUse:
-    "SELECT 1 FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL " +
-    "AND effort IN (SELECT value FROM json_each($keys)) LIMIT 1",
+  // The tasks that hold a size: live ones and those in the Trash. One whose creation was undone
+  // holds nothing; Redo may bring it back on a size the levels lack, which is reported.
+  effortHolders:
+    "SELECT effort, sum(deleted_at IS NULL AND lifecycle = 'active') AS active, " +
+    "sum(deleted_at IS NULL AND lifecycle <> 'active') AS finished, " +
+    "sum(deleted_at IS NOT NULL) AS trash FROM tasks t " +
+    `WHERE effort IS NOT NULL AND (deleted_at IS NULL OR ${inTrashSql("t")}) GROUP BY effort`,
+  effortMovers:
+    "SELECT id, effort, deleted_at IS NOT NULL AS trash, lifecycle = 'active' AS active " +
+    "FROM tasks t WHERE effort IN (SELECT value FROM json_each($from)) " +
+    `AND (deleted_at IS NULL OR ${inTrashSql("t")}) ORDER BY id`,
+  offList:
+    "SELECT effort, ref FROM tasks WHERE deleted_at IS NULL AND effort IS NOT NULL " +
+    "AND effort NOT IN (SELECT value FROM json_each($keys)) ORDER BY effort, ref",
   areaRow: "SELECT * FROM areas WHERE id = $id",
   projectRow: "SELECT * FROM projects WHERE id = $id",
   lastArea: "SELECT max(position) AS p FROM areas",
@@ -901,6 +920,93 @@ type ScaleKey = "tasks.statuses" | "tasks.effort_scale";
 
 const isScaleKey = (key: string): key is ScaleKey =>
   key === "tasks.statuses" || key === "tasks.effort_scale";
+
+/** A task a change of levels moves: the size it held, and where it is. */
+interface Mover {
+  id: Id<"t">;
+  from: string;
+  state: keyof EffortCount;
+}
+
+/**
+ * The tasks a change of the effort levels moves, each by the size it held before the change. A
+ * move is from a level of the list now or a size tasks hold; a size the list drops that tasks hold
+ * needs a move, and is refused with how many hold it.
+ */
+function stageMoves(
+  conn: Connection,
+  i: number,
+  moves: readonly EffortMove[],
+  held: readonly string[],
+  kept: ReadonlySet<string>,
+): Mover[] {
+  const counts = new Map(
+    conn
+      .prepare(SQL.effortHolders)
+      .all()
+      .map((r): [string, EffortCount] => [
+        String(r["effort"]),
+        { active: Number(r["active"]), finished: Number(r["finished"]), trash: Number(r["trash"]) },
+      ]),
+  );
+  moves.forEach((move, k) => {
+    if (!held.includes(move.from) && !counts.has(move.from)) {
+      problem(
+        "VALIDATION_FAILED",
+        "A move is from a level or a size tasks hold",
+        i,
+        `moves.${String(k)}.from`,
+      );
+    }
+  });
+  const from = new Set(moves.map((move) => move.from));
+  const stranded = held.filter((key) => !kept.has(key) && !from.has(key) && counts.has(key));
+  if (stranded.length > 0) {
+    throw new RequestProblem({
+      code: "VALIDATION_FAILED",
+      message: "Tasks hold a size this change removes: give them a level with a move",
+      op: i,
+      field: "value",
+      holders: stranded.map((effort) => ({ effort, ...must(counts.get(effort), "Counted") })),
+    });
+  }
+  if (from.size === 0) return [];
+  return conn
+    .prepare(SQL.effortMovers)
+    .all({ from: JSON.stringify([...from]) })
+    .map((r) => ({
+      id: new RowReader("tasks", r).id("id", "t"),
+      from: String(r["effort"]),
+      state: Number(r["trash"]) === 1 ? "trash" : Number(r["active"]) === 1 ? "active" : "finished",
+    }));
+}
+
+/** How many tasks each move moved, by state, in the order of the moves. */
+const movedOf = (moves: readonly EffortMove[], movers: readonly Mover[]) =>
+  moves.map((move) => {
+    const count: EffortCount = { active: 0, finished: 0, trash: 0 };
+    for (const m of movers) if (m.from === move.from) count[m.state] += 1;
+    return { ...move, ...count };
+  });
+
+/** Most references of tasks on one size off the levels that an answer names. */
+const OFF_LIST_TASKS = 10;
+
+/** The live tasks on a size the effort levels lack now, by size (OpResult.off_list). */
+export function offList(conn: Connection, refPrefix: string): { off_list?: OffList[] } {
+  const keys = listPreference(conn, "tasks.effort_scale");
+  const found = new Map<string, OffList>();
+  for (const r of conn.prepare(SQL.offList).all({ keys: JSON.stringify(keys) })) {
+    const effort = String(r["effort"]);
+    const entry = found.get(effort) ?? { effort, tasks: [], count: 0 };
+    found.set(effort, entry);
+    entry.count += 1;
+    if (entry.tasks.length < OFF_LIST_TASKS) {
+      entry.tasks.push(formatTaskRef(refPrefix, new RowReader("tasks", r).int("ref", "taskRef")));
+    }
+  }
+  return found.size === 0 ? {} : { off_list: [...found.values()] };
+}
 
 /** A scale's keys from its value: a list of keys, or of `{key}` objects. */
 function scaleKeys(value: unknown): string[] {
@@ -1457,7 +1563,8 @@ export class SpaceWriter {
       if (values.status !== undefined && !statuses.includes(values.status)) {
         problem("VALIDATION_FAILED", "Not a status of this space", i, "status");
       }
-      if (typeof values.effort === "string" && !efforts.includes(values.effort)) {
+      const offLevels = typeof values.effort === "string" && !efforts.includes(values.effort);
+      if (offLevels && op.kind !== "task.patch") {
         problem("VALIDATION_FAILED", "Not an effort of this space", i, "effort");
       }
       /** The task `given` names. Only `task.restore` (`restoring`) may name a deleted one. */
@@ -1627,6 +1734,16 @@ export class SpaceWriter {
         }
         case "task.patch": {
           const target = task(op.task, "task");
+          // A size the levels lack, sent from a read older than the task's size, is a stale
+          // write: its conflict says so (preconditions), and a read shows the size it has now.
+          const read = tasks.get(target);
+          const stale =
+            read !== undefined &&
+            request.base !== undefined &&
+            versionOf(read, "effort") > request.base.seq;
+          if (offLevels && !stale) {
+            problem("VALIDATION_FAILED", "Not an effort of this space", i, "effort");
+          }
           const fields = [...Object.keys(op.set ?? {}), ...(op.unset ?? [])];
           return {
             i,
@@ -2351,7 +2468,8 @@ export class SpaceWriter {
             request.actor.actor_kind === "system" &&
             spec.stored === true &&
             (row === undefined || row["value"] === "null") &&
-            samePrefValue(op.value, spec.default);
+            samePrefValue(op.value, spec.default) &&
+            op.moves === undefined;
           if (!fills && !mayWrite(spec, request.actor.actor_kind)) {
             problem("PREFERENCE_FORBIDDEN", "Only the user changes this preference", i, "key");
           }
@@ -2368,44 +2486,75 @@ export class SpaceWriter {
               "key",
             );
           }
-          // A task keeps its status and effort whatever the scale says, so a scale never drops a
-          // key an active task holds: the person moves those tasks first and loses nothing.
-          if (isScaleKey(op.key)) {
+          const start =
+            row === undefined ? undefined : rowState("preferences", row, CHILD_FIELDS.preferences);
+          const levels = op.key === "tasks.effort_scale" && !fills;
+          // The levels a change replaces are the ones its person read, also on a space that never
+          // stored them: a first setter racing another meets the other's row as a conflict.
+          if (levels && row === undefined && request.base === undefined) {
+            problem(
+              "BASE_REQUIRED",
+              "This change needs the as_of of a read as its base",
+              i,
+              "base",
+            );
+          }
+          // A base older than the list's last change is a conflict (preconditions), whatever the
+          // change says of a list its person never saw.
+          const stale =
+            start !== undefined &&
+            request.base !== undefined &&
+            versionOf(start, "value") > request.base.seq;
+          let movers: Mover[] | undefined;
+          if (isScaleKey(op.key) && !stale) {
             const next = scaleKeys(op.value ?? spec.default);
             const kept = new Set(next);
             const held = listPreference(conn, op.key);
-            if (op.key === "tasks.effort_scale" && !effortNamesFit(next, held)) {
-              problem(
-                "VALIDATION_FAILED",
-                `A new level's name has at most ${String(EFFORT_NAME_MAX)} characters`,
-                i,
-                "value",
-              );
-            }
-            const removed = held.filter((key) => !kept.has(key));
-            const inUse = op.key === "tasks.statuses" ? SQL.statusInUse : SQL.effortInUse;
-            if (
-              removed.length > 0 &&
-              conn.prepare(inUse).get({ keys: JSON.stringify(removed) }) !== undefined
-            ) {
-              problem(
-                "VALIDATION_FAILED",
-                "Active tasks hold a key this change removes: give them another first",
-                i,
-                "value",
-              );
+            if (op.key === "tasks.statuses") {
+              // A task keeps its status whatever the scale says: a scale never drops a status an
+              // active task holds.
+              const removed = held.filter((key) => !kept.has(key));
+              if (
+                removed.length > 0 &&
+                conn.prepare(SQL.statusInUse).get({ keys: JSON.stringify(removed) }) !== undefined
+              ) {
+                problem(
+                  "VALIDATION_FAILED",
+                  "Active tasks hold a key this change removes: give them another first",
+                  i,
+                  "value",
+                );
+              }
+            } else {
+              if (!effortNamesFit(next, held)) {
+                problem(
+                  "VALIDATION_FAILED",
+                  `A new level's name has at most ${String(EFFORT_NAME_MAX)} characters`,
+                  i,
+                  "value",
+                );
+              }
+              if (levels) movers = stageMoves(conn, i, op.moves ?? [], held, kept);
             }
           }
           const touches: Touch[] = [];
-          if (row !== undefined) {
+          if (start !== undefined) {
             // Changing a stored value, or resetting it, needs a base (A1 3.5).
             const key = rowKey("preferences", op.key);
             if (!starts.has(key)) {
-              starts.set(key, rowState("preferences", row, CHILD_FIELDS.preferences));
+              starts.set(key, start);
               touches.push({ entity: "preferences", id: op.key, field: "value", task: null });
             }
           }
-          return { i, op, target: op.key, task: null, touches, record: inputOf(op) };
+          return {
+            i,
+            op,
+            target: op.key,
+            task: null,
+            touches,
+            record: inputOf(op),
+            ...(movers === undefined ? {} : { movers }),
+          };
         }
         case "area.create":
         case "project.create": {
@@ -3196,6 +3345,12 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           status,
           id: staged.target,
           version: row === undefined ? 0 : new RowReader("preferences", row).int("version", "seq"),
+          ...(staged.movers === undefined
+            ? {}
+            : {
+                moved: movedOf(op.moves ?? [], staged.movers),
+                ...offList(conn, run.plan.refPrefix),
+              }),
         };
       }
       case "area.create":
@@ -4444,6 +4599,10 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         value: value === null ? "null" : canonicalJson(value),
         schema_ver: spec.schemaVer,
       };
+      if (staged.movers !== undefined && value !== null) {
+        changeLevels(conn, run, { i, op, spec, value, movers: staged.movers });
+        return;
+      }
       // An earlier operation of the request may have created the row: read it as it is now.
       if (conn.prepare(SQL.preferenceRow).get({ id: op.key }) === undefined) {
         // Nothing is set: a reset changes nothing.
@@ -4677,6 +4836,57 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "undo":
     case "redo":
       throw misuse("A request of its own is never executed here");
+  }
+}
+
+/**
+ * A change of the effort levels (A1 3.16): the list, then each task on a moved size, through the
+ * field path. Where no list was stored, the one it replaces is the list as it read, as a row from
+ * before any commit: its Undo then stores that list, which a space's opening keeps, never a missing
+ * row the opening fills with a write of its own.
+ */
+function changeLevels(
+  conn: Connection,
+  run: Execution,
+  change: {
+    i: number;
+    op: PrefSet;
+    spec: PreferenceSpec;
+    value: PrefValue;
+    movers: readonly Mover[];
+  },
+): void {
+  const { i, op, spec, value } = change;
+  const now = readSpacePreference(conn, op.key);
+  if (!samePrefValue(now.value, value)) {
+    if (conn.prepare(SQL.preferenceRow).get({ id: op.key }) === undefined) {
+      conn.prepare(SQL.insertPreference).run({
+        id: op.key,
+        value: canonicalJson(now.value),
+        schema_ver: spec.schemaVer,
+        policy: spec.policy ? 1 : 0,
+        seq: 0,
+      });
+      const made = conn.prepare(SQL.preferenceRow).get({ id: op.key });
+      if (made === undefined) throw misuse("A preference row just inserted is there");
+      run.plan.starts.set(
+        rowKey("preferences", op.key),
+        rowState("preferences", made, CHILD_FIELDS.preferences),
+      );
+    }
+    conn
+      .prepare(SQL.updatePreference)
+      .run({ id: op.key, value: canonicalJson(value), schema_ver: spec.schemaVer });
+    wrote(run, i, "preferences", op.key, null, ["value"]);
+  }
+  const to = new Map((op.moves ?? []).map((move) => [move.from, move.to]));
+  for (const mover of change.movers) {
+    const effort = to.get(mover.from);
+    if (effort === undefined) throw misuse("A mover follows a move");
+    if (effort === mover.from) continue;
+    ensureStart(conn, run, "tasks", mover.id);
+    update(conn, mover.id, { effort });
+    wrote(run, i, "tasks", mover.id, mover.id, ["effort"]);
   }
 }
 

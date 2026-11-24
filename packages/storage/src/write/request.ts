@@ -11,6 +11,7 @@
 import {
   EFFORT_KEY,
   EFFORT_KEY_MAX,
+  effortKeys,
   fitsShape,
   PREFERENCE_KEY,
   PREFERENCE_KEY_MAX,
@@ -146,6 +147,8 @@ export interface WriteProblem {
    * not in the Trash and which Redo brings back.
    */
   reason?: string;
+  /** A change of levels that drops sizes tasks hold, without a move: each such size's tasks. */
+  holders?: (EffortCount & { effort: string })[];
 }
 
 /** A1 3.5: an `as_of` is the triple (epoch, incarnation, last_seq) of one read. */
@@ -275,6 +278,15 @@ export interface OpResult {
    * and belongs to that later change.
    */
   later?: true;
+  /** A change of the effort levels: how many tasks each move moved, by state. */
+  moved?: (EffortMove & EffortCount)[];
+  /**
+   * A change of the effort levels, or an undo or redo of one: the live tasks on a size the levels
+   * lack after it. Reported, never refused: such a task keeps its size and every reader takes it.
+   */
+  off_list?: OffList[];
+  /** An undo or redo of a change of the effort levels. */
+  levels?: true;
   /**
    * `task.restore` that brought the task back: where it is back, as its change left it, with its
    * area's and project's names. A replay says the same, whatever changed since.
@@ -880,13 +892,38 @@ export interface RunTransition {
  * `pref.set` (A1 3.16): sets a space preference the registry declares, or resets it with null.
  * The value is checked against the key's declared shape before the transaction; whether the actor
  * may write the key is decided in it, so a refusal has its receipt (A3 3.8.3). A reset keeps the
- * row with the value null, so history and the base work as for any other value. It is not undoable
- * until undo inverts preferences (A1 3.16).
+ * row with the value null, so history and the base work as for any other value. Of the
+ * preferences only the effort levels are undoable, because their change moves tasks with it.
  */
 export interface PrefSet {
   kind: "pref.set";
   key: string;
   value: PrefValue | null;
+  /** `tasks.effort_scale` only: every task on a `from` size moves to `to`, in the same commit. */
+  moves?: EffortMove[];
+}
+
+/**
+ * A size's tasks moved by a change of levels: to a level of the new list, or to none. Every move
+ * applies to the size a task held before the change, so a chain and a swap move each task once.
+ */
+export interface EffortMove {
+  from: string;
+  to: string | null;
+}
+
+/** How many tasks hold a size, by state: live and open, finished, and in the Trash. */
+export interface EffortCount {
+  active: number;
+  finished: number;
+  trash: number;
+}
+
+/** The live tasks on a size the levels lack: the first OFF_LIST_TASKS references, and how many. */
+export interface OffList {
+  effort: string;
+  tasks: string[];
+  count: number;
 }
 
 /**
@@ -1869,7 +1906,7 @@ function checkOperation(value: unknown, i: number): Operation {
       break;
     }
     case "pref.set":
-      op = prefSet(f);
+      op = prefSet(f, i);
       break;
     case "undo": {
       const undo: Undo = { kind };
@@ -2144,7 +2181,37 @@ function normaliseJson(value: unknown): unknown {
  * `pref.set`'s fields (A1 3.16): a key this build declares for the space, and a value of its
  * declared shape, or null to reset it. The problem never quotes the key or the value.
  */
-function prefSet(f: Fields): PrefSet {
+function prefSet(f: Fields, i: number): PrefSet {
+  const set = prefValue(f);
+  if (!f.has("moves")) return set;
+  if (set.key !== EFFORT_SCALE) {
+    return f.fail("VALIDATION_FAILED", "Only the effort levels move tasks", "moves");
+  }
+  const raw = f.raw("moves");
+  if (!Array.isArray(raw) || raw.length > EFFORT_MOVES_MAX) {
+    return f.fail("VALIDATION_FAILED", "Expected a list of moves", "moves");
+  }
+  const levels = new Set(effortKeys(set.value ?? preferenceSpec(EFFORT_SCALE)?.default));
+  const from = new Set<string>();
+  const moves = raw.map((item: unknown, k): EffortMove => {
+    const m = fields(item, `ops[${String(i)}].moves[${String(k)}]`, i);
+    const move = { from: m.level("from"), to: m.raw("to") === null ? null : m.level("to") };
+    m.done();
+    if (from.has(move.from)) m.fail("VALIDATION_FAILED", "A size moves once", "from");
+    if (move.to !== null && !levels.has(move.to)) {
+      m.fail("VALIDATION_FAILED", "A move goes to a level of the new list, or to no size", "to");
+    }
+    from.add(move.from);
+    return move;
+  });
+  return { ...set, moves };
+}
+
+const EFFORT_SCALE = "tasks.effort_scale";
+/** More moves than the sizes a list and its strays plausibly hold. */
+const EFFORT_MOVES_MAX = 20;
+
+function prefValue(f: Fields): PrefSet {
   const key = f.raw("key");
   if (typeof key !== "string" || key.length > PREFERENCE_KEY_MAX || !PREFERENCE_KEY.test(key)) {
     return f.fail("VALIDATION_FAILED", "Expected a preference name", "key");
@@ -2403,9 +2470,11 @@ export function checkRequest(value: unknown): CheckedRequest {
   if (prefs > 0 && prefs < request.ops.length) {
     f.fail("VALIDATION_FAILED", "A preference request holds pref.set operations only", "ops");
   }
-  // Undo never inverts a preference (history.ts), so a change of one never joins the undo stack,
-  // where it would block every undo behind it. Setting the earlier value again changes it back.
-  if (prefs > 0 && request.undoable === true) {
+  // Of the preferences, Undo inverts only the effort levels, whose change moves tasks with it: a
+  // change of another never joins the undo stack. Setting the earlier value again changes it back.
+  const [first] = request.ops;
+  const levels = prefs === 1 && first?.kind === "pref.set" && first.key === EFFORT_SCALE;
+  if (prefs > 0 && request.undoable === true && !levels) {
     f.fail("VALIDATION_FAILED", "A preference change is not undoable: set it again", "undoable");
   }
   checkMatchableDrafts(request.ops);

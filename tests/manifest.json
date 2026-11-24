@@ -4161,6 +4161,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.16.prefs.effort-moves",
+      "title": "A change of the effort levels moves every task on a moved size, finished and in the Trash too, in one commit through the field path: a chain and a swap move each task once, a move to none takes the size off, the same list without a move is no step, and a stale write of the size conflicts",
+      "source": "A1 3.16",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.16.prefs.effort-moves-refused",
+      "title": "A change of the effort levels that drops a size tasks hold without a move is refused with the holders' counts, as are a move from an unknown size, to a size off the new list or twice, moves on another preference, another preference on the undo stack, and a stale base before its moves are checked",
+      "source": "A1 3.16",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.16.prefs.effort-off-list",
       "title": "A task on a size the list lacks stays readable: effort: search finds it, sort:effort puts it last, and the tools' text and the readable file show it",
       "source": "A1 3.16",
