@@ -609,7 +609,7 @@ describe("[A7.3.12.m5-12.page-status] The tools switch is on only while the tool
     SLOW,
   );
   it(
-    "each home has one label within the bound, the same alone and beside others, and a saved one as saved",
+    "each home has one label within the bound, the same alone and beside others, and the only one of its app is named by its app",
     async () => {
       const suffix = "a".repeat(30);
       mkdirSync(join(w.user, `.claude-${suffix}`));
@@ -627,13 +627,13 @@ describe("[A7.3.12.m5-12.page-status] The tools switch is on only while the tool
           ],
         });
         expect(applied.result.outcomes.map((o) => o.result)).toEqual(["done", "done"]);
-        // The person renames Codex's tile in machine.toml: the row says it as saved.
+        // The person renames Codex's tile in machine.toml: alone of its app, it is still its app.
         const toml = join(configOf(w.home), "machine.toml");
         writeFileSync(
           toml,
           readFileSync(toml, "utf8").replace('label = "Codex"', 'label = "Mine"'),
         );
-        expect(row(await look(), "codex").label).toBe("Mine");
+        expect(row(await look(), "codex").label).toBe("Codex");
         const back = await look();
         const off = [back.rows.find((r) => r.home?.endsWith(suffix)), row(back, "codex")];
         await call<Applied>(w, "/api/v1/machine/apps_apply", {
