@@ -1428,7 +1428,7 @@ export function planChange(input: SetupInput, view: HomeView, space: string): Ch
     return "not_set_up";
   }
   if (home.rowOnly === true) return "not_set_up";
-  if (view.sha256 !== null && !writableFile(home.file)) return "read_only";
+  if (!writable(input.platform, home.file, view.sha256 !== null)) return "read_only";
   const entry = intendedEntry(
     APPS[home.app].format,
     entryArgv(input.tasks, home, home.space ?? space),
@@ -1436,14 +1436,22 @@ export function planChange(input: SetupInput, view: HomeView, space: string): Ch
   return { entry, diff: diffOf(home.app, entry, view.parent) };
 }
 
-/** Whether the OS lets this account write the file: not read-only, not another's without write. */
-function writableFile(path: string): boolean {
-  try {
-    accessSync(path, constants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
+/**
+ * Whether the OS lets this account put a new file in place of `file` (`there`) or beside nothing:
+ * the file is not read-only, and its folder, where the new one is written first, takes a new file.
+ */
+function writable(platform: NodeJS.Platform, file: string, there: boolean): boolean {
+  const ok = (path: string) => {
+    try {
+      accessSync(path, constants.W_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const folder = pathOf(platform).dirname(file);
+  // A file gone since it was read is the write's to find (writeEntry).
+  return (!there || !fileThere(file) || ok(file)) && (!fileThere(folder) || ok(folder));
 }
 /** One selected home in a plan: as found, and the change apply would make there. */
 export interface PlanItem {
@@ -1543,11 +1551,12 @@ function putRecord(input: SetupInput, home: AgentHome, record: HomeRecord): void
   const thisFile = (r: HomeRecord) => mine(r) && samePath(platform, r.file, record.file);
   const legacy = readRecords(stateDir);
   const held = legacy.find(mine);
-  const further = twoFiled(input, home) ? readRecords(stateDir, FURTHER_FILE) : [];
-  if (held === undefined ? home.further !== true && !further.some(thisFile) : thisFile(held)) {
+  const here = () => {
     writeRecords(stateDir, [...legacy.filter((r) => !mine(r)), record]);
-    return;
-  }
+  };
+  if (held !== undefined && thisFile(held)) return here();
+  const further = twoFiled(input, home) ? readRecords(stateDir, FURTHER_FILE) : [];
+  if (held === undefined && home.further !== true && !further.some(thisFile)) return here();
   writeRecords(stateDir, [...further.filter((r) => !thisFile(r)), record], FURTHER_FILE);
 }
 
@@ -1954,8 +1963,9 @@ async function grantBack(
  * Turns a home's tools on as each file's answer (toolsOf) offers it from `space`, one file after
  * another, whatever the one before did, and does nothing an answer does not offer. The home's
  * access is asked for first: off, the first file that turns the tools on asks for it (putEntry);
- * live, each file is added or repaired without touching it, and the row is renewed once for the
- * space the home's entries name; unknown, nothing that needs it is done. `items` are one home's
+ * live, each file is added or repaired without touching it; unknown, nothing that needs it is
+ * done. An apply that turns nothing on renews the live row once, for the space the home's entries
+ * name, so it names the home's account and hosts as they are now. `items` are one home's
  * files from planOf, the first first. Each outcome says the home's access as the service says it
  * after the last file.
  */
@@ -1971,6 +1981,7 @@ export async function applyFiles(
   let state = start.state;
   const outcomes: Outcome[] = [];
   const renewed: number[] = [];
+  let turned = false;
   for (const { view, change } of items) {
     const refusal = typeof change === "string" ? change : undefined;
     const answer = toolsOf(input, view, space, refusal, state);
@@ -1980,6 +1991,7 @@ export async function applyFiles(
       reason: reason ?? answer.why ?? (state === "unknown" ? "access_unknown" : "not_registered"),
     });
     let step: Step;
+    if (answer.on !== undefined) turned = true;
     if (answer.on === "add" || answer.on === "repair") {
       const planned =
         answer.on === "repair"
@@ -2013,8 +2025,7 @@ export async function applyFiles(
     if (step.access !== undefined) state = step.access;
   }
   const first = renewed[0];
-  if (first !== undefined) {
-    // The row names the home's account and hosts as they are now: renewed for its own space.
+  if (first !== undefined && !turned) {
     const record = items[first]?.view.record;
     try {
       await access.grant(home, home.space ?? record?.space ?? space);

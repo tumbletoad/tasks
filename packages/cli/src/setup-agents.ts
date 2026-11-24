@@ -274,7 +274,7 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
   foreign_entry: `it has an entry named ${MCP_SERVER_KEY} that setup did not write`,
   not_set_up:
     "the app has not made this file yet (Claude Desktop: open its Settings, then Developer, once; Claude Code: start it that way once), and setup never creates it: run setup again then",
-  read_only: "its file is read-only, so no entry can go into it",
+  read_only: "its file or its folder is read-only, so no entry can go into it",
   access_unknown: `${PRODUCT_NAME}'s service did not say whether its access is on, so nothing that needs it was done: run this again while the service runs`,
   older: `its entry runs ${PRODUCT_NAME} where it was installed before, which is still there: apply writes it again with the command installed now`,
   no_program: "its entry names no program, so its tools do not start",

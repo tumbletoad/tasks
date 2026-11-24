@@ -146,14 +146,17 @@ export function toolsAnswer(f: ToolsFacts): ToolsAnswer {
       // Setup cannot read the file, so it cannot say that the tools start.
       return made("off", f.refusal ?? "unreadable");
     case "not_registered": {
-      // A live row with no entry (setup's record was lost): its entry is what is missing.
+      // A live row with no entry here (setup's record was lost, or another file has it): this
+      // file's entry is what is missing, unless it cannot take one.
+      if (f.otherSpace) return made("off", "other_space");
       const lost = f.access === "live" ? "missing" : undefined;
-      return blocked === undefined ? made("off", lost, "add") : made("off", lost ?? blocked);
+      return blocked === undefined ? made("off", lost, "add") : made("off", blocked);
     }
     case "interrupted": {
       // The next apply finishes it first as a removal, then this one adds.
       const why = f.entry && f.access === "off" ? "entry_left" : "interrupted";
       const status = f.entry && starts ? live : "off";
+      if (f.otherSpace) return made(status, "other_space");
       return blocked === undefined ? made(status, why, "add") : made(status, why);
     }
     case "missing":
