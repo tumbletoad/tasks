@@ -229,6 +229,8 @@ export interface HomeView {
   readonly refusal?: Refusal;
   /** SHA-256 of the file as read; null when there is no file. */
   readonly sha256: string | null;
+  /** What a plan of the home is bound to (boundOf); null when its file cannot be read. */
+  readonly bound: string | null;
   /** Whether the servers' table (`mcpServers`, `mcp_servers`) exists. */
   readonly parent: boolean;
   /** TTasks's entry as found, when there is one. TTasks's own data: never another key's value. */
@@ -796,6 +798,8 @@ type FileRead =
       readonly bom: boolean;
       readonly parent: boolean;
       readonly entry: unknown;
+      /** JSON: SHA-256 of the servers' table as parsed, of `null` without one. */
+      readonly servers?: string;
     };
 
 const refused = (refusal: Refusal) => ({ kind: "refused", refusal }) as const;
@@ -874,13 +878,17 @@ export function readText(file: string, home: string, maxBytes: number): TextRead
   };
 }
 
-function readJson(text: string, servers: string): { parent: boolean; entry: unknown } | Refusal {
+function readJson(
+  text: string,
+  servers: string,
+): { parent: boolean; entry: unknown; servers: string } | Refusal {
   const parsed = parseStrictJson(text);
   if (!parsed.ok) return parsed.reason;
   const doc = parsed.value;
   if (typeof doc !== "object" || doc === null || Array.isArray(doc)) return "wrong_type";
   const table = (doc as Record<string, unknown>)[servers];
-  if (table === undefined) return { parent: false, entry: undefined };
+  const digest = sha256(Buffer.from(JSON.stringify(table ?? null), "utf8"));
+  if (table === undefined) return { parent: false, entry: undefined, servers: digest };
   if (typeof table !== "object" || table === null || Array.isArray(table)) {
     return "wrong_type";
   }
@@ -889,8 +897,26 @@ function readJson(text: string, servers: string): { parent: boolean; entry: unkn
     entry: Object.hasOwn(table, MCP_SERVER_KEY)
       ? (table as Record<string, unknown>)[MCP_SERVER_KEY]
       : undefined,
+    servers: digest,
   };
 }
+
+/**
+ * What a preview of a home is bound to, so that apply writes what it showed or refuses: the file
+ * as read, and for Claude Code its servers' table. Claude Code rewrites `.claude.json` with its own
+ * state while a session runs, often more than once a minute, so a plan bound to the whole file
+ * would be stale before the person could apply it; apply splices its entry into the file as it is
+ * then, and every other server stays as the preview found it.
+ */
+function boundOf(app: AgentApp, read: FileRead): string | null {
+  if (app === "claude-code" && read.kind !== "refused") {
+    // No file is no servers' table: Claude Code makes its file itself, and the entry goes in alike.
+    return read.kind === "read" ? (read.servers ?? null) : NO_SERVERS;
+  }
+  return read.kind === "read" ? read.sha256 : null;
+}
+
+const NO_SERVERS = sha256(Buffer.from(JSON.stringify(null), "utf8"));
 
 function readToml(text: string): { parent: boolean; entry: unknown } | Refusal {
   // A file another tool generates: a comment near its top says so (A3 3.12 rule 2).
@@ -1006,6 +1032,7 @@ export function inspectHome(home: AgentHome, record: HomeRecord | undefined): Ho
   const base = {
     home,
     sha256: read.kind === "read" ? read.sha256 : null,
+    bound: boundOf(home.app, read),
     parent: read.kind === "read" && read.parent,
     ...(read.kind === "read" && read.entry !== undefined ? { entry: read.entry } : {}),
     ...(record === undefined ? {} : { record }),
@@ -1086,7 +1113,8 @@ async function unrecorded(input: SetupInput): Promise<HomeView[]> {
   const homes = await agentHomes(input, found);
   const rows = input.rows ?? [];
   const noRecord = registrationOfRecord(undefined);
-  const ofHome = (row: ServiceRow, home: AgentHome) => rowOfHome(input.platform, row, home, noRecord);
+  const ofHome = (row: ServiceRow, home: AgentHome) =>
+    rowOfHome(input.platform, row, home, noRecord);
   for (const row of rows) {
     if (!isAgentApp(row.app)) continue;
     if (homes.some((h) => ofHome(row, h))) continue;
@@ -1114,6 +1142,7 @@ async function unrecorded(input: SetupInput): Promise<HomeView[]> {
       state: "refused",
       refusal: "record_unreadable",
       sha256: null,
+      bound: null,
       parent: false,
     };
   });
@@ -1310,6 +1339,11 @@ export interface PlanItem {
   readonly view: HomeView;
   /** The change for a home without an entry, or why it cannot get one; undefined otherwise. */
   readonly change: Change | Refusal | undefined;
+  /**
+   * `on`: the home is registered and has no access now (hasAccess), so apply gives it back. Known
+   * only when the plan was made with the service's rows.
+   */
+  readonly access?: "on";
 }
 
 /** Whether a file is there, a link or one setup refuses to read included. */
@@ -1334,6 +1368,10 @@ export function planOf(input: SetupInput, views: readonly HomeView[], space: str
       v.home.app === "claude-desktop" &&
       (v.sha256 !== null || (v.state === "refused" && fileThere(v.home.file))),
   );
+  const gives = (view: HomeView) =>
+    view.state === "registered" &&
+    input.rows !== undefined &&
+    !hasAccess(input.platform, input.rows, view);
   return views.map((view) => ({
     view,
     change:
@@ -1342,6 +1380,7 @@ export function planOf(input: SetupInput, views: readonly HomeView[], space: str
         : view.home.app === "claude-desktop" && desktops.length > 1
           ? "ambiguous"
           : planChange(input, view, space),
+    ...(gives(view) ? { access: "on" as const } : {}),
   }));
 }
 
@@ -1349,15 +1388,13 @@ export function planOf(input: SetupInput, views: readonly HomeView[], space: str
  * The plan's token (A3 3.13.1): a digest of what apply would do in the selected
  * homes, which the preview prints and `--apply --plan` checks again under the lock, so apply does
  * exactly what the preview showed or refuses. It covers the space, each home with its file,
- * instance, account, hosts and state (everything the home's row names) and, for a change, the
- * exact entry, and the hash of the file it goes into (a Codex file and Claude Desktop's). Claude
- * Code's `.claude.json` is covered by its state and entry but not its hash: Claude Code rewrites it
- * while a session runs, and apply splices the entry into it as it is then. `blocks` is the
- * instruction block's part of the plan (block.ts `blockCanonical`), when the
- * plan holds that part.
+ * instance, account, hosts and state (everything the home's row names), what its file is as the
+ * plan read it (HomeView `bound`), the access apply gives back and, for a change, the exact entry.
+ * `blocks` is the instruction block's part of the plan (block.ts `blockCanonical`), when the plan
+ * holds that part.
  */
 export function planToken(space: string, items: readonly PlanItem[], blocks?: unknown): string {
-  const canonical = items.map(({ view, change }) => [
+  const canonical = items.map(({ view, change, access }) => [
     view.home.app,
     view.home.home,
     view.home.file,
@@ -1368,11 +1405,9 @@ export function planToken(space: string, items: readonly PlanItem[], blocks?: un
     view.state,
     view.refusal ?? null,
     view.record?.space ?? null,
-    change === undefined
-      ? null
-      : typeof change === "string"
-        ? change
-        : [change.entry, change.diff, view.home.app === "claude-code" ? null : view.sha256],
+    view.bound,
+    access ?? null,
+    change === undefined ? null : typeof change === "string" ? change : [change.entry, change.diff],
   ]);
   return createHash("sha256")
     .update(JSON.stringify(blocks === undefined ? [space, canonical] : [space, canonical, blocks]))
@@ -1537,9 +1572,9 @@ interface NotWritten {
 /**
  * Writes the home's record (`applying`, with the entry as setup intends it), then the entry into the
  * file as it is now: the record and the splice outside the app's lock, before the file changes. A
- * file that changed since the plan is left alone, except Claude Code's: the app's own state, which a
- * running session saves while setup works, so it is read and worked out again, a few times. When
- * nothing was written the record goes again.
+ * file that changed since the plan (its `bound`) is left alone; Claude Code saves its own state in
+ * its file while a session runs, also while setup works, so that file is read and worked out again,
+ * a few times. When nothing was written the record goes again.
  */
 async function writeEntry(
   input: SetupInput,
@@ -1553,9 +1588,7 @@ async function writeEntry(
   for (let attempt = 1; ; attempt += 1) {
     const now = readHomeFile(home);
     if (now.kind === "refused" || entryOf(now) !== undefined) return failed("changed_meanwhile");
-    if (!locked && (now.kind === "read" ? now.sha256 : null) !== view.sha256) {
-      return failed("changed_meanwhile");
-    }
+    if (boundOf(home.app, now) !== view.bound) return failed("changed_meanwhile");
     const text = now.kind === "read" ? now.text : format === "json" ? EMPTY_JSON : "";
     const edited = addOwnEntry(format, servers, text, change.entry);
     if (!edited.ok) {

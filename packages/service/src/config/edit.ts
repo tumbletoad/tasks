@@ -10,6 +10,7 @@
 //
 // Who may edit: approvals and instances are user-only operations (A4 3.2 step 4, R7). The caller
 // (the UI session or an interactive CLI, A2 3.6.5) checks that; this module only writes.
+import { createHash } from "node:crypto";
 import { lstatSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -715,6 +716,22 @@ function readIfPresent(path: string, maxBytes?: number): Buffer | undefined | "p
   const read = readConfigFile(path, maxBytes);
   if (read.kind === "missing") return undefined;
   return read.kind === "bytes" ? read.bytes : "problem";
+}
+
+/**
+ * A digest of machine.toml's bytes as an edit read them, or of their absence: what the preview of
+ * an instance edit is bound to, so the edit goes on only while the file is the one the person saw.
+ */
+export function configDigest(before: Buffer | undefined): string {
+  return before === undefined
+    ? "missing"
+    : createHash("sha256").update(before).digest("hex").slice(0, 32);
+}
+
+/** machine.toml's digest as it is now (configDigest); undefined when it cannot be read. */
+export function machineDigest(configDir: string): string | undefined {
+  const before = readIfPresent(join(configDir, MACHINE_TOML));
+  return before === "problem" ? undefined : configDigest(before);
 }
 
 /** Whether `dir` itself is a link (a junction on Windows too). A missing folder is none. */

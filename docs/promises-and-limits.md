@@ -344,6 +344,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Agent setup shows what it will change, changes only its own entry, and removes only what it
   wrote. What it gives you to add or take out by hand is the file and the entry, never a command,
   which would act on whatever account the shell you paste it into selects.
+- Agent setup writes the file and the entry it showed you, and gives back only the access it said
+  it would, or shows you the change again: also when the file or `machine.toml` changed since, or
+  a setup that ended midway was finished first.
 - An agent app gets TTasks's tools only once its entry is in place, and only from the change you
   asked for: a setup that did not finish is finished later only by taking the access away. Turning
   them off takes the access away first, also when you changed the entry or its file cannot be read
@@ -431,6 +434,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   replacement is lost. For that read and the replacement setup holds Claude Code's own lock, for
   milliseconds: a Claude Code session that saves then waits, but Claude Code's start-up stops
   waiting after about 1.5 seconds, and for it only that last read protects the file.
+- Claude Code saves its own state in its settings file while a session runs. A change agent setup
+  showed for that file stays valid across such a save, and its entry joins the file as it is then;
+  only a change to the file's MCP servers makes it show the change again.
 - A file TTasks creates (its own `machine.toml`, an agent app's settings file) never replaces one
   that another program made meanwhile, except on a drive without hard links (FAT, exFAT, some
   network shares): there a file that appears in the instant before TTasks puts its own in place is

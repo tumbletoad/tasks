@@ -217,7 +217,8 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
       ).toEqual(["unchanged", "unchanged"]);
       expect((await rows()).map((r) => r.grant).sort()).toEqual(granted.map((r) => r.grant).sort());
 
-      // A registered home whose access went: the preview says that its apply gives it again.
+      // A registered home whose access went: the preview says that its apply gives it again, and a
+      // plan made while its access was on does not turn it back on.
       const person = await classSession(home, service.endpoint.path, "cli-interactive");
       try {
         const codexRow = granted.find((r) => r.app === "codex");
@@ -229,6 +230,10 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
       } finally {
         person.close();
       }
+      const shownOn = await run([...renew.apply.slice(1), "--json"]);
+      expect(shownOn.code, shownOn.stdout).toBe(4);
+      expect(JSON.parse(shownOn.stdout)).toMatchObject({ error: { code: "conflict" } });
+      expect((await rows()).map((r) => r.app)).toEqual(["claude-code"]);
       const off = await run(["setup", "agents"], false);
       expect(off.stdout).toContain(
         "registered, and its access is off: apply gives it its access again.",

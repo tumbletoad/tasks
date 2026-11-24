@@ -30,7 +30,14 @@ import { join } from "node:path";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
 import { INSTANCE_ID, isTable, MANUAL_INSTANCE, type Instance } from "@ttasks/launch";
-import { commitEdit, prepareEdit, type EditRefusal, type EditValue } from "../config/edit.ts";
+import {
+  commitEdit,
+  configDigest,
+  machineDigest,
+  prepareEdit,
+  type EditRefusal,
+  type EditValue,
+} from "../config/edit.ts";
 import { loadMachineConfig, parseMachineConfig } from "../config/machine-toml.ts";
 import { BOM, parseToml } from "../config/toml.ts";
 import type { ConnectionClass } from "../local/index.ts";
@@ -94,6 +101,27 @@ const invalid = (path: string, message: string, hint?: string): AppError =>
     message: `${message}.`,
     ...(hint === undefined ? {} : { hint }),
     data: { issues: [{ path, message }] },
+  });
+
+/**
+ * The machine.toml the edit's preview showed (`expect`, configDigest), when the caller names one:
+ * the edit goes on only while the file is still that one.
+ */
+function expected(params: JsonObject): string | undefined {
+  const value = params["expect"];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !/^(?:missing|[0-9a-f]{32})$/u.test(value)) {
+    throw invalid("expect", "Expected machine.toml's digest");
+  }
+  return value;
+}
+
+const changedSince = (): AppError =>
+  new AppError({
+    code: "conflict",
+    message: "machine.toml changed since the preview, so nothing was written.",
+    hint: "Look again, and apply what it shows then.",
+    data: { reason: "changed_meanwhile" },
   });
 
 function userOnly(cls: ConnectionClass): void {
@@ -378,6 +406,8 @@ function addInstances(host: InstancesHost, params: JsonObject): unknown {
     entries.map((e) => ({ op: "append" as const, array: "instance", entries: e })),
   );
   if (!prepared.ok) throw editRefused(prepared.reason);
+  const wanted = expected(params);
+  if (wanted !== undefined && configDigest(prepared.edit.before) !== wanted) throw changedSince();
   // The file decides, as it holds the instances written by hand too; the live list follows it.
   const named = instanceIds(prepared.edit.before?.toString("utf8") ?? "");
   if (ids.some((id) => named.includes(id))) {
@@ -430,6 +460,8 @@ function addInstances(host: InstancesHost, params: JsonObject): unknown {
  * and one that is gone from the file loses its record (`missing`).
  */
 function removeInstances(host: InstancesHost, params: JsonObject): unknown {
+  const shown = expected(params);
+  if (shown !== undefined && machineDigest(host.configDir) !== shown) throw changedSince();
   const wanted = params["ids"];
   if (
     wanted !== undefined &&

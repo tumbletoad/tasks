@@ -3,7 +3,7 @@
 // and what one click adds the next one takes out again. Scratch homes and fake agent commands
 // only (testkit's fake-agents.ts): no real agent home is read or written.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CLI_NAME, MCP_SERVER_KEY } from "@ttasks/brand";
 import { installFakeAgents } from "@ttasks/testkit/fake-agents";
@@ -14,7 +14,10 @@ import {
   type AgentAppsHost,
   type AppsView,
 } from "../src/hub/agent-apps.ts";
+import type { Logger } from "../src/hub/log.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";
+import { MemoryGrants } from "../src/local/index.ts";
+import { writeRecords } from "../src/setup/index.ts";
 import { configOf, removeRuntimeDir, serviceEnv, stateOf, tempRoot } from "./harness.ts";
 import { post } from "./http-client.ts";
 import { signIn } from "./http-world.ts";
@@ -459,5 +462,95 @@ describe("[A7.3.12.m5-12.page-env] The agent apps are looked for in the person's
     const base = new FixedEnvironment({ kind: "user", env: { PATH: "/person/bin" } });
     expect(await personEnv(base)).toEqual({ PATH: "/person/bin" });
     expect(base.prepared).toBe(1);
+  });
+});
+
+describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the next takes out, and a stale view writes nothing", () => {
+  it("a cleanup that runs first and changes what a switch would write shows the new view and writes nothing", async () => {
+    const temp = tempRoot("apps-settled");
+    try {
+      const user = join(temp.root, "u");
+      const folder = join(user, ".claude");
+      mkdirSync(folder, { recursive: true });
+      const state = join(temp.root, "state");
+      const config = join(temp.root, "config");
+      mkdirSync(config, { recursive: true });
+      const tasks = join(temp.root, "bin", process.platform === "win32" ? "ttasks.exe" : "ttasks");
+      mkdirSync(dirname(tasks), { recursive: true });
+      writeFileSync(tasks, "");
+      const space = `sp_${"3".repeat(26)}`;
+      const log = { log: () => undefined } as unknown as Logger;
+      const grants = new MemoryGrants();
+      const host: AgentAppsHost = {
+        platform: process.platform,
+        configDir: config,
+        stateDir: state,
+        root: dirname(tasks),
+        tasks,
+        userHome: user,
+        env: () => Promise.resolve({}),
+        homes: {
+          log,
+          grants: () => grants,
+          spaces: () => [{ id: space, state: "open" }],
+          platform: process.platform,
+        },
+        instances: {
+          configDir: config,
+          stateDir: state,
+          platform: process.platform,
+          log,
+          set: () => undefined,
+        },
+        spaceName: () => "Mira",
+      };
+      // A removal an earlier run left midway, of the entry an instance that named ~/.claude by its
+      // variable had; machine.toml names no such instance now. Its file is a row until the cleanup,
+      // and the instance it holds pushes plain Claude Code's row to another one until then.
+      const explicit = join(folder, ".claude.json");
+      const implicit = join(user, ".claude.json");
+      const verbs = agentAppVerbs(host);
+      for (const file of [explicit, implicit]) {
+        writeRecords(state, [
+          {
+            app: "claude-code",
+            home: folder,
+            file: explicit,
+            is_default: false,
+            instance: "claude",
+            account: "",
+            space,
+            state: "removing",
+            entry: {
+              command: tasks,
+              args: ["mcp", "--space", space, "--instance", "claude", "--app", "claude-code"],
+            },
+            also: [],
+            made: { file: true, parent: true, spacing: null },
+            grant: null,
+            at: "2026-11-01T00:00:00.000Z",
+          },
+        ]);
+        const view = (await verbs.view({ space }, "ui")) as AppsView;
+        const shown = view.rows.find((r) => r.key === JSON.stringify(["claude-code", file]));
+        expect(shown?.tools, file).toMatchObject({ change: "add" });
+        const result = (await verbs.apply(
+          {
+            space,
+            changes: [{ key: shown?.key, part: "tools", on: true, plan: shown?.tools?.plan }],
+          },
+          "ui",
+        )) as Applied;
+        // The cleanup took the first row away and gave the second another instance: the person
+        // sees the new view, and no file is written.
+        expect(result.applied, file).toBe(false);
+        expect(
+          [explicit, implicit].filter((f) => existsSync(f)),
+          file,
+        ).toEqual([]);
+      }
+    } finally {
+      temp.cleanup();
+    }
   });
 });

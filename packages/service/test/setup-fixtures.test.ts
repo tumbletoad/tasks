@@ -33,6 +33,7 @@ import {
   entryRegistration,
   registrationOfRecord,
   planOf,
+  planToken,
   readRecords,
   registrationId,
   removeHome,
@@ -1420,6 +1421,51 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
       expect(w.rows.may(t3Entry, SPACE)).toBe(false);
       expect(w.rows.may(plainEntry, SPACE)).toBe(true);
       expect(w.rows.live.map((r) => r.file)).toEqual([implicit]);
+    },
+    SLOW,
+  );
+
+  test(
+    "sibling edited after preview: another server changed in the selected file makes the preview of turning it on, and of turning it off, stale, and so does any change to a Codex or Claude Desktop file; Claude Code's own state saved beside its servers keeps the preview",
+    async () => {
+      for (const a of ADAPTERS) {
+        const w = await world();
+        const file = a.file(w);
+        const plain =
+          a.format === "json"
+            ? '{"theme": "dark", "mcpServers": {"other": {"command": "/opt/other"}}}\n'
+            : 'model = "m"\n\n[mcp_servers.other]\ncommand = "/opt/other"\n';
+        const sibling = (text: string) => text.replace('"/opt/other"', '"/opt/moved"');
+        const unrelated = (text: string) =>
+          a.format === "json"
+            ? text.replace('"theme": "dark"', '"theme": "light"')
+            : text.replace('model = "m"', 'model = "n"');
+        const token = async () => {
+          const view = await viewOf(w, a);
+          return planToken(SPACE, planOf(w.input, [view], SPACE));
+        };
+        // Claude Code saves its own state in its file while a session runs: only its servers count.
+        const stale = (before: string) =>
+          a.app === "claude-code"
+            ? expect(token()).resolves.toBe(before)
+            : expect(token()).resolves.not.toBe(before);
+        seed(file, plain);
+        for (const on of [true, false]) {
+          const what = `${a.app}: turning ${on ? "on" : "off"}`;
+          if (!on) {
+            seed(file, plain);
+            expect(await apply(w, a), what).toMatchObject({ result: "applied" });
+          }
+          const shown = readFileSync(file, "utf8");
+          const before = await token();
+          seed(file, sibling(shown));
+          expect(await token(), what).not.toBe(before);
+          seed(file, unrelated(shown));
+          await stale(before);
+          seed(file, shown);
+          expect(await token(), what).toBe(before);
+        }
+      }
     },
     SLOW,
   );

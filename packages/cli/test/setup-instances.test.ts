@@ -152,6 +152,13 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
       const stale = await run(["setup", "instances", "--apply", "--plan", "0".repeat(16)]);
       expect(stale.code).toBe(4);
       expect(readFileSync(machineToml(), "utf8")).toBe(before);
+      // machine.toml changed since the preview, also where no instance is: nothing is written.
+      const edited = `${before}# edited since the preview\n`;
+      writeFileSync(machineToml(), edited);
+      const changed = await run(apply.slice(1));
+      expect(changed.code, changed.stdout).toBe(4);
+      expect(readFileSync(machineToml(), "utf8")).toBe(edited);
+      writeFileSync(machineToml(), before);
 
       const applied = await run(apply.slice(1));
       expect(applied.code, applied.stderr).toBe(0);

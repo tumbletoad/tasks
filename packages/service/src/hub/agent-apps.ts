@@ -34,6 +34,7 @@ import {
   type Proposal,
 } from "@ttasks/launch";
 import { isId } from "@ttasks/storage";
+import { machineDigest } from "../config/edit.ts";
 import { loadMachineConfig, MACHINE_TOML } from "../config/machine-toml.ts";
 import type { ConnectionClass, Grant } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
@@ -227,6 +228,8 @@ interface Look {
   readonly items: ReadonlyMap<string, PlanItem>;
   readonly offers: ReadonlyMap<string, Offer>;
   readonly owners: ReadonlyMap<string, string>;
+  /** machine.toml as this look read it (configDigest): what the open switches are bound to. */
+  readonly machine: string | undefined;
 }
 
 /** The space every new entry names: a space this service serves. */
@@ -251,6 +254,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   const userHome = host.userHome ?? "";
   const shown = (path: string) => shownPath(platform, host.userHome, path);
   const env = await host.env();
+  const machineFile = machineDigest(host.configDir);
   const machine = loadMachineConfig(host.configDir, platform).config;
   const detection = await detect(nodeDetectHost({ platform, env, home: userHome }));
   const rows = host.homes
@@ -323,7 +327,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
       change: "remove",
       file: configFile,
       detail: blockOf(new Map(mine.entries)).map((line) => `- ${line}`),
-      plan: digest([key, "remove", mine.entries]),
+      plan: digest([key, "remove", mine.entries, machineFile ?? null]),
     };
   };
   const offerPart = (
@@ -439,7 +443,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
           change: "add",
           file: configFile,
           detail: blockOf(offer.entry).map((line) => `+ ${line}`),
-          plan: digest([row.key, "add", [...offer.entry]]),
+          plan: digest([row.key, "add", [...offer.entry], machineFile ?? null]),
         },
       };
     }),
@@ -447,7 +451,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
       ? { record: shown(recordFile(host.stateDir)) }
       : {}),
   };
-  return { view, input, items, offers: byRow, owners };
+  return { view, input, items, offers: byRow, owners, machine: machineFile };
 }
 
 /** Setup's refusals of a file it cannot read as it is now, which the page says as one. */
@@ -470,13 +474,17 @@ const UNREADABLE = new Set<string>([
 function toolsPart(
   host: AgentAppsHost,
   space: string,
-  { view, change, several }: Planned,
+  { view, change, access, several }: Planned,
   installed: boolean,
   live: boolean,
   shown: (path: string) => string,
 ): Part {
   const file = shown(view.home.file);
-  const plan = (word: string) => digest([word, planToken(space, [{ view, change }])]);
+  const plan = (word: string) =>
+    digest([
+      word,
+      planToken(space, [{ view, change, ...(access === undefined ? {} : { access }) }]),
+    ]);
   const fixed = (on: boolean, why: Why): Part => ({
     on,
     change: null,
@@ -625,6 +633,7 @@ export async function personEnv(source: Pick<EnvironmentSource, "prepare" | "bas
 async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<unknown> {
   const space = spaceOf(params, host);
   const changes = changesOf(params["changes"]);
+  const { platform } = host;
   return withSetupLock(host.stateDir, async () => {
     const instances = instanceVerbs(host.instances);
     const homes = agentHomeVerbs(host.homes);
@@ -637,19 +646,52 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
       (method, input) => verb(method)(input, "ui") as Promise<Record<string, unknown>>,
     );
     const first = await look(host, space);
-    const partOf = (c: AppsChange) => first.view.rows.find((r) => r.key === c.key)?.[c.part];
+    const partOf = (seen: Look, c: AppsChange) =>
+      seen.view.rows.find((r) => r.key === c.key)?.[c.part];
     const fits = changes.every((c) => {
-      const part = partOf(c);
+      const part = partOf(first, c);
       return (
         part !== undefined && part.plan === c.plan && part.change === (c.on ? "add" : "remove")
       );
     });
     // Something changed since the person looked: nothing is written, they see it as it is now.
     if (!fits) return { applied: false, view: first.view };
-    // What a run that ended midway left is finished first (it only ever takes access away); the
-    // switches the person turned over, as they saw them, then apply to what is now.
-    const now =
-      (await settleHomes(first.input, access)).length === 0 ? first : await look(host, space);
+    // What a run that ended midway left is finished first (it only ever takes access away). That
+    // can change what a switch writes (its file, instance, space or lines), and another program can
+    // save a file meanwhile: each switch then goes on only as the person saw it, or none does and
+    // the person sees the new view.
+    const settled = await settleHomes(first.input, access);
+    const now = settled.length === 0 ? first : await look(host, space);
+    // What a switch writes: for an app's entry turned on, the entry itself (its instance, space and
+    // command), whatever the cleanup left of the servers' table around it; else the lines shown.
+    const written = (seen: Look, c: AppsChange) => {
+      if (c.part === "tools" && c.on) {
+        const change = seen.items.get(c.key)?.change;
+        return JSON.stringify(typeof change === "object" ? change.entry : null);
+      }
+      return partOf(seen, c)?.detail.join("\n");
+    };
+    const asShown = (c: AppsChange) => {
+      const before = partOf(first, c);
+      const after = partOf(now, c);
+      if (
+        before === undefined ||
+        after === undefined ||
+        after.change !== before.change ||
+        after.file !== before.file ||
+        written(now, c) !== written(first, c)
+      ) {
+        return false;
+      }
+      if (c.part === "open") return true;
+      const was = first.items.get(c.key)?.view;
+      const is = now.items.get(c.key)?.view;
+      if (was === undefined || is === undefined) return false;
+      // The file the cleanup itself changed is read again as it is now.
+      const cleaned = settled.some((o) => samePath(platform, o.home.file, was.home.file));
+      return cleaned || was.bound === is.bound;
+    };
+    if (now !== first && !changes.every(asShown)) return { applied: false, view: now.view };
 
     const outcomes: AppsOutcome[] = [];
     const done = (c: AppsChange, reason?: string): void => {
@@ -666,7 +708,10 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
     if (leaving.length > 0) {
       try {
         const ids = leaving.map((c) => now.owners.get(c.key) ?? "");
-        const result = (await verb("instances/remove")({ ids }, "ui")) as {
+        const result = (await verb("instances/remove")(
+          { ids, ...(first.machine === undefined ? {} : { expect: first.machine }) },
+          "ui",
+        )) as {
           outcomes?: { id: string; result: string }[];
         };
         for (const c of leaving) {
@@ -686,7 +731,12 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
           if (offer === undefined) throw new Error("An offer is missing");
           return wireOf(offer.entry);
         });
-        await verb("instances/add")({ entries }, "ui");
+        // After a removal of this same apply, machine.toml is what that removal left.
+        const shown = leaving.length > 0 ? machineDigest(host.configDir) : first.machine;
+        await verb("instances/add")(
+          { entries, ...(shown === undefined ? {} : { expect: shown }) },
+          "ui",
+        );
         for (const c of coming) done(c);
       } catch (error) {
         for (const c of coming) done(c, reasonOf(error));

@@ -66,7 +66,6 @@ import {
   type BlockReason,
   type BlockView,
   manualRemoval,
-  hasAccess,
   HOSTS,
   isPrintApp,
   LockBusy,
@@ -817,12 +816,6 @@ function approvals(views: readonly HomeView[], platform: NodeJS.Platform) {
   });
 }
 
-/** A registered home without its live row: its entry is in place, and apply gives it its access again. */
-const givesAccessBack = (input: SetupInput, view: HomeView): boolean =>
-  view.state === "registered" &&
-  input.rows !== undefined &&
-  !hasAccess(input.platform, input.rows, view);
-
 async function preview(
   io: Io,
   globals: Globals,
@@ -866,10 +859,10 @@ async function preview(
         ...(registers ? { space } : {}),
         ...(anything ? { plan, apply } : {}),
         ...(blocks === undefined ? {} : { blocks: blocks.map(blockItemJson) }),
-        homes: items.map(({ view, change }) => ({
+        homes: items.map(({ view, change, access }) => ({
           ...viewJson(view),
           ...(change === undefined
-            ? givesAccessBack(input, view)
+            ? access === "on"
               ? { change: { access: "on" } }
               : {}
             : typeof change === "string"
@@ -896,12 +889,12 @@ async function preview(
   if (parsed.parts.includes("mcp") && items.length === 0) io.stdout("No agent home was found.\n");
   let n = 0;
   let changes = 0;
-  for (const { view, change } of items) {
+  for (const { view, change, access } of items) {
     n += 1;
     io.stdout(`${String(n)}. ${title(view)}\n`);
     const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
     io.stdout(`   ${view.home.file} (${hash})\n`);
-    if (givesAccessBack(input, view)) {
+    if (access === "on") {
       changes += 1;
       io.stdout(`   registered, and its access is off: apply gives it its access again.\n`);
     } else if (change === undefined) {

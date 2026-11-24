@@ -21,9 +21,11 @@ export {
 export {
   applyEdits,
   commitEdit,
+  configDigest,
   editMachineToml,
   prepareEdit,
   keyText,
+  machineDigest,
   valueText,
   type Edit,
   type EditRefusal,
