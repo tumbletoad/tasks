@@ -375,6 +375,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Agent setup writes the file and the entry it showed you, and gives back only the access it said
   it would, or shows you the change again: also when the file or `machine.toml` changed since, or
   a setup that ended midway was finished first.
+- Each settings file an agent app reads is a row of its own, also two in one folder: its switch,
+  its access and the tasks Open starts with it are that file's, never the other's.
 - An agent app gets TTasks's tools only once its entry is in place, and only from the change you
   asked for: a setup that did not finish is finished later only by taking the access away. Turning
   them off takes the access away first, also when you changed the entry or its file cannot be read
@@ -438,6 +440,13 @@ the behaviour it describes, and keep each one to a sentence or two.
   be written twice.
 - When agent setup changes who an agent connects as while that agent runs, a change repeated
   through the new connection can be written twice.
+- After an update and before the service restarts, the command line and the service can be of
+  two versions, and an earlier one keeps one access per folder: agent setup then refuses to turn
+  on a second settings file of a folder (Claude Code's `~/.claude` holds two), and says what to
+  restart.
+- An entry that stayed in its file after you turned its tools off (you had changed it, or the file
+  could not be written) reaches TTasks again once another settings file is set up under its
+  instance name.
 - Chats of one agent app that are not sessions share their request IDs. A change sent with an ID
   another chat used is refused when it differs, and counted as already done when it is the same.
 - An entry without a space uses the default space when its bridge process starts. If that process
