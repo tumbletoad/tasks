@@ -2,7 +2,42 @@
 // answer from the facts of the home. Settings, the first start, `ttasks setup agents` (status,
 // preview and apply) and doctor read it, and apply carries out only what it offers, so what a row
 // says, what it offers and what Apply does are one thing.
-import type { HomeState, Refusal } from "./agents.ts";
+
+/** Why setup leaves a home alone: its file is in a state setup does not understand. */
+export type Refusal =
+  | "unreadable"
+  | "too_large"
+  | "encoding"
+  | "invalid_file"
+  | "duplicate_key"
+  | "managed"
+  | "wrong_type"
+  | "unsupported_layout"
+  | "foreign_entry"
+  /** Linux and macOS: the file or its folder belongs to another user, or anyone can change it. */
+  | "unsafe"
+  /** Claude Desktop's file is not there yet: the app makes it in its developer settings. */
+  | "not_set_up"
+  /** Several Claude Desktop configuration files: `--home` names the one the app uses. */
+  | "ambiguous"
+  /**
+   * Setup's own record cannot be read: a home's access can still be turned off, and no file, the
+   * record included, is changed until it can be read.
+   */
+  | "record_unreadable";
+
+export type HomeState =
+  /** No entry of TTasks's name, and setup can add one. */
+  | "not_registered"
+  /** The entry is exactly the one setup wrote. */
+  | "registered"
+  /** The entry setup wrote was changed since: setup leaves it alone. */
+  | "edited"
+  /** Setup wrote an entry that is gone now. */
+  | "missing"
+  /** A setup that did not finish (a crash, a failed undo): the next setup settles it first. */
+  | "interrupted"
+  | "refused";
 
 /** The facts of one home, read once for one answer (agents.ts `toolsOf`). */
 export interface ToolsFacts {
