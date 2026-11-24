@@ -4142,7 +4142,10 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       const replies =
         staged.runTask === undefined || staged.runTask === null
           ? []
-          : conn.prepare(REPLIED_SQL).all({ task: staged.runTask }).map((row) => String(row["id"]));
+          : conn
+              .prepare(REPLIED_SQL)
+              .all({ task: staged.runTask })
+              .map((row) => String(row["id"]));
       conn.prepare(RUN_SQL.insert).run({
         id: staged.target,
         task: staged.runTask ?? null,
