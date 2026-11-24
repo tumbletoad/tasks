@@ -228,6 +228,16 @@ describe("[A5.while-away.service.question] the questions agents asked wait on th
     expect(await refs()).toEqual(["l2"]);
   });
 
+  test("a log reference names its question with leading zeros too", async () => {
+    const { task, ask, refs } = asking();
+    ask(fx.codex, "Fixture first?");
+    ask(fx.codex, "Fixture second?");
+    await expect(
+      call("task.update", { task, set: { reviewed: "l01" }, request_id: rid() }),
+    ).resolves.toMatchObject({ result: "updated", fields: ["reviewed"] });
+    expect(await refs()).toEqual(["l2"]);
+  });
+
   test("a question that arrived in the same millisecond after the one dismissed still waits", async () => {
     const { task, refs, next } = asking();
     submit(

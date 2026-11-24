@@ -692,8 +692,8 @@ const questionArrival = (runs: boolean): Statement => {
  * The task's `reviewed_at` once the person dismissed its question `question` and those before it:
  * that question's arrival (storage's `WAITS`), a millisecond before it when a later question
  * arrived in the same millisecond, so the one the person did not see still waits. Never earlier
- * than the mark the task has. `mark` is undefined when it is no question of the task; `asOf` is
- * the read's.
+ * than the mark the task has. A log reference names its entry by number, l01 as l1; a run by its
+ * exact ID. `mark` is undefined when it is no question of the task; `asOf` is the read's.
  */
 export async function readReviewedMark(
   reader: WorkerConnection,
@@ -706,7 +706,7 @@ export async function readReviewedMark(
     id,
     ref: number,
     alias,
-    question,
+    question: /^l[0-9]+$/u.test(question) ? `l${String(Number(question.slice(1)))}` : question,
   });
   const { asOf } = spaceFacts(space);
   if (found === undefined || found === null) return { mark: undefined, asOf };
