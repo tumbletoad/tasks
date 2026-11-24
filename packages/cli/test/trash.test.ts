@@ -1,5 +1,5 @@
-// `ttasks delete`, `ttasks restore` and `ttasks trash` as a person reads them, and an agent's shell
-// refused. The CLI in this process against a service in this process; fixture text and temporary
+// `ttasks delete`, `ttasks restore` and `ttasks trash` as a person reads them, and from an agent's
+// shell. The CLI in this process against a service in this process; fixture text and temporary
 // folders only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { EXIT_CODES } from "@ttasks/contracts";
@@ -64,17 +64,21 @@ describe("[A3.trash.cli] ttasks delete, restore and trash", () => {
   );
 
   test(
-    "an agent's shell is refused: removing tasks is the person's",
+    "an agent's shell moves a task to the Trash, and the person sees it there under the agent's change",
     async () => {
       const a = await add("Fixture agent shell");
-      const refused = await runMain(["delete", a, "--space", w.space], {
-        home: w.home,
-        tty: true,
-        env: { CLAUDECODE: "1" },
-      });
-      expect(refused.code).toBe(EXIT_CODES.forbidden);
-      expect(refused.stderr).toContain("agents cannot remove tasks yet");
-      expect((await person(["show", a])).stdout).not.toContain("In the Trash");
+      const agent = (args: readonly string[]) =>
+        runMain([...args, "--space", w.space], {
+          home: w.home,
+          tty: true,
+          env: { CLAUDECODE: "1" },
+        });
+      const moved = await agent(["delete", a]);
+      expect(moved.code, moved.stderr).toBe(0);
+      expect((await person(["trash", a])).stdout).toMatch(
+        new RegExp(`^1 task here from agent:unknown's change, .*\\n  ${a}  Fixture agent shell\\n$`, "u"),
+      );
+      expect((await agent(["restore", a])).code).toBe(0);
       // Removed by the person, the task reads to an agent's shell as the agent's tools say it.
       expect((await person(["delete", a])).code).toBe(0);
       const shown = await runMain(["show", a, "--space", w.space], {

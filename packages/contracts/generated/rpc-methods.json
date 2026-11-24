@@ -4132,9 +4132,11 @@
     },
     {
       "actorKinds": [
-        "human"
+        "human",
+        "agent",
+        "routine"
       ],
-      "actors": "user",
+      "actors": "agent",
       "audience": "caller",
       "errors": [
         "invalid_input",

@@ -153,6 +153,7 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
         "add_entry",
         "add_tasks",
         "complete_task",
+        "delete_tasks",
         "get_task",
         "organize",
         "preferences",
