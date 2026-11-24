@@ -359,8 +359,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A page left open moves on to a new day by itself: at midnight, within a minute of the computer
   waking, and when the tab is shown again, its views, a search and its dates follow the new day,
   and what you are typing, an open card and your place stay. The page counts days on the
-  browser's calendar, a search's `today` and relative days on the service machine's: the same
-  day, unless the browser reports another time zone than the machine.
+  browser's calendar, its searches included; the command line and agents count them on the
+  service machine's.
 - Today's Changes and the Agents page list the tasks agents changed in the last seven days, read
   from the space when the page opens: a reload or another tab shows the same.
 - Task text cannot run scripts or load remote images.

@@ -9,7 +9,7 @@ import { classes } from "../app/css.ts";
 import { useTitle } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
-import { useClock } from "../row/useClock.ts";
+import { pageDay, useClock } from "../row/useClock.ts";
 import { useLive, usePagedQuery } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
 import {
@@ -115,8 +115,11 @@ function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
   // Read once per mount: a new search is a new key.
   const [def] = useState(() => ({ kind: "search" as const, fields: searchFields(q) }));
   const [sources] = useState(() => {
+    // A search counts `today` in the page's zone, as the views do; its next pages keep that zone.
     const search = (input: Parameters<typeof api.client.task.search>[0]) =>
-      api.client.task.search(input);
+      api.client.task.search(
+        input.cursor === undefined ? { ...input, time_zone: pageDay().timeZone } : input,
+      );
     const rowOf = (row: SearchRow, found: Found, read: number) => {
       const { areas, projects } = live.getState();
       return rowOfFound(row, found, areas, projects, read);

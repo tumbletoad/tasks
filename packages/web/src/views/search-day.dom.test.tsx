@@ -74,6 +74,8 @@ let open: unknown[];
 let searches: number;
 /** The service does not answer searches. */
 let failing: boolean;
+/** The zone each search was asked to count its days in. */
+let zones: unknown[];
 
 beforeEach(() => {
   vi.useFakeTimers({
@@ -99,11 +101,13 @@ beforeEach(() => {
   open = [found(1)];
   searches = 0;
   failing = false;
+  zones = [];
   api = {
     client: {
       task: {
-        search: (input: { scope?: string }) => {
+        search: (input: { scope?: string; time_zone?: string }) => {
           searches += 1;
+          zones.push(input.time_zone);
           if (failing) return Promise.reject(new Error("unreachable"));
           return Promise.resolve({
             as_of: at(10),
@@ -249,6 +253,22 @@ describe("[A5.3.13.web.search-day] a search left open reads again on the page's 
     await settle();
     expect(titles()).toEqual(["Task 2"]);
     expect(container.textContent).not.toContain("Results changed");
+  });
+
+  test("a search counts its days in the page's zone, and in the new one after travel", async () => {
+    await mount();
+    const here = new Intl.DateTimeFormat().resolvedOptions();
+    expect(zones).toEqual([here.timeZone, here.timeZone]);
+    const away = here.timeZone === "Asia/Tokyo" ? "America/Lima" : "Asia/Tokyo";
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      ...here,
+      timeZone: away,
+    });
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await settle();
+    expect(zones.slice(2)).toEqual([away, away]);
   });
 
   test("the same day: the search is not read again", async () => {

@@ -77,6 +77,9 @@ const minuteSnapshot = (): DayClock => {
   return reading.minute;
 };
 
+/** The page's day now, for a call that is not rendered: the zone a search counts its days in. */
+export const pageDay = daySnapshot;
+
 /** The page's clock in its locale: the day's, or with `minutes` the minute's. */
 export function useClock(minutes: boolean): Clock {
   const { locale } = useIntl();

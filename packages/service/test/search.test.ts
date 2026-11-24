@@ -796,6 +796,58 @@ describe("[A3.5.search.find] task.search through the request path", () => {
     expect((await refusal(call(h, user, { q: "x".repeat(501) }))).code).toBe("too_large");
   });
 
+  test("a search that names its time zone counts its days there, else on the service's", async () => {
+    const [friday] = created(
+      submit(fx, [{ kind: "task.create", title: "Zoneword friday", due: { date: "2026-11-13" } }]),
+    );
+    // 00:01 on Friday 13 November in Amsterdam: still Thursday on a service that counts in UTC.
+    const h: OpsHost = {
+      ...host(),
+      now: () => Date.UTC(2026, 10, 12, 23, 1),
+      timeZone: () => "UTC",
+    };
+    expect(ids(await call(h, user, { q: "zoneword due:today" }))).toEqual([]);
+    expect(
+      ids(await call(h, user, { q: "zoneword due:today", time_zone: "Europe/Amsterdam" })),
+    ).toEqual([friday]);
+    expect(
+      ids(await call(h, user, { q: "zoneword due<today", time_zone: "Europe/Amsterdam" })),
+    ).toEqual([]);
+    const error = await refusal(call(h, user, { q: "zoneword", time_zone: "Mars/Olympus_Mons" }));
+    expect(error.code).toBe("invalid_input");
+    expect(error.data).toEqual({ issues: [{ path: "time_zone", message: expect.any(String) }] });
+    expect((await refusal(call(h, user, { q: "zoneword", time_zone: "+01:00" }))).code).toBe(
+      "invalid_input",
+    );
+  });
+
+  test("the next page of a search shows its dates in the zone the search was asked in", async () => {
+    const finished = created(
+      submit(fx, [
+        { kind: "task.create", title: "Pagezoneword one" },
+        { kind: "task.create", title: "Pagezoneword two" },
+      ]),
+    );
+    submit(
+      fx,
+      finished.map((task) => ({ kind: "task.complete" as const, task, outcome: "Done." })),
+    );
+    // Finished on 12 November in UTC, on the 11th twelve hours west of it.
+    const zone = "Etc/GMT+12";
+    const h = host();
+    const first = await call(h, user, {
+      q: "pagezoneword",
+      scope: "finished",
+      limit: 1,
+      time_zone: zone,
+    });
+    const next = await call(h, user, { cursor: first.cursor });
+    expect([...first.rows, ...next.rows].map((row) => row["completed"])).toEqual([
+      "2026-11-11",
+      "2026-11-11",
+    ]);
+  });
+
   test("a restart drops every cursor", async () => {
     const first = await call(host(), user, { q: "findword", limit: 2 });
     const error = await refusal(call(host(), user, { cursor: first.cursor }));

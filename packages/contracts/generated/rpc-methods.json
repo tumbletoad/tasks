@@ -6507,6 +6507,12 @@
               "learnings"
             ],
             "type": "string"
+          },
+          "time_zone": {
+            "description": "IANA time zone that today and relative days count in; default: the service's",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:\\/[A-Za-z0-9_+-]+)*$",
+            "type": "string"
           }
         },
         "type": "object"
