@@ -215,7 +215,6 @@ test.describe("[A5.3.7.e2e.levels-grid] a space's effort levels changed in Setti
 
         // Move and Remove are behind More at this width.
         await level(page, "XS").locator('[data-part="level-more"]').click();
-        await picture(page, "levels-more-390.png");
         await page.getByRole("menuitem", { name: "Move XS down" }).click();
         await expect.poll(() => values(page)).toEqual(["S", "XS", "Medium", "L", "XL", "XXL"]);
 
