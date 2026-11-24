@@ -29,6 +29,7 @@ import {
   isOpenLaunch,
   isRoute,
   sessionRecord,
+  LAUNCH_ID,
   TASK_ID,
   TERMINAL_APPS,
   TERMINAL_SOURCES,
@@ -78,6 +79,12 @@ export interface UiLaunchPort {
   busy?(space: string): Promise<readonly UiBusy[]>;
   /** Shows the folder a task opens in here in the file manager (LaunchService.showFolder). */
   showFolder?(space: string, folder: TaskFolder): Promise<OpenResult>;
+  /** Starts T3 Code (LaunchService.startT3): true when the OS took its link. */
+  startT3?(): Promise<boolean>;
+  /** Opens T3's approval page for a pairing (LaunchService.pairT3). */
+  pairT3?(): Promise<"opened" | "not_opened" | "not_running">;
+  /** Brings a T3 launch's thread up in T3 Code (LaunchService.openThread). */
+  openThread?(space: string, launch: string): Promise<boolean>;
 }
 
 /**
@@ -475,6 +482,31 @@ export class UiLaunches {
       });
     }
     return { result, machine: machine.name };
+  }
+
+  /**
+   * T3 Code from the page (A4 3.4.1): `t3_start` starts it, `t3_pair` opens its approval page for
+   * a pairing, `t3_open` brings a launch's thread up. Each answers whether it opened, or for
+   * Pair, `not_running` when T3 does not run.
+   */
+  async t3(
+    action: string,
+    spaceRef: string | undefined,
+    input: Record<string, unknown>,
+    copy?: string,
+  ): Promise<{ readonly opened: boolean | "not_running" }> {
+    const port = this.#options.port;
+    if (action === "t3_start") return { opened: (await port?.startT3?.()) ?? false };
+    if (action === "t3_pair") {
+      const paired = (await port?.pairT3?.()) ?? "not_running";
+      return { opened: paired === "not_running" ? paired : paired === "opened" };
+    }
+    const { launch } = input;
+    if (typeof launch !== "string" || !LAUNCH_ID.test(launch)) {
+      throw invalid("Expected a launch ID.", "launch");
+    }
+    const space = this.#space(spaceRef, copy).id ?? "";
+    return { opened: (await port?.openThread?.(space, launch)) ?? false };
   }
 
   /** A task's launch receipts, newest last (at most ten). */

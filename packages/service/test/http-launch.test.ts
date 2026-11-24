@@ -102,8 +102,9 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       const port = w.port();
       const headers = { "ttasks-space": "Mira", "ttasks-build": "source" };
 
-      // The snapshot names the instances the tiles draw: only the one that opens here. It is a
-      // Claude Code instance, which can also run a task in the background.
+      // The snapshot names the instances the tiles draw: the ones that open here. A Claude Code
+      // instance, which can also run a task in the background, and T3 Code, which says at the
+      // click when it cannot open.
       const feed = await openFeed(port, token);
       await feed.next((m) => m["type"] === "hello");
       feed.send({ type: "subscribe", space: "Mira" });
@@ -117,6 +118,7 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
           route: "terminal",
           runs: true,
         },
+        { key: "t3-later", label: "T3 · test", glyph: "T3", ring: 2, route: "t3-mcp" },
       ]);
 
       const click = { task: task.id, instance: "fake-agent", request_id: "click-0000000000000001" };

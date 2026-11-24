@@ -138,11 +138,13 @@ export function t3Host(input: {
   readonly platform: NodeJS.Platform;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly instances: readonly Instance[];
+  /** Opens a thread link through the OS: true when the opener took it. */
+  readonly open?: (url: string) => Promise<boolean>;
 }): T3Host {
-  const { home, files, platform } = input;
+  const { home, files, platform, open } = input;
   return {
     log: input.log,
-    route: new T3Route({ home, files, platform }),
+    route: new T3Route({ home, files, platform, ...(open === undefined ? {} : { open }) }),
     cli: new T3CliRoute({
       home,
       files,
