@@ -2374,6 +2374,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.trash.web.names",
+      "title": "An agent's change in the Trash is headed by its app's name: also for an agent TTasks started, whose label holds its session; by its instance when the page does not list it; and as an agent when it named none",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.trash.e2e.title",
       "title": "A title being typed stays through the task's removal, a page opened meanwhile (whose cleanup runs) and its restore: it is listed at the foot of the Trash with its reference, and after the restore it is back in the title's editor",
       "owner": "M5",
@@ -2397,6 +2404,20 @@
     {
       "id": "A5.trash.e2e",
       "title": "A task taken away and brought back in the page, in the browser: Move to Trash in the card and the toast's Undo; the Trash in the sidebar by change with Restore these, Find by words and reference, and a Restore the keyboard reaches that says where the task is back; a link to a removed task opens it in the Trash read-only with Restore; the words typed for a task the space does not have now stay at the Trash's foot with Discard; screenshots at 1,440 and 390 px, axe clean",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.e2e.agents",
+      "title": "What an agent moved to the Trash, in the browser: the side menu counts what agents moved there that the Trash has not shown, also before it was ever opened and after a reload; a restore takes tasks out of the count; a removal another tab showed is not counted; one change under the agent's name with Restore these; both themes at 1,440 and 390 px",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.trash.e2e.key",
+      "title": "Delete on a focused row moves its task to the Trash with Undo and focus goes to the next row; a held key moves one task; the key does nothing in the top field, the composer or the shortcut sheet, which lists it",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3551,22 +3572,6 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A4.5.t3.cli-route",
-      "title": "With T3's command line as it is (no project list) only the paired T3 route opens a task and an unpaired instance names ttasks setup t3; turned on, the T3 CLI fallback route against a fake T3 and a fake t3 command line serves exact roots only: an exact root opens there with the brief on stdin, a nested folder asks Register and never opens the containing project, a worktree needs pairing, thread start is given project IDs only, the t3-cli launch states (Unknown on any exit without a thread, a T3 error included, never repeated, Unknown lost after a restart, Failed folder_mismatch for another project or a root that changed before thread start), and Start T3 Code when T3 is not running",
-      "source": "A4 3.4.1, A4 3.9.2, A4 3.9.3, A7 3.13 M6.10",
-      "owner": "M6",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A4.3.4.1.t3.cli-command",
-      "title": "The T3 CLI's command line: a .cmd shim read exactly or refused, hostile folder names reaching the fake CLI byte for byte (through the shim on Windows) or refused before anything starts, a shim naming another T3 home refused, each thread start answer mapped to its launch state, and a stage that refuses what the CLI cannot be given",
-      "source": "A4 3.4.1, A4 3.2, A4 3.6.4, A4 3.8, A7 3.13 M6.10",
-      "owner": "M6",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A4.5.t3.binding",
       "title": "Exact-folder binding for T3 by directory identity: an exact project root through a link or another case, an existing git worktree, never a containing project, a sibling clone, a submodule or a subfolder of a worktree, and an archived project gone from the list",
       "source": "A4 3.4.1, A4 5.1, R11, A7 3.9 M2.11",
@@ -3784,7 +3789,7 @@
     },
     {
       "id": "A3.3.14.doctor.launch",
-      "title": "ttasks doctor's launch rows pass and fail against fakes: launch.scopes from the launch's own scope probe, run once per start (a warning without scopes), launch.terminal naming the terminal a launch opens first and why (a warning when it is missing or the person's default has no adapter, named without a path), launch.env from the environment's check (the last snapshot attempt's outcome and the age of the one in use, taken now only with --live; the registry read on Windows), launch.t3 from t3/status (a pairing that cannot renew itself warns 5 days before its token runs out); an older service's silence skips them",
+      "title": "ttasks doctor's launch rows pass and fail against fakes: launch.scopes from the launch's own scope probe, run once per start (a warning without scopes), launch.terminal naming the terminal a launch opens first and why (a warning when it is missing or the person's default has no adapter, named without a path), launch.env from the environment's check (the last snapshot attempt's outcome and the age of the one in use, taken now only with --live; the registry read on Windows), launch.t3 from t3/status (a pairing warns 5 days before its token runs out); an older service's silence skips them",
       "source": "A3 3.14, A4 3.4.1, A4 3.7, A4 3.8, A7 3.11 M4.05b",
       "owner": "M4",
       "kind": "ci",

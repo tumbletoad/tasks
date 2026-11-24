@@ -1,7 +1,7 @@
 // What the service answers for `ttasks doctor`'s launch rows and sessions row (A3 3.14; A4 3.4.1,
 // 3.7, 3.8; A7 3.11 M4.05b): `doctor/launch` asks the very scope probe a terminal launch uses, once
-// per start, and the environment's own check; `t3/status` says when the token runs out and whether
-// the pairing renews it; `doctor/sessions` counts the open connections and the sessions among them.
+// per start, and the environment's own check; `t3/status` says when the token runs out;
+// `doctor/sessions` counts the open connections and the sessions among them.
 // Fakes only: a fake spawner for the probe, a fake environment, an in-memory T3 state, fake slots.
 // Nothing real is started, and the temporary folder is removed afterwards.
 import { mkdtempSync, rmSync } from "node:fs";
@@ -228,14 +228,13 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
     expect(auto.reads.count).toBe(1);
   });
 
-  test("t3/status: the token's expiry and whether the pairing renews it, also while T3 is not running", async () => {
+  test("t3/status: the token's expiry, also while T3 is not running", async () => {
     const files = new MemoryT3Files();
     const status = () =>
-      t3Verbs(t3Host({ log, home: undefined, files, platform: "linux", env: {}, instances: [] }))[
+      t3Verbs(t3Host({ log, home: undefined, files, platform: "linux", instances: [] }))[
         "t3/status"
       ]?.({}, "cli-script");
     expect(await status()).toMatchObject({ state: "not_paired" });
-    expect(await status()).not.toHaveProperty("renews");
     // A token that runs out in ten days.
     const expiresAt = Date.now() + 10 * 24 * 60 * 60_000;
     const pairing = {
@@ -250,10 +249,7 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
     expect(await status()).toMatchObject({
       state: "not_running",
       expires_at: new Date(expiresAt).toISOString(),
-      renews: false,
     });
-    writePairing(files, { ...pairing, refreshToken: "fixture-refresh" });
-    expect(await status()).toMatchObject({ renews: true });
     // A pairing T3 no longer accepts says only that.
     writePairing(files, { ...pairing, reconnect: true });
     const reconnect = (await status()) as Record<string, unknown>;

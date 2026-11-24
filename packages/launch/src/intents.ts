@@ -21,7 +21,10 @@ export type IntentState = (typeof INTENT_STATES)[number];
 export const OPEN_STATES = ["prepared", "dispatching", "dispatched"] as const;
 export type OpenState = (typeof OPEN_STATES)[number];
 
-/** A4 3.1's routes: one mechanism of a target. */
+/**
+ * A4 3.1's routes: one mechanism of a target. `t3-cli` is read only: no launch takes it now, and
+ * launches recorded with it earlier still read and settle.
+ */
 export const ROUTES = ["terminal", "link", "t3-mcp", "t3-cli", "clipboard"] as const;
 export type Route = (typeof ROUTES)[number];
 

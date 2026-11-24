@@ -740,14 +740,13 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // Made before the endpoint listens (its handler table takes the shim's methods), once the
     // socket folder, which holds the launch folders on Linux, has been checked below.
     const launching: { service?: LaunchService } = {};
-    // T3's routes over `<state>/t3` (M2.11): the paired one opens its thread links through the
-    // launch service's opener.
+    // T3's route over `<state>/t3` (M2.11): it opens its thread links through the launch service's
+    // opener.
     const t3 = t3Host({
       log,
       home: t3HomeOf(env, facts),
       files: t3Files(layout.state, platform),
       platform,
-      env,
       instances: config.instances,
       open: (url) => launching.service?.openLink(url) ?? Promise.resolve(false),
     });

@@ -261,7 +261,7 @@ export function t3PairingCheck(status: unknown, now: number): Check {
   }
   const running = state === "ready" ? "" : " T3 Code is not running now.";
   const expires = instant(status["expires_at"]);
-  if (status["renews"] !== true && expires === undefined && status["expires_at"] !== undefined) {
+  if (expires === undefined && status["expires_at"] !== undefined) {
     // An expiry the service gave that cannot be read: nothing to judge the pairing by.
     return {
       id,
@@ -269,18 +269,14 @@ export function t3PairingCheck(status: unknown, now: number): Check {
       detail: "The service did not say when T3 Code's pairing runs out.",
     };
   }
-  if (status["renews"] === true || expires === undefined) {
-    return {
-      id,
-      status: "ok",
-      detail: `Paired with T3 Code${status["renews"] === true ? "; the pairing renews its token itself" : ""}.${running}`,
-    };
+  if (expires === undefined) {
+    return { id, status: "ok", detail: `Paired with T3 Code.${running}` };
   }
   if (expires <= now) {
     return {
       id,
       status: "warn",
-      detail: `The pairing with T3 Code ran out on ${day(expires)} and cannot renew itself. Run: ${pair}`,
+      detail: `The pairing with T3 Code ran out on ${day(expires)}. Run: ${pair}`,
     };
   }
   if (expires - now <= T3_WARN_MS) {
@@ -288,7 +284,7 @@ export function t3PairingCheck(status: unknown, now: number): Check {
     return {
       id,
       status: "warn",
-      detail: `The pairing with T3 Code runs out on ${day(expires)}, in ${String(days)} day${days === 1 ? "" : "s"}, and cannot renew itself. Pair again before then: ${pair}`,
+      detail: `The pairing with T3 Code runs out on ${day(expires)}, in ${String(days)} day${days === 1 ? "" : "s"}. Pair again before then: ${pair}`,
     };
   }
   return {

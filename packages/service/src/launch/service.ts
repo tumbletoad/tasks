@@ -1001,7 +1001,7 @@ export class LaunchService {
     if (text.status !== "ok") throw this.#unavailable("too_long");
     let linkOpened: boolean | undefined;
     if (intent.state === "prepared") {
-      const planned = await t3.plan(intent.id, {
+      const planned = t3.plan(intent.id, {
         projectId: bound.projectId,
         strategy: bound.strategy,
         title: `${task.ref} ${sanitiseTitle(task.title)}`.trim(),

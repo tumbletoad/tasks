@@ -1,10 +1,14 @@
 // The Trash's page source and groups (trash.ts) against a fake `task.trash`: one group per change,
 // newest first, "Restore these" only for a change of several tasks, and the expanded task kept where
-// it was shown, also once restored.
+// it was shown, also once restored; the count of what agents moved there that the Trash has not shown.
 import { describe, expect, test } from "vitest";
+import { pageKept } from "../kept.ts";
 import type { TaskRow } from "../store/rows.ts";
 import {
+  keepTrashSeen,
+  movedByOthers,
   trashGroups,
+  trashSeen,
   trashSource,
   type Removal,
   type TrashedRow,
@@ -88,5 +92,47 @@ describe("[A5.trash.web] the Trash's groups and pages", () => {
       { limit: 2, q: "passport" },
       { limit: 1, cursor: "9.1", q: "passport" },
     ]);
+  });
+
+  const at = (iso: string, by: string, count: number): Removal => ({
+    id: `op_${iso}`,
+    at: `2026-11-24T${iso}:00.000Z`,
+    by,
+    count,
+  });
+  const fake = (pages: { rows: TrashedRow[]; cursor?: string }[]): TrashRead =>
+    (() => Promise.resolve(pages.shift() ?? { rows: [] })) as unknown as TrashRead;
+
+  test("the count is what others moved to the Trash after the newest removal it showed, read newest first; with none shown, all of it", async () => {
+    const pages = () => [
+      {
+        rows: [
+          row(1, at("14:00", "agent:claude-code:se_fixture", 2)),
+          row(2, at("14:00", "agent:claude-code:se_fixture", 2)),
+          row(3, at("13:00", "user", 1)),
+        ],
+        cursor: "7.3",
+      },
+      { rows: [row(4, at("12:00", "agent:unknown", 1)), row(5, at("10:00", "agent:x", 1))] },
+    ];
+    const read = pages();
+    expect(await movedByOthers(fake(read), Date.parse("2026-11-24T11:00:00.000Z"))).toBe(3);
+    expect(read).toEqual([]);
+    expect(await movedByOthers(fake(pages()), undefined)).toBe(4);
+  });
+
+  test("what the Trash shows is seen: the newest removal's time, which never goes back when a newer one is restored", () => {
+    const kept = pageKept();
+    expect(trashSeen("sp_fixture", kept)).toBeUndefined();
+    keepTrashSeen("sp_fixture", [], kept);
+    expect(trashSeen("sp_fixture", kept)).toBeUndefined();
+    keepTrashSeen(
+      "sp_fixture",
+      [row(1, at("14:00", "agent:x", 1)), row(2, at("13:00", "user", 1))],
+      kept,
+    );
+    expect(trashSeen("sp_fixture", kept)).toBe(Date.parse("2026-11-24T14:00:00.000Z"));
+    keepTrashSeen("sp_fixture", [row(2, at("13:00", "user", 1))], kept);
+    expect(trashSeen("sp_fixture", kept)).toBe(Date.parse("2026-11-24T14:00:00.000Z"));
   });
 });

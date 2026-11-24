@@ -18,6 +18,11 @@
       "tokens": 2045
     },
     {
+      "bytes": 1263,
+      "name": "delete_tasks",
+      "tokens": 632
+    },
+    {
       "bytes": 1302,
       "name": "get_task",
       "tokens": 651
@@ -54,8 +59,8 @@
     }
   ],
   "total": {
-    "bytes": 19788,
-    "tokens": 9896,
-    "tools": 10
+    "bytes": 21051,
+    "tokens": 10528,
+    "tools": 11
   }
 }

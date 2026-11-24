@@ -71,6 +71,13 @@ export const KEYMAP = [
   // The title is a button: the browser opens and closes the task on Enter and Space.
   { id: "expand", scope: "list", keys: [{ key: "Enter" }, { key: " " }], label: "keys.expand" },
   { id: "rename", scope: "list", keys: [{ key: "F2" }], label: "keys.rename" },
+  // A Mac's keyboard has no Delete key: Cmd+Backspace is its Finder's.
+  {
+    id: "trash",
+    scope: "list",
+    keys: [{ key: "Delete" }, { key: "Backspace", mod: true }],
+    label: "keys.trash",
+  },
 
   { id: "add", scope: "field", keys: [{ key: "Enter" }], label: "keys.add", inFields: true },
   {

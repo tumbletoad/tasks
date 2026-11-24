@@ -111,7 +111,7 @@ The session plans for lab sessions 1 to 3 were written before background runs an
 | M2.10t | T3 Open from the page, the part of M2.10 not built | M2.10, M2.11, M4.06 | M | done |
 | M2.15 | Real-machine acceptance | all | S RM | todo |
 
-M2.04b and M2.10t are not in the base count. Open on a T3 instance opens a thread through the paired route; T3's command-line route and the token refresh path are dead against T3's server and wait for their removal. M2.07's places were replaced by folders (M4.09, M4.10, M6.16), and M4.11 retires what is left of them. M2.04's binding is replaced under M4.06.
+M2.04b and M2.10t are not in the base count. Open on a T3 instance opens a thread through the paired route, its one route: T3's command line cannot open a thread with an unsent brief, and T3 gives no refresh token, so a pairing that ran out is paired again. M2.07's places were replaced by folders (M4.09, M4.10, M6.16), and M4.11 retires what is left of them. M2.04's binding is replaced under M4.06.
 
 ## M3: durable space (parallel with M4)
 
@@ -202,7 +202,7 @@ M5.14b is not in the base count. M5.12 merged as a first space and an agent-apps
 | M6.15 | Real machines: Refresh, cancel, receipts | M6.01–M6.14 | S RM | todo |
 | M6.16 | Launch and service on folders | M4.09 | M | done |
 
-M6.06b, M6.09b and M6.12r are not in the base count. M6.03 was built another way: the service hosts each run and no run shim exists, so a run ends with the service and keeps its last saved answer. M6.06 became two drivers of the product's own, one for the Codex app server and one for Claude Code, and the Codex parser of M6.05 left with it. M6.02's limits are guidelines a person sets, and no folder lease exists.
+M6.06b, M6.09b and M6.12r are not in the base count. M6.10's route was built and then removed: T3's command line cannot open a thread with an unsent brief. M6.03 was built another way: the service hosts each run and no run shim exists, so a run ends with the service and keeps its last saved answer. M6.06 became two drivers of the product's own, one for the Codex app server and one for Claude Code, and the Codex parser of M6.05 left with it. M6.02's limits are guidelines a person sets, and no folder lease exists.
 
 ## M7: switch-over (v1)
 

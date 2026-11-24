@@ -1,8 +1,10 @@
 // The Trash: the tasks moved there on purpose, read in pages because the live store never holds
 // them (`task.trash`, newest change first, then by reference). Pure parts, so the order and the
-// groups are unit tests: the page source, and one group per change that moved tasks there.
+// groups are unit tests: the page source, one group per change that moved tasks there, and how many
+// tasks agents moved there since the person last had it open in this browser.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { Group } from "../groups.ts";
+import { browserKept, type Kept } from "../kept.ts";
 import { taskRow, type TaskRow } from "../store/rows.ts";
 import type { Page, PageSource } from "../store/queries.ts";
 import type { HeldRow } from "./TaskList.tsx";
@@ -125,4 +127,46 @@ export function trashGroups(
     });
   }
   return out;
+}
+
+/**
+ * Kept for this browser, per space: the time, by the service's clock, of the newest removal the
+ * Trash has shown. None: nothing in the Trash was seen here.
+ */
+export const seenName = (space: string): string => `trashSeen.${space}`;
+
+export function trashSeen(space: string, kept: Kept = browserKept): number | undefined {
+  const at = Number(kept.read(seenName(space)));
+  return Number.isFinite(at) && at > 0 ? at : undefined;
+}
+
+/** The Trash showed `rows`, newest change first: what they hold is seen. */
+export function keepTrashSeen(
+  space: string,
+  rows: readonly TrashedRow[],
+  kept: Kept = browserKept,
+): void {
+  const newest = rows.reduce(
+    (at, row) => (row.removed === undefined ? at : Math.max(at, Date.parse(row.removed.at))),
+    trashSeen(space, kept) ?? 0,
+  );
+  if (newest > 0) kept.keep(seenName(space), String(newest));
+}
+
+/**
+ * How many tasks in the Trash were moved there by someone other than the person and not seen:
+ * read newest change first, up to the first change at or before `seen`.
+ */
+export async function movedByOthers(read: TrashRead, seen: number | undefined): Promise<number> {
+  let count = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await read({ limit: READ_MAX, ...(cursor === undefined ? {} : { cursor }) });
+    for (const row of page.rows) {
+      if (seen !== undefined && Date.parse(row.removed.at) <= seen) return count;
+      if (row.removed.by !== "user") count += 1;
+    }
+    cursor = page.cursor;
+  } while (cursor !== undefined);
+  return count;
 }

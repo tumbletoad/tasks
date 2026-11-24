@@ -112,7 +112,7 @@ async function useClient(
 
 describe("[A3.3.3.mcp.clients] official clients of both eras through ttasks mcp", () => {
   test(
-    "each lists the ten tools, reads the instructions and calls status, through the CLI's entry and the bridge's",
+    "each lists the eleven tools, reads the instructions and calls status, through the CLI's entry and the bridge's",
     { timeout: 300_000 },
     async () => {
       const temp = tempRoot("oc");
@@ -144,6 +144,7 @@ describe("[A3.3.3.mcp.clients] official clients of both eras through ttasks mcp"
             "add_entry",
             "add_tasks",
             "complete_task",
+            "delete_tasks",
             "get_task",
             "organize",
             "preferences",

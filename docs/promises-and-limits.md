@@ -44,8 +44,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   as long as it would for any task. A run that finishes leaves the page as any task's does: its
   answer stays in the task's thread, which the Trash opens. An agent in a terminal that TTasks
   started for the task goes on until you stop it in its terminal, and shows on the Agents page until
-  it ends, with or without the Agent Monitor. Only you move tasks to the Trash and back for now:
-  agents cannot.
+  it ends, with or without the Agent Monitor.
+- Agents can move tasks to the Trash and back. Their changes are not on your Undo: the Trash shows
+  each one under the agent's name with Restore, and the Trash in the sidebar counts the tasks agents
+  moved there that the Trash has not shown in that browser.
 - A task's reference, such as M-14, is not given to another task when the task is deleted or its
   creation is undone, when a backup is restored over the space, or when a restored copy is claimed.
 - Adding work by a source that an open task or a recently finished one already has finds that task

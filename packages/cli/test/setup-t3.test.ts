@@ -7,7 +7,7 @@
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { FAKE_T3_CLI, FakeT3 } from "@ttasks/testkit/fake-t3";
+import { FakeT3 } from "@ttasks/testkit/fake-t3";
 import { startService, type RunningService } from "@ttasks/service/hub";
 import {
   configOf,
@@ -32,7 +32,7 @@ beforeAll(async () => {
   cleanup = temp.cleanup;
   home = join(temp.root, "h");
   fake = await FakeT3.start(join(temp.root, "t3home"));
-  // A T3 instance whose `t3` is the fake CLI (M6.10), and one without a command.
+  // A T3 instance with a provider instance and model, and one without.
   mkdirSync(configOf(home), { recursive: true, mode: 0o700 });
   writeFileSync(
     join(configOf(home), "machine.toml"),
@@ -41,8 +41,6 @@ beforeAll(async () => {
       'id = "t3-codex"',
       'target = "t3"',
       'label = "T3 Codex"',
-      `exec = '${process.execPath}'`,
-      `args_prefix = ['${FAKE_T3_CLI}']`,
       't3_provider_instance = "codex"',
       't3_model = "fixture-model"',
       'open_permission = "full-access"',
@@ -159,7 +157,6 @@ describe("[A4.3.4.1.t3.setup] ttasks setup t3 through the service", () => {
 
       const first = pairing();
       const token = String(first["accessToken"]);
-      const refresh = String(first["refreshToken"]);
       expect(token).toMatch(/^fake-at-/u);
       expect(first["grant"]).toMatch(/^t3g-/u);
       if (process.platform !== "win32") {
@@ -170,11 +167,10 @@ describe("[A4.3.4.1.t3.setup] ttasks setup t3 through the service", () => {
       for (const file of filesBelow(home)) {
         if (file === pairingFile()) continue;
         const text = readFileSync(file, "latin1");
-        expect(text.includes(token) || text.includes(refresh), file).toBe(false);
+        expect(text.includes(token), file).toBe(false);
       }
       for (const text of [paired.stdout, paired.stderr, ...browsed]) {
         expect(text).not.toContain(token);
-        expect(text).not.toContain(refresh);
       }
       const log = readFileSync(logFile(), "utf8");
       expect(log).toContain('"setup.paired"');
