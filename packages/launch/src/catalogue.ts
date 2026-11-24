@@ -28,7 +28,7 @@ export const isBuiltInTarget = (value: string): value is BuiltInTargetId =>
 export const PERMISSIONS = ["inherit", "full-access", "auto-edit", "read-only"] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
-export type RouteKind = "terminal" | "link" | "t3-mcp" | "t3-cli" | "clipboard";
+export type RouteKind = "terminal" | "link" | "t3-mcp" | "clipboard";
 
 /**
  * What an instance can set beyond its app's own settings: its open permission, its extra
@@ -65,7 +65,7 @@ export interface RouteDef {
    * the launch reference confirms it (A4 3.9.2).
    */
   readonly confirmFolder?: boolean;
-  /** Terminal and t3-cli routes: whole-element placeholders only for {exec}, {permission}, {extra_args}. */
+  /** Terminal routes: whole-element placeholders only for {exec}, {permission}, {extra_args}. */
   readonly argv?: readonly Template[];
   /** Link routes: each value percent-encoded once when the route runs. */
   readonly url?: string;
@@ -152,20 +152,6 @@ export const CATALOGUE: readonly TargetDef[] = [
         copyBriefToo: false,
         // The permission as the thread's runtime mode (t3-route.ts).
         carries: ["permission"],
-      },
-      {
-        // The argv is M2.09's: it needs the project ID and provider, which are not placeholders yet.
-        kind: "t3-cli",
-        folder: "project-exact",
-        prompt: "sent",
-        nativeId: "returned",
-        maxPrompt: 120_000,
-        budget: 8_000,
-        trust: "project",
-        needsGui: true,
-        copyBriefToo: false,
-        // The CLI has no runtime-mode flag (t3-cli.ts refuses a narrower mode itself).
-        carries: [],
       },
     ],
     instances: "per-provider-instance",

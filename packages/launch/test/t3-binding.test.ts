@@ -251,7 +251,7 @@ describe("[A4.5.t3.binding] exact-folder binding for T3", () => {
           },
           "t3-binding-click-001",
         );
-        const planned = await route.plan(intent.id, {
+        const planned = route.plan(intent.id, {
           ...prepared,
           title: "M-14 Fixture task",
           instance: { openPermission: "auto-edit" },

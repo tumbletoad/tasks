@@ -21,12 +21,10 @@ import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
 import {
-  chooseT3Route,
   PairingError,
   T3_FILE_MAX_BYTES,
   T3_FILES,
   T3_TEXT,
-  T3CliRoute,
   T3Error,
   T3Route,
   type Instance,
@@ -119,24 +117,16 @@ export interface T3Host {
   readonly log: Logger;
   /** The T3 route of this service, over `<state>/t3`. */
   readonly route: T3Route;
-  /** The CLI fallback route (M6.10), over the same state and T3 home. */
-  readonly cli: T3CliRoute;
   /** The T3 instances machine.toml names, as this start read them. */
   readonly instances: readonly Instance[];
 }
 
-/**
- * The hub's T3 host: the paired route and the CLI fallback over one T3 home and one state folder.
- * The CLI's environment starts from the service's own through the allow-list here (only `t3/status`
- * uses the host so far, which starts no CLI); the step that launches through it passes the launch
- * service's person's environment (A4 3.8), as a terminal's claim gets it.
- */
+/** The hub's T3 host: the paired route over T3's home and the state folder. */
 export function t3Host(input: {
   readonly log: Logger;
   readonly home: string | undefined;
   readonly files: T3Files;
   readonly platform: NodeJS.Platform;
-  readonly env: Readonly<Record<string, string | undefined>>;
   readonly instances: readonly Instance[];
   /** Opens a thread link through the OS: true when the opener took it. */
   readonly open?: (url: string) => Promise<boolean>;
@@ -145,21 +135,9 @@ export function t3Host(input: {
   return {
     log: input.log,
     route: new T3Route({ home, files, platform, ...(open === undefined ? {} : { open }) }),
-    cli: new T3CliRoute({
-      home,
-      files,
-      platform,
-      environment: { base: () => Promise.resolve({ kind: "service", env: input.env }) },
-    }),
     instances: input.instances.filter((i) => i.target === "t3" && i.enabled),
   };
 }
-
-/** What `t3/status` says of an instance whose route is ready. */
-const ROUTE_TEXT = {
-  "t3-mcp": "Opens in T3 Code.",
-  "t3-cli": `Not paired: opens through T3's command line, which sends the brief. Pair for an unsent draft: ${CLI_NAME} setup t3`,
-} as const;
 
 type Verb = (params: JsonObject, cls: ConnectionClass) => Promise<unknown>;
 
@@ -245,29 +223,23 @@ export function t3Verbs(host: T3Host): Readonly<Record<string, Verb>> {
   return {
     "t3/status": async () => {
       const available = await host.route.availability();
-      // Per instance, the route a click would take now, or why none ("Start T3 Code" when T3 is
-      // not running): from what the routes already read, no request and no process (M6.10).
-      const instances = await Promise.all(
-        host.instances.map(async (instance) => {
-          const choice = await chooseT3Route(host.route, host.cli, instance);
-          return choice.kind === "route"
-            ? { id: instance.id, route: choice.route, message: ROUTE_TEXT[choice.route] }
-            : {
-                id: instance.id,
-                route: null,
-                reason: choice.reason,
-                message: T3_TEXT[choice.reason],
-              };
-        }),
+      // Per instance, whether a click opens it now, or why not ("Start T3 Code" when T3 is not
+      // running): from machine state and T3's runtime file, no request.
+      const instances = host.instances.map((instance) =>
+        available.state === "ready"
+          ? { id: instance.id, route: "t3-mcp", message: "Opens in T3 Code." }
+          : {
+              id: instance.id,
+              route: null,
+              reason: available.state,
+              message: T3_TEXT[available.state],
+            },
       );
       const running = await host.route.running();
-      // The token's expiry and whether the pairing renews it (a refresh token), for doctor's
-      // warning before it runs out (A4 3.4.1), whether or not T3 runs now.
+      // The token's expiry, for doctor's warning before it runs out (A4 3.4.1), whether or not T3
+      // runs now.
       const pairing = host.route.pairing();
-      const token =
-        pairing === undefined || pairing.reconnect
-          ? {}
-          : { ...iso(pairing.expiresAt), renews: pairing.refreshToken !== undefined };
+      const token = pairing === undefined || pairing.reconnect ? {} : iso(pairing.expiresAt);
       if (available.state !== "ready") {
         return {
           state: available.state,

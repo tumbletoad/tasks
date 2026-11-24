@@ -16,8 +16,9 @@
 //   synchronously right before the request leaves with that pairing's token. After a re-pairing it
 //   sends nothing and answers `refused`, which the machine records as Unknown.
 //
-// Machine state (t3-state.ts) holds the pairing, the "Not now" answers and each launch's plan; the
-// plan is written before Dispatching, so the repeat after a restart sends the same call.
+// Machine state (t3-state.ts) holds the pairing and each launch's plan; the plan is written before
+// Dispatching, so the repeat after a restart sends the same call. T3 issues a 30-day token and no
+// refresh token: a pairing that ran out is "Reconnect T3", and the person pairs again.
 import { PRODUCT_NAME, CLI_NAME } from "@ttasks/brand";
 import type { Permission } from "./catalogue.ts";
 import { EVIDENCE_ID, type FailReason } from "./intents.ts";
@@ -34,12 +35,11 @@ import {
   type Fetch,
   type T3Target,
 } from "./t3-client.ts";
-import { beginPairing, refreshGrant, type Grant, type PairingAttempt } from "./t3-oauth.ts";
+import { beginPairing, type Grant, type PairingAttempt } from "./t3-oauth.ts";
 import {
   newGrantId,
   readPairing,
   readPlan,
-  REFRESH_KEEPS_GRANT,
   writePairing,
   writePlan,
   type T3Files,
@@ -54,7 +54,7 @@ export type T3Unavailable =
   | "not_paired"
   /** No T3 server answers: the desktop app is closed, or the service is down. */
   | "not_running"
-  /** T3 refused the token (401), or it ran out without a refresh: pair again. */
+  /** T3 refused the token (401), or it ran out: pair again. */
   | "reconnect"
   /** T3 answered, but not in a way that tells: try again. */
   | "no_answer"
@@ -63,49 +63,18 @@ export type T3Unavailable =
   /** The instance names a T3 provider instance without a model; T3 needs both together. */
   | "model_required"
   /** The pairing allows less than opening here needs: pair again, choosing Full access. */
-  | "pairing_denied"
-  // The CLI fallback route (t3-cli.ts, A4 3.4.1 "Fallback route"):
-  /** The instance names a model without a provider instance: the CLI takes both or neither. */
-  | "provider_required"
-  /** The instance's provider instance or model cannot be passed to T3's command line as it is. */
-  | "invalid_instance"
-  /** Not paired, and the instance names no `t3` command (`exec`). */
-  | "no_cli"
-  /** The instance's `t3` command cannot be run as TTasks runs it (its `.cmd` shim, its home). */
-  | "cli_unusable"
-  /** The folder is an existing worktree: only the paired route attaches one. */
-  | "worktree_needs_pairing"
-  /** The instance asks for a mode T3's command line cannot set: only the paired route can. */
-  | "mode_needs_pairing"
-  /** The brief does not fit the route. */
-  | "too_long"
-  /** The bound folder, or the project root T3 holds for it, is another folder now. */
-  | "folder_changed";
+  | "pairing_denied";
 
 /** A4 3.18's lines, for the UI and the CLI. */
 export const T3_TEXT = {
   not_paired: `Pair ${PRODUCT_NAME} with T3 Code first: ${CLI_NAME} setup t3`,
   not_running: "Start T3 Code",
-  reconnect: "Reconnect T3",
+  reconnect: `T3 Code no longer accepts ${PRODUCT_NAME}'s pairing. Pair again: ${CLI_NAME} setup t3`,
   no_answer: "T3 Code did not answer. Try again.",
-  not_registered: "T3 Code did not add this folder as a project.",
+  not_registered: `T3 Code did not add this folder as a project. Add it in T3 Code, or pair again choosing Full access: ${CLI_NAME} setup t3`,
   model_required: "Set t3_model for this instance: T3 takes a provider instance with its model.",
   pairing_denied: `The pairing with T3 Code does not allow this. Pair again, choosing Full access: ${CLI_NAME} setup t3`,
-  provider_required:
-    "Set t3_provider_instance for this instance: T3's command line takes a model with its provider instance.",
-  invalid_instance:
-    "This instance's t3_provider_instance or t3_model cannot be passed to T3's command line.",
-  no_cli: `Pair ${PRODUCT_NAME} with T3 Code first: ${CLI_NAME} setup t3`,
-  cli_unusable: `T3's command line cannot be run from ${PRODUCT_NAME}. Pair with T3 Code instead: ${CLI_NAME} setup t3`,
-  worktree_needs_pairing: `This folder is a git worktree. Pair ${PRODUCT_NAME} with T3 Code to open it there: ${CLI_NAME} setup t3`,
-  mode_needs_pairing: `T3's command line cannot set this instance's permission. Pair ${PRODUCT_NAME} with T3 Code: ${CLI_NAME} setup t3`,
-  too_long: "The brief is too long for T3 Code.",
-  folder_changed: "The task's folder changed. Open the task again.",
-  register: (name: string) => `Register ${name} as a T3 project?`,
-  folder_mismatch: "T3 bound a different folder.",
-  regranted: (thread: string) =>
-    `${PRODUCT_NAME} re-paired with T3 before this launch settled. Check T3 for a thread named ${thread}.`,
-} as const;
+} as const satisfies Record<T3Unavailable, string>;
 
 /** Whether T3 can be used now, from machine state and T3's runtime file alone (no request). */
 export type T3Availability =
@@ -115,8 +84,6 @@ export type T3Availability =
 /** The result of the Prepared step for T3 (A4 3.4.1 steps 1 to 4). */
 export type T3Prepared =
   | { readonly kind: "bound"; readonly projectId: string; readonly strategy: T3Strategy }
-  /** "Register <name> as a T3 project?" with Register and Not now. */
-  | { readonly kind: "ask"; readonly question: "register"; readonly text: string }
   | { readonly kind: "unavailable"; readonly reason: T3Unavailable };
 
 /** A4 3.2: an instance's permission as T3's runtime mode. `inherit` sends none. */
@@ -138,8 +105,8 @@ const PRE_LAUNCH: Readonly<Record<string, FailReason>> = {
 /** A thread link's brief may hold this many characters (A4 3.4.1: T3's limit is 8,000). */
 export const T3_PROMPT_LIMIT = 8_000;
 
-/** A refresh is due this long before the token runs out. */
-const REFRESH_MARGIN_MS = 60_000;
+/** A token this close to running out is not used: a request would reach T3 after it ran out. */
+const EXPIRY_MARGIN_MS = 60_000;
 /** At most this many pages of projects are read. */
 const MAX_PAGES = 50;
 const PAGE = 100;
@@ -187,7 +154,6 @@ export class T3Route {
   readonly #mcp: T3Mcp;
   readonly #now: () => number;
   readonly #platform: NodeJS.Platform;
-  #refreshing: Promise<unknown> = Promise.resolve();
 
   constructor(options: T3RouteOptions) {
     this.#options = options;
@@ -214,9 +180,7 @@ export class T3Route {
   async availability(): Promise<T3Availability> {
     const pairing = this.pairing();
     if (pairing === undefined) return { state: "not_paired" };
-    // T3 gives no refresh token: a pairing ends when its token runs out (30 days).
-    const ended = pairing.refreshToken === undefined && this.#ranOut(pairing);
-    if (pairing.reconnect || ended) return { state: "reconnect" };
+    if (pairing.reconnect || this.#ranOut(pairing)) return { state: "reconnect" };
     if (this.#options.home === undefined) return { state: "not_running" };
     const origin = await readT3Origin(this.#options.home, this.#platform);
     if (origin.status !== "ok") return { state: "not_running" };
@@ -291,15 +255,6 @@ export class T3Route {
     return pairing.expiresAt !== undefined && this.#now() >= pairing.expiresAt;
   }
 
-  /**
-   * T3 refused `pairing`'s token (401). A token that had run out by then explains the 401, and its
-   * refresh token may still work: the pairing stays, and the next call refreshes it. Otherwise T3
-   * no longer accepts the grant: "Reconnect T3".
-   */
-  #refusedToken(pairing: T3Pairing): void {
-    if (!this.#ranOut(pairing)) this.#reconnect(pairing.grant);
-  }
-
   async #origin(): Promise<string> {
     if (this.#options.home === undefined) throw new T3Error("unreachable");
     const found = await readT3Origin(this.#options.home, this.#platform);
@@ -308,62 +263,27 @@ export class T3Route {
   }
 
   /**
-   * The pairing to send with, refreshed first when its token runs out (one refresh at a time).
-   * A refresh starts a new grant ID unless REFRESH_KEEPS_GRANT. Throws T3Error `unauthorized`
-   * when there is no usable pairing.
+   * The pairing to send with. Throws T3Error `unauthorized` when there is none, it is marked
+   * "Reconnect T3", or its token runs out within EXPIRY_MARGIN_MS (then it is marked so).
    */
-  async #fresh(): Promise<T3Pairing> {
-    const run = this.#refreshing.then(async () => {
-      const pairing = this.pairing();
-      if (pairing === undefined || pairing.reconnect) throw new T3Error("unauthorized");
-      const due =
-        pairing.expiresAt !== undefined && this.#now() >= pairing.expiresAt - REFRESH_MARGIN_MS;
-      if (!due) return pairing;
-      if (pairing.refreshToken === undefined) {
-        this.#reconnect(pairing.grant);
-        throw new T3Error("unauthorized");
-      }
-      let grant: Grant;
-      try {
-        grant = await refreshGrant(await this.#origin(), pairing, {
-          ...(this.#options.fetch === undefined ? {} : { fetch: this.#options.fetch }),
-          now: this.#now,
-          ...(this.#options.requestMs === undefined ? {} : { requestMs: this.#options.requestMs }),
-        });
-      } catch (error) {
-        if (error instanceof T3Error && error.failure === "unauthorized") {
-          this.#reconnect(pairing.grant);
-        }
-        throw error;
-      }
-      // Only while no re-pairing replaced it meanwhile.
-      if (this.pairing()?.grant !== pairing.grant) throw new T3Error("lost");
-      const kept: T3Pairing = {
-        ...grant,
-        grant: REFRESH_KEEPS_GRANT ? pairing.grant : newGrantId(),
-        pairedAt: pairing.pairedAt,
-        reconnect: false,
-        ...(pairing.environment === undefined ? {} : { environment: pairing.environment }),
-      };
-      writePairing(this.#options.files, kept);
-      return kept;
-    });
-    this.#refreshing = run.catch(() => undefined);
-    return run;
+  #usable(): T3Pairing {
+    const pairing = this.pairing();
+    if (pairing === undefined || pairing.reconnect) throw new T3Error("unauthorized");
+    if (pairing.expiresAt !== undefined && this.#now() >= pairing.expiresAt - EXPIRY_MARGIN_MS) {
+      this.#reconnect(pairing.grant);
+      throw new T3Error("unauthorized");
+    }
+    return pairing;
   }
 
-  /**
-   * A call with the fresh pairing. A 401 marks it "Reconnect T3", unless the token ran out during
-   * the call: then it is `lost` (try again), and the next call refreshes.
-   */
+  /** A call with the usable pairing. A 401 marks it "Reconnect T3". */
   async #call(tool: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const pairing = await this.#fresh();
+    const pairing = this.#usable();
     const target: T3Target = { origin: await this.#origin(), token: pairing.accessToken };
     try {
       return await this.#mcp.call(target, tool, args);
     } catch (error) {
       if (error instanceof T3Error && error.failure === "unauthorized") {
-        if (this.#ranOut(pairing)) throw new T3Error("lost");
         this.#reconnect(pairing.grant);
       }
       throw error;
@@ -406,7 +326,7 @@ export class T3Route {
   async prepare(input: {
     readonly folder: BindFolder;
     readonly name: string;
-  }): Promise<Extract<T3Prepared, { kind: "bound" | "unavailable" }>> {
+  }): Promise<T3Prepared> {
     try {
       const binding = await bindFolder(await this.#projects(), input.folder, this.#platform);
       if (binding.kind === "bound") return binding;
@@ -435,15 +355,14 @@ export class T3Route {
 
   /**
    * Writes the launch's plan (before Dispatching: persistence before the step) and returns the
-   * grant to dispatch it with, after a refresh when one is due: `dispatch(id, {grant})`.
+   * grant to dispatch it with: `dispatch(id, {grant})`.
    */
-  async plan(
+  plan(
     id: string,
     input: T3PlanInput,
-  ): Promise<
+  ):
     | { readonly kind: "ready"; readonly grant: string }
-    | { readonly kind: "unavailable"; readonly reason: T3Unavailable }
-  > {
+    | { readonly kind: "unavailable"; readonly reason: T3Unavailable } {
     const t3 = input.instance.t3;
     const provider = t3?.providerInstance;
     const model = t3?.model ?? "";
@@ -468,7 +387,7 @@ export class T3Route {
     };
     let pairing: T3Pairing;
     try {
-      pairing = await this.#fresh();
+      pairing = this.#usable();
     } catch (error) {
       return { kind: "unavailable", reason: unavailableFor(error) };
     }
@@ -502,8 +421,7 @@ export class T3Route {
    * only. The pairing is read, compared with the intent's grant and its token taken in one
    * synchronous step, after which only the requests to T3 are awaited: the call T3 receives
    * carries a token of the intent's grant, whatever re-pairing happens meanwhile (T3 then
-   * answers in that grant's namespace, or with a 401). A refresh is never made here: it would
-   * change the grant.
+   * answers in that grant's namespace, or with a 401).
    */
   async #launch(intent: LaunchIntent): Promise<DispatchOutcome> {
     if (intent.route !== "t3-mcp") return { kind: "refused" };
@@ -525,9 +443,8 @@ export class T3Route {
     ) {
       return { kind: "refused" };
     }
-    // A token past its expiry is not sent: T3 would only answer 401. It is not refreshed here
-    // either (that would change the grant), so nothing is sent: a dispatch fails, a repeat is
-    // Unknown, and the next ordinary call refreshes the pairing.
+    // A token past its expiry is not sent: T3 would only answer 401. A dispatch fails, a repeat
+    // is Unknown.
     if (this.#ranOut(pairing)) return { kind: "refused" };
     const args: Record<string, unknown> = {
       projectId: plan.projectId,
@@ -548,8 +465,8 @@ export class T3Route {
       return { kind: "accepted", evidence: { thread } };
     } catch (error) {
       if (!(error instanceof T3Error)) return { kind: "unknown" };
-      // A 401 did nothing. It marks "Reconnect T3" unless the token ran out during the call.
-      if (error.failure === "unauthorized") this.#refusedToken(pairing);
+      // A 401 did nothing. It marks "Reconnect T3".
+      if (error.failure === "unauthorized") this.#reconnect(pairing.grant);
       // T3 checks the model and the mode before it makes the thread.
       const before = error.code === undefined ? undefined : PRE_LAUNCH[error.code];
       if (before !== undefined) return { kind: "refused", reason: before };

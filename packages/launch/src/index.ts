@@ -30,7 +30,6 @@ export * from "./terminals/index.ts";
 export * from "./environment/index.ts";
 export * from "./windows-reads.ts";
 export * from "./t3-binding.ts";
-export * from "./t3-cli.ts";
 export * from "./t3-client.ts";
 export * from "./t3-oauth.ts";
 export * from "./t3-route.ts";
