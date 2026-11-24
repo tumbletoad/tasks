@@ -795,6 +795,21 @@ async function meanwhile(t: ContractTransport, answer: Value): Promise<() => Pro
     );
   }
 
+  // An answer that names nothing editable (a task finished or in the Trash): another task of the
+  // world changes instead, so the retry still meets a space that moved on.
+  for (let k = 1; back.length === 0 && k <= WORLD_TASKS; k += 1) {
+    const ref = `M-${String(k)}`;
+    if (strings.includes(ref)) continue;
+    const read = await t.aside("task.get", { task: ref }).catch(() => undefined);
+    const task = read?.["task"] as Value | undefined;
+    if (task?.["lifecycle"] !== "active" || typeof task["title"] !== "string") continue;
+    const title = task["title"];
+    await change("task.update", { task: ref, set: { title: `${title} meanwhile` } }, () => ({
+      task: ref,
+      set: { title },
+    }));
+  }
+
   return async () => {
     for (const undo of back.reverse()) await undo();
   };
@@ -1178,7 +1193,11 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             // is.
             if (receipted(entry.name, input)) {
               const value = result as Value;
+              const status = async (): Promise<unknown> =>
+                (await transport.aside("space.status", {}))["as_of"];
+              const before = await status();
               const takeBack = await meanwhile(transport, value);
+              expect.soft(await status(), `${key}: a change in between`).not.toBe(before);
               const again = (await transport.call(entry.name, input, actor)) as Value;
               const now =
                 NOW[entry.name]?.(again) === undefined
@@ -1250,10 +1269,13 @@ const BEFORE: Readonly<
   },
 };
 
+/** The tasks the world starts with, M-1 to M-15. */
+const WORLD_TASKS = 15;
+
 async function buildWorld(t: ContractTransport): Promise<{ asOf(): Promise<string> }> {
   const asOf = async (): Promise<string> =>
     ((await t.call("space.status", {}, "agent")) as { as_of: string }).as_of;
-  const tasks = Array.from({ length: 15 }, (_, i) => ({
+  const tasks = Array.from({ length: WORLD_TASKS }, (_, i) => ({
     title: TITLES[i + 1] ?? `Fixture task ${String(i + 1)}`,
   }));
   await t.call("task.add", { tasks, request_id: rid() }, "user");
