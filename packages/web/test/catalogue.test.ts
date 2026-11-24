@@ -72,6 +72,7 @@ const SAMPLE = {
   area: "Client work",
   project: "Lumen Health",
   projects: "Lumen Health and Billing",
+  also: "Lumen Health",
   age: "3d",
   where: "Ghostty, the desktop's default",
   claim: "yes",
@@ -185,7 +186,16 @@ describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {
     const folderSet = (values: Record<string, string | number>) =>
       intl.formatMessage(
         { id: "toast.folderSet" },
-        { folder: "~/new", count: 0, names: "", stayed: 0, because: "", kept: "", ...values },
+        {
+          folder: "~/new",
+          count: 0,
+          names: "",
+          stayed: 0,
+          because: "",
+          kept: "",
+          also: "none",
+          ...values,
+        },
       );
     expect(folderSet({ count: 1, names: "M-1" })).toBe(
       "Folder set to ~/new. 1 folder inside the old one moved along: M-1",

@@ -144,6 +144,7 @@ export function AddProject({
         ...(withFolder && folder !== undefined ? { folder } : {}),
         name: named,
         area: sent,
+        told: (exact?.projects?.length ?? 0) > 0,
       })
       .then(
         async (written) => {

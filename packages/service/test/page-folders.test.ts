@@ -496,6 +496,29 @@ describe("[A7.3.12.m5-14.folders-http] The page's folder calls over HTTP", () =>
         { project: added.owner.id },
       );
       expect(line.result).toEqual({ here: { folder: added.folder, state: "here" }, elsewhere: [] });
+      // An archived project keeps its folder, and the folder typed names it beside the others.
+      await user.call(
+        "op/call",
+        {
+          space,
+          op: "group.manage",
+          input: {
+            action: "archive",
+            path: added.owner.id,
+            base: (
+              (await user.call(
+                "op/call",
+                { space, op: "space.status", input: {} },
+                { timeoutMs: SLOW },
+              )) as { as_of: string }
+            ).as_of,
+            request_id: "folders-http-archive-01",
+          },
+        },
+        { timeoutMs: SLOW },
+      );
+      const typed = await page<Listing>("/api/v1/machine/folders", { path: join(work, "portal") });
+      expect(typed.result).toMatchObject({ exact: { projects: [{ id: added.owner.id }] } });
       const made = await page<{ folder: string }>("/api/v1/machine/folder_make", {
         path: join(work, "atlas"),
       });

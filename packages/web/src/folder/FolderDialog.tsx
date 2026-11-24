@@ -100,8 +100,11 @@ export function FolderDialog({
   /** Where the feed was when `start` was read: by default, where it is when the dialog opens. */
   readonly base?: string | undefined;
   readonly onClose: () => void;
-  /** Writes the folder with `base`: resolves when it is done, or rejects with the refusal. */
-  readonly onChoose: (folder: string, base: string | undefined) => Promise<void>;
+  /**
+   * Writes the folder with `base`: resolves when it is done, or rejects with the refusal. `told`:
+   * the dialog said which other projects have the folder.
+   */
+  readonly onChoose: (folder: string, base: string | undefined, told: boolean) => Promise<void>;
   /** The project the folder is chosen for: its own folder is no other project's. */
   readonly owner?: string;
 }) {
@@ -122,7 +125,9 @@ export function FolderDialog({
     if (busy || folder === undefined) return;
     setBusy(true);
     setError(undefined);
-    onChoose(folder, base).then(onClose, (failed: unknown) => {
+    const exact = look?.text === text ? look.exact : undefined;
+    const told = (exact?.projects ?? []).some((p) => p.id !== owner);
+    onChoose(folder, base, told).then(onClose, (failed: unknown) => {
       const changed = changedSince(failed);
       if (changed !== undefined) {
         setBase(changed.asOf ?? live.store.asOf);

@@ -545,6 +545,20 @@ test.describe("[A7.3.12.e2e.folder-shared] A folder that is another project's is
     await expect(page.getByRole("link", { name: project })).toHaveCount(0, { timeout: SLOW_MS });
     await page.getByRole("link", { name: "Lumen portal" }).click();
     await expect(line).toHaveAttribute("data-state", "here");
+
+    // Added before the chooser could look at the folder: the toast says whose it also is.
+    await page.route("**/api/v1/machine/folders**", () => undefined);
+    await newProject(page).click();
+    await folderField(dialog).fill(world.portal);
+    await dialog.getByRole("textbox", { name: "Name", exact: true }).fill(project);
+    await dialog.getByRole("button", { name: "Add project" }).click();
+    await expect(toast(page)).toHaveText(
+      `Project ${project} added. Also the folder of Lumen portal`,
+      { timeout: SLOW_MS },
+    );
+    await page.unroute("**/api/v1/machine/folders**");
+    await page.locator("body").press("Control+z");
+    await expect(page.getByRole("link", { name: project })).toHaveCount(0, { timeout: SLOW_MS });
     expect(await violations(page)).toEqual([]);
   });
 });
