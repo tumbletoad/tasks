@@ -27,6 +27,7 @@ import { newId, type Id } from "../src/ids.ts";
 import { openWriter } from "../src/open.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
+import { checkSpace } from "./space-rules.ts";
 import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("undo-model");
@@ -1090,7 +1091,9 @@ const property = (seen: Seen) =>
         if (commit !== undefined) expect(result.seq).toBe(commit.seq);
       };
 
+      let space = checkSpace(fx.reader);
       for (const s of steps) {
+        space = checkSpace(fx.reader, space);
         const before = snapshot(fx, ids);
         if (s.kind === "create") {
           if (ids.tasks.length >= MAX_TASKS) continue;
@@ -1473,6 +1476,7 @@ const property = (seen: Seen) =>
         }
         expectModel(fx, ids, model);
       }
+      checkSpace(fx.reader, space);
       checkHistory(fx.reader);
     } finally {
       fx.close();

@@ -1097,4 +1097,90 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     expect(liveLinks()).toBe(1);
     expect(one("SELECT source_id FROM task_sources WHERE task_id = $b", { b })).toBe(source);
   });
+
+  test("Redo of an archive or a check-off after someone added to the task is refused, naming that work, and the task stays open", () => {
+    for (const kind of ["task.archive", "task.complete"] as const) {
+      const a = create("Renew the passport");
+      applied(write([{ kind, task: a }]));
+      applied(undo());
+      applied(write([{ kind: "note.add", task: a, body: "Booked for Tuesday" }], "codex"));
+      const late = redo();
+      expectStatus(late, "conflict");
+      expect(late.conflicts, kind).toEqual([expect.objectContaining({ entity: "notes", task: a })]);
+      expect(late.newer?.work, kind).toEqual([
+        expect.objectContaining({
+          task: a,
+          by: expect.objectContaining({ actor: fx.codex.principal_id }) as unknown,
+        }),
+      ]);
+      expect(task(a)["lifecycle"], kind).toBe("active");
+    }
+  });
+
+  test("Undo of a reopen after someone added to the task is refused the same way; its partial form leaves the task open", () => {
+    const a = create("Renew the passport");
+    applied(write([{ kind: "task.complete", task: a }], "codex"));
+    applied(write([{ kind: "task.reopen", task: a }]));
+    applied(write([{ kind: "note.add", task: a, body: "Booked for Tuesday" }], "codex"));
+    const late = undo();
+    expectStatus(late, "conflict");
+    expect(late.conflicts).toEqual([expect.objectContaining({ entity: "notes", task: a })]);
+    expect(task(a)["lifecycle"]).toBe("active");
+    const partial = applied(undo({ partial: true }));
+    expect(partial.conflicts).toEqual([expect.objectContaining({ entity: "notes", task: a })]);
+    expect([task(a)["lifecycle"], task(a)["wrap_state"]]).toEqual(["active", null]);
+  });
+
+  test("a refused Undo names, for each task, who changed it after the step last wrote it, not before a redo wrote it again", () => {
+    const a = create("Renew the passport");
+    const b = create("Book the dentist");
+    applied(
+      write([
+        { kind: "task.patch", task: a, set: { summary: "Mine" } },
+        { kind: "task.patch", task: b, set: { summary: "Mine too" } },
+      ]),
+    );
+    patch(b, { summary: "Codex's" }, "codex");
+    // Claude's note on A comes before the redo that writes A again.
+    applied(write([{ kind: "note.add", task: a, body: "Booked for Tuesday" }], "claude"));
+    applied(undo({ partial: true }));
+    expect([task(a)["summary"], task(b)["summary"]]).toEqual(["", "Codex's"]);
+    applied(redo());
+    expect(task(a)["summary"]).toBe("Mine");
+    patch(a, { summary: "Codex's too" }, "codex");
+    const refused = undo();
+    expectStatus(refused, "conflict");
+    const named = (refused.newer?.work ?? []).map((w) => `${String(w.task)} ${w.by.actor}`);
+    expect(named.sort()).toEqual(
+      [`${a} ${fx.codex.principal_id}`, `${b} ${fx.codex.principal_id}`].sort(),
+    );
+  });
+
+  test("an Undo that a restored task keeps from deleting its project names the restore", async () => {
+    const other = await partner();
+    const t = newId("t");
+    applied(
+      write(
+        [{ kind: "task.create", id: t, title: "Renew the passport", project: fx.project }],
+        "codex",
+      ),
+    );
+    applied(write([{ kind: "task.delete", task: t }]));
+    applied(write([{ kind: "project.delete", project: fx.project }]));
+    applied(write([{ kind: "project.restore", project: fx.project }]));
+    const restore = { kind: "task.restore", task: t } as Operation;
+    applied(fx.writer.submit(fx.request(other, [restore], { base: fx.base(), undoable: true })));
+    const refused = undo();
+    expectStatus(refused, "conflict");
+    expect(refused.conflicts).toEqual([
+      expect.objectContaining({
+        entity: "tasks",
+        id: t,
+        by: expect.objectContaining({ actor: other.principal_id }) as unknown,
+      }),
+    ]);
+    expect(row("SELECT deleted_at FROM projects WHERE id = $id", { id: fx.project })).toEqual({
+      deleted_at: null,
+    });
+  });
 });

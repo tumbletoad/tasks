@@ -40,6 +40,7 @@ import type {
   WriteResult,
 } from "../src/write/request.ts";
 import { checkedDriver, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
+import { checkSpace } from "./space-rules.ts";
 import { checkHistory, expectStatus, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("undo-dedupe");
@@ -564,6 +565,28 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
     expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([t2.id]);
     applied(redo("partner"));
     expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([t1.id, t2.id].sort());
+  });
+
+  test("Undo of a check-off beside new work that took the ticket meanwhile does what a reopen does: both hold it open, and the next capture names both", () => {
+    const a = draft(["jira:FIX-1"]);
+    applied(send("human", a.ops));
+    lifecycle("task.complete", a.id, "human");
+    // New work asked for as new while A is finished: B holds the ticket.
+    const b = draft(["jira:FIX-1"], { dedupe: "new" });
+    applied(send("codex", b.ops));
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([b.id]);
+    applied(undo());
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([a.id, b.id].sort());
+    const undone = probe(["jira:FIX-1"]);
+    // A reopen of A from the same state leaves the same two.
+    lifecycle("task.complete", a.id, "human");
+    lifecycle("task.reopen", a.id, "human");
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([a.id, b.id].sort());
+    const reopened = probe(["jira:FIX-1"]);
+    const both = [ref(a.id), ref(b.id)].sort();
+    for (const found of [undone, reopened]) {
+      expect(found.results[0]).toMatchObject({ status: "existing", ambiguous: both });
+    }
   });
 
   test("a partial inversion leaves out the restores of a broken key and applies the rest", async () => {
@@ -1499,7 +1522,9 @@ const property = (seen: Record<string, number>) =>
         return pool[((p.at % Math.max(pool.length, 1)) + pool.length) % Math.max(pool.length, 1)];
       };
 
+      let rules = checkSpace(conn);
       for (const s of steps) {
+        rules = checkSpace(conn, rules);
         const before = fieldsOf(conn);
         const keysBefore = keyHolders(conn);
         const seqBefore = lastSeq();
@@ -1870,6 +1895,7 @@ const property = (seen: Record<string, number>) =>
           }
         }
       }
+      checkSpace(conn, rules);
       checkHistory(conn);
       // The index equals a fresh rebuild, undone and redone tasks and entries included.
       const { docs, stray } = storedDocuments(conn);

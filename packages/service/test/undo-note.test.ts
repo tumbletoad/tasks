@@ -33,6 +33,7 @@ afterAll(async () => {
 
 const USER: Caller = { class: "cli-interactive", env: {} };
 const SCRIPT: Caller = { class: "cli-script", env: {} };
+const AGENT = (): Caller => ({ class: "cli-agent", env: { TTASKS_SPACE: w.space } });
 
 const call = async (op: string, input: Json, caller: Caller = USER): Promise<Json> =>
   (await opCall(w.service.ops, caller, { op, input })) as Json;
@@ -176,6 +177,42 @@ describe("[A3.3.7.actors.script-undo-check] an undo that checks for a newer chan
       const undone = await call("history.undo", { check_script: true, request_id: rid() });
       expect(undone).toMatchObject({ result: "undone", tasks: [mine] });
       expect(undone).not.toHaveProperty("script_change");
+    },
+    LONG,
+  );
+});
+
+describe("[A3.3.7.actors.script-undo-note] the note of an undo about a script's change", () => {
+  test(
+    "counts from when the person's change was last written: a redo that wrote nothing again does not hide it",
+    async () => {
+      const mine = await add("Fixture task an agent changes too");
+      const scripts = await add("Fixture task a script changes before the agent");
+      await set(mine, { summary: "Fixture summary the agent replaces" });
+      await set(scripts, { summary: "Fixture summary by a script, held" }, SCRIPT);
+      await set(mine, { summary: "Fixture summary by an agent" }, AGENT());
+      const first = await call("history.undo", { partial: true, request_id: rid() });
+      expect(first).toMatchObject({ result: "partial", script_change: { task: scripts } });
+      // The agent's change holds the field: the redo writes nothing, and nor does the next undo.
+      await call("history.redo", { request_id: rid() });
+      const again = await call("history.undo", { partial: true, request_id: rid() });
+      expect(again).toMatchObject({ result: "partial", script_change: { task: scripts } });
+    },
+    LONG,
+  );
+
+  test(
+    "an undo sent again after a later redo answers with the note it gave",
+    async () => {
+      const mine = await add("Fixture task undone, then redone");
+      const scripts = await add("Fixture task a script changes in between");
+      await set(mine, { summary: "Fixture summary undone and redone" });
+      await set(scripts, { summary: "Fixture summary by a script, in between" }, SCRIPT);
+      const request_id = rid();
+      const undone = await call("history.undo", { request_id });
+      expect(undone).toMatchObject({ result: "undone", script_change: { task: scripts } });
+      await call("history.redo", { request_id: rid() });
+      expect(await call("history.undo", { request_id })).toEqual({ ...undone, replayed: true });
     },
     LONG,
   );

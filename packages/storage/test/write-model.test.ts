@@ -40,6 +40,7 @@ type TaskOperation = Extract<
   { kind: "task.create" | "task.patch" | "task.move" | "task.complete" | "task.reopen" }
 >;
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
+import { checkSpace } from "./space-rules.ts";
 import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("write-model");
@@ -669,7 +670,9 @@ const property = (seen: Seen) =>
         return asOf;
       };
 
+      let space = checkSpace(fx.reader);
       for (const s of steps) {
+        space = checkSpace(fx.reader, space);
         if (s.kind === "authority") {
           const moved = await moveAuthority(fx, s.change);
           model.epoch = moved.epoch;
@@ -757,6 +760,7 @@ const property = (seen: Seen) =>
         expect([result.epoch, result.incarnation]).toEqual([model.epoch, model.incarnation]);
         expectModel(fx, model);
       }
+      checkSpace(fx.reader, space);
       checkHistory(fx.reader);
     } finally {
       fx.close();
