@@ -31,13 +31,17 @@ async function newTask(world: World, title: string): Promise<string> {
   return added.tasks[0]?.ref ?? "";
 }
 
-/** Opens the task in the fake agent from its strip, held until released; its preset session. */
+/**
+ * Opens the task in the fake agent from the menu beside Open (the Codex agents come first in this
+ * world), held until released; its preset session.
+ */
 async function opened(page: Page, world: World, ref: string): Promise<string> {
   world.hold(ref);
   const row = await openTask(page, world, ref);
-  await row
-    .getByRole("toolbar")
-    .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
+  await row.getByRole("toolbar").getByRole("button", { name: "Open with another agent" }).click();
+  await page
+    .getByRole("menu", { name: "Open with another agent" })
+    .getByRole("menuitemradio", { name: `Open in ${FAKE_INSTANCE.label}` })
     .click();
   // The held fake agent records the session it was started with once it runs.
   await expect.poll(() => world.agentSessions(ref).length, { timeout: SLOW_MS }).toBe(1);
