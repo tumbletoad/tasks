@@ -558,6 +558,18 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
     await call("task.update", { task: id, set: { reviewed: b }, request_id: rid() });
     expect(await replied(both)).toEqual(["Fixture a?", "Fixture b?"]);
   });
+
+  test("the row names the agent of the newest question: run A queued first and asking last leads", async () => {
+    const { task: id, row } = task();
+    const a = queue(id);
+    const b = queue(id);
+    asks(b, "Fixture b?");
+    asks(a, "Fixture a?");
+    expect(await row()).toMatchObject({
+      questions: [{ ref: a }, { ref: b }],
+      run: { id: a, state: "needs_you" },
+    });
+  });
 });
 
 describe("[A5.while-away.service.reads] a waiting question breaks no read of task rows", () => {

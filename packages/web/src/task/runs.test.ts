@@ -268,6 +268,10 @@ describe("[M6.page.run-follow] the page shows a run as the service has it", () =
     expect(
       agentMarker({ id: "ru_3", state: "working", instance: "claude" }, instances, asked),
     ).toEqual({ kind: "needs_input", by: "Codex · work" });
+    // The newest question names the marker, also when an older one is a run that asks.
+    expect(
+      agentMarker({ id: "ru_1", state: "needs_you", instance: "codex-work" }, instances, question),
+    ).toEqual({ kind: "needs_input", by: "Claude" });
     // Run is offered by what the service says an instance can do, never by its name.
     expect(runners(instances).map((i) => i.key)).toEqual(["codex-work"]);
   });

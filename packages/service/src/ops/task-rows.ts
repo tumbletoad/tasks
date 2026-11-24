@@ -133,14 +133,15 @@ function waitingQuestions(runs: boolean): string {
 const RESTORED_COPY = `(SELECT json_extract(transfer, '$.state') FROM space WHERE one = 1) = '${READ_ONLY_COPY}'`;
 
 /**
- * The task's newest run, of those `where` admits, as JSON: its ID, state, reason and instance. In a
- * restored copy that is not claimed an open run is `recorded`: nothing of it runs now.
+ * The task's newest run of those `where` admits, by `order` (queued last unless it says otherwise),
+ * as JSON: its ID, state, reason and instance. In a restored copy that is not claimed an open run
+ * is `recorded`: nothing of it runs now.
  */
-const newestRun = (where: string) =>
+const newestRun = (where: string, order = "r.queued_at DESC, r.id DESC") =>
   "(SELECT json_object('id', r.id, 'state', " +
   `CASE WHEN ${OPEN_RUN} AND ${RESTORED_COPY} THEN '${RECORDED}' ELSE r.state END, ` +
   "'reason', r.reason, 'instance', r.instance_id) " +
-  `FROM runs r WHERE r.task_id = t.id${where} ORDER BY r.queued_at DESC, r.id DESC LIMIT 1)`;
+  `FROM runs r WHERE r.task_id = t.id${where} ORDER BY ${order} LIMIT 1)`;
 
 /**
  * A task row's columns. `folders`: the space has the folders and runs tables (schema 0.5 on); a
@@ -174,7 +175,8 @@ export function taskColumns(folders: boolean): string {
     (folders
       ? `, ${foldersOf("task", "t.id")} AS x_folders_own, ` +
         `${foldersOf("project", "t.project_id")} AS x_folders_project, ` +
-        `${newestRun(` AND ${OPEN_RUN}`)} AS x_run_open, ${newestRun(` AND ${RUN_WAITS}`)} AS x_run_asks`
+        `${newestRun(` AND ${OPEN_RUN}`)} AS x_run_open, ` +
+        `${newestRun(` AND ${RUN_WAITS}`, `${runAsked("r")} DESC`)} AS x_run_asks`
       : "")
   );
 }

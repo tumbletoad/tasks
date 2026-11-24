@@ -199,8 +199,8 @@ export const questionBy = (question: RowQuestion, instances: readonly Instance[]
     : runLabel({ instance: question.instance }, instances);
 
 /**
- * The row's marker for what agents ask of the person: its run needing them, else the newest
- * question that waits for them, else its run working; none otherwise.
+ * The row's marker for what agents ask of the person: the newest question that waits for them,
+ * a run's or a logged one, else its run needing them or working; none otherwise.
  */
 export function agentMarker(
   run: RowRun | undefined,
@@ -208,8 +208,8 @@ export function agentMarker(
   question?: RowQuestion,
 ): MarkerFact | undefined {
   const by = run === undefined ? undefined : runLabel(run, instances);
-  if (by !== undefined && run?.state === "needs_you") return { kind: "needs_input", by };
   if (question !== undefined) return { kind: "needs_input", by: questionBy(question, instances) };
+  if (by !== undefined && run?.state === "needs_you") return { kind: "needs_input", by };
   if (by !== undefined && run?.state === "working") return { kind: "working", by };
   return undefined;
 }
