@@ -430,7 +430,6 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
     });
     const labels = t3Proposals(
       { file: "read", instances: [instance("codex"), instance("codex_2")], off: [], skipped: [] },
-      { id: "t3", target: "t3", label: "T3 Code", account: "default", source: "app", needs: [] },
       process.platform,
     ).map((p) => p.label);
     expect(labels).toEqual(["Codex · T3 Code", "Codex (codex_2) · T3 Code"]);

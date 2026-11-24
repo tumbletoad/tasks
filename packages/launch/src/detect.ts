@@ -68,8 +68,6 @@ export interface FoundCommand {
    * run by detection and selects its own home, so it is no raw command).
    */
   readonly unusable?: "cmd_shim" | "no_node" | "wrapper";
-  /** T3 on Windows: the `.cmd` shim found, which detection never runs or reads. */
-  readonly shim?: string;
   readonly version?: string;
   /** Whether the version lies in the catalogue's tested range; absent when unknown. */
   readonly tested?: boolean;
@@ -324,7 +322,6 @@ function findCommand(
         source,
         exec: [],
         unusable: "cmd_shim",
-        ...(target === "t3" && /\.(cmd|bat)$/iu.test(file) ? { shim: file } : {}),
       };
     }
     // A link into node_modules (npm and nvm on Linux and macOS): run the entry with Node, never
@@ -587,23 +584,14 @@ export async function detect(
   const t3 = commands.find((c) => c.target === "t3");
   if (t3 !== undefined || t3Folder) {
     // T3's provider instances live in its settings, which TTasks reads only through T3's own
-    // API once paired (A4 3.4.1, M2.09): the person picks one. On Windows the command is T3's
-    // `.cmd` shim.
-    const exec =
-      t3 === undefined
-        ? undefined
-        : t3.exec.length > 0
-          ? t3.exec
-          : t3.shim !== undefined
-            ? [t3.shim]
-            : undefined;
+    // API once paired (A4 3.4.1, M2.09): the person picks one. T3 opens through its server, so
+    // the instance names no program.
     proposals.push({
       id: "t3",
       target: "t3",
       label: t3Def.label,
       account: "default",
       source: "app",
-      ...(exec === undefined ? {} : { exec: exec[0] ?? "", argsPrefix: exec.slice(1) }),
       needs: ["t3_provider_instance"],
     });
   }
