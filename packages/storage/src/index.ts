@@ -197,9 +197,11 @@ export {
 // writes a live space or moves its folder goes through a StorageWorker under the space's claim:
 // openSpaceWriter (which migrates first), claimSpace, restoreInPlace and recoverSpace. The
 // functions below read a space or write only new files.
+export { NODE_IO, type FileIo } from "./files.ts";
 export {
   backupSpace,
   backupsFolder,
+  makeDurableFolder,
   type BackupRecord,
   type BackupSeams,
   type SpaceBackupOptions,

@@ -22,8 +22,8 @@ export interface MaintenanceJob {
    * trial restore the report gives (storage's backupHistories).
    */
   readonly incarnation: Id<"ai">;
-  /** Where the space's backups are written (space-settings.ts backupsFolderOf). */
-  readonly backupDir: string;
+  /** Where the space's backups are written. Default: the space's own `backups/`. */
+  readonly backupDir?: string;
   /** Remove leftovers: only in a folder this service alone writes (above). */
   readonly cleanup: boolean;
   /** The service's start: a daily backup over 24 hours old is due at once (A1 3.18). */

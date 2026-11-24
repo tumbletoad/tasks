@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
@@ -41,8 +41,6 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
       ownerLabel: "Mira Okafor",
       machineId: newId("m"),
     });
-    // The service makes the default backups folder before a run (space-settings.ts).
-    mkdirSync(backupsFolder(space.folder));
     const runner = new Maintenance();
     runners.push(runner);
     // A job is made a moment before its worker takes the backup.
@@ -52,7 +50,6 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
       folder: space.folder,
       spaceId: space.space.spaceId,
       incarnation: space.space.authority.incarnation,
-      backupDir: backupsFolder(space.folder),
       cleanup: true,
       atStart: true,
       utcOffsetMinutes,
@@ -88,7 +85,6 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
       ownerLabel: "Mira Okafor",
       machineId: newId("m"),
     });
-    mkdirSync(backupsFolder(space.folder));
     const runner = new Maintenance();
     runners.push(runner);
     const start = Date.now() - 1000;
@@ -96,7 +92,6 @@ describe("[A1.5.backup.failure-shown] the upkeep's verdict on a space's newest b
       folder: space.folder,
       spaceId: space.space.spaceId,
       incarnation: space.space.authority.incarnation,
-      backupDir: backupsFolder(space.folder),
       cleanup: true,
       atStart: true,
       utcOffsetMinutes: noonAt(start),
@@ -145,7 +140,6 @@ describe("[A1.5.backup.kept-unknown] the upkeep removes only files it knows to b
       folder: space.folder,
       spaceId: space.space.spaceId,
       incarnation: space.space.authority.incarnation,
-      backupDir: backupsFolder(space.folder),
       cleanup: true,
       atStart: true,
       now,
@@ -181,7 +175,6 @@ describe("[A1.5.backup.kept-unknown] the upkeep removes only files it knows to b
       folder: space.folder,
       spaceId: space.space.spaceId,
       incarnation: space.space.authority.incarnation,
-      backupDir: backupsFolder(space.folder),
       cleanup: true,
       atStart: true,
       now,

@@ -721,16 +721,18 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       const folder = backupsOf(view);
       // As for the daily backup: none goes to a new folder in place of one that is not there.
       if (folder.set && !existsSync(folder.dir)) throw backupsAway(folder.dir);
+      // A default folder that cannot be made durably: the space's own, as for an upgrade.
+      const dir = readyBackupsFolder(folder) ?? folder.folders[1];
       try {
         const done = await runAdmin({
           kind: "backup",
           folder: manager.folderOf(view.entry),
-          backupDir: readyBackupsFolder(folder),
+          backupDir: dir,
         });
         if (done.kind !== "backup") return {};
         manager.backedUp(view.entry, Date.parse(done.backup.created_at));
         if (done.searchIndexDamaged === true) manager.repairSearch(view.entry);
-        return { backup: { ...done.backup, folder: folder.dir } };
+        return { backup: { ...done.backup, folder: dir } };
       } catch (error) {
         throw failure(error);
       }

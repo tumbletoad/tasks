@@ -288,7 +288,6 @@ describe("[A1.5.backup.newest-work] the newest backup is the one that holds the 
           folder: work.folder,
           spaceId: work.space.spaceId,
           incarnation: work.space.authority.incarnation,
-          backupDir: backupsFolder(work.folder),
           cleanup: true,
           atStart: true,
           now,

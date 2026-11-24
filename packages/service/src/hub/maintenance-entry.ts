@@ -6,6 +6,7 @@ import {
   applyRetention,
   backupHistories,
   backupSpace,
+  backupsFolder,
   CheckedDriver,
   compareInHistory,
   dailyBackupDue,
@@ -23,13 +24,12 @@ const reply = (message: MaintenanceReply): void => {
 
 async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
   const checked = await CheckedDriver.check(await loadDriver(DEFAULT_DRIVER));
-  const dir = job.backupDir;
+  const dir = job.backupDir ?? backupsFolder(job.folder);
   const clock = { now: job.now, utcOffsetMinutes: job.utcOffsetMinutes };
   let listing = listBackups(dir);
   // A backups folder this machine set for the space that is not there may be on a drive that is
-  // not connected: no backup goes to a new folder in its place, where nobody looks for it. The
-  // default one is made before the run, so it is missing only when it could not be made.
-  if (!listing.present) {
+  // not connected: no backup goes to a new folder in its place, where nobody looks for it.
+  if (job.backupDir !== undefined && !listing.present) {
     return { leftovers: 0, backup: "away", removed: 0, unverified: 0 };
   }
   // Only in a backups folder this service alone writes: see maintenance.ts.

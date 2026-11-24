@@ -704,6 +704,35 @@ describe("[A1.5.backup.folder-away] an upgrade whose backups folder set for the 
   );
 });
 
+describe("[A1.5.backup.outside-home] an upgrade whose backups folder beside the home cannot be made", () => {
+  test(
+    "goes on behind a backup in the space's own folder, which the record and a restore by name find",
+    async () => {
+      const { home, spaces } = setUp("unmade-upgrade");
+      const space = await spaceAt01(join(spaces, "work"));
+      const id = space.space.spaceId;
+      // A file where the folder beside the home goes.
+      writeFileSync(`${home}-backups`, "not a folder");
+      const service = await start(home, space.folder);
+      expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
+      const [backup] = barrierBackups(home, space);
+      expect(backup).toBeDefined();
+      expect(readSpaceSettings(stateOf(home), id).lastMigration).toMatchObject({
+        backup,
+        backup_folder: backupsFolder(space.folder),
+      });
+      const user = await session(home, service, "cli-interactive");
+      const restored = await call(user, "space/restore", {
+        backup,
+        of: space.folder,
+        to: join(spaces, "copy"),
+      });
+      expect(restored).toMatchObject({ read_only_copy: true });
+    },
+    LONG,
+  );
+});
+
 describe("[A2.3.1.hub.search-after-migration] word search on a migrated space, a new one, and one whose update failed", () => {
   test(
     "a 0.3 space migrates on open and answers words, and the index follows adds, edits, notes and completion through the request path",

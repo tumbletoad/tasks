@@ -41,7 +41,14 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { isId, type Id, type MigrationAttempt } from "@ttasks/storage";
+import {
+  isId,
+  makeDurableFolder,
+  NODE_IO,
+  type FileIo,
+  type Id,
+  type MigrationAttempt,
+} from "@ttasks/storage";
 import { atomicWrite, makeDir } from "./files.ts";
 
 export const SPACES_FOLDER = "spaces";
@@ -131,21 +138,22 @@ export function backupsFolderOf(
 }
 
 /**
- * The folder a backup is about to be written to, made when it is the default. One that cannot be
- * made is left to the backup, which says it is not there, as for a set folder that is away.
+ * The folder a backup is about to be written to. The default is made here with each new folder's
+ * entry synced in its parent, so a power loss cannot keep an upgrade and lose the folder of the
+ * backup from before it. When that fails: undefined, and the backup goes to the space's own
+ * `backups/`, as an upgrade's does when a set folder is away.
  */
-export function readyBackupsFolder(folder: {
-  readonly dir: string;
-  readonly set: boolean;
-}): string {
-  if (!folder.set) {
-    try {
-      makeDir(folder.dir, 0o700);
-    } catch {
-      // Said by the backup itself.
-    }
+export function readyBackupsFolder(
+  folder: { readonly dir: string; readonly set: boolean },
+  io: FileIo = NODE_IO,
+): string | undefined {
+  if (folder.set) return folder.dir;
+  try {
+    makeDurableFolder(folder.dir, io);
+    return folder.dir;
+  } catch {
+    return undefined;
   }
-  return folder.dir;
 }
 
 const fileOf = (state: string, spaceId: Id<"sp">): string =>

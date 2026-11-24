@@ -421,6 +421,10 @@ const codeOf = (error: unknown): string | undefined => {
 /** Whether the space closes. A function, so a check after an await reads the field again. */
 const closing = (space: { readonly stopping: boolean }): boolean => space.stopping;
 
+/** A storage call's `backupDir`, when there is one: without, the space's own `backups/`. */
+const backupDirOf = (dir: string | undefined): { backupDir?: string } =>
+  dir === undefined ? {} : { backupDir: dir };
+
 const isDirectory = (path: string): boolean => {
   try {
     return statSync(path).isDirectory();
@@ -1353,8 +1357,8 @@ export class SpaceManager {
         // Another space in the folder is refused before anything is claimed, locked or written.
         spaceId: space.registered,
         holder: this.#holderFacts,
-        backupDir: readyBackupsFolder(
-          backupsFolderOf(settings, this.#options.backups, space.registered),
+        ...backupDirOf(
+          readyBackupsFolder(backupsFolderOf(settings, this.#options.backups, space.registered)),
         ),
         onLock: (lock) => {
           this.#watch(space, worker, lock);
@@ -1951,7 +1955,7 @@ export class SpaceManager {
         folder: space.folder,
         spaceId,
         incarnation,
-        backupDir: readyBackupsFolder(backupFolder),
+        ...backupDirOf(readyBackupsFolder(backupFolder)),
         // Only the default folder, which this service alone writes while it holds the space's
         // writer.lock (maintenance.ts).
         cleanup: !backupFolder.set,
