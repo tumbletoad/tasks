@@ -328,6 +328,17 @@ export const InsideFolders = {
   kept: z.array(InsideFolder).max(20).describe("The first of them").optional(),
 };
 
+/** The other projects that have a project's folder here too: any number of projects may share one. */
+export const AlsoProjects = z
+  .array(
+    z.strictObject({
+      id: z.string().regex(idPattern("p")).describe("Its ID"),
+      name: z.string().describe("Its name now"),
+    }),
+  )
+  .max(1000)
+  .describe("Other projects with this folder here");
+
 /** A draft that matched several active tasks by its source keys: none was picked. */
 export const SeveralMatch = z.array(TaskRef).describe("Several active matches: pick one");
 export const LogAdded = z.boolean().describe("The draft's log entry was added");

@@ -145,7 +145,7 @@ describe("[A3.answers.replay] a retry gets what the write did", () => {
     expect(await groupNames()).not.toContain("Shed");
   });
 
-  test("a project made for a folder another project has, sent again, names that project as before", async () => {
+  test("a project made for a folder another project has, sent again, makes no second one and names the other as before", async () => {
     const at = folder("held");
     const holder = await call(
       "folder.manage",
@@ -155,8 +155,9 @@ describe("[A3.answers.replay] a retry gets what the write did", () => {
     const again = { action: "add_project", project: "Second", folder: at, request_id: rid() };
     const first = await call("folder.manage", again, USER);
     expect(first).toMatchObject({
-      result: "exists",
-      owner: { id: (holder["owner"] as Json)["id"] },
+      result: "created",
+      owner: { name: "Second" },
+      also: [{ id: (holder["owner"] as Json)["id"], name: "Holder" }],
     });
     const retry = await call("folder.manage", again, USER);
     expect(retry).toEqual({ ...first, replayed: true });

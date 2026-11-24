@@ -139,21 +139,26 @@ describe("[A1.3.15.folders.deepest] the project a working folder belongs to", ()
       return deepestProject(folder, projects, { home: own, platform });
     };
     expect(await at("/home/mira/work/portal/web/app")).toMatchObject({
-      project: { project: "web" },
+      projects: [{ project: "web" }],
       exact: false,
     });
     expect(await at("/home/mira/work/portal")).toMatchObject({
-      project: { project: "portal" },
+      projects: [{ project: "portal" }],
       exact: true,
     });
     expect(await at("/home/mira/work/portal-old/x")).toBeUndefined();
+    // Any number of projects share a folder: each is the folder's.
+    projects.push(project("bugs", "~/work/portal"));
+    const shared = await at("/home/mira/work/portal/docs");
+    expect(shared?.projects.map((p) => p.project)).toEqual(["portal", "bugs"]);
+    expect(shared?.exact).toBe(false);
     expect(await at("/home/mira/work/Portal/x")).toBeUndefined();
     const windows = [project("portal", "~\\work\\portal")];
     const folder = storedForm("C:\\Users\\Mira\\Work\\PORTAL\\api", "C:\\Users\\Mira", "win32");
     if (typeof folder === "string") throw new Error(folder);
     expect(
       await deepestProject(folder, windows, { home: "C:\\Users\\Mira", platform: "win32" }),
-    ).toMatchObject({ project: { project: "portal" }, exact: false });
+    ).toMatchObject({ projects: [{ project: "portal" }], exact: false });
   });
 
   test("a project folder reached through a link holds the folders of its target", async () => {
@@ -170,7 +175,7 @@ describe("[A1.3.15.folders.deepest] the project a working folder belongs to", ()
         home,
         platform: process.platform,
       });
-      expect(found).toMatchObject({ project: { project: "portal" }, exact: false });
+      expect(found).toMatchObject({ projects: [{ project: "portal" }], exact: false });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

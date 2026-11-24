@@ -41,6 +41,7 @@ export const TaskAddResult = z.strictObject({
         id: TaskId.optional(),
         ref: TaskRef.optional(),
         title: z.string().describe("Its title now; absent when it could not be read").optional(),
+        project: z.string().describe("Its project now; absent when in none").optional(),
         lifecycle: Lifecycle.optional(),
         matched_by: z.enum(["source_key"]).describe("How an existing task matched").optional(),
         ambiguous: SeveralMatch.optional(),
