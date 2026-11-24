@@ -496,6 +496,74 @@ test.describe("[M6.page.e2e.refused] A run that cannot start says why and keeps 
 });
 
 test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots and axe", () => {
+  test("a run that could not be stopped says so and keeps Stop, at 1,440 px and 390 px in Sumi and Washi, axe clean", async ({
+    browser,
+    runs: world,
+  }) => {
+    const ref = await addTask(world, "Screens: a run that could not be stopped");
+    world.codex(ref, ["hold"]);
+    const context = await browser.newContext({
+      bypassCSP: true,
+      viewport: { width: 1440, height: 1000 },
+      reducedMotion: "reduce",
+    });
+    try {
+      const page = await context.newPage();
+      await openTask(page, world, ref);
+      await runButton(page, ref).click();
+      await expect(stateOf(runsOf(page, ref).first())).toContainText("is working on it", {
+        timeout: SLOW_MS,
+      });
+      await runsOf(page, ref).first().getByRole("button", { name: /^Stop/u }).click();
+      await expect(stateOf(runsOf(page, ref).first())).toContainText(/^Stopped\./u, {
+        timeout: SLOW_MS,
+      });
+      // No fake agent can outlive a Stop of the real service: the service's answer about the run
+      // says what it says of a run whose processes could not be confirmed ended.
+      await page.route("**/api/v1/launch/runs", async (route) => {
+        const response = await route.fetch().catch(() => undefined);
+        if (response === undefined) return;
+        const body = (await response.json()) as { result: { runs: Record<string, unknown>[] } };
+        const runs = body.result.runs.map((run) => ({
+          ...run,
+          state: "unknown",
+          reason: "stop_timed_out",
+        }));
+        await route
+          .fulfill({ response, json: { ...body, result: { ...body.result, runs } } })
+          .catch(() => undefined);
+      });
+      for (const theme of themes()) {
+        await world.machine("ui.theme", theme);
+        await openTask(page, world, ref);
+        const entry = runsOf(page, ref).first();
+        await expect(stateOf(entry)).toContainText(
+          `${CODEX_INSTANCE.label} could not be stopped: it, or something it started, may still be running. Stop tries again.`,
+          { timeout: SLOW_MS },
+        );
+        await expect(entry.getByRole("button", { name: /^Stop/u })).toBeVisible();
+        const row = rowOf(page, ref);
+        await row.scrollIntoViewIfNeeded();
+        await picture(row, `run-unknown-${theme}-1440.png`);
+        if (pictures())
+          expect(await axeFound(page, [`li[data-task="${ref}"]`]), `axe in ${theme}`).toEqual([]);
+        await page.setViewportSize({ width: 390, height: 900 });
+        await entry.scrollIntoViewIfNeeded();
+        const scroll = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
+        await picture(page, `run-unknown-${theme}-390.png`);
+        await page.setViewportSize({ width: 1440, height: 1000 });
+      }
+    } finally {
+      await world.machine("ui.theme", null);
+      await context.unrouteAll({ behavior: "ignoreErrors" });
+      for (const open of context.pages()) await open.unrouteAll({ behavior: "ignoreErrors" });
+      await context.close();
+    }
+  });
+
   test("working, queued, done, needs you and failed, at 1,440 px and 390 px in Sumi and Washi, axe clean", async ({
     browser,
     runs: world,

@@ -4,6 +4,7 @@ import { LinuxContainers, type LinuxOptions } from "./linux.ts";
 import { unavailableMessage } from "./placement.ts";
 import {
   type ConfirmOptions,
+  type ContainerKind,
   type Confirmation,
   type Contained,
   type Containers,
@@ -52,14 +53,19 @@ export function containers(options: ContainersOptions = {}): Containers {
 
 /**
  * A run starts in a process group when the probe says one can be made, and otherwise anyway, in
- * the agent's process tree as TTasks can find it. A run keeps what it started in. After a restart,
- * a run is recovered as the probe says now.
+ * the agent's process tree as TTasks can find it; how it starts is what `kind()` said, which its
+ * record keeps. A run keeps what it started in until its end is confirmed: an empty container, or,
+ * without a group, its agent gone after a kill. After a restart, a run is asked about as its
+ * record says it started: its group is counted; without one, nothing of it is known alive and its
+ * end cannot be confirmed. A run whose record does not say (an earlier build's) is looked for in a
+ * group, if one can be made now, but an empty group cannot confirm it: it may never have been there.
  */
 export class FallbackContainers implements Containers {
   readonly #grouped: Containers;
   readonly #ungrouped: Containers;
   readonly #available: () => Promise<boolean>;
-  readonly #started = new Map<string, Containers>();
+  /** What each run started in, and whether it was killed since. */
+  readonly #started = new Map<string, { readonly box: Containers; killed: boolean }>();
 
   constructor(grouped: Containers, ungrouped: Containers, available: () => Promise<boolean>) {
     this.#grouped = grouped;
@@ -71,9 +77,14 @@ export class FallbackContainers implements Containers {
     return this.#grouped.probe();
   }
 
+  async kind(): Promise<ContainerKind> {
+    return (await this.#now()) ? this.#grouped.kind() : this.#ungrouped.kind();
+  }
+
   async start(spec: ContainerSpec): Promise<Contained> {
-    const box = (await this.#now()) ? this.#grouped : this.#ungrouped;
-    this.#started.set(spec.name, box);
+    const kind = spec.kind ?? (await this.kind());
+    const box = kind === "tree" ? this.#ungrouped : this.#grouped;
+    this.#started.set(spec.name, { box, killed: false });
     try {
       return await box.start(spec);
     } catch (error) {
@@ -83,28 +94,52 @@ export class FallbackContainers implements Containers {
   }
 
   async interrupt(name: string): Promise<boolean> {
-    return (await this.#of(name)).interrupt(name);
+    return (await this.#of(name)).box.interrupt(name);
   }
 
   async kill(name: string): Promise<void> {
-    const box = await this.#of(name);
-    await box.kill(name);
-    // Without a group, the kill is the last thing that can be done for the run.
-    if (box === this.#ungrouped) this.#started.delete(name);
+    await (await this.#of(name)).box.kill(name);
+    const started = this.#started.get(name);
+    if (started !== undefined) started.killed = true;
   }
 
   async confirmEmpty(name: string, options?: ConfirmOptions): Promise<Confirmation> {
-    const confirmed = await (await this.#of(name)).confirmEmpty(name, options);
-    if (confirmed.state === "empty") this.#started.delete(name);
-    return confirmed;
+    const { box, known } = await this.#of(name, options?.kind);
+    return this.#confirmed(name, known, await box.confirmEmpty(name, options));
   }
 
   async recover(name: string, options?: ConfirmOptions): Promise<Confirmation> {
-    return (await this.#of(name)).recover(name, options);
+    const { box, known } = await this.#of(name, options?.kind);
+    const started = this.#started.get(name);
+    if (started !== undefined) started.killed = true;
+    return this.#confirmed(name, known, await box.recover(name, options));
   }
 
-  async #of(name: string): Promise<Containers> {
-    return this.#started.get(name) ?? ((await this.#now()) ? this.#grouped : this.#ungrouped);
+  /**
+   * A run whose end is confirmed is forgotten: nothing more can be done for it. A run not known
+   * to have started in the group that answered is never confirmed by its being empty.
+   */
+  #confirmed(name: string, known: boolean, answer: Confirmation): Confirmation {
+    const confirmed: Confirmation =
+      !known && answer.state === "empty" ? { state: "unconfirmable" } : answer;
+    const started = this.#started.get(name);
+    if (
+      confirmed.state === "empty" ||
+      (confirmed.state === "unconfirmable" && started?.killed === true)
+    ) {
+      this.#started.delete(name);
+    }
+    return confirmed;
+  }
+
+  /** Where a run is asked about, and whether it is known to have started there. */
+  async #of(name: string, kind?: ContainerKind): Promise<{ box: Containers; known: boolean }> {
+    const started = this.#started.get(name)?.box;
+    if (started !== undefined) return { box: started, known: true };
+    if (kind !== undefined) {
+      return { box: kind === "tree" ? this.#ungrouped : this.#grouped, known: true };
+    }
+    return { box: (await this.#now()) ? this.#grouped : this.#ungrouped, known: false };
   }
 
   async #now(): Promise<boolean> {

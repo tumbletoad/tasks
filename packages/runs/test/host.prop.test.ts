@@ -52,6 +52,7 @@ const event: fc.Arbitrary<Event> = fc.oneof(
   { weight: 3, arbitrary: fc.record({ kind: fc.constant("stop" as const), pick }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("stick" as const), pick }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("release" as const), pick }) },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("leave" as const), pick }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("forceEnd" as const), pick }) },
   {
     weight: 3,
