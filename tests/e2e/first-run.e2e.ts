@@ -41,7 +41,7 @@ test.describe.configure({ mode: "serial" });
 
 const nameField = (page: Page) => page.getByRole("textbox", { name: "Name" });
 const appsHeading = (page: Page) => page.getByRole("heading", { name: "Agent apps" });
-const toggle = (page: Page, name: string) => page.getByRole("switch", { name });
+const toggle = (page: Page, name: string) => page.getByRole("switch", { name, exact: true });
 const changes = (page: Page) => page.locator('[data-part="changes"]');
 const openIn = (app: string) => `Open tasks in ${app}`;
 const toolsFor = (app: string) => `Give ${app} the ${PRODUCT_NAME} tools`;
@@ -79,17 +79,30 @@ test.describe("[A7.3.12.m5-12.e2e.skip] Skip: a space is all a person needs, and
     fresh,
   }) => {
     await watchViolations(page);
-    await firstStart(page, fresh);
-    await nameField(page).fill("Mira");
-    await expect(page.getByText(/M-1, M-2 and on/u)).toBeVisible();
-    await page.getByRole("button", { name: "Make the space" }).click();
-    await expect(appsHeading(page)).toBeVisible({ timeout: SLOW_MS });
-    // The usual choice is made: every switch that can be on is on.
-    for (const app of ["Claude Code", "Codex"]) {
-      await expect(toggle(page, openIn(app))).toBeChecked();
-      await expect(toggle(page, toolsFor(app))).toBeChecked();
+    // An empty folder that only looks like a second Codex home by its name.
+    const backup = fresh.backupFolder();
+    try {
+      await firstStart(page, fresh);
+      await nameField(page).fill("Mira");
+      await expect(page.getByText(/M-1, M-2 and on/u)).toBeVisible();
+      await page.getByRole("button", { name: "Make the space" }).click();
+      await expect(appsHeading(page)).toBeVisible({ timeout: SLOW_MS });
+      // The usual choice is made: every switch that can be on is on, but the folder found by its
+      // name alone is listed and left off.
+      for (const app of ["Claude Code", "Codex"]) {
+        await expect(toggle(page, openIn(app))).toBeChecked();
+        await expect(toggle(page, toolsFor(app))).toBeChecked();
+      }
+      await expect(toggle(page, openIn("Codex · backup"))).not.toBeChecked();
+      await expect(toggle(page, toolsFor("Codex · backup"))).not.toBeChecked();
+      await expect(page.locator('[data-part="by-name"]')).toContainText(
+        "Found by its folder's name alone",
+      );
+      await widths(page, "first-start-by-name");
+      await page.getByRole("button", { name: "Skip for now" }).click();
+    } finally {
+      backup();
     }
-    await page.getByRole("button", { name: "Skip for now" }).click();
     await showsSpace(page, "Mira");
     expect(fresh.claudeEntry()).toBeUndefined();
     expect(fresh.codexConfig()).not.toContain("tasks");
@@ -274,6 +287,20 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await page.reload();
     await expect(appsHeading(page)).toBeVisible();
     await expect(page.locator('[data-part="record"]')).toHaveCount(0);
+    await expect(page.getByText("The entry is in place and its access is off")).toBeVisible();
+    await widths(page, "settings-apps-access-off");
+    await flip(page, toolsFor("Codex"), true);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    expect(fresh.codexConfig()).toBe(registered);
+    // Someone takes the entry out while its access is on: the tools cannot start, so the switch is
+    // off and says why, and turning it on writes it again.
+    fresh.writeCodex(bare);
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
+    await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
+    await expect(page.getByText("The entry is gone from the app's settings")).toBeVisible();
+    await widths(page, "settings-apps-missing");
     await flip(page, toolsFor("Codex"), true);
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
@@ -282,6 +309,21 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
     expect(fresh.codexConfig()).toBe(bare);
+
+    // A file setup cannot replace: that row is named with its home and why, and stays off.
+    const writable = fresh.readOnlyCodex();
+    try {
+      await flip(page, toolsFor("Codex"), true);
+      await page.getByRole("button", { name: "Apply" }).click();
+      await expect(page.locator('[data-part="failed"]')).toContainText(
+        /Codex \(~[\\/]\.codex\): its settings file could not be written/u,
+      );
+      await widths(page, "settings-apps-failed-row");
+      await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
+      expect(fresh.codexConfig()).toBe(bare);
+    } finally {
+      writable();
+    }
 
     // Everything out again, from the same place.
     await flip(page, openIn("Claude Code"), false);
