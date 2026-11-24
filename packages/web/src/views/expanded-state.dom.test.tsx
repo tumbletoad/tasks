@@ -1053,9 +1053,7 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     expand("t_00001");
     await settle();
     expect(delivered).toBe(true);
-    expect(
-      container.querySelector('li[data-key="t_00001"] [data-part="title-edit"]'),
-    ).toBeNull();
+    expect(container.querySelector('li[data-key="t_00001"] [data-part="title-edit"]')).toBeNull();
     expect(titleOf("t_00001")?.textContent).toContain("Task 1, fixed");
     expect(readTitleDraft(SPACE.id, "t_00001")).toBeUndefined();
     expect(updates).toEqual([]);
