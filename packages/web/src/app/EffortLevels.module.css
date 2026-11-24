@@ -254,7 +254,7 @@
   }
 
   .level {
-    grid-template-columns: minmax(0, 7.5rem) minmax(0, 10.5rem) auto;
+    grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr) 2rem;
     grid-template-areas:
       "name time actions"
       "about about about"
