@@ -464,6 +464,30 @@ export function fitsShape(shape: ValueShape, value: unknown): boolean {
 }
 
 /**
+ * Whether two values are the same: lists item by item in their order, objects field by field in
+ * any order, since storage keeps an object's fields sorted.
+ */
+export function samePrefValue(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, i) => samePrefValue(item, b[i]))
+    );
+  }
+  if (isRecord(a) || isRecord(b)) {
+    if (!isRecord(a) || !isRecord(b)) return false;
+    const names = Object.keys(a);
+    return (
+      names.length === Object.keys(b).length &&
+      names.every((name) => Object.hasOwn(b, name) && samePrefValue(a[name], b[name]))
+    );
+  }
+  return a === b;
+}
+
+/**
  * A list of objects named by their `key`, every other field optional, such as `tasks.effort_scale`:
  * a person may give it as names only.
  */

@@ -24,6 +24,7 @@ import {
   effortKeys,
   effortNamesFit,
   EFFORT_NAME_MAX,
+  samePrefValue,
   laterIn,
   AUTONOMY_IN_FORCE,
   LATER_PREFERENCES,
@@ -4312,7 +4313,7 @@ async function prefsSet(call: Call): Promise<unknown> {
     from.reads.get(p.key)?.value ?? p.default;
   const changed = asked
     .map((p) => ({ key: p.key, from: shown(p, before), to: shown(p, after) }))
-    .filter((c) => JSON.stringify(c.from) !== JSON.stringify(c.to));
+    .filter((c) => !samePrefValue(c.from, c.to));
   return {
     action: "set",
     as_of: result.as_of,
@@ -4385,9 +4386,7 @@ function prefRow(
   return {
     key: p.key,
     ...(action === "describe" ? { summary: p.summary, shape: shapeText(p.shape) } : {}),
-    ...(action === "get"
-      ? { value, is_default: JSON.stringify(value) === JSON.stringify(fallback) }
-      : {}),
+    ...(action === "get" ? { value, is_default: samePrefValue(value, fallback) } : {}),
     default: fallback,
     writable: prefWritable(p, principal) && read?.state !== "newer",
     ...(p.policy ? { policy: true } : {}),

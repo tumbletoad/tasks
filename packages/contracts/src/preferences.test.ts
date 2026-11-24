@@ -17,6 +17,7 @@ import {
   preferenceSpec,
   preferenceValue,
   readPreference,
+  samePrefValue,
   type PreferenceSpec,
   type ValueShape,
 } from "./preferences.ts";
@@ -350,5 +351,17 @@ describe("[A1.3.16.prefs.effort-levels] an effort level is a name, a typical tim
     expect(effortTimeText({ amount: 1, unit: "hours" })).toBe("1 hour");
     expect(effortTimeText({ amount: 10, unit: "minutes" })).toBe("10 minutes");
     expect(effortTimeText({ amount: 1, unit: "weeks" })).toBe("1 week");
+  });
+
+  test("two lists of levels are the same when each level says the same, whatever its fields' order", () => {
+    // As storage gives them back: each level's fields sorted.
+    const sorted = EFFORT_LEVELS.map(({ key, time, about }) => ({ about, key, time }));
+    expect(samePrefValue(sorted, EFFORT_LEVELS)).toBe(true);
+    expect(samePrefValue([...EFFORT_LEVELS].reverse(), EFFORT_LEVELS)).toBe(false);
+    expect(samePrefValue(EFFORT_LEVELS.slice(1), EFFORT_LEVELS)).toBe(false);
+    expect(samePrefValue([{ key: "S" }], [{ key: "S", about: "One sitting" }])).toBe(false);
+    expect(samePrefValue([{ key: "S" }], { 0: { key: "S" } })).toBe(false);
+    expect(samePrefValue(null, null)).toBe(true);
+    expect(samePrefValue(null, {})).toBe(false);
   });
 });
