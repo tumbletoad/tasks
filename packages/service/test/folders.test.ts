@@ -619,12 +619,12 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
       base: await asOf(user),
       request_id: rid(),
     });
-    // The retry is told what the write did, and names the project as it is now, as of now.
+    // The retry is told what the write did, dated by its commit, and names the project as it is
+    // now.
     const retry = FolderManageResult.parse(await call(user, "folder.manage", input));
     expect(retry).toEqual({
       ...first,
       owner: { ...first.owner, name: "Renamed" },
-      as_of: await asOf(user),
       replayed: true,
     });
   });

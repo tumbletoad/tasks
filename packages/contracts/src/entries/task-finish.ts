@@ -6,7 +6,7 @@ import { defineEntry, under } from "../define.ts";
 import { safeText } from "../safe-text.ts";
 import {
   AGENT_LIMITS,
-  AsOf,
+  WriteAsOf,
   Base,
   Cwd,
   DRAFT_AGENT_MAX,
@@ -60,9 +60,15 @@ export const TaskFinishResult = z.strictObject({
     .enum(["completed", "no_change", "review", "proposed"])
     .describe("completed, or already so"),
   task: TaskRef,
-  lifecycle: Lifecycle,
+  // A retry of an earlier build's finish whose history could not be read leaves these out.
+  lifecycle: Lifecycle.optional(),
   wrap_state: WrapState.optional(),
-  learnings: z.int().min(0).max(USER_LIMITS.learnings).describe("Learnings recorded"),
+  learnings: z
+    .int()
+    .min(0)
+    .max(USER_LIMITS.learnings)
+    .describe("Learnings recorded; absent when a retry could not read them")
+    .optional(),
   follow_ups: z
     .array(
       z.strictObject({
@@ -79,7 +85,7 @@ export const TaskFinishResult = z.strictObject({
     .describe("One row per follow-up draft"),
   warnings: Warnings.optional(),
   proposal: ProposalId.optional(),
-  as_of: AsOf,
+  as_of: WriteAsOf,
   replayed: Replayed.optional(),
   compared: Compared.optional(),
 });

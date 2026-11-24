@@ -5,7 +5,7 @@ import { defineEntry } from "../define.ts";
 import { safeLine, safeText } from "../safe-text.ts";
 import {
   AGENT_LIMITS,
-  AsOf,
+  WriteAsOf,
   ENTRY_KINDS_IN,
   PastInput,
   Compared,
@@ -52,7 +52,7 @@ export const EntryAddResult = z.strictObject({
     .regex(patterns.entryRef)
     .describe("Its ordinal: l3 for a log entry, n2 for a note"),
   kind: z.enum(ENTRY_KINDS_IN).describe("Entry kind"),
-  as_of: AsOf,
+  as_of: WriteAsOf,
   replayed: Replayed.optional(),
   compared: Compared.optional(),
 });

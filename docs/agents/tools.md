@@ -91,7 +91,7 @@ MCP tool `add_entry`, "Log on a task": Use often while working: log progress, ev
 | `task` | string | yes | Task reference |
 | `entry` | string | yes | Its ordinal: l3 for a log entry, n2 for a note |
 | `kind` | "progress" \| "evidence" \| "decision" \| "blocker" \| "question" \| "note" | yes | Entry kind |
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `compared` | false | no | A retry whose request this build could not compare: what that request did |
 
@@ -204,7 +204,7 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | `kept[].name` | string | no | A project's name, when it could be read |
 | `kept[].ref` | string | no | Task reference |
 | `kept[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `compared` | false | no | A retry whose request this build could not compare: what that request did |
 
@@ -278,7 +278,7 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `action` | "list" \| "create" \| "rename" \| "move" \| "archive" \| "unarchive" \| "set_folder" \| "clear_folder" | yes | The action |
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | A list's read, or this write's position: your next base. Names may be newer |
 | `areas` | object[] | no | Areas in the space's order, with their projects; absent: not read |
 | `areas[].id` | string | yes | Area ID |
 | `areas[].slug` | string | yes | Slug |
@@ -481,7 +481,7 @@ Redo the change you undid last, as long as nobody changed its fields since.
 | `commit` | string | yes | The change undone or redone |
 | `tasks` | string[], max 50 items | no | The tasks it changed, the first 50; absent when they could not be read |
 | `task_count` | integer, 0 to 9999999999 | no | How many tasks it changed; absent when they could not be read |
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `compared` | false | no | A retry whose request this build could not compare: what that request did |
 | `passed_over` | string[] | no | Older changes it could not redo: they stay, and the next redo tries them again |
@@ -548,7 +548,7 @@ Undo your newest change in the space, field by field as long as nobody changed i
 | `commit` | string | yes | The change undone or redone |
 | `tasks` | string[], max 50 items | no | The tasks it changed, the first 50; absent when they could not be read |
 | `task_count` | integer, 0 to 9999999999 | no | How many tasks it changed; absent when they could not be read |
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `compared` | false | no | A retry whose request this build could not compare: what that request did |
 | `unresolved` | object[] | no | Fields left as others set them |
@@ -710,7 +710,7 @@ Take back a note on a task, or put a removed one back. Nothing is deleted for go
 | `result` | "removed" \| "put_back" \| "no_change" | yes | removed, put back, or the note was that way already |
 | `task` | string | yes | Task reference |
 | `note` | string | yes | The note, such as n3 |
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `compared` | false | no | A retry whose request this build could not compare: what that request did |
 
@@ -801,7 +801,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `action` | "describe" \| "get" \| "set" | yes | The action |
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | A list's read, or this write's position: your next base. Names may be newer |
 | `prefs` | object[] | no | The keys asked for, sorted; absent on a set when they could not be read |
 | `prefs[].key` | string | yes | The key |
 | `prefs[].summary` | string | no | What it sets (describe) |
@@ -963,7 +963,7 @@ When `found` is `false`:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `found` | false | yes | No receipt for that request ID in this writer scope |
+| `found` | false | yes | No receipt here: nothing was written under that ID; it can be sent again |
 
 When `found` is `true`:
 
@@ -1491,7 +1491,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `tasks` | object[] | yes | One row per draft, in order |
 | `tasks[].result` | "created" \| "exists" \| "inbox" | yes | created, matched an existing task, or created in the Inbox |
 | `tasks[].id` | string | no | Task ID |
@@ -1618,7 +1618,7 @@ Move tasks to the Trash, or restore them. Nothing is deleted for good.
 | `restored[].held[].source` | string | yes | Source ID |
 | `restored[].held[].by` | string | yes | The task that took its key meanwhile: captures go there |
 | `commit` | string | no | The change, which Undo names |
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `compared` | false | no | A retry whose request this build could not compare: what that request did |
 
@@ -1752,9 +1752,9 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 |---|---|---|---|
 | `result` | "completed" \| "no_change" | yes | completed, or already so |
 | `task` | string | yes | Task reference |
-| `lifecycle` | "active" \| "completed" \| "archived" | yes | Lifecycle |
+| `lifecycle` | "active" \| "completed" \| "archived" | no | Lifecycle |
 | `wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
-| `learnings` | integer, 0 to 20 | yes | Learnings recorded |
+| `learnings` | integer, 0 to 20 | no | Learnings recorded; absent when a retry could not read them |
 | `follow_ups` | object[] | yes | One row per follow-up draft |
 | `follow_ups[].result` | "created" \| "exists" | yes | What happened to the draft |
 | `follow_ups[].ref` | string | no | Task reference |
@@ -1767,7 +1767,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].held[].source` | integer, 0 to 9 | yes | Index in the draft's sources |
 | `follow_ups[].held[].held_by` | string | yes | The task that holds its key |
 | `warnings` | string[] | no | Warnings, one sentence each |
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `compared` | false | no | A retry whose request this build could not compare: what that request did |
 
@@ -2578,8 +2578,8 @@ MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archiv
 | `result` | "reopened" \| "no_change" | yes | reopened, or already active |
 | `task` | string | yes | Task reference |
 | `lifecycle` | "active" \| "completed" \| "archived" | yes | Lifecycle |
-| `status` | string | yes | Status key |
-| `as_of` | string | yes | The space's position when this answer was made |
+| `status` | string | no | Status key; absent when a retry could not read it |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `compared` | false | no | A retry whose request this build could not compare: what that request did |
 
@@ -2965,9 +2965,9 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 |---|---|---|---|
 | `result` | "updated" \| "no_change" | yes | updated, or nothing changed |
 | `task` | string | yes | Task reference |
-| `fields` | string[] | yes | The fields the call changed |
+| `fields` | string[] | no | The fields the call changed; absent when a retry could not read them |
 | `context` | "appended" \| "replaced" | no | How it changed the context |
-| `as_of` | string | yes | The space's position when this answer was made |
+| `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved, and they are in it |
 | `followed` | object[], max 20 items | no | The first of them |
 | `followed[].kind` | "project" \| "task" | yes | Whose folder it is |

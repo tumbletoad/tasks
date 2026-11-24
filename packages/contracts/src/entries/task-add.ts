@@ -4,7 +4,7 @@
 import { z } from "zod";
 import { defineEntry, under } from "../define.ts";
 import {
-  AsOf,
+  WriteAsOf,
   Cwd,
   DRAFT_AGENT_MAX,
   HeldSources,
@@ -32,7 +32,7 @@ export const TaskAddInput = z.strictObject({
 });
 
 export const TaskAddResult = z.strictObject({
-  as_of: AsOf,
+  as_of: WriteAsOf,
   tasks: z
     .array(
       z.strictObject({

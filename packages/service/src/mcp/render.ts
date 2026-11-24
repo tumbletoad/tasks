@@ -84,8 +84,20 @@ function rowLine(row: RowLike): string {
   );
 }
 
-const replayed = (result: { readonly replayed?: boolean | undefined }): string =>
-  result.replayed === true ? " (replayed)" : "";
+/** A retry's mark, and whether this build could compare it with the request it repeats. */
+const replayed = (result: {
+  readonly replayed?: boolean | undefined;
+  readonly compared?: false | undefined;
+}): string =>
+  result.replayed !== true
+    ? ""
+    : result.compared === false
+      ? " (replayed, not compared: an earlier version saved it, and this one cannot compare your request with it)"
+      : " (replayed)";
+
+/** What a no-change answer found the task already was, when it says. */
+const already = (lifecycle: string | undefined): string =>
+  lifecycle === undefined ? "" : ` (already ${lifecycle})`;
 
 // ---------------------------------------------------------------------------------------------
 // space.status (A3 3.4.2)
@@ -936,7 +948,13 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
     return { ...sectionsRendered(result, getTask), extra };
   },
   "task.update": (result: OutputOf<"task.update">) => {
-    const fields = result.fields.length === 0 ? "" : `: ${result.fields.join(", ")}`;
+    // A retry that could not read which fields its write changed says so, never that none did.
+    const fields =
+      result.fields === undefined
+        ? ": fields not read"
+        : result.fields.length === 0
+          ? ""
+          : `: ${result.fields.join(", ")}`;
     const head =
       result.result === "updated"
         ? `updated ${result.task}${fields}`
@@ -947,7 +965,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
             : `proposed ${result.task}${fields}${result.proposal === undefined ? "" : ` · proposal ${result.proposal}`}`;
     // An append is no base: an answer that only appended offers none. A replace is a set, and is.
     const contextOnly =
-      result.context === "appended" && result.fields.every((f) => f === "context");
+      result.context === "appended" && result.fields?.every((f) => f === "context") === true;
     const inside = insideOf(result);
     return {
       parts: [
@@ -977,10 +995,11 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
             `completed ${result.task}`,
             result.lifecycle !== "completed" && result.lifecycle,
             result.wrap_state,
-            `${String(result.learnings)} learning${result.learnings === 1 ? "" : "s"}`,
+            result.learnings !== undefined &&
+              `${String(result.learnings)} learning${result.learnings === 1 ? "" : "s"}`,
           )
         : result.result === "no_change"
-          ? `no change ${result.task} (already ${result.lifecycle})`
+          ? `no change ${result.task}${already(result.lifecycle)}`
           : result.result === "review"
             ? `review ${result.task} · waiting for the user's check-off`
             : join(
@@ -1008,7 +1027,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
       result.result === "reopened"
         ? `reopened ${result.task}`
         : result.result === "no_change"
-          ? `no change ${result.task} (already ${result.lifecycle})`
+          ? `no change ${result.task}${already(result.lifecycle)}`
           : join(
               `proposed ${result.task}`,
               result.proposal !== undefined && `proposal ${result.proposal}`,
@@ -1017,7 +1036,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
       parts: [
         fixed(`${head} · as_of ${result.as_of}${replayed(result)}`),
         // A status is a key of the space's own list (A1 3.16), which a person or an agent wrote.
-        ...(result.result === "reopened"
+        ...(result.result === "reopened" && result.status !== undefined
           ? [{ data: true, fixed: true, units: [[`Status: ${result.status}`]] }]
           : []),
       ],

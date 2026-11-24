@@ -802,18 +802,15 @@ async function meanwhile(t: ContractTransport, answer: Value): Promise<() => Pro
 
 /**
  * An answer's parts as of now, by entry (the rule in handlers.ts's ANSWERS): names and lists read
- * when the answer is made, dated by its `as_of`. The rest of an answer is what the write did.
+ * when the answer is made. The rest of an answer is what the write did, its `as_of` included.
  */
 const NOW: Readonly<Record<string, (answer: Value) => Value | undefined>> = {
-  "task.add": (a) => ({ as_of: a["as_of"], titles: refs(a["tasks"], "title") }),
+  "task.add": (a) => ({ titles: refs(a["tasks"], "title") }),
   "task.finish": (a) =>
-    refs(a["follow_ups"]).length === 0
-      ? undefined
-      : { as_of: a["as_of"], titles: refs(a["follow_ups"], "title") },
+    refs(a["follow_ups"]).length === 0 ? undefined : { titles: refs(a["follow_ups"], "title") },
   "group.manage": (a) => {
     const group = (a["group"] ?? {}) as Value;
     return {
-      as_of: a["as_of"],
       name: group["name"],
       area: group["area"],
       list: [a["areas"], a["projects"], a["total_areas"], a["total_projects"], a["cursor"]],
@@ -821,9 +818,9 @@ const NOW: Readonly<Record<string, (answer: Value) => Value | undefined>> = {
   },
   "folder.manage": (a) => {
     const owner = (a["owner"] ?? {}) as Value;
-    return { as_of: a["as_of"], name: owner["name"], area: owner["area"] };
+    return { name: owner["name"], area: owner["area"] };
   },
-  "prefs.manage": (a) => ({ as_of: a["as_of"], prefs: unwritable(a["prefs"]) }),
+  "prefs.manage": (a) => ({ prefs: unwritable(a["prefs"]) }),
 };
 
 /** Preference rows without who may change them, which is the caller's. */
@@ -849,7 +846,6 @@ function did(entry: string, answer: Value): Value {
       ? without(holder as Value, ["name", "area"])
       : holder;
   const kept = without(rest, [
-    "as_of",
     "areas",
     "projects",
     "total_areas",
@@ -868,10 +864,9 @@ function did(entry: string, answer: Value): Value {
 
 /**
  * The parts of `answer` as of now, read again from the space through `t` with nothing written in
- * between: what they must be at the answer's own `as_of`.
+ * between: what they must be in an answer made just before.
  */
-async function asOfNow(t: ContractTransport, entry: string, answer: Value): Promise<Value> {
-  const asOf = (await t.aside("space.status", {}))["as_of"];
+async function partsNow(t: ContractTransport, entry: string, answer: Value): Promise<Value> {
   const titleOf = async (ref: unknown) =>
     typeof ref === "string"
       ? ((await t.aside("task.get", { task: ref }))["task"] as Value)["title"]
@@ -880,7 +875,7 @@ async function asOfNow(t: ContractTransport, entry: string, answer: Value): Prom
     case "task.add":
     case "task.finish": {
       const rows = (answer[entry === "task.add" ? "tasks" : "follow_ups"] ?? []) as Value[];
-      return { as_of: asOf, titles: await Promise.all(rows.map((r) => titleOf(r["ref"]))) };
+      return { titles: await Promise.all(rows.map((r) => titleOf(r["ref"]))) };
     }
     case "group.manage": {
       const listed = await t.aside("group.manage", { action: "list" });
@@ -895,7 +890,6 @@ async function asOfNow(t: ContractTransport, entry: string, answer: Value): Prom
         ((a["projects"] ?? []) as Value[]).some((p) => p["id"] === group["id"]),
       );
       return {
-        as_of: asOf,
         name: row?.["name"],
         area:
           area === undefined
@@ -926,7 +920,6 @@ async function asOfNow(t: ContractTransport, entry: string, answer: Value): Prom
         ...((listed["projects"] ?? []) as Value[]),
       ].find((p) => p["id"] === owner["id"]);
       return {
-        as_of: asOf,
         name: owner["kind"] === "project" ? project?.["name"] : undefined,
         // Only a project's creation, or the project that holds the folder, names its area.
         area:
@@ -942,7 +935,7 @@ async function asOfNow(t: ContractTransport, entry: string, answer: Value): Prom
     case "prefs.manage": {
       const keys = refs(answer["prefs"], "key");
       const got = await t.aside("prefs.manage", { action: "get", keys }, "person");
-      return { as_of: asOf, prefs: unwritable(got["prefs"]) };
+      return { prefs: unwritable(got["prefs"]) };
     }
     default:
       return {};
@@ -1179,8 +1172,9 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
               );
             }
             // The same write sent again, as after a lost answer, gets what the write did (A3 3.4.1),
-            // whatever was written in between: here, a change to everything the answer names. Its
-            // names and lists are the space's at its own as_of, read again before anything else is.
+            // its as_of included, whatever was written in between: here, a change to everything the
+            // answer names. Its names and lists are the space's now, read again before anything else
+            // is.
             if (receipted(entry.name, input)) {
               const value = result as Value;
               const takeBack = await meanwhile(transport, value);
@@ -1188,7 +1182,7 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
               const now =
                 NOW[entry.name]?.(again) === undefined
                   ? undefined
-                  : await asOfNow(transport, entry.name, again);
+                  : await partsNow(transport, entry.name, again);
               await takeBack();
               expect.soft(again["replayed"], `${key}: sent again`).toBe(true);
               expect

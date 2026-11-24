@@ -4,7 +4,7 @@ import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeText } from "../safe-text.ts";
 import {
-  AsOf,
+  WriteAsOf,
   Base,
   Lifecycle,
   Mode,
@@ -29,9 +29,9 @@ export const TaskReopenResult = z.strictObject({
   result: z.enum(["reopened", "no_change", "proposed"]).describe("reopened, or already active"),
   task: TaskRef,
   lifecycle: Lifecycle,
-  status: z.string().describe("Status key"),
+  status: z.string().describe("Status key; absent when a retry could not read it").optional(),
   proposal: ProposalId.optional(),
-  as_of: AsOf,
+  as_of: WriteAsOf,
   replayed: Replayed.optional(),
   compared: Compared.optional(),
 });

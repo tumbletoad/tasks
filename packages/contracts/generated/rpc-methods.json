@@ -100,7 +100,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -246,7 +246,7 @@
             "type": "string"
           },
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -666,7 +666,7 @@
             "type": "array"
           },
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "A list's read, or this write's position: your next base. Names may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -978,7 +978,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -1118,7 +1118,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -1557,7 +1557,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -1731,7 +1731,7 @@
             "type": "string"
           },
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "A list's read, or this write's position: your next base. Names may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -1995,7 +1995,7 @@
             "properties": {
               "found": {
                 "const": false,
-                "description": "No receipt for that request ID in this writer scope",
+                "description": "No receipt here: nothing was written under that ID; it can be sent again",
                 "type": "boolean"
               }
             },
@@ -3321,7 +3321,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -3532,7 +3532,7 @@
             "type": "array"
           },
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -3931,7 +3931,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -4025,7 +4025,7 @@
             "type": "array"
           },
           "learnings": {
-            "description": "Learnings recorded",
+            "description": "Learnings recorded; absent when a retry could not read them",
             "maximum": 20,
             "minimum": 0,
             "type": "integer"
@@ -4082,8 +4082,6 @@
         "required": [
           "result",
           "task",
-          "lifecycle",
-          "learnings",
           "follow_ups",
           "as_of"
         ],
@@ -6448,7 +6446,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -6485,7 +6483,7 @@
             "type": "string"
           },
           "status": {
-            "description": "Status key",
+            "description": "Status key; absent when a retry could not read it",
             "type": "string"
           },
           "task": {
@@ -6498,7 +6496,6 @@
           "result",
           "task",
           "lifecycle",
-          "status",
           "as_of"
         ],
         "type": "object"
@@ -7579,7 +7576,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "The space's position when this answer was made",
+            "description": "This write's position: your next base. Names and lists here may be newer",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -7597,7 +7594,7 @@
             "type": "string"
           },
           "fields": {
-            "description": "The fields the call changed",
+            "description": "The fields the call changed; absent when a retry could not read them",
             "items": {
               "type": "string"
             },
@@ -7734,7 +7731,6 @@
         "required": [
           "result",
           "task",
-          "fields",
           "as_of",
           "warnings"
         ],

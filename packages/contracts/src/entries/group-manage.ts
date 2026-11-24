@@ -115,7 +115,9 @@ const GroupList = {
 
 export const GroupManageResult = z.strictObject({
   action: z.enum(GROUP_ACTIONS).describe("The action"),
-  as_of: AsOf,
+  as_of: AsOf.describe(
+    "A list's read, or this write's position: your next base. Names may be newer",
+  ),
   // A write whose list could not be read leaves it out rather than show part of it as whole.
   areas: GroupList.areas
     .describe("Areas in the space's order, with their projects; absent: not read")

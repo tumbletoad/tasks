@@ -826,14 +826,33 @@ const TITLES: Statement = {
   mode: "all",
 };
 
-/** The titles of the tasks `ids` names, by ID, and the space's `as_of` they are read at. */
-export async function readTitlesAt(
+const COMMIT_OPS: Statement = { sql: "SELECT ops FROM commits WHERE seq = $seq", mode: "get" };
+
+/** One operation a commit ran, as `commits.ops` holds it: its kind and its input. */
+export interface CommitOp {
+  readonly op: string;
+  readonly input: Readonly<Record<string, unknown>>;
+}
+
+/** The operations commit `seq` ran, in their order: none when there is no such commit. */
+export async function readCommitOps(reader: WorkerConnection, seq: number): Promise<CommitOp[]> {
+  const [row] = await snapshot(reader, [COMMIT_OPS], { seq });
+  const ops = isPlain(row) ? json(row["ops"]) : undefined;
+  if (!Array.isArray(ops)) return [];
+  return ops.flatMap((op: unknown) =>
+    isPlain(op) && typeof op["op"] === "string"
+      ? [{ op: op["op"], input: isPlain(op["input"]) ? op["input"] : {} }]
+      : [],
+  );
+}
+
+/** The titles of the tasks `ids` names, by ID. */
+export async function readTitles(
   reader: WorkerConnection,
   ids: readonly string[],
-): Promise<{ asOf: string; titles: Map<string, string> }> {
-  const [space, rows] = await snapshot(reader, [SPACE, TITLES], { ids: JSON.stringify(ids) });
-  const titles = new Map((rows as Row[]).map((row) => [String(row["id"]), String(row["title"])]));
-  return { asOf: spaceFacts(space).asOf, titles };
+): Promise<Map<string, string>> {
+  const [rows] = await snapshot(reader, [TITLES], { ids: JSON.stringify(ids) });
+  return new Map((rows as Row[]).map((row) => [String(row["id"]), String(row["title"])]));
 }
 
 /** A task's reference by its ID, or undefined when there is no such task. */

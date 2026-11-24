@@ -348,10 +348,9 @@ describe("[A3.3.4.finish.lifecycle] complete_task: done, dropped, learnings and 
         request_id: rid(),
       });
       await finish({ task }, USER);
-      // What the call did, again; its follow-up's title is read now, at the answer's as_of.
+      // What the call did, again, dated by its commit; its follow-up's title is read now.
       expect(TaskFinishResult.parse(await call("task.finish", input))).toEqual({
         ...first,
-        as_of: await asOf(),
         replayed: true,
       });
     },

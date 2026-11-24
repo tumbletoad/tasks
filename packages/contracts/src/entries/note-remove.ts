@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import {
-  AsOf,
+  WriteAsOf,
   Base,
   Compared,
   Replayed,
@@ -36,7 +36,7 @@ export const NoteRemoveResult = z.strictObject({
     .describe("removed, put back, or the note was that way already"),
   task: TaskRef,
   note: z.string().regex(patterns.entryRef).describe("The note, such as n3"),
-  as_of: AsOf,
+  as_of: WriteAsOf,
   replayed: Replayed.optional(),
   compared: Compared.optional(),
 });

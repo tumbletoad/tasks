@@ -5,7 +5,7 @@ import { EFFORT_KEY_MAX } from "../preferences.ts";
 import { safeLine, safeText } from "../safe-text.ts";
 import {
   AGENT_LIMITS,
-  AsOf,
+  WriteAsOf,
   Base,
   ContextInput,
   Cwd,
@@ -99,9 +99,12 @@ export const TaskUpdateResult = z.strictObject({
     .enum(["updated", "no_change", "review", "proposed"])
     .describe("updated, or nothing changed"),
   task: TaskRef,
-  fields: z.array(z.string()).describe("The fields the call changed"),
+  fields: z
+    .array(z.string())
+    .describe("The fields the call changed; absent when a retry could not read them")
+    .optional(),
   context: z.enum(["appended", "replaced"]).describe("How it changed the context").optional(),
-  as_of: AsOf,
+  as_of: WriteAsOf,
   proposal: ProposalId.optional(),
   ...InsideFolders,
   warnings: Warnings,

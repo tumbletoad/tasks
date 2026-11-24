@@ -111,7 +111,7 @@ describe("[A2.3.6.ops.request-path] op/call and op/list", () => {
       }),
     );
     expect(updated).toMatchObject({ result: "updated", task: "M-1" });
-    expect([...updated.fields].sort()).toEqual(["priority", "summary"]);
+    expect([...(updated.fields ?? [])].sort()).toEqual(["priority", "summary"]);
 
     // The same request again replays, whatever happened since.
     await call(s, "entry.add", { task: "M-1", kind: "evidence", text: "Seen.", request_id: rid() });

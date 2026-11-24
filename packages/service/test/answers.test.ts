@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, findEntry, parseInput, type ErrorBody } from "@ttasks/contracts";
 import { newId, type Id, type WriteRequest, type WriteResult } from "@ttasks/storage";
 import { toolCaller } from "../src/mcp/index.ts";
+import { renderResult } from "../src/mcp/render.ts";
 import { opCall, principalOf, type Binding, type Caller, type OpsHost } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
@@ -39,10 +40,10 @@ async function refusal(op: string, input: Json, caller: Caller = AGENT): Promise
   return error.toBody();
 }
 /** What an agent reads back from a tool. */
-async function tool(name: string, args: Json): Promise<string> {
+async function tool(name: string, args: Json, ops: OpsHost = w.service.ops): Promise<string> {
   const binding: Binding = { kind: "none", space: w.space, named: false };
   const result = await toolCaller({
-    ops: w.service.ops,
+    ops,
     context: { space: null },
     conn: 1,
     binding,
@@ -220,7 +221,9 @@ describe("[A3.answers.replay-meanwhile] a retry repeats what the write did, and 
       replayed: true,
       group: { kind: "project", id: groupId(first), name: "Barn", area: { name: "Coast" } },
     });
-    expect(retry["as_of"]).toBe(await asOf());
+    // Dated by the write, which a base taken from it covers, never by the move after it.
+    expect(retry["as_of"]).toBe(first["as_of"]);
+    expect(retry["as_of"]).not.toBe(await asOf());
   });
 
   test("a folder change, sent again after its project was renamed, names the project as it is now", async () => {
@@ -253,7 +256,6 @@ describe("[A3.answers.replay-meanwhile] a retry repeats what the write did, and 
     expect(await call("folder.manage", set, USER)).toEqual({
       ...first,
       owner: { ...(first["owner"] as Json), name: "Kiln renamed" },
-      as_of: await asOf(),
       replayed: true,
     });
   });
@@ -279,7 +281,6 @@ describe("[A3.answers.replay-meanwhile] a retry repeats what the write did, and 
     expect(await call("task.add", again)).toEqual({
       ...first,
       tasks: [{ ...found, title: "Keyed and renamed" }],
-      as_of: await asOf(),
       replayed: true,
     });
   });
@@ -313,7 +314,6 @@ describe("[A3.answers.replay-meanwhile] a retry repeats what the write did, and 
     expect(await call("task.finish", finish)).toEqual({
       ...first,
       follow_ups: [{ ...follow, title: "Followed and renamed" }],
-      as_of: await asOf(),
       replayed: true,
     });
   });
@@ -338,7 +338,7 @@ describe("[A3.answers.replay-meanwhile] a retry repeats what the write did, and 
       result: "updated",
       changed: first["changed"],
       prefs: [{ key, value: 30 }],
-      as_of: await asOf(),
+      as_of: first["as_of"],
       replayed: true,
     });
   });
@@ -367,18 +367,20 @@ describe("[A3.answers.replay-meanwhile] a retry repeats what the write did, and 
 
 /**
  * The world's service, whose writer runs `before` once just before it takes the first request of
- * `entry`, and whose reader fails while `failing()` says so.
+ * `entry` and `committed` once just after, and whose reader fails while `failing()` says so.
  */
 function held(
   options: {
     readonly entry?: string;
     readonly before?: () => Promise<void>;
+    readonly committed?: () => Promise<void>;
     readonly failing?: () => boolean;
     readonly after?: (result: WriteResult) => void;
   } = {},
 ): OpsHost {
   const ops = w.service.ops;
   let ran = false;
+  let answered = false;
   const wrap = <T extends object>(target: T, replace: (key: string | symbol) => unknown): T =>
     new Proxy(target, {
       get(object, key) {
@@ -403,6 +405,14 @@ function held(
           }
           const result = await writer.submit(request);
           options.after?.(result);
+          if (
+            !answered &&
+            options.committed !== undefined &&
+            request.intent?.entry === options.entry
+          ) {
+            answered = true;
+            await options.committed();
+          }
           return result;
         };
         const broken = () => Promise.reject(new Error("Fixture: the read failed"));
@@ -678,6 +688,136 @@ describe("[A3.answers.read-fails] a read after the commit that fails leaves out 
   });
 });
 
+describe("[A3.answers.as-of] a write's answer is dated by its own commit, first and on every retry", () => {
+  test("a retried create is no base for overwriting the summary a person gave the task since", async () => {
+    const add = {
+      tasks: [{ title: "Dated by its commit", summary: "The agent's summary" }],
+      request_id: rid(),
+    };
+    const first = await call("task.add", add);
+    const ref = String((first["tasks"] as Json[])[0]?.["ref"]);
+    await call(
+      "task.update",
+      {
+        task: ref,
+        set: { summary: "The person's summary" },
+        base: await asOf(),
+        request_id: rid(),
+      },
+      USER,
+    );
+    const retry = await call("task.add", add);
+    expect(retry["as_of"]).toBe(first["as_of"]);
+    const update = {
+      task: ref,
+      set: { summary: "The agent's next summary" },
+      base: retry["as_of"],
+      request_id: rid(),
+    };
+    expect(await refusal("task.update", update)).toMatchObject({ code: "conflict" });
+    const read = await call("task.get", { task: ref });
+    expect((read["task"] as Json)["summary"]).toBe("The person's summary");
+  });
+
+  test("every write's first answer and its retry carry its commit's position, whatever was written in between", async () => {
+    const bystander = String(
+      (
+        (await call("task.add", { tasks: [{ title: "Bystander" }], request_id: rid() }))[
+          "tasks"
+        ] as Json[]
+      )[0]?.["ref"],
+    );
+    /** Another writer's change, which moves the space on. */
+    const meanwhile = () =>
+      call("entry.add", { task: bystander, text: "Fixture meanwhile", request_id: rid() });
+    /**
+     * A write whose answer waits, just after its commit, for another writer's change; then the same
+     * request again after one more. Both answers must carry the position the commit left.
+     */
+    async function dated(op: string, input: Json, caller: Caller = AGENT): Promise<Json> {
+      let commit = "";
+      const host = held({
+        entry: op,
+        committed: async () => {
+          commit = await asOf();
+          await meanwhile();
+        },
+      });
+      const first = (await opCall(host, caller, { op, input })) as Json;
+      await meanwhile();
+      const retry = await call(op, input, caller);
+      expect(retry["replayed"], op).toBe(true);
+      expect(first["as_of"], `${op}: its first answer`).toBe(commit);
+      expect(retry["as_of"], `${op}: its retry`).toBe(commit);
+      return first;
+    }
+
+    const added = await dated("task.add", {
+      tasks: [{ title: "Dated one" }, { title: "Dated two" }],
+      request_id: rid(),
+    });
+    const [ref, other] = (added["tasks"] as Json[]).map((t) => String(t["ref"]));
+    await dated("task.update", {
+      task: ref,
+      set: { summary: "Dated summary" },
+      base: await asOf(),
+      request_id: rid(),
+    });
+    await dated("entry.add", { task: ref, kind: "note", text: "Dated note", request_id: rid() });
+    await dated(
+      "note.remove",
+      { task: ref, remove: "n1", base: await asOf(), request_id: rid() },
+      USER,
+    );
+    await dated("task.finish", {
+      task: ref,
+      outcome: "Fixture outcome.",
+      follow_ups: [{ title: "Dated follow-up" }],
+      base: await asOf(),
+      request_id: rid(),
+    });
+    await dated("task.reopen", {
+      task: ref,
+      reason: "A fixture reason.",
+      base: await asOf(),
+      request_id: rid(),
+    });
+    await call(
+      "task.update",
+      { task: ref, set: { summary: "To be undone" }, base: await asOf(), request_id: rid() },
+      USER,
+    );
+    await dated("history.undo", { request_id: rid() }, USER);
+    await dated("history.redo", { request_id: rid() }, USER);
+    await dated("task.delete", { tasks: [other], base: await asOf(), request_id: rid() }, USER);
+    await dated(
+      "group.manage",
+      { action: "create", path: "Dated/Project", request_id: rid() },
+      USER,
+    );
+    await dated(
+      "folder.manage",
+      {
+        action: "add_project",
+        project: "Dated folder",
+        folder: folder("dated"),
+        request_id: rid(),
+      },
+      USER,
+    );
+    await dated(
+      "prefs.manage",
+      {
+        action: "set",
+        set: [{ key: "tasks.dedupe_window_days", value: 11 }],
+        base: await asOf(),
+        request_id: rid(),
+      },
+      USER,
+    );
+  });
+});
+
 describe("[A3.answers.retry-first] a request decided before is answered from its receipt before today's rules read it", () => {
   /** The agent's shell as the writer knows it: its actor and its writer scope. */
   async function script() {
@@ -764,11 +904,89 @@ describe("[A3.answers.retry-first] a request decided before is answered from its
       compared: false,
       tasks: [{ result: "created", id: task, title: "Placed earlier" }],
     });
+    expect(renderResult("task.add", retry)).toContain("(replayed, not compared:");
     expect(await asOf()).toBe(before);
     // The same body under a new request ID is a new request, which this build refuses.
     expect(await refusal("task.add", { ...input, request_id: rid() })).toMatchObject({
       code: "invalid_input",
     });
+    // Under its own ID to another tool, it is another request, whatever this build makes of it.
+    for (const op of ["task.reopen", "task.update", "task.finish"]) {
+      expect(await refusal(op, input), op).toMatchObject({ code: "request_id_conflict" });
+    }
+    expect(await asOf()).toBe(before);
+  });
+
+  /** A task, and an update of it as the build before this one decided it, with no record. */
+  async function earlierUpdate(input: (task: string, base: string) => Json): Promise<Json> {
+    const added = await call("task.add", {
+      tasks: [{ title: "Updated earlier" }],
+      request_id: rid(),
+    });
+    const made = (added["tasks"] as { id: Id<"t">; ref: string }[])[0];
+    if (made === undefined) throw new Error("no task was added");
+    const sent = input(made.ref, await asOf());
+    const { writer, actor } = await script();
+    const first = await writer.submit({
+      space_id: w.space,
+      request_id: String(sent["request_id"]),
+      actor,
+      base: String(sent["base"]),
+      intent: { entry: "task.update", input: sent },
+      ops: [{ kind: "task.patch", task: made.id, set: { summary: "Set earlier" } }],
+    });
+    expect(first.status).toBe("applied");
+    return sent;
+  }
+
+  test("an update an earlier build made with a field this build retired, sent again, names the fields its commit changed", async () => {
+    const input = await earlierUpdate((task, base) => ({
+      task,
+      set: { summary: "Set earlier" },
+      clear: ["place"],
+      base,
+      request_id: rid(),
+    }));
+    expect(await call("task.update", input)).toMatchObject({
+      result: "updated",
+      task: input["task"],
+      fields: ["summary"],
+      replayed: true,
+      compared: false,
+    });
+  });
+
+  test("an update an earlier build made, sent again while history cannot be read, leaves out its fields and every face says so", async () => {
+    const entry = findEntry("task.update");
+    if (entry === undefined) throw new Error("task.update is no entry");
+    let input: Json = {};
+    await earlierUpdate((task, base) => {
+      input = { task, set: { summary: "Set earlier" }, base, request_id: rid() };
+      const parsed = parseInput(entry, "agent", input);
+      if (!parsed.success) throw new Error("the earlier input does not parse");
+      return parsed.data;
+    });
+    const host = held({ failing: () => true });
+    const retry = (await opCall(host, AGENT, { op: "task.update", input })) as Json;
+    expect(retry).toMatchObject({ result: "updated", task: input["task"], replayed: true });
+    expect(retry["fields"]).toBeUndefined();
+    expect(entry.output.safeParse(retry).success).toBe(true);
+    expect(renderResult("task.update", retry)).toMatch(/^updated M-[0-9]+: fields not read · /u);
+    // Healthy again, the commit's history names what it changed.
+    expect(await call("task.update", input)).toMatchObject({ fields: ["summary"] });
+  });
+
+  test("a request ID used for one tool is another request for any other tool, whatever its body", async () => {
+    const input = { tasks: [{ title: "Its tool's own" }], request_id: rid() };
+    await call("task.add", input);
+    const before = await asOf();
+    for (const body of [{ request_id: input.request_id, reason: 7 }, input]) {
+      expect(await refusal("task.reopen", body)).toMatchObject({
+        code: "request_id_conflict",
+        data: { field: "request_id" },
+      });
+    }
+    expect(await asOf()).toBe(before);
   });
 
   test("a body that differs from the one its request ID was used for is refused as another request", async () => {

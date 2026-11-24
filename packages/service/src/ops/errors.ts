@@ -217,6 +217,20 @@ export function storageFailure(error: unknown): AppError {
   return new AppError({ code: "internal", message: "Something went wrong in the service." });
 }
 
+/**
+ * A request ID whose receipt in the caller's writer scope is another request's, decided at `at`,
+ * as the writer refuses one (REQUEST_ID_REUSED).
+ */
+export function requestIdReused(at: number): AppError {
+  return new AppError(
+    a1ErrorBody(
+      "REQUEST_ID_REUSED",
+      "This request ID was used for another change: review it, then use a new ID",
+      { field: "request_id", at },
+    ),
+  );
+}
+
 /** The input path of the caller's own operation `op`, with the field a refusal names there. */
 export type PathOf = (op: number, field: string | undefined) => string | undefined;
 

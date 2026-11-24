@@ -80,7 +80,9 @@ const PrefRow = z.strictObject({
 
 export const PrefsManageResult = z.strictObject({
   action: z.enum(PREFS_ACTIONS).describe("The action"),
-  as_of: AsOf,
+  as_of: AsOf.describe(
+    "A list's read, or this write's position: your next base. Names may be newer",
+  ),
   prefs: z
     .array(PrefRow)
     .describe("The keys asked for, sorted; absent on a set when they could not be read")

@@ -128,7 +128,9 @@ export function newerWorkJson(newer: {
 
 export const ReceiptGetResult = z.union([
   z.strictObject({
-    found: z.literal(false).describe("No receipt for that request ID in this writer scope"),
+    found: z
+      .literal(false)
+      .describe("No receipt here: nothing was written under that ID; it can be sent again"),
   }),
   z.strictObject({
     found: z.literal(true).describe("The write was decided: its stored result follows"),

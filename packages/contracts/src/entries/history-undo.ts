@@ -5,7 +5,15 @@
 // revert and the page's toast (M5.08) build on it.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { AsOf, idPattern, patterns, Compared, Replayed, RequestId, TaskRef } from "../schemas.ts";
+import {
+  WriteAsOf,
+  idPattern,
+  patterns,
+  Compared,
+  Replayed,
+  RequestId,
+  TaskRef,
+} from "../schemas.ts";
 import { AS_OF_NEXT, requestId } from "./fixture.ts";
 
 /** A commit (`op_` ID): what the feed's events and a write's receipt name. */
@@ -67,7 +75,7 @@ export const HistoryResultFields = {
     .max(9_999_999_999)
     .describe("How many tasks it changed; absent when they could not be read")
     .optional(),
-  as_of: AsOf,
+  as_of: WriteAsOf,
   replayed: Replayed.optional(),
   compared: Compared.optional(),
 };

@@ -7,7 +7,7 @@ import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeText } from "../safe-text.ts";
 import {
-  AsOf,
+  WriteAsOf,
   Base,
   Compared,
   Replayed,
@@ -84,7 +84,7 @@ export const TaskDeleteResult = z.strictObject({
     .optional(),
   restored: z.array(RestoredTask).max(DELETE_MAX).describe("Where each is back").optional(),
   commit: CommitId.describe("The change, which Undo names").optional(),
-  as_of: AsOf,
+  as_of: WriteAsOf,
   replayed: Replayed.optional(),
   compared: Compared.optional(),
 });

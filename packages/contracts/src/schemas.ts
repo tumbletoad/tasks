@@ -261,6 +261,16 @@ export const AsOf = z
   .regex(patterns.asOf)
   .describe("The space's position when this answer was made");
 
+/**
+ * A write's `as_of`: the position of its own commit, or of the space it was judged on when it
+ * changed nothing, in its first answer and in every retry. A caller passes it as the base of its
+ * next write, which is then refused when something it has not seen changed since. The names and
+ * lists in the answer are read when it is made, and may be newer.
+ */
+export const WriteAsOf = AsOf.describe(
+  "This write's position: your next base. Names and lists here may be newer",
+);
+
 export const TaskId = z.string().regex(idPattern("t")).describe("Task ID");
 export const TaskRef = z.string().regex(patterns.taskRef).describe("Task reference");
 export const SourceId = z.string().regex(idPattern("s")).describe("Source ID");

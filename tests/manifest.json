@@ -2678,7 +2678,7 @@
     },
     {
       "id": "A3.answers.replay-meanwhile",
-      "title": "A retry repeats what the write did and names what it names as it is now, with the as_of of that read: a project's creation after the project moved says it was created and names its area now, a folder change after its project was renamed names the new name, an import and a follow-up that found a task by key find the same task and name its new title, a preference set after another value was set says the change it made and the value now, and an undo after a script changed its task says what it said",
+      "title": "A retry repeats what the write did, dated by the write itself, and names what it names as it is now: a project's creation after the project moved says it was created and names its area now, a folder change after its project was renamed names the new name, an import and a follow-up that found a task by key find the same task and name its new title, a preference set after another value was set says the change it made and the value now, and an undo after a script changed its task says what it said",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2692,7 +2692,21 @@
     },
     {
       "id": "A3.answers.retry-first",
-      "title": "A request decided before is answered from its receipt before this build's rules read its input: an import an earlier build accepted with a mail header's date or February 30 is answered and adds nothing, an import with a field this build retired says the task it made and that the request could not be compared, a new request with either is refused, and another body under a used request ID is request_id_conflict",
+      "title": "A request decided before is answered from its receipt before this build's rules read its input: an import an earlier build accepted with a mail header's date or February 30 is answered and adds nothing, an import with a field this build retired says the task it made and that the request could not be compared, in the agent's text too, and under its ID to another tool is request_id_conflict; an earlier build's update with a retired field names the fields its commit changed, and while history cannot be read leaves them out and the tool's text says it could not read them; a new request with either is refused, another body under a used request ID is request_id_conflict, and a request ID this build used for one tool is request_id_conflict for any other, whatever its body",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.as-of",
+      "title": "A write's answer is dated by its own commit, first and on every retry: each of the twelve writes, held just after its commit while another writer writes, and retried after one more write, answers both times with the position its commit left, and a retried create is no base for overwriting the summary a person gave the task since: the update based on it is a conflict",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.answers.absent",
+      "title": "A write's answer renders without any field it may leave out: every write's example answer with those fields left out still matches its contract and renders in the agent's text and the command line's without a gap, an update whose changed fields could not be read says so and never that none changed, and a retry this build could not compare says so",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]

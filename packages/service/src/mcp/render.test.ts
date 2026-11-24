@@ -1,7 +1,14 @@
 // The compact text of every tool (A3 3.3, 3.4, 3.5, 3.9.6): within each result budget for every
 // example and for worst cases at the field limits (A3 3.2.5's result budget test), with stored
 // text and editable names only inside the data block (A3 3.10, X14).
-import { findEntry, registry, REQUEST_CHARS, resultTokens, type AnyEntry } from "@ttasks/contracts";
+import {
+  findEntry,
+  outputJsonSchema,
+  registry,
+  REQUEST_CHARS,
+  resultTokens,
+  type AnyEntry,
+} from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import { SKILL_LINE_BYTES, SKILL_LIST_BYTES, SKILL_LIST_ROWS } from "../skills/index.ts";
 import { DIGEST_TOKENS, ERROR_TOKENS, hasRenderer, renderError, renderResult } from "./render.ts";
@@ -741,5 +748,44 @@ describe("[A3.3.10.mcp.framing] stored text and editable names appear only insid
     expect(outside.join("\n")).not.toContain("From an agent.");
     expect(inside.join("\n")).toContain("From an agent.");
     expect(inside.join("\n")).toContain("For the user.");
+  });
+});
+
+describe("[A3.answers.absent] a write's answer renders without any field it may leave out", () => {
+  /** `value` without every field its JSON schema does not require, at every depth. */
+  function bare(schema: Json, value: unknown): unknown {
+    if (Array.isArray(value)) return value.map((v) => bare((schema["items"] ?? {}) as Json, v));
+    const properties = schema["properties"] as Record<string, Json> | undefined;
+    if (typeof value !== "object" || value === null || properties === undefined) return value;
+    const required = new Set((schema["required"] ?? []) as string[]);
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => required.has(key))
+        .map(([key, v]) => [key, bare(properties[key] ?? {}, v)]),
+    );
+  }
+
+  test("every write's example answer, with every field it may leave out left out, renders", () => {
+    for (const tool of tools.filter((t) => t.kind === "write")) {
+      tool.examples.forEach((ex, i) => {
+        const key = `${tool.name} ${String(i)}`;
+        const answer = bare(outputJsonSchema(tool), ex.output);
+        expect(tool.output.safeParse(answer).success, key).toBe(true);
+        expect(() => renderResult(tool.name, answer), key).not.toThrow();
+      });
+    }
+  });
+
+  test("a retry that could not read what its update changed says so, and one not compared says that", () => {
+    const answer = { result: "updated", task: "M-14", as_of: "1.1047.5n0w8k3q", warnings: [] };
+    expect(renderResult("task.update", answer)).toBe(
+      "updated M-14: fields not read · as_of 1.1047.5n0w8k3q",
+    );
+    expect(renderResult("task.update", { ...answer, replayed: true, compared: false })).toMatch(
+      / \(replayed, not compared: an earlier version saved it, and this one cannot compare your request with it\)$/u,
+    );
+    expect(
+      renderResult("task.finish", { ...example("task.finish", 0), learnings: undefined }),
+    ).not.toContain("undefined");
   });
 });

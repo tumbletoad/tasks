@@ -9,7 +9,7 @@ import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeLine } from "../safe-text.ts";
 import {
-  AsOf,
+  WriteAsOf,
   Base,
   idPattern,
   InsideFolders,
@@ -63,7 +63,7 @@ export const FolderManageResult = z.strictObject({
     .describe("The folder here as stored, the home as ~; absent once cleared")
     .optional(),
   ...InsideFolders,
-  as_of: AsOf,
+  as_of: WriteAsOf,
   replayed: Replayed.optional(),
   compared: Compared.optional(),
 });
