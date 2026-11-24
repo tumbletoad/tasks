@@ -570,6 +570,21 @@ describe("[A5.while-away.service.run-question] a run that ended asking keeps its
       run: { id: a, state: "needs_you" },
     });
   });
+
+  test("a task in the Trash waits for no one until it is restored, and then its question waits again", async () => {
+    const { task: id, row } = task();
+    asks(queue(id));
+    submit(fx.human, [{ kind: "task.delete", task: id }], (clock += 60_000));
+    const trashed = (await call("task.trash", { working: true, limit: 200 })) as {
+      rows: readonly Readonly<Record<string, unknown>>[];
+    };
+    expect(trashed.rows.find((r) => r["id"] === id)).toBeUndefined();
+    submit(fx.human, [{ kind: "task.restore", task: id }], (clock += 60_000));
+    expect(await row()).toMatchObject({
+      questions: [{ text: QUESTION }],
+      run: { state: "needs_you" },
+    });
+  });
 });
 
 describe("[A5.while-away.service.reads] a waiting question breaks no read of task rows", () => {
