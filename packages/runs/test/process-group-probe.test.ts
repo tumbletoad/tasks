@@ -1,22 +1,22 @@
-// Where runs cannot be contained, the probe says why in plain words, and nothing starts. These
-// read files only, so they run on every platform; the real probe is in container.test.ts.
+// Where runs cannot be grouped, the probe says why in plain words, and nothing starts. These
+// read files only, so they run on every platform; the real probe is in process-group.test.ts.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
-  containers,
-  LinuxContainers,
+  processGroups,
+  LinuxProcessGroups,
   placement,
   quoteWindowsArg,
   windowsCommandLine,
-  WindowsContainers,
+  WindowsProcessGroups,
   type UnavailableReason,
-} from "../src/container/index.ts";
+} from "../src/process-group/index.ts";
 
 const UNIT = "/user.slice/user-1000.slice/user@1000.service/app.slice/ttasks.service";
 
-describe("[A4.3.11.8.container.probe] the probe says why runs cannot be contained, and start refuses there", () => {
+describe("[A4.3.11.8.group.probe] the probe says why runs cannot be grouped, and start refuses there", () => {
   test("placement reads the service's own unit from /proc/self/cgroup", () => {
     expect(placement(`0::${UNIT}\n`, 1000)).toEqual({
       ok: true,
@@ -76,7 +76,7 @@ describe("[A4.3.11.8.container.probe] the probe says why runs cannot be containe
       if (facts.v2 !== false) writeFileSync(join(cgroups, "cgroup.controllers"), "");
       if (facts.kill !== false) writeFileSync(join(cgroups, UNIT, "cgroup.kill"), "");
       writeFileSync(join(root, "self"), facts.self ?? `0::${UNIT}\n`);
-      return new LinuxContainers({
+      return new LinuxProcessGroups({
         cgroupRoot: cgroups,
         selfCgroup: join(root, "self"),
         systemdRunDir: join(root, "systemd"),
@@ -117,14 +117,14 @@ describe("[A4.3.11.8.container.probe] the probe says why runs cannot be containe
   });
 
   test("Windows without ttasks-run.exe, and other platforms", async () => {
-    const missing = new WindowsContainers({ helper: join(tmpdir(), "no-such-dir", "x.exe") });
+    const missing = new WindowsProcessGroups({ helper: join(tmpdir(), "no-such-dir", "x.exe") });
     expect(await missing.probe()).toMatchObject({ available: false, reason: "helper_missing" });
     await expect(
       missing.start({ name: "r1", command: "C:\\x.exe", args: [], cwd: "C:\\", env: {} }),
     ).rejects.toMatchObject({ code: "unavailable" });
     // Elsewhere no process group exists: a run starts as the agent's process tree, so a program
     // that is not there fails its start.
-    const other = containers({ platform: "darwin" });
+    const other = processGroups({ platform: "darwin" });
     expect(await other.probe()).toMatchObject({
       available: false,
       reason: "unsupported_platform",
@@ -140,15 +140,15 @@ describe("[A4.3.11.8.container.probe] the probe says why runs cannot be containe
     ).rejects.toMatchObject({ code: "start_failed" });
   });
 
-  test("container names are checked before anything is made", async () => {
-    const box = new WindowsContainers({ helper: "C:\\x.exe" });
+  test("process group names are checked before anything is made", async () => {
+    const box = new WindowsProcessGroups({ helper: "C:\\x.exe" });
     for (const name of ["", "-a", "a/b", "a\\b", "a b", "Global\\x", "x".repeat(101)]) {
       await expect(box.confirmEmpty(name)).rejects.toMatchObject({ code: "bad_name" });
     }
   });
 });
 
-describe("[A4.3.11.8.container.command-line] a Windows command line quotes each argument as the C runtime reads it back", () => {
+describe("[A4.3.11.8.group.command-line] a Windows command line quotes each argument as the C runtime reads it back", () => {
   test("quoting", () => {
     expect(quoteWindowsArg("")).toBe('""');
     expect(quoteWindowsArg("plain")).toBe("plain");

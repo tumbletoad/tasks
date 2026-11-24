@@ -73,7 +73,7 @@ The service never runs in a job object of the launcher's, so processes it starts
 
 ## `ttasks-run.exe`, the holder of a background run
 
-`src/run.c`, built by `buildRunHelper` with the same compiler flags, holds one background run's job object. The service starts it as a plain child (so it ends with the service), and `@ttasks/runs`'s Windows containers (`packages/runs/src/container/windows.ts`) drive it. The source's header lists its modes, its one-line protocol on fd 3 and fd 4, and its exit codes.
+`src/run.c`, built by `buildRunHelper` with the same compiler flags, holds one background run's job object. The service starts it as a plain child (so it ends with the service), and `@ttasks/runs`'s Windows process groups (`packages/runs/src/process group/windows.ts`) drive it. The source's header lists its modes, its one-line protocol on fd 3 and fd 4, and its exit codes.
 
 - `start <name> <program> <command line>` creates the job `Local\<name>` (refusing a name that exists) with kill on close and no breakaway, and starts the agent already inside it (`PROC_THREAD_ATTRIBUTE_JOB_LIST`), on its own console without a window, with stdin on NUL and only the standard handles (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`). It holds the only handle to the job, so the run ends when it ends. It ends the job itself when its control pipe closes.
 - Ctrl+C: before it starts the agent it clears the inherited "ignore Ctrl+C" flag, so the agent can receive one, and sets it again for itself afterwards. To interrupt it attaches to the agent's console and sends Ctrl+C there. A handler function does not protect a process attached that way: the flag does.

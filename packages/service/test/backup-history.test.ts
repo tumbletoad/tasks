@@ -3,7 +3,7 @@
 // restored copy, opened read-only, every read answers and returns them as `recorded`; a claim, a
 // restore in place and a claim on another machine end them as interrupted by the restore before
 // the copy is served, so the first read after each already says so; and none of them is ever
-// joined with the machine's live agents. Services run in this process on a temporary home, with containers that
+// joined with the machine's live agents. Services run in this process on a temporary home, with process groups that
 // hold nothing; fixture data only.
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -11,7 +11,7 @@ import type { RpcSession } from "@ttasks/bridge/protocol";
 import { RUN_LIMITS } from "@ttasks/contracts/runs";
 import { SpaceExecutionStore } from "@ttasks/launch";
 import { newId } from "@ttasks/storage";
-import type { Containers } from "@ttasks/runs";
+import type { ProcessGroups } from "@ttasks/runs";
 import { afterEach, describe, expect, test } from "vitest";
 import { COPY_HEADER, SPACE_HEADER } from "../src/http/app.ts";
 import { heldSessions } from "../src/monitor/held.ts";
@@ -32,8 +32,8 @@ afterEach(async () => {
   for (const w of worlds.splice(0)) await w.close();
 });
 
-/** Containers that never held a run: nothing starts, and every container is empty. */
-const empty: Containers = {
+/** Process groups that never held a run: nothing starts, and every process group is empty. */
+const empty: ProcessGroups = {
   probe: () => Promise.resolve({ available: true, kind: "job" }),
   kind: () => Promise.resolve("job" as const),
   start: () => Promise.reject(new Error("no run starts in this test")),
@@ -75,7 +75,7 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
             label: "Claude · work",
             exec: process.execPath,
           }),
-          runs: { containers: empty },
+          runs: { groups: empty },
         },
       );
       worlds.push(w);

@@ -24,7 +24,7 @@ export type Placement =
 const SERVICE = /\.service$/;
 
 /**
- * Reads `/proc/self/cgroup`. Runs can be contained only when it has the unified hierarchy alone
+ * Reads `/proc/self/cgroup`. Runs can be grouped only when it has the unified hierarchy alone
  * (one line `0::<path>`) and the path is a `.service` unit of this user's systemd manager
  * (`…/user@<uid>.service/…/<unit>.service`, or its `main` child).
  */
@@ -66,6 +66,6 @@ export function unavailableMessage(reason: UnavailableReason, detail?: string): 
     case "helper_missing":
       return `The program that holds background runs (${RUN_HELPER}) is missing from this installation. Reinstall to restore it.`;
     case "check_failed":
-      return `Background runs could not be contained on this machine${detail === undefined ? "" : ` (${detail})`}.`;
+      return `Background runs could not be given their own process group on this machine${detail === undefined ? "" : ` (${detail})`}.`;
   }
 }

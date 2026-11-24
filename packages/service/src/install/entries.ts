@@ -281,7 +281,7 @@ function spacesText(spaces: readonly { readonly state: string }[]): string {
     : listed;
 }
 
-/** Whether background runs can be contained here; nothing for a service that hosts none. */
+/** Whether background runs can be grouped here; nothing for a service that hosts none. */
 function runsText(runs: Extract<ServiceAnswer, { answers: true }>["runs"]): string | undefined {
   if (runs === null) return undefined;
   if (runs.available === null) return "not checked yet";

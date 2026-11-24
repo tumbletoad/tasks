@@ -22,9 +22,9 @@ import {
   claudeDriver,
   RunHost,
   RunMachine,
-  UngroupedContainers,
-  WindowsContainers,
-  type Containers,
+  UngroupedProcesses,
+  WindowsProcessGroups,
+  type ProcessGroups,
   type RunFolders,
   type SavedAnswer,
 } from "../src/index.ts";
@@ -94,7 +94,7 @@ afterAll(() => {
   if (work !== "") rmSync(work, { recursive: true, force: true });
 });
 
-function bench(containers: Containers, times: Record<string, number> = {}) {
+function bench(groups: ProcessGroups, times: Record<string, number> = {}) {
   const store = new MemoryExecutionStore(new MemoryDurable(() => Date.UTC(2026, 10, 17)));
   const machine = new RunMachine({ store, machine: MACHINE });
   const saved = new Map<string, SavedAnswer>();
@@ -105,7 +105,7 @@ function bench(containers: Containers, times: Record<string, number> = {}) {
     logs: () => ({ stdout: () => undefined, stderr: () => undefined, close: () => undefined }),
     removeTemps: () => undefined,
   };
-  const host = new RunHost({ machine, containers, files, times: { stopGraceMs: 3_000, ...times } });
+  const host = new RunHost({ machine, groups, files, times: { stopGraceMs: 3_000, ...times } });
   return { host, machine };
 }
 
@@ -142,16 +142,16 @@ async function startRun(
   return queued.id;
 }
 
-const kinds: [string, () => Containers][] = [
+const kinds: [string, () => ProcessGroups][] = [
   ...(windows
     ? [
-        ["in a job object", () => new WindowsContainers({ helper: natives?.helper ?? "" })] as [
+        ["in a job object", () => new WindowsProcessGroups({ helper: natives?.helper ?? "" })] as [
           string,
-          () => Containers,
+          () => ProcessGroups,
         ],
       ]
     : []),
-  ["without a process group", () => new UngroupedContainers()],
+  ["without a process group", () => new UngroupedProcesses()],
 ];
 
 describe("[A4.3.11.claude.run] a Claude Code run in the run host: the program resolved from its shim gets its stdin, its interrupt over it and its process group, and both results are kept", () => {

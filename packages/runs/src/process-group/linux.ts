@@ -1,4 +1,4 @@
-// Linux containers: each run is a child cgroup `run-<name>` of the service's own systemd user
+// Linux process groups: each run is a child cgroup `run-<name>` of the service's own systemd user
 // unit, which must have Delegate=yes. The service moves itself into the unit's child `main`, so
 // the unit's cgroup holds no process of its own. A run's first process is a shell that writes its
 // own PID into the run's cgroup.procs before it runs anything else (`echo` is a shell builtin: no
@@ -27,15 +27,15 @@ import { makeDir } from "@ttasks/files";
 import { MAIN_CGROUP, placement, unavailableMessage } from "./placement.ts";
 import {
   checkName,
-  ContainerError,
+  ProcessGroupError,
   DEFAULT_RECOVER_WAIT_MS,
   type AgentExit,
   type ConfirmOptions,
-  type ContainerKind,
+  type ProcessGroupKind,
   type Confirmation,
-  type Contained,
-  type Containers,
-  type ContainerSpec,
+  type StartedAgent,
+  type ProcessGroups,
+  type ProcessGroupSpec,
   type ProbeResult,
   type UnavailableReason,
 } from "./types.ts";
@@ -98,7 +98,7 @@ const errorCode = (error: unknown): string | undefined =>
     ? error.code
     : undefined;
 
-export class LinuxContainers implements Containers {
+export class LinuxProcessGroups implements ProcessGroups {
   private readonly cgroupRoot: string;
   private readonly selfCgroup: string;
   private readonly systemdRunDir: string;
@@ -117,7 +117,7 @@ export class LinuxContainers implements Containers {
     this.sh = options.sh ?? "/bin/sh";
   }
 
-  kind(): Promise<ContainerKind> {
+  kind(): Promise<ProcessGroupKind> {
     return Promise.resolve("cgroup");
   }
 
@@ -141,7 +141,7 @@ export class LinuxContainers implements Containers {
     return { available: true, kind: "cgroup" };
   }
 
-  /** Starts a shell that loops on `sleep` in a container, kills it and confirms the cgroup gone. */
+  /** Starts a shell that loops on `sleep` in a process group, kills it and confirms the cgroup gone. */
   private async check(): Promise<string | undefined> {
     const name = `probe-${randomBytes(6).toString("hex")}`;
     try {
@@ -158,7 +158,7 @@ export class LinuxContainers implements Containers {
     await this.kill(name);
     const confirmed = await this.confirmEmpty(name, { waitMs: 5_000 });
     if (confirmed.state !== "empty") {
-      return `the test container was not empty: ${"detail" in confirmed ? confirmed.detail : confirmed.state}`;
+      return `the test process group was not empty: ${"detail" in confirmed ? confirmed.detail : confirmed.state}`;
     }
     return undefined;
   }
@@ -211,7 +211,7 @@ export class LinuxContainers implements Containers {
   private async rootOrThrow(): Promise<string> {
     const layout = await this.ready();
     if (!layout.ok) {
-      throw new ContainerError("unavailable", unavailableMessage(layout.reason, layout.detail));
+      throw new ProcessGroupError("unavailable", unavailableMessage(layout.reason, layout.detail));
     }
     return layout.root;
   }
@@ -221,15 +221,18 @@ export class LinuxContainers implements Containers {
     return join(await this.rootOrThrow(), `run-${name}`);
   }
 
-  async start(spec: ContainerSpec): Promise<Contained> {
+  async start(spec: ProcessGroupSpec): Promise<StartedAgent> {
     const dir = await this.dirOf(spec.name);
     try {
       makeDir(dir, 0o755, { recursive: false });
     } catch (error) {
       if (errorCode(error) === "EEXIST") {
-        throw new ContainerError("exists", "a container with this name exists");
+        throw new ProcessGroupError("exists", "a process group with this name exists");
       }
-      throw new ContainerError("start_failed", `cannot create the run's cgroup: ${String(error)}`);
+      throw new ProcessGroupError(
+        "start_failed",
+        `cannot create the run's cgroup: ${String(error)}`,
+      );
     }
     const child = spawn(
       this.sh,
@@ -258,7 +261,7 @@ export class LinuxContainers implements Containers {
     } catch (error) {
       await exited;
       removeTree(dir);
-      throw new ContainerError(
+      throw new ProcessGroupError(
         "start_failed",
         error instanceof Error ? error.message : "the agent did not start",
       );

@@ -1,7 +1,7 @@
-// Run containers on a real container: a cgroup of a delegated systemd user unit on Linux, a job
+// Process groups on a real operating system: a cgroup of a delegated systemd user unit on Linux, a job
 // object held by ttasks-run.exe on Windows. Each test starts stand-in agents (stand-ins/) through
 // a stand-in service (stand-ins/harness.ts) and counts what is alive from the operating system,
-// never from the container. Where no real container can be made, the tests say so and skip: a
+// never from the process group. Where no real process group can be made, the tests say so and skip: a
 // fake would prove nothing.
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -11,10 +11,10 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { afterAll, beforeAll, describe, expect, test, type TestContext } from "vitest";
 import {
   jobName,
-  WindowsContainers,
+  WindowsProcessGroups,
   type AgentExit,
   type Confirmation,
-} from "../src/container/index.ts";
+} from "../src/process-group/index.ts";
 import { buildNatives, type Natives } from "./stand-ins/native.ts";
 import {
   Service,
@@ -36,14 +36,14 @@ const services: Service[] = [];
 const units: string[] = [];
 
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "ttasks-container-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-group-"));
   if (windows) {
     natives = buildNatives(join(work, "bin"));
     place = { ok: true };
   } else if (process.platform === "linux") {
     place = userUnits();
   } else {
-    place = { ok: false, reason: "runs are contained on Linux and Windows only" };
+    place = { ok: false, reason: "runs are grouped on Linux and Windows only" };
   }
 }, 300_000);
 
@@ -57,7 +57,7 @@ function need(ctx: TestContext): void {
   if (!place.ok) ctx.skip(place.reason);
 }
 
-/** A new stand-in service: in its own user unit `ttasks-test-container-<label>` on Linux. */
+/** A new stand-in service: in its own user unit `ttasks-test-group-<label>` on Linux. */
 async function startService(label: string): Promise<Service> {
   let service: Service;
   if (windows) {
@@ -89,7 +89,7 @@ async function waitFor<T>(what: string, read: () => Promise<T>, ok: (value: T) =
 
 const output = (service: Service, name: string) => service.request<Output>("output", { name });
 
-/** Starts a stand-in in a fresh container. */
+/** Starts a stand-in in a fresh process group. */
 async function start(service: Service, mode: StandInMode, args: string[] = []) {
   const token = newToken();
   const name = `t-${token}`;
@@ -132,7 +132,7 @@ async function holdJob(name: string) {
   return release;
 }
 
-/** Kills the container and proves it empty, by its own confirmation and by the census. */
+/** Kills the process group and proves it empty, by its own confirmation and by the census. */
 async function killAndConfirm(service: Service, name: string, token: string) {
   await service.request("kill", { name });
   const confirmed = await service.request<Confirmation>("confirm", { name, waitMs: 10_000 });
@@ -140,7 +140,7 @@ async function killAndConfirm(service: Service, name: string, token: string) {
   expect(census(token)).toEqual([]);
 }
 
-describe("[A4.3.11.8.container.kill] after kill nothing a stand-in agent started is left, and confirmEmpty says empty only when it is", () => {
+describe("[A4.3.11.8.group.kill] after kill nothing a stand-in agent started is left, and confirmEmpty says empty only when it is", () => {
   let service: Service | undefined;
   const get = () => {
     if (service === undefined) throw new Error("no service");
@@ -253,7 +253,7 @@ describe("[A4.3.11.8.container.kill] after kill nothing a stand-in agent started
     await killAndConfirm(get(), name, token);
   });
 
-  test("an agent that dies: its container is empty by itself", async (ctx) => {
+  test("an agent that dies: its process group is empty by itself", async (ctx) => {
     need(ctx);
     const { token, name } = await start(get(), "die");
     expect((await get().request<AgentExit>("exited", { name })).code).toBe(3);
@@ -262,7 +262,7 @@ describe("[A4.3.11.8.container.kill] after kill nothing a stand-in agent started
   });
 });
 
-describe("[A4.3.11.8.container.interrupt] an interrupt reaches the agent, which may stop by itself; it ends nothing on its own", () => {
+describe("[A4.3.11.8.group.interrupt] an interrupt reaches the agent, which may stop by itself; it ends nothing on its own", () => {
   test("an agent that behaves prints its last words and exits on the interrupt", async (ctx) => {
     need(ctx);
     const service = await startService(`interrupt-${newToken()}`);
@@ -284,7 +284,7 @@ describe("[A4.3.11.8.container.interrupt] an interrupt reaches the agent, which 
   });
 });
 
-describe("[A4.3.11.8.container.ungrouped] without a process group, a run still starts, reads its stdin, and Stop ends what TTasks can find of its process tree", () => {
+describe("[A4.3.11.8.group.ungrouped] without a process group, a run still starts, reads its stdin, and Stop ends what TTasks can find of its process tree", () => {
   /** A stand-in service whose runs get no process group, on every OS. */
   async function ungrouped(): Promise<Service> {
     const service = await Service.plain("ungrouped");
@@ -377,7 +377,7 @@ describe("[A4.3.11.8.container.ungrouped] without a process group, a run still s
   });
 });
 
-describe("[A4.3.11.8.container.crash] killing the service by force leaves nothing of its runs, and recover confirms each container empty", () => {
+describe("[A4.3.11.8.group.crash] killing the service by force leaves nothing of its runs, and recover confirms each process group empty", () => {
   test("the service killed by force with three runs, then recovered by name", async (ctx) => {
     need(ctx);
     const label = `crash-${newToken()}`;
@@ -397,7 +397,7 @@ describe("[A4.3.11.8.container.crash] killing the service by force leaves nothin
     for (const run of runs) await waitForCensus(run.token, (pids) => pids.length === 0, 10_000);
 
     if (windows) {
-      const fresh = new WindowsContainers({ helper: natives?.helper ?? "" });
+      const fresh = new WindowsProcessGroups({ helper: natives?.helper ?? "" });
       for (const run of runs) expect(await fresh.recover(run.name)).toEqual(EMPTY);
     } else {
       // The next service runs in the same unit, so it finds the same cgroup paths.
@@ -414,7 +414,7 @@ describe("[A4.3.11.8.container.crash] killing the service by force leaves nothin
     for (const run of runs) expect(census(run.token)).toEqual([]);
   });
 
-  test("a service that lost its records recovers a live container from its name alone", async (ctx) => {
+  test("a service that lost its records recovers a live process group from its name alone", async (ctx) => {
     need(ctx);
     const service = await startService(`forget-${newToken()}`);
     try {
@@ -449,7 +449,7 @@ describe("[A4.3.11.8.container.crash] killing the service by force leaves nothin
       await service.request<AgentExit>("exited", { name }, 15_000);
       await service.crash();
       expect(census(token)).toHaveLength(1);
-      const fresh = new WindowsContainers({ helper: natives?.helper ?? "" });
+      const fresh = new WindowsProcessGroups({ helper: natives?.helper ?? "" });
       expect(await fresh.confirmEmpty(name)).toMatchObject({ state: "occupied" });
       expect(await fresh.recover(name)).toEqual(EMPTY);
       expect(census(token)).toEqual([]);
@@ -459,7 +459,7 @@ describe("[A4.3.11.8.container.crash] killing the service by force leaves nothin
   });
 });
 
-describe("[A4.3.11.8.container.start] the agent starts in its container with its arguments as given and no handle of the service", () => {
+describe("[A4.3.11.8.group.start] the agent starts in its process group with its arguments as given and no handle of the service", () => {
   test("hostile arguments arrive unchanged", async (ctx) => {
     need(ctx);
     const args = [
@@ -516,7 +516,7 @@ describe("[A4.3.11.8.container.start] the agent starts in its container with its
         () => output(service, name),
         (o) => o.head.includes("stdin ended"),
       );
-      // The end of the agent's input is no command: the container and the agent are as they were.
+      // The end of the agent's input is no command: the process group and the agent are as they were.
       await sleep(300);
       expect(census(token)).toHaveLength(1);
       expect(await service.request<Confirmation>("confirm", { name })).toMatchObject({
@@ -567,7 +567,7 @@ describe("[A4.3.11.8.container.start] the agent starts in its container with its
     }
   });
 
-  test("a name in use is refused, and the running container is untouched", async (ctx) => {
+  test("a name in use is refused, and the running process group is untouched", async (ctx) => {
     need(ctx);
     const service = await startService(`taken-${newToken()}`);
     try {
@@ -585,7 +585,7 @@ describe("[A4.3.11.8.container.start] the agent starts in its container with its
     }
   });
 
-  test("the probe creates, kills and confirms a container where runs can be contained", async (ctx) => {
+  test("the probe creates, kills and confirms a process group where runs can be grouped", async (ctx) => {
     need(ctx);
     const service = await startService(`probe-${newToken()}`);
     try {

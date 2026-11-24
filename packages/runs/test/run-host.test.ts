@@ -1,7 +1,7 @@
-// The run host on real containers: a stand-in service (stand-ins/run-service.ts) hosts runs of
+// The run host on real process groups: a stand-in service (stand-ins/run-service.ts) hosts runs of
 // stand-in agents over a fixture space, in a delegated user unit on Linux and with ttasks-run.exe
 // on Windows, and the tests count what is alive from the operating system, never from the
-// container. Where no real container can be made, the tests say so and skip: a fake would prove
+// process group. Where no real process group can be made, the tests say so and skip: a fake would prove
 // nothing.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,7 +40,7 @@ beforeAll(() => {
   } else if (process.platform === "linux") {
     place = userUnits();
   } else {
-    place = { ok: false, reason: "runs are contained on Linux and Windows only" };
+    place = { ok: false, reason: "runs are grouped on Linux and Windows only" };
   }
 }, 300_000);
 
@@ -61,7 +61,7 @@ async function bench(label: string): Promise<{ space: LaunchSpaceFolder; state: 
   return { space: await createLaunchSpace(folder), state: join(folder, "state") };
 }
 
-/** A run service on the bench: in the user unit `ttasks-test-container-<label>` on Linux. */
+/** A run service on the bench: in the user unit `ttasks-test-group-<label>` on Linux. */
 async function startService(
   label: string,
   at: { space: LaunchSpaceFolder; state: string },
@@ -107,7 +107,7 @@ async function waitFor<T>(what: string, get: () => T | Promise<T>, ok: (value: T
 
 const bytes = (text: string | null | undefined): number => Buffer.byteLength(text ?? "", "utf8");
 
-describe("[A4.3.11.8.run.stop] on a real container, Stop ends the agent and everything it started, and the run is cancelled only once that is confirmed", () => {
+describe("[A4.3.11.8.run.stop] on a real process group, Stop ends the agent and everything it started, and the run is cancelled only once that is confirmed", () => {
   for (const [mode, alive] of [
     ["ignore-stop", 2],
     ["fork-late", 4],
@@ -144,7 +144,7 @@ describe("[A4.3.11.8.run.stop] on a real container, Stop ends the agent and ever
         await sleep(300);
         expect(census(token)).toEqual([]);
         if (mode === "detach-stay") {
-          // The agent got the interrupt and gave its answer before its container was ended.
+          // The agent got the interrupt and gave its answer before its process group was ended.
           expect(after.result?.text).toBe("Stopped, with what was found so far.");
         }
       } finally {
@@ -154,7 +154,7 @@ describe("[A4.3.11.8.run.stop] on a real container, Stop ends the agent and ever
   }
 });
 
-describe("[A4.3.11.5.run.answer] on a real container, the answer is kept whole up to 1 MiB after 50 MB of other output, and cut with a flag beyond it", () => {
+describe("[A4.3.11.5.run.answer] on a real process group, the answer is kept whole up to 1 MiB after 50 MB of other output, and cut with a flag beyond it", () => {
   test("a 1 MiB answer that escaping makes far longer, after 50 MB of other output", async (ctx) => {
     need(ctx);
     const label = `flood-${newToken()}`;

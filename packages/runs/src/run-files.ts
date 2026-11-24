@@ -69,7 +69,7 @@ export interface RunLogs {
 
 /** What the run host keeps of a run in machine state. RunFiles keeps it in the run's folder. */
 export interface RunFolders {
-  /** Makes the run's folder, before its container starts. */
+  /** Makes the run's folder, before its process group starts. */
   prepare(id: string): void;
   /** Replaces the saved answer. Throws when it cannot be written (a full disk, for one). */
   saveAnswer(id: string, answer: SavedAnswer): void;

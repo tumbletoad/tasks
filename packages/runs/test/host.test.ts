@@ -1,6 +1,6 @@
-// The run host's rules one by one, on the model world's fake containers and clock (host-world.ts):
+// The run host's rules one by one, on the model world's fake process groups and clock (host-world.ts):
 // Stop before the agent's PID, while it runs and after it exited, the start time, the run's limits,
-// a container that refuses to empty and End by force, and the next start after a crash.
+// a process group that refuses to empty and End by force, and the next start after a crash.
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,16 +13,16 @@ import { MemoryDurable, MemoryExecutionStore } from "@ttasks/launch/memory-store
 import { describe, expect, test } from "vitest";
 import {
   ANSWER_FILE,
-  FallbackContainers,
+  FallbackProcessGroups,
   claudeDriver,
   RunFiles,
   RunHost,
   RunMachine,
-  UngroupedContainers,
+  UngroupedProcesses,
   type AgentCommand,
   type AgentExit,
   type Confirmation,
-  type Containers,
+  type ProcessGroups,
   type OpenDriver,
   type RunFolders,
   type RunTimes,
@@ -40,7 +40,7 @@ const MACHINE = "m_3q7k9d2xw8f4r6t1c5v0b2n8a7";
  * processes and preparation that never ends. `wrap` changes what the store does.
  */
 async function bareHost(options: {
-  containers: Containers;
+  groups: ProcessGroups;
   wrap?: (store: RunStore) => RunStore;
   times?: Partial<RunTimes>;
   wait?: (ms: number, signal: AbortSignal) => Promise<void>;
@@ -58,7 +58,7 @@ async function bareHost(options: {
   };
   const host = new RunHost({
     machine,
-    containers: options.containers,
+    groups: options.groups,
     files,
     ...(options.times === undefined ? {} : { times: options.times }),
     ...(options.wait === undefined ? {} : { wait: options.wait }),
@@ -81,8 +81,8 @@ async function bareHost(options: {
   return { host, id: queued.id, saved, machine, files };
 }
 
-/** Containers that run each agent as a plain child process, and one that refuses every start. */
-function childContainers(): Containers & { exited: Promise<void> } {
+/** Process groups that run each agent as a plain child process, and one that refuses every start. */
+function childGroups(): ProcessGroups & { exited: Promise<void> } {
   const children = new Map<string, ChildProcess>();
   let ended!: () => void;
   const exited = new Promise<void>((resolve) => {
@@ -143,7 +143,7 @@ function childContainers(): Containers & { exited: Promise<void> } {
   };
 }
 
-const refusing: Containers = {
+const refusing: ProcessGroups = {
   probe: () => Promise.resolve({ available: true, kind: "job" }),
   kind: () => Promise.resolve("job" as const),
   start: () => Promise.reject(new Error("the agent did not start")),
@@ -227,7 +227,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(world.boxes.get(after.id)?.procs).toBe(0);
   });
 
-  test("Stop for an agent that ignores it: the container is killed after the grace time", async () => {
+  test("Stop for an agent that ignores it: the process group is killed after the grace time", async () => {
     const { run, read, world } = await oneRun();
     await run(start("ok", false), say(), { kind: "fork", pick: 0 }, STOP);
     expect((await read()).state).toBe("cancelling");
@@ -240,7 +240,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(world.boxes.get(after.id)?.procs).toBe(0);
   });
 
-  test("Stop before the agent's PID: the run stays cancelling until its container is started, stopped and confirmed empty", async () => {
+  test("Stop before the agent's PID: the run stays cancelling until its process group is started, stopped and confirmed empty", async () => {
     const { run, read, history } = await oneRun();
     await run(start("hang"), STOP);
     expect((await read()).state).toBe("cancelling");
@@ -281,7 +281,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(after.result?.text).toBe("answer 1");
   });
 
-  test("a container that refuses to empty leaves the run unknown; End by force settles it once it is empty", async () => {
+  test("a process group that refuses to empty leaves the run unknown; End by force settles it once it is empty", async () => {
     const { run, read } = await oneRun();
     await run(start(), say(true), { kind: "fork", pick: 0 }, { kind: "stick", pick: 0 });
     // After the drain, the time to end by itself and the confirmation time.
@@ -313,7 +313,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
     await run(start("hang"), tick(59_000));
     expect((await read()).state).toBe("starting");
     await run(tick(2_000), tick(11_000));
-    // The start may still make a container: the run is not final yet.
+    // The start may still make a process group: the run is not final yet.
     expect((await read()).state).toBe("unknown");
     await run({ kind: "answerStart", pick: 0, ok: true }, tick(1_000));
     const after = await read();
@@ -461,8 +461,8 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(world.boxes.get(after.id)?.procs).toBe(0);
   });
 
-  /** Containers whose one agent runs until it is killed, and a driver's work. */
-  const boxed = (): Containers => {
+  /** Process groups whose one agent runs until it is killed, and a driver's work. */
+  const boxed = (): ProcessGroups => {
     let killed: () => void = () => undefined;
     const exited = new Promise<AgentExit>((resolve) => {
       killed = () => {
@@ -502,7 +502,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
   });
 
   test("a service that closes while the agent writes its answer saves the words so far for the next start", async () => {
-    const { host, id, saved, machine, files } = await bareHost({ containers: boxed() });
+    const { host, id, saved, machine, files } = await bareHost({ groups: boxed() });
     let opened: () => void = () => undefined;
     const open = new Promise<void>((resolve) => {
       opened = resolve;
@@ -531,7 +531,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(saved.get(id)).toMatchObject({ text: "Looking." });
     await host.close();
     expect(saved.get(id)).toEqual({ text: "The export drops", final: false, cut: false });
-    await new RunHost({ machine, containers: refusing, files }).recover();
+    await new RunHost({ machine, groups: refusing, files }).recover();
     expect(await machine.read(id)).toMatchObject({
       state: "failed",
       reason: "service_ended",
@@ -545,7 +545,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
       release = resolve;
     });
     const { host, id, machine, files } = await bareHost({
-      containers: boxed(),
+      groups: boxed(),
       // The `running` commit is slow: the run's end waits behind it when the service closes.
       wrap: (store) => ({
         createRun: (input, request) => store.createRun(input, request),
@@ -580,7 +580,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
     await open;
     await host.close();
     release();
-    await new RunHost({ machine, containers: refusing, files }).recover();
+    await new RunHost({ machine, groups: refusing, files }).recover();
     expect(await machine.read(id)).toMatchObject({
       state: "succeeded",
       result: { outcome: "success", text: answer, textFinal: true },
@@ -589,7 +589,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
 
   test("after a restart, a run is asked about as its record says it started: a group is counted, a run without one is never confirmed ended, and neither is one whose record does not say; what was found is recorded also when the agent had said nothing", async () => {
     // A group that holds nothing by any name: what a job helper says of a run it never held.
-    const group: Containers = { ...refusing, kind: () => Promise.resolve("job" as const) };
+    const group: ProcessGroups = { ...refusing, kind: () => Promise.resolve("job" as const) };
     const cases = [
       { held: "job", cleanup: "confirmed" },
       { held: "tree", cleanup: "ended_found" },
@@ -597,15 +597,15 @@ describe("[A4.5.run.host] the run host's rules", () => {
     ] as const;
     for (const { held, cleanup } of cases) {
       for (const said of ["Half done.", null]) {
-        const { id, machine, files } = await bareHost({ containers: refusing });
+        const { id, machine, files } = await bareHost({ groups: refusing });
         await machine.begin(id, held === undefined ? {} : { container: held });
         await machine.started(id, 4242, Date.UTC(2026, 10, 16));
         await machine.cancel(id);
         if (said !== null) files.saveAnswer(id, { text: said, final: false, cut: false });
-        const containers = new FallbackContainers(group, new UngroupedContainers(), () =>
+        const groups = new FallbackProcessGroups(group, new UngroupedProcesses(), () =>
           Promise.resolve(true),
         );
-        await new RunHost({ machine, containers, files }).recover();
+        await new RunHost({ machine, groups, files }).recover();
         expect(await machine.read(id), `${String(held)}, ${String(said)}`).toMatchObject({
           state: "cancelled",
           result: { text: said, cleanup },
@@ -617,7 +617,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
   test("a Stop before the agent said anything, a restart, a group that still holds something, then End by force: what it ended is recorded", async () => {
     // The process in the group refuses to end at the restart, and ends at End by force.
     let ends = 0;
-    const group: Containers = {
+    const group: ProcessGroups = {
       ...refusing,
       confirmEmpty: () => Promise.resolve({ state: "occupied", detail: "one process" }),
       recover: () => {
@@ -627,11 +627,11 @@ describe("[A4.5.run.host] the run host's rules", () => {
         );
       },
     };
-    const { id, machine, files } = await bareHost({ containers: refusing });
+    const { id, machine, files } = await bareHost({ groups: refusing });
     await machine.begin(id, { container: "job" });
     await machine.started(id, 4242, Date.UTC(2026, 10, 16));
     await machine.cancel(id);
-    const host = new RunHost({ machine, containers: group, files });
+    const host = new RunHost({ machine, groups: group, files });
     await host.recover();
     expect(await machine.read(id)).toMatchObject({ state: "unknown", result: null });
     expect(await host.forceEnd(id)).toMatchObject({
@@ -642,7 +642,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
 
   test("a run records how its processes start before its agent starts, and starts so", async () => {
     const starts: string[] = [];
-    const box = (name: "group" | "tree"): Containers => ({
+    const box = (name: "group" | "tree"): ProcessGroups => ({
       ...refusing,
       kind: () => Promise.resolve(name === "tree" ? "tree" : "job"),
       start: (spec) => {
@@ -650,10 +650,10 @@ describe("[A4.5.run.host] the run host's rules", () => {
         return Promise.reject(new Error("not here"));
       },
     });
-    const containers = new FallbackContainers(box("group"), box("tree"), () =>
+    const groups = new FallbackProcessGroups(box("group"), box("tree"), () =>
       Promise.resolve(false),
     );
-    const { host, id, machine } = await bareHost({ containers });
+    const { host, id, machine } = await bareHost({ groups });
     let recorded: unknown;
     await host.start(id, async () => {
       recorded = (await machine.read(id))?.evidence.container;
@@ -672,9 +672,9 @@ describe("[A4.5.run.host] the run host's rules", () => {
   });
 
   test("without a process group, Stop ends the agent even when its tree cannot be walked, and the run is called ended only once the agent is gone", async () => {
-    const containers = new UngroupedContainers({ taskkill: join(tmpdir(), "no-taskkill.exe") });
+    const groups = new UngroupedProcesses({ taskkill: join(tmpdir(), "no-taskkill.exe") });
     const { host, id, machine } = await bareHost({
-      containers,
+      groups,
       times: { stopGraceMs: 200, closeMs: 200, settleMs: 0, drainMs: 200 },
     });
     const token = newToken();
@@ -718,7 +718,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
       Promise.resolve(
         alive ? { state: "occupied", detail: "the agent still runs" } : { state: "unconfirmable" },
       );
-    const tree: Containers = {
+    const tree: ProcessGroups = {
       probe: () => Promise.resolve({ available: true, kind: "tree" }),
       kind: () => Promise.resolve("tree" as const),
       start: (spec) =>
@@ -742,7 +742,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
       },
     };
     const { host, id, machine } = await bareHost({
-      containers: tree,
+      groups: tree,
       times: { stopGraceMs: 10, closeMs: 10, settleMs: 0, confirmMs: 10, drainMs: 10 },
     });
     void host.start(id, () => ({ command: "agent", args: [], cwd: ".", env: {} }));
@@ -769,9 +769,9 @@ describe("[A4.5.run.host] the run host's rules", () => {
   });
 
   test("an agent that answers and exits while its start is being recorded keeps its answer", async () => {
-    const containers = childContainers();
+    const groups = childGroups();
     const { host, id, saved } = await bareHost({
-      containers,
+      groups,
       // The `running` commit lands only after the agent exited and its pipes were left alone.
       wrap: (store) => ({
         createRun: (input, request) => store.createRun(input, request),
@@ -780,7 +780,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
         openWork: (machine) => store.openWork(machine),
         transitionRun: async (run, seen, next, patch) => {
           if (next === "running") {
-            await containers.exited;
+            await groups.exited;
             await sleep(300);
           }
           return store.transitionRun(run, seen, next, patch);
@@ -807,7 +807,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
   });
 
   test("what the command says the run started with is recorded with its PID", async () => {
-    const { host, id } = await bareHost({ containers: childContainers() });
+    const { host, id } = await bareHost({ groups: childGroups() });
     const home = "a".repeat(64);
     await host.start(id, () => ({
       command: process.execPath,
@@ -826,7 +826,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
   test("Stop while the agent's command is still being prepared: cancelled at once, and nothing starts", async () => {
     let starts = 0;
     const { host, id } = await bareHost({
-      containers: {
+      groups: {
         ...refusing,
         start: () => {
           starts += 1;
@@ -848,9 +848,9 @@ describe("[A4.5.run.host] the run host's rules", () => {
       { at: "queued", taken: "after the start was asked", fails: true },
       { at: "preparing", taken: "at once", fails: false },
       { at: "preparing", taken: "after the command", fails: false },
-      { at: "preparing", taken: "after the container", fails: false },
+      { at: "preparing", taken: "after the process group", fails: false },
       { at: "spawning", taken: "at once", fails: false },
-      { at: "spawning", taken: "after the container", fails: false },
+      { at: "spawning", taken: "after the process group", fails: false },
     ] as const;
     const turns = async () => {
       for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve));
@@ -871,7 +871,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
       let input = "";
       let asked = false;
       const { host, id } = await bareHost({
-        containers: {
+        groups: {
           ...refusing,
           start: (spec) => {
             starts += 1;
@@ -940,7 +940,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
         // The start goes as far as it goes before the store answers.
         ready?.(command);
         await turns();
-        if (taken === "after the container") {
+        if (taken === "after the process group") {
           spawn?.();
           await turns();
         }
@@ -962,7 +962,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
   test("a Stop the store does not take still stops the run", async () => {
     let starts = 0;
     const { host, id } = await bareHost({
-      containers: {
+      groups: {
         ...refusing,
         start: () => {
           starts += 1;
@@ -987,7 +987,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
   });
 
   test("a command that is never ready fails the run after the start time", async () => {
-    const { host, id } = await bareHost({ containers: refusing, times: { startMs: 50 } });
+    const { host, id } = await bareHost({ groups: refusing, times: { startMs: 50 } });
     await host.start(id, never);
     expect(await host.ended(id)).toMatchObject({ state: "failed", reason: "start_timed_out" });
   });
@@ -995,7 +995,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
   test("a store that refuses the end for a long time records it once it takes it again", async () => {
     let mono = 0;
     const { host, id } = await bareHost({
-      containers: refusing,
+      groups: refusing,
       elapsed: () => mono,
       // Each wait passes at once on this clock.
       wait: (ms, signal) =>

@@ -1,11 +1,11 @@
-// Starts the stand-in service (harness.ts) where a real container can be made, and talks to it.
+// Starts the stand-in service (harness.ts) where a real process group can be made, and talks to it.
 //
 // Windows: a plain child of the test, with ttasks-run.exe built from packages/launcher-win.
 // Linux: the main process of a transient systemd user unit with Delegate=yes, as the real
 // service runs. Such a unit is made only where the machine's user manager is disposable: CI says
 // so with TTASKS_TEST_USER_UNITS=1 after it started one. A person's own session never gets a test
-// unit. Every unit is named `ttasks-test-container-<token>.service`: a test run stops its own by
-// full name, and `systemctl --user stop 'ttasks-test-container-*'` removes any a killed run left.
+// unit. Every unit is named `ttasks-test-group-<token>.service`: a test run stops its own by
+// full name, and `systemctl --user stop 'ttasks-test-group-*'` removes any a killed run left.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -16,9 +16,9 @@ const HARNESS = join(import.meta.dirname, "harness.ts");
 
 /** The opt-in that says this machine's systemd user manager is CI's own. */
 export const USER_UNITS_VARIABLE = "TTASKS_TEST_USER_UNITS";
-export const UNIT_PREFIX = "ttasks-test-container-";
+export const UNIT_PREFIX = "ttasks-test-group-";
 
-/** Where a real container can be made, or why not. */
+/** Where a real process group can be made, or why not. */
 export type Where = { readonly ok: true } | { readonly ok: false; readonly reason: string };
 
 const SYSTEMD_RUN = ["/usr/bin/systemd-run", "/bin/systemd-run"];
@@ -47,7 +47,7 @@ export function userUnits(): Where {
   if (process.env[USER_UNITS_VARIABLE] !== "1") {
     return {
       ok: false,
-      reason: `real cgroup containers need a disposable systemd user manager, which CI provides with ${USER_UNITS_VARIABLE}=1; none is made in a person's own session`,
+      reason: `real cgroup process groups need a disposable systemd user manager, which CI provides with ${USER_UNITS_VARIABLE}=1; none is made in a person's own session`,
     };
   }
   if (found(SYSTEMD_RUN) === undefined || found(SYSTEMCTL) === undefined) {

@@ -21,15 +21,15 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   checkName,
-  ContainerError,
+  ProcessGroupError,
   DEFAULT_RECOVER_WAIT_MS,
   type AgentExit,
   type ConfirmOptions,
-  type ContainerKind,
+  type ProcessGroupKind,
   type Confirmation,
-  type Contained,
-  type Containers,
-  type ContainerSpec,
+  type StartedAgent,
+  type ProcessGroups,
+  type ProcessGroupSpec,
   type ProbeResult,
 } from "./types.ts";
 
@@ -96,7 +96,7 @@ function parentTable(proc: string): Map<number, number> {
   return table;
 }
 
-export class UngroupedContainers implements Containers {
+export class UngroupedProcesses implements ProcessGroups {
   private readonly platform: NodeJS.Platform;
   private readonly taskkill: string;
   private readonly proc: string;
@@ -110,7 +110,7 @@ export class UngroupedContainers implements Containers {
     this.proc = options.proc ?? "/proc";
   }
 
-  kind(): Promise<ContainerKind> {
+  kind(): Promise<ProcessGroupKind> {
     return Promise.resolve("tree");
   }
 
@@ -118,10 +118,10 @@ export class UngroupedContainers implements Containers {
     return Promise.resolve({ available: true, kind: "tree" });
   }
 
-  async start(spec: ContainerSpec): Promise<Contained> {
+  async start(spec: ProcessGroupSpec): Promise<StartedAgent> {
     checkName(spec.name);
     if (this.live.has(spec.name)) {
-      throw new ContainerError("exists", "a container with this name exists");
+      throw new ProcessGroupError("exists", "a process group with this name exists");
     }
     const child = spawn(spec.command, [...spec.args], {
       cwd: spec.cwd,
@@ -143,7 +143,7 @@ export class UngroupedContainers implements Containers {
     await new Promise<void>((resolve, reject) => {
       child.once("spawn", resolve);
       child.once("error", (error) => {
-        reject(new ContainerError("start_failed", `the agent did not start: ${error.message}`));
+        reject(new ProcessGroupError("start_failed", `the agent did not start: ${error.message}`));
       });
     });
     const pid = child.pid ?? -1;

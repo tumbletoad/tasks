@@ -211,7 +211,7 @@ export const RUN_STATES = [
 export type RunState = (typeof RUN_STATES)[number];
 
 /**
- * The states `openWork` lists (A4 3.11.9, 3.16.1): the queue and every run whose container may hold
+ * The states `openWork` lists (A4 3.11.9, 3.16.1): the queue and every run whose process group may hold
  * processes. It also lists the `unknown` runs not yet confirmed ended (`awaitsConfirmation`).
  */
 export const OPEN_RUN_STATES = [
@@ -233,8 +233,8 @@ export const FINAL_RUN_STATES = [
 ] as const satisfies readonly RunState[];
 
 /**
- * An `unknown` run whose container was not confirmed empty: processes of it may still live. End by
- * force or the next start confirms the container and settles it, so `openWork` keeps listing it.
+ * An `unknown` run whose process group was not confirmed empty: processes of it may still live. End by
+ * force or the next start confirms the process group and settles it, so `openWork` keeps listing it.
  */
 export const awaitsConfirmation = (run: { state: RunState; reason: string | null }): boolean =>
   run.state === "unknown" && run.reason === "stop_timed_out";
@@ -265,7 +265,7 @@ export type RowRunState = (typeof ROW_RUN_STATES)[number];
 
 /**
  * The legal transitions. A self edge records evidence and changes no state: the agent's PID on
- * `starting` or `cancelling`, its native ID on `running`. A queued run has no container: a Stop
+ * `starting` or `cancelling`, its native ID on `running`. A queued run has no process group: a Stop
  * cancels it at once, and one that can no longer start (its task closed, its instance or folder
  * gone) fails with why. `unknown` moves only on a definite outcome, to a final state, and never
  * back to one a process may still hold.
@@ -309,9 +309,9 @@ export const RUN_REASONS = {
     "not_for_space",
     /** A queued run whose folder can no longer be found or used. Nothing ran. */
     "folder_gone",
-    /** The agent could not be started in its container. Nothing ran. */
+    /** The agent could not be started in its process group. Nothing ran. */
     "spawn_failed",
-    /** The container gave no agent within its start time. Nothing of it is left. */
+    /** The process group gave no agent within its start time. Nothing of it is left. */
     "start_timed_out",
     /**
      * TTasks restarted, crashed or was updated while the run was open: its processes ended with the
@@ -337,7 +337,7 @@ export const RUN_REASONS = {
   timed_out: ["wall", "idle"],
   unknown: [
     /**
-     * The run's container could not be confirmed empty after it was ended: processes of the run may
+     * The run's process group could not be confirmed empty after it was ended: processes of the run may
      * still live. End by force, or the next start, settles it.
      */
     "stop_timed_out",
@@ -366,7 +366,7 @@ export type RunEvidenceKind = "id" | "instant" | "count";
 
 /** The evidence a run record may hold. Evidence only grows: a key, once written, keeps its value. */
 export const RUN_EVIDENCE_FIELDS = {
-  /** The agent's PID and when it started, once its container started it. */
+  /** The agent's PID and when it started, once its process group started it. */
   pid: "count",
   pid_started_at: "instant",
   /** The agent's native session or thread ID. */
@@ -474,7 +474,7 @@ export const RUN_LIMIT_BOUNDS = {
 } as const;
 
 /**
- * How the run's processes ended, which the run host decides from the container after the work's
+ * How the run's processes ended, which the run host decides from the process group after the work's
  * result is known, and which never changes it:
  * - `confirmed`: nothing was left when the agent ended, as the operating system counts it.
  * - `ended_leftovers`: processes the agent started, or the agent itself, had to be ended; the

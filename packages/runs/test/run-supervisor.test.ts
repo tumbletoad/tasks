@@ -1,7 +1,7 @@
-// The supervisor on real containers: a stand-in service (stand-ins/run-service.ts) queues runs of
+// The supervisor on real process groups: a stand-in service (stand-ins/run-service.ts) queues runs of
 // stand-in agents over a fixture space, in a delegated user unit on Linux and with ttasks-run.exe on
-// Windows, and the tests count what is alive from the operating system, never from the container.
-// Where no real container can be made, the tests say so and skip.
+// Windows, and the tests count what is alive from the operating system, never from the process group.
+// Where no real process group can be made, the tests say so and skip.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,7 +33,7 @@ beforeAll(() => {
   } else if (process.platform === "linux") {
     place = userUnits();
   } else {
-    place = { ok: false, reason: "runs are contained on Linux and Windows only" };
+    place = { ok: false, reason: "runs are grouped on Linux and Windows only" };
   }
 }, 300_000);
 
@@ -115,7 +115,7 @@ async function running(service: Service, q: Queued): Promise<void> {
   );
 }
 
-describe("[A4.3.11.9.run.queue] on a real container, runs past the limit wait in the queue and start in order as places free; the run limits end a run with its answer; an update's hold waits, then stops the runs", () => {
+describe("[A4.3.11.9.run.queue] on a real process group, runs past the limit wait in the queue and start in order as places free; the run limits end a run with its answer; an update's hold waits, then stops the runs", () => {
   test("four runs with room for two: two run, two wait and say why, and each Stop starts the oldest waiting one", async (ctx) => {
     need(ctx);
     const service = await startService(`queue-${newToken()}`, {
