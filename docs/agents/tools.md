@@ -1688,6 +1688,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | `tasks[].id` | string | no | Task ID |
 | `tasks[].ref` | string | no | Task reference |
 | `tasks[].title` | string | no | Its title now; absent when it could not be read |
+| `tasks[].project` | string | no | Its project now; absent when in none |
 | `tasks[].lifecycle` | "active" \| "completed" \| "archived" | no | Lifecycle |
 | `tasks[].matched_by` | "source_key" | no | How an existing task matched |
 | `tasks[].ambiguous` | string[] | no | Several active matches: pick one |
@@ -1948,6 +1949,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].result` | "created" \| "exists" | yes | What happened to the draft |
 | `follow_ups[].ref` | string | no | Task reference |
 | `follow_ups[].title` | string | no | Its title now; absent when it could not be read |
+| `follow_ups[].project` | string | no | Its project now; absent when in none |
 | `follow_ups[].lifecycle` | "active" \| "completed" \| "archived" | no | The matched task's lifecycle |
 | `follow_ups[].ambiguous` | string[] | no | Several active matches: pick one |
 | `follow_ups[].log_added` | boolean | yes | The draft's log entry was added |

@@ -294,8 +294,7 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
     expect(await projectFolder()).toBeUndefined();
   });
 
-  test("creating a project with a folder another project has answers exists with that project", async () => {
-    const before = await asOf();
+  test("creating a project with a folder another project has makes it on that folder and names the other", async () => {
     const answer = GroupListResult.parse(
       await call(agent, "group.manage", {
         action: "create",
@@ -305,12 +304,10 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
       }),
     );
     expect(answer).toMatchObject({
-      result: "exists",
-      group: { kind: "project", name: "Portal", folder: ends("portal") },
+      result: "created",
+      group: { kind: "project", name: "Portal again", folder: ends("portal") },
+      also: [{ name: "Portal" }],
     });
-    // Nothing was written: no second project.
-    expect(answer.as_of).toBe(before);
-    expect(JSON.stringify(answer.areas)).not.toContain("Portal again");
   });
 
   test("creating with an area and a folder makes a project in the area named after the folder", async () => {

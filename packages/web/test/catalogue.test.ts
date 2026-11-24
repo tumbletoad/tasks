@@ -71,6 +71,7 @@ const SAMPLE = {
   kind: "email",
   area: "Client work",
   project: "Lumen Health",
+  projects: "Lumen Health and Billing",
   age: "3d",
   where: "Ghostty, the desktop's default",
   claim: "yes",

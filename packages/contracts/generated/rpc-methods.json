@@ -4135,6 +4135,10 @@
                   ],
                   "type": "string"
                 },
+                "project": {
+                  "description": "Its project now; absent when in none",
+                  "type": "string"
+                },
                 "ref": {
                   "description": "Task reference",
                   "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
@@ -4715,6 +4719,10 @@
                   "const": true,
                   "description": "This request added its log to no task: check the matched task before filing it",
                   "type": "boolean"
+                },
+                "project": {
+                  "description": "Its project now; absent when in none",
+                  "type": "string"
                 },
                 "ref": {
                   "description": "Task reference",
