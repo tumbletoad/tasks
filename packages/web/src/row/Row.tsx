@@ -33,6 +33,7 @@ import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
 import { readOnly, type RowActions } from "./actions.ts";
 import { tileClick, type BusyOf, type FolderRefusal } from "./launch.ts";
+import { formatInstant } from "./dates.ts";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
 import { KeptTitles } from "./KeptTitles.tsx";
@@ -569,7 +570,7 @@ function RowView({
       ? undefined
       : t("row.completedBy", {
           ...whoOf(leaving.by),
-          time: intl.formatTime(leaving.at ?? 0, { timeStyle: "short" }),
+          time: formatInstant(leaving.at ?? 0, ctx.clock, { timeStyle: "short" }),
         });
   const body = `row-${task.id}-body`;
   const described = `row-${task.id}-desc`;
