@@ -1,8 +1,8 @@
 // The brief and its sanitiser (A4 3.15, A4 5.1 "Sanitiser properties", "Brief renderer", "Hostile
 // input tests"). The brief is what an agent reads as its first instructions, and an Open route puts
-// it on a command line or in a link: these tests show that it holds no task text and never the
-// person's words on an Open route, that no path or label of Copy's pointer can leave its line or
-// add one, whatever it holds, and that a brief is never cut. Fixture data only.
+// it on a command line or in a link: these tests show that it holds no task text but the title,
+// never the person's words on an Open route, that no title, path or label can leave its place or
+// add a line, whatever it holds, and that a brief is never cut. Fixture data only.
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { PRODUCT_NAME } from "@ttasks/brand";
@@ -180,6 +180,9 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
       ...fixedLines(REF),
       WAIT_LINE,
     ]);
+    expect(okText(base({ title: "Fix appointment time zones" })).split("\n")[0]).toBe(
+      `${PRODUCT_NAME} task M-14 "Fix appointment time zones" (launch ${REF}).`,
+    );
     const prefilled = okText(base({ kind: "prefilled" }));
     expect(prefilled.split("\n")).toHaveLength(5);
     expect(prefilled.endsWith("\n")).toBe(true);
@@ -218,18 +221,20 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
     );
   });
 
-  test("no hostile folder or label leaves its line: the template's lines stay exactly as they are", () => {
+  test("no hostile title, folder or label leaves its place: the template's lines stay exactly as they are", () => {
     const inputs = fc.record({
+      title: titles,
       machine: titles,
       path: titles,
       found: fc.boolean(),
       kind: fc.constantFrom("sent" as const, "prefilled" as const, "pointer" as const),
     });
     fc.assert(
-      fc.property(inputs, ({ machine, path, found, kind }) => {
+      fc.property(inputs, ({ title, machine, path, found, kind }) => {
         const text = okText(
           base({
             kind,
+            title,
             // Room for the hostile paths, which may be as long as the longest piece twice over.
             budget: 200_000,
             folder:
@@ -239,7 +244,12 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
           }),
         );
         const lines = text.split("\n");
-        expect(lines[0]).toBe(`${PRODUCT_NAME} task M-14 (launch ${REF}).`);
+        const shown = sanitiseTitle(title).trim();
+        expect(lines[0]).toBe(
+          shown === ""
+            ? `${PRODUCT_NAME} task M-14 (launch ${REF}).`
+            : `${PRODUCT_NAME} task M-14 "${shown}" (launch ${REF}).`,
+        );
         expect(lines.slice(1, 4)).toEqual(fixedLines(REF));
         if (kind === "sent") expect(lines).toEqual([lines[0], ...fixedLines(REF), WAIT_LINE]);
         if (kind === "prefilled") expect(lines).toHaveLength(5);
@@ -254,7 +264,7 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
         expect(isBriefSafe(text, true)).toBe(true);
         expect(Buffer.from(text, "utf8").toString("utf8")).toBe(text);
         // The reference a reader takes from the brief (Codex's reference match) is its own,
-        // whatever references a folder quotes.
+        // whatever references a title or a folder quotes.
         expect(briefReference(text)).toBe(REF);
       }),
       { numRuns: 1500 },
