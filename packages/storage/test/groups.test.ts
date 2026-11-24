@@ -260,6 +260,22 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     expectStatus(submit([{ kind: "project.restore", project: empty }]), "rejected");
   });
 
+  test("a project restored after its area is gone comes back without an area, with its tasks", () => {
+    const area = created(submit([{ kind: "area.create", title: "Garden" }]));
+    const project = created(submit([{ kind: "project.create", title: "Beds", area }], "codex"));
+    const task = created(submit([{ kind: "task.create", title: "Dig", project }], "codex"));
+    expectStatus(submit([{ kind: "task.delete", task }], "codex"), "applied");
+    expectStatus(submit([{ kind: "project.delete", project }], "codex"), "applied");
+    // Nothing live is in the area: its creation is undone.
+    expectStatus(undo(), "applied");
+    expect(row("areas", area)["deleted_at"]).not.toBeNull();
+    expectStatus(submit([{ kind: "project.restore", project }]), "applied");
+    expect(row("projects", project)).toMatchObject({ deleted_at: null, area_id: null });
+    expect(
+      fx.reader.prepare("SELECT area_id, project_id FROM tasks WHERE id = $id").get({ id: task }),
+    ).toEqual({ area_id: null, project_id: project });
+  });
+
   test("Redo of a project's delete after someone renamed it is a conflict naming the rename, and the project stays", () => {
     const spare = created(submit([{ kind: "project.create", title: "Spare" }]));
     expectStatus(submit([{ kind: "project.delete", project: spare }]), "applied");

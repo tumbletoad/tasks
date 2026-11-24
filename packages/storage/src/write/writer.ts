@@ -4440,28 +4440,9 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       groupWrote(conn, run, i, entity, staged.target, Object.keys(values));
       return;
     }
-    case "project.move": {
-      const area = staged.area ?? null;
-      const row = readRow(conn, "projects", staged.target);
-      if (row["area_id"] !== area) {
-        // At the end of its new area's projects.
-        const last = conn.prepare(SQL.lastProject).get({ area })?.["p"] ?? undefined;
-        if (last !== undefined && !isPosition(last)) throw invalidValue("projects", "position");
-        conn
-          .prepare(updateGroupSql("projects", ["area_id", "position"]))
-          .run({ id: staged.target, area_id: area, position: positionBetween(last, undefined) });
-        groupWrote(conn, run, i, "projects", staged.target, ["grouping"]);
-      }
-      // Its tasks are in its area: every one of them, whatever its state.
-      for (const found of conn.prepare(SQL.tasksOfProject).all({ id: staged.target })) {
-        const task = new RowReader("tasks", found).id("id", "t");
-        if (readTask(conn, task).areaId === area) continue;
-        ensureStart(conn, run, "tasks", task);
-        conn.prepare(SQL.taskArea).run({ id: task, area });
-        wrote(run, i, "tasks", task, task, ["grouping"]);
-      }
+    case "project.move":
+      moveProject(conn, run, i, staged.target, staged.area ?? null);
       return;
-    }
     case "area.archive":
     case "area.unarchive":
     case "project.archive":
@@ -4511,6 +4492,11 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         .prepare(updateGroupSql("projects", ["deleted_at"]))
         .run({ id: staged.target, deleted_at: null });
       groupWrote(conn, run, i, "projects", staged.target, ["deleted"]);
+      // A project whose area is gone comes back without one, its tasks with it, as a task does.
+      const area = readRow(conn, "projects", staged.target)["area_id"];
+      if (typeof area === "string" && conn.prepare(SQL.areaGone).get({ id: area }) !== undefined) {
+        moveProject(conn, run, i, staged.target, null);
+      }
       for (const row of conn
         .prepare(FOLDER_SQL.allOfOwner)
         .all({ kind: "project", owner: staged.target })) {
@@ -4619,6 +4605,34 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "undo":
     case "redo":
       throw misuse("A request of its own is never executed here");
+  }
+}
+
+/**
+ * Moves project `id` into `area`, at the end of its projects, and every task of it, whatever its
+ * state, into that area too.
+ */
+function moveProject(
+  conn: Connection,
+  run: Execution,
+  i: number,
+  id: string,
+  area: string | null,
+): void {
+  if (readRow(conn, "projects", id)["area_id"] !== area) {
+    const last = conn.prepare(SQL.lastProject).get({ area })?.["p"] ?? undefined;
+    if (last !== undefined && !isPosition(last)) throw invalidValue("projects", "position");
+    conn
+      .prepare(updateGroupSql("projects", ["area_id", "position"]))
+      .run({ id, area_id: area, position: positionBetween(last, undefined) });
+    groupWrote(conn, run, i, "projects", id, ["grouping"]);
+  }
+  for (const found of conn.prepare(SQL.tasksOfProject).all({ id })) {
+    const task = new RowReader("tasks", found).id("id", "t");
+    if (readTask(conn, task).areaId === area) continue;
+    ensureStart(conn, run, "tasks", task);
+    conn.prepare(SQL.taskArea).run({ id: task, area });
+    wrote(run, i, "tasks", task, task, ["grouping"]);
   }
 }
 

@@ -256,6 +256,14 @@ const GROUP_CASES: readonly (readonly Step[])[] = [
     { kind: "undo", partial: false },
     { kind: "beside", who: "agent", t: 3, s: 1, side: "before" },
   ],
+  // A project restored after its area's creation was undone comes back without an area
+  // (seed 163886335, path "23:3:3:6:6:6:2:2:2:2:2:2:2:2").
+  [
+    { kind: "file", who: "human" },
+    { kind: "undo", partial: false },
+    { kind: "restore", who: "human", p: 0 },
+    { kind: "move", who: "human", t: 0, p: 0 },
+  ],
   // One request that deletes an empty project and sets its folder: refused, the project named.
   [
     { kind: "project_set", who: "human", m: 0, p: 2, path: 0, carry: [] },
