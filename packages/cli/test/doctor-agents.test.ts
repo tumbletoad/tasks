@@ -299,6 +299,37 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
   );
 
   test(
+    "an entry Off had to leave because its record file is damaged: doctor names the file and that record file, and both ways out (pull request 193's third check, fix 3)",
+    async () => {
+      const inner = join(user, ".claude", ".claude.json");
+      const furtherFile = join(stateOf(home), "setup", "agents-further.json");
+      const claude = ["setup", "agents", "--app", "claude-code"];
+      writeFileSync(inner, "{}\n");
+      try {
+        await applyAll(["--app", "claude-code"]);
+        const intact = readFileSync(furtherFile);
+        writeFileSync(furtherFile, '{"format": 2, "homes": [');
+        expect((await run([...claude, "--remove"])).code).toBe(10);
+        const check = row(await doctor(), "mcp.claude.further");
+        expect(check?.status).toBe("fail");
+        expect(check?.detail).toContain(furtherFile);
+        expect(check?.detail).toContain("put that record file back as it was");
+        expect(check?.detail).toContain("out of this file by hand");
+        expect(check?.detail).not.toContain(user);
+        // The first way out: the record file back, Off takes the entry out.
+        writeFileSync(furtherFile, intact);
+        const off = await run([...claude, "--remove"]);
+        expect(off.code, off.stdout).toBe(0);
+        expect(readFileSync(inner, "utf8")).toBe("{}\n");
+      } finally {
+        rmSync(furtherFile, { force: true });
+        rmSync(inner, { force: true });
+      }
+    },
+    SLOW,
+  );
+
+  test(
     "print, print-block and approve-tools write nothing, nor does the block's preview",
     async () => {
       const before = read();

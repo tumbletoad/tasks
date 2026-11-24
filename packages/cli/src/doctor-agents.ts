@@ -292,9 +292,9 @@ export async function agentChecks(
     } catch {
       rows = undefined;
     }
-    // Nothing recorded and no live row: no agent can reach the service, and no home is read. A
-    // live row whose record was lost is checked as what it is, below.
-    if (records.length === 0 && (rows ?? []).length === 0) {
+    // Nothing recorded, no record file that cannot be read and no live row: no agent can reach the
+    // service, and no home is read. A live row whose record was lost is checked as what it is, below.
+    if (records.length === 0 && read.unreadable.length === 0 && (rows ?? []).length === 0) {
       return [
         ...checks,
         {
@@ -310,8 +310,9 @@ export async function agentChecks(
     const { input } = await setupInputOf(io, options);
     const surveyed = await survey(input);
     const resolve = (argv: readonly string[]) => options.agents?.resolve?.(argv) ?? argv;
-    // Each file setup has a record of, and each other file of a home set up that needs something:
-    // one setup cannot read, or one without the entry.
+    // Each file setup has a record of, each file with an entry of TTasks's name whose record cannot
+    // be read, and each other file of a home set up that needs something: one setup cannot read, or
+    // one without the entry.
     const setUp = (v: HomeView) =>
       surveyed.some(
         (o) =>
@@ -322,6 +323,7 @@ export async function agentChecks(
     const views = surveyed.filter(
       (v) =>
         v.record !== undefined ||
+        (v.refusal === "record_unreadable" && v.entry !== undefined) ||
         (setUp(v) &&
           (v.state === "not_registered" ||
             (v.state === "refused" && v.refusal !== "foreign_entry"))),
@@ -477,6 +479,23 @@ async function mcpCheck(
   const id = fileId("mcp", view);
   const fix = `${CLI_NAME} setup agents --remove, then ${CLI_NAME} setup agents and the apply it prints`;
   const record = view.record;
+  if (view.refusal === "record_unreadable") {
+    // Setup leaves the file as it is: its record of it is in a record file it cannot read.
+    const damaged = setupRecords(input.stateDir).unreadable.join(" or ");
+    if (view.entry === undefined) {
+      return {
+        id,
+        status: "warn",
+        detail: `${name(view)}: setup cannot read its record of this file (${damaged}), so it changes nothing there. Put that record file back as it was (from a backup), then run: ${CLI_NAME} setup agents --status`,
+      };
+    }
+    const removal = manualRemoval(view.home);
+    return {
+      id,
+      status: "fail",
+      detail: `${name(view)}: ${PRODUCT_NAME}'s entry is still in this file, and setup cannot read its record of it (${damaged}), so it leaves the entry there. Either put that record file back as it was (from a backup), and turning the tools off then takes the entry out (${CLI_NAME} setup agents --remove, or Settings); or take ${removal.what} out of this file by hand (${CLI_NAME} setup agents shows its full path).`,
+    };
+  }
   if (record === undefined) {
     // A file of a home set up whose reader gets no entry from setup.
     if (view.state === "refused") {
