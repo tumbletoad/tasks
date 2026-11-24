@@ -11,6 +11,7 @@
 // Programmatic scrolling also skips the compositor's own smooth scrolling, so it is a stricter test
 // of coverage than a wheel, and no test of smoothness.
 import { expect, type Page } from "@playwright/test";
+import { levelTip } from "./bulk.ts";
 import { day } from "./days.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { BULK_TASKS, test } from "./fixture.ts";
@@ -407,7 +408,7 @@ test.describe("[A5.3.6.e2e.row-due-effort] A row's due date fits its column at e
           else if (key === undefined) await expect(effort).toBeEmpty();
           else {
             await expect(effort).toHaveText(key);
-            await expect(effort).toHaveAttribute("data-tip", `Effort ${key}`);
+            await expect(effort).toHaveAttribute("data-tip", `Effort ${levelTip(key)}`);
           }
         }
         const scroll = await page.evaluate(

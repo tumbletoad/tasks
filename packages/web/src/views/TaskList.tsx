@@ -324,8 +324,15 @@ export function TaskList({
   );
   const ownClock = useClock(timed && viewClock === undefined);
   const clock = viewClock ?? ownClock;
-  const ctx = useMemo(() => contextFor(view, grouping, clock), [view, grouping, clock]);
-  const finishedCtx = useMemo(() => contextFor("completed", grouping, clock), [grouping, clock]);
+  const efforts = state.scales.efforts;
+  const ctx = useMemo(
+    () => contextFor(view, grouping, clock, efforts),
+    [view, grouping, clock, efforts],
+  );
+  const finishedCtx = useMemo(
+    () => contextFor("completed", grouping, clock, efforts),
+    [grouping, clock, efforts],
+  );
 
   const loadReceipts = useCallback(
     (task: string) => {

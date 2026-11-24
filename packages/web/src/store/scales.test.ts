@@ -44,7 +44,10 @@ describe("[A5.3.7.web.scales] the space's statuses and effort scale reach the pa
         { key: "tasks.effort_scale", value: [{ key: "XS" }, { key: "XL" }], state: "set" },
       ]),
     ) as SnapshotMessage;
-    expect(message.scales).toEqual({ statuses: ["open", "blocked"], efforts: ["XS", "XL"] });
+    expect(message.scales).toEqual({
+      statuses: ["open", "blocked"],
+      efforts: [{ key: "XS" }, { key: "XL" }],
+    });
     for (const junk of [
       undefined,
       "x",
@@ -135,7 +138,7 @@ const lists = fc.uniqueArray(name, {
   selector: (n) => n.toLowerCase(),
 });
 const scaleOf = (value: unknown) =>
-  scalesOf([{ key: "tasks.effort_scale", value, state: "set" }]).efforts;
+  scalesOf([{ key: "tasks.effort_scale", value, state: "set" }]).efforts.map((level) => level.key);
 
 describe("[A5.3.7.web.effort-lists] any list of sizes reaches the card and the row as it is", () => {
   test("the store, the card's options and the row follow a list of 1 to 10 names", () => {
@@ -143,10 +146,12 @@ describe("[A5.3.7.web.effort-lists] any list of sizes reaches the card and the r
       fc.property(lists, (names) => {
         const efforts = scaleOf(names.map((key) => ({ key })));
         expect(efforts).toEqual(names);
-        const scales = { ...DEFAULT_SCALES, efforts };
-        expect(effortOptions(scales, undefined)).toEqual(names);
+        const scales = { ...DEFAULT_SCALES, efforts: names.map((key) => ({ key })) };
+        const optionsOf = (effort: string | undefined) =>
+          effortOptions(scales, effort).map((level) => level.key);
+        expect(optionsOf(undefined)).toEqual(names);
         for (const key of names) {
-          expect(effortOptions(scales, key)).toEqual(names);
+          expect(optionsOf(key)).toEqual(names);
           const row = renderRow(
             {
               task: {
@@ -163,7 +168,7 @@ describe("[A5.3.7.web.effort-lists] any list of sizes reaches the card and the r
               },
               instances: [],
             },
-            contextFor("open", "area", CLOCK),
+            contextFor("open", "area", CLOCK, scales.efforts),
           );
           expect(row.effort?.key).toBe(key);
           expect(row.effort === undefined ? undefined : sayMsg(t, row.effort.tip)).toBe(
@@ -173,7 +178,7 @@ describe("[A5.3.7.web.effort-lists] any list of sizes reaches the card and the r
         // A size the scale lost stays on its task's card, after the scale's.
         const stray = "Gone-size";
         if (!names.includes(stray)) {
-          expect(effortOptions(scales, stray)).toEqual([...names, stray]);
+          expect(optionsOf(stray)).toEqual([...names, stray]);
         }
       }),
     );
@@ -187,8 +192,10 @@ describe("[A5.3.7.web.effort-lists] any list of sizes reaches the card and the r
     const eleven = Array.from({ length: EFFORT_SCALE_MAX + 1 }, (_, i) => ({
       key: `S${String(i)}`,
     }));
-    expect(scaleOf(eleven)).toEqual(DEFAULT_SCALES.efforts);
+    expect(scaleOf(eleven)).toEqual(DEFAULT_SCALES.efforts.map((level) => level.key));
     expect(scaleOf(eleven.slice(0, EFFORT_SCALE_MAX))).toHaveLength(EFFORT_SCALE_MAX);
-    expect(scaleOf([{ key: "X".repeat(EFFORT_KEY_MAX + 1) }])).toEqual(DEFAULT_SCALES.efforts);
+    expect(scaleOf([{ key: "X".repeat(EFFORT_KEY_MAX + 1) }])).toEqual(
+      DEFAULT_SCALES.efforts.map((level) => level.key),
+    );
   });
 });

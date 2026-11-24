@@ -11,6 +11,7 @@
 import type { Instance } from "../api.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { TaskRow } from "../store/rows.ts";
+import type { EffortLevel } from "@ttasks/contracts/preferences";
 import { dayNumber, isStarred, localDate } from "@ttasks/contracts/day";
 import { formatDay, formatInstant, type Clock } from "./dates.ts";
 import { launchOf, type BusyOf, type LaunchBlock, type LaunchModel } from "./launch.ts";
@@ -60,7 +61,39 @@ export interface RowContext {
   /** The due column shows the follow-up day, in indigo (Waiting). */
   readonly followUp: boolean;
   readonly clock: Clock;
+  /** The space's effort levels, whose time and line a task's effort tip says. */
+  readonly efforts: readonly EffortLevel[];
 }
+
+/** A level's name, time and line, as its tip says them: "M, about 4 hours. One long sitting". */
+export function levelMsg(level: EffortLevel): Msg {
+  return {
+    id: "effort.level",
+    values: {
+      name: level.key,
+      ...timeValues(level),
+      described: level.about === undefined ? "no" : "yes",
+      about: level.about ?? "",
+    },
+  };
+}
+
+/** A task's level: the space's of its name, a bare name the space lost, none when unsized. */
+export const effortLevelOf = (
+  effort: string | undefined,
+  efforts: readonly EffortLevel[],
+): EffortLevel | undefined =>
+  effort === undefined || effort === ""
+    ? undefined
+    : (efforts.find((level) => level.key === effort) ?? { key: effort });
+
+const timeValues = (level: EffortLevel): MsgValues => ({
+  timed: level.time === undefined ? "no" : "yes",
+  time:
+    level.time === undefined
+      ? ""
+      : { id: "effort.time", values: { amount: level.time.amount, unit: level.time.unit } },
+});
 
 /** The status a view lists, which its rows therefore never repeat. */
 const VIEW_STATUS: Readonly<Partial<Record<RowView, string>>> = {
@@ -80,6 +113,7 @@ export function contextFor(
   view: RowView,
   grouping: Grouping,
   clock: Clock,
+  efforts: readonly EffortLevel[],
   extra: readonly Fact[] = [],
 ): RowContext {
   const implied = new Set<Fact>(extra);
@@ -94,6 +128,7 @@ export function contextFor(
     mixesAreas: !implied.has("area"),
     followUp: view === "waiting",
     clock,
+    efforts,
   };
 }
 
@@ -527,11 +562,14 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
       : undefined;
   if (priority !== undefined) description.push(msg("row.desc.priority", { level: priority.level }));
 
+  const sized = finished ? undefined : effortLevelOf(task.effort, ctx.efforts);
   const effort: RowModel["effort"] =
-    !finished && task.effort !== undefined && task.effort !== ""
-      ? { key: task.effort, tip: msg("row.effortTip", { effort: task.effort }) }
-      : undefined;
-  if (effort !== undefined) description.push(msg("row.desc.effort", { effort: effort.key }));
+    sized === undefined
+      ? undefined
+      : { key: sized.key, tip: msg("row.effortTip", { level: levelMsg(sized) }) };
+  if (sized !== undefined) {
+    description.push(msg("row.desc.effort", { name: sized.key, ...timeValues(sized) }));
+  }
 
   const age = finished ? undefined : ageOf(row, ctx);
   if (age !== undefined) description.push(age.describe);

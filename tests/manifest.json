@@ -2631,6 +2631,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.6.mcp.skills.levels",
+      "title": "sizing-effort's levels part is written from the space's list when it is read: each level with its time and its line, a level that has neither as its name, a list of names only as one line, ten levels with the longest lines beside a copy near its limit served whole, and the user's copy whole below it",
+      "source": "A3 3.4.2",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.6.mcp.instructions",
       "title": "The server instructions: ASCII, within the 2,048 characters Claude Code shows, the trigger and start rule within the first 240 characters, every tool they name is a registry tool and every registry tool is named, and the fields and values they name are the tools' own",
       "source": "A3 3.2.5, A3 3.6, A3 5, M0 row A06, A7 3.9 M2.02, A7 3.11 M4.04",
@@ -4062,7 +4070,7 @@
     },
     {
       "id": "A1.3.16.prefs.effort-any",
-      "title": "Every reader of the effort scale (an agent's tools, the refusal of a wrong size, the page's snapshot, the writer's check) offers exactly the names of a stored list whose items carry unknown fields, or of a newer build's list, which stays read-only; a missing or reset row offers S, M and L; a list the person set offers its names; a value that is no list of sizes reads as the fallback",
+      "title": "Every reader of the effort scale (an agent's tools, the refusal of a wrong size, the page's snapshot, the writer's check) offers exactly the levels of a list an earlier build stored as names, a default level's name meaning that level, or of a newer build's list, which stays read-only; a missing or reset row has the five default levels; a list the person set offers its levels; a value that is no list of levels reads as the defaults",
       "source": "A1 3.16",
       "owner": "M3",
       "kind": "ci",
@@ -4070,15 +4078,23 @@
     },
     {
       "id": "A1.3.16.prefs.effort-longest",
-      "title": "A size of the longest name goes through add_tasks, update_task and a follow-up of complete_task, and search, get_task and the readable file show it whole",
+      "title": "A level of the longest name a person sets, and a longer one an earlier build let be set, goes through add_tasks, update_task and a follow-up of complete_task, and search, get_task and the readable file show it whole; the longer one stays while the levels change around it and cannot be set anew",
       "source": "A1 3.16, A3 3.4",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.16.prefs.effort-levels",
+      "title": "An effort level is a name with single spaces inside, an optional time of 1 to 999 minutes, hours, days or weeks and an optional line of up to 280 characters; a new name has at most 10 characters; a list of names an earlier build stored reads each default level's name as that level; a newer build's list gives its names; the build before this one reads the names of a list this build writes; the writer keeps a list whole and a task takes a name with spaces",
+      "source": "A1 3.16",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.16.prefs.effort-lists",
-      "title": "Generated lists of 1 to 10 sizes (one character, the longest, a digit first, . - and _, mixed case) set as the person: every size given through add_tasks and one changed through update_task, effort: finds exactly those tasks, sort:effort and sort:-effort follow the list with unsized tasks last, search and get_task text and the readable file show the name, and a wrong size's refusal lists exactly the list",
+      "title": "Generated lists of 1 to 10 sizes (one character, the longest, a digit first, . - and _, a space inside, mixed case) set as the person: every size given through add_tasks and one changed through update_task, effort: finds exactly those tasks, sort:effort and sort:-effort follow the list with unsized tasks last, search and get_task text and the readable file show the name, and a wrong size's refusal lists exactly the list",
       "source": "A1 3.16, A3 3.4, A3 3.9",
       "owner": "M3",
       "kind": "ci",
@@ -4762,7 +4778,7 @@
     },
     {
       "id": "A5.3.7.web.effort-lists",
-      "title": "Generated lists of 1 to 10 sizes reach the page's store, the card's options and the row's mark and tip as they are; a size the scale lost stays on its task's card; items with unknown fields keep their names, and more sizes than the contract allows, or a name longer than it allows, keep the fallback",
+      "title": "Generated lists of 1 to 10 sizes reach the page's store, the card's options and the row's mark and tip as they are; a size the scale lost stays on its task's card; items with unknown fields keep their names, and more sizes than the contract allows, or a name longer than it allows, keep the default levels",
       "source": "A5 3.6, A5 3.7",
       "owner": "M5",
       "kind": "ci",
@@ -4770,7 +4786,7 @@
     },
     {
       "id": "A5.3.7.e2e.effort-scales",
-      "title": "In Chromium and Firefox against the real service: a space with one size and one with ten (four of the longest name) offer each size whole in the expanded task's control; the largest chosen there holds after a reload at 1,440 and 390 px with nothing scrolling sideways, and the collapsed row marks it with the whole name in its tip, hidden at 390 px",
+      "title": "In Chromium and Firefox against the real service: a space with one level and one with ten (four of the longest name a person sets) offer each level whole in the expanded task's control, and a longer name an earlier build let be set is cut there; resting on a level by mouse or keyboard focus shows its time and line, as its description says them; the largest chosen there holds after a reload at 1,440 and 390 px with nothing scrolling sideways, and the collapsed row marks it with the whole name, its time and line in its tip, hidden at 390 px",
       "source": "A5 3.6, A5 3.7",
       "owner": "M5",
       "kind": "ci",
@@ -5854,7 +5870,15 @@
     },
     {
       "id": "A3.3.4.prefs.set",
-      "title": "The person sets a space's scale from the command line: tasks keep their keys, every reader of the scale follows on the next call, a change that drops a key active tasks hold is refused naming them, and scripts and agents' shells are refused",
+      "title": "The person sets a space's scale from the command line: tasks keep their keys, a set by names keeps each staying level's time and line, every reader of the scale follows on the next call, a change that drops a key active tasks hold is refused naming them, a new level's name over the limit is refused, and scripts and agents' shells are refused",
+      "source": "A1 3.16, A3 3.4.11",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.prefs.file",
+      "title": "ttasks prefs get --json gives the effort levels whole with the as_of they were read at; set --file takes that output edited, or the value alone, and refuses the file again once a change was made after its read",
       "source": "A1 3.16, A3 3.4.11",
       "owner": "M3",
       "kind": "ci",
