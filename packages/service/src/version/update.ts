@@ -88,6 +88,7 @@ import {
   writeJournal,
   type Journal,
   type LauncherChange,
+  type UpdateJournal,
 } from "./journal.ts";
 import { hostPlatform, ReleaseError, verifyRelease, type VerifiedRelease } from "./release.ts";
 import {
@@ -579,16 +580,19 @@ async function lockForUpdate(install: Install, options: UpdateOptions): Promise<
   }
 }
 
+const what = (journal: Journal): string =>
+  journal.kind === "install" ? `install of ${journal.to}` : `update to ${journal.to}`;
+
 /** Reports a repair the update had to make before it could begin. */
 function sayRepair(options: UpdateOptions, repair: RepairOutcome): void {
   switch (repair.kind) {
     case "rolled_forward":
-      say(options, `An interrupted update to ${repair.journal.to} was finished.`);
+      say(options, `An interrupted ${what(repair.journal)} was finished.`);
       return;
     case "rolled_back":
       say(
         options,
-        `An interrupted update to ${repair.journal.to} was rolled back to ${repair.journal.from}.`,
+        `An interrupted ${what(repair.journal)} was rolled back to ${repair.journal.from}.`,
       );
       return;
     case "kept":
@@ -698,7 +702,9 @@ async function repairFirst(
     }
   } finally {
     // Brought back, tried, or left as the person decided: the install is complete either way.
-    if (journaled) removeJournal(install.state);
+    if (repair.kind === "rolled_forward" || repair.kind === "rolled_back") {
+      removeJournal(install.state, repair.journal.kind);
+    }
   }
   return repair;
 }
@@ -954,7 +960,7 @@ async function waitForRuns(options: UpdateOptions): Promise<RunsHold | undefined
 interface Switch {
   readonly install: Install;
   readonly options: UpdateOptions;
-  journal: Journal;
+  journal: UpdateJournal;
   readonly decision: Decision;
   /** The hold on the service's runs; the caller lets it go once the update is over. */
   held: RunsHold | undefined;
@@ -971,7 +977,7 @@ interface Switch {
  * leaves out a space that was so already.
  */
 async function decideAtSwitch(run: Switch): Promise<{
-  journal: Journal;
+  journal: UpdateJournal;
   note: readonly SpaceNote[] | undefined;
   /** The version the service that runs answered with. */
   seen: string | undefined;
@@ -1122,7 +1128,7 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
   const { root, state, platform } = install;
   const { from, to } = run.journal;
   const target = join(root, VERSIONS, to);
-  const write = (journal: Journal) => {
+  const write = (journal: UpdateJournal) => {
     run.journal = journal;
     writeJournal(state, journal);
   };
@@ -1393,7 +1399,7 @@ export async function updateFromArchive(
     const held = ran ? await waitForRuns(options) : undefined;
     let run: Switch | undefined;
     try {
-      const journal: Journal = {
+      const journal: UpdateJournal = {
         format: 1,
         kind: "update",
         from,
@@ -1496,7 +1502,7 @@ export async function rollbackUpdate(options: UpdateOptions): Promise<UpdateResu
     const held = ran ? await waitForRuns(options) : undefined;
     let run: Switch | undefined;
     try {
-      const journal: Journal = {
+      const journal: UpdateJournal = {
         format: 1,
         kind: "rollback",
         from,

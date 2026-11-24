@@ -613,7 +613,8 @@ const VERSION_WORD = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
  * install.json, a rolled-back one with its reason.
  */
 function updateCheck(state: string, installFile: string): Check {
-  if (existsSync(join(state, "update.json"))) {
+  // An update's journal, or an install's (service/src/version/journal.ts).
+  if (["update.json", "install-update.json"].some((file) => existsSync(join(state, file)))) {
     return {
       id: "update",
       status: "warn",

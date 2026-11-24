@@ -21,7 +21,7 @@
 // service.json, a stale socket file, a temporary file of an atomic write. A start that fails after
 // the lock removes its own service.json.
 import { randomBytes } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { CLI_NAME, envVar, PRODUCT_NAME } from "@ttasks/brand";
 import { nodeDetectHost, type Instance } from "@ttasks/launch";
@@ -128,7 +128,7 @@ import {
   supervisorReplaced,
   type RepairOutcome,
 } from "../version/repair.ts";
-import { UPDATE_JOURNAL } from "../version/journal.ts";
+import { journalPresent } from "../version/journal.ts";
 import { currentVersion } from "../version/switch.ts";
 import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
 import { homeGate } from "./home-gate.ts";
@@ -634,7 +634,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       },
       // From the journal's write to its removal an update may restart the service, a repair
       // included, whether or not its updater still holds the queue.
-      updating: () => !repairStuck && existsSync(join(layout.state, UPDATE_JOURNAL)),
+      updating: () => !repairStuck && journalPresent(layout.state),
     });
     void runs.probe();
 

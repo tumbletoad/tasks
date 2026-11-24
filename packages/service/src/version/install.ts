@@ -7,7 +7,7 @@
 //      once: the second stops with nothing changed,
 //   2. finishes or rolls back an update that was interrupted (repair.ts), so an install never
 //      switches under a journal that would later undo it,
-//   3. over another version, writes the update journal (journal.ts), so a cut from here on is
+//   3. over another version, writes an install's journal (journal.ts), so a cut from here on is
 //      finished like a cut-off update and keeps the version before it as the way back,
 //   4. points `current` at the version (switch.ts),
 //   5. puts the stable command in place: `<root>/bin/ttasks` (Linux, macOS), or copies of the
@@ -266,12 +266,12 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
           ? before.value
           : basename(before.value)
         : undefined;
-    // An install over another version is an update from the script's archive, journalled as one
-    // before current changes: wherever it is cut off from here, whoever takes update.lock next
-    // (this installer run again, an update, the running service) finishes it from the journal,
-    // and install.json then names the version before it as the way back. An older version's
-    // repair knows this journal too. A first install has no way back to keep, and a journal no
-    // repair could finish stays as it is.
+    // An install over another version is journalled like an update before current changes:
+    // wherever it is cut off from here, whoever of this version or later takes update.lock next
+    // (this installer run again, an update, the running service) finishes it, and install.json
+    // then names the version before it as the way back. A service of a version from before this
+    // journal never reads it, so it keeps serving and is not restarted unasked. A first install
+    // has no way back to keep, and a journal no repair could finish stays as it is.
     const journal: Journal | undefined =
       previous !== undefined &&
       previous !== target.version &&
@@ -279,7 +279,7 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
       repair.kind !== "stuck"
         ? {
             format: JOURNAL_FORMAT,
-            kind: "update",
+            kind: "install",
             from: previous,
             to: target.version,
             phase: "staged",
@@ -294,8 +294,8 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
         : undefined;
     if (journal !== undefined) writeJournal(state, journal);
     // Right before the switch: a launcher that appears after it was put there by a stable
-    // launcher's sibling repair (launcher.c, while the journal is there), from the version this
-    // install switches to.
+    // launcher's sibling repair (launcher.c, while a stuck update's journal is there), from the
+    // version this install switches to.
     const stableBefore = stableFiles(plan);
     // From the switch on, all or nothing: a failure puts back current and the stable command, so
     // the install script can remove the new version and leave the previous install working.
@@ -329,7 +329,10 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
           ? { switched: { from: previous, to: target.version } }
           : {}),
       });
-      if (journal !== undefined || repair.kind === "stuck") removeJournal(state);
+      // Complete: an install's journal this run wrote, or one left by an install an older version
+      // then switched past, and a journal no repair could finish, are all done with.
+      removeJournal(state, "install");
+      if (repair.kind === "stuck") removeJournal(state);
       return {
         root: target.root,
         version: target.version,
@@ -350,7 +353,7 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
       }
       // All put back: nothing is left to finish. Otherwise the journal stays, and the next run
       // takes the install the rest of the way back.
-      if (journal !== undefined && left.length === 0) removeJournal(state);
+      if (journal !== undefined && left.length === 0) removeJournal(state, "install");
       const why =
         error instanceof InstallError ? error.message : (error as Error).message || "an error";
       throw new InstallError(

@@ -29,9 +29,9 @@ import { join } from "node:path";
 import { acquireLock, LockBusy } from "../hub/lock.ts";
 import { checkVersionFolder } from "./folder.ts";
 import {
+  journalPresent,
   readJournal,
   removeJournal,
-  UPDATE_JOURNAL,
   writeJournal,
   type Journal,
 } from "./journal.ts";
@@ -66,8 +66,7 @@ import {
 export async function repairIfIdle(
   options: RepairOptions & { readonly clean?: boolean },
 ): Promise<RepairOutcome | undefined> {
-  if (!options.clean && !existsSync(join(options.state, UPDATE_JOURNAL)))
-    return { kind: "nothing" };
+  if (!options.clean && !journalPresent(options.state)) return { kind: "nothing" };
   if (!existsSync(join(options.root, VERSIONS))) return { kind: "nothing" };
   let lock;
   try {
@@ -231,7 +230,7 @@ export function repairLocked(options: RepairOptions): RepairOutcome {
     }
     const problems = launchersOf(root, current, platform);
     if (problems.length > 0) return { kind: "stuck", problems };
-    removeJournal(state);
+    removeJournal(state, read.of);
     return {
       kind: "kept",
       current,
@@ -240,6 +239,17 @@ export function repairLocked(options: RepairOptions): RepairOutcome {
   }
   let journal = read.journal;
   const named = currentVersion(root, platform);
+  // An older version's updater, which never reads an install's journal, has switched to a third
+  // version since that install was cut off: the journal is no longer the install's state.
+  if (
+    journal.kind === "install" &&
+    named !== undefined &&
+    named !== journal.from &&
+    named !== journal.to
+  ) {
+    removeJournal(state, "install");
+    return { kind: "nothing" };
+  }
   const toIntact = intact(root, journal.to);
   let forward = journal.phase !== "rolling_back" && named === journal.to && toIntact;
   // The old version is gone or no longer matches its manifest: going back would leave current
@@ -285,16 +295,21 @@ export function repairLocked(options: RepairOptions): RepairOutcome {
     }
     at("repair:launchers");
     if (problems.length > 0) return { kind: "stuck", problems };
+    // `last_update` is an update's or a rollback's, which doctor names: an install never sets it.
     writeInstallRecord(state, root, platform, {
       installed: journal.to,
       switched: { from: journal.from, to: journal.to },
-      lastUpdate: {
-        kind: journal.kind,
-        outcome: "completed",
-        from: journal.from,
-        to: journal.to,
-        at: now(),
-      },
+      ...(journal.kind === "install"
+        ? {}
+        : {
+            lastUpdate: {
+              kind: journal.kind,
+              outcome: "completed",
+              from: journal.from,
+              to: journal.to,
+              at: now(),
+            },
+          }),
     });
   } else {
     if (journal.phase !== "rolling_back") {
@@ -321,16 +336,18 @@ export function repairLocked(options: RepairOptions): RepairOutcome {
     }
     at("repair:launchers");
     if (problems.length > 0) return { kind: "stuck", problems };
-    writeInstallRecord(state, root, platform, {
-      lastUpdate: {
-        kind: journal.kind,
-        outcome: "reverted",
-        from: journal.from,
-        to: journal.to,
-        at: now(),
-        reason: options.reason ?? "interrupted",
-      },
-    });
+    if (journal.kind !== "install") {
+      writeInstallRecord(state, root, platform, {
+        lastUpdate: {
+          kind: journal.kind,
+          outcome: "reverted",
+          from: journal.from,
+          to: journal.to,
+          at: now(),
+          reason: options.reason ?? "interrupted",
+        },
+      });
+    }
   }
   at("repair:record");
   // The staged launchers are done with either way (A2 3.12.6 step 14: none is named once the
@@ -350,7 +367,7 @@ export function repairLocked(options: RepairOptions): RepairOutcome {
       retryDelay: 100,
     });
   }
-  if (options.keepJournal !== true) removeJournal(state);
+  if (options.keepJournal !== true) removeJournal(state, journal.kind);
   at("repair:done");
   return {
     kind: forward ? "rolled_forward" : "rolled_back",

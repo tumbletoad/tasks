@@ -27,7 +27,8 @@ import { canonicalStatePath, installId, type HostFacts } from "../hub/paths.ts";
 import { writeVersionManifest } from "./folder.ts";
 import { finishInstall, InstallError, installTarget, type InstallRecord } from "./install.ts";
 import { noteWorking } from "./repair.ts";
-import { rollbackUpdate } from "./update.ts";
+import { currentFor, writeCurrent } from "./switch.ts";
+import { repairUpdate, rollbackUpdate } from "./update.ts";
 
 const windows = process.platform === "win32";
 const RACER = fileURLToPath(new URL("../../test/lock-racer.ts", import.meta.url));
@@ -440,6 +441,9 @@ describe("[A2.3.12.6.update.way-back] an install cut off and run again keeps the
       const next = addVersion(root, "0.2.0", "launcher two");
       await cutFinish(root, next, cut);
       expect(currentOf(root)).toBe(windows ? "0.2.0" : "versions/0.2.0");
+      // update.json is what a service of a version from before the install's journal reads, and
+      // restarts after: an install cut off leaves nothing there.
+      expect(existsSync(join(root, "state", "update.json"))).toBe(false);
       for (const run of [1, 2]) {
         await finishInstall({ versionFolder: next, facts: facts(root) });
         expect(record(root).previous, `run ${String(run)}`).toBe("0.1.0");
@@ -482,5 +486,29 @@ describe("[A2.3.12.6.update.way-back] an install cut off and run again keeps the
     await finishInstall({ versionFolder: d, facts: facts(root), seen: "0.1.0" });
     expect(record(root).seen_working).toEqual(["0.1.0"]);
     expect(record(root).previous).toBe("0.1.0");
+  });
+});
+
+describe("[A2.3.12.6.update.repair] an install's journal is finished by the next install, and never undoes what an older version did since", () => {
+  test("an install cut off and then switched past by an older version's own update is left as that update left it", async () => {
+    const { root, folder } = install();
+    await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+    // C's install is cut off after its switch; the person then updates with A's own command,
+    // which knows nothing of an install's journal, to D.
+    const c = addVersion(root, "0.3.0", "launcher three");
+    await cutFinish(root, c, windows ? 1 : "switch");
+    addVersion(root, "0.4.0", "launcher four");
+    writeCurrent(root, currentFor("0.4.0", process.platform), process.platform);
+    // D's repair, at its start or in its first update, changes nothing of that.
+    const repaired = await repairUpdate({
+      facts: facts(root),
+      keys: [],
+      selfTest: () => Promise.resolve({ ok: true, failed: [] }),
+    });
+    expect(repaired).toMatchObject({ repair: { kind: "nothing" }, current: "0.4.0" });
+    expect(currentOf(root)).toBe(windows ? "0.4.0" : "versions/0.4.0");
+    expect(readdirSync(join(root, "state")).filter((name) => name.endsWith(".json"))).toEqual([
+      "install.json",
+    ]);
   });
 });
