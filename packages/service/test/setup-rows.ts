@@ -4,12 +4,11 @@
 // make the service refuse.
 import { MANUAL_INSTANCE } from "@ttasks/launch";
 import { agentHomeVerbs } from "../src/hub/agent-homes.ts";
-import { homeGate, rowRegistration } from "../src/hub/home-gate.ts";
+import { homeGate } from "../src/hub/home-gate.ts";
 import type { Logger } from "../src/hub/log.ts";
 import { isLive, MemoryGrants } from "../src/local/index.ts";
 import {
   entryInstance,
-  entryRegistration,
   GrantRefused,
   rowAccess,
   type Access,
@@ -22,7 +21,6 @@ export interface KeptRow {
   /** Undefined for a row an earlier build made. */
   readonly file: string | undefined;
   readonly instance: string;
-  readonly registration: string | undefined;
   readonly space: string;
   readonly grant: string;
 }
@@ -36,10 +34,10 @@ export interface KeptRows extends Access {
   refuse: { grant?: "instance_taken" | "grant_failed"; revoke?: boolean };
   /**
    * Whether a connection the agent app starts from `entry` (TTasks's entry as its file holds it)
-   * may use `space`: its instance and registration as the bridge presents them, through the gate.
+   * may use `space`: its instance as the bridge presents it, through the gate.
    */
   may(entry: unknown, space: string): boolean;
-  /** A row as the build before this one made it: a folder and no file or registration. */
+  /** A row as the build before this one made it: a folder and no file. */
   earlier(home: AgentHome, space: string): string;
 }
 
@@ -77,7 +75,6 @@ export function keptRows(before?: (verb: "grant" | "revoke", home: AgentHome) =>
             home: text("home"),
             file: text("file") === "" ? undefined : text("file"),
             instance: text("instance"),
-            registration: rowRegistration(grant.attrs),
             space: grant.spaces[0] ?? "",
             grant: grant.grant_id,
           };
@@ -98,13 +95,7 @@ export function keptRows(before?: (verb: "grant" | "revoke", home: AgentHome) =>
       return access.revoke(home, of);
     },
     may(entry, space) {
-      return gate.may(
-        {
-          instance: entryInstance(entry) ?? MANUAL_INSTANCE,
-          registration: entryRegistration(entry),
-        },
-        space,
-      );
+      return gate.may(entryInstance(entry) ?? MANUAL_INSTANCE, space);
     },
     earlier(home, space) {
       served.add(space);

@@ -29,13 +29,10 @@ import { withAppLock } from "../src/setup/app-lock.ts";
 import {
   applyHome,
   hasAccess,
-  entryInstance,
-  entryRegistration,
   planOf,
   planToken,
   readRecords,
   registrationOfRecord,
-  registrationId,
   removeHome,
   setupDir,
   SETUP_FILE,
@@ -184,17 +181,16 @@ async function remove(w: World, a: Adapter) {
 const recordPath = (w: World): string => join(setupDir(w.input.stateDir), SETUP_FILE);
 
 /** A grant or a revoke for a home setup keeps no record of. */
-const NO_RECORD = { registration: undefined, recorded: undefined } as const;
+const NO_RECORD = { recorded: undefined } as const;
 
 /** The test's live rows as `setup/homes` lists them. */
 const serviceRows = (w: World): ServiceRow[] =>
-  w.rows.live.map(({ grant, app, home, file, instance, registration }) => ({
+  w.rows.live.map(({ grant, app, home, file, instance }) => ({
     grant,
     app,
     home,
     ...(file === undefined ? {} : { file }),
     instance,
-    ...(registration === undefined ? {} : { registration }),
   }));
 
 /** Whether the selected home has access: a live row of the test's grants table. */
@@ -217,15 +213,11 @@ function entryIn(a: Adapter, file: string): unknown {
   return servers?.[MCP_SERVER_KEY];
 }
 
-/**
- * What setup writes for an app: the command, the bridge's arguments, the registration of the file,
- * and Codex's two keys.
- */
+/** What setup writes for an app: the command, the bridge's arguments, and Codex's two keys. */
 function expectedEntry(w: World, a: Adapter, instance: string): Record<string, unknown> {
   const entry = {
     command: w.input.tasks,
     args: ["mcp", "--space", SPACE, "--instance", instance, "--app", a.app],
-    env: { [envVar("REGISTRATION")]: registrationId(process.platform, a.app, a.file(w)) },
   };
   return a.format === "toml"
     ? { ...entry, env_vars: [envVar("TICKET")], startup_timeout_sec: 20 }
@@ -395,7 +387,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         json: [
           [
             "an extra field",
-            (t) => t.replace(`"args": [`, `"cwd": "/person/work",\n      "args": [`),
+            (t) => t.replace(`"args": [`, `"env": {"PERSON": "1"},\n      "args": [`),
           ],
           ["a changed argument", (t) => t.replace('"--app"', '"--app-x"')],
         ],
@@ -462,7 +454,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
               save === "takes the entry out"
                 ? before
                 : a.format === "json"
-                  ? text.replace(`"args": [`, `"cwd": "/person/work",\n      "args": [`)
+                  ? text.replace(`"args": [`, `"env": {"PERSON": "1"},\n      "args": [`)
                   : `${text}tool_timeout_sec = 99\n`;
             writeFileSync(file, saved);
           });
@@ -506,7 +498,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
             const text = readFileSync(file, "utf8");
             saved =
               a.format === "json"
-                ? text.replace(`"args": [`, `"cwd": "/person/work",\n      "args": [`)
+                ? text.replace(`"args": [`, `"env": {"PERSON": "1"},\n      "args": [`)
                 : `${text}tool_timeout_sec = 99\n`;
             writeFileSync(file, saved);
           };
@@ -1057,13 +1049,12 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         );
         const input: SetupInput = {
           ...w.input,
-          rows: w.rows.live.map(({ grant, app, home, file, instance, registration }) => ({
+          rows: w.rows.live.map(({ grant, app, home, file, instance }) => ({
             grant,
             app,
             home,
             ...(file === undefined ? {} : { file }),
             instance,
-            ...(registration === undefined ? {} : { registration }),
           })),
         };
         expect(await settleHomes(input, w.rows)).toEqual([]);
@@ -1323,8 +1314,11 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           writeFileSync(file, `${withEntry}tool_timeout_sec = 99\n`);
         }
         const kept = readFileSync(file, "utf8");
-        writeV1(v1({ entry: a.format === "json" ? adopted : { ...left, tool_timeout_sec: 99 } }));
-        w.rows.earlier((await viewOf(w, a)).home, SPACE);
+        // That build's row names the folder only, and its record names the row.
+        const grant = w.rows.earlier((await viewOf(w, a)).home, SPACE);
+        writeV1(
+          v1({ entry: a.format === "json" ? adopted : { ...left, tool_timeout_sec: 99 }, grant }),
+        );
         expect(await remove(w, a), a.app).toMatchObject({
           result: "left",
           reason: "edited",
@@ -1371,7 +1365,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
-    "second home, implicit versus explicit default, shared reader: T3's provider that names ~/.claude gets the file it reads, plain Claude Code keeps its own, each with its own registration and access; T3's Codex shares the Codex CLI's row",
+    "second home, implicit versus explicit default, shared reader: T3's provider that names ~/.claude gets the file it reads, plain Claude Code keeps its own, each with its own instance and access; T3's Codex shares the Codex CLI's row",
     async () => {
       const w = await world();
       const folder = join(w.home, ".claude");
@@ -1423,7 +1417,6 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
       expect(w.rows.may(t3Entry, SPACE)).toBe(true);
       expect(await turnOn(implicit)).toMatchObject({ result: "applied", access: "on" });
       const plainEntry = entryIn(claude, implicit);
-      expect(entryRegistration(plainEntry)).not.toBe(entryRegistration(t3Entry));
       expect(w.rows.may(plainEntry, SPACE)).toBe(true);
 
       // Turning one off leaves the other on.
@@ -1482,23 +1475,20 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test.skipIf(root)(
-    "an install an earlier build set up, five agent homes and Claude Desktop, recorded in either earlier format: each keeps its access and shows on; one turned off whose entry stayed reaches nothing once another home takes its name; each turns off and comes out",
+    "an install an earlier build set up, five agent homes and Claude Desktop, recorded in either earlier format: each keeps its access and shows on; one turned off whose entry stayed reaches nothing; each turns off and comes out",
     async () => {
       for (const format of [1, 2] as const) {
         const w = await world();
         mkdirSync(join(w.home, ".claude-two"));
-        mkdirSync(join(w.home, ".codex-three"));
         const input: SetupInput = {
           ...w.input,
           detection: await detect(nodeDetectHost({ env: w.input.env, home: w.home })),
         };
-        const registered = (await survey(input)).filter(
-          (v) => !v.home.home.endsWith(".codex-three"),
-        );
+        const registered = await survey(input);
         expect(registered.map((v) => v.home.instance).sort(), `format ${String(format)}`).toEqual(
           ["claude", "claude-desktop", "claude-two", "claude-work", "codex", "codex-work"].sort(),
         );
-        // What that build left in each file, its record and its row: no file, no registration.
+        // What that build left in each file, its record and its row: a folder, no file.
         const records: Record<string, unknown>[] = [];
         for (const view of registered) {
           const { app, file, home, instance } = view.home;
@@ -1515,7 +1505,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           const left =
             format === 1 && app === "claude-code"
               ? { type: "stdio", command: argv[0], args: argv.slice(1), env: {} }
-              : intendedEntry(app === "codex" ? "toml" : "json", argv, undefined);
+              : intendedEntry(app === "codex" ? "toml" : "json", argv);
           if (app === "codex") {
             seed(
               file,
@@ -1560,7 +1550,7 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
         mkdirSync(setupDir(w.input.stateDir), { recursive: true });
         writeFileSync(recordPath(w), JSON.stringify({ format, homes: records }));
         // After the update: registered, on, and each entry's connection goes through.
-        const after = (await survey(input)).filter((v) => !v.home.home.endsWith(".codex-three"));
+        const after = await survey(input);
         for (const view of after) {
           const what = `format ${String(format)}: ${view.home.instance}`;
           expect(view.state, what).toBe("registered");
@@ -1581,31 +1571,9 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           restore();
         }
         expect(w.rows.may(left, SPACE)).toBe(false);
-        // Another home takes its name: the old entry still reaches nothing, the new one does.
-        const taking: SetupInput = {
-          ...input,
-          instances: [
-            {
-              ...claudeInstance("codex-work", { CODEX_HOME: join(w.home, ".codex-three") }),
-              target: "codex-cli",
-            },
-          ],
-        };
-        const third = (await survey(taking)).find((v) =>
-          v.home.home.endsWith(".codex-three"),
-        ) as HomeView;
-        expect(
-          await applyHome(taking, third, SPACE, w.rows, planOf(taking, [third], SPACE)[0]?.change),
-        ).toMatchObject({ result: "applied", access: "on" });
-        const taken = entryIn(ADAPTERS.find((a) => a.app === "codex") as Adapter, third.home.file);
-        expect(w.rows.may(taken, SPACE)).toBe(true);
-        expect(w.rows.may(left, SPACE), `format ${String(format)}: the old entry`).toBe(false);
-
         // The others turn off and come out exactly.
         for (const view of await survey(input)) {
-          if (view.home.instance === "codex-work" || view.home.home.endsWith(".codex-three")) {
-            continue;
-          }
+          if (view.home.instance === "codex-work") continue;
           expect(await removeHome(input, view, w.rows), view.home.instance).toMatchObject({
             result: "removed",
             access: "off",
@@ -1613,117 +1581,8 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           const adapter = ADAPTERS.find((a) => a.app === view.home.app) as Adapter;
           if (existsSync(view.home.file)) expect(entryIn(adapter, view.home.file)).toBeUndefined();
         }
-        expect(w.rows.live.map((r) => r.instance)).toEqual(["codex-work"]);
+        expect(w.rows.live).toEqual([]);
       }
-    },
-    SLOW,
-  );
-
-  test(
-    "rolled back and forward: a row the build before this one gave a registered home shows off here, and turning the home on gives its row the registration again",
-    async () => {
-      const w = await world();
-      const codex = ADAPTERS.find((a) => a.app === "codex") as Adapter;
-      const file = codex.file(w);
-      seed(file, 'model = "m"\n');
-      expect(await apply(w, codex)).toMatchObject({ result: "applied", access: "on" });
-      const [record] = readRecords(w.input.stateDir);
-      if (record === undefined) throw new Error("no record");
-      const entry = entryIn(codex, file);
-      // That build turned it off and on: its row names the folder only, and the record that row.
-      await w.rows.revoke((await viewOf(w, codex)).home, registrationOfRecord(record));
-      const earlier = w.rows.earlier((await viewOf(w, codex)).home, SPACE);
-      writeRecords(w.input.stateDir, [{ ...record, grant: earlier }]);
-      const back = await viewOf(w, codex);
-      expect(back.state).toBe("registered");
-      expect(hasAccess(process.platform, serviceRows(w), back)).toBe(false);
-      expect(w.rows.may(entry, SPACE)).toBe(false);
-      expect(await applyHome(w.input, back, SPACE, w.rows)).toMatchObject({ access: "on" });
-      expect(w.rows.may(entry, SPACE)).toBe(true);
-      expect(w.rows.live.map((r) => [r.file, r.registration])).toEqual([
-        [file, entryRegistration(entry)],
-      ]);
-    },
-    SLOW,
-  );
-
-  test(
-    "a service that keeps no registration yet (updated, not restarted): new entries carry none, as that build's did, and work",
-    async () => {
-      for (const a of ADAPTERS) {
-        const w = await world();
-        const file = a.file(w);
-        seed(file, a.format === "json" ? "{}\n" : "");
-        const input: SetupInput = { ...w.input, registers: false };
-        const view = (await survey(input)).find((v) => v.home.file === file) as HomeView;
-        const [item] = planOf(input, [view], SPACE);
-        const change = item?.change;
-        expect(
-          typeof change === "object" ? Object.keys(change.entry) : change,
-          a.app,
-        ).not.toContain("env");
-        expect(await applyHome(input, view, SPACE, w.rows, item?.change), a.app).toMatchObject({
-          result: "applied",
-          access: "on",
-        });
-        const entry = entryIn(a, file);
-        expect(entryRegistration(entry), a.app).toBeUndefined();
-        expect(w.rows.may(entry, SPACE), a.app).toBe(true);
-      }
-    },
-    SLOW,
-  );
-  test.skipIf(root)(
-    "reused instance: a home turned off whose entry stayed reaches nothing once another home is given its instance, that home's connections go through, and an entry naming the instance without a registration reaches nothing",
-    async () => {
-      const w = await world();
-      const codex = ADAPTERS.find((a) => a.app === "codex") as Adapter;
-      const folderA = join(w.home, ".codex-work");
-      const folderB = join(w.home, ".codex");
-      const fileA = join(folderA, "config.toml");
-      const fileB = join(folderB, "config.toml");
-      seed(fileA, 'model = "m"\n');
-      seed(fileB, 'model = "m"\n');
-      // machine.toml's instance `shared` names one home, then the other.
-      const naming = (folder: string): SetupInput => ({
-        ...w.input,
-        instances: [{ ...claudeInstance("shared", { CODEX_HOME: folder }), target: "codex-cli" }],
-      });
-      const viewIn = async (input: SetupInput, file: string) => {
-        const found = (await survey(input)).find((v) => v.home.file === file);
-        if (found === undefined) throw new Error(`no home for ${file}`);
-        return found;
-      };
-      const applyIn = async (input: SetupInput, file: string) => {
-        const view = await viewIn(input, file);
-        return applyHome(input, view, SPACE, w.rows, planOf(input, [view], SPACE)[0]?.change);
-      };
-
-      const first = naming(folderA);
-      expect(await applyIn(first, fileA)).toMatchObject({ result: "applied", access: "on" });
-      const entryA = entryIn(codex, fileA);
-      expect(w.rows.may(entryA, SPACE)).toBe(true);
-      // Turned off while its file cannot be written: the access goes, the entry stays.
-      const restore = unwritable(fileA);
-      try {
-        expect(await removeHome(first, await viewIn(first, fileA), w.rows)).toMatchObject({
-          access: "off",
-          kept: "own",
-        });
-      } finally {
-        restore();
-      }
-      expect(entryIn(codex, fileA)).toEqual(entryA);
-      expect(w.rows.may(entryA, SPACE)).toBe(false);
-
-      const second = naming(folderB);
-      expect(await applyIn(second, fileB)).toMatchObject({ result: "applied", access: "on" });
-      const entryB = entryIn(codex, fileB) as Record<string, unknown>;
-      expect(entryInstance(entryB)).toBe("shared");
-      expect(w.rows.may(entryB, SPACE)).toBe(true);
-      expect(w.rows.may(entryA, SPACE), "the first home's entry, connecting now").toBe(false);
-      const nameOnly = Object.fromEntries(Object.entries(entryB).filter(([key]) => key !== "env"));
-      expect(w.rows.may(nameOnly, SPACE), "the instance without a registration").toBe(false);
     },
     SLOW,
   );

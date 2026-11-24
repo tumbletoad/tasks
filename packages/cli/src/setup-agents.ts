@@ -676,7 +676,7 @@ async function withRows(input: SetupInput, call: Call): Promise<SetupInput> {
   const listed = answer["homes"];
   const rows = (Array.isArray(listed) ? (listed as unknown[]) : []).flatMap((row) => {
     if (typeof row !== "object" || row === null) return [];
-    const { grant, app, home, file, instance, registration } = row as Record<string, unknown>;
+    const { grant, app, home, file, instance } = row as Record<string, unknown>;
     return typeof grant === "string" &&
       typeof app === "string" &&
       typeof home === "string" &&
@@ -688,12 +688,11 @@ async function withRows(input: SetupInput, call: Call): Promise<SetupInput> {
             home,
             ...(typeof file === "string" ? { file } : {}),
             instance,
-            ...(typeof registration === "string" ? { registration } : {}),
           },
         ]
       : [];
   });
-  return { ...input, rows, registers: answer["registrations"] === true };
+  return { ...input, rows };
 }
 
 /** Whether `--app`, `--instance` and `--home` select a home. */

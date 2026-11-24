@@ -201,9 +201,7 @@ describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the 
     expect(lines).not.toContain("MARKREQ8C3");
     expect(lines).not.toContain(ticket);
     expect(service?.runs.allows("claude", spaceId, live)).toBe(true);
-    expect(service?.ops.homes?.may({ instance: "claude", registration: undefined }, spaceId)).toBe(
-      false,
-    );
+    expect(service?.ops.homes?.may("claude", spaceId)).toBe(false);
     // While the run runs, its ticket names it, as the session named after it, in the copy of the
     // space it started in.
     expect(service?.runs.liveByTicket(ticket)).toEqual({

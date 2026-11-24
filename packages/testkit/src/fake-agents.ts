@@ -49,15 +49,15 @@ const failModes = (process.env.FAKE_AGENT_FAIL ?? "").split(",");
 const readStdin = () => {
   try { return fs.readFileSync(0, "utf8"); } catch { return ""; }
 };
-// Starts an MCP server as an agent app does, with the entry's env added to its own, and calls one
-// tool with no arguments. Resolves true when the call was answered without an error.
-const callTool = (command, serverArgs, tool, serverEnv) => new Promise((resolve) => {
+// Starts an MCP server as an agent app does, and calls one tool with no arguments. Resolves true
+// when the call was answered without an error.
+const callTool = (command, serverArgs, tool) => new Promise((resolve) => {
   const map = process.env.FAKE_AGENT_TASKS ? JSON.parse(process.env.FAKE_AGENT_TASKS) : undefined;
   const argv = map && command === map.path ? [...map.argv, ...serverArgs] : [command, ...serverArgs];
   let child;
   try {
     child = require("node:child_process").spawn(argv[0], argv.slice(1), {
-      stdio: ["pipe", "pipe", "ignore"], env: { ...process.env, ...(serverEnv ?? {}) }, windowsHide: true,
+      stdio: ["pipe", "pipe", "ignore"], env: process.env, windowsHide: true,
     });
   } catch { resolve(false); return; }
   let buffer = "";
@@ -113,7 +113,7 @@ if (args[0] === "-p") {
   const match = /^mcp__(.+)__([a-z_]+)$/.exec(allowed);
   const entry = match ? (read().mcpServers ?? {})[match[1]] : undefined;
   if (!entry) process.exit(4);
-  callTool(entry.command, entry.args ?? [], match[2], entry.env).then((ok) => process.exit(ok ? 0 : 3));
+  callTool(entry.command, entry.args ?? [], match[2]).then((ok) => process.exit(ok ? 0 : 3));
   return;
 }
 if (args[0] !== "mcp") process.exit(2);
@@ -148,13 +148,6 @@ const tableOf = (name) => {
     if (!kv) continue;
     const raw = kv[2];
     if (/^'[^']*'$/.test(raw)) { table[kv[1]] = raw.slice(1, -1); continue; }
-    // An inline table of strings, { NAME = "value", ... }: the entry's env.
-    if (/^\{.*\}$/.test(raw)) {
-      const inline = {};
-      for (const m of raw.matchAll(/([A-Za-z0-9_]+)\s*=\s*("(?:[^"\\]|\\.)*")/g)) inline[m[1]] = JSON.parse(m[2]);
-      table[kv[1]] = inline;
-      continue;
-    }
     try { table[kv[1]] = JSON.parse(raw); } catch { table[kv[1]] = raw; }
   }
   return table;
@@ -166,7 +159,7 @@ if (args[0] === "exec") {
   const name = /^mcp_servers\.(.+)\.default_tools_approval_mode=/.exec(override)?.[1];
   const table = name === undefined ? undefined : tableOf(name);
   if (!table) process.exit(4);
-  callTool(table.command, table.args ?? [], "status", table.env).then((ok) => process.exit(ok ? 0 : 3));
+  callTool(table.command, table.args ?? [], "status").then((ok) => process.exit(ok ? 0 : 3));
   return;
 }
 if (args[0] !== "mcp") process.exit(2);

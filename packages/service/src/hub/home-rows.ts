@@ -4,14 +4,11 @@
 // folder as setup resolved it and the launch as the click named it.
 import { isLive, type GrantStore } from "../local/index.ts";
 import { samePath } from "../setup/agents.ts";
-import { rowRegistration } from "./home-gate.ts";
 
-/** One of a home's rows: the instance and registration its entry names, and whether it counts now. */
+/** One of a home's rows: the instance its entry names, and whether it counts now. */
 export interface HomeRow {
   readonly grant: string;
   readonly instance: string;
-  /** The registration's ID; undefined for a row an earlier build made. */
-  readonly registration: string | undefined;
   readonly spaces: readonly string[];
   /** Neither revoked nor expired. */
   readonly live: boolean;
@@ -55,7 +52,6 @@ export function homeRows(
     .map((grant) => ({
       grant: grant.grant_id,
       instance: text(grant.attrs["instance"]),
-      registration: rowRegistration(grant.attrs),
       spaces: grant.spaces,
       live: isLive(grant, now),
     }));

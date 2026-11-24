@@ -28,10 +28,4 @@ export {
   type UnboundReason,
 } from "./binding.ts";
 export { readOnly } from "./errors.ts";
-export {
-  gateHomeOf,
-  grantRefused,
-  MANUAL_INSTANCE,
-  type GateHome,
-  type HomeGate,
-} from "./grant.ts";
+export { grantRefused, MANUAL_INSTANCE, type HomeGate } from "./grant.ts";

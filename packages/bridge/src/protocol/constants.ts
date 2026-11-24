@@ -124,15 +124,8 @@ export function isContextEnvName(name: string): boolean {
 }
 
 /**
- * The registration an entry setup wrote belongs to, which setup puts in the entry's environment: the
- * grant gate lets a connection use only its own registration's row.
- */
-export const REGISTRATION_ENV = "TTASKS_REGISTRATION";
-
-/**
  * The environment names a bridge copies into an mcp mode bind context, and no others (A2 3.6.4,
- * A3 3.7.2): the native session IDs, A4's ticket, A4's two hints and the entry's registration. A3
- * maintains the list.
+ * A3 3.7.2): the native session IDs, A4's ticket and A4's two hints. A3 maintains the list.
  */
 export const MCP_CONTEXT_ENV = [
   "CLAUDE_CODE_SESSION_ID",
@@ -141,5 +134,4 @@ export const MCP_CONTEXT_ENV = [
   "TTASKS_TICKET",
   "TTASKS_TASK",
   "TTASKS_SPACE",
-  REGISTRATION_ENV,
 ] as const;

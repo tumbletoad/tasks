@@ -47,7 +47,6 @@ describe("[A2.3.7.bridge.hygiene] arguments and the bind context", () => {
       PATH: "/usr/bin",
       HOME: "/home/mira",
       TTASKS_HOME: "/x",
-      TTASKS_REGISTRATION: "rg_x",
     };
     expect(contextEnv(env)).toEqual({
       TTASKS_TICKET: "Q4M8",
@@ -56,9 +55,8 @@ describe("[A2.3.7.bridge.hygiene] arguments and the bind context", () => {
       T3CODE_THREAD_ID: "t3",
       TTASKS_TASK: "M-14",
       TTASKS_SPACE: "sp_x",
-      TTASKS_REGISTRATION: "rg_x",
     });
-    expect(MCP_CONTEXT_ENV).toHaveLength(7);
+    expect(MCP_CONTEXT_ENV).toHaveLength(6);
     expect(
       contextEnv({
         TTASKS_TICKET: "",

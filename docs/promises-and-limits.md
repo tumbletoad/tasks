@@ -186,8 +186,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   named or the default space then. Switching space in the page or changing the default does not
   move it.
 - An agent that reaches TTasks through its registered connection reaches only the spaces you
-  granted it. Once you turn an app's tools off, its entry reaches nothing, also when you give its
-  name to another account later.
+  granted it.
 - A change by an agent or a script is never recorded as yours.
 - An agent that asks what is on for today or this week is told the tasks your Today shows under
   Focus and This week, in the same order, when your browser and TTasks's service are in the same
@@ -435,9 +434,6 @@ the behaviour it describes, and keep each one to a sentence or two.
   be written twice.
 - When agent setup changes who an agent connects as while that agent runs, a change repeated
   through the new connection can be written twice.
-- Two entries that agent setup wrote before this update and that use the same name cannot be told
-  apart: while one is off, the other's access reaches it once the other is on under that name.
-  Turning an app's tools off and on again gives its entry a registration of its own.
 - Chats of one agent app that are not sessions share their request IDs. A change sent with an ID
   another chat used is refused when it differs, and counted as already done when it is the same.
 - An entry without a space uses the default space when its bridge process starts. If that process

@@ -8,11 +8,10 @@
 // - A bridge of a terminal launch must also present the app the click recorded and the instance
 //   its home expects: a live row's, any row's when all were revoked (every call is then refused),
 //   or `manual` for a home that never had a row. So another app's bridge inside the agent is
-//   none, and setup run after Open works. The registration its entry carries is kept with it.
+//   none, and setup run after Open works.
 // - A shell sends its environment only: the value alone decides.
 // - A run's bridge presents the run's instance; no app is asked.
 // What a session may do is decided again at every call (`standing`), never who it is.
-import { REGISTRATION_ENV } from "@ttasks/bridge/protocol";
 import { INSTANCE_ID, MANUAL_INSTANCE } from "@ttasks/launch";
 import type { Named, Live } from "../hub/named.ts";
 import type { HomeRows } from "../hub/home-rows.ts";
@@ -110,13 +109,9 @@ export function decide(sources: DecideSources, presented: Presented): Decision {
       : (live.length > 0 ? live : rows.rows).map((row) => row.instance);
   if (!expected.includes(instance)) return { kind: "none", reason: "home" };
   if (heldElsewhere(presented, session)) return { kind: "none", reason: "space" };
-  const registration = presented.env[REGISTRATION_ENV];
   return {
     kind: "session",
-    session: {
-      ...session,
-      home: { ...session.home, instance, ...(registration === undefined ? {} : { registration }) },
-    },
+    session: { ...session, home: { ...session.home, instance } },
     by,
   };
 }
@@ -131,9 +126,7 @@ const heldElsewhere = (presented: Presented, session: Session): boolean =>
 /**
  * What a session may do now. A terminal session may use a space its home's live row names, and a
  * bridge only while that row names the instance it bound with, so one connection never writes
- * under two actor names, and is the registration its entry carries, so a name given to another of
- * the home's settings files never reaches it; a home that never had a row may use the machine's
- * default as `manual`.
+ * under two actor names; a home that never had a row may use the machine's default as `manual`.
  * A run's session may use its space while the run runs, whatever rows its home has.
  */
 export function standing(sources: DecideSources, home: SessionHome): Standing {
@@ -156,9 +149,7 @@ export function standing(sources: DecideSources, home: SessionHome): Standing {
   }
   const live = rows.rows.filter((row) => row.live);
   const bound = home.instance;
-  const row = live.find(
-    (r) => bound === undefined || (r.instance === bound && r.registration === home.registration),
-  );
+  const row = live.find((r) => bound === undefined || r.instance === bound);
   const instance = bound ?? row?.instance ?? rows.rows[0]?.instance ?? MANUAL_INSTANCE;
   return {
     kind: "read",

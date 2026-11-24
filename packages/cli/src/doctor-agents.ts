@@ -59,13 +59,11 @@ import {
   commandEnv,
   commandFor,
   entryInstance,
-  entryRegistration,
   manualRemoval,
   readBlockRecords,
   readRecords,
   readsHome,
   recordArgv,
-  recordEnv,
   registrationOfRecord,
   rowOfHome,
   recordedBlocks,
@@ -501,14 +499,12 @@ async function mcpCheck(
   }
   if (
     row !== undefined &&
-    (row.spaces[0] !== argAfter(argv, "--space") ||
-      row.instance !== argAfter(argv, "--instance") ||
-      row.registration !== entryRegistration(record.entry))
+    (row.spaces[0] !== argAfter(argv, "--space") || row.instance !== argAfter(argv, "--instance"))
   ) {
     return {
       id,
       status: "fail",
-      detail: `${name(view)}: the entry's --space, --instance or registration does not match its grant row. Run: ${fix}`,
+      detail: `${name(view)}: the entry's --space or --instance does not match its grant row. Run: ${fix}`,
     };
   }
   return {
@@ -948,15 +944,13 @@ async function bridgeCheck(
 ): Promise<Check> {
   const id = `bridge.${view.home.instance}`;
   const argv = resolve(view.record === undefined ? [] : recordArgv(view.record));
-  // The agent app starts the entry with the environment the entry adds: its registration's ID.
-  const env = { ...io.env, ...(view.record === undefined ? {} : recordEnv(view.record)) };
   const failed = (why: string): Check => ({
     id,
     status: "fail",
     detail: `${name(view)}: the entry's command ${why}. Run: ${CLI_NAME} doctor again once the service runs; if it stays, run ${CLI_NAME} setup agents --remove, then ${CLI_NAME} setup agents`,
   });
   const legacy = async (): Promise<Check | number> => {
-    const bridge = probe(argv, env, io.cwd, probeMs);
+    const bridge = probe(argv, io.env, io.cwd, probeMs);
     // An answer missing because the deadline ended the probe is a probe out of time.
     const fail = (why: string) => failed(bridge.timedOut() ? "did not answer in time" : why);
     try {
@@ -992,7 +986,7 @@ async function bridgeCheck(
     }
   };
   const modern = async (): Promise<boolean> => {
-    const bridge = probe(argv, env, io.cwd, probeMs);
+    const bridge = probe(argv, io.env, io.cwd, probeMs);
     try {
       const discovered = await bridge.request("server/discover", MODERN_META);
       return isMessage(discovered?.["result"]);

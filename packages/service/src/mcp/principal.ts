@@ -10,7 +10,7 @@
 // its answer changes (an account label, the hosts), and a scope that changed with it would lose
 // the receipts a retry must find. Every chat of that app on this machine that is no session
 // shares it, and with it its request IDs.
-import { REGISTRATION_ENV, type JsonObject } from "@ttasks/bridge/protocol";
+import type { JsonObject } from "@ttasks/bridge/protocol";
 import { INSTANCE_ID, MANUAL_INSTANCE } from "@ttasks/launch";
 import type { Principal } from "../ops/index.ts";
 
@@ -21,17 +21,6 @@ import type { Principal } from "../ops/index.ts";
 export function instanceOf(context: JsonObject): string {
   const value = context["instance"];
   return typeof value === "string" && INSTANCE_ID.test(value) ? value : MANUAL_INSTANCE;
-}
-
-/**
- * The registration a connection's entry carries in its environment (setup's ID), or undefined for an
- * entry that carries none. Compared as sent: a value that is no ID is no registration's, and none's.
- */
-export function registrationOf(context: JsonObject): string | undefined {
-  const env = context["env"];
-  if (typeof env !== "object" || env === null || Array.isArray(env)) return undefined;
-  const value = (env as Record<string, unknown>)[REGISTRATION_ENV];
-  return typeof value === "string" && value !== "" ? value : undefined;
 }
 
 /** The principal of an unbound MCP connection on machine `machine`. */

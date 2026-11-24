@@ -7,13 +7,12 @@
 //   setup/seen          the instances whose MCP calls this start saw (every CLI class)
 //
 // A row is A3's registration grant, for TTasks's entry in one settings file: the instance, the app,
-// the home's folder and the file, the registration's ID the entry carries, the account label, the
-// other apps that read the file (the Codex app, T3: A3 3.13.6 step 3, so attribution can say "via
-// T3") and the space the entry names (`--space`, `--instance`). It has no secret and no expiry;
-// setup asks for it once the entry is in place, and revokes it before it takes the entry out. The
-// CLI changes the file itself, in the person's session with the person's environment
-// (setup/agents.ts); the service keeps the row, so the one holder of service.lock is the one writer
-// of the grants table.
+// the home's folder and the file, the account label, the other apps that read the file (the Codex
+// app, T3: A3 3.13.6 step 3, so attribution can say "via T3") and the space the entry names
+// (`--space`, `--instance`). It has no secret and no expiry; setup asks for it once the entry is
+// in place, and revokes it before it takes the entry out. The CLI changes the file itself, in the
+// person's session with the person's environment (setup/agents.ts); the service keeps the row, so
+// the one holder of service.lock is the one writer of the grants table.
 //
 // `setup/seen` is what `ttasks doctor --live` asks after its headless call through an agent app
 // (A3 3.14): the time this start last carried out a tool call from each instance (the entry's
@@ -27,9 +26,8 @@ import { hasControl, INSTANCE_ID, MANUAL_INSTANCE } from "@ttasks/launch";
 import { isId } from "@ttasks/storage";
 import { isLive, type ConnectionClass, type Grant, type GrantStore } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
-import { HOSTS, REGISTRATION_ID, rowOfHome, samePath } from "../setup/agents.ts";
+import { HOSTS, rowOfHome, samePath } from "../setup/agents.ts";
 import { AGENT_APPS, isAgentApp } from "../setup/state.ts";
-import { rowRegistration } from "./home-gate.ts";
 import type { Logger } from "./log.ts";
 
 export interface AgentHomesHost {
@@ -166,19 +164,17 @@ const hostsOf = (value: unknown): string[] =>
     : [];
 
 /**
- * A row as the CLI sees it. No secret: an agent-home row has none. `file` and `registration` are
- * absent on a row an earlier build made.
+ * A row as the CLI sees it. No secret: an agent-home row has none. `file` is absent on a row an
+ * earlier build made.
  */
 function rowOf(grant: Grant) {
   const file = attr(grant, "file");
-  const registration = rowRegistration(grant.attrs);
   return {
     grant: grant.grant_id,
     app: attr(grant, "app"),
     home: attr(grant, "home"),
     ...(file === "" ? {} : { file }),
     instance: attr(grant, "instance"),
-    ...(registration === undefined ? {} : { registration }),
     account: attr(grant, "account"),
     hosts: hostsOf(grant.attrs["hosts"]),
     spaces: grant.spaces,
@@ -195,21 +191,13 @@ function text(params: JsonObject, key: string, max: number): string {
 }
 
 /**
- * The registration a verb names: its app, folder and settings file, the ID its entry carries
- * (`registration`, absent for an earlier build's entry) and the row setup's record of it names
- * (`grant`: an ID, null for none, absent when setup keeps no record of it), which find an earlier
- * build's row (rowOfHome).
+ * The registration a verb names: its app, folder and settings file, and the row setup's record of
+ * it names (`grant`: an ID, null for none, absent when setup keeps no record of it), which finds an
+ * earlier build's row (rowOfHome).
  */
 function registrationParams(params: JsonObject) {
   const app = params["app"];
   if (!isAgentApp(app)) throw invalid("app", `Expected ${AGENT_APPS.join(", ")}`);
-  const registration = params["registration"];
-  if (
-    registration !== undefined &&
-    !(typeof registration === "string" && REGISTRATION_ID.test(registration))
-  ) {
-    throw invalid("registration", "Expected a registration ID");
-  }
   const recorded = params["grant"];
   if (
     recorded !== undefined &&
@@ -220,7 +208,7 @@ function registrationParams(params: JsonObject) {
   }
   return {
     home: { app, home: text(params, "home", 4096), file: text(params, "file", 4096) },
-    of: { registration, recorded },
+    of: { recorded },
   };
 }
 
@@ -252,8 +240,7 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
     });
 
   return {
-    // `registrations`: this service keeps the registration an entry carries (SetupInput.registers).
-    "setup/homes": () => Promise.resolve({ homes: live().map(rowOf), registrations: true }),
+    "setup/homes": () => Promise.resolve({ homes: live().map(rowOf) }),
 
     "setup/seen": (params) => {
       const given = params["folders"];
@@ -273,7 +260,6 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
       userOnly(cls);
       const named = registrationParams(params);
       const { app, home, file } = named.home;
-      const { registration } = named.of;
       const given = params["hosts"];
       if (
         given !== undefined &&
@@ -325,7 +311,6 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
       const kept = ofHome.find(
         (grant) =>
           samePath(host.platform, attr(grant, "file"), file) &&
-          rowRegistration(grant.attrs) === registration &&
           attr(grant, "instance") === instance &&
           attr(grant, "account") === account &&
           hostsOf(grant.attrs["hosts"]).join() === hosts.join() &&
@@ -346,7 +331,6 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
           home,
           file,
           instance,
-          ...(registration === undefined ? {} : { registration }),
           account,
           hosts,
         },

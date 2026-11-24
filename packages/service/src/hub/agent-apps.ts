@@ -71,7 +71,6 @@ import {
   type SetupInput,
 } from "../setup/index.ts";
 import { agentHomeVerbs, type AgentHomesHost } from "./agent-homes.ts";
-import { rowRegistration } from "./home-gate.ts";
 import { instanceVerbs, readInstancesRecord, type InstancesHost } from "./instances.ts";
 
 export interface AgentAppsHost {
@@ -263,14 +262,12 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     .filter((grant) => grant.revoked_at === null)
     .map((grant): ServiceRow => {
       const file = attr(grant, "file");
-      const registration = rowRegistration(grant.attrs);
       return {
         grant: grant.grant_id,
         app: attr(grant, "app"),
         home: attr(grant, "home"),
         ...(file === "" ? {} : { file }),
         instance: attr(grant, "instance"),
-        ...(registration === undefined ? {} : { registration }),
       };
     });
   const input: SetupInput = {

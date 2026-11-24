@@ -9,12 +9,11 @@ export type RowCall = (
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
-/** The registration a verb is for: the home's file, its ID and the row its record names. */
+/** The registration a verb is for: the home's file and the row its record names. */
 const registrationParams = (home: AgentHome, of: RegistrationOf) => ({
   app: home.app,
   home: home.home,
   file: home.file,
-  ...(of.registration === undefined ? {} : { registration: of.registration }),
   ...(of.recorded === undefined ? {} : { grant: of.recorded }),
 });
 
