@@ -335,8 +335,7 @@ function checkChain(
 /** A grouping's value without its position. */
 function withoutPosition(json: string | undefined): string | undefined {
   if (json === undefined) return undefined;
-  const { position: _position, ...rest } = JSON.parse(json) as Record<string, unknown>;
-  return JSON.stringify(rest);
+  return JSON.stringify({ ...(JSON.parse(json) as Record<string, unknown>), position: null });
 }
 
 /** Each commit's kind by seq: `ops`, `undo`, `redo`, `migration`. */

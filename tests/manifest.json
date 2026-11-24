@@ -2233,6 +2233,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.history.alone",
+      "title": "Property test of one person working alone: they create, file, move and reorder tasks, check them off, reopen, archive, move them to the Trash and back, add notes, folders and tickets, make, move and remove areas and projects, often several in one request, and queue runs and open sessions in between and between their undos and redos; then they undo until nothing is left and redo until nothing is left. Every Undo and Redo applies whole, the space after the last Undo is the space before the first step and after the last Redo the space after the last step, the order of every list included, the rules every write keeps hold after every write, and every way this once failed runs first as a fixed case",
+      "source": "A1 3.10, A1 3.10.1",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.source.detach",
       "title": "In the page, a source's Remove takes it off the task and the toast's Undo brings it back; after a reload the Removed line lists it with who removed it and Put back; put back while another task holds its key brings it back as context with a link to where its captures go",
       "owner": "M3",

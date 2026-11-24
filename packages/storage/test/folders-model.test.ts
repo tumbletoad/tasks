@@ -24,7 +24,7 @@ import { openSpace } from "../src/space.ts";
 import { type FolderOs } from "../src/write/folders.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
-import { checkSpace, expectBeside, listOf } from "./space-rules.ts";
+import { checkSpace, expectBeside, listOf, listsOf } from "./space-rules.ts";
 import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("folders-model");
@@ -341,8 +341,8 @@ interface FolderState {
 }
 
 /**
- * What an undo must give back: the live folders, the live projects with their areas, and each
- * task's project, area and tombstone.
+ * What an undo must give back: the live folders, the live projects with their areas, each
+ * task's project, area and tombstone, and the order of every list (space-rules.ts: listsOf).
  */
 interface Snapshot {
   folders: Record<string, string>;
@@ -351,6 +351,7 @@ interface Snapshot {
   tasks: Record<string, string | null>;
   taskAreas: Record<string, string | null>;
   deletedTasks: string[];
+  lists: Record<string, string[]>;
 }
 
 interface World {
@@ -445,6 +446,7 @@ function snapshot(w: World): Snapshot {
     tasks: Object.fromEntries(tasks.map((r) => [String(r["id"]), nullable(r["project_id"])])),
     taskAreas: Object.fromEntries(tasks.map((r) => [String(r["id"]), nullable(r["area_id"])])),
     deletedTasks: tasks.filter((r) => r["deleted_at"] !== null).map((r) => String(r["id"])),
+    lists: listsOf(w.fx.reader),
   };
 }
 
@@ -492,6 +494,14 @@ function backTo(now: Snapshot, was: Snapshot): Snapshot {
     tasks: kept(now.tasks, was.tasks),
     taskAreas: kept(now.taskAreas, was.tasks),
     deletedTasks: now.deletedTasks.filter(old),
+    lists: Object.fromEntries(
+      Object.entries(now.lists)
+        .map(([list, ids]): [string, string[]] => [
+          list,
+          ids.filter((id) => old(id) || Object.hasOwn(was.areas, id)),
+        ])
+        .filter(([, ids]) => ids.length > 0),
+    ),
   };
 }
 

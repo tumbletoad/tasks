@@ -32,7 +32,7 @@ import { appliedSql } from "../src/write/history.ts";
 import { openWriter } from "../src/open.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
-import { checkSpace } from "./space-rules.ts";
+import { checkSpace, listsOf } from "./space-rules.ts";
 import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("undo-model");
@@ -1260,6 +1260,11 @@ const property = (seen: Seen) =>
       let space = checkSpace(fx.reader);
       for (const s of steps) {
         space = checkSpace(fx.reader, space);
+        // Every task stays in the Inbox where it was made, in the Trash and undone too.
+        expect(
+          listsOf(fx.reader)["the Inbox"],
+          "the Inbox in the order the tasks were made",
+        ).toEqual(ids.tasks);
         const before = snapshot(fx, ids);
         if (s.kind === "create") {
           if (ids.tasks.length >= MAX_TASKS) continue;

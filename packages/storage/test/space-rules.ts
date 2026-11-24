@@ -135,6 +135,24 @@ export function checkSpace(conn: Connection, before?: SpaceState): SpaceState {
   return { lastSeq, lifecycles, open };
 }
 
+/**
+ * Every list of the space in its order, as every view sorts it: the tasks of each project, of each
+ * area outside a project and of the Inbox, and the projects of each area and of none. A row in the
+ * Trash, or one whose creation was undone, keeps its place in its list.
+ */
+export function listsOf(conn: Connection): Record<string, string[]> {
+  const lists: Record<string, string[]> = {};
+  for (const r of conn.prepare(LISTS).all())
+    (lists[String(r["list"])] ??= []).push(String(r["id"]));
+  return lists;
+}
+
+const LISTS =
+  "SELECT id, CASE WHEN project_id IS NOT NULL THEN 'tasks of project ' || project_id " +
+  "WHEN area_id IS NOT NULL THEN 'tasks of area ' || area_id ELSE 'the Inbox' END AS list, " +
+  "position FROM tasks UNION ALL SELECT id, 'projects of ' || coalesce('area ' || area_id, " +
+  "'no area'), position FROM projects ORDER BY 2, 3, 1";
+
 /** The tasks of `task`'s list in their order: by position, as every view sorts them. */
 export function listOf(conn: Connection, task: string): string[] {
   return conn
