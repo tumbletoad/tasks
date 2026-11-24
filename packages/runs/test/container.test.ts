@@ -292,17 +292,50 @@ describe("[A4.3.11.8.container.ungrouped] without a process group, a run still s
     return service;
   }
 
-  test("an agent and its child that ignore the interrupt are ended, and nothing claims to confirm it", async () => {
+  test("an agent and its child that ignore the interrupt are ended; while the agent lives it is never said to be gone, and after, nothing claims to confirm the rest", async () => {
     const service = await ungrouped();
     try {
       const { token, name } = await start(service, "ignore-stop");
       await waitForCensus(token, (pids) => pids.length === 2);
+      expect(await service.request("confirm", { name })).toMatchObject({ state: "occupied" });
       await service.request("kill", { name });
       await waitForCensus(token, (pids) => pids.length === 0);
       expect(await service.request("confirm", { name, waitMs: 5_000 })).toEqual({
         state: "unconfirmable",
       });
     } finally {
+      await service.close();
+    }
+  });
+
+  test("Windows: when taskkill cannot walk the agent's tree, the agent is still ended, and a live agent is never said to be gone", async (ctx) => {
+    if (!windows) ctx.skip("taskkill is Windows's own");
+    const service = await Service.plain("ungrouped", undefined, [join(work, "no-taskkill.exe")]);
+    services.push(service);
+    const token = newToken();
+    const name = `t-${token}`;
+    try {
+      const { pid } = await service.request<{ pid: number }>("start", {
+        name,
+        mode: "ignore-stop",
+        token,
+        maxMs: 60_000,
+      });
+      await waitForCensus(token, (pids) => pids.length === 2);
+      await service.request("kill", { name });
+      const confirmed = await service.request<Confirmation>("confirm", { name, waitMs: 10_000 });
+      if (census(token).includes(pid)) expect(confirmed).toMatchObject({ state: "occupied" });
+      expect(confirmed).toEqual({ state: "unconfirmable" });
+      expect(census(token)).not.toContain(pid);
+    } finally {
+      // Its child, which nothing could find without taskkill: this test's own stand-in.
+      for (const left of census(token)) {
+        try {
+          process.kill(left);
+        } catch {
+          // Gone meanwhile.
+        }
+      }
       await service.close();
     }
   });

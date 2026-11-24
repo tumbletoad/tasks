@@ -1,14 +1,20 @@
 // Runs where no process group can hold them (Linux without systemd or a delegated unit, Windows
 // without ttasks-run.exe): the agent is the service's own child, and its processes are what TTasks
-// can find of its tree. Nothing confirms that none is left, so every confirmation is
-// `unconfirmable`: the run settles, and its cleanup says that TTasks ended what it could find.
+// can find of its tree. The agent itself is known: while it lives, a confirmation says `occupied`,
+// as a group's with processes left, so the run is never called ended. Once it is gone nothing
+// counts what it started, so the confirmation is `unconfirmable`: the run settles, and its cleanup
+// says that TTasks ended what it could find.
 //
-// What is found: on Linux the agent's process group (its own, from the start) and every process
-// whose parents lead back to the agent, read from /proc at the kill; on Windows the agent's tree as
-// `taskkill /T` walks it while the agent lives. A process that left the group and lost its parent
-// (a daemon) is not found. When the service ends, the agent's stdin ends, which ends an agent that
-// reads its protocol from there; on Windows the agent itself ends with the service too (Node holds
-// its own children in a job), but what the agent started does not.
+// What is found: on Linux and macOS the agent's process group (its own, from the start), and on
+// Linux every process whose parents lead back to the agent, read from /proc at the kill; on Windows
+// the agent's tree as `taskkill /T` walks it while the agent lives, and then the agent itself by its
+// own handle, which ends it also when taskkill could not. The group is signalled only while its ID
+// is the run's: while the agent lives, and once, when its exit is seen, which ends what it left in
+// its group. Later, and after a restart, the ID may be another program's, so no group is
+// signalled. A process that left the group and lost its parent (a daemon) is not found. When the
+// service ends, the agent's stdin ends, which ends an agent that reads its protocol from there; on
+// Windows the agent itself ends with the service too (Node holds its own children in a job), but
+// what the agent started does not.
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,8 +22,10 @@ import { setTimeout as sleep } from "node:timers/promises";
 import {
   checkName,
   ContainerError,
+  DEFAULT_RECOVER_WAIT_MS,
   type AgentExit,
   type ConfirmOptions,
+  type ContainerKind,
   type Confirmation,
   type Contained,
   type Containers,
@@ -102,6 +110,10 @@ export class UngroupedContainers implements Containers {
     this.proc = options.proc ?? "/proc";
   }
 
+  kind(): Promise<ContainerKind> {
+    return Promise.resolve("tree");
+  }
+
   probe(): Promise<ProbeResult> {
     return Promise.resolve({ available: true, kind: "tree" });
   }
@@ -136,9 +148,19 @@ export class UngroupedContainers implements Containers {
     });
     const pid = child.pid ?? -1;
     const live: Live = { child, pid, exited, done: false };
-    void exited.then(() => {
+    const gone = (): void => {
       live.done = true;
-    });
+      // What the agent left in its group ends now: the ID stays the group's while anything is in
+      // it. Once the group is empty the ID is free, and may be another program's.
+      if (this.platform === "win32") return;
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        // Nothing was left in it.
+      }
+    };
+    if (child.exitCode !== null || child.signalCode !== null) gone();
+    else child.once("exit", gone);
     this.live.set(spec.name, live);
     return {
       name: spec.name,
@@ -165,7 +187,10 @@ export class UngroupedContainers implements Containers {
     }
   }
 
-  /** Ends what can be found of the run; the run is forgotten once the agent ended too. */
+  /**
+   * Ends what can be found of the run while its agent lives; once it is gone nothing more can be
+   * found. The run is forgotten once the agent ended too.
+   */
   async kill(name: string): Promise<void> {
     checkName(name);
     const live = this.live.get(name);
@@ -173,12 +198,19 @@ export class UngroupedContainers implements Containers {
     void live.exited.then(() => {
       if (this.live.get(name) === live) this.live.delete(name);
     });
+    if (live.done) return;
     if (this.platform === "win32") {
-      if (!live.done) await this.taskkillTree(live.pid);
+      await this.taskkillTree(live.pid);
+      try {
+        // By the agent's own handle, which reaches nothing once it exited.
+        live.child.kill("SIGKILL");
+      } catch {
+        // Its confirmation says whether it is still there.
+      }
       return;
     }
     const found = descendants(parentTable(this.proc), live.pid);
-    for (const pid of [-live.pid, ...(live.done ? [] : [live.pid]), ...found]) {
+    for (const pid of [-live.pid, live.pid, ...found]) {
       try {
         process.kill(pid, "SIGKILL");
       } catch {
@@ -188,22 +220,29 @@ export class UngroupedContainers implements Containers {
   }
 
   /**
-   * Waits up to `waitMs` for the agent to end; what else is left cannot be counted. The run stays
-   * known for the kill that follows: what the agent left in its group is found from it.
+   * Waits up to `waitMs` for the agent to end: `occupied` while it lives, else `unconfirmable`,
+   * since what else is left cannot be counted. The run stays known for the kill that follows: what
+   * the agent left in its group is found from it.
    */
   async confirmEmpty(name: string, options: ConfirmOptions = {}): Promise<Confirmation> {
     checkName(name);
     const live = this.live.get(name);
-    if (live !== undefined && !live.done && (options.waitMs ?? 0) > 0) {
-      await Promise.race([live.exited, sleep(options.waitMs)]);
-    }
-    return UNCONFIRMABLE;
+    if (live === undefined || live.done) return UNCONFIRMABLE;
+    const waitMs = options.waitMs ?? 0;
+    const ended =
+      waitMs > 0 && (await Promise.race([live.exited.then(() => true), sleep(waitMs, false)]));
+    return ended ? UNCONFIRMABLE : { state: "occupied", detail: "the agent still runs" };
   }
 
-  /** After a restart nothing of the run is known: what it left cannot be found by its name. */
-  recover(name: string): Promise<Confirmation> {
+  /**
+   * Ends what can be found of a run this service started, as kill does, and confirms it. After a
+   * restart nothing of the run is known: what it left cannot be found by its name.
+   */
+  async recover(name: string, options: ConfirmOptions = {}): Promise<Confirmation> {
     checkName(name);
-    return Promise.resolve(UNCONFIRMABLE);
+    if (!this.live.has(name)) return UNCONFIRMABLE;
+    await this.kill(name);
+    return this.confirmEmpty(name, { waitMs: options.waitMs ?? DEFAULT_RECOVER_WAIT_MS });
   }
 
   private taskkillTree(pid: number): Promise<void> {

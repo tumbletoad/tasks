@@ -146,7 +146,7 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
         stoppable: false,
       };
     case "unknown":
-      return { tone: "unknown", status: [msg("run.unknown")], stoppable: true };
+      return { tone: "unknown", status: [msg("run.unknown", { label })], stoppable: true };
     case "failed": {
       const reason = run.reason ?? "";
       if (reason === "needs_input") {

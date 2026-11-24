@@ -19,11 +19,18 @@ export const RUN_ADAPTERS = ["claude-print", "codex"] as const;
 export type RunAdapterId = (typeof RUN_ADAPTERS)[number];
 
 /**
- * A stdout line longer than this (UTF-8 bytes, without its line break) is skipped (A4 3.11.4). It
- * is well above ANSWER_CAP_BYTES: the line that carries an answer is JSON, whose escaping and other
- * fields make it several times longer than the answer itself.
+ * A stdout line up to this many UTF-8 bytes, without its line break, is read as it is. It is well
+ * above ANSWER_CAP_BYTES: the line that carries an answer is JSON, whose escaping and other fields
+ * make it several times longer than the answer itself. A longer line is read the same way, up to
+ * LONG_LINE_CAP_BYTES, and then each string in it longer than this is cut to its start.
  */
 export const LINE_CAP_BYTES = 8 * 1024 * 1024;
+
+/**
+ * The longest stdout line read at all, in UTF-8 bytes. While it is parsed, a line takes a few
+ * times its length in memory, in each run that sends one; a longer line is not read.
+ */
+export const LONG_LINE_CAP_BYTES = 64 * 1024 * 1024;
 
 /**
  * The agent's answer is kept whole up to this many UTF-8 bytes, and cut with a flag beyond it: in
@@ -143,7 +150,7 @@ export interface StreamCounts {
   unknownEvents: number;
   /** Lines that were not JSON, or JSON that was not an object. */
   notJson: number;
-  /** Lines over LINE_CAP_BYTES, skipped whole. */
+  /** Lines that could not be read: over LONG_LINE_CAP_BYTES, or over LINE_CAP_BYTES and not JSON. */
   oversized: number;
   /** Lines that were not valid UTF-8. They are still parsed, with replacement characters. */
   invalidUtf8: number;
@@ -366,6 +373,11 @@ export const RUN_EVIDENCE_FIELDS = {
   native_id: "id",
   /** The agent home the run started its app in, as a digest: never the path. */
   home: "id",
+  /**
+   * How the run's processes start, recorded with `starting`: `cgroup` or `job`, a group the
+   * operating system counts, or `tree`, none.
+   */
+  container: "id",
 } as const satisfies Record<string, RunEvidenceKind>;
 
 export type RunEvidenceKey = keyof typeof RUN_EVIDENCE_FIELDS;
@@ -468,7 +480,8 @@ export const RUN_LIMIT_BOUNDS = {
  * - `ended_leftovers`: processes the agent started, or the agent itself, had to be ended; the
  *   operating system then confirmed none is left.
  * - `ended_found`: no process group could hold the run, so TTasks ended the agent's processes it
- *   could find, and nothing confirms that none is left.
+ *   could find: the agent itself is gone, and nothing confirms that none of what it started is
+ *   left.
  */
 export const RUN_CLEANUPS = ["confirmed", "ended_leftovers", "ended_found"] as const;
 export type RunCleanup = (typeof RUN_CLEANUPS)[number];

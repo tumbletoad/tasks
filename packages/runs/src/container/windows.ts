@@ -23,6 +23,7 @@ import {
   DEFAULT_RECOVER_WAIT_MS,
   type AgentExit,
   type ConfirmOptions,
+  type ContainerKind,
   type Confirmation,
   type Contained,
   type Containers,
@@ -79,6 +80,10 @@ export class WindowsContainers implements Containers {
 
   constructor(options: WindowsOptions) {
     this.helper = options.helper;
+  }
+
+  kind(): Promise<ContainerKind> {
+    return Promise.resolve("job");
   }
 
   async probe(): Promise<ProbeResult> {

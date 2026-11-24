@@ -96,11 +96,27 @@ describe.each(STREAM_KINDS)(
       expect(outcome.resultFinal).toBe(false);
     });
 
-    test("an answer on a line too long to read leaves the earlier message unfinished, never final", () => {
+    test("an answer on a line longer than a line read whole is read as any answer is: cut with a flag, and final", () => {
       const parser = createStreamParser(kind);
       parser.push(`${messageLine(kind, "Working.")}\n`);
       const lines = finalLines(kind, "a".repeat(LINE_CAP_BYTES + 1));
       parser.push(`${lines.join("\n")}\n`);
+      const { outcome } = parser.end(exit0);
+      expect(outcome.result === "a".repeat(ANSWER_CAP_BYTES)).toBe(true);
+      expect([outcome.reason, outcome.resultCut, outcome.resultFinal]).toEqual([
+        "success",
+        true,
+        true,
+      ]);
+      expect(outcome.counts.oversized).toBe(0);
+    });
+
+    test("an answer on a line that cannot be read leaves the earlier message unfinished, never final", () => {
+      const parser = createStreamParser(kind);
+      parser.push(`${messageLine(kind, "Working.")}\n`);
+      // Longer than a line read whole, and broken off before its end.
+      const line = finalLines(kind, "a".repeat(LINE_CAP_BYTES)).join("\n").slice(0, -3);
+      parser.push(`${line}\n`);
       const { outcome } = parser.end(exit0);
       expect([outcome.result, outcome.resultFinal]).toEqual(["Working.", false]);
       expect(outcome.counts.oversized).toBe(1);

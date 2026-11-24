@@ -4,7 +4,7 @@
 // fake's input ended and it exited.
 import { PassThrough } from "node:stream";
 import { describe, expect, test } from "vitest";
-import type { RunEvent } from "@ttasks/contracts/runs";
+import { LINE_CAP_BYTES, type RunEvent } from "@ttasks/contracts/runs";
 import {
   claudeArgs,
   claudeDriver,
@@ -130,6 +130,8 @@ const ASKS: readonly { readonly request: Json; readonly asked: string }[] = [
 
 /** The words of the request the run heard, in a cell of TABLE. */
 const ASKED = Symbol("the request's words");
+/** The words of a run that ended on a line it could not read: TTasks's own, not the agent's. */
+const UNREAD = expect.any(String) as string;
 
 /** The answer the run shows: its words, and whether they are the agent's final answer. */
 type Answer = readonly [text: string | null | typeof ASKED, final: boolean];
@@ -171,6 +173,11 @@ const TABLE: Readonly<Record<Phase, Readonly<Record<Heard, Expected>>>> = {
       wrote: ["turned down", "interrupt"],
     },
     "unknown request": { goesOn: "turn", answer: [null, false], wrote: ["error"] },
+    unreadable: {
+      settles: { ok: false, outcome: "agent_error", error: UNREAD },
+      answer: [null, false],
+      wrote: ["interrupt"],
+    },
     exit: { settles: { ok: false, outcome: "no_result" }, answer: [null, false] },
     stop: { goesOn: "stopping", answer: [null, false], wrote: ["interrupt"] },
   },
@@ -190,6 +197,11 @@ const TABLE: Readonly<Record<Phase, Readonly<Record<Heard, Expected>>>> = {
       wrote: ["turned down", "interrupt"],
     },
     "unknown request": { goesOn: "between", answer: ["First.", true], wrote: ["error"] },
+    unreadable: {
+      settles: { ok: false, outcome: "agent_error", error: UNREAD },
+      answer: ["First.", false],
+      wrote: ["interrupt", "end"],
+    },
     exit: { settles: { ok: false, outcome: "no_result" }, answer: ["First.", false] },
     stop: {
       settles: { ok: false, outcome: "interrupted" },
@@ -205,6 +217,7 @@ const TABLE: Readonly<Record<Phase, Readonly<Record<Heard, Expected>>>> = {
     failed: { settles: { ok: false, outcome: "interrupted" }, answer: [null, false] },
     asks: { goesOn: "stopping", answer: [null, false], wrote: ["turned down"] },
     "unknown request": { goesOn: "stopping", answer: [null, false], wrote: ["error"] },
+    unreadable: { settles: { ok: false, outcome: "interrupted" }, answer: [null, false] },
     exit: { settles: { ok: false, outcome: "interrupted" }, answer: [null, false] },
     stop: { goesOn: "stopping", answer: [null, false] },
   },
@@ -216,6 +229,7 @@ const TABLE: Readonly<Record<Phase, Readonly<Record<Heard, Expected>>>> = {
     failed: "unchanged",
     asks: "unchanged",
     "unknown request": "unchanged",
+    unreadable: "unchanged",
     exit: "unchanged",
     stop: "unchanged",
   },
@@ -247,45 +261,68 @@ async function driverIn(phase: Phase) {
       if (event.kind === "answer") answer = [event.text, event.final];
     },
   );
-  const say = async (...messages: unknown[]) => {
-    fromProgram.write(messages.map((m) => `${JSON.stringify(m)}\n`).join(""));
+  /** Writes `text` as the program does, and lets it be read. */
+  const raw = async (text: string) => {
+    fromProgram.write(text);
     for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
   };
+  const say = (...messages: unknown[]) =>
+    raw(messages.map((m) => `${JSON.stringify(m)}\n`).join(""));
   await say(INIT);
   if (phase === "between") await say(backgroundOf(1), { ...RESULT, result: "First." });
   if (phase === "settled") await say({ ...RESULT, result: "First." });
   if (phase === "stopping") driver.interrupt();
   await say();
   wrote.splice(0);
-  return { driver, wrote, say, answer: () => answer };
+  /** Closes the program's output, as a program does that then lives on. */
+  const closeOutput = async () => {
+    fromProgram.end();
+    for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  };
+  return { driver, wrote, say, raw, closeOutput, answer: () => answer };
 }
 
-/** Makes the driver hear `heard`; `ask` is the request for the person, when it hears one. */
+/** Longer than a line read whole: a file a tool wrote, say. */
+const BULK = "x".repeat(LINE_CAP_BYTES + 1);
+
+/**
+ * Makes the driver hear `heard`; `ask` is the request for the person, when it hears one. `long`:
+ * the line it hears also carries more than a line read whole.
+ */
 async function makeHear(
-  { driver, say }: Awaited<ReturnType<typeof driverIn>>,
+  { driver, say, raw }: Awaited<ReturnType<typeof driverIn>>,
   heard: Heard,
   ask: (typeof ASKS)[number],
+  long = false,
 ): Promise<void> {
+  const line = (message: Json): Json => (long ? { ...message, bulk: BULK } : message);
   switch (heard) {
     case "turn":
-      return say(own("Newer words."));
+      return say(line(own("Newer words.")));
     case "other":
-      return say({ ...own("A helper's notes."), parent_tool_use_id: "toolu_h1" });
+      return say(line({ ...own("A helper's notes."), parent_tool_use_id: "toolu_h1" }));
     case "result":
-      return say(backgroundOf(0), { ...RESULT, result: "Done." });
+      return say(backgroundOf(0), line({ ...RESULT, result: "Done." }));
     case "result, more":
-      return say({ ...RESULT, result: "Done.", queued_turn_count: 1 });
+      return say(line({ ...RESULT, result: "Done.", queued_turn_count: 1 }));
     case "failed":
-      return say({
-        ...RESULT,
-        is_error: true,
-        subtype: "error_during_execution",
-        result: "The API failed.",
-      });
+      return say(
+        line({
+          ...RESULT,
+          is_error: true,
+          subtype: "error_during_execution",
+          result: "The API failed.",
+        }),
+      );
     case "asks":
-      return say({ type: "control_request", request_id: "r1", request: ask.request });
+      return say(line({ type: "control_request", request_id: "r1", request: ask.request }));
+    case "unreadable":
+      // Longer than a line read whole, and not JSON: nothing of it can be read.
+      return raw(`${BULK}\n`);
     case "unknown request":
-      return say({ type: "control_request", request_id: "r2", request: { subtype: "later_kind" } });
+      return say(
+        line({ type: "control_request", request_id: "r2", request: { subtype: "later_kind" } }),
+      );
     case "exit":
       driver.ended({ code: 1, signal: null });
       return say();
@@ -296,49 +333,84 @@ async function makeHear(
 }
 
 describe("[A4.3.11.claude.driver] the claude driver's decisions: every phase against everything it hears", () => {
-  for (const phase of PHASES) {
-    for (const heard of HEARD) {
-      test(`${phase}, hears ${heard}`, async () => {
-        const expected = TABLE[phase][heard] as Expected | undefined;
-        expect(expected, `no cell for ${phase} × ${heard}`).toBeDefined();
-        if (expected === undefined) return;
-        for (const ask of heard === "asks" ? ASKS : ASKS.slice(0, 1)) {
-          const bench = await driverIn(phase);
-          const before = await settledNow(bench.driver);
-          await makeHear(bench, heard, ask);
-          const work = await settledNow(bench.driver);
-          if (expected === "unchanged") {
-            expect(work).toEqual(before);
-            expect(bench.wrote).toEqual([]);
-            continue;
+  // A line too long to read whole is heard as its short twin is: the work and its answer come from
+  // the same reading of it.
+  for (const long of [false, true]) {
+    for (const phase of PHASES) {
+      for (const heard of HEARD) {
+        const name = `${phase}, hears ${heard}${long ? ", in a line too long to read whole" : ""}`;
+        test(name, async () => {
+          const expected = TABLE[phase][heard] as Expected | undefined;
+          expect(expected, `no cell for ${phase} × ${heard}`).toBeDefined();
+          if (expected === undefined) return;
+          for (const ask of heard === "asks" ? ASKS : ASKS.slice(0, 1)) {
+            const bench = await driverIn(phase);
+            const before = await settledNow(bench.driver);
+            await makeHear(bench, heard, ask, long);
+            const work = await settledNow(bench.driver);
+            if (expected === "unchanged") {
+              expect(work).toEqual(before);
+              expect(bench.wrote).toEqual([]);
+              continue;
+            }
+            expect(bench.wrote).toEqual(expected.wrote ?? []);
+            const [text, final] = expected.answer;
+            const answer = [text === ASKED ? ask.asked : text, final];
+            if ("settles" in expected) {
+              expect(before).toBeUndefined();
+              expect(work).toEqual(done(expected.settles));
+              expect([work?.text, work?.textFinal], "the answer").toEqual(answer);
+              continue;
+            }
+            expect(work).toBeUndefined();
+            expect(bench.answer(), "the answer").toEqual(answer);
+            // Which phase it goes on in shows in what a Stop then does.
+            bench.wrote.splice(0);
+            bench.driver.interrupt();
+            await bench.say();
+            const stopped = await settledNow(bench.driver);
+            if (expected.goesOn === "between") {
+              expect(stopped).toEqual(done({ outcome: "interrupted" }));
+              expect(bench.wrote).toEqual(["interrupt", "end"]);
+            } else {
+              expect(stopped).toBeUndefined();
+              expect(bench.wrote).toEqual(expected.goesOn === "turn" ? ["interrupt"] : []);
+            }
           }
-          expect(bench.wrote).toEqual(expected.wrote ?? []);
-          const [text, final] = expected.answer;
-          const answer = [text === ASKED ? ask.asked : text, final];
-          if ("settles" in expected) {
-            expect(before).toBeUndefined();
-            expect(work).toEqual(done(expected.settles));
-            expect([work?.text, work?.textFinal], "the answer").toEqual(answer);
-            continue;
-          }
-          expect(work).toBeUndefined();
-          expect(bench.answer(), "the answer").toEqual(answer);
-          // Which phase it goes on in shows in what a Stop then does.
-          bench.wrote.splice(0);
-          bench.driver.interrupt();
-          await bench.say();
-          const stopped = await settledNow(bench.driver);
-          if (expected.goesOn === "between") {
-            expect(stopped).toEqual(done({ outcome: "interrupted" }));
-            expect(bench.wrote).toEqual(["interrupt", "end"]);
-          } else {
-            expect(stopped).toBeUndefined();
-            expect(bench.wrote).toEqual(expected.goesOn === "turn" ? ["interrupt"] : []);
-          }
-        }
-      });
+        });
+      }
     }
   }
+
+  test("a result the program ends on without a line end settles the work as one with it does, short or too long to read whole", async () => {
+    for (const phase of ["turn", "between"] as const) {
+      for (const long of [false, true]) {
+        const bench = await driverIn(phase);
+        const result = { ...RESULT, result: "Done.", ...(long ? { bulk: BULK } : {}) };
+        await bench.say(backgroundOf(0));
+        await bench.raw(JSON.stringify(result));
+        bench.driver.ended({ code: 0, signal: null });
+        expect(await settledNow(bench.driver), `${phase}, long: ${String(long)}`).toEqual(
+          done({ ok: true, outcome: "success", text: "Done.", textFinal: true }),
+        );
+      }
+    }
+  });
+
+  test("a result without a line end settles the work when the program closes its output, before it exits", async () => {
+    for (const long of [false, true]) {
+      const bench = await driverIn("turn");
+      const result = { ...RESULT, result: "Done.", ...(long ? { bulk: BULK } : {}) };
+      await bench.say(backgroundOf(0));
+      await bench.raw(JSON.stringify(result));
+      expect(await settledNow(bench.driver), `held, long: ${String(long)}`).toBeUndefined();
+      await bench.closeOutput();
+      expect(await settledNow(bench.driver), `long: ${String(long)}`).toEqual(
+        done({ ok: true, outcome: "success", text: "Done.", textFinal: true }),
+      );
+      expect(bench.answer()).toEqual(["Done.", true]);
+    }
+  });
 
   test("a follow-up turn that ends at once with no words leaves the last turn's words provisional, in one write or several", async () => {
     for (const together of [true, false]) {
