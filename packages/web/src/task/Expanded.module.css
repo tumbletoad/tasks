@@ -745,6 +745,11 @@ a + .muted,
   min-width: 0;
 }
 
+/* Run's name gives way long before Open's. */
+.strip > .split:has([data-part="run"]) {
+  flex-shrink: 20;
+}
+
 .split > .button:first-child {
   min-width: 0;
 }
@@ -838,9 +843,22 @@ a + .muted,
 
 /* Narrow, Run and Copy are their icons, so Open keeps the name of its agent. */
 @media (max-width: 599px) {
+  .strip {
+    gap: 4px;
+  }
+
   .strip .hint,
-  .strip .wide {
+  .strip .wide,
+  .strip .glyph {
     display: none;
+  }
+
+  .button[data-part="note"] {
+    margin-right: 0;
+  }
+
+  .strip > .split:has([data-part="run"]) {
+    flex-shrink: 0;
   }
 }
 
@@ -956,6 +974,7 @@ a + .muted,
 }
 
 .button svg {
+  flex: none;
   width: 14px;
   height: 14px;
 }

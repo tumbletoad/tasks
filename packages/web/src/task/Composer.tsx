@@ -721,11 +721,6 @@ export function Composer({ task, busy, instances, opened, ran, actions }: Compos
               <span className={`${styles.label} ${styles.wide}`} aria-hidden="true">
                 <span>{t("composer.run", { label: runner.label })}</span>
               </span>
-              {runKeys[0] === undefined ? null : (
-                <kbd className={styles.hint} aria-hidden="true">
-                  {keyLabel(runKeys[0])}
-                </kbd>
-              )}
             </button>
             <AgentMenu
               part="run-other"
