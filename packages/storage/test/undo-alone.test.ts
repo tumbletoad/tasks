@@ -4,9 +4,9 @@
 // folders and tickets, makes areas and projects and moves and removes them, often several of these
 // in one request. In between, and between their undos and redos, they queue runs and open
 // sessions, which are no steps on their stack. No one else writes. Then they undo until nothing is
-// left and redo until nothing is left: every Undo and Redo applies whole, the space after the last
-// Undo is the space before the first step, and after the last Redo the space after the last step,
-// the order of every list included. The rules every write keeps (space-rules.ts) are checked after
+// left and redo until nothing is left: every Undo and Redo applies whole, each Undo gives back the
+// space before the step it took back and each Redo the space after it, every position and the
+// order of every list included. The rules every write keeps (space-rules.ts) are checked after
 // every write. A run keeps its task's create (undo-runs.test.ts), so runs go on the tasks that
 // were there before the first step. Each ticket goes to one task: while two tasks hold one key,
 // an Undo or Redo never brings a link of it back, also when the person linked both, a limit for
@@ -16,7 +16,7 @@ import { afterAll, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
 import { tempFolders } from "./space-helpers.ts";
-import { checkSpace, listsOf, type SpaceState } from "./space-rules.ts";
+import { listsOf, ruled } from "./space-rules.ts";
 import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("undo-alone");
@@ -203,6 +203,50 @@ const CASES: readonly Plan[] = [
           { kind: "regroup", p: 0, a: 1 },
         ],
       },
+    ],
+    between: [],
+  },
+  // The same step, then one that moves the rows back while C holds A's old place: its Redo puts
+  // A, Y and the spacer back around C.
+  {
+    steps: [
+      { kind: "create", where: "before", at: 1 },
+      { kind: "create", where: "before", at: INBOX + IN_PROJECT },
+      { kind: "move", t: INBOX + IN_PROJECT, to: 0 },
+      {
+        kind: "batch",
+        steps: [
+          { kind: "move", t: 0, to: 0 },
+          { kind: "move", t: INBOX + IN_PROJECT + 1, to: 0 },
+          { kind: "beside", t: 2, s: 1, side: "before" },
+        ],
+      },
+      {
+        kind: "batch",
+        steps: [
+          { kind: "beside", t: 0, s: 2, side: "before" },
+          { kind: "beside", t: INBOX + IN_PROJECT + 1, s: 2, side: "before" },
+          { kind: "beside", t: 2, s: 1, side: "after" },
+          { kind: "beside", t: 0, s: 1, side: "before" },
+          { kind: "beside", t: INBOX + IN_PROJECT, s: 1, side: "before" },
+          { kind: "beside", t: INBOX + IN_PROJECT + 1, s: INBOX + IN_PROJECT, side: "before" },
+          { kind: "move", t: INBOX + IN_PROJECT, to: 0 },
+        ],
+      },
+    ],
+    between: [],
+  },
+  // In the spare project: A and C made, B put before C, C, B and A moved out one by one, X made
+  // where A stood. The Undo of A's move puts A back on its place, which X holds, before B returns.
+  {
+    steps: [
+      { kind: "create", where: "project", at: 1 },
+      { kind: "create", where: "project", at: 1 },
+      { kind: "create", where: "before", at: INBOX + IN_PROJECT + 1 },
+      { kind: "move", t: INBOX + IN_PROJECT + 1, to: 0 },
+      { kind: "move", t: INBOX + IN_PROJECT + 2, to: 0 },
+      { kind: "move", t: INBOX + IN_PROJECT, to: 0 },
+      { kind: "create", where: "project", at: 1 },
     ],
     between: [],
   },
@@ -406,8 +450,8 @@ function asideOps(w: World, s: Aside): Operation[] {
       ];
 }
 
-/** The columns a space keeps that are no part of what a person sees: versions and positions. */
-const BOOKKEEPING = new Set(["version", "touched", "fv", "fp", "position"]);
+/** The columns a space keeps that are no part of what a person sees: versions. */
+const BOOKKEEPING = new Set(["version", "touched", "fv", "fp"]);
 
 const ROWS = {
   tasks: "SELECT id AS key, * FROM tasks",
@@ -453,8 +497,8 @@ function spaceOf(w: World): Space {
 }
 
 /**
- * The space after the last Undo, as the space before the first step: every row made since is out
- * of sight, and is left out with its place in its list.
+ * The space now, as `was` holds it: every row made since is out of sight, and is left out with its
+ * place in its list.
  */
 function without(now: Space, was: Space): Space {
   const old = new Set(Object.values(was.rows).flatMap((rows) => Object.keys(rows)));
@@ -479,25 +523,24 @@ function without(now: Space, was: Space): Space {
 async function run({ steps, between }: Plan): Promise<void> {
   const w = await world();
   const { fx } = w;
-  let rules: SpaceState = checkSpace(fx.reader);
   /** Every write is checked against the rules on the space it leaves. */
+  const write = ruled(fx.reader, (request) => fx.writer.submit(request));
   const submit = (actor: Credential, ops: Operation[], undoable: boolean): WriteResult => {
-    const result = fx.writer.submit(
+    const result = write(
       fx.request(actor, ops, { base: fx.base(), ...(undoable ? { undoable: true } : {}) }),
     );
     expect(
       ["applied", "unchanged", "conflict", "rejected"],
       JSON.stringify(result.error),
     ).toContain(result.status);
-    rules = checkSpace(fx.reader, rules);
     return result;
   };
   const asideOf = (s: Aside): void => {
     submit(w.ui, asideOps(w, s), false);
   };
   try {
-    const first = spaceOf(w);
-    let done = 0;
+    /** The space before and after each step that applied, in order. */
+    const done: { before: Space; after: Space }[] = [];
     for (const s of steps) {
       if (isAside(s)) {
         asideOf(s);
@@ -506,8 +549,9 @@ async function run({ steps, between }: Plan): Promise<void> {
       const counts = [w.tasks.length, w.areas.length, w.projects.length] as const;
       const ops = s.kind === "batch" ? s.steps.flatMap((f) => opsOf(w, f)) : opsOf(w, s);
       if (ops.length === 0) continue;
+      const before = spaceOf(w);
       const result = submit(fx.human, ops, true);
-      if (result.status === "applied") done += 1;
+      if (result.status === "applied") done.push({ before, after: spaceOf(w) });
       else {
         // A request refused leaves none of the rows it named.
         w.tasks.length = counts[0];
@@ -515,33 +559,35 @@ async function run({ steps, between }: Plan): Promise<void> {
         w.projects.length = counts[2];
       }
     }
-    const last = spaceOf(w);
     let k = 0;
     const history = (kind: "undo" | "redo"): WriteResult => {
-      const result = fx.writer.submit(fx.request(fx.human, [{ kind }]));
-      rules = checkSpace(fx.reader, rules);
+      const result = write(fx.request(fx.human, [{ kind }]));
       k += 1;
       for (const b of between) if (b.at === k) asideOf(b.aside);
       return result;
     };
-    for (let u = 0; u < done; u += 1) {
+    for (const [u, { before }] of [...done].reverse().entries()) {
+      const label = `undo ${String(u + 1)} of ${String(done.length)}`;
       const result = history("undo");
-      expect(
-        [result.status, result.conflicts, result.newer],
-        `undo ${String(u + 1)} of ${String(done)}`,
-      ).toEqual(["applied", [], undefined]);
+      expect([result.status, result.conflicts, result.newer], label).toEqual([
+        "applied",
+        [],
+        undefined,
+      ]);
+      expect(without(spaceOf(w), before), `${label}: the space before its step`).toEqual(before);
     }
     expect(history("undo").error?.code, "nothing is left to undo").toBe("NOTHING_TO_UNDO");
-    expect(without(spaceOf(w), first), "the space before the first step").toEqual(first);
-    for (let r = 0; r < done; r += 1) {
+    for (const [r, { after }] of done.entries()) {
+      const label = `redo ${String(r + 1)} of ${String(done.length)}`;
       const result = history("redo");
-      expect(
-        [result.status, result.conflicts, result.passed],
-        `redo ${String(r + 1)} of ${String(done)}`,
-      ).toEqual(["applied", [], undefined]);
+      expect([result.status, result.conflicts, result.passed], label).toEqual([
+        "applied",
+        [],
+        undefined,
+      ]);
+      expect(without(spaceOf(w), after), `${label}: the space after its step`).toEqual(after);
     }
     expect(history("redo").error?.code, "nothing is left to redo").toBe("NOTHING_TO_REDO");
-    expect(spaceOf(w), "the space after the last step").toEqual(last);
     checkHistory(fx.reader);
   } finally {
     fx.close();
@@ -549,7 +595,7 @@ async function run({ steps, between }: Plan): Promise<void> {
 }
 
 describe("[A1.5.history.alone] a person working alone undoes everything they did and redoes it", () => {
-  test("every Undo and Redo applies whole, and gives back the space before the first step and after the last, the order of every list included", async () => {
+  test("every Undo and Redo applies whole, and gives back the space before or after its step, every position and the order of every list included", async () => {
     const failures: string[] = [];
     for (const [k, c] of CASES.entries()) {
       try {

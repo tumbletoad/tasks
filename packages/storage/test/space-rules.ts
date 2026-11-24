@@ -4,6 +4,7 @@
 import { expect } from "vitest";
 import type { Connection } from "../src/driver.ts";
 import { folderKey, hasFolders, machineOs } from "../src/write/folders.ts";
+import { TASK_ORDER } from "../src/write/positions.ts";
 import { WRITE_LIMITS, type WriteRequest, type WriteResult } from "../src/write/request.ts";
 
 /** The space as a step found it: what a rule about the step compares with. */
@@ -51,20 +52,6 @@ const FOLDERS_OF_ONE_OWNER =
   "SELECT owner_kind || ' ' || owner_id || ' ' || machine_id AS id FROM folders " +
   "WHERE deleted_at IS NULL GROUP BY owner_kind, owner_id, machine_id HAVING count(*) > 1";
 
-/**
- * Positions that two rows of one list share. Placement counts every row of a list, those in the
- * Trash and those whose creation was undone too, so no write gives a row a position another holds.
- */
-const SHARED_POSITIONS = {
-  tasks:
-    "SELECT group_concat(id) AS id FROM tasks " +
-    "GROUP BY project_id, CASE WHEN project_id IS NULL THEN area_id END, position " +
-    "HAVING count(*) > 1",
-  projects:
-    "SELECT group_concat(id) AS id FROM projects GROUP BY area_id, position HAVING count(*) > 1",
-  areas: "SELECT group_concat(id) AS id FROM areas GROUP BY position HAVING count(*) > 1",
-} as const;
-
 const LIVE_PROJECT_FOLDERS =
   "SELECT f.machine_id AS machine, f.path AS path FROM folders f " +
   "JOIN projects p ON p.id = f.owner_id WHERE f.owner_kind = 'project' " +
@@ -86,9 +73,9 @@ const KINDS_SINCE = "SELECT DISTINCT kind FROM commits WHERE seq > $seq";
  * - A task in a project is in that project's area, in the Trash too.
  * - A live task or project never has an area or a project that is deleted, so a deleted project
  *   holds no live task, and no live folder either.
- * - No two rows of one list share a position: tasks of one project, or of one area outside a
- *   project, projects of one area, areas. So a row placed "before X" sorts before X and after
- *   what was before X (expectBeside).
+ * - Every list has one order, which every view reads (TASK_ORDER). Two tasks may share a position
+ *   (an Undo puts a task back on its place while another took it); a task placed beside either
+ *   still stands right there (ruled).
  * - An owner has at most one live folder on a machine, and two live projects never share one
  *   folder on one machine, by that machine's case rule.
  * - An active task has no wrap-up, and a task has at most 20 live learnings.
@@ -102,9 +89,6 @@ export function checkSpace(conn: Connection, before?: SpaceState): SpaceState {
   expect(ids(conn, GROUPS.taskInGoneArea), "a live task's area is live").toEqual([]);
   expect(ids(conn, GROUPS.taskInGoneProject), "a deleted project holds no live task").toEqual([]);
   expect(ids(conn, GROUPS.projectInGoneArea), "a live project's area is live").toEqual([]);
-  for (const [list, sql] of Object.entries(SHARED_POSITIONS)) {
-    expect(ids(conn, sql), `two ${list} of one list share a position`).toEqual([]);
-  }
   expect(ids(conn, TASKS.activeWrapped), "an active task has no wrap-up").toEqual([]);
   expect(ids(conn, TASKS.learnings), "a task has at most 20 live learnings").toEqual([]);
   if (hasFolders(conn)) {
@@ -159,7 +143,11 @@ export function checkSpace(conn: Connection, before?: SpaceState): SpaceState {
 
 /**
  * `submit`, with the rules checked on the space each write leaves (checkSpace), the space as the
- * write found it as `before`: a step that sends several writes is checked after each of them.
+ * write found it as `before`: a step that sends several writes is checked after each of them. And
+ * a task a forward write placed right before or after another stands right there in its list, as
+ * every view reads the list (listOf), also when two tasks of it share a position: unless a later
+ * operation of the request names either task again. A retried request that is answered from its
+ * receipt writes nothing.
  */
 export function ruled(
   conn: Connection,
@@ -169,8 +157,37 @@ export function ruled(
   return (request) => {
     const result = submit(request);
     state = checkSpace(conn, state);
+    if (result.status === "applied" && result.replayed !== true) {
+      for (const { task, sibling, side } of placedBeside(conn, request, result)) {
+        const list = listOf(conn, sibling);
+        const at = list.indexOf(sibling) + (side === "before" ? -1 : 1);
+        expect(list[at], `${task} right ${side} ${sibling}`).toBe(task);
+      }
+    }
     return result;
   };
+}
+
+/** The tasks the request placed right before or after another that no later operation names. */
+function placedBeside(
+  conn: Connection,
+  request: WriteRequest,
+  result: WriteResult,
+): { task: string; sibling: string; side: "before" | "after" }[] {
+  return request.ops.flatMap((op, k) => {
+    if (op.kind !== "task.create" && op.kind !== "task.move") return [];
+    const side = op.before !== undefined ? "before" : op.after !== undefined ? "after" : undefined;
+    const done = result.results[k];
+    if (side === undefined || done === undefined || done.status === "existing") return [];
+    const task = done.task ?? done.id;
+    const sibling = conn
+      .prepare("SELECT id FROM tasks WHERE id = $s OR ref = $s")
+      .get({ s: op[side] ?? null })?.["id"];
+    if (typeof sibling !== "string") return [];
+    const later = JSON.stringify(request.ops.slice(k + 1));
+    if (later.includes(task) || later.includes(sibling)) return [];
+    return [{ task, sibling, side }];
+  });
 }
 
 /**
@@ -180,26 +197,33 @@ export function ruled(
  */
 export function listsOf(conn: Connection): Record<string, string[]> {
   const lists: Record<string, string[]> = {};
-  for (const r of conn.prepare(LISTS).all())
-    (lists[String(r["list"])] ??= []).push(String(r["id"]));
+  for (const sql of [TASK_LISTS, PROJECT_LISTS]) {
+    for (const r of conn.prepare(sql).all())
+      (lists[String(r["list"])] ??= []).push(String(r["id"]));
+  }
   return lists;
 }
 
-const LISTS =
+const TASK_LISTS =
   "SELECT id, CASE WHEN project_id IS NOT NULL THEN 'tasks of project ' || project_id " +
-  "WHEN area_id IS NOT NULL THEN 'tasks of area ' || area_id ELSE 'the Inbox' END AS list, " +
-  "position FROM tasks UNION ALL SELECT id, 'projects of ' || coalesce('area ' || area_id, " +
-  "'no area'), position FROM projects ORDER BY 2, 3, 1";
+  "WHEN area_id IS NOT NULL THEN 'tasks of area ' || area_id ELSE 'the Inbox' END AS list " +
+  `FROM tasks ORDER BY list, ${TASK_ORDER}`;
+const PROJECT_LISTS =
+  "SELECT id, 'projects of ' || coalesce('area ' || area_id, 'no area') AS list FROM projects " +
+  "ORDER BY list, position, id";
 
-/** The tasks of `task`'s list in their order: by position, as every view sorts them. */
+/** The tasks of `task`'s list in their order, as every view sorts them (TASK_ORDER). */
 export function listOf(conn: Connection, task: string): string[] {
+  const group = conn
+    .prepare("SELECT project_id AS project, area_id AS area FROM tasks WHERE id = $id")
+    .get<{ project: string | null; area: string | null }>({ id: task });
+  if (group === undefined) throw new Error("no such task");
   return conn
     .prepare(
-      "SELECT o.id AS id FROM tasks t JOIN tasks o ON o.project_id IS t.project_id " +
-        "AND (t.project_id IS NOT NULL OR o.area_id IS t.area_id) WHERE t.id = $id " +
-        "ORDER BY o.position, o.id",
+      "SELECT id FROM tasks WHERE project_id IS $project " +
+        `AND ($project IS NOT NULL OR area_id IS $area) ORDER BY ${TASK_ORDER}`,
     )
-    .all({ id: task })
+    .all(group)
     .map((r) => String(r["id"]));
 }
 

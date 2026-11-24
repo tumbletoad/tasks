@@ -317,25 +317,13 @@ function checkChain(
     at === created.seq ? undefined : at,
   );
   expect(maps.fp[field] ?? created.seq, `fp of ${label}.${field} is its provenance`).toBe(prov);
-  // A1 3.10's invariant: the value is the after-value its provenance commit wrote. An Undo or a
-  // Redo that set a grouping back may have placed it right after a row that holds its old position:
-  // that place is no one's write, so the provenance stays and only the position differs.
+  // A1 3.10's invariant: the value is the after-value its provenance commit wrote.
   const wrote =
     prov === created.seq
       ? valueOf(created.row)
       : chain.find((c) => c.seq === prov && c.after_prov === prov)?.after;
-  const placedBack = field === "grouping" && kinds.get(at) !== "ops" && at !== created.seq;
-  expect(
-    placedBack ? withoutPosition(wrote) : wrote,
-    `${label}.${field} holds its provenance commit's write`,
-  ).toBe(placedBack ? withoutPosition(value) : value);
+  expect(wrote, `${label}.${field} holds its provenance commit's write`).toBe(value);
   return at;
-}
-
-/** A grouping's value without its position. */
-function withoutPosition(json: string | undefined): string | undefined {
-  if (json === undefined) return undefined;
-  return JSON.stringify({ ...(JSON.parse(json) as Record<string, unknown>), position: null });
 }
 
 /** Each commit's kind by seq: `ops`, `undo`, `redo`, `migration`. */

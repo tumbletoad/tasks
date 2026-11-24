@@ -247,8 +247,8 @@ const GROUP_CASES: readonly (readonly Step[])[] = [
     { kind: "note", who: "agent", t: TASKS },
     { kind: "undo", partial: true },
   ],
-  // An undo of a move out of a list that another filled meanwhile: the task comes back on a
-  // position of its own, and one moved before the second then stands right there.
+  // An undo of a move out of a list that another filled meanwhile: the task comes back on its
+  // place, which the other holds too, and one moved before the second then stands right there.
   [
     { kind: "move", who: "human", t: 0, p: 2 },
     { kind: "move", who: "human", t: 0, p: 3 },
@@ -759,7 +759,7 @@ describe("[A1.5.write.folders-model] random folder operations, deletes, restores
     );
   }, 300_000);
 
-  test("after every write, undo and redo, also of several writes in one request: a deleted project or area holds nothing live, a task stays in its project's area, and no two rows of a list share a position", async () => {
+  test("after every write, undo and redo, also of several writes in one request: a deleted project or area holds nothing live, a task stays in its project's area, and a task placed beside another stands right there", async () => {
     const failures: string[] = [];
     for (const [k, steps] of GROUP_CASES.entries()) {
       try {
