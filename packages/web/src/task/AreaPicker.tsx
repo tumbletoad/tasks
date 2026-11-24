@@ -27,7 +27,7 @@ import { Session } from "../context.ts";
 import { groupingChange } from "../edit/change.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
-import { archivedGroup, areaSlots } from "../groups.ts";
+import { archivedGroup, areaSlots, byPosition } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
@@ -55,9 +55,6 @@ interface Choice {
   /** An archived area, or a project archived or in an archived area. */
   readonly archived?: boolean;
 }
-
-const byPosition = <T extends { position: string }>(a: T, b: T) =>
-  a.position < b.position ? -1 : a.position > b.position ? 1 : 0;
 
 /** The choice that makes a new area of what was typed. */
 const NEW_AREA = "new-area";

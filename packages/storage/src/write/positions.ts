@@ -152,3 +152,10 @@ export function positionBetween(before: string | undefined, after: string | unde
   if (next === undefined) throw misuse("No position sorts after this one");
   return next < after ? next : a.integer + midpoint(a.fraction, undefined);
 }
+
+/**
+ * The order of a list of tasks, in every read and when a task is placed beside another: position,
+ * then age, then ID. Two tasks can share a position (an Undo puts a task back where it was while
+ * another took that place), and every view shows them in this one order.
+ */
+export const TASK_ORDER = "position, created_at, id";

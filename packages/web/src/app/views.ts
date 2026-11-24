@@ -10,13 +10,12 @@
 // - Completed, Agents and the Trash read data the live store does not hold (completed and removed
 //   tasks are never in it): Completed and the Trash are paged queries (views/Completed.tsx,
 //   views/Trash.tsx), Agents the tab's change log.
-import { flatGroups, groupTasks, personGroups, type GroupTasks } from "../groups.ts";
+import { flatGroups, groupTasks, inListOrder, personGroups, type GroupTasks } from "../groups.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { TaskRow } from "../live.ts";
 import type { AgentChange } from "../store/rows.ts";
 import {
   byDue,
-  byText,
   countedStatus,
   dateOf,
   dayNumber,
@@ -231,15 +230,11 @@ type Order = (a: TaskRow, b: TaskRow) => number;
 export const inNext = (task: TaskRow): boolean =>
   task.lifecycle === "active" && task.status === "open" && !task.inbox;
 
-/** Next: priority, then due date (undated last), then the space's order, then age. */
+/** Next: priority, then due date (undated last), then the order of a list (position, then age). */
 const nextOrder =
   (clock: Clock): Order =>
   (a, b) =>
-    priorityOf(a) - priorityOf(b) ||
-    byDue(dueKey(a, clock), dueKey(b, clock)) ||
-    byText(a.position, b.position) ||
-    a.created_at - b.created_at ||
-    byText(a.id, b.id);
+    priorityOf(a) - priorityOf(b) || byDue(dueKey(a, clock), dueKey(b, clock)) || inListOrder(a, b);
 
 /**
  * The first `n` of a list in an order, in that order: one pass that keeps the best `n`, so Next
