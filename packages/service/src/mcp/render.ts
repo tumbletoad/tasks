@@ -1053,7 +1053,8 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
               ? []
               : [`${task.ref}: its group was gone, it is in the ${task.regrouped}`]),
             ...(task.held ?? []).map(
-              (held) => `${task.ref}: link ${held.source} stayed with ${held.by}, which holds its key`,
+              (held) =>
+                `${task.ref}: link ${held.source} stayed with ${held.by}, which holds its key`,
             ),
           ]),
         ),

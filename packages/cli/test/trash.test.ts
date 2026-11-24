@@ -76,7 +76,10 @@ describe("[A3.trash.cli] ttasks delete, restore and trash", () => {
       const moved = await agent(["delete", a]);
       expect(moved.code, moved.stderr).toBe(0);
       expect((await person(["trash", a])).stdout).toMatch(
-        new RegExp(`^1 task here from agent:unknown's change, .*\\n  ${a}  Fixture agent shell\\n$`, "u"),
+        new RegExp(
+          `^1 task here from agent:unknown's change, .*\\n  ${a}  Fixture agent shell\\n$`,
+          "u",
+        ),
       );
       expect((await agent(["restore", a])).code).toBe(0);
       // Removed by the person, the task reads to an agent's shell as the agent's tools say it.

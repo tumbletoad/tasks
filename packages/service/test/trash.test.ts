@@ -301,7 +301,10 @@ describe("[A3.trash] the Trash through real requests", () => {
     );
     expect(moved).toMatchObject({ result: "moved", moved: [a, b] });
     expect(renderResult("task.delete", moved)).toMatch(
-      new RegExp(`^moved to the Trash ${a}, ${b} · change ${String(moved["commit"])} · as_of `, "u"),
+      new RegExp(
+        `^moved to the Trash ${a}, ${b} · change ${String(moved["commit"])} · as_of `,
+        "u",
+      ),
     );
     const listed = (await trash()).rows.filter((r) => [a, b].includes(r.ref));
     expect(listed.map((r) => r.removed)).toEqual([
