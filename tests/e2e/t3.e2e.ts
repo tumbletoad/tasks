@@ -42,6 +42,16 @@ function parts(page: Page, ref: string) {
         .click();
     },
     opened: row.locator('[data-entry="session"][data-state="opened"]'),
+    button: row.locator('[data-part="strip"] [data-part="open"]'),
+    menu: async () => {
+      await row
+        .getByRole("toolbar", { name: "Act on this task" })
+        .getByRole("button", { name: "Open with another agent" })
+        .click();
+      return page
+        .getByRole("menu", { name: "Open with another agent" })
+        .getByRole("menuitemradio", { name: `Open in ${T3_INSTANCE.label}` });
+    },
   };
 }
 
@@ -79,6 +89,17 @@ test.describe("[A4.3.4.1.t3.e2e] Open in T3 Code from the page", () => {
     const stopped = page.getByRole("status").filter({ hasText: "T3 Code is not running." });
     await expect(stopped).toBeVisible({ timeout: SLOW_MS });
     await pictures(page, "t3-not-running");
+    // The refused pick is not Open's agent; its menu item says why, and picking it again offers
+    // Start again.
+    await expect(p.button).not.toHaveAttribute("data-instance", T3_INSTANCE.key);
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: width === 1440 ? 1000 : 900 });
+      const item = await p.menu();
+      await expect(item).toContainText("T3 Code is not running");
+      await picture(page, `t3-not-running-menu-${String(width)}.png`);
+      await page.keyboard.press("Escape");
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await stopped.getByRole("button", { name: "Start T3 Code" }).click();
     await expect(page.getByRole("status").filter({ hasText: "T3 Code is starting." })).toBeVisible({
       timeout: SLOW_MS,
