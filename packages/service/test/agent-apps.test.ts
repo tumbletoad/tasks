@@ -535,7 +535,7 @@ describe("[A7.3.12.m5-12.page-status] The tools switch is on only while the tool
       expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
       const file = join(w.user, ".claude.json");
       const doc = JSON.parse(readFileSync(file, "utf8")) as { mcpServers: Record<string, unknown> };
-      delete doc.mcpServers[MCP_SERVER_KEY];
+      Reflect.deleteProperty(doc.mcpServers, MCP_SERVER_KEY);
       writeFileSync(file, JSON.stringify(doc));
       expect(row(await look(), "claude-code").tools).toMatchObject({
         on: false,

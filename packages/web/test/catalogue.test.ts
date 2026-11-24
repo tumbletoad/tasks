@@ -129,6 +129,7 @@ const SAMPLE = {
   c: "Ana Reyes",
   rest: 2,
   tasks: "LUM-212 and LUM-214",
+  home: "~/.codex",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {
