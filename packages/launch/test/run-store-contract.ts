@@ -528,7 +528,7 @@ export function runStoreContract(
       for (const state of RUN_STATES) {
         const run = await runIn(state);
         backend.advance(1);
-        // An unknown run awaits the confirmation that its container is empty: it stays listed.
+        // An unknown run awaits the confirmation that its process group is empty: it stays listed.
         if (!(FINAL_RUN_STATES as readonly RunState[]).includes(state) || state === "unknown") {
           expected.push(run.id);
         }

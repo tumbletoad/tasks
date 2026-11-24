@@ -1,4 +1,4 @@
-// The container tests' stand-in service: a process that owns containers, so a test can kill it by
+// The process group tests' stand-in service: a process that owns process groups, so a test can kill it by
 // force as a crash would. On Linux it runs as the main process of a transient user unit with
 // Delegate=yes, as the real service runs in its unit; on Windows it is a plain child of the test.
 //
@@ -16,7 +16,7 @@
 //   {"op":"output","name"}                          -> {"bytes","head","ended"}: its stdout so far
 //   {"op":"write","name","text"}                    -> {}: `text` written to the agent's stdin
 //   {"op":"endStdin","name"}                        -> {}: the agent's stdin ended
-//   {"op":"forget"}                                 -> {}: drops what it knows of its containers,
+//   {"op":"forget"}                                 -> {}: drops what it knows of its process groups,
 //                                                      as a restarted service would have nothing
 // Every answer is {"ok":true,"result":…} or {"ok":false,"error":"…","code"?:"…"}.
 //
@@ -24,12 +24,12 @@
 import "@ttasks/bridge/safe-exit";
 import { createInterface } from "node:readline";
 import {
-  ContainerError,
-  containers,
-  UngroupedContainers,
+  ProcessGroupError,
+  processGroups,
+  UngroupedProcesses,
   type AgentExit,
-  type Containers,
-} from "../../src/container/index.ts";
+  type ProcessGroups,
+} from "../../src/process-group/index.ts";
 import { standInSpec, type StandInMode } from "./stand-ins.ts";
 
 interface Output {
@@ -40,10 +40,10 @@ interface Output {
 
 const helper = process.argv[2];
 const taskkill = process.argv[3];
-const make = (): Containers =>
+const make = (): ProcessGroups =>
   helper === "ungrouped"
-    ? new UngroupedContainers(taskkill === undefined ? {} : { taskkill })
-    : containers(helper === undefined ? {} : { runHelper: helper });
+    ? new UngroupedProcesses(taskkill === undefined ? {} : { taskkill })
+    : processGroups(helper === undefined ? {} : { runHelper: helper });
 let box = make();
 const exits = new Map<string, Promise<AgentExit>>();
 const outputs = new Map<string, Output>();
@@ -137,7 +137,7 @@ requests.on("line", (line) => {
       answer = {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
-        ...(error instanceof ContainerError ? { code: error.code } : {}),
+        ...(error instanceof ProcessGroupError ? { code: error.code } : {}),
       };
     }
     process.stdout.write(`${JSON.stringify(answer)}\n`);

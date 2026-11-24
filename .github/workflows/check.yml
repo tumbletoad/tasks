@@ -74,7 +74,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # The run-container tests need real cgroups: transient systemd user units with Delegate=yes,
+      # The process-group tests need real cgroups: transient systemd user units with Delegate=yes,
       # as the service's own unit has. They make such units only where this variable says the user
       # manager is the runner's own, never in a person's session
       # (packages/runs/test/stand-ins/service.ts). Linger starts the runner user's manager.

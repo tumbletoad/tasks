@@ -1,4 +1,4 @@
-// Windows programs for the container tests: ttasks-run.exe as the product builds it, and the
+// Windows programs for the process group tests: ttasks-run.exe as the product builds it, and the
 // jobhold.c fixture, compiled with the same MSVC.
 import { join } from "node:path";
 import { buildRunHelper, compileC, findMsvc } from "@ttasks/launcher-win/build";

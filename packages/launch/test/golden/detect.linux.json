@@ -115,8 +115,6 @@
       "label": "T3 Code",
       "account": "default",
       "source": "app",
-      "exec": "/home/mira/.local/bin/t3",
-      "argsPrefix": [],
       "needs": [
         "t3_provider_instance"
       ]

@@ -1,7 +1,7 @@
 // The supervisor's model test: random sequences of runs queued in two spaces, Stops, agents that
 // finish, limits changed, a service restart, an update's hold taken and released (or its holder
 // gone), tasks closed, starts refused, time passing and retention, over in-memory stores and fake
-// containers (supervisor-world.ts). And the start order itself, as a property of planStarts.
+// process groups (supervisor-world.ts). And the start order itself, as a property of planStarts.
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { planStarts, type QueueLimits, type Slot } from "../src/index.ts";

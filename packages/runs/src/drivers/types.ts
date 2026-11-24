@@ -1,10 +1,10 @@
 // A driver speaks one agent program's protocol over the pipes the run host gives it, and knows
-// nothing of processes: the host starts the program in the run's container, owns its pipes and
-// ends it. What a driver decides is the work's result; what the container says afterwards is the
+// nothing of processes: the host starts the program in the run's process group, owns its pipes and
+// ends it. What a driver decides is the work's result; what the process group says afterwards is the
 // cleanup's, which the host adds and which never changes the work's.
 import type { Readable, Writable } from "node:stream";
 import type { AppToolsState, OutcomeReason, RunEvent, Usage } from "@ttasks/contracts/runs";
-import type { AgentExit } from "../container/index.ts";
+import type { AgentExit } from "../process-group/index.ts";
 
 /** The work's result, as the driver judged it from the protocol. */
 export interface Work {

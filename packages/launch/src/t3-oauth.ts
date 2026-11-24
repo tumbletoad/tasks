@@ -66,7 +66,6 @@ export interface AuthServer {
 /** What T3 issued: the client registration and its token. Secrets: machine state only. */
 export interface Grant {
   readonly clientId: string;
-  readonly clientSecret?: string;
   readonly accessToken: string;
   /** When the access token expires (ms since 1970), when T3 said. */
   readonly expiresAt?: number;
@@ -243,7 +242,7 @@ export async function beginPairing(options: PairingOptions): Promise<PairingAtte
   let finished = false;
   let used = false;
   let redirect = "";
-  let client: { clientId: string; clientSecret?: string } | undefined;
+  let client: { clientId: string } | undefined;
 
   const listener: Server = createServer((req, res) => {
     const page = (status: number, text: string) => {
@@ -296,9 +295,6 @@ export async function beginPairing(options: PairingOptions): Promise<PairingAtte
         client_id: registered.clientId,
         code_verifier: verifier,
         resource: server.resource,
-        ...(registered.clientSecret === undefined
-          ? {}
-          : { client_secret: registered.clientSecret }),
       },
       ms,
     ).then(
@@ -382,7 +378,7 @@ async function register(
   endpoint: string,
   redirect: string,
   ms: number,
-): Promise<{ clientId: string; clientSecret?: string }> {
+): Promise<{ clientId: string }> {
   const response = await t3Request(
     fetchFn,
     endpoint,
@@ -405,10 +401,6 @@ async function register(
   }
   const answer = await readObject(response);
   const id = answer["client_id"];
-  const secret = answer["client_secret"];
   if (typeof id !== "string" || !CLIENT_ID.test(id)) throw new T3Error("unreadable");
-  if (secret !== undefined && (typeof secret !== "string" || !TOKEN.test(secret))) {
-    throw new T3Error("unreadable");
-  }
-  return { clientId: id, ...(typeof secret === "string" ? { clientSecret: secret } : {}) };
+  return { clientId: id };
 }

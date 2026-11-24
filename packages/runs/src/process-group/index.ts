@@ -1,27 +1,27 @@
-// Run containers: the processes of one background run, ended together and confirmed empty where
+// Run process groups: the processes of one background run, ended together and confirmed empty where
 // a process group can hold them, and ended as far as TTasks can find them where none can.
-import { LinuxContainers, type LinuxOptions } from "./linux.ts";
+import { LinuxProcessGroups, type LinuxOptions } from "./linux.ts";
 import { unavailableMessage } from "./placement.ts";
 import {
   type ConfirmOptions,
-  type ContainerKind,
+  type ProcessGroupKind,
   type Confirmation,
-  type Contained,
-  type Containers,
-  type ContainerSpec,
+  type StartedAgent,
+  type ProcessGroups,
+  type ProcessGroupSpec,
   type ProbeResult,
 } from "./types.ts";
-import { UngroupedContainers, type UngroupedOptions } from "./ungrouped.ts";
-import { WindowsContainers } from "./windows.ts";
+import { UngroupedProcesses, type UngroupedOptions } from "./ungrouped.ts";
+import { WindowsProcessGroups } from "./windows.ts";
 
 export * from "./types.ts";
 export { windowsCommandLine, quoteWindowsArg } from "./command-line.ts";
-export { JOIN_FAILED_EXIT, LinuxContainers, type LinuxOptions } from "./linux.ts";
+export { JOIN_FAILED_EXIT, LinuxProcessGroups, type LinuxOptions } from "./linux.ts";
 export { MAIN_CGROUP, placement, RUN_HELPER, unavailableMessage } from "./placement.ts";
-export { descendants, UngroupedContainers, type UngroupedOptions } from "./ungrouped.ts";
-export { jobName, WindowsContainers, type WindowsOptions } from "./windows.ts";
+export { descendants, UngroupedProcesses, type UngroupedOptions } from "./ungrouped.ts";
+export { jobName, WindowsProcessGroups, type WindowsOptions } from "./windows.ts";
 
-export interface ContainersOptions {
+export interface ProcessGroupsOptions {
   readonly platform?: NodeJS.Platform;
   /** Windows: the absolute path of ttasks-run.exe. */
   readonly runHelper?: string;
@@ -30,7 +30,7 @@ export interface ContainersOptions {
 }
 
 /** Where no process group exists at all: the probe says why. */
-class NoGroups extends UngroupedContainers {
+class NoGroups extends UngroupedProcesses {
   override probe(): Promise<ProbeResult> {
     return Promise.resolve({
       available: false as const,
@@ -41,12 +41,12 @@ class NoGroups extends UngroupedContainers {
 }
 
 /** The process groups of this platform: the probe says whether one can be made here. */
-export function containers(options: ContainersOptions = {}): Containers {
+export function processGroups(options: ProcessGroupsOptions = {}): ProcessGroups {
   const platform = options.platform ?? process.platform;
-  if (platform === "linux") return new LinuxContainers(options.linux);
+  if (platform === "linux") return new LinuxProcessGroups(options.linux);
   if (platform === "win32") {
     if (options.runHelper === undefined) throw new Error("runHelper is required on Windows");
-    return new WindowsContainers({ helper: options.runHelper });
+    return new WindowsProcessGroups({ helper: options.runHelper });
   }
   return new NoGroups({ ...options.ungrouped, platform });
 }
@@ -54,20 +54,20 @@ export function containers(options: ContainersOptions = {}): Containers {
 /**
  * A run starts in a process group when the probe says one can be made, and otherwise anyway, in
  * the agent's process tree as TTasks can find it; how it starts is what `kind()` said, which its
- * record keeps. A run keeps what it started in until its end is confirmed: an empty container, or,
+ * record keeps. A run keeps what it started in until its end is confirmed: an empty process group, or,
  * without a group, its agent gone after a kill. After a restart, a run is asked about as its
  * record says it started: its group is counted; without one, nothing of it is known alive and its
  * end cannot be confirmed. A run whose record does not say (an earlier build's) is looked for in a
  * group, if one can be made now, but an empty group cannot confirm it: it may never have been there.
  */
-export class FallbackContainers implements Containers {
-  readonly #grouped: Containers;
-  readonly #ungrouped: Containers;
+export class FallbackProcessGroups implements ProcessGroups {
+  readonly #grouped: ProcessGroups;
+  readonly #ungrouped: ProcessGroups;
   readonly #available: () => Promise<boolean>;
   /** What each run started in, and whether it was killed since. */
-  readonly #started = new Map<string, { readonly box: Containers; killed: boolean }>();
+  readonly #started = new Map<string, { readonly box: ProcessGroups; killed: boolean }>();
 
-  constructor(grouped: Containers, ungrouped: Containers, available: () => Promise<boolean>) {
+  constructor(grouped: ProcessGroups, ungrouped: ProcessGroups, available: () => Promise<boolean>) {
     this.#grouped = grouped;
     this.#ungrouped = ungrouped;
     this.#available = available;
@@ -77,11 +77,11 @@ export class FallbackContainers implements Containers {
     return this.#grouped.probe();
   }
 
-  async kind(): Promise<ContainerKind> {
+  async kind(): Promise<ProcessGroupKind> {
     return (await this.#now()) ? this.#grouped.kind() : this.#ungrouped.kind();
   }
 
-  async start(spec: ContainerSpec): Promise<Contained> {
+  async start(spec: ProcessGroupSpec): Promise<StartedAgent> {
     const kind = spec.kind ?? (await this.kind());
     const box = kind === "tree" ? this.#ungrouped : this.#grouped;
     this.#started.set(spec.name, { box, killed: false });
@@ -133,7 +133,10 @@ export class FallbackContainers implements Containers {
   }
 
   /** Where a run is asked about, and whether it is known to have started there. */
-  async #of(name: string, kind?: ContainerKind): Promise<{ box: Containers; known: boolean }> {
+  async #of(
+    name: string,
+    kind?: ProcessGroupKind,
+  ): Promise<{ box: ProcessGroups; known: boolean }> {
     const started = this.#started.get(name)?.box;
     if (started !== undefined) return { box: started, known: true };
     if (kind !== undefined) {

@@ -141,7 +141,7 @@ export const T3_PAIR_FAILURES = [
 ] as const;
 export type T3PairFailure = (typeof T3_PAIR_FAILURES)[number];
 
-/** Why runs cannot be contained (packages/runs: UnavailableReason). */
+/** Why runs cannot be grouped (packages/runs: UnavailableReason). */
 const UNAVAILABLE_RUN_REASONS = [
   "unsupported_platform",
   "no_systemd",
@@ -665,7 +665,7 @@ export const EVENTS = {
     c: "launch",
     fields: { source: ["reference_match"], result: ["matched", "none"] },
   },
-  // Background runs: whether runs can be contained here, and each run's start and end by its
+  // Background runs: whether runs can be grouped here, and each run's start and end by its
   // codes. Never a run's ID, request, answer, folder or command.
   "runs.probe": {
     lvl: "info",

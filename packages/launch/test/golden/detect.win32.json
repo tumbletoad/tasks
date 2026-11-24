@@ -24,8 +24,7 @@
       "target": "t3",
       "source": "app-folder",
       "exec": [],
-      "unusable": "cmd_shim",
-      "shim": "C:\\Users\\mira\\.t3\\bin\\t3.cmd"
+      "unusable": "cmd_shim"
     }
   ],
   "homes": [
@@ -117,8 +116,6 @@
       "label": "T3 Code",
       "account": "default",
       "source": "app",
-      "exec": "C:\\Users\\mira\\.t3\\bin\\t3.cmd",
-      "argsPrefix": [],
       "needs": [
         "t3_provider_instance"
       ]

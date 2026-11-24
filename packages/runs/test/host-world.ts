@@ -1,8 +1,8 @@
 // A model world for the run host: one service at a time (its RunMachine and RunHost over a durable
-// store), fake containers on a fake operating system that outlives the service, fake agents that
+// store), fake process groups on a fake operating system that outlives the service, fake agents that
 // talk Claude's stream, a fake monotonic clock, and crashes of the service at any boundary (a store
-// write, a container call or an answer's save, before or after it takes effect). A crash kills the
-// service: everything it calls fails or never answers, its containers' processes die with it unless
+// write, a process group call or an answer's save, before or after it takes effect). A crash kills the
+// service: everything it calls fails or never answers, its process groups' processes die with it unless
 // one refuses to end, and a new service starts on the same durable state and recovers.
 //
 // The world keeps its own truth of what the processes did, which the host never sees, and checks
@@ -12,14 +12,14 @@ import type { RunLimits, RunRecord, RunState } from "@ttasks/contracts/runs";
 import { FINAL_RUN_STATES } from "@ttasks/contracts/runs";
 import type { RunStore } from "@ttasks/launch/execution-store";
 import {
-  ContainerError,
+  ProcessGroupError,
   RunHost,
   RunMachine,
   type AgentExit,
   type Confirmation,
-  type Contained,
-  type Containers,
-  type ContainerSpec,
+  type StartedAgent,
+  type ProcessGroups,
+  type ProcessGroupSpec,
   type OpenDriver,
   type RunFolders,
   type SavedAnswer,
@@ -37,7 +37,7 @@ interface Life {
 
 const isDead = (life: Life): boolean => life.dead;
 
-/** One run's container on the fake operating system. */
+/** One run's process group on the fake operating system. */
 interface Box {
   /** Processes alive in it: the agent and what it started. */
   procs: number;
@@ -107,7 +107,7 @@ export class World {
   #pids = 1_000;
   #said = 0;
   readonly runs: string[] = [];
-  /** The operating system's truth: each run's container, and the starts not answered yet. */
+  /** The operating system's truth: each run's process group, and the starts not answered yet. */
   readonly boxes = new Map<string, Box>();
   readonly hung = new Map<string, { answer: (ok: boolean) => void; life: Life }>();
   /** How each run's next start goes, set before the host starts it. */
@@ -142,7 +142,7 @@ export class World {
     });
     return new RunHost({
       machine,
-      containers: this.#containers(life),
+      groups: this.#processGroups(life),
       files: this.#files(life),
       now: () => this.now,
       elapsed: () => this.mono,
@@ -151,7 +151,7 @@ export class World {
   }
 
   // -------------------------------------------------------------------------------------------
-  // The service's view: a store, containers, files and a clock, each bound to one life.
+  // The service's view: a store, process groups, files and a clock, each bound to one life.
 
   /** Waits on the fake clock; a dead service's waits never end. */
   #wait(life: Life): (ms: number, signal: AbortSignal) => Promise<void> {
@@ -223,7 +223,7 @@ export class World {
     };
   }
 
-  #containers(life: Life): Containers {
+  #processGroups(life: Life): ProcessGroups {
     const alive = <T>(call: () => T): Promise<T> =>
       life.dead ? Promise.reject(new Crash()) : Promise.resolve(call());
     const confirm = async (name: string, waitMs = 0): Promise<Confirmation> => {
@@ -265,26 +265,26 @@ export class World {
     };
   }
 
-  #start(spec: ContainerSpec, life: Life): Promise<Contained> {
+  #start(spec: ProcessGroupSpec, life: Life): Promise<StartedAgent> {
     const how = this.modes.get(spec.name) ?? { mode: "ok", obeys: true };
     if (how.mode === "refuse") {
-      return Promise.reject(new ContainerError("start_failed", "the agent did not start"));
+      return Promise.reject(new ProcessGroupError("start_failed", "the agent did not start"));
     }
     if (how.mode === "ok") return Promise.resolve(this.#create(spec.name, how.obeys));
-    return new Promise<Contained>((resolve, reject) => {
+    return new Promise<StartedAgent>((resolve, reject) => {
       this.hung.set(spec.name, {
         life,
         answer: (ok) => {
           this.hung.delete(spec.name);
           if (life.dead) return;
           if (ok) resolve(this.#create(spec.name, how.obeys));
-          else reject(new ContainerError("start_failed", "the agent did not start"));
+          else reject(new ProcessGroupError("start_failed", "the agent did not start"));
         },
       });
     });
   }
 
-  #create(name: string, obeys: boolean): Contained {
+  #create(name: string, obeys: boolean): StartedAgent {
     let exit!: (exit: AgentExit) => void;
     const exited = new Promise<AgentExit>((resolve) => {
       exit = resolve;
@@ -329,7 +329,7 @@ export class World {
     this.#maybeEnd(box);
   }
 
-  /** The output pipes end once no process of the container holds them. */
+  /** The output pipes end once no process of the process group holds them. */
   #maybeEnd(box: Box): void {
     if (box.procs === 0 && !box.ended) {
       box.ended = true;
@@ -361,7 +361,7 @@ export class World {
     box.stdout.write(`${JSON.stringify(line)}\n`);
   }
 
-  /** The service dies: its timers and calls end, and its containers' processes with it. */
+  /** The service dies: its timers and calls end, and its process groups' processes with it. */
   #die(): void {
     if (this.#life.dead) return;
     this.#life.dead = true;
@@ -556,7 +556,7 @@ export class World {
     const box = this.boxes.get(run.id);
     const occupied = (box?.procs ?? 0) > 0 || this.hung.has(run.id);
     if (FINAL.has(run.state) && run.state !== "unknown" && occupied) {
-      throw new Error(`a ${run.state} run's container is not empty`);
+      throw new Error(`a ${run.state} run's process group is not empty`);
     }
     if (
       this.stopped.has(run.id) &&

@@ -203,7 +203,7 @@ async function surveyOf(
       continue;
     }
     const settings = t3SettingsOf({ platform: io.platform, userHome, env });
-    const t3 = settings === undefined ? [] : t3Proposals(settings, found, io.platform);
+    const t3 = settings === undefined ? [] : t3Proposals(settings, io.platform);
     const fresh = t3.filter(
       (p) =>
         !existing.some(

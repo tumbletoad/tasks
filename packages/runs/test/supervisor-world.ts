@@ -1,7 +1,7 @@
 // A model world for the supervisor: a service with a run machine and a run host per space over
-// in-memory stores, the supervisor over them, fake containers on a fake operating system that
+// in-memory stores, the supervisor over them, fake process groups on a fake operating system that
 // outlives the service, and run folders that outlive it too. The world checks the supervisor's
-// promises where they are kept or broken: at each container start (the limits, a Stop, the update
+// promises where they are kept or broken: at each process group start (the limits, a Stop, the update
 // hold) and at each folder's removal (retention), and once everything settled (no run waits while
 // there is room for it).
 import { PassThrough } from "node:stream";
@@ -14,15 +14,15 @@ import {
 import { MemoryDurable, MemoryExecutionStore } from "@ttasks/launch/memory-store";
 import type { RunStore } from "@ttasks/launch/execution-store";
 import {
-  ContainerError,
+  ProcessGroupError,
   planStarts,
   RunHost,
   RunMachine,
   Supervisor,
   type AgentExit,
-  type Contained,
-  type Containers,
-  type ContainerSpec,
+  type StartedAgent,
+  type ProcessGroups,
+  type ProcessGroupSpec,
   type HeldAnswer,
   type Hold,
   type Lane,
@@ -66,7 +66,7 @@ export type Event =
   | { kind: "age"; days: number }
   | { kind: "retain" };
 
-/** One run's container on the fake operating system. */
+/** One run's process group on the fake operating system. */
 interface Box {
   alive: boolean;
   readonly space: string;
@@ -129,7 +129,7 @@ export class SupervisorWorld {
   /** Runs a Stop cancelled while they were queued: none of them may ever start. */
   readonly stoppedQueued = new Set<string>();
   readonly closedTasks = new Set<string>();
-  /** Every container start, in order. */
+  /** Every process group start, in order. */
   readonly started: string[] = [];
   /** Folders retention removed. */
   readonly removed: string[] = [];
@@ -167,7 +167,7 @@ export class SupervisorWorld {
 
   #start(): Supervisor {
     const life = this.#life;
-    const containers = this.#containers();
+    const groups = this.#processGroups();
     const files = this.#files();
     this.#lanes = SPACES.map((space, i) => {
       const machine = new RunMachine({
@@ -177,7 +177,7 @@ export class SupervisorWorld {
       });
       const host = new RunHost({
         machine,
-        containers,
+        groups,
         files,
         now: () => this.now,
         wait: never,
@@ -199,8 +199,8 @@ export class SupervisorWorld {
     });
   }
 
-  /** The fake operating system's containers, which check the supervisor's promises at a start. */
-  #containers(): Containers {
+  /** The fake operating system's process groups, which check the supervisor's promises at a start. */
+  #processGroups(): ProcessGroups {
     const end = (box: Box, exit: AgentExit) => {
       if (!box.alive) return;
       box.alive = false;
@@ -211,16 +211,16 @@ export class SupervisorWorld {
     return {
       probe: () => Promise.resolve({ available: true, kind: "job" }),
       kind: () => Promise.resolve("job" as const),
-      start: (spec: ContainerSpec): Promise<Contained> => {
+      start: (spec: ProcessGroupSpec): Promise<StartedAgent> => {
         const name = spec.name;
         const run = this.record(name);
         if (run === undefined) {
-          this.broken.push("a container started for a run no store has");
-          return Promise.reject(new ContainerError("start_failed", "no run"));
+          this.broken.push("a process group started for a run no store has");
+          return Promise.reject(new ProcessGroupError("start_failed", "no run"));
         }
         this.#checkStart(run);
         if (this.refuseStarts) {
-          return Promise.reject(new ContainerError("start_failed", "refused"));
+          return Promise.reject(new ProcessGroupError("start_failed", "refused"));
         }
         let exit!: (exit: AgentExit) => void;
         const exited = new Promise<AgentExit>((resolve) => {
@@ -279,7 +279,7 @@ export class SupervisorWorld {
     );
   }
 
-  /** The supervisor's promises at the moment a container starts. */
+  /** The supervisor's promises at the moment a process group starts. */
   #checkStart(run: RunRecord): void {
     if (this.stoppedQueued.has(run.id)) this.broken.push("a run stopped while queued started");
     if (this.#holdInForce) this.broken.push("a run started while an update held the queue");
@@ -511,7 +511,7 @@ export class SupervisorWorld {
         throw new Error(`a run did not settle: ${run?.state ?? "missing"}`);
       }
     }
-    if ([...this.boxes.values()].some((b) => b.alive)) throw new Error("a container lives on");
+    if ([...this.boxes.values()].some((b) => b.alive)) throw new Error("a process group lives on");
   }
 
   async close(): Promise<void> {

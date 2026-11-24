@@ -28,10 +28,10 @@ import {
 } from "@ttasks/launch";
 import { decodeRunRow, type SpaceWriterHandle } from "@ttasks/storage";
 import {
-  containers as platformContainers,
-  FallbackContainers,
+  processGroups as platformGroups,
+  FallbackProcessGroups,
   RUN_HELPER,
-  UngroupedContainers,
+  UngroupedProcesses,
   RunFiles,
   RunHost,
   RunMachine,
@@ -39,7 +39,7 @@ import {
   Supervisor,
   TOOLS_FILE,
   type AgentCommand,
-  type Containers,
+  type ProcessGroups,
   type Hold,
   type Lane,
   type Prepared,
@@ -75,12 +75,12 @@ import {
 } from "./agent.ts";
 import { runAdapter, runsWith } from "./drivers.ts";
 
-/** What a start of the service may set for runs. Tests pass their containers or times. */
+/** What a start of the service may set for runs. Tests pass their process groups or times. */
 export interface RunOptions {
-  /** This platform's process groups. Default: the cgroup or job containers (`containers()`). */
-  readonly containers?: Containers;
+  /** This platform's process groups. Default: the cgroup or job process groups (`processGroups()`). */
+  readonly groups?: ProcessGroups;
   /** Where no process group can be made. Default: the agent's process tree as TTasks finds it. */
-  readonly ungrouped?: Containers;
+  readonly ungrouped?: ProcessGroups;
   /** Windows: ttasks-run.exe. Default: the one in this version folder's `bin`. */
   readonly runHelper?: string;
   readonly times?: Partial<RunTimes>;
@@ -258,7 +258,7 @@ export const defaultRunHelper = (execPath: string = process.execPath): string =>
 
 export class RunService {
   readonly #options: RunServiceOptions;
-  readonly #containers: Containers;
+  readonly #groups: ProcessGroups;
   readonly #files: RunFiles;
   readonly #hosted = new Map<string, Hosted>();
   /** The spaces whose host recovered, as the supervisor works on them. */
@@ -283,14 +283,14 @@ export class RunService {
   constructor(options: RunServiceOptions) {
     this.#options = options;
     const grouped =
-      options.containers ??
-      platformContainers({
+      options.groups ??
+      platformGroups({
         platform: options.platform,
         runHelper: options.runHelper ?? defaultRunHelper(),
       });
-    this.#containers = new FallbackContainers(
+    this.#groups = new FallbackProcessGroups(
       grouped,
-      options.ungrouped ?? new UngroupedContainers({ platform: options.platform }),
+      options.ungrouped ?? new UngroupedProcesses({ platform: options.platform }),
       async () => (await this.probe()).available,
     );
     this.#files = new RunFiles(join(options.stateDir, RUNS_FOLDER));
@@ -307,11 +307,11 @@ export class RunService {
   }
 
   /**
-   * Probes this machine's containers. Only a success is kept: a machine that could not contain
+   * Probes this machine's process groups. Only a success is kept: a machine that could not group
    * runs a moment ago, a busy user manager for one, is asked again at the next call.
    */
   probe(): Promise<ProbeResult> {
-    const probe = (this.#probe ??= this.#containers.probe().then(
+    const probe = (this.#probe ??= this.#groups.probe().then(
       (result) => {
         this.#options.log.log(
           "runs.probe",
@@ -326,7 +326,7 @@ export class RunService {
         return {
           available: false,
           reason: "check_failed",
-          message: `${PRODUCT_NAME} could not check whether runs can be contained here.`,
+          message: `${PRODUCT_NAME} could not check whether runs can be grouped here.`,
         };
       },
     ));
@@ -376,7 +376,7 @@ export class RunService {
     await this.#supervisor.round();
   }
 
-  /** Ends hosting: the containers of live runs are killed; the next start settles their runs. */
+  /** Ends hosting: the process groups of live runs are killed; the next start settles their runs. */
   async close(): Promise<void> {
     this.#stopped = true;
     this.#ending();
@@ -913,7 +913,7 @@ export class RunService {
     };
     const host = new RunHost({
       machine,
-      containers: this.#containers,
+      groups: this.#groups,
       files: this.#files,
       log,
       ...(this.#options.times === undefined ? {} : { times: this.#options.times }),
@@ -971,7 +971,7 @@ export class RunService {
 
   /**
    * Ends the host of a space whose writer is gone: its runs can no longer be recorded, so their
-   * containers are killed, and the space's next open settles them.
+   * process groups are killed, and the space's next open settles them.
    */
   #drop(space: string, hosted: Hosted): void {
     if (this.#hosted.get(space) === hosted) this.#hosted.delete(space);

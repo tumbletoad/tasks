@@ -1,10 +1,10 @@
 // The run host: one background run from its `starting` record to its settled end. It starts the
-// agent's program in a container (container/) and owns its pipes; a driver (drivers/) speaks the
+// agent's program in a process group (process-group/) and owns its pipes; a driver (drivers/) speaks the
 // agent's protocol over them. A run has two results, and the record keeps both:
 //
 // - The work's, from the driver: done with its answer, needs the person, failed, stopped. It is
 //   saved to the run's folder first, before anything of the run is closed or ended.
-// - The cleanup's, from the container: nothing was left, what was left had to be ended, or (with
+// - The cleanup's, from the process group: nothing was left, what was left had to be ended, or (with
 //   no process group) TTasks ended what it could find. It never changes the work's.
 //
 // What the person can count on, and how this keeps it:
@@ -13,13 +13,13 @@
 //   what is still there is ended.
 // - Stop works at every moment, start-up and a close included, and waits for nothing: it is
 //   committed first (`cancelling`), the agent is asked to stop over its protocol (or interrupted
-//   when it has none), and after the grace time the container is killed. A Stop before the
+//   when it has none), and after the grace time the process group is killed. A Stop before the
 //   agent's process was there means its driver never opens: nothing of the work reaches it. A
-//   container that is not confirmed empty in time, or without a process group an agent still
+//   process group that is not confirmed empty in time, or without a process group an agent still
 //   alive, leaves the run `unknown`, with End by force.
 // - The answer is kept whole up to 1 MiB, also after megabytes of other output, and each answer
 //   is saved to the run's folder as it comes, so a crash of the service keeps the last one.
-// - When the service ends, its runs' processes end with it (the container's own guarantee). A
+// - When the service ends, its runs' processes end with it (the process group's own guarantee). A
 //   service that closes saves each agent's work first: its own end when it had settled, else what
 //   it said so far, the words of an answer still being written included. The next start settles
 //   each open run from its saved work: its own result when the work had settled, else the last
@@ -28,7 +28,7 @@
 //   which is recorded with `starting`: a group is counted; without one, nothing of the run is
 //   known alive any more and its end cannot be confirmed.
 // - A late PID, exit or event never revives a stopped run: the record's rules (machine.ts) refuse
-//   it, and a container that starts after its run gave up on it is killed.
+//   it, and a process group that starts after its run gave up on it is killed.
 //
 // Every limit runs on the monotonic clock: the start time, the run's wall and idle times, the
 // stop's grace, the close, the confirmation and the drain of the output.
@@ -43,11 +43,11 @@ import { SIGNAL_NAME, TEXT_CAP_BYTES } from "@ttasks/contracts/runs";
 import type {
   AgentExit,
   Confirmation,
-  Contained,
-  ContainerKind,
-  ContainerSpec,
-  Containers,
-} from "./container/index.ts";
+  StartedAgent,
+  ProcessGroupKind,
+  ProcessGroupSpec,
+  ProcessGroups,
+} from "./process-group/index.ts";
 import { printDriver } from "./drivers/print.ts";
 import type { DriverSession, OpenDriver, Work } from "./drivers/types.ts";
 import { RunMachine, type RunEnd } from "./machine.ts";
@@ -57,7 +57,7 @@ import { capText } from "./streams/values.ts";
 
 /** The host's time limits, in milliseconds. A run's wall and idle times come from its record. */
 export interface RunTimes {
-  /** From the start of the container to the agent's PID. */
+  /** From the start of the process group to the agent's PID. */
   startMs: number;
   /** From the interrupt to the kill. */
   stopGraceMs: number;
@@ -65,9 +65,9 @@ export interface RunTimes {
   closeMs: number;
   /** After the agent's exit, for what it started to end by itself before it counts as left. */
   settleMs: number;
-  /** From the kill to the confirmation that the container is empty. */
+  /** From the kill to the confirmation that the process group is empty. */
   confirmMs: number;
-  /** For the output pipes to end once the agent or its container ended. */
+  /** For the output pipes to end once the agent or its process group ended. */
   drainMs: number;
   /** Between attempts to record a run's end that the store did not take. */
   retryMs: number;
@@ -84,10 +84,10 @@ export const RUN_TIMES: Readonly<RunTimes> = {
 };
 
 /**
- * What runs in a run's container: the agent's program, arguments, folder and environment, and
+ * What runs in a run's process group: the agent's program, arguments, folder and environment, and
  * its driver. Without one, a print-mode agent's stream parser is the driver.
  */
-export interface AgentCommand extends Omit<ContainerSpec, "name"> {
+export interface AgentCommand extends Omit<ProcessGroupSpec, "name"> {
   readonly open?: OpenDriver;
   /** What the run records once its agent started, besides its PID. */
   readonly evidence?: RunEvidence;
@@ -101,7 +101,7 @@ export type RunHostLog = (
 
 export interface RunHostOptions {
   readonly machine: RunMachine;
-  readonly containers: Containers;
+  readonly groups: ProcessGroups;
   readonly files: RunFolders;
   /** Wall clock milliseconds, for the PID's start time. Default: Date.now. */
   readonly now?: () => number;
@@ -113,8 +113,8 @@ export interface RunHostOptions {
   readonly log?: RunHostLog;
 }
 
-/** A container is named after its run: the record of `starting` is the record of its name. */
-export const containerName = (run: string): string => run;
+/** A process group is named after its run: the record of `starting` is the record of its name. */
+export const groupName = (run: string): string => run;
 
 /** One run this host works on, from its start until its record is final. */
 interface Flow {
@@ -123,9 +123,9 @@ interface Flow {
   readonly stopping: () => boolean;
   readonly stopped: Promise<"stop">;
   readonly stop: () => void;
-  /** The container's start has not answered yet: a container may still appear. */
+  /** The process group's start has not answered yet: a process group may still appear. */
   startPending: boolean;
-  /** The end it settles with once its container is confirmed empty, while it is `unknown`. */
+  /** The end it settles with once its process group is confirmed empty, while it is `unknown`. */
   pending: RunEnd | undefined;
   /** Its end is being recorded: from here on the run no longer runs. */
   settling: boolean;
@@ -152,7 +152,7 @@ function timer(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /** How a run's record says its processes started; undefined when it does not say. */
-function kindOf(run: RunRecord): ContainerKind | undefined {
+function kindOf(run: RunRecord): ProcessGroupKind | undefined {
   const kind = run.evidence.container;
   return kind === "cgroup" || kind === "job" || kind === "tree" ? kind : undefined;
 }
@@ -297,7 +297,7 @@ function defaultDriver(run: RunRecord): OpenDriver | undefined {
 
 export class RunHost {
   readonly #machine: RunMachine;
-  readonly #containers: Containers;
+  readonly #groups: ProcessGroups;
   readonly #files: RunFolders;
   readonly #now: () => number;
   readonly #elapsed: () => number;
@@ -309,7 +309,7 @@ export class RunHost {
 
   constructor(options: RunHostOptions) {
     this.#machine = options.machine;
-    this.#containers = options.containers;
+    this.#groups = options.groups;
     this.#files = options.files;
     this.#now = options.now ?? Date.now;
     this.#elapsed = options.elapsed ?? (() => globalThis.performance.now());
@@ -326,7 +326,7 @@ export class RunHost {
   /**
    * Starts a queued run: commits `starting`, then hosts it until its record is final. Returns the
    * record as `begin` left it: a run that was not queued is returned as it is and nothing starts.
-   * `command` names what runs in the container; it is asked once, after the commit.
+   * `command` names what runs in the process group; it is asked once, after the commit.
    */
   async start(
     id: string,
@@ -339,8 +339,8 @@ export class RunHost {
     try {
       // How the run's processes will be held is recorded before anything of it starts: recovery
       // asks the question that fits it.
-      const container = await this.#containers.kind();
-      begun = await this.#machine.begin(id, { container });
+      const group = await this.#groups.kind();
+      begun = await this.#machine.begin(id, { container: group });
     } catch (error) {
       this.#flows.delete(id);
       throw error;
@@ -390,7 +390,7 @@ export class RunHost {
 
   /**
    * The person's Stop: committed first, then the run is stopped. A queued run is cancelled at
-   * once. A run no flow of this service holds is settled from its container's name, as at start.
+   * once. A run no flow of this service holds is settled from its process group's name, as at start.
    */
   async stop(id: string): Promise<RunRecord | undefined> {
     // The flow hears the Stop before the store is asked: a start that goes on while the store
@@ -413,9 +413,9 @@ export class RunHost {
   }
 
   /**
-   * End by force, for an `unknown` run: looks whether anything is left in its container, ends
-   * what is, and settles the run once the container is confirmed empty, or with no process group
-   * once its agent is gone. The record says whether anything had to be ended. A run whose container
+   * End by force, for an `unknown` run: looks whether anything is left in its process group, ends
+   * what is, and settles the run once the process group is confirmed empty, or with no process group
+   * once its agent is gone. The record says whether anything had to be ended. A run whose process group
    * may still be starting cannot be confirmed yet and stays `unknown`.
    */
   async forceEnd(id: string): Promise<RunRecord | undefined> {
@@ -437,7 +437,7 @@ export class RunHost {
   /**
    * A `starting` run no flow of this host holds while the service runs: its `starting` commit
    * reached the store after the host had given up waiting for it, so nothing started it. Once its
-   * container is confirmed empty by its name it fails `start_timed_out`; any other run is returned
+   * process group is confirmed empty by its name it fails `start_timed_out`; any other run is returned
    * as it is.
    */
   async settleUnstarted(id: string): Promise<RunRecord | undefined> {
@@ -445,7 +445,7 @@ export class RunHost {
     const run = await this.#machine.read(id);
     if (run?.state !== "starting" || this.#flows.has(id)) return run;
     const end: RunEnd = { kind: "start_failed", reason: "start_timed_out" };
-    const confirmed = await this.#recoverContainer(containerName(id), kindOf(run));
+    const confirmed = await this.#recoverGroup(groupName(id), kindOf(run));
     if (settles(confirmed)) return this.#settle(id, end);
     const flow = this.#flows.get(id) ?? this.#flow(id);
     flow.pending = end;
@@ -454,7 +454,7 @@ export class RunHost {
 
   /**
    * At the service's start: every open run of this machine that no flow of this host holds, and
-   * every `unknown` one, is settled once its container is confirmed empty by its name: `failed`
+   * every `unknown` one, is settled once its process group is confirmed empty by its name: `failed`
    * (`service_ended`) with its last saved answer, or `cancelled` after an accepted Stop. One that
    * cannot be confirmed is `unknown`. Queued runs stay queued. Returns the runs it looked at.
    */
@@ -467,7 +467,7 @@ export class RunHost {
   }
 
   /**
-   * Stops hosting: every wait ends and every live container is killed, without a record. The
+   * Stops hosting: every wait ends and every live process group is killed, without a record. The
    * service's own end ends them too; the next start's recovery settles the runs, with what each
    * agent had said: the part of an answer it was still writing is saved first.
    */
@@ -477,7 +477,7 @@ export class RunHost {
     await Promise.all(flows.map((flow) => this.#keepSaid(flow)));
     for (const flow of flows) flow.abort.abort();
     await Promise.all(
-      flows.map((flow) => this.#containers.kill(containerName(flow.id)).catch(() => undefined)),
+      flows.map((flow) => this.#groups.kill(groupName(flow.id)).catch(() => undefined)),
     );
   }
 
@@ -556,14 +556,14 @@ export class RunHost {
     }
   }
 
-  /** One run's life in its container, from the `starting` this host committed to its end. */
+  /** One run's life in its process group, from the `starting` this host committed to its end. */
   async #host(
     flow: Flow,
     run: RunRecord,
     command: (run: RunRecord) => AgentCommand | Promise<AgentCommand>,
   ): Promise<RunRecord | undefined> {
-    const name = containerName(run.id);
-    // The command is asked within the start time, and a Stop ends the wait: no container exists
+    const name = groupName(run.id);
+    // The command is asked within the start time, and a Stop ends the wait: no process group exists
     // yet, so nothing is left to stop.
     let prepared: AgentCommand | "stop" | undefined;
     try {
@@ -585,7 +585,7 @@ export class RunHost {
       return this.#settle(flow.id, { kind: "start_failed", reason: "spawn_failed" });
     }
     const kind = kindOf(run);
-    const spec: ContainerSpec = {
+    const spec: ProcessGroupSpec = {
       name,
       command: prepared.command,
       args: prepared.args,
@@ -595,8 +595,8 @@ export class RunHost {
     };
 
     flow.startPending = true;
-    const starting = this.#containers.start(spec).then(
-      (contained) => ({ ok: true as const, contained }),
+    const starting = this.#groups.start(spec).then(
+      (child) => ({ ok: true as const, child }),
       () => ({ ok: false as const }),
     );
     void starting.then(() => {
@@ -604,39 +604,39 @@ export class RunHost {
     });
     const started = await this.#within(flow, starting, this.#times.startMs);
     if (started === undefined) return this.#startTimedOut(flow, starting);
-    // The container's contract: a refused start leaves nothing running and no container.
+    // The process group's contract: a refused start leaves nothing running and no process group.
     if (!started.ok) return this.#settle(flow.id, { kind: "start_failed", reason: "spawn_failed" });
-    return this.#running(flow, run, started.contained, open, prepared.evidence);
+    return this.#running(flow, run, started.child, open, prepared.evidence);
   }
 
   /**
    * A Stop came while the agent's process started: its driver is never opened, so nothing of the
    * work reaches its input. Its PID is recorded, and what it is is ended.
    */
-  async #stoppedAtStart(flow: Flow, contained: Contained): Promise<RunRecord | undefined> {
-    contained.stdin.on("error", () => undefined);
-    contained.stdin.end();
-    contained.stdout.resume();
-    contained.stderr.resume();
-    await this.#machine.started(flow.id, contained.pid, this.#now()).catch((error: unknown) => {
+  async #stoppedAtStart(flow: Flow, child: StartedAgent): Promise<RunRecord | undefined> {
+    child.stdin.on("error", () => undefined);
+    child.stdin.end();
+    child.stdout.resume();
+    child.stderr.resume();
+    await this.#machine.started(flow.id, child.pid, this.#now()).catch((error: unknown) => {
       this.#failed("started", error);
     });
     const end: RunEnd = { kind: "start_failed", reason: "spawn_failed" };
-    return this.#confirmed(flow, end, await this.#endContainer(contained.name));
+    return this.#confirmed(flow, end, await this.#endGroup(child.name));
   }
 
   /**
-   * The container gave no agent within the start time: whatever it holds is ended. Its start may
-   * still answer later, so the run is settled only once that answer came and the container is
+   * The process group gave no agent within the start time: whatever it holds is ended. Its start may
+   * still answer later, so the run is settled only once that answer came and the process group is
    * confirmed empty; until then it is `unknown`.
    */
   async #startTimedOut(
     flow: Flow,
-    starting: Promise<{ ok: true; contained: Contained } | { ok: false }>,
+    starting: Promise<{ ok: true; child: StartedAgent } | { ok: false }>,
   ): Promise<RunRecord | undefined> {
-    const name = containerName(flow.id);
+    const name = groupName(flow.id);
     const end: RunEnd = { kind: "start_failed", reason: "start_timed_out" };
-    await this.#containers.kill(name).catch(() => undefined);
+    await this.#groups.kill(name).catch(() => undefined);
     const late = await this.#within(flow, starting, this.#times.confirmMs);
     if (late === undefined) {
       flow.pending = end;
@@ -644,7 +644,7 @@ export class RunHost {
       // When the start answers at last, what it made is ended and the run settled.
       void starting
         .then(async () => {
-          const confirmed = await this.#endContainer(name);
+          const confirmed = await this.#endGroup(name);
           if (settles(confirmed) && flow.pending !== undefined) {
             await this.#settle(flow.id, flow.pending);
             flow.pending = undefined;
@@ -656,29 +656,29 @@ export class RunHost {
         });
       return unknown;
     }
-    return this.#confirmed(flow, end, await this.#endContainer(name));
+    return this.#confirmed(flow, end, await this.#endGroup(name));
   }
 
   /**
    * The agent runs: its driver speaks its protocol, and the first of its settled work, its own
    * end, a Stop and a limit ends it. The work's result is saved, then the protocol is closed and
-   * the container cleaned up: the cleanup's result is added, and never changes the work's.
+   * the process group cleaned up: the cleanup's result is added, and never changes the work's.
    */
   async #running(
     flow: Flow,
     run: RunRecord,
-    contained: Contained,
+    child: StartedAgent,
     open: OpenDriver,
     evidence: RunEvidence = {},
   ): Promise<RunRecord | undefined> {
-    if (flow.stopping()) return this.#stoppedAtStart(flow, contained);
-    const name = contained.name;
+    if (flow.stopping()) return this.#stoppedAtStart(flow, child);
+    const name = child.name;
     const startedAt = this.#elapsed();
     const agent: { exit: AgentExit | undefined; at: number | undefined } = {
       exit: undefined,
       at: undefined,
     };
-    const exited = contained.exited.then((exit) => {
+    const exited = child.exited.then((exit) => {
       agent.exit = exit;
       agent.at = this.#elapsed();
       return exit;
@@ -690,26 +690,26 @@ export class RunHost {
     const logs = this.#files.logs(flow.id);
     let lastOutput = startedAt;
     flow.quietSince = this.#now();
-    contained.stdout.on("data", (chunk: Buffer) => {
+    child.stdout.on("data", (chunk: Buffer) => {
       lastOutput = this.#elapsed();
       flow.quietSince = this.#now();
       logs.stdout(chunk);
     });
     // The end of what it wrote on stderr: the only explanation of a start that said nothing else.
     let stderrTail = Buffer.alloc(0);
-    contained.stderr.on("data", (chunk: Buffer) => {
+    child.stderr.on("data", (chunk: Buffer) => {
       logs.stderr(chunk);
       stderrTail = Buffer.concat([stderrTail, chunk]).subarray(-TEXT_CAP_BYTES);
     });
-    const drained = Promise.all([endOf(contained.stdout), endOf(contained.stderr)]);
+    const drained = Promise.all([endOf(child.stdout), endOf(child.stderr)]);
     let session: DriverSession;
     try {
-      session = open({ stdin: contained.stdin, stdout: contained.stdout }, (event) => {
+      session = open({ stdin: child.stdin, stdout: child.stdout }, (event) => {
         this.#event(flow, event);
       });
     } catch (error) {
       this.#failed("open", error);
-      contained.stdin.end();
+      child.stdin.end();
       session = unopened;
     }
     flow.session = session;
@@ -721,7 +721,7 @@ export class RunHost {
     });
 
     await this.#machine
-      .started(flow.id, contained.pid, this.#now(), evidence)
+      .started(flow.id, child.pid, this.#now(), evidence)
       .catch((error: unknown) => {
         this.#failed("started", error);
       });
@@ -745,7 +745,7 @@ export class RunHost {
 
     if (why === "stop" || flow.limit !== undefined) {
       // The agent is asked to stop, and may still say how its work ended.
-      if (!session.interrupt()) await this.#containers.interrupt(name).catch(() => false);
+      if (!session.interrupt()) await this.#groups.interrupt(name).catch(() => false);
       await this.#within(
         flow,
         Promise.race([session.settled, agentEnded]),
@@ -759,7 +759,7 @@ export class RunHost {
     }
     if (work === undefined) {
       // The agent did not end its work in time: it is ended, and what it said is its work.
-      await this.#containers.kill(name).catch(() => undefined);
+      await this.#groups.kill(name).catch(() => undefined);
       await this.#within(flow, agentEnded, this.#times.confirmMs);
       session.ended(agent.exit ?? { code: null, signal: null });
       work = (await settledNow(session)) ?? (await unopened.settled);
@@ -807,7 +807,7 @@ export class RunHost {
 
   /**
    * The cleanup's result: whether anything was left after `waitMs` for it to end by itself, and
-   * once what was left was ended, whether the container is confirmed empty, or, with no process
+   * once what was left was ended, whether the process group is confirmed empty, or, with no process
    * group, whether the agent is gone.
    */
   async #cleanUp(
@@ -816,12 +816,12 @@ export class RunHost {
   ): Promise<{ confirmed: Confirmation; cleanup: RunCleanup | undefined }> {
     let first: Confirmation;
     try {
-      first = await this.#containers.confirmEmpty(name, { waitMs });
+      first = await this.#groups.confirmEmpty(name, { waitMs });
     } catch (error) {
       first = { state: "unknown", detail: error instanceof Error ? error.name : "error" };
     }
     if (first.state === "empty") return { confirmed: first, cleanup: "confirmed" };
-    const confirmed = await this.#endContainer(name);
+    const confirmed = await this.#endGroup(name);
     return { confirmed, cleanup: endedBy(confirmed) };
   }
 
@@ -874,24 +874,24 @@ export class RunHost {
     }
   }
 
-  /** Kills the container and waits until it is confirmed empty, or the confirmation time passed. */
-  async #endContainer(name: string): Promise<Confirmation> {
+  /** Kills the process group and waits until it is confirmed empty, or the confirmation time passed. */
+  async #endGroup(name: string): Promise<Confirmation> {
     try {
-      await this.#containers.kill(name);
+      await this.#groups.kill(name);
     } catch {
       // The confirmation below says whether anything is left.
     }
     try {
-      return await this.#containers.confirmEmpty(name, { waitMs: this.#times.confirmMs });
+      return await this.#groups.confirmEmpty(name, { waitMs: this.#times.confirmMs });
     } catch (error) {
       return { state: "unknown", detail: error instanceof Error ? error.name : "error" };
     }
   }
 
-  /** From the container's name and kind alone: ends what is left and confirms it empty. */
-  async #recoverContainer(name: string, kind: ContainerKind | undefined): Promise<Confirmation> {
+  /** From the process group's name and kind alone: ends what is left and confirms it empty. */
+  async #recoverGroup(name: string, kind: ProcessGroupKind | undefined): Promise<Confirmation> {
     try {
-      return await this.#containers.recover(name, {
+      return await this.#groups.recover(name, {
         waitMs: this.#times.confirmMs,
         ...(kind === undefined ? {} : { kind }),
       });
@@ -908,21 +908,21 @@ export class RunHost {
   async #endLeft(
     run: RunRecord,
   ): Promise<{ confirmed: Confirmation; cleanup: RunCleanup | undefined }> {
-    const name = containerName(run.id);
+    const name = groupName(run.id);
     const kind = kindOf(run);
     let left: Confirmation;
     try {
-      left = await this.#containers.confirmEmpty(name, kind === undefined ? {} : { kind });
+      left = await this.#groups.confirmEmpty(name, kind === undefined ? {} : { kind });
     } catch (error) {
       left = { state: "unknown", detail: error instanceof Error ? error.name : "error" };
     }
     if (left.state === "empty") return { confirmed: left, cleanup: "confirmed" };
-    const confirmed = await this.#recoverContainer(name, kind);
+    const confirmed = await this.#recoverGroup(name, kind);
     return { confirmed, cleanup: endedBy(confirmed) };
   }
 
   /**
-   * Settles with `end` when the container is empty, or when no process group holds the run and
+   * Settles with `end` when the process group is empty, or when no process group holds the run and
    * nothing can be confirmed; else `unknown`, keeping `end` for later.
    */
   async #confirmed(
@@ -958,7 +958,7 @@ export class RunHost {
   }
 
   /**
-   * Recovery's rule for one run no flow holds: confirm its container by name, ending what is
+   * Recovery's rule for one run no flow holds: confirm its process group by name, ending what is
    * left, then settle.
    */
   async #reconcile(run: RunRecord): Promise<RunRecord | undefined> {

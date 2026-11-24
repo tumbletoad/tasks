@@ -12,8 +12,8 @@ import {
   RunFiles,
   RUNS_FOLDER,
   type AgentExit,
-  type Contained,
-  type Containers,
+  type StartedAgent,
+  type ProcessGroups,
   type ProbeResult,
 } from "@ttasks/runs";
 import { seedMira } from "@ttasks/testkit";
@@ -178,11 +178,11 @@ const alive = (pid: number | undefined): boolean => {
   }
 };
 
-describe("[A4.3.11.9.run.service] the service probes its containers at start, recovers each open space's runs, and hosts a run started through its internal call", () => {
+describe("[A4.3.11.9.run.service] the service probes its process groups at start, recovers each open space's runs, and hosts a run started through its internal call", () => {
   test("Windows: a run ends with its answer, and one left by a stopped service is interrupted at the next start", async (ctx) => {
     if (!windows)
       ctx.skip(
-        "in this process a run is contained on Windows only: Linux needs the service's own user unit",
+        "in this process a run is grouped on Windows only: Linux needs the service's own user unit",
       );
     const { root, home, spaceId } = await setUp("runs-host");
     const helper = buildRunHelper(join(root, "bin"));
@@ -232,7 +232,7 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
       { available: true, kind: "job" },
     ];
     let probes = 0;
-    const containers: Containers = {
+    const groups: ProcessGroups = {
       kind: () => Promise.resolve("job" as const),
       probe: () =>
         Promise.resolve(answers[Math.min(probes++, 1)] ?? { available: true, kind: "job" }),
@@ -252,7 +252,7 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
       },
     };
     const service = new RunService({
-      containers,
+      groups,
       machine: newId("m"),
       stateDir: join(tmpdir(), "ttasks-runs-unused"),
       platform: process.platform,
@@ -314,7 +314,7 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
 });
 
 /**
- * Containers on no operating system: each agent says it is working, and answers and exits on the
+ * Process groups on no operating system: each agent says it is working, and answers and exits on the
  * interrupt or when `finish` is called. Every OS runs the tests that use them.
  */
 function fakeBoxes() {
@@ -339,7 +339,7 @@ function fakeBoxes() {
     return true;
   };
   let pid = 4_000;
-  const containers: Containers = {
+  const groups: ProcessGroups = {
     probe: () => Promise.resolve({ available: true, kind: "job" }),
     kind: () => Promise.resolve("job" as const),
     start: (spec) => {
@@ -351,7 +351,7 @@ function fakeBoxes() {
       live.set(spec.name, box);
       say(box.stdout, "Still looking.", false);
       pid += 1;
-      const contained: Contained = {
+      const child: StartedAgent = {
         name: spec.name,
         pid,
         stdin: new PassThrough(),
@@ -359,7 +359,7 @@ function fakeBoxes() {
         stderr: box.stderr,
         exited,
       };
-      return Promise.resolve(contained);
+      return Promise.resolve(child);
     },
     interrupt: (name) => Promise.resolve(end(name, "Stopped with what was found.")),
     kill: (name) => {
@@ -373,14 +373,14 @@ function fakeBoxes() {
       return Promise.resolve({ state: "empty" });
     },
   };
-  return { containers, live, finish: (name: string) => end(name, "Found it in the export.") };
+  return { groups, live, finish: (name: string) => end(name, "Found it in the export.") };
 }
 
 describe("[A4.3.11.9.run.folder] a queued run checks the folder a launch of its task would use, right before it starts", () => {
   test("a task whose folder went is refused as folder_gone and nothing starts; a task without a folder runs", async () => {
     const { root, home, spaceId } = await setUp("runs-folder");
     const boxes = fakeBoxes();
-    const service = await start(home, { containers: boxes.containers });
+    const service = await start(home, { groups: boxes.groups });
     const placed = await addTask(home, service, 1);
     const plain = await addTask(home, service, 2);
     const folder = join(root, "work", "portal");
@@ -427,23 +427,23 @@ describe("[A4.3.11.9.run.stop-unknown] Stop of a run whose processes were not co
     const boxes = fakeBoxes();
     // What the agent left survives the run's own kill, until it is ended by its name.
     const left = new Set<string>();
-    const containers: Containers = {
-      ...boxes.containers,
+    const groups: ProcessGroups = {
+      ...boxes.groups,
       start: async (spec) => {
         left.add(spec.name);
-        return boxes.containers.start(spec);
+        return boxes.groups.start(spec);
       },
       confirmEmpty: (name, options) =>
         left.has(name)
           ? Promise.resolve({ state: "occupied", detail: "left" })
-          : boxes.containers.confirmEmpty(name, options),
+          : boxes.groups.confirmEmpty(name, options),
       recover: (name, options) => {
         left.delete(name);
-        return boxes.containers.recover(name, options);
+        return boxes.groups.recover(name, options);
       },
     };
     const service = await start(home, {
-      containers,
+      groups,
       times: { stopGraceMs: 500, confirmMs: 200, closeMs: 200 },
     });
     const task = await addTask(home, service, 1);
@@ -467,7 +467,7 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
   test("a working run comes with what it said so far and since when it is quiet; a run being stopped is not quiet, and one that waits said nothing", async () => {
     const { home, spaceId } = await setUp("runs-live");
     const boxes = fakeBoxes();
-    const service = await start(home, { containers: boxes.containers });
+    const service = await start(home, { groups: boxes.groups });
     const task = await addTask(home, service, 1);
     const command = agent(ANSWERS, home);
     const first = await service.runs.start(spaceId, input(task), "runs-live-run-000001", command);
@@ -507,7 +507,7 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
       "\n[runs]\nmax_minutes = 7\nmax_quiet_minutes = 3\n",
     );
     const boxes = fakeBoxes();
-    const service = await start(home, { containers: boxes.containers });
+    const service = await start(home, { groups: boxes.groups });
     const task = await addTask(home, service, 1);
     const other = await addTask(home, service, 2);
     const command = agent(ANSWERS, home);
@@ -593,18 +593,18 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
 });
 
 describe("[A4.3.11.9.run.restored] the runs a backup held open never start or go on after a claim or a restore in place", () => {
-  /** Fake containers that count the agents started. */
+  /** Fake process groups that count the agents started. */
   const counted = () => {
     const boxes = fakeBoxes();
     const started: string[] = [];
-    const containers: Containers = {
-      ...boxes.containers,
+    const groups: ProcessGroups = {
+      ...boxes.groups,
       start: (spec) => {
         started.push(spec.name);
-        return boxes.containers.start(spec);
+        return boxes.groups.start(spec);
       },
     };
-    return { ...boxes, containers, started };
+    return { ...boxes, groups, started };
   };
 
   /**
@@ -614,7 +614,7 @@ describe("[A4.3.11.9.run.restored] the runs a backup held open never start or go
   async function backedUpRuns(label: string) {
     const set = await setUp(label, "\n[runs]\nat_once = 1\n");
     const boxes = counted();
-    const service = await start(set.home, { containers: boxes.containers });
+    const service = await start(set.home, { groups: boxes.groups });
     const command = agent(ANSWERS, set.home);
     const working = await service.runs.start(
       set.spaceId,
@@ -688,7 +688,7 @@ describe("[A4.3.11.9.run.restored] the runs a backup held open never start or go
     );
     user.close();
     await service.stop();
-    const again = await start(w.home, { containers: w.boxes.containers });
+    const again = await start(w.home, { groups: w.boxes.groups });
     await again.runs.tick();
     const ended = await runUntil(again, spaceId, own.id, (r) => r.state !== "running", "recovery");
     expect(ended).toMatchObject({ state: "failed", reason: "service_ended" });
@@ -754,7 +754,7 @@ describe("[A4.3.11.9.run.restored] the runs a backup held open never start or go
       }),
       { mode: 0o600 },
     );
-    const other = await start(w.home, { containers: w.boxes.containers });
+    const other = await start(w.home, { groups: w.boxes.groups });
     const person = await classSession(w.home, other.endpoint.path, "cli-interactive");
     const before = w.boxes.started.length;
     await person.call("space/claim", { space: copy }, { timeoutMs: 60_000 });

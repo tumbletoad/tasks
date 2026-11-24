@@ -52,7 +52,7 @@ function start(
 /**
  * A service with its UI listener on an OS-chosen port and, unless `space` is false, one space.
  * `toml` is machine.toml's text before the first start (instances); `launch` the service's
- * launching seams (a test's terminal); `runs` its background runs' (a test's containers).
+ * launching seams (a test's terminal); `runs` its background runs' (a test's process groups).
  */
 export async function httpWorld(
   label: string,

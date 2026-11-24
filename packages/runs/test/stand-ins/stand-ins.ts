@@ -1,11 +1,11 @@
 // The stand-in agents (stand-in.ts) as a test starts them, and a census of what is still alive,
-// read from the operating system without the container: on Linux every process's arguments in
+// read from the operating system without the process group: on Linux every process's arguments in
 // /proc, on Windows the named pipes each stand-in process listens on.
 import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { ContainerSpec } from "../../src/container/index.ts";
+import type { ProcessGroupSpec } from "../../src/process-group/index.ts";
 
 /** The stand-in program. */
 export const STAND_IN = join(import.meta.dirname, "stand-in.ts");
@@ -32,13 +32,13 @@ export type StandInMode =
 /** A fresh token: it marks every process of one stand-in tree. */
 export const newToken = (): string => randomBytes(8).toString("hex");
 
-/** A container spec that starts stand-in `mode`. */
+/** A process group spec that starts stand-in `mode`. */
 export function standInSpec(
   name: string,
   mode: StandInMode,
   token: string,
   options: { maxMs?: number; cwd?: string; args?: readonly string[] } = {},
-): ContainerSpec {
+): ProcessGroupSpec {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value;
