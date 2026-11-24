@@ -1157,6 +1157,11 @@ When `found` is `true`:
 | `results[].matched_by` | "source_key" | no | A task draft that matched an existing task: how |
 | `results[].lifecycle` | "active" \| "completed" \| "archived" | no | The matched task's lifecycle |
 | `results[].ambiguous` | string[] | no | Several active tasks matched, the named one first |
+| `results[].levels` | true | no | An undo or redo of a change of the effort levels |
+| `results[].off_list` | object[] | no | Live tasks on a size that is not a level now: give each of them a level |
+| `results[].off_list[].effort` | string, max 20 | yes | The size |
+| `results[].off_list[].tasks` | string[], max 10 items | yes | Their references, the first 10 |
+| `results[].off_list[].count` | integer, 0 to 9999999999 | yes | How many |
 | `results_more` | integer, 1 to 1000000 | no | An import's results beyond those 50 |
 | `conflicts` | object[] | no | Every conflicting field, without its value: read again |
 | `conflicts[].op` | integer, 0 to 999999 | yes | Index of the operation in the request |

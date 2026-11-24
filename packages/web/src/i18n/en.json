@@ -635,6 +635,7 @@
   "toast.undoneRest": "Undone, apart from what others changed since",
   "toast.redone": "Redone",
   "toast.levels": "{kind, select, undo {Effort levels put back} other {Effort levels changed again}}{count, plural, =0 {} one {. # task is on a size that is not a level now: {tasks}} other {. # tasks are on sizes that are not levels now: {tasks}}}",
+  "toast.levelsNotUndone": "{who, select, user {Not undone: you changed the effort levels since} import {Not undone: the import changed the effort levels since} other {Not undone: {by} changed the effort levels since}}",
   "toast.undoUnknown": "This change cannot be found from here. Ctrl+Z undoes your newest change.",
   "toast.nothingToUndo": "Nothing to undo",
   "toast.nothingToRedo": "Nothing to redo",

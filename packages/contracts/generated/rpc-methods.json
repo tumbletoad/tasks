@@ -2789,6 +2789,11 @@
                       ],
                       "description": "The row it acted on, or a preference's key"
                     },
+                    "levels": {
+                      "const": true,
+                      "description": "An undo or redo of a change of the effort levels",
+                      "type": "boolean"
+                    },
                     "lifecycle": {
                       "description": "The matched task's lifecycle",
                       "enum": [
@@ -2804,6 +2809,40 @@
                         "source_key"
                       ],
                       "type": "string"
+                    },
+                    "off_list": {
+                      "description": "Live tasks on a size that is not a level now: give each of them a level",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "count": {
+                            "description": "How many",
+                            "maximum": 9999999999,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effort": {
+                            "description": "The size",
+                            "maxLength": 20,
+                            "type": "string"
+                          },
+                          "tasks": {
+                            "description": "Their references, the first 10",
+                            "items": {
+                              "type": "string"
+                            },
+                            "maxItems": 10,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "effort",
+                          "tasks",
+                          "count"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
                     },
                     "ref": {
                       "description": "Task reference",

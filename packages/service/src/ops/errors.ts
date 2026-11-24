@@ -431,6 +431,8 @@ export function resultFailure(
       // An undo or redo's UNDO_CONFLICT names the commit it met: a caller that named none (Ctrl+Z)
       // passes it to Undo the rest, so it never reaches a newer change instead.
       ...(result.target === undefined ? {} : { commit: result.target }),
+      // That commit is a change of the effort levels: its rest is the list and the tasks.
+      ...(result.levels === true ? { levels: true } : {}),
       // A refused redo's: every undone change it tried, which stay for the next redo.
       ...(result.passed === undefined ? {} : { passed_over: result.passed }),
       // An undo's or a redo's: who changed which task since.

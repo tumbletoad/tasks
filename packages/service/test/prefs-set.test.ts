@@ -351,6 +351,21 @@ describe("[A3.3.4.prefs.moves] a change of the effort levels moves its tasks, an
     ]);
   });
 
+  test("a refused undo of a change of levels says it is one, so the rest can be undone from anywhere", async () => {
+    const [moved] = await add([{ title: "Fixture medium", effort: "M" }]);
+    await levels(await asOf(), "XS,S,Medium,L,XL", [{ from: "M", to: "Medium" }]);
+    await call(script, "task.update", {
+      task: moved ?? "",
+      set: { effort: "L" },
+      base: await asOf(),
+      request_id: rid(),
+    });
+    expect(await refusal(call(person, "history.undo", { request_id: rid() }))).toMatchObject({
+      code: "conflict",
+      data: { levels: true },
+    });
+  });
+
   test("moves go with the effort levels alone", async () => {
     const before = await asOf();
     expect(

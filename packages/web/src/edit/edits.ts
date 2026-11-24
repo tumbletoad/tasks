@@ -246,6 +246,8 @@ interface Problem {
   readonly newer: readonly NewerWorkEntry[];
   /** A refused redo's: every change it tried. */
   readonly passed: readonly string[];
+  /** The commit an undo or redo met is a change of the effort levels. */
+  readonly levels: boolean;
 }
 
 /**
@@ -306,6 +308,7 @@ function problemOf(error: unknown): Problem | undefined {
     conflicts,
     ...(typeof commit === "string" && commit !== "" ? { commit } : {}),
     newer: newerOf(record["newer_work"]),
+    levels: record["levels"] === true,
     passed: Array.isArray(record["passed_over"]) ? record["passed_over"].map(String) : [],
   };
 }
@@ -334,6 +337,7 @@ function historyOf(kind: "undo" | "redo", found: Found): Decision<HistoryResult>
   const commit = found.results[0]?.id;
   if (commit === undefined) return undefined;
   const partial = kind === "undo" && (found.conflicts?.length ?? 0) > 0;
+  const op = found.results[0];
   const value = {
     result: kind === "redo" ? "redone" : partial ? "partial" : "undone",
     commit,
@@ -342,6 +346,18 @@ function historyOf(kind: "undo" | "redo", found: Found): Decision<HistoryResult>
     as_of: found.as_of,
     ...(found.passed_over === undefined ? {} : { passed_over: found.passed_over }),
     ...(found.newer_work === undefined ? {} : { newer_work: found.newer_work }),
+    ...(op?.levels === true ? { levels: true } : {}),
+    ...(op?.off_list === undefined ? {} : { off_list: op.off_list }),
+    ...(partial
+      ? {
+          unresolved: (found.conflicts ?? []).map((c) => ({
+            entity: c.entity,
+            field: c.field,
+            by: c.by.origin === "import" ? "import" : c.by.kind === "human" ? "user" : c.by.label,
+            at: c.at,
+          })),
+        }
+      : {}),
   };
   return { ok: true, value: value as HistoryResult };
 }
@@ -724,7 +740,8 @@ export class Edits {
   relevelled(unsaved: Unsaved): boolean {
     const { source } = unsaved.change;
     const now = this.#deps.levels?.();
-    if (source?.kind !== "effort" || source.levels === undefined || now === undefined) return false;
+    if (source?.kind !== "effort" || source.effort === undefined || now === undefined) return false;
+    // A size kept by an earlier build does not say its levels: it is chosen again.
     return source.levels !== now;
   }
 
@@ -1124,8 +1141,16 @@ export class Edits {
         return;
       }
       const result = decision.value;
-      // A change of the levels changes no task's lifecycle: no checked row comes back.
+      // A change of the levels changes no task's lifecycle: no checked row comes back. While
+      // another's change holds its list, none of it comes back: the toast says so, with no Redo.
       if (result.levels !== true) this.#undone(result.tasks, true);
+      const unresolved = (result as { unresolved?: readonly { entity: string; by: string }[] })
+        .unresolved;
+      const list = (unresolved ?? []).find((u) => u.entity === "preferences");
+      if (result.levels === true && list !== undefined) {
+        say({ kind: "error", text: { id: "toast.levelsNotUndone", values: whoOf(list.by) } });
+        return;
+      }
       say({
         kind: "undo",
         text:
@@ -1503,13 +1528,11 @@ export class Edits {
     // Undo the rest only where the page knows the step has a field that does not conflict: its
     // own step's fields. The service then undoes the fields that pass when it is asked, and keeps
     // the others as they are; a page that does not know the step offers nothing, but for a change
-    // of the effort levels, made anywhere: its rest is the list and the tasks nobody changed, or,
-    // when the list itself was changed since, nothing, and the step leaves the stack.
+    // of the effort levels, made anywhere, as the refusal says: its rest is the list and the tasks
+    // nobody changed, or, when the list itself was changed since, nothing, and the step leaves.
     const fields = new Set(conflicts.map((c) => c.field));
     const known = commit === undefined ? undefined : this.#fieldsOf.get(commit);
-    const levels =
-      known === undefined &&
-      (fields.has("effort") || conflicts.some((c) => c.entity === "preferences"));
+    const levels = known === undefined && problem.levels;
     if (
       kind !== "undo" ||
       commit === undefined ||
