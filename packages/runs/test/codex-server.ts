@@ -439,7 +439,7 @@ async function main(): Promise<void> {
       .unref()
       .on("error", () => undefined);
   }
-  // Never outlives a minute, so a broken container cannot leave it running for long.
+  // Never outlives a minute, so a broken process group cannot leave it running for long.
   setTimeout(() => process.exit(124), 60_000).unref();
   // As the real server, the thread works in the folder the program was started in.
   const fake = serveCodex(process.stdin, process.stdout, {

@@ -1,14 +1,14 @@
 // What a run record may say about a run's processes, and when. The run host (host.ts) owns the
-// processes and their container; this module decides each move of the record on the record as it
+// processes and their process group; this module decides each move of the record on the record as it
 // is, and commits it by compare-and-set:
 //
-// 1. Only `queued` moves to `starting`, and it is committed before any container exists. A run's
-//    container is named after the run, so that commit is also the record of the container's name:
+// 1. Only `queued` moves to `starting`, and it is committed before any process group exists. A run's
+//    process group is named after the run, so that commit is also the record of the process group's name:
 //    a crash right after it leaves a record that the next start's recovery settles, and nothing
 //    ever starts twice.
-// 2. A final state is entered only once the run's container was confirmed empty. A container that
+// 2. A final state is entered only once the run's process group was confirmed empty. A process group that
 //    could not be confirmed makes the run `unknown` (reason `stop_timed_out`), which keeps the
-//    cancel intent and moves on once End by force or the next start confirms the container.
+//    cancel intent and moves on once End by force or the next start confirms the process group.
 // 3. An accepted Stop (`cancelling`, committed before anything is stopped) ends `cancelled` or
 //    `unknown`. A late agent PID is recorded as evidence and never moves a run out of it.
 // 4. What an agent wrote never keeps its run from settling: a result the store refuses is left out.
@@ -34,7 +34,7 @@ import { RunRefused, seenRun, type RunStore } from "@ttasks/launch/execution-sto
 export const RUN_STORE_DEADLINE_MS = 15_000;
 
 /**
- * How a run ended, once its container was confirmed empty, or that it could not be confirmed.
+ * How a run ended, once its process group was confirmed empty, or that it could not be confirmed.
  * With a Stop accepted before, every confirmed end is `cancelled`.
  */
 export type RunEnd =
@@ -48,7 +48,7 @@ export type RunEnd =
   | { readonly kind: "service_ended"; readonly result: RunResult }
   /** A claim or a restore in place brought the run back open from a backup: it never goes on. */
   | { readonly kind: "restored" }
-  /** The container could not be confirmed empty. */
+  /** The process group could not be confirmed empty. */
   | { readonly kind: "not_confirmed" };
 
 /**
@@ -78,7 +78,7 @@ export class RunDeadlinePassed extends Error {
 
 const FINAL: ReadonlySet<RunState> = new Set(FINAL_RUN_STATES);
 
-/** The states whose container may hold processes, where evidence about them is recorded. */
+/** The states whose process group may hold processes, where evidence about them is recorded. */
 const HELD: ReadonlySet<RunState> = new Set([
   "starting",
   "running",
@@ -121,11 +121,11 @@ function outcomeMove(result: RunResult): Move {
 
 /**
  * The move an end makes from the run's record, or undefined for none: a final run stays as it is
- * (an `unknown` one moves on a confirmed end only), a queued run has no container, and an accepted
+ * (an `unknown` one moves on a confirmed end only), a queued run has no process group, and an accepted
  * Stop makes every confirmed end `cancelled`.
  */
 export function endMove(run: RunRecord, end: RunEnd): Move | undefined {
-  // A queued run a restore brought back has no container: it ends at once, never to start.
+  // A queued run a restore brought back has no process group: it ends at once, never to start.
   if (end.kind === "restored" && run.state === "queued") {
     return { next: "failed", patch: { reason: "restored" } };
   }
@@ -189,8 +189,8 @@ export class RunMachine {
   }
 
   /**
-   * Commits `queued → starting`, the one move that lets a container start, with what is known of
-   * the container before it starts: how it will hold the run. `began` is true only for the call
+   * Commits `queued → starting`, the one move that lets a process group start, with what is known of
+   * the process group before it starts: how it will hold the run. `began` is true only for the call
    * that made it; any other gets the record as it is.
    */
   begin(
@@ -228,7 +228,7 @@ export class RunMachine {
     );
   }
 
-  /** Evidence about a run whose container may hold processes, such as the agent's native ID. */
+  /** Evidence about a run whose process group may hold processes, such as the agent's native ID. */
   evidence(id: string, evidence: RunEvidence): Promise<RunRecord | undefined> {
     return this.#section(id, () =>
       this.#decide(id, (run) =>
@@ -238,8 +238,8 @@ export class RunMachine {
   }
 
   /**
-   * The person's Stop. A queued run is `cancelled` at once: it has no container. A run whose
-   * container may hold processes is `cancelling`, committed before anything is stopped, and
+   * The person's Stop. A queued run is `cancelled` at once: it has no process group. A run whose
+   * process group may hold processes is `cancelling`, committed before anything is stopped, and
    * `stopping` says the caller must stop it. Any other run is returned as it is.
    */
   cancel(id: string): Promise<{ run: RunRecord | undefined; stopping: boolean }> {
@@ -256,7 +256,7 @@ export class RunMachine {
   }
 
   /**
-   * A queued run that can no longer start fails with why, before any container exists. Any other
+   * A queued run that can no longer start fails with why, before any process group exists. Any other
    * run is returned as it is: one a Stop cancelled meanwhile, or one that started.
    */
   refuse(id: string, reason: StartRefusal): Promise<RunRecord | undefined> {

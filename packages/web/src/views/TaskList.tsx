@@ -1111,6 +1111,9 @@ export function TaskList({
           },
         );
       },
+      folderChanged: (task) => {
+        refuse(task.id, undefined);
+      },
       openInT3,
       // Run: the service queues the run and answers at once; the thread shows it from then on,
       // and the feed brings each of its steps. A refusal starts nothing and says why where the

@@ -30,8 +30,6 @@ export class ReadContext {
   nativeId: string | null = null;
   lastMessage: string | null = null;
   answerSeen: { text: string; final: boolean; cut: boolean } | null = null;
-  /** A line too long to read came after the last answer: it may have been a later one. */
-  answerUnsure = false;
   lastError: string | null = null;
   usage: Usage | null = null;
   session: { cwd: string | null; appTools: AppToolsState } | null = null;
@@ -83,7 +81,6 @@ export class ReadContext {
     const r = capText(text, ANSWER_CAP_BYTES);
     if (r.capped) this.counts.cappedTexts += 1;
     this.answerSeen = { text: r.text, final, cut: r.capped };
-    this.answerUnsure = false;
     this.out.push({ kind: "answer", ...this.answerSeen });
   }
 
@@ -95,14 +92,6 @@ export class ReadContext {
     const seen = this.answerSeen;
     if (seen === null || !seen.final) return;
     this.answerSeen = { ...seen, final: false };
-    this.out.push({ kind: "answer", ...this.answerSeen });
-  }
-
-  /** The agent finished its turn with the answer it gave last, if any. */
-  answerFinished(): void {
-    const seen = this.answerSeen;
-    if (seen === null || seen.final || this.answerUnsure) return;
-    this.answerSeen = { ...seen, final: true };
     this.out.push({ kind: "answer", ...this.answerSeen });
   }
 
@@ -169,7 +158,6 @@ export function createParser(kind: StreamKind, reader: CliReader): StreamParser 
     c.lines += 1;
     if (line.kind === "lost") {
       c.oversized += 1;
-      ctx.answerUnsure = true;
       return;
     }
     if (line.invalidUtf8) c.invalidUtf8 += 1;

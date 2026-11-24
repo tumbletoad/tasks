@@ -1,4 +1,4 @@
-// The supervisor's rules one by one, over an in-memory store and fake containers: a run whose
+// The supervisor's rules one by one, over an in-memory store and fake process groups: a run whose
 // `starting` commit reached the store after its deadline, what retention keeps, and a queued run's
 // wait, Stop and refusal.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -14,7 +14,7 @@ import {
   RunMachine,
   Supervisor,
   type Confirmation,
-  type Containers,
+  type ProcessGroups,
   type Lane,
   type Prepared,
   type QueueLimits,
@@ -58,8 +58,8 @@ async function failedWithoutAnswer(store: RunStore, run: RunRecord): Promise<voi
   await store.transitionRun(run.id, seenRun(running), "failed", { reason: "no_result" });
 }
 
-/** Containers whose start never answers: a run that reaches one stays starting. */
-const hanging: Containers = {
+/** Process groups whose start never answers: a run that reaches one stays starting. */
+const hanging: ProcessGroups = {
   probe: () => Promise.resolve({ available: true, kind: "job" }),
   kind: () => Promise.resolve("job" as const),
   start: () => new Promise<never>(() => undefined),
@@ -92,7 +92,7 @@ function bench(
     prepareMs?: number;
     updating?: () => boolean;
     limits?: QueueLimits;
-    containers?: Containers;
+    groups?: ProcessGroups;
   } = {},
 ) {
   let now = Date.UTC(2026, 10, 16, 9, 0, 0);
@@ -104,7 +104,7 @@ function bench(
     ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
   });
   const { kept, files } = folders(() => now);
-  const host = new RunHost({ machine, containers: options.containers ?? hanging, files });
+  const host = new RunHost({ machine, groups: options.groups ?? hanging, files });
   const lane: Lane = { space: "sp_0000000000000000000000000a", machine, host };
   let refuse = false;
   const supervisor = new Supervisor({
@@ -199,7 +199,7 @@ describe("[A4.5.run.supervisor] the supervisor's rules: a start whose record lan
 
   test("a queued run past its limits says why it waits; a Stop cancels it at once and it never starts; one that can no longer start fails with why", async () => {
     const b = bench();
-    // The first run of the task takes the task's one place: its container is still starting.
+    // The first run of the task takes the task's one place: its process group is still starting.
     const first = await b.queue();
     await b.supervisor.round();
     expect((await b.store.readRun(first.id))?.state).toBe("starting");
@@ -228,7 +228,7 @@ describe("[A4.5.run.supervisor] the supervisor's rules: a start whose record lan
     let left = true;
     const confirm = (): Promise<Confirmation> =>
       Promise.resolve(left ? { state: "occupied", detail: "left" } : { state: "empty" });
-    const b = bench({ containers: { ...hanging, confirmEmpty: confirm, recover: confirm } });
+    const b = bench({ groups: { ...hanging, confirmEmpty: confirm, recover: confirm } });
     const first = await b.queue();
     const starting = await b.store.transitionRun(
       first.id,

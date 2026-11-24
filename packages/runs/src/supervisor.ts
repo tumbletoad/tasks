@@ -5,7 +5,7 @@
 //
 // - The limits are guidelines a person sets in machine.toml (QUEUE_LIMITS by default): runs at once
 //   on this machine, per agent instance and per task. A lower limit stops nothing that runs; it only
-//   holds back what waits. A run counts from `starting` until its container is confirmed empty: one
+//   holds back what waits. A run counts from `starting` until its process group is confirmed empty: one
 //   whose end could not be confirmed (`unknown`) still holds its place, so no second agent works in
 //   its task's folder while it may.
 // - The oldest queued run its limits allow starts first. One held back by its own instance or task
@@ -129,7 +129,7 @@ export interface Slot {
   readonly queuedAt: number;
 }
 
-/** The states in which a run holds a place: its container may hold processes. */
+/** The states in which a run holds a place: its process group may hold processes. */
 const ACTIVE: ReadonlySet<RunState> = new Set([
   "starting",
   "running",
@@ -141,7 +141,7 @@ const ACTIVE: ReadonlySet<RunState> = new Set([
 const FINAL: ReadonlySet<RunState> = new Set(FINAL_RUN_STATES);
 
 /**
- * Whether a run may still run: its container may hold processes, its end is not confirmed, or a
+ * Whether a run may still run: its process group may hold processes, its end is not confirmed, or a
  * host works on it whatever its record says. Such a run holds its place, and an update waits for it.
  */
 const mayRun = (run: RunRecord, hosted: ReadonlySet<string>): boolean =>

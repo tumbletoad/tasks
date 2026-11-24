@@ -1,7 +1,7 @@
 // The run host under random lives (host-world.ts): runs queued and started, starts that fail or
 // hang, agents that talk, fork, exit, obey or ignore an interrupt, Stop at every moment, the clock
-// passing every limit, containers that refuse to empty, End by force, and crashes of the service at
-// any boundary with the next start. After every event: a final run's container is empty, a stopped
+// passing every limit, process groups that refuse to empty, End by force, and crashes of the service at
+// any boundary with the next start. After every event: a final run's process group is empty, a stopped
 // run ends `cancelled` or `unknown` and never runs again, and an answer in a record is one its agent
 // gave whole. At the end every run is final or `unknown` once every limit passed, and the next
 // start settles every run that is not queued.
@@ -101,8 +101,8 @@ const scenario = fc.oneof(
   },
 );
 
-describe("[A4.5.run.lifecycle-model] the run host under Stop at every moment, limits, containers that refuse to empty and crashes at any boundary", () => {
-  test("in memory: final runs have empty containers, stopped runs end cancelled or unknown, answers are whole, and every run settles", async () => {
+describe("[A4.5.run.lifecycle-model] the run host under Stop at every moment, limits, process groups that refuse to empty and crashes at any boundary", () => {
+  test("in memory: final runs have empty process groups, stopped runs end cancelled or unknown, answers are whole, and every run settles", async () => {
     const reached = new Map<string, number>();
     const seen = new Set<string>();
     await fc.assert(
@@ -142,7 +142,7 @@ describe("[A4.5.run.lifecycle-model] the run host under Stop at every moment, li
     ]) {
       expect(reached.get(key) ?? 0, key).toBeGreaterThan(0);
     }
-    // And the states between: a Stop in flight, and a container not confirmed empty.
+    // And the states between: a Stop in flight, and a process group not confirmed empty.
     for (const state of ["starting", "running", "cancelling", "unknown"]) {
       expect(seen.has(state), state).toBe(true);
     }

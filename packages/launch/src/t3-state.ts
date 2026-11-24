@@ -80,18 +80,12 @@ function parse(text: string | undefined): Record<string, unknown> | undefined {
 export function readPairing(files: T3Files): T3Pairing | undefined {
   const value = parse(files.read("pairing"));
   if (value === undefined) return undefined;
-  const { grant, pairedAt, clientId, clientSecret, accessToken, expiresAt } = value;
+  const { grant, pairedAt, clientId, accessToken, expiresAt } = value;
   const { reconnect, environment } = value;
   if (typeof grant !== "string" || !EVIDENCE_ID.test(grant)) return undefined;
   if (!isInstant(pairedAt) || typeof reconnect !== "boolean") return undefined;
   if (typeof clientId !== "string" || !CLIENT_ID.test(clientId)) return undefined;
   if (typeof accessToken !== "string" || !TOKEN.test(accessToken)) return undefined;
-  if (
-    clientSecret !== undefined &&
-    (typeof clientSecret !== "string" || !TOKEN.test(clientSecret))
-  ) {
-    return undefined;
-  }
   if (expiresAt !== undefined && !isInstant(expiresAt)) return undefined;
   if (
     environment !== undefined &&
@@ -105,7 +99,6 @@ export function readPairing(files: T3Files): T3Pairing | undefined {
     reconnect,
     clientId,
     accessToken,
-    ...(typeof clientSecret === "string" ? { clientSecret } : {}),
     ...(expiresAt === undefined ? {} : { expiresAt }),
     ...(typeof environment === "string" ? { environment } : {}),
   };

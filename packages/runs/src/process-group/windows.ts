@@ -1,4 +1,4 @@
-// Windows containers: each run is a named job object `Local\ttasks-run-<name>`, created and held by
+// Windows process groups: each run is a named job object `Local\ttasks-run-<name>`, created and held by
 // ttasks-run.exe (packages/launcher-win/src/run.c), which starts the agent already inside it.
 // Nothing in the job can break away, detached processes included. The helper holds the only
 // handle to the job, and the job ends every process when its last handle closes: so the run ends
@@ -19,15 +19,15 @@ import { windowsCommandLine } from "./command-line.ts";
 import { unavailableMessage } from "./placement.ts";
 import {
   checkName,
-  ContainerError,
+  ProcessGroupError,
   DEFAULT_RECOVER_WAIT_MS,
   type AgentExit,
   type ConfirmOptions,
-  type ContainerKind,
+  type ProcessGroupKind,
   type Confirmation,
-  type Contained,
-  type Containers,
-  type ContainerSpec,
+  type StartedAgent,
+  type ProcessGroups,
+  type ProcessGroupSpec,
   type ProbeResult,
 } from "./types.ts";
 
@@ -35,7 +35,7 @@ import {
 const ANSWER_MS = 5_000;
 const POLL_MS = 50;
 
-/** The job's name for a container: its prefix keeps runs apart from other programs' jobs. */
+/** The job's name for a process group: its prefix keeps runs apart from other programs' jobs. */
 export const jobName = (name: string): string => `${PRODUCT_ID}-run-${name}`;
 
 export interface WindowsOptions {
@@ -74,7 +74,7 @@ async function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined
   }
 }
 
-export class WindowsContainers implements Containers {
+export class WindowsProcessGroups implements ProcessGroups {
   private readonly helper: string;
   private readonly live = new Map<string, Live>();
 
@@ -82,7 +82,7 @@ export class WindowsContainers implements Containers {
     this.helper = options.helper;
   }
 
-  kind(): Promise<ContainerKind> {
+  kind(): Promise<ProcessGroupKind> {
     return Promise.resolve("job");
   }
 
@@ -119,20 +119,20 @@ export class WindowsContainers implements Containers {
         reason: "check_failed",
         message: unavailableMessage(
           "check_failed",
-          `the test container was not empty: ${"detail" in confirmed ? confirmed.detail : confirmed.state}`,
+          `the test process group was not empty: ${"detail" in confirmed ? confirmed.detail : confirmed.state}`,
         ),
       };
     }
     return { available: true, kind: "job" };
   }
 
-  async start(spec: ContainerSpec): Promise<Contained> {
+  async start(spec: ProcessGroupSpec): Promise<StartedAgent> {
     checkName(spec.name);
     if (!existsSync(this.helper)) {
-      throw new ContainerError("unavailable", unavailableMessage("helper_missing"));
+      throw new ProcessGroupError("unavailable", unavailableMessage("helper_missing"));
     }
     if (this.live.has(spec.name)) {
-      throw new ContainerError("exists", "a container with this name exists");
+      throw new ProcessGroupError("exists", "a process group with this name exists");
     }
     const helper = spawn(
       this.helper,
@@ -180,7 +180,7 @@ export class WindowsContainers implements Containers {
       reportExit({ code: null, signal: null });
     });
 
-    return new Promise<Contained>((resolve, reject) => {
+    return new Promise<StartedAgent>((resolve, reject) => {
       let live: Live | undefined;
       let failure = "the helper ended before the agent started";
       const lines = createInterface({ input: events, crlfDelay: Infinity });
@@ -215,8 +215,8 @@ export class WindowsContainers implements Containers {
         if (live === undefined) {
           reject(
             failure === "exists"
-              ? new ContainerError("exists", "a container with this name exists")
-              : new ContainerError("start_failed", failure),
+              ? new ProcessGroupError("exists", "a process group with this name exists")
+              : new ProcessGroupError("start_failed", failure),
           );
           return;
         }

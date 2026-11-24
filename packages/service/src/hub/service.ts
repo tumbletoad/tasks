@@ -10,7 +10,7 @@
 //             socket folder, listen. A Windows pipe name that is taken gets a new instance ID,
 //             three tries in all, then exit 70.
 //   ready     service.json says "ready". Spaces open in parallel after it (STARTUP below).
-//   draining  End the background runs (their containers are killed), stop accepting
+//   draining  End the background runs (their process groups are killed), stop accepting
 //             connections, let them finish for up to 5 s, close each space within its bound (an
 //             open in progress is not waited for past it), release the writer locks, remove
 //             service.json if it is still ours, release service.lock. Then the exit: 0, 75 for a
@@ -258,7 +258,7 @@ export interface StartOptions {
    * in memory, so a test that does not ask for HTTP never binds a port of 7713 to 7733.
    */
   readonly http?: HttpStart;
-  /** Background runs: the containers, ttasks-run.exe and the host's times, for tests. */
+  /** Background runs: the process groups, ttasks-run.exe and the host's times, for tests. */
   readonly runs?: RunOptions;
   /**
    * The page's agent apps: the environment and home folder they are looked for in, and the home
@@ -302,7 +302,7 @@ export interface RunningService {
   readonly launches: LaunchService;
   /** The bridge connections and their bindings. */
   readonly bridges: Bridges;
-  /** Background runs: the containers' probe, each open space's run host and its recovery. */
+  /** Background runs: the process groups' probe, each open space's run host and its recovery. */
   readonly runs: RunService;
   /** Resolves when the registered spaces have each opened or become unavailable. */
   readonly spacesSettled: Promise<void>;
@@ -1345,7 +1345,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         // its connections, its spaces (their writer.lock files are theirs), service.sqlite's
         // connection, the lock it holds. Exit codes stay those of the stop that began.
         launches.stop();
-        // A run's processes end with the service: its containers are killed, and the next start
+        // A run's processes end with the service: its process groups are killed, and the next start
         // settles the runs.
         await within(Promise.all([runs.close(), monitor.close()]), DRAIN_MS).catch(() => undefined);
         // A drain for a loss (service.lock's, or a space's writer.lock in this process) starts

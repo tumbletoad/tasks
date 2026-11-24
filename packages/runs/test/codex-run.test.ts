@@ -15,9 +15,9 @@ import {
   RunHost,
   RunMachine,
   sameFolder,
-  UngroupedContainers,
-  WindowsContainers,
-  type Containers,
+  UngroupedProcesses,
+  WindowsProcessGroups,
+  type ProcessGroups,
   RunFiles,
   type RunFolders,
   type SavedAnswer,
@@ -88,7 +88,7 @@ afterAll(() => {
   if (work !== "") rmSync(work, { recursive: true, force: true });
 });
 
-function bench(containers: Containers, times: Record<string, number> = {}, folders?: RunFolders) {
+function bench(groups: ProcessGroups, times: Record<string, number> = {}, folders?: RunFolders) {
   const store = new MemoryExecutionStore(new MemoryDurable(() => Date.UTC(2026, 10, 17)));
   const machine = new RunMachine({ store, machine: MACHINE });
   const saved = new Map<string, SavedAnswer>();
@@ -99,7 +99,7 @@ function bench(containers: Containers, times: Record<string, number> = {}, folde
     logs: () => ({ stdout: () => undefined, stderr: () => undefined, close: () => undefined }),
     removeTemps: () => undefined,
   };
-  const host = new RunHost({ machine, containers, files, times: { stopGraceMs: 3_000, ...times } });
+  const host = new RunHost({ machine, groups, files, times: { stopGraceMs: 3_000, ...times } });
   return { host, machine };
 }
 
@@ -149,16 +149,16 @@ async function startRun(
   return queued.id;
 }
 
-const kinds: [string, () => Containers][] = [
+const kinds: [string, () => ProcessGroups][] = [
   ...(windows
     ? [
-        ["in a job object", () => new WindowsContainers({ helper: natives?.helper ?? "" })] as [
+        ["in a job object", () => new WindowsProcessGroups({ helper: natives?.helper ?? "" })] as [
           string,
-          () => Containers,
+          () => ProcessGroups,
         ],
       ]
     : []),
-  ["without a process group", () => new UngroupedContainers()],
+  ["without a process group", () => new UngroupedProcesses()],
 ];
 
 describe("[A4.3.11.codex.run] a Codex run in the run host: the program resolved from its shim gets its stdin, its interrupt and its process group, and both results are kept", () => {
@@ -255,7 +255,7 @@ describe("[A4.3.11.codex.run] a Codex run in the run host: the program resolved 
   test("a question the turn ended with is what the run's folder keeps after a later answer, so a crash of the service recovers the question", async () => {
     const token = newToken();
     const root = join(work, `state-${token}`, "runs");
-    const b = bench(new UngroupedContainers(), {}, new RunFiles(root));
+    const b = bench(new UngroupedProcesses(), {}, new RunFiles(root));
     let after: () => void = () => undefined;
     const answered = new Promise<void>((resolve) => {
       after = resolve;
@@ -330,7 +330,7 @@ describe("[A4.3.11.codex.run] a Codex run in the run host: the program resolved 
   test("Windows: Ctrl+C reaches the app server behind the shim, through Node's own wrapper", async (ctx) => {
     if (!windows) ctx.skip("a console's Ctrl+C is Windows'");
     const token = newToken();
-    const box = new WindowsContainers({ helper: natives?.helper ?? "" });
+    const box = new WindowsProcessGroups({ helper: natives?.helper ?? "" });
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(process.env))
       if (value !== undefined) env[key] = value;
@@ -340,19 +340,19 @@ describe("[A4.3.11.codex.run] a Codex run in the run host: the program resolved 
       ignoreEnd: true,
     });
     const name = `codex-${token}`;
-    const contained = await box.start({
+    const child = await box.start({
       name,
       command: program?.command ?? "",
       args: [...(program?.args ?? []), ...CODEX_ARGS],
       cwd: work,
       env,
     });
-    contained.stdout.resume();
-    contained.stderr.resume();
+    child.stdout.resume();
+    child.stderr.resume();
     await waitForCensus(token, (pids) => pids.length === 1);
     expect(await box.interrupt(name)).toBe(true);
     await waitForCensus(token, (pids) => pids.length === 0);
-    await contained.exited;
+    await child.exited;
     expect(await box.confirmEmpty(name, { waitMs: 10_000 })).toEqual({ state: "empty" });
   });
 });

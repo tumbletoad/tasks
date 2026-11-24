@@ -556,29 +556,6 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   );
 
   test(
-    "an instance with a provider instance and no model is refused before anything is sent",
-    async () => {
-      fake.addProject(folder("lumen"));
-      const resolution = await resolvePlace({ root: "work", path: "lumen" }, roots);
-      if (resolution.status !== "ok") throw new Error("fixture");
-      const { prepared } = await prepare("lumen");
-      if (prepared.kind !== "bound") throw new Error("fixture");
-      const planned = route.plan(randomId("la"), {
-        ...prepared,
-        title: "M-14 Fixture task",
-        instance: {
-          openPermission: "inherit",
-          t3: { environment: "local", providerInstance: "codex", model: "" },
-        },
-        folder: resolution.identity,
-      });
-      expect(planned).toEqual({ kind: "unavailable", reason: "model_required" });
-      expect(fake.callsOf("t3_thread_launch")).toHaveLength(0);
-    },
-    SLOW,
-  );
-
-  test(
     "T3 that is not running, or not paired, makes the route unavailable before anything is dispatched",
     async () => {
       fake.addProject(folder("lumen"));

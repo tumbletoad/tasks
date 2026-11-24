@@ -469,16 +469,12 @@ function t3ProposalId(instance: T3ProviderInstance): string {
 
 /**
  * `ttasks setup instances` for T3 (A4 3.2): one complete proposal per enabled provider instance of a
- * driver TTasks opens through T3, from the detection's T3 proposal (`base`: its command). The label
+ * driver TTasks opens through T3. The label
  * is T3's display name (T3's own name for the driver when the settings give none), the account the
  * home folder's suffix, and the model T3's default selection when it names this provider instance,
  * else the catalogue's default for the driver.
  */
-export function t3Proposals(
-  settings: T3Settings,
-  base: Proposal,
-  platform: NodeJS.Platform,
-): Proposal[] {
+export function t3Proposals(settings: T3Settings, platform: NodeJS.Platform): Proposal[] {
   const models = targetDef("t3").t3Models ?? {};
   const proposals: Proposal[] = [];
   for (const instance of settings.instances) {
@@ -496,8 +492,6 @@ export function t3Proposals(
       label: instanceLabel(name, targetDef("t3").label),
       account: homeAccount(instance.home, platform),
       source: "app",
-      ...(base.exec === undefined ? {} : { exec: base.exec }),
-      ...(base.argsPrefix === undefined ? {} : { argsPrefix: base.argsPrefix }),
       t3: { providerInstance: instance.id, model, modelFrom: own !== "" ? "t3" : "catalogue" },
       needs: [],
     });

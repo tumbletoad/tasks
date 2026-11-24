@@ -431,7 +431,7 @@ async function main(): Promise<void> {
       .unref()
       .on("error", () => undefined);
   }
-  // Never outlives a minute, so a broken container cannot leave it running for long.
+  // Never outlives a minute, so a broken process group cannot leave it running for long.
   setTimeout(() => process.exit(124), 60_000).unref();
   // A program that ignores the end of its input needs something to keep it alive.
   if (scenario.ignoreEnd === true) setInterval(() => undefined, 1 << 30);

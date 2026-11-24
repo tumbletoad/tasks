@@ -894,7 +894,7 @@ export async function planInstall(ctx: ServiceContext): Promise<Plan> {
 /**
  * Linux: this install's unit as an earlier version wrote it, without `Delegate=yes`, gets that
  * line, and systemd reads it again; the service's next start runs with it, and background runs can
- * be contained. A unit that is not this install's, that says something about delegation, or that
+ * be grouped. A unit that is not this install's, that says something about delegation, or that
  * drop-ins change is left as it is. True when it changed. `ttasks update` calls it right before it
  * restarts the service.
  */
@@ -2024,7 +2024,7 @@ export type ServiceAnswer =
       readonly spaces: ServiceStatus["spaces"];
       /** The UI's listener (A2 3.8.2): its port, whether it moved or is blocked; null: none. */
       readonly http: NonNullable<ServiceStatus["http"]> | null;
-      /** Whether background runs can be contained, and why not; null from a service that hosts none. */
+      /** Whether background runs can be grouped, and why not; null from a service that hosts none. */
       readonly runs: NonNullable<ServiceStatus["runs"]> | null;
     }
   | { readonly answers: false; readonly reason: ProbeReason };

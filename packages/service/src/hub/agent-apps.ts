@@ -447,7 +447,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   const settings = t3 === undefined ? undefined : t3SettingsOf({ platform, userHome, env });
   for (const proposal of settings === undefined || t3 === undefined
     ? []
-    : t3Proposals(settings, t3, platform)) {
+    : t3Proposals(settings, platform)) {
     const provider = proposal.t3?.providerInstance;
     const key = JSON.stringify(["t3", provider ?? proposal.id]);
     const owner = machine.instances.find(

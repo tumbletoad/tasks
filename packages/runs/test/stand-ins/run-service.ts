@@ -1,5 +1,5 @@
 // The run host tests' stand-in service: a process that hosts runs as the real service does (the
-// run host and the supervisor over a fixture space's database, real containers and run folders),
+// run host and the supervisor over a fixture space's database, real process groups and run folders),
 // so a test can kill it by force mid run and start another on the same space. It runs where
 // harness.ts runs: in a delegated user unit on Linux, as a plain child of the test on Windows.
 //
@@ -31,7 +31,7 @@ import { createInterface } from "node:readline";
 import { SpaceExecutionStore } from "@ttasks/launch";
 import { openLaunchSpaceAt, type LaunchSpaceFolder } from "@ttasks/testkit";
 import {
-  containers,
+  processGroups,
   QUEUE_LIMITS,
   RunFiles,
   RunHost,
@@ -65,7 +65,7 @@ const machine = new RunMachine({ store, machine: space.machine });
 const files = new RunFiles(join(config.state, RUNS_FOLDER));
 const host = new RunHost({
   machine,
-  containers: containers(config.helper === undefined ? {} : { runHelper: config.helper }),
+  groups: processGroups(config.helper === undefined ? {} : { runHelper: config.helper }),
   files,
   ...(config.times === undefined ? {} : { times: config.times }),
 });

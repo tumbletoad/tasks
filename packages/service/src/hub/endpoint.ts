@@ -57,7 +57,7 @@ export interface ServiceStatus {
   readonly spaces: readonly SpaceSummary[];
   /** The UI's listener (M2.12): its port, whether it moved, and whether it is blocked. */
   readonly http?: HttpStatus | null;
-  /** Whether background runs can be contained here, and why not; null before the probe answered. */
+  /** Whether background runs can be grouped here, and why not; null before the probe answered. */
   readonly runs?: RunsStatus;
 }
 

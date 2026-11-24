@@ -1,4 +1,4 @@
-// A stand-in agent for the container tests: a program that behaves like one kind of agent process
+// A stand-in agent for the process group tests: a program that behaves like one kind of agent process
 // tree. How to start one and how to find what it left: stand-ins.ts.
 //
 //   node stand-in.ts <mode> --token=<token> [--max-ms=<n>]
@@ -32,8 +32,8 @@
 //
 // Every process of a stand-in tree carries the token in its arguments, and on Windows also
 // listens on the named pipe `ttasks-test-standin-<token>-<pid>`, so the tests can count what is
-// alive without trusting the container. None outlives --max-ms (default 60 s), so a broken
-// container cannot leave a stand-in running for long.
+// alive without trusting the process group. None outlives --max-ms (default 60 s), so a broken
+// process group cannot leave a stand-in running for long.
 import { spawn, type StdioOptions } from "node:child_process";
 import {
   mkdirSync,
