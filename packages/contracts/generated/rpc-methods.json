@@ -1389,6 +1389,22 @@
                 "maxLength": 64,
                 "type": "string"
               },
+              "left_out": {
+                "description": "What this way of opening could not carry: a permission by name, args, env, home",
+                "items": {
+                  "enum": [
+                    "full-access",
+                    "auto-edit",
+                    "read-only",
+                    "arguments",
+                    "environment",
+                    "home"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              },
               "reason": {
                 "description": "Why it failed or is unknown: a fixed code",
                 "maxLength": 40,
@@ -4239,8 +4255,12 @@
                         "description": "The agent that asked",
                         "type": "string"
                       },
+                      "instance": {
+                        "description": "The instance of the run that asked",
+                        "type": "string"
+                      },
                       "ref": {
-                        "description": "The log entry, such as l3",
+                        "description": "The log entry, such as l3, or the run that ended with it",
                         "type": "string"
                       },
                       "text": {
@@ -7022,8 +7042,12 @@
                         "description": "The agent that asked",
                         "type": "string"
                       },
+                      "instance": {
+                        "description": "The instance of the run that asked",
+                        "type": "string"
+                      },
                       "ref": {
-                        "description": "The log entry, such as l3",
+                        "description": "The log entry, such as l3, or the run that ended with it",
                         "type": "string"
                       },
                       "text": {
@@ -7451,9 +7475,9 @@
                 "type": "string"
               },
               "reviewed": {
-                "description": "Newest agent question the user read, such as l4: it and earlier ones are done",
-                "maxLength": 10,
-                "pattern": "^l[0-9]{1,9}$",
+                "description": "Newest agent question the user read, l4 or a run ID: it and earlier are done",
+                "maxLength": 29,
+                "pattern": "^(?:l[0-9]{1,9}|ru_[0-7][0-9a-hjkmnp-tv-z]{25})$",
                 "type": "string"
               },
               "status": {

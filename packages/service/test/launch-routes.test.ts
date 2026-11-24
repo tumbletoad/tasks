@@ -14,6 +14,7 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -24,18 +25,22 @@ import type { RpcSession } from "@ttasks/bridge/protocol";
 import {
   NOTE_LINE,
   OPENER_MS,
+  FixedEnvironment,
   presetSession,
   renderBrief,
+  settingsOf,
   REQUEST_LINE,
   STEP_DEADLINE_MS,
   type LaunchIntent,
   type SpawnRequest,
   type SpawnedProcess,
 } from "@ttasks/launch";
-import { FAKE_CLI_AGENT, type CliAgentReport } from "@ttasks/testkit";
+import { FAKE_CLI_AGENT, testEnv, type CliAgentReport } from "@ttasks/testkit";
+import type { Logger } from "../src/hub/log.ts";
 import { briefNames, chooseRoute, codexEntryOf, LaunchUnavailable } from "../src/launch/open.ts";
+import { LaunchService } from "../src/launch/service.ts";
 import { homeDigest, physicalHome } from "../src/setup/agents.ts";
-import { instanceToml, readLog, stateOf, tempRoot, waitFor } from "./harness.ts";
+import { configOf, instanceToml, readLog, stateOf, tempRoot, waitFor } from "./harness.ts";
 import { errorOf, classSession } from "./ops-helpers.ts";
 import { LONG_MS, ShimLab } from "./shim-harness.ts";
 import { holdNextWrite } from "./slow-marker.ts";
@@ -116,13 +121,44 @@ function writerOf(r: Rig) {
   return writer;
 }
 
+/** More of a rig: instances whose fake reports under their ID, and the person's environment. */
+interface RigMore {
+  readonly instances?: readonly {
+    readonly id: string;
+    readonly env?: Readonly<Record<string, string>>;
+    readonly [key: string]:
+      string | readonly string[] | Readonly<Record<string, string>> | undefined;
+  }[];
+  /** The person's own environment as the agent's base (a `user` base), on top of the test's. */
+  readonly person?: Readonly<Record<string, string>>;
+  /**
+   * The terminal adapters over a desktop where none can start: on Linux the default terminal has
+   * no adapter (Alacritty) and no other is installed; on Windows neither console nor Windows
+   * Terminal is there.
+   */
+  readonly noTerminal?: boolean;
+}
+
+/** The desktop of RigMore's `noTerminal`: only a terminal TTasks has no adapter for. */
+const ALACRITTY = "/usr/bin/alacritty";
+const noTerminalHost = (_session: unknown, path: readonly string[]) => ({
+  platform: process.platform,
+  path,
+  terminalVar: WINDOWS ? undefined : ALACRITTY,
+  home: WINDOWS ? "C:\\Users\\mira" : "/home/mira",
+  windowsApps: undefined,
+  executable: (program: string) => program === ALACRITTY,
+  readText: () => undefined,
+  realpath: (program: string) => program,
+});
+
 /**
  * A lab whose machine.toml has the fake Claude Code and Codex as instances: Claude Code with full
- * access (`claude`), Claude Code with the prefill route (`claude-link`), Codex with the brief sent
- * (`codex`) and assisted (`codex-assisted`), with a Codex home of the lab's own whose TTasks entry
- * lacks `env_vars`.
+ * access (`claude`), Claude Code with the prefill route and nothing it cannot carry
+ * (`claude-link`), Codex with the brief sent (`codex`) and assisted (`codex-assisted`), with a
+ * Codex home of the lab's own whose TTasks entry lacks `env_vars`.
  */
-async function rig(label: string, opener: number | "hang" = 0): Promise<Rig> {
+async function rig(label: string, opener: number | "hang" = 0, more: RigMore = {}): Promise<Rig> {
   const fake = (name: string, extra: Record<string, string> = {}) => ({
     exec: process.execPath,
     args_prefix: [FAKE_CLI_AGENT],
@@ -138,7 +174,17 @@ async function rig(label: string, opener: number | "hang" = 0): Promise<Rig> {
     writeFileSync(join(bin.root, "gio"), "#!/bin/sh\nexit 0\n");
     chmodSync(join(bin.root, "gio"), 0o755);
   }
+  const terminals = {
+    spawn: recordingSpawner(opener),
+    systemdRun: SYSTEMD_RUN,
+    // The recording spawner's hang never ends: what is proved is the answer once the
+    // deadline passes, not the deadline's length (opener.test.ts covers that).
+    ...(opener === "hang" ? { openerMs: 200 } : {}),
+    ...(more.noTerminal === true ? { host: noTerminalHost } : {}),
+  };
   const lab = await ShimLab.create(label, {
+    // The real adapters in place of the lab's terminal, which always starts the shim.
+    ...(more.noTerminal === true ? { adapters: terminals } : {}),
     toml: (root) => {
       codexHome = join(root, "codex-home");
       const withReport = (name: string, extra: Record<string, string> = {}) => {
@@ -158,7 +204,8 @@ async function rig(label: string, opener: number | "hang" = 0): Promise<Rig> {
           target: "claude-cli",
           label: "Claude link · test",
           prompt: "prefill",
-          ...withReport("claude-link"),
+          exec: process.execPath,
+          args_prefix: [FAKE_CLI_AGENT],
         }),
         instanceToml({
           id: "codex",
@@ -177,16 +224,23 @@ async function rig(label: string, opener: number | "hang" = 0): Promise<Rig> {
           ...withReport("codex-assisted"),
         }),
         instanceToml({ id: "t3-later", target: "t3", label: "T3 · test" }),
+        ...(more.instances ?? []).map(({ env, ...fields }) => {
+          const made = withReport(fields.id);
+          return instanceToml({
+            target: "claude-cli",
+            label: `${fields.id} · test`,
+            ...made,
+            ...fields,
+            env: { ...made.env, ...env },
+          });
+        }),
       ].join("");
     },
     launch: {
-      terminals: {
-        spawn: recordingSpawner(opener),
-        systemdRun: SYSTEMD_RUN,
-        // The recording spawner's hang never ends: what is proved is the answer once the
-        // deadline passes, not the deadline's length (opener.test.ts covers that).
-        ...(opener === "hang" ? { openerMs: 200 } : {}),
-      },
+      ...(more.person === undefined
+        ? {}
+        : { environment: new FixedEnvironment({ kind: "user", env: testEnv(more.person) }) }),
+      terminals,
     },
     ...(WINDOWS
       ? {}
@@ -259,6 +313,7 @@ interface Opened {
     state: string;
     route: string;
     instance: string;
+    left_out?: string[];
   };
   readonly copy?: string;
   readonly text: string;
@@ -719,14 +774,10 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       remoteAllowed: false,
       enabled: true,
     } as const;
-    // On Windows `claude_config_dir` selects another home: the link (default home only) is not
-    // this instance's route.
-    expect(() =>
-      chooseRoute(claude, { terminal: false, home: "C:\\Users\\mira", platform: "win32" }),
-    ).toThrow(LaunchUnavailable);
-    expect(
-      chooseRoute(claude, { terminal: false, home: "/home/mira", platform: "linux" }).route,
-    ).toBe("link");
+    // On Windows `claude_config_dir` selects another home, which the link (default home only)
+    // cannot open; on Linux it is another variable.
+    expect(settingsOf(claude, "C:\\Users\\mira", "win32")).toEqual(["environment", "home"]);
+    expect(settingsOf(claude, "/home/mira", "linux")).toEqual(["environment"]);
     // The Codex home's entry: its own names are kept, a list TTasks cannot repeat exactly is left.
     const entry = (toml: string) => {
       writeFileSync(join(home.root, "config.toml"), toml);
@@ -873,6 +924,380 @@ describe("[A3.3.7.grant.space] Open says at the click when its agent's home is r
       for (const name of ["claude", "codex"]) {
         expect((await reportAt(r.report(name))).argv.length, name).toBeGreaterThan(0);
       }
+    },
+  );
+});
+
+describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: its permission, its account and its spaces", () => {
+  const SPACE = { id: "sp_3q7k9d2xw8f4r6t1c5v0b2n8a7", name: "Personal" };
+  const base = {
+    id: "claude-x",
+    target: "claude-cli",
+    label: "Claude · x",
+    account: "",
+    spaces: [],
+    exec: "/usr/bin/claude",
+    argsPrefix: [],
+    configHome: undefined,
+    env: {},
+    openPermission: "inherit",
+    runPermission: "inherit",
+    extraArgs: [],
+    prompt: "sent",
+    viaLoginShell: false,
+    remoteAllowed: false,
+    enabled: true,
+  } as const;
+  const here = { home: "/home/mira", platform: "linux", space: SPACE } as const;
+  const reason = (run: () => unknown): string | undefined => {
+    try {
+      run();
+    } catch (error) {
+      if (error instanceof LaunchUnavailable) return error.reason;
+      throw error;
+    }
+    return undefined;
+  };
+
+  test("Open takes the route that carries what the instance sets; without one it opens with the prompt unsent and names what it left out", () => {
+    type Given = Parameters<typeof chooseRoute>[0];
+    const pick = (instance: Given, terminal: boolean) => {
+      const chosen = chooseRoute(instance, { ...here, terminal });
+      // A route that leaves something out never sends the prompt: the person reads what it left
+      // out first.
+      if (chosen.leftOut.length > 0) expect(chosen.kind).toBe("prefilled");
+      return [chosen.route, chosen.prompt ?? "unsent", [...chosen.leftOut]];
+    };
+    const prefill = { ...base, prompt: "prefill" } as const;
+    const desktop = { ...base, id: "desktop", target: "claude-desktop", exec: undefined } as const;
+    const codex = { ...base, id: "codex-x", target: "codex-cli" } as const;
+    const ownHome = { configHome: "/home/mira/.claude-work" } as const;
+    // instance, with a terminal, without one.
+    const table: readonly (readonly [string, Given, unknown, unknown])[] = [
+      ["nothing set, prefill", prefill, ["link", "unsent", []], ["link", "unsent", []]],
+      ["nothing set, sent", base, ["terminal", "sent", []], ["link", "unsent", []]],
+      [
+        "read-only, prefill",
+        { ...prefill, openPermission: "read-only" },
+        ["terminal", "clipboard", []],
+        ["link", "unsent", ["read-only"]],
+      ],
+      [
+        "read-only, sent",
+        { ...base, openPermission: "read-only" },
+        ["terminal", "sent", []],
+        ["link", "unsent", ["read-only"]],
+      ],
+      [
+        "arguments",
+        { ...prefill, extraArgs: ["--model", "fixture"] },
+        ["terminal", "clipboard", []],
+        ["link", "unsent", ["arguments"]],
+      ],
+      [
+        "environment",
+        { ...prefill, env: { FIXTURE_SETTING: "1" } },
+        ["terminal", "clipboard", []],
+        ["link", "unsent", ["environment"]],
+      ],
+      [
+        // The agent never gets a TTASKS_* variable: it is no setting to carry.
+        "a reserved variable only",
+        { ...prefill, env: { [envVar("FIXTURE")]: "1" } },
+        ["link", "unsent", []],
+        ["link", "unsent", []],
+      ],
+      [
+        // Its link would open the default home's Claude Code: what the person types there goes
+        // to another account. Only a terminal opens it (below).
+        "a home of its own",
+        { ...base, ...ownHome },
+        ["terminal", "sent", []],
+        null,
+      ],
+      [
+        "a home of its own, prefill",
+        { ...prefill, ...ownHome },
+        ["terminal", "clipboard", []],
+        null,
+      ],
+      [
+        "an app with its own settings",
+        { ...desktop, openPermission: "auto-edit", env: { FIXTURE_SETTING: "1" }, ...ownHome },
+        ["link", "unsent", ["auto-edit", "environment", "home"]],
+        ["link", "unsent", ["auto-edit", "environment", "home"]],
+      ],
+      ["Codex, sent", { ...codex, openPermission: "read-only" }, ["terminal", "sent", []], null],
+      ["Codex, prefill", { ...codex, prompt: "prefill" }, ["terminal", "clipboard", []], null],
+    ];
+    for (const [name, instance, withTerminal, without] of table) {
+      expect(pick(instance, true), name).toEqual(withTerminal);
+      if (without !== null) expect(pick(instance, false), name).toEqual(without);
+    }
+    // Codex opens only in a terminal: without one, or without its command, nothing opens.
+    expect(reason(() => chooseRoute(codex, { ...here, terminal: false }))).toBe("no_terminal");
+    expect(
+      reason(() => chooseRoute({ ...codex, exec: undefined }, { ...here, terminal: true })),
+    ).toBe("not_set_up");
+    // A home of its own opens only where a route carries it: never the default home instead.
+    for (const own of [
+      { ...base, ...ownHome },
+      { ...prefill, ...ownHome, openPermission: "read-only" },
+      { ...base, env: { CLAUDE_CONFIG_DIR: "/home/mira/.claude-work" } },
+    ] as const) {
+      expect(reason(() => chooseRoute(own, { ...here, terminal: false }))).toBe("own_home");
+    }
+  });
+
+  test("where no terminal opens (macOS), each instance that can open or run for the space keeps its tile, offering what works", () => {
+    const root = tempRoot("chosen-tiles");
+    cleanups.push(root.cleanup);
+    const service = new LaunchService({
+      machine: "m_7c0hq2m4w9d8k1r6t3v5x0b2nf",
+      root: join(root.root, "launch"),
+      stateDir: join(root.root, "state"),
+      platform: "darwin",
+      env: {},
+      home: "/Users/mira",
+      spaces: () => [],
+      log: { log: () => undefined } as unknown as Logger,
+      instances: [
+        { ...base, id: "claude-plan", openPermission: "read-only" },
+        { ...base, id: "claude-work", configHome: "/Users/mira/.claude-work" },
+        { ...base, id: "codex-x", target: "codex-cli" },
+        { ...base, id: "claude-elsewhere", spaces: ["Research"] },
+        { ...base, id: "t3-x", target: "t3", exec: undefined },
+        { ...base, id: "claude-off", enabled: false },
+      ],
+    });
+    // Claude Code opens through its link, saying what it left out; with a home of its own, and
+    // Codex, it only runs here.
+    expect(service.instances(SPACE.id).map((t) => [t.key, t.route ?? "runs only"])).toEqual([
+      ["claude-plan", "link"],
+      ["claude-work", "runs only"],
+      ["codex-x", "runs only"],
+    ]);
+  });
+
+  test("an instance set for some spaces opens only there, named by ID or name in any case", () => {
+    const listed = (spaces: readonly string[]) =>
+      reason(() => chooseRoute({ ...base, spaces }, { ...here, terminal: true }));
+    expect(listed([])).toBeUndefined();
+    expect(listed(["personal"])).toBeUndefined();
+    expect(listed([SPACE.id])).toBeUndefined();
+    expect(listed(["Research"])).toBe("not_for_space");
+    expect(listed(["sp_000000000000000000000000000"])).toBe("not_for_space");
+  });
+
+  test(
+    "through the service: read-only with prefill opens in a terminal in plan mode with the brief to paste; an instance for another space is not offered and opens nothing",
+    { timeout: 300_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("chosen", 0, {
+        instances: [
+          { id: "claude-plan", prompt: "prefill", open_permission: "read-only" },
+          { id: "claude-research", spaces: ["Research"] },
+          { id: "desktop-plan", target: "claude-desktop", open_permission: "read-only" },
+        ],
+      });
+      const tiles = r.lab.running.launches.instances(r.lab.spaceId);
+      expect(tiles.find((t) => t.key === "claude-plan")?.route).toBe("terminal");
+      expect(tiles.find((t) => t.key === "desktop-plan")?.route).toBe("link");
+      expect(tiles.map((t) => t.key)).not.toContain("claude-research");
+
+      // The app opens with its own settings: it opens, with the prompt unsent, and the receipt
+      // names what it left out, also for a repeat of the click.
+      const linked = await addTask(r, "Fixture desktop plan");
+      const viaLink = await open(r, { task: linked.ref, instance: "desktop-plan" });
+      // The rig gives every instance its fake's env: the app cannot carry that either.
+      const leftOut = ["read-only", "environment"];
+      expect(viaLink.result.launch).toMatchObject({ route: "link", left_out: leftOut });
+      const again = await open(r, {
+        task: linked.ref,
+        instance: "desktop-plan",
+        request_id: viaLink.requestId,
+      });
+      expect(again.result.launch).toMatchObject({
+        id: viaLink.result.launch.id,
+        left_out: leftOut,
+      });
+      await waitFor(() => (opened.length > 0 ? true : undefined), LONG_MS, "the link's opener");
+      opened.length = 0;
+
+      const task = await addTask(r, "Fixture plan only");
+      const { result } = await open(r, { task: task.ref, instance: "claude-plan" });
+      expect(result.launch.route).toBe("terminal");
+      const report = await reportAt(r.report("claude-plan"));
+      expect(report.argv.slice(4)).toEqual(["--permission-mode", "plan"]);
+      expect(report.argv).not.toContain("--");
+      expect(result.copy).toBe(briefFor("prefilled", r.lab.spaceId, task, result.launch.reference));
+      expect(opened).toHaveLength(0);
+
+      const started = r.lab.folders.size;
+      const refused = errorOf(
+        await open(r, { task: task.ref, instance: "claude-research" }).catch((e: unknown) => e),
+      );
+      expect(refused).toMatchObject({
+        code: "invalid_input",
+        message: "This instance is set up for other spaces only. Nothing was started.",
+        data: { field: "instance", reason: "not_for_space" },
+      });
+      expect(r.lab.folders.size).toBe(started);
+    },
+  );
+
+  test(
+    "a launch keeps what it left out: a repeat of its click after the instance changed and the service restarted still names it",
+    { timeout: 300_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("chosen-kept", 0, {
+        instances: [{ id: "desktop-plan", target: "claude-desktop", open_permission: "read-only" }],
+      });
+      const task = await addTask(r, "Fixture kept left out");
+      const first = await open(r, { task: task.ref, instance: "desktop-plan" });
+      const leftOut = ["read-only", "environment"];
+      expect(first.result.launch.left_out).toEqual(leftOut);
+      await waitFor(() => (opened.length > 0 ? true : undefined), LONG_MS, "the link's opener");
+      // The person takes the permission away, and the service starts again.
+      await r.lab.stopService();
+      const toml = join(configOf(r.lab.home), "machine.toml");
+      const before = readFileSync(toml, "utf8");
+      writeFileSync(toml, before.replace('open_permission = "read-only"', ""));
+      await r.lab.start();
+      const user = await classSession(r.lab.home, r.lab.running.endpoint.path, "cli-interactive");
+      sessions.push(user);
+      const again = await open(
+        { ...r, user },
+        { task: task.ref, instance: "desktop-plan", request_id: first.requestId },
+      );
+      expect(again.result.launch).toMatchObject({ id: first.result.launch.id, left_out: leftOut });
+      // A new click opens as the instance is set up now.
+      const now = await open({ ...r, user }, { task: task.ref, instance: "desktop-plan" });
+      expect(now.result.launch.left_out).toEqual(["environment"]);
+    },
+  );
+
+  test(
+    "through the service: where no terminal of the launch's chain can start, a permission opens through the link with the prompt unsent and is named",
+    { timeout: 300_000 },
+    async () => {
+      opened.length = 0;
+      const homes = tempRoot("chosen-no-terminal-home");
+      cleanups.push(homes.cleanup);
+      const r = await rig("chosen-no-terminal", 0, {
+        noTerminal: true,
+        instances: [
+          { id: "claude-plan", prompt: "prefill", open_permission: "read-only" },
+          { id: "claude-work", prompt: "prefill", config_home: join(homes.root, "claude-work") },
+        ],
+      });
+      const task = await addTask(r, "Fixture no terminal");
+      const { result } = await open(r, { task: task.ref, instance: "claude-plan" });
+      // The rig gives every instance its fake's env: the link cannot carry that either.
+      expect(result.launch).toMatchObject({
+        route: "link",
+        left_out: ["read-only", "environment"],
+      });
+      await waitFor(() => (opened.length > 0 ? true : undefined), LONG_MS, "the link's opener");
+      // A home of its own: the link would open the default account's Claude Code instead.
+      opened.length = 0;
+      const refused = errorOf(
+        await open(r, { task: task.ref, instance: "claude-work" }).catch((e: unknown) => e),
+      );
+      expect(refused).toMatchObject({
+        code: "invalid_input",
+        message:
+          "Only a terminal opens this instance with the account chosen for it, and none can start here. Nothing was started.",
+        data: { field: "instance", reason: "own_home" },
+      });
+      expect(opened).toHaveLength(0);
+    },
+  );
+
+  test(
+    "through the service: an instance with a home of its own gets no account variable from the person's environment, and its own env wins; the default home keeps the person's",
+    { timeout: 300_000 },
+    async () => {
+      // Inert stand-ins: no value here is a credential, and only the names are reported.
+      const inert = "inert-stand-in";
+      const home = tempRoot("chosen-home");
+      cleanups.push(home.cleanup);
+      // What says which account or endpoint, and one variable of the person's that does not.
+      const account = [
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_PROFILE",
+        "ANTHROPIC_FEDERATION_RULE_ID",
+        "ANTHROPIC_ORGANIZATION_ID",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_CUSTOM_HEADERS",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_MANTLE",
+      ];
+      const r = await rig("chosen-account", 0, {
+        person: { ...Object.fromEntries(account.map((n) => [n, inert])), FIXTURE_PERSON: "1" },
+        instances: [
+          {
+            id: "claude-own",
+            env: { CLAUDE_CONFIG_DIR: join(home.root, "claude"), CLAUDE_CODE_USE_BEDROCK: "1" },
+          },
+          // A home of its own by `config_home` alone: the program is told it.
+          { id: "claude-config", config_home: join(home.root, "claude-config") },
+        ],
+      });
+      const task = await addTask(r, "Fixture account");
+      await open(r, { task: task.ref, instance: "claude-own" });
+      await open(r, { task: task.ref, instance: "claude-config" });
+      await open(r, { task: task.ref, instance: "claude", another: true });
+      const names = async (id: string) =>
+        (await reportAt(r.report(id))).envNames.map((n) => n.toUpperCase());
+      const own = await names("claude-own");
+      expect(own).toContain("CLAUDE_CONFIG_DIR");
+      expect(own).toContain("CLAUDE_CODE_USE_BEDROCK");
+      expect(own).toContain("FIXTURE_PERSON");
+      for (const name of account) expect(own, name).not.toContain(name);
+      const configured = await names("claude-config");
+      expect(configured).toContain("CLAUDE_CONFIG_DIR");
+      for (const name of account) expect(configured, name).not.toContain(name);
+      const usual = await names("claude");
+      expect(usual).not.toContain("CLAUDE_CONFIG_DIR");
+      for (const name of [...account, "FIXTURE_PERSON"]) expect(usual, name).toContain(name);
+    },
+  );
+
+  test(
+    "a folder replaced at its path after its marker was checked opens nothing: the launch fails as folder_changed",
+    { timeout: 300_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("chosen-folder");
+      for (const instance of ["claude", "claude-link"]) {
+        const task = await addTask(r, `Fixture replaced folder ${instance}`, `swapped-${instance}`);
+        const folder = join(r.lab.work, `swapped-${instance}`);
+        // Only its marker went (`git clean -x`): the check puts it back, and the checkout is
+        // replaced while it writes.
+        rmSync(join(folder, FOLDER_MARKER), { recursive: true, force: true });
+        const held = holdNextWrite();
+        const opening = open(r, { task: task.ref, instance });
+        await held.reached;
+        renameSync(folder, join(r.lab.work, `swapped-aside-${instance}`));
+        mkdirSync(folder);
+        await held.land();
+        const { result } = await opening;
+        const settled = await waitFor(
+          async () => {
+            const now = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
+            return now?.state === "failed" ? now : undefined;
+          },
+          LONG_MS,
+          "the refused dispatch",
+        );
+        expect(settled.reason, instance).toBe("folder_changed");
+        expect(r.lab.folders.get(result.launch.id), instance).toBeUndefined();
+      }
+      expect(opened).toHaveLength(0);
     },
   );
 });

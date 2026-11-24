@@ -10,6 +10,8 @@ import {
   isBuiltInTarget,
   isToolEnvList,
   routeOf,
+  servesSpace,
+  settingsOf,
   targetDef,
   type BriefComposer,
   type BriefKind,
@@ -17,8 +19,13 @@ import {
   type Instance,
   type LaunchIntent,
   type PackInput,
+  PERMISSIONS,
+  type Permission,
   type ResolveReason,
   type Route,
+  type RouteDef,
+  SETTINGS,
+  type Setting,
 } from "@ttasks/launch";
 import { decodeConfig, parseToml, readConfigFile } from "../config/toml.ts";
 import type { SpaceWriterHandle } from "@ttasks/storage";
@@ -33,6 +40,10 @@ export const UNAVAILABLE_REASONS = [
   "no_route",
   /** No product command or terminal for a terminal route. */
   "no_terminal",
+  /** A home of its own, and no terminal: its app's link would open the default account instead. */
+  "own_home",
+  /** The instance's `spaces` do not name this space. */
+  "not_for_space",
   /** The task's folder, or its project's, is on another machine only: it opens there. */
   "other_machine",
   /** `claude-cli://` refuses a UNC folder (A4 3.3 step 4). */
@@ -43,6 +54,9 @@ export const UNAVAILABLE_REASONS = [
   "other_space",
 ] as const;
 export type UnavailableReason = (typeof UNAVAILABLE_REASONS)[number];
+
+/** What an Open or a run of an instance that is not for the space says (servesSpace). */
+export const NOT_FOR_SPACE = "This instance is set up for other spaces only. Nothing was started.";
 
 /**
  * The writer a click was checked against no longer serves its space (it closed, or another copy
@@ -211,6 +225,30 @@ export interface Choice {
   readonly prompt?: "sent" | "clipboard";
   /** The brief goes on the clipboard as well (Copy, the assisted open). */
   readonly copy: boolean;
+  /** What the instance sets that the route cannot carry: said to the person, never sent. */
+  readonly leftOut: readonly LeftOut[];
+}
+
+/**
+ * A setting an Open could not carry, as its receipt names it: a permission by its own name
+ * (`read-only`), the others by theirs.
+ */
+export type LeftOut = Exclude<Permission, "inherit"> | Exclude<Setting, "permission">;
+
+const LEFT_OUT: readonly string[] = [
+  ...PERMISSIONS.filter((p) => p !== "inherit"),
+  ...SETTINGS.filter((s) => s !== "permission"),
+];
+
+/** A launch's `left_out` evidence for what its click left out; undefined for nothing. */
+export const leftOutEvidence = (codes: readonly LeftOut[]): string | undefined =>
+  codes.length === 0 ? undefined : codes.join(".");
+
+/** What a launch's evidence says its click left out: the codes it knows, in their order. */
+export function leftOutOf(evidence: Readonly<Record<string, unknown>>): LeftOut[] {
+  const kept = evidence["left_out"];
+  if (typeof kept !== "string") return [];
+  return kept.split(".").filter((code): code is LeftOut => LEFT_OUT.includes(code));
 }
 
 /** Copy (A4 3.4.6): the pointer brief on the clipboard, a launch with route `clipboard`. */
@@ -219,28 +257,24 @@ export const COPY: Choice = {
   kind: "pointer",
   budget: routeOf("clipboard", "clipboard")?.budget ?? 20_000,
   copy: true,
+  leftOut: [],
 };
 
 /** The instance key a Copy launch records (the catalogue's single clipboard target). */
 export const COPY_INSTANCE = "clipboard";
 
 /**
- * Whether Claude Code's `claude-cli://` link may serve the instance (A4 3.4.2): the link always
- * opens the default config home, so only the instance whose home is the default has it, by the
- * rule setup uses too (instanceHome: a home variable in any case on Windows selects another).
- */
-export function defaultClaudeHome(
-  instance: Instance,
-  home: string | undefined,
-  platform: NodeJS.Platform,
-): boolean {
-  return instanceHome(instance, home, platform)?.isDefault === true;
-}
-
-/**
- * The route a click takes on an instance (A4 3.4): the primary unless it is unavailable before
- * dispatch or the instance asks for the prefill route (`prompt = "prefill"`, A4 L7). A fallback is
- * never chosen after a dispatch.
+ * The route a click takes on an instance (A4 3.4), the one place that decides it for the tiles and
+ * for Open: the first of its target's routes usable here that carries everything the instance sets
+ * (settingsOf), routes of the instance's prompt mode first (`prompt = "prefill"` asks for the
+ * prefill route, A4 L7). When none carries it all, the usable route that leaves the prompt unsent
+ * and leaves out the least, naming what it leaves out: the person reads that before anything
+ * reaches the agent. A prompt is sent only on a route that carries it all. A fallback is never
+ * chosen after a dispatch.
+ *
+ * Throws LaunchUnavailable: `not_for_space` (servesSpace); `no_terminal` (or `not_set_up` without
+ * a command) when only a terminal route opens the target, `own_home` when only a terminal opens it
+ * with its home; `no_route` when the target has none this choice opens (T3 opens through its own).
  */
 export function chooseRoute(
   instance: Instance,
@@ -248,57 +282,62 @@ export function chooseRoute(
     readonly terminal: boolean;
     readonly home: string | undefined;
     readonly platform: NodeJS.Platform;
+    readonly space: { readonly id: string; readonly name?: string | undefined };
   },
 ): Choice {
   if (!instance.enabled || !isBuiltInTarget(instance.target)) {
     throw new LaunchUnavailable("not_set_up");
   }
+  if (!servesSpace(instance, options.space)) throw new LaunchUnavailable("not_for_space");
+  const settings = settingsOf(instance, options.home, options.platform);
+  const lost = (route: RouteDef): Setting[] => settings.filter((s) => !route.carries.includes(s));
+  const target = targetDef(instance.target);
+  const routes = target.routes.filter((r) => r.kind === "terminal" || r.kind === "link");
+  const asked = (r: RouteDef): boolean => (instance.prompt === "sent") === (r.prompt === "sent");
   const terminal = options.terminal && instance.exec !== undefined;
-  switch (instance.target) {
-    case "claude-cli": {
-      const link = routeOf("claude-cli", "link");
-      const primary = routeOf("claude-cli", "terminal", "sent");
-      if (instance.prompt === "sent" && terminal && primary !== undefined) {
-        return {
-          route: "terminal",
-          kind: "sent",
-          budget: primary.budget,
-          prompt: "sent",
-          copy: false,
-        };
-      }
-      if (link !== undefined && defaultClaudeHome(instance, options.home, options.platform)) {
-        return { route: "link", kind: "prefilled", budget: link.budget, copy: link.copyBriefToo };
-      }
-      throw new LaunchUnavailable(terminal ? "no_route" : "no_terminal");
-    }
-    case "codex-cli": {
-      if (!terminal) {
-        throw new LaunchUnavailable(instance.exec === undefined ? "not_set_up" : "no_terminal");
-      }
-      const assisted = instance.prompt === "prefill";
-      const route = routeOf("codex-cli", "terminal", assisted ? "clipboard" : "sent");
-      if (route === undefined) throw new LaunchUnavailable("no_route");
-      return {
-        route: "terminal",
-        kind: assisted ? "prefilled" : "sent",
-        budget: route.budget,
-        prompt: assisted ? "clipboard" : "sent",
-        copy: route.copyBriefToo,
-      };
-    }
-    case "claude-desktop":
-    case "codex-app": {
-      // The best-effort apps (A4 3.4.4, 3.4.5): their one link, with the brief on the clipboard
-      // too, because the app may drop the prefill. A deep link cannot choose an account (A4 L3).
-      const link = routeOf(instance.target, "link");
-      if (link === undefined) throw new LaunchUnavailable("no_route");
-      return { route: "link", kind: "prefilled", budget: link.budget, copy: link.copyBriefToo };
-    }
-    default:
-      // T3 opens through its own route (M2.11); custom targets come later.
-      throw new LaunchUnavailable("no_route");
+  const usable = [...routes.filter(asked), ...routes.filter((r) => !asked(r))].filter(
+    (r) => r.kind === "link" || terminal,
+  );
+  // An app that keeps its accounts in homes opens another account's session on a route that
+  // leaves the home out: what the person types there goes to that account, so it is never taken.
+  const otherAccount = (r: RouteDef): boolean =>
+    target.detect.homes !== undefined && lost(r).includes("home");
+  const fallbacks = usable.filter((r) => r.prompt !== "sent");
+  const route =
+    usable.find((r) => lost(r).length === 0) ??
+    fallbacks
+      .filter((r) => !otherAccount(r))
+      .reduce<RouteDef | undefined>(
+        (best, r) => (best === undefined || lost(r).length < lost(best).length ? r : best),
+        undefined,
+      );
+  if (route === undefined) {
+    if (routes.length === 0) throw new LaunchUnavailable("no_route");
+    if (instance.exec === undefined) throw new LaunchUnavailable("not_set_up");
+    throw new LaunchUnavailable(fallbacks.some(otherAccount) ? "own_home" : "no_terminal");
   }
+  const permission = instance.openPermission;
+  const leftOut = lost(route).flatMap((s): LeftOut[] =>
+    s !== "permission" ? [s] : permission === "inherit" ? [] : [permission],
+  );
+  if (route.kind === "link") {
+    return {
+      route: "link",
+      kind: "prefilled",
+      budget: route.budget,
+      copy: route.copyBriefToo,
+      leftOut,
+    };
+  }
+  const prompt = route.prompt === "sent" ? "sent" : "clipboard";
+  return {
+    route: "terminal",
+    kind: prompt === "sent" ? "sent" : "prefilled",
+    budget: route.budget,
+    prompt,
+    copy: route.copyBriefToo,
+    leftOut,
+  };
 }
 
 /** The glyph a target shows on its tile (A4 3.2: a neutral monogram). */

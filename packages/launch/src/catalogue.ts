@@ -30,6 +30,14 @@ export type Permission = (typeof PERMISSIONS)[number];
 
 export type RouteKind = "terminal" | "link" | "t3-mcp" | "t3-cli" | "clipboard";
 
+/**
+ * What an instance can set beyond its app's own settings: its open permission, its extra
+ * arguments, its environment, and a home of its own (another account). Each reaches the agent
+ * only through a route that carries it.
+ */
+export const SETTINGS = ["permission", "arguments", "environment", "home"] as const;
+export type Setting = (typeof SETTINGS)[number];
+
 /** A template element: literal text and placeholders (A4 3.6.4). */
 export type Template = string;
 
@@ -46,6 +54,11 @@ export interface RouteDef {
   readonly needsGui: boolean;
   /** Also copy the brief, for apps that may drop a prefill. */
   readonly copyBriefToo: boolean;
+  /**
+   * What of an instance's settings the route gives its agent. A route that does not carry what an
+   * instance sets is never taken for it: the agent would work with less than the person chose.
+   */
+  readonly carries: readonly Setting[];
   /**
    * Link routes of the best-effort apps (A4 3.4.4, 3.4.5): the bridge's binding confirms the launch
    * only when the bridge's working folder is the folder the link named. Otherwise a binding through
@@ -66,8 +79,16 @@ export interface DetectRule {
   readonly npm?: { readonly package: string; readonly entry: string };
   /** User wrapper scripts in `~/.local/bin`: names that start with this prefix (Linux, macOS). */
   readonly wrapperPrefix?: string;
-  /** Config homes in the user's home folder: the default folder, and `<default>-<suffix>`. */
-  readonly homes?: { readonly folder: string; readonly env: string };
+  /**
+   * Config homes in the user's home folder: the default folder, and `<default>-<suffix>`.
+   * `account`: the prefixes of the variables that say which account or endpoint the app uses over
+   * its home's sign-in. An instance with a home of its own does not inherit them (accountVariable).
+   */
+  readonly homes?: {
+    readonly folder: string;
+    readonly env: string;
+    readonly account: readonly string[];
+  };
   /** A folder in the home whose presence shows the app is installed (T3's `~/.t3`). */
   readonly appFolder?: string;
   /** A variable that names that folder instead when it holds an absolute path (`T3CODE_HOME`). */
@@ -129,6 +150,8 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "project",
         needsGui: true,
         copyBriefToo: false,
+        // The permission as the thread's runtime mode (t3-route.ts).
+        carries: ["permission"],
       },
       {
         // The argv is M2.09's: it needs the project ID and provider, which are not placeholders yet.
@@ -141,6 +164,8 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "project",
         needsGui: true,
         copyBriefToo: false,
+        // The CLI has no runtime-mode flag (t3-cli.ts refuses a narrower mode itself).
+        carries: [],
       },
     ],
     instances: "per-provider-instance",
@@ -171,6 +196,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "once-per-root",
         needsGui: true,
         copyBriefToo: false,
+        carries: SETTINGS,
         argv: [
           "{exec}",
           "--session-id",
@@ -193,7 +219,31 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "once-per-root",
         needsGui: true,
         copyBriefToo: false,
+        carries: [],
         url: "claude-cli://open?cwd={cwd}&q={brief}",
+      },
+      {
+        // The assisted open, as Codex's: no prompt in argv, the brief on the clipboard to paste.
+        // A prefill instance takes it when the link cannot carry what the instance sets.
+        kind: "terminal",
+        folder: "cwd",
+        prompt: "clipboard",
+        nativeId: "preset",
+        maxPrompt: null,
+        budget: TERMINAL_BUDGET,
+        trust: "once-per-root",
+        needsGui: true,
+        copyBriefToo: true,
+        carries: SETTINGS,
+        argv: [
+          "{exec}",
+          "--session-id",
+          "{session}",
+          "-n",
+          "{task.id}",
+          "{permission}",
+          "{extra_args}",
+        ],
       },
     ],
     instances: "per-home",
@@ -201,7 +251,16 @@ export const CATALOGUE: readonly TargetDef[] = [
       binaries: ["claude"],
       npm: { package: "@anthropic-ai/claude-code", entry: "cli.js" },
       wrapperPrefix: "claude-",
-      homes: { folder: ".claude", env: "CLAUDE_CONFIG_DIR" },
+      homes: {
+        folder: ".claude",
+        env: "CLAUDE_CONFIG_DIR",
+        // Claude Code's documented authentication precedence puts each of these families above the
+        // home's own sign-in: the provider switches (`CLAUDE_CODE_USE_BEDROCK` and the rest), the
+        // OAuth token, and the `ANTHROPIC_` key, token, profile and federation selectors; its
+        // environment variables add the endpoint and headers (`ANTHROPIC_BASE_URL`,
+        // `ANTHROPIC_CUSTOM_HEADERS`) and the models of that account.
+        account: ["ANTHROPIC_", "CLAUDE_CODE_USE_", "CLAUDE_CODE_OAUTH_"],
+      },
       urlScheme: "claude-cli",
     },
     testedVersions: ">=2.1.0 <3.0.0",
@@ -238,6 +297,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "once-per-root",
         needsGui: true,
         copyBriefToo: false,
+        carries: SETTINGS,
         argv: [
           "{exec}",
           "-C",
@@ -261,6 +321,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "once-per-root",
         needsGui: true,
         copyBriefToo: true,
+        carries: SETTINGS,
         argv: [
           "{exec}",
           "-C",
@@ -277,7 +338,9 @@ export const CATALOGUE: readonly TargetDef[] = [
       binaries: ["codex"],
       npm: { package: "@openai/codex", entry: "bin/codex.js" },
       wrapperPrefix: "codex-",
-      homes: { folder: ".codex", env: "CODEX_HOME" },
+      // Codex keeps its sign-in and its provider in the home (auth.json, config.toml) and reads a
+      // variable for a provider's key only where that config names it: none is taken away.
+      homes: { folder: ".codex", env: "CODEX_HOME", account: [] },
       urlScheme: "codex",
     },
     testedVersions: ">=0.166.0 <0.200.0",
@@ -307,6 +370,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         needsGui: true,
         copyBriefToo: true,
         confirmFolder: true,
+        carries: [],
         url: "claude://code/new?folder={cwd}&q={brief}",
       },
     ],
@@ -332,6 +396,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         needsGui: true,
         copyBriefToo: true,
         confirmFolder: true,
+        carries: [],
         url: "codex://threads/new?path={cwd}&prompt={brief}",
       },
     ],
@@ -355,6 +420,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "none",
         needsGui: false,
         copyBriefToo: false,
+        carries: [],
       },
     ],
     instances: "single",
@@ -368,6 +434,21 @@ export function targetDef(id: BuiltInTargetId): TargetDef {
   const def = CATALOGUE.find((t) => t.id === id);
   if (def === undefined) throw new Error("unknown built-in target");
   return def;
+}
+
+/**
+ * Whether `name` says which account or endpoint `target`'s app uses (its `account` prefixes), or
+ * any target's when none is given (Windows names compared without case). The scrub of the
+ * person's environment (A4 3.8) leaves these, so the default home keeps the person's setup whole.
+ */
+export function accountVariable(
+  name: string,
+  platform: NodeJS.Platform,
+  target?: BuiltInTargetId,
+): boolean {
+  const key = platform === "win32" ? name.toUpperCase() : name;
+  const defs = target === undefined ? CATALOGUE : [targetDef(target)];
+  return defs.some((def) => def.detect.homes?.account.some((p) => key.startsWith(p)) === true);
 }
 
 /**

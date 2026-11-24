@@ -23,6 +23,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, makeDir } from "@ttasks/files";
+import { isBuiltInTarget, type BuiltInTargetId } from "../catalogue.ts";
 import { isLaunchRef } from "../intents.ts";
 import { RESOLVE_REASONS, type FolderCheck, type ResolveReason } from "../places.ts";
 import { LAUNCH_ID, SESSION_ID, SESSION_UUID, TASK_ID } from "../store.ts";
@@ -47,7 +48,15 @@ export interface PlanFolder {
   readonly stored: string;
   /** The absolute path this machine opens, `~` expanded. */
   readonly path: string;
+  /**
+   * The directory whose marker the click checked (identityKey): the launch opens nothing in
+   * another one found at the path later. Absent: no marker was checked.
+   */
+  readonly at?: string;
 }
+
+/** An identityKey: `<volume>:<file number>`. */
+const IDENTITY_KEY = /^[0-9]{1,20}:[0-9]{1,20}$/u;
 
 /** What the claim's reply hands the shim to start (A4 3.6.3 step 3), kept from the click. */
 export interface SpawnPlan {
@@ -61,6 +70,11 @@ export interface SpawnPlan {
   readonly folder: PlanFolder | null;
   /** The instance's `env` (A4 3.8 layer 3). */
   readonly env: Readonly<Record<string, string>>;
+  /**
+   * The app whose home the instance has of its own: the person's variables that say which account
+   * it uses are not given (agentSetup). Absent: the default home, which gets them all.
+   */
+  readonly ownHome?: BuiltInTargetId;
   /** For the terminal title and the announce line. */
   readonly title: string;
   readonly afterExit: AfterExit;
@@ -175,16 +189,19 @@ const isFolderText = (value: unknown): value is string =>
  */
 export function checkPlanFolder(value: unknown): PlanFolder | null | undefined {
   if (value === null) return null;
-  if (!isObject(value) || Object.keys(value).length !== 2) return undefined;
-  const { stored, path } = value;
-  if (!isFolderText(stored) || !isFolderText(path)) return undefined;
-  return { stored, path };
+  if (!isObject(value)) return undefined;
+  const { stored, path, at, ...rest } = value;
+  if (Object.keys(rest).length > 0 || !isFolderText(stored) || !isFolderText(path)) {
+    return undefined;
+  }
+  if (at === undefined) return { stored, path };
+  return typeof at === "string" && IDENTITY_KEY.test(at) ? { stored, path, at } : undefined;
 }
 
 /** The plan, checked: a plan that is not one starts nothing. */
 export function checkPlan(value: unknown): SpawnPlan | undefined {
   if (!isObject(value)) return undefined;
-  const { argv, env, title, afterExit, loginShell, folderArgs, match } = value;
+  const { argv, env, title, afterExit, loginShell, folderArgs, match, ownHome } = value;
   if (!Array.isArray(argv) || argv.length === 0 || argv.length > REPLY_BOUNDS.argv) {
     return undefined;
   }
@@ -193,6 +210,9 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
   if (folder === undefined || !isEnv(env) || !isText(title, REPLY_BOUNDS.title)) return undefined;
   if (!(AFTER_EXIT_MODES as readonly unknown[]).includes(afterExit)) return undefined;
   if (loginShell !== undefined && typeof loginShell !== "boolean") return undefined;
+  if (ownHome !== undefined && (typeof ownHome !== "string" || !isBuiltInTarget(ownHome))) {
+    return undefined;
+  }
   // The folder's elements: distinct indices of empty elements after the executable.
   if (folderArgs !== undefined) {
     if (!Array.isArray(folderArgs) || folderArgs.length > 16) return undefined;
@@ -219,6 +239,7 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
       ? {}
       : { folderArgs: folderArgs as number[] }),
     ...(match === undefined ? {} : { match: { home: (match as { home: string }).home } }),
+    ...(ownHome === undefined ? {} : { ownHome }),
   };
   return Buffer.byteLength(JSON.stringify(plan), "utf8") <= PLAN_MAX_BYTES ? plan : undefined;
 }

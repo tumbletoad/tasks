@@ -1,8 +1,9 @@
 // The toast (A5 3.12): one at a time, at the foot of the main column, a short past-tense sentence
 // and at most one action. A new one replaces the old; the replaced change stays undoable with
-// Ctrl+Z. Undo toasts last 6 s, plain ones 2.5 s, and errors stay until they are dismissed. A
-// timer pauses while the pointer or focus is on the toast. F6 moves focus to its action, and focus
-// goes back where it was once the action ran or Escape left the toast.
+// Ctrl+Z. Undo toasts last 6 s and plain ones 2.5 s, or as long as their sentence takes to read,
+// and errors stay until they are dismissed. A timer pauses while the pointer or focus is on the
+// toast. F6 moves focus to its action, and focus goes back where it was once the action ran or
+// Escape left the toast.
 //
 // The region is always in the page (a polite live region must exist before what it announces), and
 // the toast's words are formatted here from message IDs: the edits controller holds no text.
@@ -17,12 +18,24 @@ import css from "./Toast.module.css";
 
 const styles = classes(css, ["toast", "text", "action", "dismiss"]);
 
-/** How long each kind stays (A5 3.12): errors until dismissed. */
+/** The least each kind stays (A5 3.12): errors until dismissed. */
 const LASTS: Readonly<Record<ToastKind, number | undefined>> = {
   undo: 6_000,
   info: 2_500,
   error: undefined,
 };
+/** Time to read one character of a toast: a little slower than an adult reads, since it comes unasked. */
+const READ_MS = 60;
+/** The longest a toast stays by itself. */
+const MOST_MS = 12_000;
+
+/** How long a toast of `kind` saying `text` stays, in ms; undefined: until it is dismissed. */
+export function lastsFor(kind: ToastKind, text: string): number | undefined {
+  const least = LASTS[kind];
+  return least === undefined
+    ? undefined
+    : Math.max(least, Math.min(text.length * READ_MS, MOST_MS));
+}
 
 export interface Shown {
   readonly key: number;
@@ -61,8 +74,11 @@ export function Toast({
     },
   };
 
+  const text =
+    toast === undefined ? "" : typeof toast.text === "string" ? toast.text : sayMsg(t, toast.text);
+
   // The toast's own timer: restarted for each toast, paused while held.
-  const lasts = toast === undefined ? undefined : LASTS[toast.kind];
+  const lasts = toast === undefined ? undefined : lastsFor(toast.kind, text);
   const key = toast?.key;
   useEffect(() => {
     if (key === undefined || lasts === undefined || held) return;
@@ -81,9 +97,6 @@ export function Toast({
     if (element instanceof HTMLElement && element.isConnected) element.focus();
     else document.getElementById("main")?.focus();
   }, []);
-
-  const text =
-    toast === undefined ? "" : typeof toast.text === "string" ? toast.text : sayMsg(t, toast.text);
   return (
     <div
       ref={box}

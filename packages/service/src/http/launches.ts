@@ -36,6 +36,7 @@ import {
   type OpenResult,
   type Route,
 } from "@ttasks/launch";
+import { leftOutOf, type LeftOut } from "../launch/open.ts";
 import { findSpace, isAmbiguity, spaceChanged } from "../ops/copies.ts";
 import { launchError } from "../ops/handlers.ts";
 import { readOnly, type OpsHost, type ServedSpace } from "../ops/index.ts";
@@ -54,7 +55,8 @@ export interface UiInstance {
   readonly glyph: string;
   /** One of the eight ring slots of A5 3.19. */
   readonly ring: number;
-  readonly route: Route;
+  /** How Open opens it here; absent when Open cannot, and the tile is for Run. */
+  readonly route?: Route;
   /** It can work on a task in the background (Run). Absent: it cannot. */
   readonly runs?: true;
 }
@@ -64,7 +66,8 @@ export interface UiInstance {
  * a way to hear that a space's launch records changed (the feed catches up at once).
  */
 export interface UiLaunchPort {
-  instances(): readonly UiInstance[];
+  /** The instances Open can open a task of the space in here. */
+  instances(space: string): readonly UiInstance[];
   onChange?(listener: (space: string) => void): () => void;
   /**
    * Whether the launch's session runs now, as this service follows it, and was made in the copy
@@ -226,6 +229,8 @@ export interface UiReceipt {
   readonly session?: "running" | "ended" | "restored";
   /** How long its agent ran, when its end was reported with it. */
   readonly ran_ms?: number;
+  /** What of its instance's settings its click could not carry (LeftOut codes). */
+  readonly left_out?: readonly LeftOut[];
 }
 
 /** A note's entry reference, as a launch's evidence names its request. */
@@ -248,7 +253,8 @@ export function checkInstances(list: readonly UiInstance[]): UiInstance[] {
       !Number.isInteger(item.ring) ||
       item.ring < 1 ||
       item.ring > 8 ||
-      !isRoute(item.route)
+      (item.route !== undefined && !isRoute(item.route)) ||
+      (item.route === undefined && item.runs !== true)
     ) {
       continue;
     }
@@ -258,7 +264,7 @@ export function checkInstances(list: readonly UiInstance[]): UiInstance[] {
       label: item.label,
       glyph: item.glyph,
       ring: item.ring,
-      route: item.route,
+      ...(item.route === undefined ? {} : { route: item.route }),
       ...(item.runs === true ? { runs: true } : {}),
     });
   }
@@ -319,6 +325,7 @@ export function receiptOf(
   const reason = row["reason"];
   const ran = evidence["ran_ms"];
   const ranMs = typeof ran === "number" && Number.isSafeInteger(ran) && ran >= 0 ? ran : undefined;
+  const leftOut = leftOutOf(evidence);
   const recorded = restored && isOpenLaunch({ state, route, evidence });
   const record = state === "confirmed" && !recorded ? sessionRecord(evidence) : undefined;
   const session =
@@ -339,6 +346,7 @@ export function receiptOf(
     ...(request === undefined ? {} : { request }),
     ...(session === undefined ? {} : { session }),
     ...(ranMs === undefined ? {} : { ran_ms: ranMs }),
+    ...(leftOut.length === 0 ? {} : { left_out: leftOut }),
   };
 }
 
@@ -368,16 +376,16 @@ export class UiLaunches {
   }
 
   /**
-   * The instances the page draws a tile for, each marked when it can run. None without a launch
-   * service: Copy only.
+   * The instances the page draws a tile for in `space`, each marked when it can run. None without
+   * a launch service: Copy only.
    */
-  instances(): UiInstance[] {
+  instances(space: string): UiInstance[] {
     const port = this.#options.port;
     const runs = this.#options.runs;
     if (port === undefined) return [];
     return checkInstances(
       port
-        .instances()
+        .instances(space)
         .map((tile) =>
           runs?.runnable(tile.key) === true ? { ...tile, runs: true as const } : tile,
         ),
