@@ -834,6 +834,7 @@ export class LaunchService {
         const text = brief(reference);
         const built = cliArgv(chosen, choice.prompt ?? "sent", {
           task: task.ref,
+          title,
           reference,
           toolEnv,
           ...(session === undefined ? {} : { session }),
@@ -1353,6 +1354,8 @@ ${instance}`;
       renderBrief({
         kind: choice.kind,
         task: task.ref,
+        // A link is the one route that keeps the title out: it would stand in a URL.
+        ...(choice.route === "link" ? {} : { title: task.title }),
         space,
         reference,
         composer: request.composer,

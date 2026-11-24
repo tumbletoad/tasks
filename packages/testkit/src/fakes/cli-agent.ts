@@ -65,7 +65,7 @@ const env = process.env;
  */
 function briefOf(args: readonly string[]): { task: string; command: string[] } | undefined {
   const lines = (args[args.indexOf("--") + 1] ?? "").split("\n");
-  const task = / task (\S+) \(launch L[0-9A-Z]{5}\)\./u.exec(lines[0] ?? "")?.[1];
+  const task = / task (\S+) (?:"[^"]*" )?\(launch L[0-9A-Z]{5}\)\./u.exec(lines[0] ?? "")?.[1];
   const command = /run `\S+ ([^`]+)`\.$/u.exec(lines[1] ?? "")?.[1];
   return task === undefined || command === undefined
     ? undefined
