@@ -1164,6 +1164,61 @@ function diffOf(
   ];
 }
 
+/** Why the tools of a home setup registered do not start: what is missing of the three. */
+export type NotStarting = "missing" | "moved" | "access_off";
+
+/**
+ * Whether the tools of a home setup registered start, the one answer the page's switch and the
+ * command line's status give: undefined when its entry is there, the program it runs is there and
+ * its access is live (`input.rows`, when the caller read them), else the first that is not.
+ * Undefined for a home in any other state too: its state says it.
+ */
+export function notStarting(input: SetupInput, view: HomeView): NotStarting | undefined {
+  if (view.record?.state !== "applied") return undefined;
+  if (view.state === "missing") return "missing";
+  if (view.state !== "registered") return undefined;
+  // A command by its name alone is found on PATH, which setup cannot judge here; the present one
+  // missing is no install at all, which writing the entry again would not mend.
+  const command = (view.entry as { command?: unknown } | undefined)?.command;
+  if (
+    typeof command === "string" &&
+    pathOf(input.platform).isAbsolute(command) &&
+    !samePath(input.platform, command, input.tasks) &&
+    !isFile(command)
+  ) {
+    return "moved";
+  }
+  const { rows } = input;
+  if (
+    rows !== undefined &&
+    !rows.some((r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home))
+  ) {
+    return "access_off";
+  }
+  return undefined;
+}
+
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What repairs a registered home whose entry is gone or runs a program that is gone: its entry
+ * written again with the present command, in the space it named (rewrite).
+ */
+function repairOf(input: SetupInput, view: HomeView): Change | Refusal | undefined {
+  const lack = notStarting(input, view);
+  const space = view.record?.space;
+  if (space === undefined || (lack !== "missing" && lack !== "moved")) return undefined;
+  const change = planChange(input, view, space);
+  if (typeof change === "string" || lack === "missing") return change;
+  return { ...change, diff: [...entryLines(view.home.app, view.entry, "-"), ...change.diff] };
+}
+
 /** What applying a home would write, or why it cannot. Reads nothing more. */
 export function planChange(input: SetupInput, view: HomeView, space: string): Change | Refusal {
   const { home } = view;
@@ -1205,7 +1260,7 @@ export function planOf(input: SetupInput, views: readonly HomeView[], space: str
     view,
     change:
       view.state !== "not_registered"
-        ? undefined
+        ? repairOf(input, view)
         : view.home.app === "claude-desktop" && desktops.length > 1
           ? "ambiguous"
           : planChange(input, view, space),
@@ -1477,6 +1532,8 @@ export async function applyHome(
   planned?: Change | Refusal,
 ): Promise<Outcome> {
   const { home } = view;
+  const lack = notStarting(input, view);
+  if (lack === "missing" || lack === "moved") return rewrite(input, view, access);
   if (view.state === "registered") {
     // A registered home has its record (inspectHome).
     const record = view.record;
@@ -1494,6 +1551,28 @@ export async function applyHome(
   const written = await writeEntry(input, view, space, change);
   if (!("entry" in written)) return { home, ...written, access: "off" };
   return giveAccess(input, home, written, space, access, false);
+}
+
+/**
+ * Repairs a registered home whose entry is gone or runs a program that is gone: the old entry and
+ * its access go as a removal does, then the entry is written with the present command, in the
+ * space it named, and gets its access as a new install does. A step that fails stops there, and the
+ * home is as that step left it: off, or as it was.
+ */
+async function rewrite(input: SetupInput, view: HomeView, access: Access): Promise<Outcome> {
+  const { home, record } = view;
+  if (record === undefined) return { home, result: "left", reason: "missing" };
+  const removed = await removeHome(input, view, access);
+  if (removed.result !== "removed") return { ...removed, result: "failed" };
+  const fresh = inspectHome(home, undefined);
+  if (fresh.state !== "not_registered") {
+    return { home, result: "failed", reason: "changed_meanwhile", access: "off" };
+  }
+  const change = planChange(input, fresh, record.space);
+  if (typeof change === "string") return { home, result: "failed", reason: change, access: "off" };
+  const written = await writeEntry(input, fresh, record.space, change);
+  if (!("entry" in written)) return { home, ...written, access: "off" };
+  return giveAccess(input, home, written, record.space, access, false);
 }
 
 /**

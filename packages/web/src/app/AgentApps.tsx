@@ -238,6 +238,11 @@ export function AgentApps({
                   </span>
                 )}
               </div>
+              {row.byName ? (
+                <p className={styles.why} data-part="by-name">
+                  {t("apps.byName", { label: row.label })}
+                </p>
+              ) : null}
               {row.also.map((host) => (
                 <p key={host} className={styles.why}>
                   {t("apps.also", { host: host.replace("-", "_") })}

@@ -69,6 +69,7 @@ import {
   HOSTS,
   isPrintApp,
   LockBusy,
+  notStarting,
   planOf,
   planToken,
   PRINT_APPS,
@@ -88,6 +89,7 @@ import {
   type AgentApp,
   type Host,
   type HomeView,
+  type NotStarting,
   type Outcome,
   type OutcomeReason,
   type PrintApp,
@@ -321,6 +323,14 @@ const NOTE: Readonly<Record<string, string>> = {
   undo_failed: `The entry may still be there: the next ${CLI_NAME} setup agents --apply or --remove takes it out.`,
   entry_left:
     "The entry there is not exactly the one setup asked for, so it was left as it is: take it out by hand if it is not wanted.",
+};
+
+/** Why a registered home's tools do not start (notStarting), and what apply does about it. */
+const LACK_TEXT: Readonly<Record<NotStarting, string>> = {
+  missing: "registered, and its entry is gone, so its tools do not start: apply writes it again",
+  moved: `registered, and its entry runs ${PRODUCT_NAME} where it was installed before, so its tools do not start: apply writes it again with the command installed now`,
+  access_off:
+    "registered, and its access is off, so its tools do not start: apply gives it its access again",
 };
 
 const STATE_TEXT: Readonly<Record<HomeView["state"], string>> = {
@@ -705,9 +715,10 @@ const rowCall =
 const needsSpace = (views: readonly HomeView[]): boolean =>
   views.some((view) => view.state === "not_registered");
 
-/** Whether apply has anything to do: a home to register, or a registered one whose row it renews. */
+/** Whether apply has anything to do: a home to register, or a registered one it renews or repairs. */
 const applies = (views: readonly HomeView[]): boolean =>
-  needsSpace(views) || views.some((view) => view.state === "registered");
+  needsSpace(views) ||
+  views.some((view) => view.state === "registered" || view.state === "missing");
 
 /**
  * After a remove: revokes the agent-home rows of the selected homes that no longer have an entry of
@@ -771,7 +782,14 @@ async function status(
   if (globals.json) {
     io.stdout(
       `${JSON.stringify({
-        homes: views.map((view) => ({ ...viewJson(view), row: rowOf(view)?.grant ?? null })),
+        homes: views.map((view) => {
+          const lack = notStarting(input, view);
+          return {
+            ...viewJson(view),
+            ...(lack === undefined ? {} : { not_starting: lack }),
+            row: rowOf(view)?.grant ?? null,
+          };
+        }),
         service: rows !== undefined,
       })}\n`,
     );
@@ -784,7 +802,9 @@ async function status(
     const space = view.record === undefined ? "" : `, space ${view.record.space}`;
     const grant =
       rows === undefined ? "" : row === undefined ? ", no grant row" : `, grant row ${row.grant}`;
-    io.stdout(`${title(view)}\n  ${STATE_TEXT[view.state]}${reason}${space}${grant}\n`);
+    const lack = notStarting(input, view);
+    const state = lack === undefined ? STATE_TEXT[view.state] : LACK_TEXT[lack];
+    io.stdout(`${title(view)}\n  ${state}${reason}${space}${grant}\n`);
   }
   if (rows === undefined) {
     io.stdout(`${PRODUCT_NAME}'s service is not running: the grant rows are not shown.\n`);
@@ -802,11 +822,7 @@ function approvals(views: readonly HomeView[], platform: NodeJS.Platform) {
 
 /** A registered home without its live row: its entry is in place, and apply gives it its access again. */
 const givesAccessBack = (input: SetupInput, view: HomeView): boolean =>
-  view.state === "registered" &&
-  input.rows !== undefined &&
-  !input.rows.some(
-    (r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home),
-  );
+  notStarting(input, view) === "access_off";
 
 async function preview(
   io: Io,
@@ -886,9 +902,11 @@ async function preview(
     io.stdout(`${String(n)}. ${title(view)}\n`);
     const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
     io.stdout(`   ${view.home.file} (${hash})\n`);
-    if (givesAccessBack(input, view)) {
+    const lack = notStarting(input, view);
+    if (lack !== undefined && typeof change !== "string") {
       changes += 1;
-      io.stdout(`   registered, and its access is off: apply gives it its access again.\n`);
+      io.stdout(`   ${LACK_TEXT[lack]}${change === undefined ? "." : ":"}\n`);
+      for (const line of change?.diff ?? []) io.stdout(`     ${line}\n`);
     } else if (change === undefined) {
       const reason = view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home)}`;
       io.stdout(`   ${STATE_TEXT[view.state]}${reason}. Nothing to do.\n`);

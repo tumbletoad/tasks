@@ -26,6 +26,8 @@ export interface AppRow {
   readonly label: string;
   readonly home: string | null;
   readonly also: readonly string[];
+  /** Found by its folder's name alone: the first start leaves its switches off. */
+  readonly byName: boolean;
   readonly open: Part | undefined;
   readonly tools: Part | undefined;
 }
@@ -97,6 +99,7 @@ export function viewOf(value: unknown): AppsView {
         also: Array.isArray(row["also"])
           ? row["also"].filter((h): h is string => h === "codex-app" || h === "t3")
           : [],
+        byName: row["byName"] === true,
         open: partOf(row["open"]),
         tools: partOf(row["tools"]),
       },
@@ -140,12 +143,12 @@ export type Choices = ReadonlyMap<string, boolean>;
  * The person's choices as they first see the switches: none in Settings, and at the first start
  * every switch that can be turned on is on, so one press applies the usual choice. A switch with
  * something to know first (one of several Claude Desktop files, a home whose tools were turned off
- * before) is left to the person.
+ * before), or in a folder found by its name alone, is left to the person.
  */
 export function initialChoices(view: AppsView, propose: boolean): Map<string, boolean> {
   const choices = new Map<string, boolean>();
   if (!propose) return choices;
-  for (const row of view.rows) {
+  for (const row of view.rows.filter((r) => !r.byName)) {
     for (const part of ["open", "tools"] as const) {
       const found = row[part];
       if (found?.change === "add" && found.why === undefined) {

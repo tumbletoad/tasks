@@ -2,7 +2,14 @@
 // page calls them: only the person may call them, a switch is applied only as the person saw it,
 // and what one click adds the next one takes out again. Scratch homes and fake agent commands
 // only (testkit's fake-agents.ts): no real agent home is read or written.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CLI_NAME, MCP_SERVER_KEY } from "@ttasks/brand";
@@ -387,6 +394,120 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
         (await call<Applied>(w, "/api/v1/machine/apps_apply", { space, changes: [twice, twice] }))
           .status,
       ).toBe(400);
+    },
+    SLOW,
+  );
+});
+
+describe("[A7.3.12.m5-12.page-status] The tools switch is on only while the tools start, and the first start proposes only what a person would choose", () => {
+  let w: World;
+  let space: string;
+  const look = async () => (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+  const turn = async (app: string, on: boolean) => {
+    const found = row(await look(), app);
+    return call<Applied>(w, "/api/v1/machine/apps_apply", {
+      space,
+      changes: [{ key: found.key, part: "tools", on, plan: found.tools?.plan }],
+    });
+  };
+  beforeAll(async () => {
+    w = await world("status");
+    space = (await call<{ id: string }>(w, "/api/v1/space/create", { name: "Mira" })).result.id;
+  }, SLOW);
+  afterAll(async () => {
+    await w.close();
+  }, SLOW);
+
+  it(
+    "a folder found by its name only is listed with nothing proposed, and the usual home beside it is",
+    async () => {
+      mkdirSync(join(w.user, ".codex-backup"));
+      try {
+        const seen = await look();
+        const backup = seen.rows.find((r) => r.app === "codex" && r.home?.endsWith("backup"));
+        expect(backup).toMatchObject({ byName: true, tools: { on: false, change: "add" } });
+        expect(row(seen, "codex")).not.toHaveProperty("byName");
+        expect(row(seen, "claude-code")).not.toHaveProperty("byName");
+      } finally {
+        rmSync(join(w.user, ".codex-backup"), { recursive: true });
+      }
+    },
+    SLOW,
+  );
+
+  it(
+    "a home whose access went shows off with why, and turning it on gives the access back",
+    async () => {
+      expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      const session = await classSession(w.home, w.service.endpoint.path, "cli-interactive");
+      try {
+        await session.call("setup/home_revoke", {
+          app: "claude-code",
+          home: join(w.user, ".claude"),
+        });
+      } finally {
+        session.close();
+      }
+      expect(row(await look(), "claude-code").tools).toMatchObject({
+        on: false,
+        change: "add",
+        why: "access_off",
+      });
+      expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(row(await look(), "claude-code").tools).toMatchObject({ on: true, change: "remove" });
+      await turn("claude-code", false);
+    },
+    SLOW,
+  );
+
+  it(
+    "an entry that runs a program that is gone shows off, and turning it on writes it again with the present one",
+    async () => {
+      expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      const present = join(
+        w.home,
+        "bin",
+        process.platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME,
+      );
+      const gone = join(w.home, "old", process.platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME);
+      // The install moved: the entry and setup's record of it name the old place.
+      const moved = (file: string) => {
+        const text = readFileSync(file, "utf8");
+        writeFileSync(
+          file,
+          text.replaceAll(JSON.stringify(present).slice(1, -1), JSON.stringify(gone).slice(1, -1)),
+        );
+      };
+      moved(join(w.user, ".claude.json"));
+      moved(join(stateOf(w.home), "setup", "agents.json"));
+      const seen = row(await look(), "claude-code").tools;
+      expect(seen).toMatchObject({ on: false, change: "add", why: "moved" });
+      expect(seen?.detail.join("\n")).toContain("-");
+      expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(row(await look(), "claude-code").tools).toMatchObject({ on: true, change: "remove" });
+      expect((claudeEntry(w.user) as { command?: string } | undefined)?.command).toBe(present);
+      await turn("claude-code", false);
+    },
+    SLOW,
+  );
+
+  it(
+    "an entry someone took out shows off even while its access is live, and turning it on writes it again",
+    async () => {
+      expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      const file = join(w.user, ".claude.json");
+      const doc = JSON.parse(readFileSync(file, "utf8")) as { mcpServers: Record<string, unknown> };
+      delete doc.mcpServers[MCP_SERVER_KEY];
+      writeFileSync(file, JSON.stringify(doc));
+      expect(row(await look(), "claude-code").tools).toMatchObject({
+        on: false,
+        change: "add",
+        why: "missing",
+      });
+      expect((await turn("claude-code", true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(row(await look(), "claude-code").tools).toMatchObject({ on: true, change: "remove" });
+      expect(claudeEntry(w.user)).toBeDefined();
+      await turn("claude-code", false);
     },
     SLOW,
   );

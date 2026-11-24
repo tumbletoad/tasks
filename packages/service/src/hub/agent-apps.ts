@@ -46,6 +46,7 @@ import {
   entryInstance,
   entryLines,
   LockBusy,
+  notStarting,
   planChange,
   planOf,
   planToken,
@@ -64,6 +65,8 @@ import {
   withSetupLock,
   type AgentApp,
   type AgentHome,
+  type HomeView,
+  type NotStarting,
   type Offer,
   type PlanItem,
   type SetupInput,
@@ -122,6 +125,11 @@ export interface AppRow {
   readonly home: string | null;
   /** Other apps that read this home's tools: the Codex app, T3 Code. */
   readonly also: readonly string[];
+  /**
+   * Found by its folder's name alone (`.codex-backup`): no settings file of the app is in it, and
+   * nothing else says an app uses it, so the first start leaves its switches off.
+   */
+  readonly byName?: true;
   readonly open?: Part;
   readonly tools?: Part;
 }
@@ -341,6 +349,21 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     return "offer";
   };
 
+  const byName = (view: HomeView): boolean =>
+    view.home.proposed === true &&
+    view.state === "not_registered" &&
+    view.sha256 === null &&
+    view.home.hosts.length === 0 &&
+    detection.homes.some(
+      (h) => h.source === "home" && h.suffix !== "" && samePath(platform, h.path, view.home.home),
+    ) &&
+    !detection.proposals.some(
+      (p) =>
+        p.source === "wrapper" &&
+        p.configHome !== undefined &&
+        samePath(platform, p.configHome, view.home.home),
+    );
+
   for (const item of plan) {
     const { view } = item;
     const { home } = view;
@@ -376,8 +399,9 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
       label: appLabel(home.app),
       home: shown(home.home),
       also: home.hosts,
+      ...(byName(view) ? { byName: true as const } : {}),
       ...(open === undefined ? {} : { open }),
-      tools: toolsPart(host, space, item, installed, live(home), shown),
+      tools: toolsPart(host, space, item, installed, live(home), notStarting(input, view), shown),
     });
   }
 
@@ -456,6 +480,7 @@ function toolsPart(
   { view, change, several }: Planned,
   installed: boolean,
   live: boolean,
+  lack: NotStarting | undefined,
   shown: (path: string) => string,
 ): Part {
   const file = shown(view.home.file);
@@ -479,7 +504,7 @@ function toolsPart(
         ? "file_unreadable"
         : (view.refusal ?? "unreadable")
       : undefined;
-  if (live) {
+  if (live && lack === undefined) {
     // What turning it off takes out of the file: setup's own entry, never one the person changed.
     const own =
       view.entry !== undefined && (view.state === "registered" || view.state === "interrupted");
@@ -514,13 +539,15 @@ function toolsPart(
       : fixed(false, "not_installed");
   switch (view.state) {
     case "registered":
-      // Its entry is in place and its access is gone: turning it on gives the access again.
-      return adding([]);
+    case "missing":
+      // Its tools do not start (notStarting): turning it on gives back what is missing.
+      if (lack === undefined || lack === "access_off") return adding([], lack);
+      if (change === undefined || typeof change === "string") return fixed(false, change ?? lack);
+      return adding(change.diff, lack);
     case "interrupted":
       // A change that did not finish: the next apply finishes it first, then this one adds.
       if (change === undefined || typeof change === "string") return fixed(false, "interrupted");
       return adding(change.diff, view.entry === undefined ? "interrupted" : "entry_left");
-    case "missing":
     case "edited":
       return fixed(false, view.state);
     case "refused":

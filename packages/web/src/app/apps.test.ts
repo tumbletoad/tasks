@@ -97,6 +97,28 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
     ]);
   });
 
+  test("the first start leaves off a folder found by its name alone and a home whose tools were turned off", () => {
+    const view = viewOf({
+      ...VIEW,
+      rows: [
+        VIEW.rows[0],
+        { ...VIEW.rows[0], key: "backup", home: "~/.claude-backup", byName: true },
+        {
+          ...VIEW.rows[1],
+          open: part(false, "add"),
+          tools: { ...part(false, "add"), why: "access_off" },
+        },
+      ],
+    });
+    expect(pendingOf(view, initialChoices(view, true)).map((p) => [p.row.key, p.part])).toEqual([
+      ["claude", "open"],
+      ["claude", "tools"],
+      ["codex", "open"],
+    ]);
+    expect(view.rows[1]?.byName).toBe(true);
+    expect(view.rows[0]?.byName).toBe(false);
+  });
+
   test("a newer view takes every switch the person did not touch as it stands now", () => {
     const [claude] = VIEW.rows;
     if (claude === undefined) throw new Error("no rows");
