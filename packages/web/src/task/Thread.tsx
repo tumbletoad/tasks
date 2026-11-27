@@ -9,14 +9,15 @@
 // Stop while it may still work, and the agent's answer or question (RunBody). A session shows what
 // was asked the same way (the note its launch names) above its state, and a launch that did not
 // open offers to open again with it, or says that the person took the request back. Copy on a log
-// entry and Remove on a note or a session's request show on hover and on focus, and always without
-// hover; Remove takes the note back, and the card's removed line puts it back. Grouped field
-// changes and their Revert join with M5.09.
+// entry shows on hover and on focus, and always without hover. Remove, a bin on a note or a
+// session's request, is always in sight: it takes the note back, and the card's removed line puts
+// it back.
 import { useLayoutEffect, useRef, useState } from "react";
 import { localDate } from "@ttasks/contracts/day";
 import type { Instance, Receipt, Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
+import { ViewIcon } from "../app/Icons.tsx";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import { formatInstant, type Clock } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
@@ -516,6 +517,7 @@ export function Thread({
                 <button
                   type="button"
                   className={styles.act}
+                  data-quiet=""
                   aria-label={t("thread.copyEntry", { who: item.who })}
                   data-tip={t("thread.copy")}
                   onClick={() => {
@@ -545,11 +547,12 @@ export function Thread({
                         : "thread.removeNote",
                     { who: item.who },
                   )}
+                  data-tip={t("thread.remove")}
                   onClick={() => {
                     if (item.note !== undefined) onRemove(item.note);
                   }}
                 >
-                  {t("thread.remove")}
+                  <ViewIcon view="trash" />
                 </button>
               )}
             </span>

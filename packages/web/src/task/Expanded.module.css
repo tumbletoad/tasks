@@ -210,8 +210,8 @@ a + .muted,
 }
 
 .act svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 /* A line's own words (a folder's change and clear, a source's remove) stay out of sight until
@@ -526,20 +526,23 @@ a + .muted,
   overflow: hidden;
 }
 
-/* Entry actions show on hover and on focus (A5 3.7, 3.22: what hover shows, focus shows). */
+/* An entry's quiet actions show on hover and on focus (A5 3.7, 3.22: what hover shows, focus
+   shows); without hover they are in sight, so a tap never lands on one it cannot see. */
 .entry .acts {
-  opacity: 0;
   transform: none;
 }
 
-.entry:hover .acts,
-.entry:focus-within .acts {
+.entry [data-quiet] {
+  opacity: 0;
+}
+
+.entry:hover [data-quiet],
+.entry:focus-within [data-quiet] {
   opacity: 1;
 }
 
-/* Without hover, an entry's actions are in sight: a tap never lands on one it cannot see. */
 @media (hover: none) {
-  .entry .acts {
+  .entry [data-quiet] {
     opacity: 1;
   }
 }
