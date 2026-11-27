@@ -83,13 +83,9 @@ async function rig(label: string): Promise<Rig> {
       [
         instanceToml({ id: "desktop", target: "claude-desktop", label: "Claude Desktop · test" }),
         instanceToml({ id: "codex-app", target: "codex-app", label: "Codex app · test" }),
-        // Claude Code's own link (`claude-cli://`), which asks for no folder check.
-        instanceToml({
-          id: "claude-link",
-          target: "claude-cli",
-          label: "Claude link · test",
-          prompt: "prefill",
-        }),
+        // Claude Code's own link (`claude-cli://`), which asks for no folder check: without a
+        // command, the instance opens through it.
+        instanceToml({ id: "claude-link", target: "claude-cli", label: "Claude link · test" }),
       ].join(""),
     launch: { terminals: { spawn: recordingSpawner } },
     ...(WINDOWS

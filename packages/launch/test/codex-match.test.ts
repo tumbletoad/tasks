@@ -172,7 +172,7 @@ describe("[A4.5.routes.codex-match] Codex's reference match: only this launch's 
     expect(
       matchRollout(rollout({ prompt: `Please look.\n${brief(REF)}` }), TARGET),
     ).toBeUndefined();
-    // This launch's own brief, with the person's words after it (the assisted open), matches.
+    // This launch's own brief, with the person's words after it, matches.
     expect(matchRollout(rollout({ prompt: `${brief(REF)}\nAnd check the tests.` }), TARGET)).toBe(
       THREAD,
     );

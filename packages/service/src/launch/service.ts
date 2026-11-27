@@ -10,7 +10,7 @@
 // Each connection that claimed or attached holds its attachment (a WeakMap on the connection the
 // library hands every handler), so a report is accepted only on the connection that presented the
 // ticket or the credential, and never names its launch itself.
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, win32 } from "node:path";
 import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
@@ -62,6 +62,8 @@ import {
   servesSpace,
   sanitiseComposer,
   instanceHome,
+  instanceVersion,
+  inTestedRange,
   isOpenLaunch,
   sanitiseTitle,
   sessionRecord,
@@ -415,6 +417,8 @@ export class LaunchService {
     }
   >();
   readonly #timers = new Set<NodeJS.Timeout>();
+  /** The versions instances' programs reported (#versionOf), by program file as it was then. */
+  readonly #versions = new Map<string, string>();
   readonly #listeners = new Set<(space: string) => void>();
   /** `launch.open` calls under way, by space and request ID: the last of each queue. */
   readonly #opening = new Map<string, Promise<OpenTaskResult>>();
@@ -843,14 +847,18 @@ export class LaunchService {
       const title = sanitiseTitle(task.title);
       planFor = (reference) => {
         const text = brief(reference);
-        const built = cliArgv(chosen, choice.prompt ?? "sent", {
-          task: task.ref,
-          title,
-          reference,
-          toolEnv,
-          ...(session === undefined ? {} : { session }),
-          ...(choice.prompt === "clipboard" || text.status !== "ok" ? {} : { brief: text.text }),
-        });
+        const built = cliArgv(
+          chosen,
+          {
+            task: task.ref,
+            title,
+            reference,
+            toolEnv,
+            ...(session === undefined ? {} : { session }),
+            ...(text.status !== "ok" ? {} : { brief: text.text }),
+          },
+          choice.kind === "sent" ? "sent" : "prefilled",
+        );
         return {
           argv: built.argv,
           folder,
@@ -861,6 +869,7 @@ export class LaunchService {
           ...(chosen.viaLoginShell && platform !== "win32" ? { loginShell: true } : {}),
           ...(built.folderArgs.length === 0 ? {} : { folderArgs: built.folderArgs }),
           ...(codexHome === undefined ? {} : { match: { home: codexHome } }),
+          ...(choice.briefSent === true ? { notice: "brief_sent" as const } : {}),
         };
       };
       if (checkPlan(planFor(REFERENCE_LENGTH_STAND_IN)) === undefined) {
@@ -937,6 +946,7 @@ export class LaunchService {
       composer,
       ...(note === undefined ? {} : { note }),
       removed: probe.removed,
+      ...(choice.briefSent === true ? { briefSent: true as const } : {}),
     };
   }
 
@@ -965,10 +975,6 @@ export class LaunchService {
       // Pairing needs T3's server: when it does not run, Start T3 Code comes first.
       const running = available.state === "not_running" || (await t3.running());
       throw refuse(running ? available.state : "not_running");
-    }
-    // T3 takes a provider instance only with its model: without one the account could be another.
-    if (instance.t3?.providerInstance !== undefined && instance.t3.model === "") {
-      throw refuse("model_required");
     }
     const { task, requestId } = request;
     const set = this.#planFolder(task.folder);
@@ -1292,10 +1298,47 @@ ${instance}`;
    */
   async #routeNow(instance: Instance, space: string): Promise<Choice> {
     const choice = this.#route(instance, space);
-    if (choice.route !== "terminal" || this.#options.terminal !== undefined) return choice;
-    const session = await this.environment.session().catch(() => ({}));
-    const found = await this.terminals.startable(session).catch(() => false);
-    return found ? choice : this.#route(instance, space, false);
+    if (choice.route !== "terminal") return choice;
+    if (this.#options.terminal === undefined) {
+      const session = await this.environment.session().catch(() => ({}));
+      const found = await this.terminals.startable(session).catch(() => false);
+      if (!found) return this.#route(instance, space, false);
+    }
+    return this.#heldBy(instance, choice);
+  }
+
+  /**
+   * A terminal route that leaves the brief unsent needs the app's version from its `since` on: an
+   * older one, or one whose version cannot be read, gets the brief sent, and the person is told.
+   */
+  async #heldBy(instance: Instance, choice: Choice): Promise<Choice> {
+    if (choice.kind !== "prefilled" || !isBuiltInTarget(instance.target)) return choice;
+    const since = routeOf(instance.target, "terminal", "prefilled")?.since;
+    if (since === undefined) return choice;
+    const version = await this.#versionOf(instance);
+    if (version !== undefined && inTestedRange(version, `>=${since}`) === true) return choice;
+    return { ...choice, kind: "sent", briefSent: true };
+  }
+
+  /** The instance's version, read once per program file as it is now: an update changes the file. */
+  async #versionOf(instance: Instance): Promise<string | undefined> {
+    const files = [instance.exec ?? "", ...instance.argsPrefix].map((file) => {
+      try {
+        const stat = statSync(file);
+        return [file, stat.size, stat.mtimeMs];
+      } catch {
+        return [file];
+      }
+    });
+    const key = JSON.stringify([files, instance.env]);
+    const known = this.#versions.get(key);
+    if (known !== undefined) return known;
+    const version = await instanceVersion(instance, {
+      env: { ...this.#options.env, ...instance.env },
+      cwd: this.#options.home ?? process.cwd(),
+    });
+    if (version !== undefined) this.#versions.set(key, version);
+    return version;
   }
 
   /** The space as an instance's `spaces` name it: its ID, and its name when it is served. */
@@ -1424,6 +1467,7 @@ ${instance}`;
       composer: composerOf(kind, note, intent),
       ...(note === undefined ? {} : { note }),
       removed: brief?.removed ?? false,
+      ...(choice?.briefSent === true ? { briefSent: true as const } : {}),
     };
   }
 

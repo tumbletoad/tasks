@@ -47,6 +47,7 @@ import {
   isPlainObject,
   LAUNCH_ID_FORM,
   LAUNCH_REF_FORM,
+  NOTICES,
   REATTACH_MS,
   REPLY_BOUNDS,
   SETTLE_MS,
@@ -98,6 +99,9 @@ export const TEXT = {
     `This window is not in the task's folder as it was checked (${reason}). This launch did not start.`,
   spawn: "The agent's program could not be started.",
   enter: "Press Enter to close.",
+  notice: {
+    brief_sent: `${PRODUCT_NAME} sent the brief: this version of the app cannot hold it in its prompt box for you to send. Update the app to choose the model first.`,
+  },
 } as const;
 
 /** What the shim does to its process and terminal: injected in tests. */
@@ -311,7 +315,7 @@ export function readReply(value: unknown, platform: NodeJS.Platform): ReplyRead 
   ) {
     return fail("protocol");
   }
-  if (!hasExactly(value, REPLY_FIELDS)) return fail("reply");
+  if (!hasExactly(value, REPLY_FIELDS, ["notice"])) return fail("reply");
   if (protocol !== SHIM_PROTOCOL) return fail("reply");
   if (!hasExactly(launch, ["id", "reference"])) return fail("reply");
   const reference = launch["reference"];
@@ -341,6 +345,10 @@ export function readReply(value: unknown, platform: NodeJS.Platform): ReplyRead 
   if (!(AFTER_EXIT_MODES as readonly unknown[]).includes(afterExit)) return fail("reply");
   if (typeof credential !== "string" || !CREDENTIAL.test(credential)) return fail("reply");
   if (!isExitFile(exitFile, platform)) return fail("reply");
+  const notice = value["notice"];
+  if (notice !== undefined && !(NOTICES as readonly unknown[]).includes(notice)) {
+    return fail("reply");
+  }
   return {
     ok: true,
     reply: {
@@ -354,6 +362,7 @@ export function readReply(value: unknown, platform: NodeJS.Platform): ReplyRead 
       after_exit: afterExit as ClaimReply["after_exit"],
       credential,
       exit_file: exitFile,
+      ...(notice === undefined ? {} : { notice: notice as (typeof NOTICES)[number] }),
     },
   };
 }
@@ -580,6 +589,7 @@ async function afterClaim(
   if (io.tty.stdout) io.write(`\u001b]0;${title}\u0007`);
   const line = `${PRODUCT_NAME} · ${title} · ${printable(reply.launch.reference)}`;
   io.write(io.tty.stdout ? `\u001b[2m${line}\u001b[0m\n` : `${line}\n`);
+  if (reply.notice !== undefined) io.say(TEXT.notice[reply.notice]);
 
   // 6. Spawn.
   let agent;

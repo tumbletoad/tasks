@@ -11,7 +11,6 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { instanceLabel, LABEL_MAX } from "@ttasks/launch";
-import { t3Proposals } from "@ttasks/service/setup";
 import { configOf, stateOf } from "@ttasks/service/test/harness";
 import { httpWorld, openFeed, signIn, type HttpWorld } from "@ttasks/service/test/http-world";
 import { installFakeAgents, type FakeAgents } from "@ttasks/testkit/fake-agents";
@@ -68,7 +67,7 @@ interface Preview {
   commands: { target: string; version?: string; usable: boolean }[];
   homes: { target: string; home: string }[];
   configured: { id: string }[];
-  add: { id: string; entry: Record<string, unknown>; model_from?: string }[];
+  add: { id: string; entry: Record<string, unknown> }[];
   plan?: string;
   apply?: string[];
 }
@@ -282,7 +281,7 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
   );
 
   test(
-    "T3 Code: one complete instance per enabled provider instance in T3's settings, applied and removed like the others",
+    "T3 Code: one instance whatever profiles T3's settings hold, naming no profile or model, applied and removed like the others",
     async () => {
       // T3's folder and its settings in T3's own shape (A3 3.13.6), in the test's scratch home.
       const t3 = join(user, ".t3", "userdata");
@@ -299,8 +298,6 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
               enabled: true,
               config: { homePath: "~/.claude_second" },
             },
-            claude_off: { driver: "claudeAgent", enabled: false },
-            cursor: { driver: "cursor", enabled: true },
           },
           defaultModelSelection: { instanceId: "claude_second", model: "claude-sonnet-5" },
         }),
@@ -308,77 +305,31 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
       );
       const before = readFileSync(settings, "utf8");
       const shown = await preview();
-      // The CLIs' homes again, then T3's enabled Codex and Claude provider instances: its default
-      // Claude instance too, which the file does not list.
-      expect(shown.add.map((a) => [a.id, a.model_from])).toEqual([
-        ["claude", undefined],
-        ["codex", undefined],
-        ["t3-codex", "catalogue"],
-        ["t3-claude-second", "t3"],
-        ["t3-claude", "catalogue"],
-      ]);
-      expect(shown.add.find((a) => a.id === "t3-claude-second")?.entry).toEqual({
-        id: "t3-claude-second",
+      expect(shown.add.map((a) => a.id)).toEqual(["claude", "codex", "t3"]);
+      expect(shown.add.find((a) => a.id === "t3")?.entry).toEqual({
+        id: "t3",
         target: "t3",
-        label: "Claude Second · T3 Code",
-        account: "second",
-        t3_environment: "local",
-        t3_provider_instance: "claude_second",
-        t3_model: "claude-sonnet-5",
+        label: "T3 Code",
+        account: "default",
         remote_allowed: false,
       });
-      expect(shown.add.find((a) => a.id === "t3-codex")?.entry).toMatchObject({
-        label: "Codex Work · T3 Code",
-        account: "default",
-        t3_provider_instance: "codex",
-        t3_model: "gpt-6-astra",
-      });
-      const text = await run(["setup", "instances"], false);
-      expect(text.stdout).toContain("change t3_model in machine.toml");
 
-      // One of them, applied as the preview showed it. machine.toml holds the world's space.
+      // Applied as the preview showed it. machine.toml holds the world's space.
       const tomlBefore = readFileSync(machineToml(), "utf8");
-      const one = await run(
-        ["setup", "instances", "--instance", "t3-claude-second", "--json"],
-        false,
-      );
+      const one = await run(["setup", "instances", "--instance", "t3", "--json"], false);
       const planned = JSON.parse(one.stdout) as Preview;
-      expect(planned.add.map((a) => a.id)).toEqual(["t3-claude-second"]);
+      expect(planned.add.map((a) => a.id)).toEqual(["t3"]);
       const applied = await run((planned.apply ?? []).slice(1));
       expect(applied.code, applied.stdout + applied.stderr).toBe(0);
-      const written = readFileSync(machineToml(), "utf8");
-      expect(written).toContain('t3_provider_instance = "claude_second"');
-      expect(written).toContain('t3_model = "claude-sonnet-5"');
-      // Its provider instance is configured now, so it is not proposed again.
-      expect((await preview()).add.map((a) => a.id)).not.toContain("t3-claude-second");
+      expect(readFileSync(machineToml(), "utf8")).not.toContain("t3_");
+      // Configured now, so it is not proposed again.
+      expect((await preview()).add.map((a) => a.id)).not.toContain("t3");
 
-      const removed = await run([
-        "setup",
-        "instances",
-        "--remove",
-        "--instance",
-        "t3-claude-second",
-      ]);
+      const removed = await run(["setup", "instances", "--remove", "--instance", "t3"]);
       expect(removed.code, removed.stdout).toBe(0);
       expect(readFileSync(machineToml(), "utf8")).toBe(tomlBefore);
       // T3's settings were only read.
       expect(readFileSync(settings, "utf8")).toBe(before);
-
-      // Every instance turned off in T3: nothing to propose for it, and the preview says why.
-      writeFileSync(
-        settings,
-        JSON.stringify({
-          providerInstances: {
-            codex: { driver: "codex", enabled: false },
-            claudeAgent: { driver: "claudeAgent", config: { enabled: false } },
-          },
-        }),
-      );
-      const off = await run(["setup", "instances", "--instance", "t3", "--json"], false);
-      expect(JSON.parse(off.stdout)).toMatchObject({
-        add: [],
-        left: [{ id: "t3", reason: "needs_t3_provider" }],
-      });
     },
     SLOW,
   );
@@ -417,21 +368,5 @@ describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and th
     const t3 = instanceLabel("n".repeat(39), "T3 Code");
     expect(t3.endsWith(" · T3 Code")).toBe(true);
     expect(t3.length).toBeLessThanOrEqual(LABEL_MAX);
-  });
-
-  test("T3 Code's provider instances without a name are told apart by their key", () => {
-    const instance = (id: string) => ({
-      id,
-      driver: "codex" as const,
-      app: "codex" as const,
-      listed: true,
-      home: join("scratch", ".codex"),
-      isDefault: true,
-    });
-    const labels = t3Proposals(
-      { file: "read", instances: [instance("codex"), instance("codex_2")], off: [], skipped: [] },
-      process.platform,
-    ).map((p) => p.label);
-    expect(labels).toEqual(["Codex · T3 Code", "Codex (codex_2) · T3 Code"]);
   });
 });

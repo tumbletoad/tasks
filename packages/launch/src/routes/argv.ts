@@ -4,14 +4,15 @@
 //
 // What an agent's argv may carry: the instance's own executable and arguments, the mapped
 // permission flags, fixed flags, the session ID TTasks presets, the task's reference and sanitised
-// title (`-n`), the folder, and the rendered brief as one element after `--`, so it is
-// never read as an option. Every element is one argument of an array that the shim spawns without
+// title (`-n`), the folder, and the rendered brief as one element after `--` or as the value of
+// one `--name=` element, so it is never read as an option. Every element is one argument of an array that the shim spawns without
 // a shell (A4 3.6.3 step 6); nothing is ever joined into a command string here. The folder is not
 // known at the click (it is resolved right before the launch, A4 3.3), so its element stays
 // empty and its index travels with the plan: the claim's reply puts the resolved folder there.
 import { createHash } from "node:crypto";
 import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
 import {
+  BRIEF_OPTION,
   checkArgvTemplate,
   checkUrlTemplate,
   isBuiltInTarget,
@@ -115,7 +116,8 @@ export class RouteUnavailable extends Error {
 /**
  * A template's argv (A4 3.6.4): whole-element placeholders become zero or more elements, the
  * others are replaced within their element, `{cwd}` must be a whole element (it is filled at the
- * claim) and `{brief}` one whole element after `--`. IDs are checked against their patterns.
+ * claim) and `{brief}` one whole element after `--`, or the value of `--name={brief}`. IDs are
+ * checked against their patterns.
  */
 export function expandArgv(template: readonly string[], values: ArgvValues): ExpandedArgv {
   if (checkArgvTemplate(template).length > 0) throw new RouteUnavailable("bad_value");
@@ -149,8 +151,11 @@ export function expandArgv(template: readonly string[], values: ArgvValues): Exp
       continue;
     }
     if (names.includes("brief")) {
-      if (!single || values.brief === undefined) throw new RouteUnavailable("bad_value");
-      argv.push(values.brief);
+      if (values.brief === undefined) throw new RouteUnavailable("bad_value");
+      if (single) argv.push(values.brief);
+      else if (BRIEF_OPTION.test(element))
+        argv.push(element.replace("{brief}", () => values.brief ?? ""));
+      else throw new RouteUnavailable("bad_value");
       continue;
     }
     argv.push(
@@ -209,14 +214,14 @@ export function routeOf(
 }
 
 /**
- * A CLI instance's terminal command line (A4 3.4.2, 3.4.3): Claude Code's or Codex's route of the
- * catalogue with this prompt mode (`sent`, or Codex's assisted `clipboard`), the instance's
- * executable, open permission and extra arguments.
+ * A CLI instance's terminal command line (A4 3.4.2, 3.4.3): Claude Code's or Codex's terminal route
+ * of the catalogue with this prompt (its first when none is named), the instance's executable,
+ * open permission and extra arguments.
  */
 export function cliArgv(
   instance: Instance,
-  prompt: "sent" | "clipboard",
   values: Omit<ArgvValues, "exec" | "permission" | "extraArgs">,
+  prompt?: RouteDef["prompt"],
 ): ExpandedArgv {
   if (!isBuiltInTarget(instance.target)) throw new RouteUnavailable("no_route");
   const route = routeOf(instance.target, "terminal", prompt);

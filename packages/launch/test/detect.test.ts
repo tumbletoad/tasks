@@ -191,7 +191,6 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
         openPermission: "inherit",
         runPermission: "full-access",
         extraArgs: [],
-        prompt: "sent",
         viaLoginShell: false,
         remoteAllowed: false,
         enabled: true,
@@ -327,7 +326,15 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
     ]);
     const t3 = detection.proposals.find((p) => p.id === "t3");
     if (t3 === undefined) throw new Error("no t3 proposal");
-    expect(instanceEntry(t3)).toEqual({ ok: false, needs: ["t3_provider_instance"] });
+    // One T3 Code instance, which names no profile or model: the person picks those in T3.
+    const t3Entry = instanceEntry(t3);
+    expect(t3Entry.ok && [...t3Entry.entry]).toEqual([
+      ["id", "t3"],
+      ["target", "t3"],
+      ["label", "T3 Code"],
+      ["account", "default"],
+      ["remote_allowed", false],
+    ]);
   });
 });
 

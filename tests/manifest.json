@@ -2082,7 +2082,7 @@
     },
     {
       "id": "A4.5.routes.golden-argv",
-      "title": "Golden argv per target, route and OS compared as arrays: Claude Code's terminal route with --session-id, -n, the permission and the brief after --; Codex's with -C filled at the claim, --no-daemon, its env_vars override and the brief after --; the assisted open of Codex and Claude Code without a prompt; the claude-cli:// link's values decoded back exactly; hostile values stay one element; refused routes",
+      "title": "Golden argv per target, route and OS compared as arrays: Claude Code's terminal route with --session-id, -n, the permission and the brief unsent in --prefill=; Codex's with -C filled at the claim, --no-daemon, its env_vars override and the brief after --; the claude-cli:// link's values decoded back exactly; hostile values stay one element; refused routes",
       "source": "A4 3.4.2, A4 3.4.3, A4 3.6.4, A4 5.1, A7 3.9 M2.10",
       "owner": "M2",
       "kind": "ci",
@@ -2138,7 +2138,7 @@
     },
     {
       "id": "A4.5.routes.service",
-      "title": "Open and Copy through the service with a real shim and a fake Claude Code and Codex: the golden argv reaches the fake agent as arrays and byte for byte through the OS's real process creation, hostile titles, folders and composer text included, in the resolved folder; Codex's env_vars override and reference match; the assisted open's brief to copy; the claude-cli:// link's one URL element, and clicks straight after given the same launch whose words go only while it holds none; an opener that does not answer is Unknown; Copy's pointer brief, a repeat that replays, words past Copy's budget saved once as a note while Open holds them instead; refusals that record nothing",
+      "title": "Open and Copy through the service with a real shim and a fake Claude Code and Codex: the golden argv reaches the fake agent as arrays and byte for byte through the OS's real process creation, hostile titles, folders and composer text included, in the resolved folder; Codex's env_vars override and reference match; the claude-cli:// link's one URL element, and clicks straight after given the same launch whose words go only while it holds none; an opener that does not answer is Unknown; Copy's pointer brief, a repeat that replays, words past Copy's budget saved once as a note while Open holds them instead; refusals that record nothing",
       "source": "A4 3.4.2, A4 3.4.3, A4 3.4.6, A4 3.6.5, A4 3.15, A7 3.9 M2.10",
       "owner": "M2",
       "kind": "ci",
@@ -3032,7 +3032,7 @@
     },
     {
       "id": "A4.5.routes.request",
-      "title": "What a person types before Open, up to 20,000 characters with line breaks, quotes, other scripts and an emoji, is a note of theirs on the task at the click that the launch names, and reaches the agent through TTasks on every route that takes it: Claude Code's and Codex's terminal routes (the fake agent reads it with show --launch as its brief says, the same again, its first 8,000 characters with the rest in the note), Codex's assisted open, the claude-cli:// link, Claude Desktop and the Codex app (an agent's get_task, twice the same, its tool text whole); it is in no process's command line (Linux /proc, Windows' process table), no URL opened, no log line and no file outside the space; Copy puts the words on the clipboard and saves nothing",
+      "title": "What a person types before Open, up to 20,000 characters with line breaks, quotes, other scripts and an emoji, is a note of theirs on the task at the click that the launch names, and reaches the agent through TTasks on every route that takes it: Claude Code's and Codex's terminal routes (the fake agent reads it with show --launch as its brief says, the same again, its first 8,000 characters with the rest in the note), the claude-cli:// link, Claude Desktop and the Codex app (an agent's get_task, twice the same, its tool text whole); it is in no process's command line (Linux /proc, Windows' process table), no URL opened, no log line and no file outside the space; Copy puts the words on the clipboard and saves nothing",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

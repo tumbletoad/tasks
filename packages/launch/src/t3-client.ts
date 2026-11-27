@@ -72,7 +72,9 @@ export class T3Error extends Error {
 
 /**
  * T3's code of a tool's refusal, when it is one of its fixed words: T3 answers a declared failure
- * with its JSON (`{"_tag":"OrchestratorMcpFailure","code":…}`) as the first text content.
+ * with its JSON (`{"_tag":"OrchestratorMcpFailure","code":…}`) as the first text content. A thread
+ * asked for without a model in a project with no default model is `no_default_model`: T3 says so
+ * only in its message, under the `invalid_request` it gives other refusals too.
  */
 function refusalCode(result: Record<string, unknown>): string | undefined {
   const content = result["content"];
@@ -85,6 +87,14 @@ function refusalCode(result: Record<string, unknown>): string | undefined {
     return undefined;
   }
   const code = isObject(failure) ? failure["code"] : undefined;
+  const message = isObject(failure) ? failure["message"] : undefined;
+  if (
+    code === "invalid_request" &&
+    typeof message === "string" &&
+    message.startsWith("Pass modelSelection: the project has no default model.")
+  ) {
+    return "no_default_model";
+  }
   return typeof code === "string" && /^[a-z_]{1,64}$/u.test(code) ? code : undefined;
 }
 

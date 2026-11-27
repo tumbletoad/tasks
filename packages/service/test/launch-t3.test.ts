@@ -51,14 +51,7 @@ async function rig(): Promise<Rig> {
     chmodSync(join(bin.root, "gio"), 0o755);
   }
   const lab = await ShimLab.create("t3-open", {
-    toml: () =>
-      instanceToml({ id: "t3", target: "t3", label: "T3 Code · test" }) +
-      instanceToml({
-        id: "t3-no-model",
-        target: "t3",
-        label: "T3 Code · no model",
-        t3_provider_instance: "codex",
-      }),
+    toml: () => instanceToml({ id: "t3", target: "t3", label: "T3 Code · test" }),
     launch: {
       terminals: { spawn: spawner, systemdRun: SYSTEMD_RUN, openerMs: 200 },
     },
@@ -154,10 +147,6 @@ describe("[A4.3.4.1.t3.open] Open in T3 Code through the service, against a fake
       expect(await refusal(r, task.ref)).toMatchObject({ data: { t3: "not_running" } });
       await r.fake.restart();
       await pair(r);
-      // A provider instance without its model: refused before T3 is asked anything.
-      expect(await refusal(r, task.ref, "t3-no-model")).toMatchObject({
-        data: { t3: "model_required" },
-      });
       expect(r.fake.projects.size).toBe(0);
       expect(r.fake.threads.size).toBe(0);
 
@@ -172,6 +161,8 @@ describe("[A4.3.4.1.t3.open] Open in T3 Code through the service, against a fake
       expect(thread).toMatchObject({
         projectId: lumen,
         message: false,
+        // T3's own default model and profile, which the person changes in T3.
+        modelSelection: null,
         title: `${task.ref} Fixture T3 task`,
       });
       const url = new URL(opener.urls.at(-1) ?? "");

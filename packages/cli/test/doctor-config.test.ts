@@ -75,6 +75,21 @@ describe("[A2.3.2.2.permissions.rule] ttasks doctor's config row", () => {
     expect(configCheck(io).detail).toContain("[roots] lines do nothing now");
   });
 
+  test("an instance's T3 profile keys and prompt mode are named as lines that do nothing, not as a dropped entry", () => {
+    const { io, file } = home();
+    const text =
+      '[[instance]]\nid = "t3-codex"\ntarget = "t3"\nlabel = "T3 Code"\n' +
+      't3_provider_instance = "codex"\nt3_model = "fixture-model"\nprompt = "prefill"\n';
+    writeFileSync(file, text, { mode: 0o600 });
+    const check = configCheck(io);
+    expect(check.status).toBe("warn");
+    expect(check.detail).toContain("instance[1].t3_provider_instance");
+    expect(check.detail).toContain("do nothing now");
+    expect(check.detail).not.toContain("drop only their entry");
+    expect(check.detail).not.toContain("[roots]");
+    expect(readFileSync(file, "utf8")).toBe(text);
+  });
+
   test.skipIf(process.platform === "win32")(
     "a machine.toml or folder another user could change fails with the command that fixes it",
     () => {

@@ -92,13 +92,12 @@ describe("[A4.3.2.setup.instances-service] the service writes and takes back [[i
     await expect(
       add({ entries: [codex({ env: { CODEX_HOME: "codex-b" } })] }, "cli-interactive"),
     ).rejects.toMatchObject({ code: "invalid_input" });
-    // Keys this command never writes, a T3 entry without its provider instance and model, T3's
-    // keys on another target, the hand-made entry's ID.
+    // Keys this command never writes (T3's provider instance and model among them: T3 Code opens
+    // on the profile chosen in T3), the hand-made entry's ID.
     for (const entry of [
       codex({ open_permission: "full" }),
-      codex({ target: "t3" }),
       codex({ target: "t3", t3_environment: "local", t3_provider_instance: "codex" }),
-      codex({ t3_environment: "local", t3_provider_instance: "codex", t3_model: "m" }),
+      codex({ t3_model: "m" }),
       codex({ id: "manual" }),
     ]) {
       await expect(add({ entries: [entry] }, "cli-interactive")).rejects.toMatchObject({
@@ -129,28 +128,18 @@ describe("[A4.3.2.setup.instances-service] the service writes and takes back [[i
     expect(h.live).toEqual([]);
     expect(h.events).toEqual(["config.instances_changed", "config.instances_changed"]);
 
-    // A T3 instance as setup instances proposes it (A4 3.2): its provider instance and model.
+    // The T3 instance as setup instances proposes it (A4 3.2): no profile or model of its own.
     const t3 = {
-      id: "t3-claude-second",
+      id: "t3",
       target: "t3",
-      label: "Claude Second",
-      account: "second",
-      t3_environment: "local",
-      t3_provider_instance: "claude_second",
-      t3_model: "claude-sonnet-5",
+      label: "T3 Code",
+      account: "default",
       remote_allowed: false,
     };
-    expect(await add({ entries: [t3] }, "cli-interactive")).toEqual({
-      added: ["t3-claude-second"],
-    });
-    expect(h.live.map((i) => [i.id, i.t3])).toEqual([
-      [
-        "t3-claude-second",
-        { environment: "local", providerInstance: "claude_second", model: "claude-sonnet-5" },
-      ],
-    ]);
+    expect(await add({ entries: [t3] }, "cli-interactive")).toEqual({ added: ["t3"] });
+    expect(h.live.map((i) => [i.id, i.target])).toEqual([["t3", "t3"]]);
     expect(await remove({}, "cli-interactive")).toEqual({
-      outcomes: [{ id: "t3-claude-second", result: "removed" }],
+      outcomes: [{ id: "t3", result: "removed" }],
     });
     expect(readFileSync(toml, "utf8")).toBe("# mine\n[http]\nport = 7713\n");
   });

@@ -882,8 +882,8 @@ export function TaskList({
           changed.current?.(task);
         }
       },
-      // Open (A4's `launch.open`). An app that takes the brief by paste (Codex's assisted open)
-      // gets it on the clipboard too.
+      // Open (A4's `launch.open`). A link whose app may drop the brief (Claude Desktop, the Codex
+      // app) puts it on the clipboard too.
       // A folder whose marker says it may be another one opens only when the person says so: the
       // toast asks, and its action opens it there and marks it. The composer's words stay in its
       // field until then. Once the service saved them on the task the field clears, as for Note.
@@ -927,6 +927,9 @@ export function TaskList({
               // What this way of opening could not carry is said before the person sends anything.
               // A second click while the first was opening got that launch: its words are a note.
               const said = [
+                ...(opened.briefSent === true
+                  ? [t("row.briefSent", { label: instance.label })]
+                  : []),
                 ...(opened.leftOut.length > 0
                   ? [
                       t("row.openedWithout", {
@@ -943,7 +946,9 @@ export function TaskList({
               // T3 Code refused before making a thread: why, and what to do.
               if (
                 receipt.state === "failed" &&
-                (receipt.reason === "model_unavailable" || receipt.reason === "pairing_denied")
+                (receipt.reason === "model_unavailable" ||
+                  receipt.reason === "no_default_model" ||
+                  receipt.reason === "pairing_denied")
               ) {
                 say(
                   t("row.openT3", { why: receipt.reason, label: instance.label }),

@@ -30,10 +30,7 @@ let opened: string[];
 let now: number;
 let roots: RootFolder[];
 
-const INSTANCE = {
-  openPermission: "full-access",
-  t3: { environment: "local", providerInstance: "codex", model: "fixture-model" },
-} as const;
+const INSTANCE = { openPermission: "full-access" } as const;
 const BRIEF = "M-14 Fixture task. Read the task with TTasks's tools (launch L7KQ2M).";
 
 function newRoute(): T3Route {
@@ -161,7 +158,8 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
         clientRequestId: intent.id,
         message: false,
         runtimeMode: "full-access",
-        modelSelection: { instanceId: "codex", model: "fixture-model" },
+        // No model selection: T3's own default, which the person changes in T3.
+        modelSelection: null,
         title: "M-14 Fixture task",
       });
       const confirmed = await m.report(intent.id, await route.confirm(dispatched as LaunchIntent));
@@ -182,7 +180,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   );
 
   test(
-    "T3's refusal of the model, a narrower mode or a read-only pairing is Failed with its reason at once: no repeat, no thread",
+    "T3's refusal of its default model, no default model at all, a narrower mode or a read-only pairing is Failed with its reason at once: no repeat, no thread",
     async () => {
       fake.addProject(folder("lumen"));
       fake.models = ["another-model"];
@@ -190,6 +188,12 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
       expect(model.dispatched?.state).toBe("failed");
       expect(model.dispatched?.reason).toBe("model_unavailable");
       fake.models = undefined;
+      // The project has no default model, and the launch names none: T3 refuses with its message.
+      fake.defaultModel = null;
+      const none = await launch(machine(), "lumen");
+      expect(none.dispatched?.state).toBe("failed");
+      expect(none.dispatched?.reason).toBe("no_default_model");
+      fake.defaultModel = "default";
       // The person approved less than full access: an instance with full access asks for more.
       fake.access = "auto-accept-edits";
       await pair();
@@ -203,7 +207,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
       expect(read.dispatched?.state).toBe("failed");
       expect(read.dispatched?.reason).toBe("pairing_denied");
       expect(fake.threads.size).toBe(0);
-      for (const { intent } of [model, mode, read]) {
+      for (const { intent } of [model, none, mode, read]) {
         const calls = fake.callsOf("t3_thread_launch");
         expect(calls.filter((c) => c.clientRequestId === intent.id)).toHaveLength(1);
       }

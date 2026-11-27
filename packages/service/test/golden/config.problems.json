@@ -46,7 +46,23 @@
         "openPermission": "inherit",
         "runPermission": "inherit",
         "extraArgs": [],
-        "prompt": "sent",
+        "viaLoginShell": false,
+        "remoteAllowed": false,
+        "enabled": true
+      },
+      {
+        "id": "t3-key",
+        "target": "codex-cli",
+        "label": "x",
+        "account": "",
+        "spaces": [],
+        "exec": null,
+        "argsPrefix": [],
+        "configHome": null,
+        "env": {},
+        "openPermission": "inherit",
+        "runPermission": "inherit",
+        "extraArgs": [],
         "viaLoginShell": false,
         "remoteAllowed": false,
         "enabled": true
@@ -64,7 +80,6 @@
         "openPermission": "inherit",
         "runPermission": "inherit",
         "extraArgs": [],
-        "prompt": "sent",
         "viaLoginShell": false,
         "remoteAllowed": false,
         "enabled": true
@@ -158,8 +173,8 @@
     },
     {
       "key": "instance[5].t3_provider_instance",
-      "code": "not_for_target",
-      "severity": "error"
+      "code": "retired",
+      "severity": "warning"
     },
     {
       "key": "instance[7].target",

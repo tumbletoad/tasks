@@ -8,8 +8,6 @@ export interface Offer {
   readonly id: string;
   readonly label: string;
   readonly entry: ReadonlyMap<string, InstanceValue>;
-  /** A T3 instance: where its model came from (Proposal `t3.modelFrom`). */
-  readonly modelFrom?: "t3" | "catalogue";
 }
 
 /** The block machine.toml gets for an entry, as its editor writes it. */

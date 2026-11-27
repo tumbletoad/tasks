@@ -50,7 +50,6 @@
         "openPermission": "full-access",
         "runPermission": "full-access",
         "extraArgs": [],
-        "prompt": "sent",
         "viaLoginShell": false,
         "remoteAllowed": false,
         "enabled": true
@@ -70,7 +69,6 @@
         "extraArgs": [
           "--verbose"
         ],
-        "prompt": "sent",
         "viaLoginShell": false,
         "remoteAllowed": false,
         "enabled": true
