@@ -149,13 +149,14 @@ test.describe("[A5.entry.correct.e2e.screens] The pens and the box, in both them
     const tag = test.info().project.name;
     const space = world.mira.id;
     const ref = await written(world, `screens ${tag}`);
-    const status = (await world.op(space, "space.status", {})) as { as_of: string };
-    await world.op(space, "entry.edit", {
-      task: ref,
-      entry: "l1",
-      text: "Checked the site: it still lists the summer hours.",
-      base: status.as_of,
-    });
+    // The agent's log entry and the person's own note, corrected.
+    for (const [entry, text] of [
+      ["l1", "Checked the site: it still lists the summer hours."],
+      ["n2", "Ask whether Saturdays and holidays change too."],
+    ]) {
+      const status = (await world.op(space, "space.status", {})) as { as_of: string };
+      await world.op(space, "entry.edit", { task: ref, entry, text, base: status.as_of });
+    }
     for (const theme of themes()) {
       const context = await browser.newContext({
         bypassCSP: true,

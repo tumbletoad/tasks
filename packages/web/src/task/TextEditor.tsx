@@ -4,7 +4,7 @@
 // title's editor does. What is typed is kept in this browser (unsent.ts) until the service holds
 // it: after a reload the box opens again with it. The save is made from where the page was when
 // the box opened, so a change someone made meanwhile is a refusal, never overwritten; the box then
-// keeps the person's words, and a second Enter saves them over what is there now.
+// keeps the person's words and says why, and only a second Enter saves them over what is there now.
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
@@ -162,12 +162,12 @@ export function TextEditor({
     const kept = readTextDraft(space, task, part);
     if (kept !== undefined) letGo(space, { kind: "text", task, part, text: kept.typed });
   };
-  const finish = (saving: boolean) => {
+  const finish = (send: boolean) => {
     if (sending.current) return;
     const typed = field.current?.value ?? "";
     const words = line ? typed.trim() : wordsOf(typed);
     // Nothing to save: an emptied text is taken back with its own control, not by clearing it.
-    if (!saving || words === "" || words === wordsOf(text)) {
+    if (!send || words === "" || words === wordsOf(text)) {
       release();
       onDone(undefined);
       return;
@@ -221,7 +221,8 @@ export function TextEditor({
     },
     onBlur: () => {
       // The window lost focus or the page goes away: the box keeps what was typed for its return.
-      if (!document.hasFocus() || pageLeaving()) return;
+      // After a refusal only Enter saves over what is there now, never a click elsewhere.
+      if (!document.hasFocus() || pageLeaving() || refused !== undefined) return;
       finish(true);
     },
   };
