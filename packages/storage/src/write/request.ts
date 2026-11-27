@@ -795,6 +795,7 @@ export const LAUNCH_FAIL_REASONS = [
   "agent_exited",
   "folder_mismatch",
   "model_unavailable",
+  "no_default_model",
   "pairing_denied",
   "interrupted",
   "restored",

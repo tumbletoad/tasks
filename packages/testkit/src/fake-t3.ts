@@ -165,6 +165,11 @@ export class FakeT3 {
    * `default` is not offered, is `model_unavailable`.
    */
   models: readonly string[] | undefined = undefined;
+  /**
+   * The model a thread made without one takes: the project's effective default. Null: the project
+   * has none, and T3 refuses such a launch as it does (`invalid_request`, its own message).
+   */
+  defaultModel: string | null = "default";
   /** Answer MCP requests as an SSE stream instead of a JSON body. */
   sse = false;
   /** With `sse`: keep each stream open after its reply, as the specification allows. */
@@ -752,7 +757,13 @@ export class FakeT3 {
     }
     // Without a selection the thread takes T3's default, which T3 checks the same way.
     const selection = args["modelSelection"] as { model?: unknown } | undefined;
-    const model = typeof selection?.model === "string" ? selection.model : "default";
+    const model = typeof selection?.model === "string" ? selection.model : this.defaultModel;
+    if (model === null) {
+      throw new Refusal(
+        "invalid_request",
+        "Pass modelSelection: the project has no default model. orchestrator_capabilities lists providers and models.",
+      );
+    }
     if (this.models !== undefined && !this.models.includes(model)) {
       throw new Refusal("model_unavailable", `Model ${model} is not advertised.`);
     }

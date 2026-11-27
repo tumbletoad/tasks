@@ -95,6 +95,7 @@ export const T3_RUNTIME_MODES: Readonly<Record<Permission, string | undefined>> 
 /** T3's refusals of a launch that it makes before any thread, by its code. */
 const PRE_LAUNCH: Readonly<Record<string, FailReason>> = {
   model_unavailable: "model_unavailable",
+  no_default_model: "no_default_model",
   runtime_mode_escalation_denied: "pairing_denied",
   capability_denied: "pairing_denied",
 };
