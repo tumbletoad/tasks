@@ -58,6 +58,8 @@ export function useUnarchive(): (
             ? { id: "archived.back", values: { name } }
             : { id: "archived.backInArea", values: { name, area: stays } };
         },
+        // The page cannot archive: Undo is the one way back from here.
+        { undo: true },
       )
       .then(
         () => true,

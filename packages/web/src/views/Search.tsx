@@ -8,6 +8,7 @@ import { askField, isWanted, onWantResults, wantResults } from "../app/field.ts"
 import { classes } from "../app/css.ts";
 import { useTitle } from "../app/frame.ts";
 import { Session } from "../context.ts";
+import { useEditState } from "../edit/useEdits.ts";
 import { useT } from "../i18n/intl.tsx";
 import { pageDay, useClock } from "../row/useClock.ts";
 import { useLive, usePagedQuery } from "../store/hooks.ts";
@@ -144,10 +145,15 @@ function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
   const shown = useRef(new Set<string>());
   shown.current = new Set([...open.state.rows, ...done.state.rows].map((row) => row.id));
   const filter = useCallback((row: TaskRow) => shown.current.has(row.id), []);
+  // A task this tab checked off or moved to the Trash shows as that leaves it, not as found.
+  const { finishing } = useEditState();
+  const rows = useMemo(
+    () => (finishing.size === 0 ? state.tasks : new Map([...state.tasks, ...finishing])),
+    [state.tasks, finishing],
+  );
   const groups = useCallback<GroupsOf>(
-    (_tasks, held) =>
-      searchGroups(open.state.rows, done.state.rows, state.tasks, held, sortsByEffort(q)),
-    [open.state.rows, done.state.rows, state.tasks, q],
+    (_tasks, held) => searchGroups(open.state.rows, done.state.rows, rows, held, sortsByEffort(q)),
+    [open.state.rows, done.state.rows, rows, q],
   );
 
   // A task read again is shown as the read found it, where the search found it, also once its card

@@ -28,7 +28,7 @@ export function noteWrites(client: Client, edits: Pick<Edits, "write">): NoteWri
     edits.write(
       (request, sent) => client.note.remove({ ...input, base: sent ?? base, request_id: request }),
       (result: RemoveResult | WriteReceipt) => (result.result === "no_change" ? undefined : msg),
-      { base },
+      { base, undo: true },
     );
   return {
     remove: (task, note, base) =>

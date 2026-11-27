@@ -1,7 +1,7 @@
 // The page's folder and project writes: a new project with its folder, and setting or clearing a
 // project's or a task's folder here. Each goes through folder.manage (or group.manage for a project
-// without a folder) as the person, in turn with the page's other edits, and each is undone by its
-// toast's Undo or by Ctrl+Z.
+// without a folder) as the person, in turn with the page's other edits. A new project is on Undo, as
+// the page cannot remove one; a folder is set or cleared again by hand.
 import { useContext, useMemo } from "react";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { Session } from "../context.ts";
@@ -129,7 +129,7 @@ export function folderWrites(
             request_id: request,
           }),
         (result) => said(input, result, told, list),
-        { base },
+        { base, undo: input.action === "add_project" },
       )
       .then((result): Written => ({
         result: result.result,
@@ -175,6 +175,7 @@ export function folderWrites(
                   },
                 }
               : undefined,
+          { undo: true },
         )
         .then((result): Written => ({
           result: result.result ?? "",

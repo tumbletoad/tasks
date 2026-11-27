@@ -185,7 +185,7 @@ export function TaskList({
   const state = useLive();
   const edits = useEdits();
   // Rows checked off, or completed by others, stay where they are for the hold (A5 3.12).
-  const { leaving: holding } = useEditState();
+  const { leaving: holding, finishing } = useEditState();
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
   const [current, setCurrent] = useState<string | undefined>(undefined);
   // The expanded one stays as the card shows it (below), with its newest data.
@@ -281,11 +281,13 @@ export function TaskList({
    */
   const [unresolved, setUnresolved] = useState<{ id: string; failed: boolean } | undefined>();
 
-  // The expanded task's newest row: live, else the injected one, else the last one seen.
+  // The expanded task's newest row: as this tab's check-off or move to the Trash leaves it while
+  // that is on its way, else live, else the injected one, else the last one seen.
   const expandedRow =
     expanded === undefined
       ? undefined
-      : (state.tasks.get(expanded) ??
+      : (finishing.get(expanded) ??
+        state.tasks.get(expanded) ??
         (injected?.id === expanded ? injected : undefined) ??
         holding.get(expanded)?.row ??
         (held.current?.id === expanded ? held.current : undefined));
@@ -612,7 +614,7 @@ export function TaskList({
             : change.actor.kind === "human"
               ? "user"
               : change.actor.label;
-          edits.hold(before, by, Date.now());
+          edits.hold(before, by, Date.now(), change.request_id);
         }
       }),
     [live, edits],

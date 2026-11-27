@@ -3,7 +3,7 @@
 //
 // Verify line: by keyboard alone, edit due, priority and effort, check off, undo, redo; an
 // agent-only field starts a composer request. Also: an undo refused because an agent changed the
-// field since the person's edit, "Apply mine" when it changed while the person's editor was open,
+// title since the person's edit, "Apply mine" when it changed while the person's editor was open,
 // axe in both themes with the date popover and a toast open, and the screenshots at 1,440 and 390 px.
 // Dates are relative to the day the test runs, as the service's are.
 import { expect, type Locator, type Page } from "@playwright/test";
@@ -55,6 +55,7 @@ async function agentSets(world: World, ref: string, set: Record<string, unknown>
 const rowOf = (page: Page, ref: string) => page.locator(`main li[data-task="${ref}"]`);
 const toast = (page: Page) => page.locator('[data-part="toast-text"]');
 const toastAction = (page: Page) => page.locator('[data-part="toast-action"]');
+const toastButton = (page: Page, name: string) => toastAction(page).filter({ hasText: name });
 
 /** Presses Tab until focus is in `target`, at most `max` times. */
 async function tabInto(page: Page, target: Locator, max = 30): Promise<void> {
@@ -76,16 +77,19 @@ async function openArea(page: Page, world: World, name: string): Promise<void> {
 }
 
 test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off, undo and redo, by keyboard alone", () => {
-  test("the facts change at once and hold, the check-off holds then leaves, Ctrl+Z, F6 and Ctrl+Shift+Z", async ({
+  test("the facts change at once with no toast, the check-off leaves at once, F6, Undo and Redo side by side, Ctrl+Z and Ctrl+Shift+Z, and a priority after a check-off leaves Ctrl+Z nothing to undo", async ({
     page,
     world,
   }) => {
     const tag = test.info().project.name;
-    const [ref, next] = await addTasks(world, [
+    const [ref, next, third] = await addTasks(world, [
       { title: `Order the bookshelf (${tag})`, area: "home" },
       { title: `Return the drill (${tag})`, area: "home" },
+      { title: `Fix the gate latch (${tag})`, area: "home" },
     ]);
-    if (ref === undefined || next === undefined) throw new Error("the tasks were not added");
+    if (ref === undefined || next === undefined || third === undefined) {
+      throw new Error("the tasks were not added");
+    }
     await watchViolations(page);
     await openArea(page, world, "Home");
     const row = rowOf(page, ref);
@@ -111,7 +115,8 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
       "aria-checked",
       "true",
     );
-    await expect(toast(page)).toHaveText("Priority set to P2");
+    // A priority is chosen again by hand: it saves without a toast or an Undo.
+    await expect(toast(page)).toHaveCount(0);
 
     // Effort: L, the fourth of the default levels.
     await tabInto(page, effort);
@@ -165,51 +170,76 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
     await page.keyboard.press("Escape");
     await expect(title).toHaveAttribute("aria-expanded", "false");
 
-    // Check off by keyboard: the box fills, the title strikes through, the row stays for the hold,
-    // focus moves on to the next row, and the toast offers Undo.
+    // Check off by keyboard: the box fills, focus moves on to the next row, the row leaves at once,
+    // and the toast offers Undo.
     await title.focus();
     await page.keyboard.press("Shift+Tab");
     const check = row.locator('[data-part="check"]');
     await expect(check).toBeFocused();
     await page.keyboard.press("Space");
-    await expect(check).toBeChecked();
-    await expect(row).toHaveAttribute("data-done", "true");
     await expect(toast(page)).toHaveText("Done");
     await expect(toastAction(page)).toHaveText("Undo");
-    await expect(row.locator('[data-part="title"]')).not.toBeFocused();
     await expect(page.locator("[data-list] [data-part='title']:focus")).toHaveCount(1);
+    await expect(row).toHaveCount(0);
     await expect.poll(async () => (await read(world, ref)).task.lifecycle).toBe("completed");
-    await expect(row).toBeVisible();
+    await bothWidths(page, "done-toast");
 
-    // F6 reaches the toast's Undo at once: the row is open again where it was, and leaves no trace.
+    // F6 reaches the toast's Undo at once: the row is open again where it was, and the toast
+    // offers Undo and Redo side by side, Undo with nothing older to take back.
     await page.keyboard.press("F6");
     await expect(toastAction(page)).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(toast(page)).toHaveText("Undone");
-    await expect(toastAction(page)).toHaveText("Redo");
-    await expect(check).not.toBeChecked();
+    await expect(toastAction(page)).toHaveText(["Undo", "Redo"]);
+    await expect(toastButton(page, "Undo")).toBeDisabled();
+    await expect(toastButton(page, "Redo")).toBeEnabled();
+    await expect(check).not.toBeChecked({ timeout: SLOW_MS });
     await expect.poll(async () => (await read(world, ref)).task.lifecycle).toBe("active");
     await expect(row).not.toHaveAttribute("data-done", "true");
     // Focus went back to where F6 took it from.
     await expect(page.locator("[data-list] [data-part='title']:focus")).toHaveCount(1);
+    await bothWidths(page, "undone-with-redo");
 
-    // Ctrl+Shift+Z redoes it; after the hold the row leaves the view.
-    await page.keyboard.press("Control+Shift+z");
+    // The toast's Redo checks it off again: the row leaves, and the toast offers Undo.
+    await toastButton(page, "Redo").click();
     await expect(toast(page)).toHaveText("Redone");
+    await expect(toastButton(page, "Undo")).toBeEnabled();
     await expect.poll(async () => (await read(world, ref)).task.lifecycle).toBe("completed");
     await expect(rowOf(page, ref)).toHaveCount(0, { timeout: SLOW_MS });
 
-    // Ctrl+Z undoes it again: the row comes back.
+    // Ctrl+Z undoes it again, and Ctrl+Shift+Z redoes it.
+    await page.locator("main").focus();
     await page.keyboard.press("Control+z");
     await expect(rowOf(page, ref)).toBeVisible({ timeout: SLOW_MS });
     await expect.poll(async () => (await read(world, ref)).task.lifecycle).toBe("active");
-    // Checking off the next row and clicking its box again during the hold undoes it too.
+    await page.keyboard.press("Control+Shift+z");
+    await expect(toast(page)).toHaveText("Redone");
+    await expect.poll(async () => (await read(world, ref)).task.lifecycle).toBe("completed");
+
+    // A priority chosen after a check-off takes the check-off's Undo away: Ctrl+Z then takes back
+    // neither, and the person is told there is nothing to undo.
     const other = rowOf(page, next);
     await other.locator('[data-part="check"]').click();
-    await expect(other).toHaveAttribute("data-done", "true");
-    await other.locator('[data-part="check"]').click();
-    await expect(other.locator('[data-part="check"]')).not.toBeChecked();
-    await expect.poll(async () => (await read(world, next)).task.lifecycle).toBe("active");
+    await expect(toast(page)).toHaveText("Done");
+    await expect.poll(async () => (await read(world, next)).task.lifecycle).toBe("completed");
+    // The rows below move up once the checked-off one has left: the next click waits for that.
+    await expect(other).toHaveCount(0);
+    const thirdTitle = rowOf(page, third).locator('[data-part="title"]');
+    await thirdTitle.focus();
+    await page.keyboard.press("Enter");
+    await expect(thirdTitle).toHaveAttribute("aria-expanded", "true");
+    const p1 = rowOf(page, third)
+      .getByRole("radiogroup", { name: "Priority" })
+      .getByRole("radio", { name: "P1" });
+    await p1.click();
+    await expect(p1).toHaveAttribute("aria-checked", "true");
+    await expect(toast(page)).toHaveCount(0);
+    await expect.poll(async () => (await read(world, third)).task.priority).toBe(1);
+    await page.locator("main").focus();
+    await page.keyboard.press("Control+z");
+    await expect(toast(page)).toHaveText("Nothing to undo");
+    expect((await read(world, next)).task.lifecycle).toBe("completed");
+    expect((await read(world, third)).task.priority).toBe(1);
     expect(await violations(page)).toEqual([]);
   });
 });
@@ -243,19 +273,21 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Undo and Apply mine: an agent change
     const body = row.locator('[data-part="expanded"]');
     const due = body.locator('[data-part="due"]');
 
-    // The person sets tomorrow; then an agent sets another day.
-    await onOneDay(async (today) => {
-      await due.click();
-      await page.getByRole("button", { name: "Tomorrow" }).click();
-      await expect
-        .poll(async () => (await read(world, ref)).task.due)
-        .toBe(day(1, today.start).iso);
-    });
-    const agents = day(10).iso;
-    await agentSets(world, ref, { due: agents });
-    await expect.poll(async () => (await read(world, ref)).task.due).toBe(agents);
+    // The person renames the task; then an agent renames it again.
+    const titleOf = async () =>
+      ((await read(world, ref)).task as unknown as { title: string }).title;
+    const mine = `Renew the parking permit online (${tag})`;
+    const title = row.locator('[data-part="title"]');
+    await title.focus();
+    await page.keyboard.press("F2");
+    await row.locator('[data-part="title-edit"]').fill(mine);
+    await page.keyboard.press("Enter");
+    await expect.poll(titleOf).toBe(mine);
+    const agents = `Renew the parking permit at the desk (${tag})`;
+    await agentSets(world, ref, { title: agents });
+    await expect.poll(titleOf).toBe(agents);
 
-    // Undo: the field is the agent's now, so nothing is overwritten. The toast says who changed
+    // Undo: the title is the agent's now, so nothing is overwritten. The toast says who changed
     // which task, with nothing to choose: the person sets the value on the task if they want.
     await page.locator("main").focus();
     await page.keyboard.press("Control+z");
@@ -263,7 +295,7 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Undo and Apply mine: an agent change
     await expect(toast(page)).toHaveText(new RegExp(`.+ changed ${ref} since$`, "u"));
     await expect(toastAction(page)).toHaveCount(0);
     await bothWidths(page, "undo-refused");
-    expect((await read(world, ref)).task.due).toBe(agents);
+    expect(await titleOf()).toBe(agents);
 
     // The popover takes its base when it opens: an agent's change while it is open is shown there,
     // and the person's pick is a conflict that keeps their value one click away.
@@ -289,8 +321,8 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Undo and Apply mine: an agent change
   });
 });
 
-test.describe("[A5.3.12.e2e.redo-passed-over] Redo passes over a change an agent added to since, and says who changed which task", () => {
-  test("Redo after an agent's note on a removed task redoes the edit behind it and keeps the task; the next Redo is refused, naming the same", async ({
+test.describe("[A5.3.12.e2e.redo-passed-over] Redo of a step an agent added to since is refused, and the next Redo brings back the step behind it", () => {
+  test("Redo after an agent's note on a task taken out of the Trash says who changed which task and keeps the task; the next Redo brings back the title", async ({
     page,
     world,
   }) => {
@@ -300,22 +332,23 @@ test.describe("[A5.3.12.e2e.redo-passed-over] Redo passes over a change an agent
       { title: `Order the printer ink (${tag})`, area: "home" },
     ]);
     if (removed === undefined || edited === undefined) throw new Error("the tasks were not added");
-    // The person, at a terminal: the same undo stack as the page's.
-    await world.op(world.mira.id, "task.delete", {
-      tasks: [removed],
-      base: (await read(world, removed)).as_of,
-    });
-    await world.op(world.mira.id, "task.update", {
-      task: edited,
-      set: { priority: 1 },
-      base: (await read(world, edited)).as_of,
-    });
-    await signIn(page, world, `/s/${world.mira.id}/task/${edited}`);
-    await showsSpace(page, world.mira.name);
-    await expect(rowOf(page, edited)).toBeVisible({ timeout: SLOW_MS });
+    const titleOf = async () =>
+      ((await read(world, edited)).task as unknown as { title: string }).title;
+    await openArea(page, world, "Home");
+    // Two steps in the page: a task to the Trash, then a title.
+    await rowOf(page, removed).locator('[data-part="title"]').focus();
+    await page.keyboard.press("Delete");
+    await expect.poll(async () => (await read(world, removed)).task.deleted).toBeDefined();
+    const renamed = `Order the printer ink and paper (${tag})`;
+    await rowOf(page, edited).locator('[data-part="title"]').focus();
+    await page.keyboard.press("F2");
+    await rowOf(page, edited).locator('[data-part="title-edit"]').fill(renamed);
+    await page.keyboard.press("Enter");
+    await expect.poll(titleOf).toBe(renamed);
+    // Both undone, newest first.
     await page.locator("main").focus();
     await page.keyboard.press("Control+z");
-    await expect.poll(async () => (await read(world, edited)).task.priority).not.toBe(1);
+    await expect.poll(titleOf).not.toBe(renamed);
     await page.keyboard.press("Control+z");
     await expect.poll(async () => (await read(world, removed)).task.deleted).toBeUndefined();
     await world.op(
@@ -325,26 +358,22 @@ test.describe("[A5.3.12.e2e.redo-passed-over] Redo passes over a change an agent
       "agent",
     );
 
-    // Redo would move the task, note and all, to the Trash: it passes over that and redoes the
-    // edit behind it, and says who changed which task.
+    // Redo would move the task, note and all, to the Trash: refused, naming who changed which
+    // task, with nothing to choose.
     const changed = new RegExp(`.+ changed ${removed} since$`, "u");
     await page.keyboard.press("Control+Shift+z");
-    await expect(toast(page)).toContainText("Redone. Not redone: ");
-    await expect(toast(page)).toHaveText(changed);
-    await expect(toastAction(page)).toHaveText("Undo");
-    await expect.poll(async () => (await read(world, edited)).task.priority).toBe(1);
-    expect((await read(world, removed)).task.deleted).toBeUndefined();
-    await bothWidths(page, "redo-passed-over");
-
-    // Nothing else can be redone: refused, naming the same, with nothing to choose.
-    await page.locator("main").focus();
-    await page.keyboard.press("Control+Shift+z");
     await expect(toast(page)).toContainText("Not redone: ");
-    await expect(toast(page)).not.toContainText("Redone.");
     await expect(toast(page)).toHaveText(changed);
     await expect(toastAction(page)).toHaveCount(0);
     expect((await read(world, removed)).task.deleted).toBeUndefined();
     await bothWidths(page, "redo-refused");
+
+    // The next Redo brings back the title behind it.
+    await page.locator("main").focus();
+    await page.keyboard.press("Control+Shift+z");
+    await expect(toast(page)).toHaveText("Redone");
+    await expect.poll(titleOf).toBe(renamed);
+    expect((await read(world, removed)).task.deleted).toBeUndefined();
   });
 });
 
@@ -386,7 +415,7 @@ test.describe("[A7.3.12.m5-08.e2e.ask] An agent-only field starts a request in t
 });
 
 test.describe("[A5.3.11.e2e.unanswered] An undo that gets no answer does not hold later edits", () => {
-  test("Ctrl+Z whose request is lost: the star clicked after it goes out once the page has learned the undo's outcome, and the undo takes back the priority, not the star", async ({
+  test("Ctrl+Z whose request is lost: the star clicked after it goes out once the page has learned the undo's outcome, and the undo takes back the title, not the star", async ({
     page,
     world,
   }) => {
@@ -398,10 +427,14 @@ test.describe("[A5.3.11.e2e.unanswered] An undo that gets no answer does not hol
     if (ref === undefined || other === undefined) throw new Error("the tasks were not added");
     await openArea(page, world, "Home");
     const row = rowOf(page, ref);
-    await row.locator('[data-part="title"]').click();
-    const priority = row.getByRole("radiogroup", { name: "Priority" });
-    await priority.getByRole("radio", { name: "P1" }).click();
-    await expect.poll(async () => (await read(world, ref)).task.priority).toBe(1);
+    const titleOf = async () =>
+      ((await read(world, ref)).task as unknown as { title: string }).title;
+    const before = await titleOf();
+    await row.locator('[data-part="title"]').focus();
+    await page.keyboard.press("F2");
+    await row.locator('[data-part="title-edit"]').fill(`Book the boiler service early (${tag})`);
+    await page.keyboard.press("Enter");
+    await expect.poll(titleOf).not.toBe(before);
 
     // The first undo request never reaches the service (a connection that went away); a request
     // sent again goes through.
@@ -423,7 +456,7 @@ test.describe("[A5.3.11.e2e.unanswered] An undo that gets no answer does not hol
     await expect
       .poll(async () => (await read(world, other)).task as unknown as { focus: unknown })
       .toMatchObject({ focus: true });
-    expect((await read(world, ref)).task.priority).toBe(4);
+    expect(await titleOf()).toBe(before);
     expect(held).toBe(2);
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
@@ -484,8 +517,8 @@ test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is fini
   });
 });
 
-test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a task, and Undo takes it back", () => {
-  test("a typo takes the live area it is close to, never an archived one; a new name close to an area is one Down away; Enter makes it and moves the task there; Ctrl+Z moves it back, and again takes the area away", async ({
+test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a task", () => {
+  test("a typo takes the live area it is close to, never an archived one; a new name close to an area is one Down away; Enter makes it and moves the task there, and Ctrl+Z takes back the move, then the area", async ({
     page,
     world,
   }) => {
@@ -494,11 +527,14 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     // A new name close to an existing one, meant as a new area.
     const garden = `Seedling ${tag}`;
     await world.op(world.mira.id, "group.manage", { action: "create", path: seedlings });
-    const [ref] = await addTasks(world, [{ title: `Plant the tulips (${tag})`, area: "home" }]);
-    if (ref === undefined) throw new Error("the task was not added");
-    const areaOf = async () =>
-      ((await world.op(world.mira.id, "task.get", { task: ref })) as { task: { area?: string } })
-        .task.area;
+    const [ref, later] = await addTasks(world, [
+      { title: `Plant the tulips (${tag})`, area: "home" },
+      { title: `Sow the beans (${tag})`, area: "home" },
+    ]);
+    if (ref === undefined || later === undefined) throw new Error("the tasks were not added");
+    const areaOf = async (task = ref) =>
+      ((await world.op(world.mira.id, "task.get", { task })) as { task: { area?: string } }).task
+        .area;
     const sidebarLink = page
       .getByRole("navigation")
       .getByRole("link", { name: new RegExp(`^${garden}, `) });
@@ -532,36 +568,17 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await expect(offer).toHaveText(`New area “${typo}”`);
     await expect(page.getByRole("option").first()).toHaveAttribute("data-focused", "true");
     await page.keyboard.press("Enter");
-    await expect(toast(page)).toHaveText(`Moved to ${seedlings}`);
-    await expect.poll(areaOf).toBe(seedlings);
-    await page.keyboard.press("Control+z");
-    await expect(toast(page)).toHaveText("Undone");
-    await expect.poll(areaOf).toBe("Home");
-    // The page has the undo too: its row is drawn again then, which would close a list opened before.
+    await expect.poll(() => areaOf()).toBe(seedlings);
+    // Put back by choosing again: no Undo for a move.
+    await expect(pill).toHaveAccessibleName(`Area, ${seedlings}`);
+    await expect(toast(page)).toHaveCount(0);
+    await pill.click();
+    await expect(field).toBeFocused();
+    await page.keyboard.type("Home");
+    await expect(page.getByRole("option").first()).toHaveText("Home");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => areaOf()).toBe("Home");
     await expect(pill).toHaveAccessibleName("Area, Home");
-
-    // A new name close to an area: the area comes first, the new one is the next choice down.
-    await pill.focus();
-    await page.keyboard.press("Enter");
-    await page.keyboard.type(garden);
-    await expect(page.getByRole("option").first()).toHaveText(seedlings);
-    await expect(page.getByRole("option").nth(1)).toHaveText(`New area “${garden}”`);
-    // The keys act on the highlighted choice, as a person sees it: the area first, then one down.
-    await expect(page.getByRole("option").first()).toHaveAttribute("data-focused", "true");
-    await page.keyboard.press("ArrowDown");
-    await expect(page.getByRole("option").nth(1)).toHaveAttribute("data-focused", "true");
-    await page.keyboard.press("Enter");
-    await expect(toast(page)).toHaveText(`Moved to ${garden}`);
-    await expect(toastAction(page)).toHaveText("Undo");
-    await expect.poll(areaOf).toBe(garden);
-    await expect(sidebarLink).toBeVisible();
-
-    // Ctrl+Z takes back the move, and once more the area.
-    await page.keyboard.press("Control+z");
-    await expect(toast(page)).toHaveText("Undone");
-    await expect.poll(areaOf).toBe("Home");
-    await page.keyboard.press("Control+z");
-    await expect(sidebarLink).toHaveCount(0, { timeout: SLOW_MS });
 
     // The same typo once the area is archived: the archived area comes last, marked, and Enter
     // makes the area typed.
@@ -576,8 +593,12 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
         .locator('[data-group="areas"]')
         .getByRole("link", { name: new RegExp(`^${seedlings}, `) }),
     ).toHaveCount(0);
-    await pill.focus();
-    await page.keyboard.press("Enter");
+    const laterTitle = rowOf(page, later).locator('[data-part="title"]');
+    await laterTitle.click();
+    await expect(laterTitle).toHaveAttribute("aria-expanded", "true");
+    const laterPill = rowOf(page, later).locator('[data-part="area"]');
+    await laterPill.click();
+    await expect(field).toBeFocused();
     await page.keyboard.type(typo);
     const shelved = page.getByRole("option", { name: seedlings, exact: true });
     await expect(shelved).toHaveAccessibleDescription("archived");
@@ -585,8 +606,35 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await expect(page.getByRole("option").last()).toHaveAccessibleName(seedlings);
     await expect(page.getByRole("option").first()).toHaveAttribute("data-focused", "true");
     await page.keyboard.press("Enter");
-    await expect(toast(page)).toHaveText(`Moved to ${typo}`);
-    await expect.poll(areaOf).toBe(typo);
+    await expect.poll(() => areaOf(later)).toBe(typo);
+
+    // A new name close to an area (the one just made): the area comes first, the new one is the
+    // next choice down.
+    await title.focus();
+    await page.keyboard.press("Enter");
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+    await pill.click();
+    await expect(field).toBeFocused();
+    await page.keyboard.type(garden);
+    await expect(page.getByRole("option").first()).toHaveText(typo);
+    await expect(page.getByRole("option").nth(1)).toHaveText(`New area “${garden}”`);
+    // The keys act on the highlighted choice, as a person sees it: the area first, then one down.
+    await expect(page.getByRole("option").first()).toHaveAttribute("data-focused", "true");
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("option").nth(1)).toHaveAttribute("data-focused", "true");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => areaOf()).toBe(garden);
+    await expect(sidebarLink).toBeVisible();
+
+    // A new area made by mistake has no other way back here: Ctrl+Z takes back the move, and once
+    // more the area.
+    await expect(toastAction(page)).toHaveText("Undo");
+    await page.locator("main").focus();
+    await page.keyboard.press("Control+z");
+    await expect(toast(page)).toHaveText("Undone");
+    await expect.poll(() => areaOf()).toBe("Home");
+    await page.keyboard.press("Control+z");
+    await expect(sidebarLink).toHaveCount(0, { timeout: SLOW_MS });
     expect(await violations(page)).toEqual([]);
   });
 
@@ -682,11 +730,13 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
           timeout: SLOW_MS,
         });
         // A toast with its action, then the date popover open over the card.
+        await row.locator('[data-part="title"]').focus();
+        await page.keyboard.press("F2");
+        // Another title in each theme, so each one changes it.
         await row
-          .getByRole("radiogroup", { name: "Effort" })
-          // Another effort in each theme, so each toast sets one (the second would clear it).
-          .getByRole("radio", { name: theme === "sumi" ? "L" : "S", exact: true })
-          .click();
+          .locator('[data-part="title-edit"]')
+          .fill(`Plan the team offsite in ${theme} (${tag})`);
+        await page.keyboard.press("Enter");
         await expect(toastAction(page)).toHaveText("Undo");
         await row.locator('[data-part="due"]').click();
         await expect(page.locator('[data-part="due-field"]')).toBeFocused();

@@ -149,6 +149,8 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
         // Known only from its receipt, the area is not named: the task stays, and the toast says so.
         (result) =>
           "receipt" in result ? { id: "area.added", values: { name: title } } : undefined,
+        // The page has no way to take an area away.
+        { undo: true },
       )
       .then(
         (result) => {
@@ -156,8 +158,11 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
           if (made?.kind !== "area") return;
           // An answer that could not read the name back names none: the one typed.
           const name = made.name ?? title;
+          // The new area is a step of its own, which the move must not end: Undo takes back the
+          // move, and then the area.
           edits.edit(task, groupingChange({ id: made.id, title: name }, undefined), {
             base: seen,
+            undo: true,
             refused: (why) => ({ id: "area.addedNotMoved", values: { name, why } }),
           });
         },

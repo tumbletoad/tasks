@@ -35,6 +35,19 @@ const ONE_LINE = [true, false, true];
 
 const tipOf = (key: string, scale: Scales): string => levelTip(key, levelsOf(scale));
 
+/**
+ * Renames a level in Settings, reached by the sidebar, and comes back where the person was: the
+ * page stays loaded, so its Undo has the change.
+ */
+async function renameInSettings(page: Page, from: string, to: string): Promise<void> {
+  await page.getByRole("navigation").getByRole("link", { name: "Settings" }).click();
+  const name = page.locator(`li[data-level="${from}"] [data-part="level-name"]`);
+  await name.fill(to);
+  await name.press("Enter");
+  await expect(page.locator('[data-part="toast-text"]')).toContainText(`${from} renamed to ${to}`);
+  await page.goBack();
+}
+
 /** How many lines the options of a segmented control take. */
 const linesOf = (group: Locator) =>
   group
@@ -239,7 +252,7 @@ test.describe("[A5.3.7.e2e.effort-scales] one level, ten levels and the longest 
   });
 });
 
-test.describe("[A5.3.12.e2e.undo-levels] a change of the effort levels made at a terminal, undone from the page", () => {
+test.describe("[A5.3.12.e2e.undo-levels] a change of the effort levels made in Settings, undone from the task's card", () => {
   test("Ctrl+Z puts back the levels and the task's size and says so, Ctrl+Shift+Z changes them again, and a size kept unsent waits once the levels change, at 1,440 and 390 px", async ({
     page,
   }) => {
@@ -281,7 +294,7 @@ test.describe("[A5.3.12.e2e.undo-levels] a change of the effort levels made at a
       const chosen = (name: string) => effort.getByRole("radio", { name, exact: true });
       await expect(chosen("M")).toHaveAttribute("aria-checked", "true", { timeout: SLOW_MS });
 
-      await levels(space.id, "S,Medium,L", [{ from: "M", to: "Medium" }]);
+      await renameInSettings(page, "M", "Medium");
       await expect(chosen("Medium")).toHaveAttribute("aria-checked", "true", { timeout: SLOW_MS });
       await page.locator("main").focus();
       await page.keyboard.press("Control+z");
@@ -337,16 +350,7 @@ test.describe("[A5.3.12.e2e.undo-levels-rest] the rest of a change of the effort
         .getByRole("radiogroup", { name: "Effort" });
       const chosen = (name: string) => effort.getByRole("radio", { name, exact: true });
       await expect(chosen("M")).toHaveAttribute("aria-checked", "true", { timeout: SLOW_MS });
-      const read = (await world.op(space.id, "prefs.manage", { action: "get" })) as {
-        as_of: string;
-      };
-      await world.op(space.id, "prefs.manage", {
-        action: "set",
-        set: [
-          { key: "tasks.effort_scale", value: "S,Medium,L", moves: [{ from: "M", to: "Medium" }] },
-        ],
-        base: read.as_of,
-      });
+      await renameInSettings(page, "M", "Medium");
       await expect(chosen("Medium")).toHaveAttribute("aria-checked", "true", { timeout: SLOW_MS });
       const got = (await world.op(space.id, "task.get", { task: ref })) as { as_of: string };
       await world.op(

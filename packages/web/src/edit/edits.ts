@@ -8,9 +8,14 @@
 //   field, with the person's value ready to apply again with one click: after a conflict ("Changed
 //   by Codex just now · Apply mine") and after a failed call ("Not saved · Try again"). Nothing is
 //   overwritten silently: "Apply mine" is the person's explicit choice.
-// - A check-off by mistake is undone with one action. The row stays, checked and struck through,
-//   for the hold (4 s), its toast's Undo names its own commit, and clicking the box again during
-//   the hold undoes it too.
+// - Undo is for what is a nuisance to put back by hand: a check-off or a reopen, a move to the
+//   Trash or out of it, a removal, a text, a change of many tasks at once (`#stepped`, STEP_FIELDS,
+//   `write`'s `undo`). Every other change saves without Undo. The history is one line, so a change
+//   without Undo made in this tab ends the Undo and Redo of what came before it (`#moved`). A change
+//   made elsewhere ends nothing here: each Undo names its own commit, and the service refuses one
+//   that newer work stands in the way of, saying whose it was.
+// - A check-off by mistake is undone with one action. The row shows checked and struck through for
+//   a moment, then leaves at once; its toast's Undo names its own commit.
 // - Two windows, or a person and an agent, on one task: every edit carries a base (A1 3.5), so the
 //   service refuses a write over a change the person did not see, and the conflict names who made it.
 //
@@ -58,8 +63,8 @@ function readOnlyText(error: unknown): Msg | undefined {
     : { id: "edit.notSavedReadOnly", values: { why: readOnlyWhy(reason) } };
 }
 
-/** How long a checked-off row stays where it is (A5 3.12). */
-export const HOLD_MS = 4_000;
+/** How long a checked-off row stays where it is: long enough to see the check land. */
+export const HOLD_MS = 300;
 /** Then it collapses (A5 3.12, 3.20). */
 export const COLLAPSE_MS = 180;
 /** A row whose undo answered waits this long at most for the feed to bring it back. */
@@ -67,12 +72,20 @@ const RETURN_MS = 10_000;
 
 export type ToastKind = "undo" | "info" | "error";
 
-/** One toast: a short sentence and at most one action (A5 3.12). */
+export interface ToastAction {
+  readonly label: Msg;
+  readonly run: () => void;
+  /** Shown in its place, with nothing to do now: Undo after the last step was undone. */
+  readonly disabled?: boolean;
+}
+
+/** One toast: a short sentence and its action; after an Undo or a Redo, Undo and Redo side by side. */
 export interface Toast {
   readonly key: number;
   readonly kind: ToastKind;
   readonly text: Msg;
-  readonly action?: { readonly label: Msg; readonly run: () => void };
+  readonly action?: ToastAction;
+  readonly second?: ToastAction;
 }
 
 /** An edit the service did not take: the person's value waits here (A5 3.11 "Writes"). */
@@ -127,6 +140,11 @@ export interface EditState {
    */
   readonly retrying: ReadonlyMap<string, Unsaved>;
   readonly leaving: ReadonlyMap<string, Leaving>;
+  /**
+   * The tasks this tab checked off or moved to the Trash, as that write leaves them, until it is
+   * confirmed or refused: every view of such a task shows it so, never an older copy of its own.
+   */
+  readonly finishing: ReadonlyMap<string, TaskRow>;
 }
 
 /** Someone else changed a field while an editor was open (A5 3.15 item 9). */
@@ -172,6 +190,12 @@ type Say = (toast: Omit<Toast, "key"> | undefined) => void;
 /** A toast's write whose commit the page cannot learn: its Undo says so and changes nothing. */
 class UnknownCommit extends Error {}
 
+/** The step was undone, or redone, by an earlier request that got its answer late: nothing to send. */
+class AlreadyDone extends Error {}
+
+/** Ctrl+Z or Ctrl+Shift+Z, behind another undo or redo, found no step left in its turn. */
+class NothingLeft extends Error {}
+
 /**
  * The codes of a refusal that is no decision: the request may still be decided (A1 3.8: busy,
  * a timeout, a space that is opening). `internal` is a bug, refused the same way every time.
@@ -198,7 +222,6 @@ function receiptError(found: Found): Error {
         at: c.at,
       })),
       ...(found.target === undefined ? {} : { commit: found.target }),
-      ...(found.passed_over === undefined ? {} : { passed_over: found.passed_over }),
       ...(found.newer_work === undefined ? {} : { newer_work: found.newer_work }),
     },
   });
@@ -244,8 +267,6 @@ interface Problem {
   readonly commit?: string;
   /** An undo's or a redo's: who changed which task since. */
   readonly newer: readonly NewerWorkEntry[];
-  /** A refused redo's: every change it tried. */
-  readonly passed: readonly string[];
   /** The commit an undo or redo met is a change of the effort levels. */
   readonly levels: boolean;
 }
@@ -309,7 +330,6 @@ function problemOf(error: unknown): Problem | undefined {
     ...(typeof commit === "string" && commit !== "" ? { commit } : {}),
     newer: newerOf(record["newer_work"]),
     levels: record["levels"] === true,
-    passed: Array.isArray(record["passed_over"]) ? record["passed_over"].map(String) : [],
   };
 }
 
@@ -344,7 +364,6 @@ function historyOf(kind: "undo" | "redo", found: Found): Decision<HistoryResult>
     tasks: [],
     task_count: 0,
     as_of: found.as_of,
-    ...(found.passed_over === undefined ? {} : { passed_over: found.passed_over }),
     ...(found.newer_work === undefined ? {} : { newer_work: found.newer_work }),
     ...(op?.levels === undefined ? {} : { levels: op.levels }),
     ...(op?.lifecycles === undefined ? {} : { lifecycles: op.lifecycles }),
@@ -429,6 +448,24 @@ function backIn(task: Restored): Msg {
     : { id: "toast.restoredInGroup", values: { ref: task.ref, place, group } };
 }
 
+/** The fields whose edit is an undoable step: words the person would have to type again. */
+const STEP_FIELDS: ReadonlySet<string> = new Set(["title", "summary"]);
+
+/**
+ * Whether an edit of `task` is an undoable step: words typed again otherwise, or a change whose old
+ * value the page offers no way to choose again (the Inbox, no area). Any other value is put back by
+ * choosing it again.
+ */
+function isStep(task: Pick<TaskRow, "inbox" | "area_id" | "project_id">, change: Change): boolean {
+  if (change.fields.every((field) => STEP_FIELDS.has(field))) return true;
+  const outOfInbox = task.inbox && change.set?.["inbox"] === false;
+  const firstArea =
+    change.fields.includes("grouping") &&
+    task.area_id === undefined &&
+    task.project_id === undefined;
+  return outOfInbox || firstArea;
+}
+
 /** The key of a task's field in the maps of unsaved edits and others' changes. */
 export const keyOf = (task: string, field: string) => `${task}\u0000${field}`;
 
@@ -478,7 +515,7 @@ function levelsToast(
     readonly off_list?:
       readonly { readonly tasks: readonly string[]; readonly count: number }[] | undefined;
   },
-  action: NonNullable<Toast["action"]>,
+  offer: Pick<Toast, "action" | "second">,
 ): Omit<Toast, "key"> {
   const unresolved =
     (result as { unresolved?: readonly { entity: string; field: string; by: string }[] })
@@ -500,7 +537,7 @@ function levelsToast(
     return { kind: "info", text: { id: "toast.levelsNothing", values: { kind, newer, ...off } } };
   }
   const values = { kind, list: levels.list ? "yes" : "no", newer, ...off };
-  return { kind: "undo", text: { id: "toast.levels", values }, action };
+  return { kind: "undo", text: { id: "toast.levels", values }, ...offer };
 }
 
 /**
@@ -520,6 +557,8 @@ function newerValues(work: readonly NewerWorkEntry[]): { who: Msg; tasks: Msg } 
 
 interface EditOptions {
   readonly base?: string | undefined;
+  /** An undoable step whatever `isStep` says: the move into an area this change of the person's made. */
+  readonly undo?: boolean;
   readonly refused?: (why: Msg) => Msg;
   /**
    * The service holds the change, or this tab keeps it as not saved (a refusal, no answer): the
@@ -532,7 +571,12 @@ export class Edits {
   readonly #deps: EditDeps;
   readonly #listeners = new Set<() => void>();
   readonly #toastListeners = new Set<(toast: Toast | undefined) => void>();
-  #state: EditState = { unsaved: new Map(), retrying: new Map(), leaving: new Map() };
+  #state: EditState = {
+    unsaved: new Map(),
+    retrying: new Map(),
+    leaving: new Map(),
+    finishing: new Map(),
+  };
   /** The newest write's turn per task, until its outcome is known: the next edit waits for it. */
   readonly #chains = new Map<string, Turn>();
   /**
@@ -571,6 +615,17 @@ export class Edits {
   #toasts = 0;
   /** Kept edits let go elsewhere while they are sent again from here: a refusal keeps none. */
   readonly #letGo = new Set<Unsaved>();
+  /** This tab's undoable steps since the person's last other change, oldest first. */
+  #undoable: Named[] = [];
+  /** The steps undone from here since then, oldest first: Redo brings back the last. */
+  #redoable: string[] = [];
+  /**
+   * Counts the person's changes: an answer offers its Undo, Redo or a retry only while none came
+   * after the action it answers.
+   */
+  #era = 0;
+  /** The toast shown that offers Undo or Redo: it goes once there is nothing for it to take back. */
+  #offer: Toast | undefined;
 
   constructor(deps: EditDeps) {
     this.#deps = deps;
@@ -689,17 +744,13 @@ export class Edits {
       }
     };
     void sent.settled.then(shown, shown);
-    const saved: Omit<Toast, "key"> = {
-      kind: "undo",
-      text: change.said,
-      action: {
-        label: { id: "toast.undo" },
-        run: () => {
-          void this.undo(sent);
-        },
-      },
-    };
-    const toast = this.#toast(saved);
+    // Any other change shows its value at once and needs no toast: it is put back by choosing again.
+    const step = options.undo === true || isStep(task, change);
+    if (!step) this.#moved();
+    const saved: Omit<Toast, "key"> | undefined = step
+      ? { kind: "undo", text: change.said, action: this.#stepped(sent) }
+      : undefined;
+    const toast = saved === undefined ? undefined : this.#toast(saved);
     void sent.commit.then((commit) => {
       if (commit !== undefined) this.#fieldsOf.set(commit, change.fields);
     });
@@ -721,7 +772,7 @@ export class Edits {
           }
           // Nothing changed (the value was already so): there is nothing to undo.
           if ((decision.value as { result?: unknown }).result === "no_change") say(undefined);
-          else if (late) say(saved);
+          else if (late && saved !== undefined) say(saved);
           return;
         }
         // Kept part by part: a part whose field the person edited again since gives way to that
@@ -828,23 +879,23 @@ export class Edits {
     // Checked again after its undo: the row that waited to come back holds again.
     if (entry !== undefined) this.#drop(task.id);
     this.#leave(task, {});
+    // The store's row goes with the write, so the row never shows open again while it is on its
+    // way, however late the feed confirms it.
     const sent = this.#sendWith(
       task.id,
       ["lifecycle"],
       this.seen(task, ["lifecycle"]),
       (base, request) =>
         this.#deps.client.task.finish({ task: task.id, base: base ?? "", request_id: request }),
+      { tasks: [{ id: task.id, remove: true }] },
     );
     this.#checks.set(task.id, sent);
+    this.#checkedOff.add(sent.request);
+    this.#finishing(sent, { ...task, lifecycle: "completed", completed_at: Date.now() });
     const done: Omit<Toast, "key"> = {
       kind: "undo",
       text: { id: "toast.done" },
-      action: {
-        label: { id: "toast.undo" },
-        run: () => {
-          void this.undo(sent);
-        },
-      },
+      action: this.#stepped(sent),
     };
     const toast = this.#toast(done);
     void sent.commit.then((commit) => {
@@ -895,12 +946,7 @@ export class Edits {
     const reopened: Omit<Toast, "key"> = {
       kind: "undo",
       text: { id: "toast.reopened" },
-      action: {
-        label: { id: "toast.undo" },
-        run: () => {
-          void this.undo(sent);
-        },
-      },
+      action: this.#stepped(sent),
     };
     const toast = this.#toast(reopened);
     void sent.commit.then((commit) => {
@@ -942,19 +988,16 @@ export class Edits {
       this.seen(task, ["deleted"]),
       (base, request) =>
         this.#deps.client.task.delete({ tasks: [task.id], base: base ?? "", request_id: request }),
+      { tasks: [{ id: task.id, remove: true }] },
     );
+    this.#finishing(sent, { ...task, deleted_at: Date.now() });
     const moved: Omit<Toast, "key"> = {
       kind: "undo",
       text: {
         id: task.run?.state === "working" ? "toast.trashedWorking" : "toast.trashed",
         values: { ref: task.ref },
       },
-      action: {
-        label: { id: "toast.undo" },
-        run: () => {
-          void this.undo(sent);
-        },
-      },
+      action: this.#stepped(sent),
     };
     const toast = this.#toast(moved);
     void sent.commit.then((commit) => {
@@ -1003,12 +1046,7 @@ export class Edits {
           request_id: request,
         }),
     );
-    const undo = {
-      label: { id: "toast.undo" },
-      run: () => {
-        void this.undo(sent);
-      },
-    } as const;
+    const undo = this.#stepped(sent);
     const toast = this.#toast({
       kind: "undo",
       text: { id: "toast.restoredTask", values: { ref: task.ref } },
@@ -1088,12 +1126,7 @@ export class Edits {
     const dismissed: Omit<Toast, "key"> = {
       kind: "undo",
       text: { id: "toast.questionDismissed", values: { count } },
-      action: {
-        label: { id: "toast.undo" },
-        run: () => {
-          void this.undo(sent);
-        },
-      },
+      action: this.#stepped(sent),
     };
     const toast = this.#toast(dismissed);
     void sent.commit.then((commit) => {
@@ -1116,6 +1149,8 @@ export class Edits {
 
   /** The check-offs of this tab still in their hold, with their writes. */
   readonly #checks = new Map<string, Named>();
+  /** This tab's check-off requests: the row left already, and their feed event holds it no more. */
+  readonly #checkedOff = new Set<string>();
 
   /**
    * The box clicked again during the hold: the check-off is undone, by its commit, or for a redone
@@ -1142,7 +1177,8 @@ export class Edits {
    * A task the view shows was completed by a write the tab did not hold yet (A5 3.12): another
    * actor's (it strikes through, says who, and leaves after the hold), or the tab's own redo.
    */
-  hold(row: TaskRow, by: string | undefined, at: number): void {
+  hold(row: TaskRow, by: string | undefined, at: number, request?: string): void {
+    if (request !== undefined && this.#checkedOff.has(request)) return;
     const entry = this.#state.leaving.get(row.id);
     if (entry?.done === true) return;
     // A row back from an undo that is completed again (a redo) holds again, checked.
@@ -1151,15 +1187,36 @@ export class Edits {
   }
 
   /**
-   * Undo (A5 3.12): the person's newest change, or the one a toast names. It takes its place in
-   * the queue at once, when the person acts, and a toast's write's commit is resolved there. A
-   * commit the page cannot learn (the write was refused) is not guessed: the person uses Ctrl+Z.
+   * Undo (A5 3.12): the step a toast names, or this tab's newest step (Ctrl+Z), always by its
+   * commit. It takes its place in the queue at once, when the person acts, and a toast's write's
+   * commit is resolved there. A commit the page cannot learn (the write was refused) is not guessed.
    */
   undo(commit?: Named, partial = false): Promise<void> {
+    if (commit === undefined && this.#undoable.length === 0 && this.#gate === undefined) {
+      this.#toast({ kind: "info", text: { id: "toast.nothingToUndo" } });
+      return Promise.resolve();
+    }
+    const era = this.#era;
+    let named: Named | undefined;
+    let at = -1;
+    const take = (): Named | undefined => {
+      const step = commit ?? this.#undoable.at(-1);
+      if (step === undefined) return undefined;
+      named = step;
+      at = this.#undoable.indexOf(step);
+      this.#undoable = this.#undoable.filter((other) => other !== step);
+      return step;
+    };
     const asked: { commit?: string } = {};
-    const { answer, call } = this.#history("undo", commit, partial, asked);
+    const { answer, call } = this.#history("undo", this.#when(take), partial, asked);
     return this.#outcome(answer, call, (decision, say) => {
       if (!decision.ok) {
+        if (decision.error instanceof AlreadyDone) return;
+        // The undo or redo before it said what happened.
+        if (decision.error instanceof NothingLeft) return;
+        if (named !== undefined && at >= 0 && era === this.#era) {
+          if (this.#retryable(decision.error)) this.#undoable.splice(at, 0, named);
+        }
         if (decision.error instanceof UnknownCommit) {
           say({ kind: "info", text: { id: "toast.undoUnknown" } });
         } else {
@@ -1168,31 +1225,52 @@ export class Edits {
         return;
       }
       const result = decision.value;
+      // Done after all, when no answer had come at first.
+      this.#undoable = this.#undoable.filter((step) => step !== named);
       // Only a row whose check-off this undid comes back unchecked.
       this.#undone(result.lifecycles ?? [], true);
-      const redo = {
-        label: { id: "toast.redo" },
-        run: () => {
-          void this.redo(result.commit);
-        },
-      } as const;
+      // A change the person made since the Undo was asked ends its Redo.
+      const fresh = era === this.#era;
+      if (fresh) this.#redoable.push(result.commit);
+      const offer = fresh ? this.#pair() : {};
       if (result.levels !== undefined) {
-        say(levelsToast("undo", result, redo));
+        say(levelsToast("undo", result, offer));
         return;
       }
       say({
-        kind: "undo",
+        kind: fresh ? "undo" : "info",
         text: { id: result.result === "partial" ? "toast.undoneRest" : "toast.undone" },
-        action: redo,
+        ...offer,
       });
     });
   }
 
+  /** Redo: the step a toast names, or the last one this tab undid since the person's last change. */
   redo(commit?: string): Promise<void> {
-    const { answer, call } = this.#history("redo", commit, false);
+    if (commit === undefined && this.#redoable.length === 0 && this.#gate === undefined) {
+      this.#toast({ kind: "info", text: { id: "toast.nothingToRedo" } });
+      return Promise.resolve();
+    }
+    const era = this.#era;
+    let named: string | undefined;
+    let at = -1;
+    const take = (): string | undefined => {
+      const step = commit ?? this.#redoable.at(-1);
+      if (step === undefined) return undefined;
+      named = step;
+      at = this.#redoable.indexOf(step);
+      this.#redoable = this.#redoable.filter((other) => other !== step);
+      return step;
+    };
+    const { answer, call } = this.#history("redo", this.#when(take), false);
     return this.#outcome(answer, call, (decision, say) => {
       if (!decision.ok) {
-        this.#historyFailed("redo", decision.error, commit, say);
+        if (decision.error instanceof AlreadyDone) return;
+        if (decision.error instanceof NothingLeft) return;
+        if (named !== undefined && at >= 0 && era === this.#era) {
+          if (this.#retryable(decision.error)) this.#redoable.splice(at, 0, named);
+        }
+        this.#historyFailed("redo", decision.error, named, say);
         return;
       }
       const result = decision.value;
@@ -1200,29 +1278,14 @@ export class Edits {
       // else names the task too, and never becomes its target or ends its hold.
       for (const ref of result.lifecycles ?? []) this.#redone.set(ref, result.commit);
       this.#undone(result.lifecycles ?? [], false);
-      // Older changes it passed over stay for the next Redo: who changed which tasks since.
-      const passed = (result as { passed_over?: readonly string[] }).passed_over ?? [];
-      const newer = newerValues(newerOf(result.newer_work));
-      const undo = {
-        label: { id: "toast.undo" },
-        run: () => {
-          void this.undo(result.commit);
-        },
-      } as const;
-      const redone: Omit<Toast, "key"> =
-        result.levels === undefined
-          ? { kind: "undo", text: { id: "toast.redone" }, action: undo }
-          : levelsToast("redo", result, undo);
+      this.#redoable = this.#redoable.filter((step) => step !== named);
+      const fresh = era === this.#era;
+      if (fresh) this.#undoable.push(result.commit);
+      const offer = fresh ? this.#pair() : {};
       say(
-        passed.length === 0
-          ? redone
-          : {
-              ...redone,
-              text:
-                newer === undefined
-                  ? { id: "toast.redonePassedOwn", values: { redone: redone.text } }
-                  : { id: "toast.redonePassed", values: { ...newer, redone: redone.text } },
-            },
+        result.levels === undefined
+          ? { kind: fresh ? "undo" : "info", text: { id: "toast.redone" }, ...offer }
+          : levelsToast("redo", result, offer),
       );
     });
   }
@@ -1230,7 +1293,7 @@ export class Edits {
   /**
    * A person's write that is no field of one task (a new project, a folder): in turn after the
    * writes already on their way, and before any made after it. Once it changed something, its
-   * toast says `said` and its Undo names its own commit; Ctrl+Z takes it back as the newest change.
+   * toast says `said`; with `undo` it is an undoable step, and its Undo names its own commit.
    * The caller reads the answer, a refusal included, and says what a refusal means. Its base is
    * `base`, what a dialog showed when it opened, or else the screen's now, moved past the tab's own
    * commits since. When the answer was lost and its receipt decided it, the caller gets only the
@@ -1239,7 +1302,11 @@ export class Edits {
   write<T extends { as_of?: string; result?: unknown }>(
     send: (request: string, base: string | undefined) => Promise<T>,
     said: (value: T | WriteReceipt) => Msg | undefined,
-    options: { readonly base?: string | undefined; readonly overlay?: Overlay } = {},
+    options: {
+      readonly base?: string | undefined;
+      readonly overlay?: Overlay;
+      readonly undo?: boolean;
+    } = {},
   ): Promise<T | WriteReceipt> {
     const seen = options.base ?? this.#deps.asOf();
     const ahead = allOf(this.#ahead());
@@ -1277,20 +1344,19 @@ export class Edits {
     this.#release(sent.answer, () => {
       if (this.#gate === turn) this.#gate = undefined;
     });
+    const action = options.undo === true ? this.#stepped(sent) : undefined;
+    if (action === undefined) this.#moved();
+    const era = this.#era;
     return sent.answer.then((value) => {
       // A write that changed nothing has nothing to undo.
       const text = WROTE_NOTHING.has(String(value.result)) ? undefined : said(value);
       if (text !== undefined) {
-        this.#toast({
-          kind: "undo",
-          text,
-          action: {
-            label: { id: "toast.undo" },
-            run: () => {
-              void this.undo(sent);
-            },
-          },
-        });
+        // Its Undo only while it is still the person's newest change.
+        this.#toast(
+          action === undefined || era !== this.#era
+            ? { kind: "info", text }
+            : { kind: "undo", text, action },
+        );
       }
       return value;
     });
@@ -1299,14 +1365,13 @@ export class Edits {
   // -------------------------------------------------------------------------------------------
 
   /**
-   * An undo or redo, in the order the person asked: after the edits already on their way (Ctrl+Z
-   * takes back the newest of them, never one before it while the newest is still to be sent), and
-   * before any edit made after it, which waits for it (`#sendWith`), so an unnamed undo never takes
-   * back a change the person made after pressing it.
+   * An undo or redo of the step `take` gives in its turn, in the order the person asked: after the
+   * edits already on their way (a step still to be sent is undone once it landed), and before any
+   * edit made after it, which waits for it (`#sendWith`).
    */
   #history(
     kind: "undo" | "redo",
-    commit: Named | undefined,
+    take: () => Named | undefined,
     partial: boolean,
     asked: { commit?: string } = {},
   ): { answer: Promise<HistoryResult>; call: Carried<HistoryResult> } {
@@ -1314,18 +1379,18 @@ export class Edits {
     const { turn, made, call: carried } = this.#turn<HistoryResult>(ahead);
     const run = (async (): Promise<HistoryResult> => {
       try {
-        // Behind a request whose outcome is unknown, an unnamed undo could take back the wrong
-        // change: nothing is sent.
         if (!(await ahead.wait())) throw new NotSent();
-        const named = await this.#commitOf(commit);
-        if (commit !== undefined && named === undefined) throw new UnknownCommit();
-        if (named !== undefined) asked.commit = named;
+        const step = take();
+        if (step === undefined) throw new NothingLeft();
+        const named = await this.#commitOf(step);
+        if (named === undefined) throw new UnknownCommit();
+        if ((kind === "undo" ? this.#redoable : this.#undoable).includes(named)) {
+          throw new AlreadyDone();
+        }
+        asked.commit = named;
         const request = this.#deps.newRequest();
         this.#mine.add(request);
-        const input = {
-          ...(named === undefined ? {} : { commit: named }),
-          request_id: request,
-        };
+        const input = { commit: named, request_id: request };
         const call = this.#call<HistoryResult>(
           request,
           (): Promise<HistoryResult> =>
@@ -1471,8 +1536,8 @@ export class Edits {
    * The commit an undo names, in its turn: a string as it is; a toast's write's from the feed, else
    * from the write's receipt (the feed did not name it in time, or a fresh snapshot covered it).
    */
-  async #commitOf(named: Named | undefined): Promise<string | undefined> {
-    if (named === undefined || typeof named === "string") return named;
+  async #commitOf(named: Named): Promise<string | undefined> {
+    if (typeof named === "string") return named;
     const fromFeed = await this.#within(named.commit);
     if (fromFeed !== undefined) return fromFeed;
     try {
@@ -1793,6 +1858,18 @@ export class Edits {
     this.#set({ ...this.#state, unsaved: next });
   }
 
+  /** `row` is how the views show the task until `sent` is confirmed or refused. */
+  #finishing(sent: Pick<Sent<unknown>, "settled">, row: TaskRow): void {
+    this.#set({ ...this.#state, finishing: new Map(this.#state.finishing).set(row.id, row) });
+    const done = () => {
+      if (this.#state.finishing.get(row.id) !== row) return;
+      const finishing = new Map(this.#state.finishing);
+      finishing.delete(row.id);
+      this.#set({ ...this.#state, finishing });
+    };
+    sent.settled.then(done, done);
+  }
+
   #leave(row: TaskRow, who: { by?: string; at?: number }): void {
     const leaving = new Map(this.#state.leaving);
     leaving.set(row.id, { row, done: true, out: false, ...who });
@@ -1890,9 +1967,86 @@ export class Edits {
     this.#deps.keeper.save(retrying.size === 0 ? unsaved : new Map([...retrying, ...unsaved]));
   }
 
+  /**
+   * The one place a change becomes an undoable step: the newest on this tab's Undo, and the end of
+   * its Redo. One that wrote nothing, or was refused, leaves Undo again. Returns its toast's Undo.
+   */
+  #stepped(sent: Pick<Sent<unknown>, "commit" | "request" | "answer">): ToastAction {
+    this.#era += 1;
+    this.#undoable.push(sent);
+    this.#redoable = [];
+    const leave = () => {
+      this.#undoable = this.#undoable.filter((step) => step !== sent);
+    };
+    sent.answer.then(
+      (value) => {
+        if (WROTE_NOTHING.has(String((value as { result?: unknown } | undefined)?.result))) leave();
+      },
+      (error: unknown) => {
+        if (!(error instanceof Unanswered)) leave();
+      },
+    );
+    return {
+      label: { id: "toast.undo" },
+      run: () => {
+        void this.undo(sent);
+      },
+    };
+  }
+
+  /**
+   * The person changed something that is no step: the history's newest change is that one, so
+   * nothing before it is offered for Undo or Redo any more, and a toast that offered it goes.
+   */
+  #moved(): void {
+    this.#era += 1;
+    this.#undoable = [];
+    this.#redoable = [];
+    if (this.#offer !== undefined) this.#untoast(this.#offer);
+    this.#offer = undefined;
+  }
+
+  /**
+   * When Ctrl+Z or Ctrl+Shift+Z takes its step: at once, as the person saw the lists; behind an undo
+   * or redo still on its way, in its own turn, once that one's answer has changed them.
+   */
+  #when<T>(take: () => T | undefined): () => T | undefined {
+    if (this.#gate !== undefined) return take;
+    const step = take();
+    return () => step;
+  }
+
+  /** Whether an undo or a redo got no decision from the service: its step stays to try again. */
+  #retryable(error: unknown): boolean {
+    return (
+      !(error instanceof UnknownCommit || error instanceof AlreadyDone) && !this.#decided(error)
+    );
+  }
+
+  /** After an Undo or a Redo: the two side by side, each in its place also when it has no step. */
+  #pair(): Pick<Toast, "action" | "second"> {
+    return {
+      action: {
+        label: { id: "toast.undo" },
+        run: () => {
+          void this.undo();
+        },
+        ...(this.#undoable.length === 0 ? { disabled: true } : {}),
+      },
+      second: {
+        label: { id: "toast.redo" },
+        run: () => {
+          void this.redo();
+        },
+        ...(this.#redoable.length === 0 ? { disabled: true } : {}),
+      },
+    };
+  }
+
   #toast(toast: Omit<Toast, "key">): Toast {
     this.#toasts += 1;
     const shown: Toast = { ...toast, key: this.#toasts };
+    this.#offer = shown.kind === "undo" ? shown : undefined;
     for (const listener of this.#toastListeners) listener(shown);
     return shown;
   }

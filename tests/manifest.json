@@ -4306,7 +4306,7 @@
     },
     {
       "id": "A5.3.12.web.undo-levels",
-      "title": "The page's Undo of a change of the effort levels says the levels were put back and names tasks left off them, leaves a checked row checked, and a refused one offers Undo the rest also when the page did not make the change",
+      "title": "The page's Undo of a change of the effort levels says the levels were put back and names tasks left off them, leaves a checked row checked, and a refused one offers Undo the rest",
       "source": "A5 3.12",
       "owner": "M5",
       "kind": "ci",
@@ -5102,7 +5102,7 @@
     },
     {
       "id": "A5.3.12.e2e.undo-levels",
-      "title": "In Chromium and Firefox against the real service: a change of the effort levels made at a terminal is undone from the page with Ctrl+Z, which puts back the levels and the task's size and says so, and redone with Ctrl+Shift+Z; a size the service did not take is not sent again once the levels change, and its line asks to choose again",
+      "title": "In Chromium and Firefox against the real service: a change of the effort levels made in Settings is undone from the task's card with Ctrl+Z, which puts back the levels and the task's size and says so, and redone with Ctrl+Shift+Z; a size the service did not take is not sent again once the levels change, and its line asks to choose again",
       "source": "A5 3.11, A5 3.12",
       "owner": "M5",
       "kind": "ci",
@@ -5753,7 +5753,7 @@
     },
     {
       "id": "A5.3.11.e2e.unanswered",
-      "title": "In Chromium and Firefox against the real service: Ctrl+Z whose first request never reaches the service does not hold the star clicked after it; the page learns the undo's outcome by its request ID, sends it again, and the star goes out after it, so the undo takes back the priority and the star stays",
+      "title": "In Chromium and Firefox against the real service: Ctrl+Z whose first request never reaches the service does not hold the star clicked after it; the page learns the undo's outcome by its request ID, sends it again, and the star goes out after it, so the undo takes back the title and the star stays",
       "source": "A5 3.11, A1 3.8",
       "owner": "M5",
       "kind": "ci",
@@ -5769,7 +5769,7 @@
     },
     {
       "id": "A5.3.11.e2e.new-area",
-      "title": "In Chromium and Firefox against the real service: the area picker offers a name no area has as a new area, never one an area has in another case; a live area close to a typo comes first and Enter takes it, a new name close to an area is the next choice down, and an archived area comes last, marked, and is never what Enter takes; Enter makes a new area and moves the task into it with Undo, and Ctrl+Z takes back the move, then the area; a filing made elsewhere meanwhile stays, and the toast says the area was added and the task stayed",
+      "title": "In Chromium and Firefox against the real service: the area picker offers a name no area has as a new area, never one an area has in another case; a live area close to a typo comes first and Enter takes it, a new name close to an area is the next choice down, and an archived area comes last, marked, and is never what Enter takes; Enter makes a new area and moves the task into it with Undo, and Ctrl+Z takes back the move, then the area; a move between areas is put back by choosing again, with no toast; a filing made elsewhere meanwhile stays, and the toast says the area was added and the task stayed",
       "source": "A5 3.7, A5 3.11",
       "owner": "M5",
       "kind": "ci",
@@ -5832,8 +5832,24 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.12.web.undo-late",
+      "title": "Undo and Redo with answers late or missing: a field edit made while an undo or redo is on its way is sent after it and saved; Ctrl+Shift+Z pressed before an undo's answer redoes that undo's step; the feed naming the tab's own step before its answer leaves the step and its Undo; an undo that got no decision keeps its step for Ctrl+Z to try again; a late answer offers no Undo after a priority chosen since, and no Redo after a check-off made since",
+      "source": "A5 3.12, A5 3.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.12.web.undo-steps",
+      "title": "Undo covers the steps worth it (a check-off, a title, out of the Inbox, a first area) and no other change, a move between areas included: a priority change shows no toast, takes the older step's toast away and leaves Ctrl+Z nothing to undo; a change that arrives on the feed (an agent's, a session's record, the person's in another tab) leaves the toast and its Undo, which goes to the service and may be refused with its reason; Ctrl+Z takes back a run of steps newest first, by their commits; after an Undo the toast offers Undo and Redo side by side, Redo brings the step back by its commit, and another change ends Redo",
+      "source": "A5 3.12",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.12.web.undo",
-      "title": "A check-off holds its row checked for 4 s, collapses and leaves, and a click on its box during the hold undoes it by its commit, the row unchecked at once and kept until the feed brings it back; an undo or redo refused because someone changed it since says who changed which tasks and offers no action, except Undo the rest for the tab's own step where only some fields conflict (never on a page that does not know the step, nor for a commit the refusal does not name), and nothing to undo, a newer change first and an unknown commit each change nothing; Reopen sends its base and its toast's Undo names its commit, and a refused Reopen says so with no action",
+      "title": "A check-off shows its row checked for a moment, then it leaves and never shows open again while its write is on its way, and a click on its box during the hold undoes it by its commit, the row unchecked at once and kept until the feed brings it back; an undo or redo refused because someone changed it since says who changed which tasks and offers no action, except Undo the rest for the tab's own step where only some fields conflict (never on a page that does not know the step), and nothing to undo, a newer change first and an unknown commit each change nothing; Reopen sends its base and its toast's Undo names its commit, and a refused Reopen says so with no action",
       "source": "A5 3.12, A1 3.10.1, A7 3.12 M5.08",
       "owner": "M5",
       "kind": "ci",
@@ -5841,7 +5857,7 @@
     },
     {
       "id": "A7.3.12.m5-08.e2e.flow",
-      "title": "In Chromium and Firefox against the real service, by keyboard alone: empty facts are empty controls; priority, effort and the due date (through the popover's field, which refuses what is not a date) change at once and hold after a reload; a check-off fills the box, strikes the title, keeps the row for the hold, moves focus on and offers Undo; Ctrl+Z undoes it, Ctrl+Shift+Z redoes it and the row leaves after the hold, F6 reaches the toast's Undo, and the box clicked again during the hold undoes it",
+      "title": "In Chromium and Firefox against the real service, by keyboard alone: empty facts are empty controls; priority, effort and the due date (through the popover's field, which refuses what is not a date) change at once with no toast and hold after a reload; a check-off moves focus on, takes the row away at once and offers Undo; F6 reaches the toast's Undo, whose toast then offers Undo and Redo side by side, its Redo and Ctrl+Shift+Z check the task off again and Ctrl+Z undoes it; a priority chosen after a check-off takes its Undo away, and Ctrl+Z then says there is nothing to undo and changes neither",
       "source": "A5 3.11, A5 3.12, A5 3.21, A7 3.12 M5.08",
       "owner": "M5",
       "kind": "ci",
@@ -5849,15 +5865,31 @@
     },
     {
       "id": "A7.3.12.m5-08.e2e.conflict",
-      "title": "In Chromium and Firefox against the real service: an undo of a due date an agent changed since is refused, says who changed the task, offers no action and leaves the agent's date; an agent's change while the date popover is open shows there, and the person's pick then keeps their value under the field until Apply mine saves it",
+      "title": "In Chromium and Firefox against the real service: an undo of a title an agent changed since is refused, says who changed the task, offers no action and leaves the agent's title; an agent's change while the date popover is open shows there, and the person's pick then keeps their value under the field until Apply mine saves it",
       "source": "A5 3.11, A5 3.12, A5 3.15, A7 3.12 M5.08",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.12.e2e.checkoff-pending",
+      "title": "In Chromium and Firefox against the real service: with the answer to a check-off held past the hold, an expanded card and a collapsed search result stay checked, and neither shows open again once the answer and the feed come",
+      "source": "A5 3.12, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.12.e2e.checkoff-leaves",
+      "title": "In Chromium and Firefox against the real service, in a list of a few hundred tasks: a check-off shows the row checked and takes it away while its answer is held, and a move to the Trash by its key takes it away at once; neither row shows open again once the answer and the feed come",
+      "source": "A5 3.12, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.12.e2e.redo-passed-over",
-      "title": "In Chromium and Firefox against the real service: a Redo that would move a task to the Trash after an agent added a note to it passes over that change and redoes the edit behind it, and its toast says who changed which task; the task keeps its note, and the next Redo is refused, naming the same, with no action",
+      "title": "In Chromium and Firefox against the real service: after a move to the Trash and a title are undone in the page, a Redo that would move the task to the Trash again after an agent added a note to it is refused, says who changed which task, offers no action and keeps the task; the next Redo brings back the title",
       "source": "A1 3.10.1, A5 3.12",
       "owner": "M5",
       "kind": "ci",
@@ -5985,7 +6017,7 @@
     },
     {
       "id": "A7.3.12.m5-05.e2e.views",
-      "title": "In Chromium and Firefox against the real service: every sidebar view is there in its fixed order also when it is empty (no count, its name says no tasks), no view has a heading that names it, Waiting groups by person, Inbox's Move to Open and Review's Back to open move the task with an undo toast, the area view groups by project, a task completed while Completed is open appears in its Checked off group, and Reopen in its expanded facts brings it back to Open with an undo toast",
+      "title": "In Chromium and Firefox against the real service: every sidebar view is there in its fixed order also when it is empty (no count, its name says no tasks), no view has a heading that names it, Waiting groups by person, Inbox's Move to Open moves the task with an undo toast, since the page has no way back into the Inbox, and Review's Back to open without a toast, the area view groups by project, a task completed while Completed is open appears in its Checked off group, and Reopen in its expanded facts brings it back to Open with an undo toast",
       "source": "A5 3.3, A5 3.5, A5 3.15, A5 3.16, A7 3.12 M5.05",
       "owner": "M5",
       "kind": "ci",
@@ -6444,7 +6476,7 @@
     },
     {
       "id": "A7.3.12.m5-14.web-write",
-      "title": "A folder or project write from the page waits for the edits before it, shows its toast once it applied with an Undo that names its own commit, and leaves a refusal to the caller without a toast",
+      "title": "A write from the page that is no field of a task waits for the edits before it and shows its toast once it applied; one that is an undoable step offers an Undo that names its own commit, a folder offers none, and a refusal is left to the caller without a toast",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6472,14 +6504,14 @@
     },
     {
       "id": "A7.3.12.m5-14.e2e.project-folder",
-      "title": "In Chromium: a project's folder line shows its folder, Change after a move says what followed and the task's own folder inside follows, Undo puts both back, and Clear and Ctrl+Z take it away and back",
+      "title": "In Chromium: a project's folder line shows its folder, Change after a move says what followed and the task's own folder inside follows, and Clear takes it away; neither offers Undo, and Ctrl+Z then has nothing to undo",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A7.3.12.m5-14.e2e.task-folder",
-      "title": "In Chromium and Firefox: a task's folder line sets a folder of its own, clears it, and Ctrl+Z gives it back",
+      "title": "In Chromium and Firefox: a task's folder line sets a folder of its own and clears it, each with no Undo, and sets it again",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

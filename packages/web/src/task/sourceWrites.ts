@@ -33,7 +33,7 @@ export function sourceWrites(client: Client, edits: Pick<Edits, "write">): Sourc
           request_id: request,
         }),
       (result: UpdateResult | WriteReceipt) => (result.result === "no_change" ? undefined : msg),
-      { base },
+      { base, undo: true },
     );
   return {
     detach: (task, source, base) =>

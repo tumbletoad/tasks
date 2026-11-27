@@ -936,7 +936,18 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
       .getByRole("radio", { name: "P1" })
       .click();
     await page.reload();
-    expect(updates).toHaveLength(1);
+    // Only the rename left: the priority waited behind it. The rename may have gone twice with one
+    // request ID, as the page asks again for an answer that does not come.
+    const sentSets = updates.map(
+      (request) => (request.postDataJSON() as { set?: Record<string, unknown> }).set ?? {},
+    );
+    expect(sentSets.length).toBeGreaterThan(0);
+    expect(sentSets.filter((set) => "priority" in set)).toEqual([]);
+    expect(
+      new Set(
+        updates.map((request) => (request.postDataJSON() as { request_id: string }).request_id),
+      ).size,
+    ).toBe(1);
     answer();
     await page.unrouteAll({ behavior: "wait" });
     // The rename went out, and the priority is offered again, as any edit that was not saved.

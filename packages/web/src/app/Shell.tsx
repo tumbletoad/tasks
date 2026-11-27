@@ -39,7 +39,7 @@ const styles = classes(css, [
 
 /** A toast as a tab that saves nothing more shows it: its words, no action. */
 function withoutAction(toast: Shown | undefined): Shown | undefined {
-  if (toast?.action === undefined) return toast;
+  if (toast?.action === undefined && toast?.second === undefined) return toast;
   const { key, kind, text } = toast;
   return { key, kind, text };
 }
@@ -83,7 +83,10 @@ export function Shell({ space }: { readonly space: string }) {
   useEffect(
     () =>
       edits.onToast((next) => {
-        setToast(next);
+        // The edits take away only a toast of theirs: a message of the page's own stays.
+        setToast((shown) =>
+          next === undefined && shown !== undefined && shown.key < 0 ? shown : next,
+        );
       }),
     [edits],
   );

@@ -1,5 +1,5 @@
-/* The toast (A5 3.12): at the foot of the main column, at its inline start. One sentence and at
-   most one action; an error has a dismiss button. Tokens only. */
+/* The toast (A5 3.12): at the foot of the main column, at its inline start. One sentence and its
+   action, or Undo and Redo; an error has a dismiss button. Tokens only. */
 
 .toast {
   position: fixed;
@@ -49,6 +49,13 @@
 
 .action:hover {
   background: var(--k-selection);
+}
+
+/* Undo or Redo with nothing to take back now: it keeps its place, quiet. */
+.action:disabled {
+  background: transparent;
+  color: var(--k-muted);
+  cursor: default;
 }
 
 .dismiss {
