@@ -28,6 +28,7 @@ import type { Client } from "@ttasks/contracts/generated/client.ts";
  * late answer is still taken), and costs one read and a replay, so it can come early.
  */
 export const ASK_MS = 5_000;
+const STALL_MARGIN_MS = 1_000;
 
 /** The request got no decision the page could learn: it may still apply later. */
 export class Unanswered extends Error {
@@ -77,11 +78,15 @@ export const allOf = (turns: readonly Turn[]): Turn =>
         wait: async () => (await Promise.all(turns.map((turn) => turn.wait()))).every(Boolean),
       };
 
-/** Resolves after `ms`, unless stopped first. */
+/** A stalled page can run an overdue timer before a ready response. Give that response one more wait. */
 function after(timers: Timers, ms: number): { done: Promise<void>; stop: () => void } {
   let handle: unknown;
   const done = new Promise<void>((resolve) => {
-    handle = timers.set(resolve, ms);
+    const due = Date.now() + ms;
+    handle = timers.set(() => {
+      if (Date.now() - due > STALL_MARGIN_MS) handle = timers.set(resolve, ms);
+      else resolve();
+    }, ms);
   });
   return {
     done,
