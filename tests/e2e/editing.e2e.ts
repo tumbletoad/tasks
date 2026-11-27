@@ -513,7 +513,7 @@ test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is fini
 });
 
 test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a task", () => {
-  test("a typo takes the live area it is close to, never an archived one; a new name close to an area is one Down away; Enter makes it and moves the task there", async ({
+  test("a typo takes the live area it is close to, never an archived one; a new name close to an area is one Down away; Enter makes it and moves the task there, and Ctrl+Z takes back the move, then the area", async ({
     page,
     world,
   }) => {
@@ -620,6 +620,16 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await page.keyboard.press("Enter");
     await expect.poll(() => areaOf()).toBe(garden);
     await expect(sidebarLink).toBeVisible();
+
+    // A new area made by mistake has no other way back here: Ctrl+Z takes back the move, and once
+    // more the area.
+    await expect(toastAction(page)).toHaveText("Undo");
+    await page.locator("main").focus();
+    await page.keyboard.press("Control+z");
+    await expect(toast(page)).toHaveText("Undone");
+    await expect.poll(() => areaOf()).toBe("Home");
+    await page.keyboard.press("Control+z");
+    await expect(sidebarLink).toHaveCount(0, { timeout: SLOW_MS });
     expect(await violations(page)).toEqual([]);
   });
 

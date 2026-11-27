@@ -5761,7 +5761,7 @@
     },
     {
       "id": "A5.3.11.e2e.new-area",
-      "title": "In Chromium and Firefox against the real service: the area picker offers a name no area has as a new area, never one an area has in another case; a live area close to a typo comes first and Enter takes it, a new name close to an area is the next choice down, and an archived area comes last, marked, and is never what Enter takes; Enter makes a new area and moves the task into it, and a move is put back by choosing again, with no toast; a filing made elsewhere meanwhile stays, and the toast says the area was added and the task stayed",
+      "title": "In Chromium and Firefox against the real service: the area picker offers a name no area has as a new area, never one an area has in another case; a live area close to a typo comes first and Enter takes it, a new name close to an area is the next choice down, and an archived area comes last, marked, and is never what Enter takes; Enter makes a new area and moves the task into it with Undo, and Ctrl+Z takes back the move, then the area; a move between areas is put back by choosing again, with no toast; a filing made elsewhere meanwhile stays, and the toast says the area was added and the task stayed",
       "source": "A5 3.7, A5 3.11",
       "owner": "M5",
       "kind": "ci",
@@ -5824,8 +5824,16 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.12.web.undo-late",
+      "title": "Undo and Redo with answers late or missing: Ctrl+Shift+Z pressed before an undo's answer redoes that undo's step; the feed naming the tab's own step before its answer leaves the step and its Undo; an undo that got no decision keeps its step for Ctrl+Z to try again; a late answer offers no Undo after a priority chosen since, and no Redo after a check-off made since",
+      "source": "A5 3.12, A5 3.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.12.web.undo-steps",
-      "title": "Undo covers the steps worth it (a check-off, a title) and no other change: a priority change shows no toast, takes the older step's toast away and leaves Ctrl+Z nothing to undo, as does the person's change from elsewhere; Ctrl+Z takes back a run of steps newest first, by their commits; after an Undo the toast offers Undo and Redo side by side, Redo brings the step back by its commit, and another change ends Redo",
+      "title": "Undo covers the steps worth it (a check-off, a title, out of the Inbox, a first area) and no other change, a move between areas included: a priority change shows no toast, takes the older step's toast away and leaves Ctrl+Z nothing to undo, as does the person's change from elsewhere; Ctrl+Z takes back a run of steps newest first, by their commits; after an Undo the toast offers Undo and Redo side by side, Redo brings the step back by its commit, and another change ends Redo",
       "source": "A5 3.12",
       "owner": "M5",
       "kind": "ci",
@@ -6001,7 +6009,7 @@
     },
     {
       "id": "A7.3.12.m5-05.e2e.views",
-      "title": "In Chromium and Firefox against the real service: every sidebar view is there in its fixed order also when it is empty (no count, its name says no tasks), no view has a heading that names it, Waiting groups by person, Inbox's Move to Open and Review's Back to open move the task without a toast, the area view groups by project, a task completed while Completed is open appears in its Checked off group, and Reopen in its expanded facts brings it back to Open with an undo toast",
+      "title": "In Chromium and Firefox against the real service: every sidebar view is there in its fixed order also when it is empty (no count, its name says no tasks), no view has a heading that names it, Waiting groups by person, Inbox's Move to Open moves the task with an undo toast, since the page has no way back into the Inbox, and Review's Back to open without a toast, the area view groups by project, a task completed while Completed is open appears in its Checked off group, and Reopen in its expanded facts brings it back to Open with an undo toast",
       "source": "A5 3.3, A5 3.5, A5 3.15, A5 3.16, A7 3.12 M5.05",
       "owner": "M5",
       "kind": "ci",

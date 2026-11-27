@@ -8,6 +8,7 @@ import { FakeFrames } from "../../test/fake-frames.ts";
 import {
   dueChange,
   effortChange,
+  groupingChange,
   joinChanges,
   priorityChange,
   statusChange,
@@ -1605,6 +1606,30 @@ describe("[A5.3.12.web.undo-steps] Undo for the steps worth it, and Redo beside 
     expect(history(w)).toEqual([]);
   });
 
+  test("a change whose old value the page cannot choose again keeps Undo: out of the Inbox, and a first area; a move between areas does not", async () => {
+    const w = new World([task(1, { inbox: true }), task(2), task(3, { area_id: "a_home" })]);
+    const answered = (ref: string) => () => ({
+      result: "updated",
+      task: ref,
+      fields: [],
+      as_of: w.asOf(11),
+      warnings: [],
+    });
+    w.answer("task.update", answered("M-1"));
+    w.edits.edit(task(1, { inbox: true }), triageChange());
+    expect(w.lastToast()).toMatchObject({ kind: "undo", action: { label: { id: "toast.undo" } } });
+    w.answer("task.update", answered("M-2"));
+    w.edits.edit(task(2), groupingChange({ id: "a_home", title: "Home" }, undefined));
+    expect(w.lastToast()).toMatchObject({ kind: "undo", action: { label: { id: "toast.undo" } } });
+    w.answer("task.update", answered("M-3"));
+    w.edits.edit(
+      task(3, { area_id: "a_home" }),
+      groupingChange({ id: "a_yard", title: "Yard" }, undefined),
+    );
+    expect(w.lastToast()).toBeUndefined();
+    await flush();
+  });
+
   test("Ctrl+Z takes back a run of steps newest first, by their commits", async () => {
     const w = new World([task(1), task(2)]);
     await checkedOff(w, 1, 11);
@@ -1663,6 +1688,162 @@ describe("[A5.3.12.web.undo-steps] Undo for the steps worth it, and Redo beside 
       warnings: [],
     }));
     w.edits.edit(task(2), priorityChange(1));
+    await flush();
+    const sent = history(w).length;
+    await w.edits.redo();
+    expect(history(w)).toHaveLength(sent);
+    expect(w.lastToast()?.text).toEqual({ id: "toast.nothingToRedo" });
+  });
+});
+
+describe("[A5.3.12.web.undo-late] Undo and Redo when answers come late, or not at all", () => {
+  const commitAt = (seq: number) => `op_${String(seq).padStart(26, "0")}`;
+  const history = (w: World) => w.calls.filter((c) => c.name.startsWith("history"));
+  const network = () => {
+    throw new Error("network");
+  };
+  async function checkedOff(w: World, n: number, seq: number): Promise<void> {
+    w.answer("task.finish", () => ({
+      result: "completed",
+      task: `M-${String(n)}`,
+      lifecycle: "completed",
+      learnings: 0,
+      follow_ups: [],
+      as_of: w.asOf(seq),
+    }));
+    w.edits.checkOff(task(n));
+    await flush();
+    w.feed(
+      [task(n, { lifecycle: "completed", version: 2 })],
+      String(w.calls.at(-1)?.input["request_id"]),
+      ["lifecycle"],
+    );
+  }
+
+  test("the feed naming the tab's own step before its answer leaves the step and its toast", async () => {
+    const w = new World([task(1)]);
+    let answer!: (value: { result: string; as_of: string }) => void;
+    let request = "";
+    const written = w.edits.write(
+      (sent) => {
+        request = sent;
+        return new Promise<{ result: string; as_of: string }>((resolve) => (answer = resolve));
+      },
+      () => ({ id: "toast.noteRemoved", values: { ref: "M-1" } }),
+      { undo: true },
+    );
+    await flush();
+    w.feed([task(1, { version: 2 })], request, []);
+    answer({ result: "updated", as_of: w.asOf(11) });
+    await written;
+    expect(w.lastToast()).toMatchObject({ kind: "undo", action: { label: { id: "toast.undo" } } });
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: commitAt(11),
+      tasks: [],
+      task_count: 0,
+      as_of: w.asOf(12),
+    }));
+    await w.edits.undo();
+    expect(history(w).at(-1)?.input).toMatchObject({ commit: commitAt(11) });
+  });
+
+  test("Ctrl+Shift+Z pressed before the undo's answer redoes the step that undo took back", async () => {
+    const w = new World([task(1), task(2)]);
+    await checkedOff(w, 1, 11);
+    await checkedOff(w, 2, 12);
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: commitAt(12),
+      tasks: [],
+      task_count: 0,
+      as_of: w.asOf(13),
+    }));
+    w.answer("history.redo", () => ({
+      result: "redone",
+      commit: commitAt(12),
+      tasks: [],
+      task_count: 0,
+      as_of: w.asOf(14),
+    }));
+    const undone = w.edits.undo();
+    const redone = w.edits.redo();
+    await Promise.all([undone, redone]);
+    expect(history(w).map((c) => [c.name, c.input["commit"]])).toEqual([
+      ["history.undo", commitAt(12)],
+      ["history.redo", commitAt(12)],
+    ]);
+  });
+
+  test("an undo that got no answer keeps its step: Ctrl+Z tries the same step again", async () => {
+    const w = new World([task(1)]);
+    await checkedOff(w, 1, 11);
+    w.answer("history.undo", network);
+    w.answer("history.undo", network);
+    w.answer("receipt.get", network);
+    const failed = w.edits.undo();
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await failed;
+    expect(w.lastToast()?.text).toEqual({ id: "toast.undoFailed" });
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: commitAt(11),
+      tasks: ["M-1"],
+      task_count: 1,
+      as_of: w.asOf(12),
+    }));
+    await w.edits.undo();
+    expect(history(w).at(-1)?.input).toMatchObject({ commit: commitAt(11) });
+    expect(w.lastToast()?.text).toEqual({ id: "toast.undone" });
+  });
+
+  test("a late answer offers nothing the person has moved past: no Undo after a priority, no Redo after a check-off", async () => {
+    const w = new World([task(1), task(2), task(3)]);
+    // A note removed, a priority chosen before the removal's answer: its toast comes with no Undo.
+    let answer!: (value: { result: string; as_of: string }) => void;
+    const written = w.edits.write(
+      () => new Promise<{ result: string; as_of: string }>((resolve) => (answer = resolve)),
+      () => ({ id: "toast.noteRemoved", values: { ref: "M-1" } }),
+      { undo: true },
+    );
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-2",
+      fields: ["priority"],
+      as_of: w.asOf(12),
+      warnings: [],
+    }));
+    w.edits.edit(task(2), priorityChange(1));
+    await flush();
+    answer({ result: "updated", as_of: w.asOf(11) });
+    await written;
+    await flush();
+    expect(w.lastToast()).toMatchObject({ kind: "info", text: { id: "toast.noteRemoved" } });
+    expect(w.lastToast()?.action).toBeUndefined();
+
+    // An undo still on its way when another task is checked off: its answer offers no Redo.
+    await checkedOff(w, 1, 13);
+    let undone!: (value: unknown) => void;
+    w.answer("history.undo", () => new Promise((resolve) => (undone = resolve)));
+    const asked = w.edits.undo();
+    await flush();
+    w.answer("task.finish", () => ({
+      result: "completed",
+      task: "M-3",
+      lifecycle: "completed",
+      learnings: 0,
+      follow_ups: [],
+      as_of: w.asOf(15),
+    }));
+    w.edits.checkOff(task(3));
+    undone({
+      result: "undone",
+      commit: commitAt(13),
+      tasks: ["M-1"],
+      task_count: 1,
+      as_of: w.asOf(14),
+    });
+    await asked;
     await flush();
     const sent = history(w).length;
     await w.edits.redo();

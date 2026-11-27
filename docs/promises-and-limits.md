@@ -29,11 +29,12 @@ the behaviour it describes, and keep each one to a sentence or two.
 - In the page, Undo and Redo are for what is a nuisance to put back by hand: checking off and
   reopening, moving to the Trash and restoring, removing a note or a source and putting it back, a
   title, setting questions aside, restoring a whole change from the Trash, a change of the effort
-  levels, and a new project or an unarchive, which the page has no other way to take back. Any
-  other change saves without Undo, and from then on the page offers no Undo or
-  Redo of what came before it, wherever you made that change, so Undo never takes back something
-  you did not expect. Limit: the page offers only what that tab did since it opened; `ttasks undo`
-  reaches the rest.
+  levels, and what the page has no other way to take back: a new project, area or unarchive, a
+  move out of the Inbox, and a task's first area. Any other change saves without Undo, and from
+  then on the page offers no Undo or Redo of what came before it, wherever you made that change,
+  so Undo never takes back something you did not expect. An Undo or Redo that got no answer keeps
+  its step to try again. Limit: the page offers only what that tab did since it opened; `ttasks
+  undo` reaches the rest.
 - Checking off a task completes it at once and can be undone. Neither Undo nor Redo checks a task
   off or archives it again when someone else added to it or changed it since.
 - Wrapping up a task keeps its context, notes, activity and sources. Reopening keeps the earlier
