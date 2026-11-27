@@ -604,22 +604,23 @@ a + .muted,
   background: var(--k-slot);
 }
 
-/* A segmented control (A5 3.7): equal cells, the chosen one on hover's surface with a control
-   line. Controls that share `--k-cols` columns have cells of one width: one that uses `--k-span`
-   of them takes that share of the width, so priority's and effort's cells sit under each other. */
+/* A segmented control (A5 3.7): its options on one line in cells of one width while their names
+   fit there, wrapping only when they do not; the chosen one on hover's surface with a control line.
+   A cell is never narrower than its name, nor wider than the control. */
 .seg {
-  display: grid;
-  grid-template-columns: repeat(var(--k-span, 3), minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 2px;
-  width: calc(100% * var(--k-span, 1) / var(--k-cols, 1));
   padding: 2px;
   border-radius: 6px;
   box-shadow: inset 0 0 0 1px var(--k-line-strong);
 }
 
-/* A long status name wraps rather than being cut: two cut names could read the same. */
+/* A name wider than the whole control wraps rather than being cut: two cut names could read the
+   same. */
 .segButton {
-  min-width: 0;
+  flex: 1 1 0;
+  min-width: fit-content;
   min-height: 26px;
   padding: 2px 4px;
   border: 0;
@@ -637,9 +638,8 @@ a + .muted,
   font-size: 0.8125rem;
 }
 
-/* A level's name is short and wraps like a status's. One an earlier build let be longer is cut:
-   its tip says it whole, with its time and what belongs on it. */
-.segButton[data-long] > span,
+/* A finished task's level an earlier build let be longer than a name set now is cut: its tip says
+   it whole, with its time and what belongs on it. */
 .level[data-long] {
   display: block;
   overflow: hidden;
@@ -1085,9 +1085,11 @@ a + .muted,
     box-shadow: none;
   }
 
-  .seg {
-    grid-template-columns: repeat(var(--k-span, 3), auto);
-    width: auto;
+  /* The Created line takes the rest of its line, so Move to Trash sits at its far end. */
+  .facts dd:has(> .foot) {
+    flex-grow: 1;
+    padding-inline-end: 0;
+    box-shadow: none;
   }
 
   .segButton {
@@ -1110,24 +1112,12 @@ a + .muted,
   }
 }
 
-/* Move to Trash: a quiet line at the foot of the facts, away from the controls used every day. */
-.trash {
-  margin: 12px 0 0;
-}
-
-.trashButton {
+/* The facts' last line: Created, and Move to Trash at its far end, away from the controls used
+   every day. */
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   min-height: 24px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--k-text-2);
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.trashButton:hover {
-  color: var(--k-text);
 }
