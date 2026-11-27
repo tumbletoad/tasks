@@ -328,13 +328,13 @@ describe("[M6.page.last-agents] a task's row names the agents it was last opened
 
     let from = (await readHead(reader)).cursor.seq;
     await open("claude-work");
-    expect(await lastOf(from)).toEqual({ open: "claude-work" });
+    expect(await lastOf(from)).toEqual({ open: "claude-work", open_route: "terminal" });
 
     // T3 Code refused the Open: the work account stays the task's.
     const t3 = await open("t3-personal", "t3-mcp");
     from = (await readHead(reader)).cursor.seq;
     await store.transitionIntent(t3.id, "prepared", "failed", { reason: "pairing_denied" });
-    expect(await lastOf(from)).toEqual({ open: "claude-work" });
+    expect(await lastOf(from)).toEqual({ open: "claude-work", open_route: "terminal" });
 
     from = (await readHead(reader)).cursor.seq;
     await open("claude-work", "clipboard");
@@ -353,10 +353,23 @@ describe("[M6.page.last-agents] a task's row names the agents it was last opened
       },
       rid(),
     );
-    expect(await lastOf(from)).toEqual({ open: "claude-work", run: "codex-personal" });
+    expect(await lastOf(from)).toEqual({
+      open: "claude-work",
+      open_route: "terminal",
+      run: "codex-personal",
+    });
     const snapshot = await readSnapshot(reader, here);
     expect(snapshot.tasks.find((r) => r["id"] === task)?.["last"]).toEqual({
       open: "claude-work",
+      open_route: "terminal",
+      run: "codex-personal",
+    });
+    // An Open in T3 Code names its route: a T3 key machine.toml no longer has still says T3 Code.
+    from = (await readHead(reader)).cursor.seq;
+    await open("t3-personal", "t3-mcp");
+    expect(await lastOf(from)).toEqual({
+      open: "t3-personal",
+      open_route: "t3-mcp",
       run: "codex-personal",
     });
   });

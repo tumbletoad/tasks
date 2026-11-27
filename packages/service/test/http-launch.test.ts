@@ -170,7 +170,7 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       expect(JSON.parse(busy.body)).toEqual({
         result: {
           busy: [{ task: task.id, instance: "fake-agent", state: "opening" }],
-          last: { open: "fake-agent" },
+          last: { open: "fake-agent", open_route: "terminal" },
         },
       });
       // A distinct click while it is opening gets the same launch and starts nothing.
@@ -230,7 +230,9 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       );
       expect(left.state).toBe("prepared");
       const busy = await post(port, "/api/v1/launch/busy", {}, { token, headers });
-      expect(JSON.parse(busy.body)).toEqual({ result: { busy: [], last: { open: "fake-agent" } } });
+      expect(JSON.parse(busy.body)).toEqual({
+        result: { busy: [], last: { open: "fake-agent", open_route: "terminal" } },
+      });
       const opened = await post(
         port,
         OPEN,
