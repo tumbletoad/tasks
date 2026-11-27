@@ -22,7 +22,6 @@ import { MCP_SERVER_KEY } from "@ttasks/brand";
 import { REQUEST_CHARS } from "@ttasks/contracts";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import {
-  briefReference,
   powershellPath,
   REQUEST_LINE,
   type SpawnRequest,
