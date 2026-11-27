@@ -31,9 +31,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   title, setting questions aside, restoring a whole change from the Trash, a change of the effort
   levels, and what the page has no other way to take back: a new project, area or unarchive, a
   move out of the Inbox, and a task's first area. Any other change saves without Undo, and from
-  then on the page offers no Undo or Redo of what came before it, wherever you made that change,
-  so Undo never takes back something you did not expect. An Undo or Redo that got no answer keeps
-  its step to try again. Limit: the page offers only what that tab did since it opened; `ttasks
+  then on that tab offers no Undo or Redo of what came before it, so Undo never takes back
+  something you did not expect. A change made elsewhere since is never overwritten: Undo then says
+  who changed what. An Undo or Redo that got no answer keeps its step to try again. Limit: the page offers only what that tab did since it opened; `ttasks
   undo` reaches the rest.
 - Checking off a task completes it at once and can be undone. Neither Undo nor Redo checks a task
   off or archives it again when someone else added to it or changed it since.

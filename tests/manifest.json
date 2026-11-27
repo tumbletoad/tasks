@@ -5841,7 +5841,7 @@
     },
     {
       "id": "A5.3.12.web.undo-steps",
-      "title": "Undo covers the steps worth it (a check-off, a title, out of the Inbox, a first area) and no other change, a move between areas included: a priority change shows no toast, takes the older step's toast away and leaves Ctrl+Z nothing to undo, as does the person's change from elsewhere; Ctrl+Z takes back a run of steps newest first, by their commits; after an Undo the toast offers Undo and Redo side by side, Redo brings the step back by its commit, and another change ends Redo",
+      "title": "Undo covers the steps worth it (a check-off, a title, out of the Inbox, a first area) and no other change, a move between areas included: a priority change shows no toast, takes the older step's toast away and leaves Ctrl+Z nothing to undo; a change that arrives on the feed (an agent's, a session's record, the person's in another tab) leaves the toast and its Undo, which goes to the service and may be refused with its reason; Ctrl+Z takes back a run of steps newest first, by their commits; after an Undo the toast offers Undo and Redo side by side, Redo brings the step back by its commit, and another change ends Redo",
       "source": "A5 3.12",
       "owner": "M5",
       "kind": "ci",

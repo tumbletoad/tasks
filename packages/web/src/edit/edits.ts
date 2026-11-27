@@ -11,8 +11,9 @@
 // - Undo is for what is a nuisance to put back by hand: a check-off or a reopen, a move to the
 //   Trash or out of it, a removal, a text, a change of many tasks at once (`#stepped`, STEP_FIELDS,
 //   `write`'s `undo`). Every other change saves without Undo. The history is one line, so a change
-//   without Undo, made anywhere, ends the Undo and Redo of what came before it (`#moved`): Undo
-//   never takes back something other than the person thinks.
+//   without Undo made in this tab ends the Undo and Redo of what came before it (`#moved`). A change
+//   made elsewhere ends nothing here: each Undo names its own commit, and the service refuses one
+//   that newer work stands in the way of, saying whose it was.
 // - A check-off by mistake is undone with one action. The row shows checked and struck through for
 //   a moment, then leaves at once; its toast's Undo names its own commit.
 // - Two windows, or a person and an agent, on one task: every edit carries a base (A1 3.5), so the
@@ -1938,22 +1939,9 @@ export class Edits {
 
   /** What the feed brought: others' changes for open editors, and rows back from an undo. */
   #heard(changes: readonly FeedChange[]): void {
-    // A session's or a run's record is never on the person's Undo, whoever's name it carries.
-    const records = new Set(
-      changes.filter((c) => c.type === "launch" || c.type === "run").map((c) => c.request_id),
-    );
     for (const change of changes) {
       // A request of this tab's whose outcome was unknown is decided: its outcome can be read.
       this.#calls.get(change.request_id)?.heard();
-      // The person's change made elsewhere (another window, the command line, a write of this page
-      // outside its edits) is the newest of their history now.
-      if (
-        change.actor.kind === "human" &&
-        !this.#mine.has(change.request_id) &&
-        !records.has(change.request_id)
-      ) {
-        this.#moved();
-      }
       if (change.type !== "task" || change.task === undefined) continue;
       const leaving = this.#state.leaving.get(change.task);
       const after = change.after as TaskRow | undefined;

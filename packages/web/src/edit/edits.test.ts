@@ -1564,12 +1564,17 @@ describe("[A5.3.12.web.undo-steps] Undo for the steps worth it, and Redo beside 
     expect(w.lastToast()?.text).toEqual({ id: "toast.nothingToUndo" });
   });
 
-  test("the person's change made elsewhere ends this tab's Undo as well; an agent's does not, nor a session's record", async () => {
+  test("an Undo toast keeps its button while the feed brings changes of every kind, and its Undo goes to the service, which may refuse it with its reason", async () => {
     const w = new World([task(1), task(2)]);
     await checkedOff(w, 1, 11);
+    const offered = w.lastToast();
+    expect(offered).toMatchObject({
+      text: { id: "toast.done" },
+      action: { label: { id: "toast.undo" } },
+    });
+    // An agent's change, a session's record under the person's name, and the person's change in
+    // another tab.
     w.feed([task(2, { priority: 2, version: 2 })], "agent-1", ["priority"], "agent");
-    expect(w.lastToast()).toMatchObject({ text: { id: "toast.done" } });
-    // A session's state, recorded under the person's name: never on their Undo.
     w.seq += 1;
     w.store.push({
       type: "batch",
@@ -1599,11 +1604,15 @@ describe("[A5.3.12.web.undo-steps] Undo for the steps worth it, and Redo beside 
       ],
     });
     w.store.flush();
-    expect(w.lastToast()).toMatchObject({ text: { id: "toast.done" } });
-    w.feed([task(2, { priority: 3, version: 3 })], "other-window", ["priority"]);
-    expect(w.lastToast()).toBeUndefined();
+    w.feed([task(2, { priority: 3, version: 4 })], "other-window", ["priority"]);
+    expect(w.lastToast()).toBe(offered);
+    // The service refuses it: the person's newer change elsewhere comes first, and the toast says so.
+    w.answer("history.undo", () => {
+      throw appError("conflict", { cause: "INVALID_TRANSITION" });
+    });
     await w.edits.undo();
-    expect(history(w)).toEqual([]);
+    expect(history(w).at(-1)?.input).toMatchObject({ commit: commitAt(11) });
+    expect(w.lastToast()?.text).toEqual({ id: "toast.newerFirst" });
   });
 
   test("a change whose old value the page cannot choose again keeps Undo: out of the Inbox, and a first area; a move between areas does not", async () => {
