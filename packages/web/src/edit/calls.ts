@@ -11,8 +11,10 @@
 //   sends the request again with the same ID and input, which applies it at most once (A1 3.8: the
 //   writer replays a decided request, and one that races its first call). The first decision of
 //   any of them is the outcome.
-// - No decision within `ASK_MS` more: the caller keeps the sent value as not saved. An edit
-//   already queued on the same task waits for the late decision. A new wait can ask again.
+// - No decision within `ASK_MS` more (the service is down, or hangs): the outcome is unknown. The
+//   request keeps its place: whatever waits behind it is not sent (`NotSent`), and the caller keeps
+//   the person's value as not saved. The next wait on it asks again, so Try again goes out once
+//   the outcome is known, never before it.
 // - A decision that comes later (the answer, or the feed naming the request) is still taken.
 //
 // An outcome is decided once: the first decision. What depends on it runs from that decision and
@@ -26,6 +28,7 @@ import type { Client } from "@ttasks/contracts/generated/client.ts";
  * late answer is still taken), and costs one read and a replay, so it can come early.
  */
 export const ASK_MS = 5_000;
+const STALL_MARGIN_MS = 1_000;
 
 /** The request got no decision the page could learn: it may still apply later. */
 export class Unanswered extends Error {
@@ -61,7 +64,7 @@ export interface CallDeps {
 /** A place in the queue: what waits behind it waits for this. */
 export interface Turn {
   /** True once the outcome is known; false when it could not be learned (asked again next time). */
-  wait(follow?: "same-task"): Promise<boolean>;
+  wait(): Promise<boolean>;
 }
 
 /** A turn with nothing to wait for. */
@@ -75,11 +78,15 @@ export const allOf = (turns: readonly Turn[]): Turn =>
         wait: async () => (await Promise.all(turns.map((turn) => turn.wait()))).every(Boolean),
       };
 
-/** Resolves after `ms`, unless stopped first. */
+/** A stalled page can run an overdue timer before a ready response. Give that response one more wait. */
 function after(timers: Timers, ms: number): { done: Promise<void>; stop: () => void } {
   let handle: unknown;
   const done = new Promise<void>((resolve) => {
-    handle = timers.set(resolve, ms);
+    const due = Date.now() + ms;
+    handle = timers.set(() => {
+      if (Date.now() - due > STALL_MARGIN_MS) handle = timers.set(resolve, ms);
+      else resolve();
+    }, ms);
   });
   return {
     done,
@@ -143,11 +150,14 @@ export class Call<T> implements Turn {
     this.answer.catch(() => undefined);
   }
 
-  /** An edit already queued on this task follows the decision even after the sender times out. */
-  wait(follow?: "same-task"): Promise<boolean> {
+  /**
+   * A wait that begins while the first answer is awaited gets its outcome; one that begins after
+   * an unknown outcome asks again.
+   */
+  wait(): Promise<boolean> {
+    if (!this.#firstDone) return this.#first;
     if (this.#decision !== undefined) return Promise.resolve(true);
-    const answer = this.#firstDone ? this.#learn() : this.#first;
-    return follow === "same-task" ? this.decided.then(() => true) : answer;
+    return this.#learn();
   }
 
   /**
