@@ -277,6 +277,7 @@ export function TopBar({
     void navigate({
       to: "/s/$space/search",
       params: { space },
+      search: ({ task }) => (task === undefined ? {} : { task }),
       state: q === "" ? {} : { q },
       replace: true,
     });
