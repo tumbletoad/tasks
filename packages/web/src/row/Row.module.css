@@ -206,9 +206,15 @@
   color: var(--k-late);
 }
 
+/* The title's column, as tall as the line: a click anywhere in it expands the row. */
 .main {
+  align-self: stretch;
   min-width: 0;
   padding-inline-end: 12px;
+}
+
+.row:not([data-expanded="true"]) .main {
+  cursor: pointer;
 }
 
 .tline {

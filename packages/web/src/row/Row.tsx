@@ -1,8 +1,8 @@
 // The task row (A5 3.6, 3.22): the model from `renderRow` drawn in fixed columns. The title is a
 // button that expands the row in place; the checkbox, the sources, the folder, the star and the
-// launch tile are its siblings, never its children, and never expand it by themselves (a click on
-// the summary does, as on the title). A roving tabindex puts only the current row in the tab order:
-// its title first, then its other controls.
+// launch tile are its siblings, never its children, and never expand it by themselves. A click
+// anywhere else in the title's column, empty space included, expands it as the title does. A roving
+// tabindex puts only the current row in the tab order: its title first, then its other controls.
 //
 // The row is memoised: it renders again only when its own task, its area or project, its receipts,
 // what busies its agent apps, its place in the list or its state (expanded, current, fresh) changes. Every prop it takes is a
@@ -688,7 +688,20 @@ function RowView({
             />
           )}
         </span>
-        <div className={styles.main}>
+        <div
+          className={styles.main}
+          onClick={(event) => {
+            // A control in the column does only its own thing, and a click that ends a selection
+            // of the text selects it. Expanded, the title collapses the card and the summary asks.
+            if (expanded || (event.target as Element).closest("button, a, input") !== null) return;
+            if (!(window.getSelection()?.isCollapsed ?? true)) return;
+            // The row becomes current, as if its title had been clicked.
+            event.currentTarget
+              .querySelector<HTMLElement>('[data-part="title"]')
+              ?.focus({ preventScroll: true });
+            toggle();
+          }}
+        >
           <div className={styles.tline}>
             {editing !== false && editable ? (
               <TitleEditor
@@ -761,25 +774,15 @@ function RowView({
             )}
           </div>
           {model.prefix === undefined && line === undefined ? null : (
-            // A click on the summary toggles the row like the title, whose button keyboard users reach.
             <div
               className={styles.summary}
               data-part={model.ending === undefined ? "summary" : "ending"}
               data-tip={expanded && !trashed ? t("ask.tip") : undefined}
-              onClick={(event) => {
+              onClick={() => {
                 // Expanded, the line is an agent's to change: a click asks one (A5 3.11), unless
                 // it ends a selection of its text.
-                if (expanded) {
-                  if (!(window.getSelection()?.isCollapsed ?? true)) return;
-                  actions.ask(task, model.ending === undefined ? "summary" : "outcome");
-                  return;
-                }
-                // The row becomes current, as if its title had been clicked.
-                event.currentTarget
-                  .closest("li")
-                  ?.querySelector<HTMLElement>('[data-part="title"]')
-                  ?.focus({ preventScroll: true });
-                toggle();
+                if (!expanded || !(window.getSelection()?.isCollapsed ?? true)) return;
+                actions.ask(task, model.ending === undefined ? "summary" : "outcome");
               }}
             >
               {model.prefix === undefined ? null : (
