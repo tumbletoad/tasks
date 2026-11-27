@@ -1563,10 +1563,41 @@ describe("[A5.3.12.web.undo-steps] Undo for the steps worth it, and Redo beside 
     expect(w.lastToast()?.text).toEqual({ id: "toast.nothingToUndo" });
   });
 
-  test("the person's change made elsewhere ends this tab's Undo as well; an agent's does not", async () => {
+  test("the person's change made elsewhere ends this tab's Undo as well; an agent's does not, nor a session's record", async () => {
     const w = new World([task(1), task(2)]);
     await checkedOff(w, 1, 11);
     w.feed([task(2, { priority: 2, version: 2 })], "agent-1", ["priority"], "agent");
+    expect(w.lastToast()).toMatchObject({ text: { id: "toast.done" } });
+    // A session's state, recorded under the person's name: never on their Undo.
+    w.seq += 1;
+    w.store.push({
+      type: "batch",
+      space_id: SPACE.id,
+      epoch: 1,
+      incarnation: INCARNATION,
+      from: w.seq - 1,
+      through: w.seq,
+      events: [
+        {
+          seq: w.seq,
+          op_id: `op_${String(w.seq).padStart(26, "0")}`,
+          request_id: "launch-1",
+          actor: { kind: "human", label: "Mira" },
+          kind: "ops",
+          entities: [
+            {
+              type: "launch",
+              id: "la_1",
+              task: "t_00002",
+              row: null,
+              changed: ["state"],
+              created: false,
+            },
+          ],
+        },
+      ],
+    } as BatchMessage);
+    w.store.flush();
     expect(w.lastToast()).toMatchObject({ text: { id: "toast.done" } });
     w.feed([task(2, { priority: 3, version: 3 })], "other-window", ["priority"]);
     expect(w.lastToast()).toBeUndefined();

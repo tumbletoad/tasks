@@ -1871,12 +1871,22 @@ export class Edits {
 
   /** What the feed brought: others' changes for open editors, and rows back from an undo. */
   #heard(changes: readonly FeedChange[]): void {
+    // A session's or a run's record is never on the person's Undo, whoever's name it carries.
+    const records = new Set(
+      changes.filter((c) => c.type === "launch" || c.type === "run").map((c) => c.request_id),
+    );
     for (const change of changes) {
       // A request of this tab's whose outcome was unknown is decided: its outcome can be read.
       this.#calls.get(change.request_id)?.heard();
       // The person's change made elsewhere (another window, the command line, a write of this page
       // outside its edits) is the newest of their history now.
-      if (change.actor.kind === "human" && !this.#mine.has(change.request_id)) this.#moved();
+      if (
+        change.actor.kind === "human" &&
+        !this.#mine.has(change.request_id) &&
+        !records.has(change.request_id)
+      ) {
+        this.#moved();
+      }
       if (change.type !== "task" || change.task === undefined) continue;
       const leaving = this.#state.leaving.get(change.task);
       const after = change.after as TaskRow | undefined;
