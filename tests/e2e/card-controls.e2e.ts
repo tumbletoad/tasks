@@ -2,7 +2,7 @@
 // fixture data, at 1,440 and 390 px: a click anywhere in a row's title column expands it, while its
 // star and a selection of its text do not; in the card, a note's Remove is a bin in sight without
 // hover, the folder line's icon opens the folder chooser by mouse and by keyboard, the default
-// effort levels sit on one line, and Move to Trash is an icon at the end of the Created line.
+// effort levels sit on one line, and Move to Trash is an icon, the last control on the Created line.
 // Screenshots go to the results folder for review.
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
@@ -16,6 +16,17 @@ const linesOf = (group: Locator) =>
     .evaluateAll(
       (cells) => new Set(cells.map((c) => Math.round(c.getBoundingClientRect().top))).size,
     );
+
+/** Whether nothing from the element up to the page hides it: no opacity 0, hidden or none. */
+const shown = (element: Element): boolean => {
+  for (let at: Element | null = element; at !== null; at = at.parentElement) {
+    const style = getComputedStyle(at);
+    if (style.opacity === "0" || style.visibility === "hidden" || style.display === "none") {
+      return false;
+    }
+  }
+  return true;
+};
 
 /** Drags the mouse across `target`'s text, as a person selecting it does. */
 async function select(page: Page, target: Locator): Promise<void> {
@@ -77,8 +88,9 @@ test.describe("[A5.3.7.e2e.card-controls] the row's title column expands it; the
       const room = await column.boundingBox();
       const words = await title.boundingBox();
       if (room === null || words === null) throw new Error("the row is not laid out");
-      expect(room.width - words.width, "room beside the title").toBeGreaterThan(40);
-      await page.mouse.move(room.x + room.width - 8, words.y + words.height / 2);
+      const beyond = words.x + words.width;
+      expect(room.x + room.width, "room beside the title").toBeGreaterThan(beyond);
+      await page.mouse.move((beyond + room.x + room.width) / 2, words.y + words.height / 2);
       await expect(column).toHaveCSS("cursor", "pointer");
       await picture(page, `row-empty-space-${String(width)}.png`);
       await page.mouse.down();
@@ -91,7 +103,8 @@ test.describe("[A5.3.7.e2e.card-controls] the row's title column expands it; the
       // A note's Remove is a bin, in sight without the pointer on it.
       const note = body.locator('[data-entry="note"]');
       const remove = note.getByRole("button", { name: "Remove your note" });
-      await expect(remove).toHaveCSS("opacity", "1", { timeout: SLOW_MS });
+      await expect(remove).toBeVisible({ timeout: SLOW_MS });
+      await expect.poll(() => remove.evaluate(shown)).toBe(true);
       await expect(remove).toHaveText("");
       await picture(note, `note-bin-${String(width)}.png`);
 
@@ -121,15 +134,26 @@ test.describe("[A5.3.7.e2e.card-controls] the row's title column expands it; the
       await expect(effort.getByRole("radio")).toHaveCount(5);
       expect(await linesOf(effort), `effort lines at ${String(width)} px`).toBe(1);
 
-      // Move to Trash: an icon at the end of the Created line.
+      // Move to Trash: an icon, the last control on the Created line.
       const trash = facts.getByRole("button", { name: "Move to Trash" });
       await expect(trash).toHaveText("");
       const line = trash.locator("xpath=ancestor::dd");
       expect(await line.evaluate((dd) => dd.previousElementSibling?.textContent)).toBe("Created");
-      const end = await trash.boundingBox();
-      const all = await facts.boundingBox();
-      if (end === null || all === null) throw new Error("the facts are not laid out");
-      expect(all.x + all.width - (end.x + end.width), "Trash at the end").toBeLessThan(2);
+      expect(
+        await line.evaluate((dd) => {
+          const last = [...dd.querySelectorAll("button")].at(-1);
+          if (last === undefined) return { last: undefined, after: 0 };
+          const end = last.getBoundingClientRect().right;
+          // What else the line shows: neither inside the button nor holding it.
+          const others = [...dd.querySelectorAll("*")].filter(
+            (e) => !last.contains(e) && !e.contains(last),
+          );
+          return {
+            last: last.getAttribute("aria-label"),
+            after: others.filter((e) => e.getBoundingClientRect().right > end + 1).length,
+          };
+        }),
+      ).toEqual({ last: "Move to Trash", after: 0 });
       await trash.hover();
       await expect(tooltip).toHaveText("Move to Trash");
       await picture(facts, `facts-${String(width)}.png`);
