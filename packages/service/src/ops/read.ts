@@ -209,7 +209,17 @@ const REQUEST_FOR =
   "(SELECT json_group_array(json_array(l.reference, l.instance_id) ORDER BY l.created_at, l.id) " +
   "FROM launches l WHERE l.task_id = n.task_id " +
   "AND json_extract(l.detail, '$.evidence.request') = 'n' || n.ordinal)";
-const NOTE_COLUMNS = `n.ordinal, n.addressee, n.body, n.created_at, ${authorOf("n")} AS author, ${REQUEST_FOR} AS request_for`;
+/**
+ * Entry `e`'s words as someone corrected them: the commit whose write its body holds, when that is
+ * not the one that wrote the entry, as `{at, by}`. An undo of the correction gives the body its
+ * writing back, and with it no mark.
+ */
+const EDITED = (e: string): string =>
+  "(SELECT json_object('at', c.at, 'by', CASE WHEN c.origin = 'import' THEN 'import' " +
+  "WHEN a.kind = 'human' THEN 'user' ELSE a.label END) FROM commits c " +
+  `JOIN actors a ON a.id = c.author_id WHERE c.seq = json_extract(${e}.fp, '$.body') ` +
+  `AND c.seq <> ${e}.created_seq)`;
+const NOTE_COLUMNS = `n.ordinal, n.addressee, n.body, n.created_at, ${authorOf("n")} AS author, ${REQUEST_FOR} AS request_for, ${EDITED("n")} AS edited`;
 const NOTES_FROM = `FROM notes n JOIN actors x ON x.id = n.author_id WHERE n.task_id = ${MATCH} AND n.deleted_at IS NULL`;
 /** Newest first, from ordinal `$iupto` down (all when null), at most `$ilimit`. */
 const INSTRUCTIONS: Statement = {
@@ -254,7 +264,8 @@ const NOTE_COUNTS: Statement = {
 };
 const LOG: Statement = {
   sql:
-    `SELECT l.ordinal, l.kind, l.body, l.created_at, ${authorOf("l")} AS author FROM log_entries l ` +
+    `SELECT l.ordinal, l.kind, l.body, l.created_at, ${authorOf("l")} AS author, ` +
+    `${EDITED("l")} AS edited FROM log_entries l ` +
     `JOIN actors x ON x.id = l.author_id WHERE l.task_id = ${MATCH} AND l.deleted_at IS NULL ` +
     "AND ($lupto IS NULL OR l.ordinal <= $lupto) ORDER BY l.ordinal DESC LIMIT $llimit",
   mode: "all",
@@ -413,6 +424,7 @@ export const noteOf = (row: Row) => {
     for_agents: row["addressee"] === "agents",
     at: iso(row["created_at"]),
     text: text(row["body"]),
+    ...editedOf(row["edited"]),
     ...(launches.length === 0 ? {} : { request_for: launches }),
     ...(typeof row["deleted_at"] === "number"
       ? { removed: { at: iso(row["deleted_at"]), by: text(row["removed_by"]) } }
@@ -443,7 +455,15 @@ export const logOf = (row: Row) => ({
   author: text(row["author"]),
   at: iso(row["created_at"]),
   text: text(row["body"]),
+  ...editedOf(row["edited"]),
 });
+
+/** An entry's `edited`, from its EDITED column: none for words as they were written. */
+function editedOf(value: unknown): { edited?: { at: string; by: string } } {
+  if (typeof value !== "string") return {};
+  const { at, by } = JSON.parse(value) as { at?: unknown; by?: unknown };
+  return typeof at === "number" ? { edited: { at: iso(at), by: text(by) } } : {};
+}
 
 /** The tasks a read names as holding a source's key, when any do, and how many more there are. */
 function capturesTo(value: unknown): { captures_to?: string[]; captures_more?: number } {

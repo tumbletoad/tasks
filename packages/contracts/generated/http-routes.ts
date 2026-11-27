@@ -4,6 +4,7 @@
 
 export const httpRoutes = [
   { entry: "entry.add", method: "POST", path: "/api/v1/op/entry.add" },
+  { entry: "entry.edit", method: "POST", path: "/api/v1/op/entry.edit" },
   { entry: "folder.manage", method: "POST", path: "/api/v1/op/folder.manage" },
   { entry: "group.manage", method: "POST", path: "/api/v1/op/group.manage" },
   { entry: "history.redo", method: "POST", path: "/api/v1/op/history.redo" },

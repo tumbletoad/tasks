@@ -28,6 +28,8 @@ const VERBS: Readonly<Record<string, string>> = {
   "note.add": "added a note to",
   "note.delete": "took back a note on",
   "note.restore": "put back a note on",
+  "note.patch": "corrected a note on",
+  "log.patch": "corrected an entry on",
 };
 
 export interface UndoOptions extends ConnectOptions {

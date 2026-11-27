@@ -92,6 +92,11 @@ const LaunchRef = z.string().regex(/^L[0-9A-HJKMNP-TV-Z]{5}$/u);
 /** The most launches a note names as their request: a note opened again and again stays small. */
 export const REQUEST_LAUNCHES = 20;
 
+/** The user corrected the entry's words: the words before are in the history. */
+const Edited = z
+  .strictObject({ at: At, by: Author.describe("Who corrected it") })
+  .describe("Its words were corrected since it was written");
+
 const NoteOutput = z.strictObject({
   ref: z.string().regex(patterns.entryRef).describe("Note ordinal, such as n2"),
   author: Author,
@@ -108,6 +113,7 @@ const NoteOutput = z.strictObject({
     .max(REQUEST_LAUNCHES)
     .describe("The user's request for these launches, oldest first: history, not yours to do")
     .optional(),
+  edited: Edited.optional(),
   cut: Cut.optional(),
   slice: Slice.optional(),
 });
@@ -128,6 +134,7 @@ const LogOutput = z.strictObject({
   author: Author,
   at: At,
   text: z.string().describe("Entry text"),
+  edited: Edited.optional(),
   cut: Cut.optional(),
   slice: Slice.optional(),
 });

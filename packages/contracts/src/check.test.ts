@@ -1808,8 +1808,8 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
         expect(check(defineEntry({ ...base, ops: [op] })), op).toEqual([]);
       }
       // An unconditional base stays required.
-      expect(check(defineEntry({ ...base, ops: ["note.patch"] }))).toEqual([
-        "fixture.note: a write entry that may emit note.patch takes base (A1 3.5)",
+      expect(check(defineEntry({ ...base, ops: ["log.delete"] }))).toEqual([
+        "fixture.note: a write entry that may emit log.delete takes base (A1 3.5)",
       ]);
     });
 

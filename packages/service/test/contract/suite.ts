@@ -450,6 +450,7 @@ const VERIFIED = new Set([
   "entry.add 1",
   "note.remove 0",
   "note.remove 1",
+  "entry.edit 0",
   "task.finish 0",
   "task.finish 1",
   "task.reopen 0",
@@ -634,6 +635,8 @@ function meaning(entry: string, value: Value): unknown {
       };
     case "note.remove":
       return { result: value["result"], task: value["task"], note: value["note"] };
+    case "entry.edit":
+      return { result: value["result"], task: value["task"], entry: value["entry"] };
     case "task.trash":
       return (value["rows"] as Value[]).map((r) => [
         r["ref"],

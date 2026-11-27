@@ -12,6 +12,8 @@ export function createClient(transport: ClientTransport) {
     entry: {
       /** Append to a task's log, or record a note for the user. */
       add: (input: InputOf<"entry.add">): Promise<OutputOf<"entry.add">> => call("entry.add", input),
+      /** Correct the words of a note or a log entry. The words before stay in the history. */
+      edit: (input: InputOf<"entry.edit">): Promise<OutputOf<"entry.edit">> => call("entry.edit", input),
     },
     folder: {
       /** Give a project or a task its folder on this machine, or make a project for a folder. */

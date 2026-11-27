@@ -2437,6 +2437,17 @@ const noteAnswer: Answer = (_view, stored) => {
   });
 };
 
+const editAnswer: Answer = (_view, stored) => {
+  const done = opAt(stored, 0);
+  return Promise.resolve({
+    result: done.status === "updated" ? "edited" : "no_change",
+    task: refOf(done),
+    entry: done.entry,
+    as_of: stored.as_of,
+    ...replayed(stored),
+  });
+};
+
 const finishAnswer: Answer = async (view, stored) => {
   const result = ownResults(stored);
   const drafts = draftsOf(result, "follow_ups");
@@ -2758,6 +2769,7 @@ const ANSWERS: Readonly<Record<string, Answer>> = {
   "task.update": updateAnswer,
   "entry.add": entryAnswer,
   "note.remove": noteAnswer,
+  "entry.edit": editAnswer,
   "task.finish": finishAnswer,
   "task.reopen": reopenAnswer,
   "task.delete": deleteAnswer,
@@ -3260,6 +3272,19 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       answer: { action: remove === undefined ? "put_back" : "remove" },
     });
     return answerOf(call, result);
+  },
+
+  "entry.edit": async (call) => {
+    const { input } = call;
+    const entry = String(input["entry"]);
+    const kind = entry.startsWith("n") ? "note.patch" : "log.patch";
+    const op: Operation = {
+      kind,
+      task: String(input["task"]),
+      ordinal: Number(entry.slice(1)),
+      body: String(input["text"]),
+    };
+    return answerOf(call, await submit(call, [op]));
   },
 
   "task.finish": async (call) => {
