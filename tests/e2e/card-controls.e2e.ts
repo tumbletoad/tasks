@@ -99,7 +99,7 @@ test.describe("[A5.3.7.e2e.card-controls] the row's title column expands it; the
       const place = body.locator('[data-part="place"]');
       const choose = place.getByRole("button", { name: "Choose folder" });
       await expect(choose).toHaveCount(1);
-      await expect(choose).toHaveAttribute("data-part", "choose-folder");
+      await expect(choose).toHaveText("");
       await choose.hover();
       await expect(tooltip).toHaveText("Choose folder");
       await picture(page, `folder-icon-${String(width)}.png`);
