@@ -47,4 +47,8 @@ pnpm verify
 
 ## Licence
 
-Apache License 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+TTasks is source-available under the Sustainable Use License 1.0. You may use it and change it for your own internal business purposes and for personal or non-commercial use, and you may run it yourself. You may pass it on only free of charge and for non-commercial purposes: selling it, or offering it to others as a paid product or service, is not allowed. [`LICENSE`](LICENSE) holds the terms, and they are what counts; see also [`NOTICE`](NOTICE).
+
+Versions up to and including commit `67830a97` (27 November 2026) were published under the Apache License 2.0 and remain available under it.
+
+Contributions are welcome. Before a first contribution is merged, you are asked to agree that the project may license it under these and other terms.
