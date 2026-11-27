@@ -31,9 +31,8 @@
 // Writes go through the live store, so each shows at once as an overlay and settles only through
 // the feed (A5 3.15 item 4).
 //
-// The queue waits for outcomes, never for ever: a request that gets no answer is asked about by
-// its own ID, and what waits behind a request whose outcome cannot be learned stays with the
-// person as not saved, never sent out of order (calls.ts, A5 3.11 "No request holds the queue").
+// A request that gets no answer is asked about by its own ID. Edits already queued on the same
+// task wait for its decision, so a late answer still lets them go out in order.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { newerSaid, type NewerWorkEntry, type ShortList } from "@ttasks/contracts/newer-work";
 import type { Msg } from "../row/model.ts";
@@ -735,7 +734,7 @@ export class Edits {
     for (const field of change.fields) this.#latest.set(keyOf(task.id, field), number);
     // What the person saw: the editor's base, or what the screen shows of the fields now.
     const seen = options.base ?? this.seen(task, change.fields);
-    const sent = this.#send(task.id, change, seen);
+    const sent = this.#send(task.id, change, seen, retried.length > 0);
     for (const field of change.fields) this.#showing.set(keyOf(task.id, field), { number, seen });
     const shown = () => {
       for (const field of change.fields) {
@@ -1430,14 +1429,21 @@ export class Edits {
     made: (call: Call<T> | undefined) => void;
     call: Promise<Call<T> | undefined>;
   } {
-    let made!: (call: Call<T> | undefined) => void;
-    const call = new Promise<Call<T> | undefined>((resolve) => {
-      made = resolve;
-    });
+    const { promise: call, resolve } = Promise.withResolvers<Call<T> | undefined>();
+    let queued = true;
+    const made = (sent: Call<T> | undefined) => {
+      queued = false;
+      resolve(sent);
+    };
     const turn: Turn = {
-      wait: async () => {
-        const sent = await call;
-        return sent === undefined ? ahead.wait() : sent.wait();
+      wait: async (follow) => {
+        // A new action behind a queued edit can ask again about the request holding it up.
+        if (queued) {
+          const known = await ahead.wait();
+          if (!known && follow === undefined) return false;
+        }
+        const next = (await call) ?? ahead;
+        return next.wait(follow);
       },
     };
     return { turn, made, call };
@@ -1646,7 +1652,7 @@ export class Edits {
   }
 
   /** Sends one `task.update` after the task's earlier writes have answered. */
-  #send(task: string, change: Change, seen: string | undefined): Write<unknown> {
+  #send(task: string, change: Change, seen: string | undefined, retry: boolean): Write<unknown> {
     const { set, clear } = change.overlay;
     return this.#sendWith(
       task,
@@ -1661,6 +1667,7 @@ export class Edits {
           request_id: request,
         }),
       { tasks: [{ id: task, set, ...(clear === undefined ? {} : { clear }) }] },
+      retry,
     );
   }
 
@@ -1706,10 +1713,15 @@ export class Edits {
     seen: string | undefined,
     call: (base: string | undefined, request: string) => Promise<T>,
     overlay?: Overlay,
+    retry = false,
   ): Write<T> {
     // Sent once the task's earlier writes and any undo or redo before it have their outcome.
-    const waits = [this.#chains.get(task), this.#gate].filter((turn) => turn !== undefined);
-    const ahead = allOf(waits);
+    const previous = this.#chains.get(task);
+    const gate = this.#gate;
+    const ahead: Turn = {
+      wait: async (follow) =>
+        !(await Promise.all([previous?.wait(follow), gate?.wait()])).includes(false),
+    };
     const { turn, made, call: mine } = this.#turn<T>(ahead);
     const note = (result: T) => {
       // A write that changed nothing wrote no field: its `as_of` is only the head.
@@ -1722,9 +1734,10 @@ export class Edits {
       try {
         // The page going away ends the wait as not sent: the edit is kept as not saved and offered
         // after the reload. Sent now, it could arrive before the edit it waits for.
-        if (waits.length > 0) {
+        if (previous !== undefined || gate !== undefined) {
           const gone = (this.#deps.leaving ?? (() => pageGone))().then(() => false);
-          if (!(await Promise.race([ahead.wait(), gone]))) throw new NotSent();
+          const ready = ahead.wait(retry ? undefined : "same-task");
+          if (!(await Promise.race([ready, gone]))) throw new NotSent();
         }
         // The same base for a second send with the same request ID: one intent, sent again.
         const base = this.#baseFor(task, fields, seen);

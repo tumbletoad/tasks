@@ -11,10 +11,8 @@
 //   sends the request again with the same ID and input, which applies it at most once (A1 3.8: the
 //   writer replays a decided request, and one that races its first call). The first decision of
 //   any of them is the outcome.
-// - No decision within `ASK_MS` more (the service is down, or hangs): the outcome is unknown. The
-//   request keeps its place: whatever waits behind it is not sent (`NotSent`), and the caller keeps
-//   the person's value as not saved. The next wait on it asks again, so Try again goes out once
-//   the outcome is known, never before it.
+// - No decision within `ASK_MS` more: the caller keeps the sent value as not saved. An edit
+//   already queued on the same task waits for the late decision. A new wait can ask again.
 // - A decision that comes later (the answer, or the feed naming the request) is still taken.
 //
 // An outcome is decided once: the first decision. What depends on it runs from that decision and
@@ -63,7 +61,7 @@ export interface CallDeps {
 /** A place in the queue: what waits behind it waits for this. */
 export interface Turn {
   /** True once the outcome is known; false when it could not be learned (asked again next time). */
-  wait(): Promise<boolean>;
+  wait(follow?: "same-task"): Promise<boolean>;
 }
 
 /** A turn with nothing to wait for. */
@@ -145,14 +143,11 @@ export class Call<T> implements Turn {
     this.answer.catch(() => undefined);
   }
 
-  /**
-   * A wait that begins while the first answer is awaited gets its outcome; one that begins after
-   * an unknown outcome asks again.
-   */
-  wait(): Promise<boolean> {
-    if (!this.#firstDone) return this.#first;
+  /** An edit already queued on this task follows the decision even after the sender times out. */
+  wait(follow?: "same-task"): Promise<boolean> {
     if (this.#decision !== undefined) return Promise.resolve(true);
-    return this.#learn();
+    const answer = this.#firstDone ? this.#learn() : this.#first;
+    return follow === "same-task" ? this.decided.then(() => true) : answer;
   }
 
   /**
