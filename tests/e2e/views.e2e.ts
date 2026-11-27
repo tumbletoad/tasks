@@ -157,14 +157,11 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
       await noViewHeading(page, name);
     }
 
-    // Inbox: "Move to Open" on the row moves the task out, with an undo toast; the row stays
-    // under focus until focus leaves it.
+    // Inbox: "Move to Open" on the row moves the task out, without a toast; the row stays under
+    // focus until focus leaves it.
     await sidebar(page).locator('a[data-view="inbox"]').click();
     const captured = row(page, capture);
     await captured.locator('[data-part="move"]').click();
-    await expect(page.getByRole("status").filter({ hasText: "Moved to Open" })).toBeVisible({
-      timeout: SLOW_MS,
-    });
     await expect(captured.locator('[data-part="title"]')).toBeFocused();
     await expect(captured.locator('[data-part="move"]')).toHaveCount(0, { timeout: SLOW_MS });
     await page.evaluate(() => {
@@ -174,7 +171,7 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
     // Review: "Back to open".
     await sidebar(page).locator('a[data-view="review"]').click();
     await row(page, docs).locator('[data-part="move"]').click();
-    await expect(page.getByRole("status").filter({ hasText: "Moved to Open" })).toBeVisible({
+    await expect(row(page, docs).locator('[data-part="move"]')).toHaveCount(0, {
       timeout: SLOW_MS,
     });
     await sidebar(page).locator('a[data-view="open"]').click();

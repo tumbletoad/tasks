@@ -182,6 +182,7 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
     await expect(page.locator("[data-list] [data-part='title']:focus")).toHaveCount(1);
     await expect(row).toHaveCount(0);
     await expect.poll(async () => (await read(world, ref)).task.lifecycle).toBe("completed");
+    await bothWidths(page, "done-toast");
 
     // F6 reaches the toast's Undo at once: the row is open again where it was, and the toast
     // offers Undo and Redo side by side, Undo with nothing older to take back.

@@ -5,7 +5,7 @@
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { showsSpace, signIn } from "./page.ts";
-import { SLOW_MS, type World } from "./world.ts";
+import { SLOW_MS, startWorld, type World } from "./world.ts";
 
 const rowOf = (page: Page, ref: string) => page.locator(`main li[data-task="${ref}"]`);
 
@@ -58,57 +58,68 @@ async function hold(page: Page, path: string): Promise<() => void> {
 test.describe("[A5.3.12.e2e.checkoff-leaves] A checked-off task leaves at once and never shows open again", () => {
   test("in a list of a few hundred tasks, a check-off and a move to the Trash take the row away while the answer is held, and it stays away once the answer and the feed come", async ({
     page,
-    world,
   }) => {
     test.setTimeout(300_000);
-    const tag = test.info().project.name;
-    const [done, trashed] = await addMany(world, 240, tag);
-    if (done === undefined || trashed === undefined) throw new Error("the tasks were not added");
-    await signIn(page, world, `/s/${world.mira.id}/today`);
-    await showsSpace(page, world.mira.name);
-    await page
-      .getByRole("navigation")
-      .getByRole("link", { name: /^Home, / })
-      .click();
-    await expect(page.locator("[data-list]")).toHaveAttribute("data-virtual", "true", {
-      timeout: SLOW_MS,
-    });
-
-    // The check-off: checked at once, gone while its answer is held.
-    await expect(rowOf(page, done)).toBeVisible({ timeout: SLOW_MS });
-    const finish = await hold(page, "task.finish");
-    const doneSeen = await watchRow(page, done);
-    await rowOf(page, done).locator('[data-part="check"]').click();
-    await expect(rowOf(page, done)).toHaveCount(0);
-    finish();
-    await expect
-      .poll(async () => {
-        const got = (await world.op(world.mira.id, "task.get", { task: done })) as {
-          task: { lifecycle: string };
-        };
-        return got.task.lifecycle;
-      })
-      .toBe("completed");
-    await expect(rowOf(page, done)).toHaveCount(0);
-    expect(await doneSeen()).toEqual(["open", "checked", "gone"]);
-
-    // Move to Trash by its key: gone while its answer is held, and gone after.
-    const moved = await hold(page, "task.delete");
-    const trashSeen = await watchRow(page, trashed);
-    await rowOf(page, trashed).locator('[data-part="title"]').focus();
-    await page.keyboard.press("Delete");
-    await expect(rowOf(page, trashed)).toHaveCount(0);
-    moved();
-    await expect
-      .poll(async () => {
-        const got = (await world.op(world.mira.id, "task.get", { task: trashed })) as {
-          task: { deleted?: unknown };
-        };
-        return got.task.deleted !== undefined;
-      })
-      .toBe(true);
-    await expect(rowOf(page, trashed)).toHaveCount(0);
-    expect(await trashSeen()).toEqual(["open", "gone"]);
-    await page.unrouteAll({ behavior: "ignoreErrors" });
+    const ui = process.env["E2E_UI_BUILD"];
+    if (ui === undefined) throw new Error("global-setup.ts did not build the page");
+    // A world of its own: the worker's shared one keeps the size the other tests count on.
+    const world = await startWorld(ui);
+    try {
+      await checkOffAndTrash(page, world);
+    } finally {
+      await world.close();
+    }
   });
 });
+
+async function checkOffAndTrash(page: Page, world: World): Promise<void> {
+  const tag = test.info().project.name;
+  const [done, trashed] = await addMany(world, 240, tag);
+  if (done === undefined || trashed === undefined) throw new Error("the tasks were not added");
+  await signIn(page, world, `/s/${world.mira.id}/today`);
+  await showsSpace(page, world.mira.name);
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: /^Home, / })
+    .click();
+  await expect(page.locator("[data-list]")).toHaveAttribute("data-virtual", "true", {
+    timeout: SLOW_MS,
+  });
+
+  // The check-off: checked at once, gone while its answer is held.
+  await expect(rowOf(page, done)).toBeVisible({ timeout: SLOW_MS });
+  const finish = await hold(page, "task.finish");
+  const doneSeen = await watchRow(page, done);
+  await rowOf(page, done).locator('[data-part="check"]').click();
+  await expect(rowOf(page, done)).toHaveCount(0);
+  finish();
+  await expect
+    .poll(async () => {
+      const got = (await world.op(world.mira.id, "task.get", { task: done })) as {
+        task: { lifecycle: string };
+      };
+      return got.task.lifecycle;
+    })
+    .toBe("completed");
+  await expect(rowOf(page, done)).toHaveCount(0);
+  expect(await doneSeen()).toEqual(["open", "checked", "gone"]);
+
+  // Move to Trash by its key: gone while its answer is held, and gone after.
+  const moved = await hold(page, "task.delete");
+  const trashSeen = await watchRow(page, trashed);
+  await rowOf(page, trashed).locator('[data-part="title"]').focus();
+  await page.keyboard.press("Delete");
+  await expect(rowOf(page, trashed)).toHaveCount(0);
+  moved();
+  await expect
+    .poll(async () => {
+      const got = (await world.op(world.mira.id, "task.get", { task: trashed })) as {
+        task: { deleted?: unknown };
+      };
+      return got.task.deleted !== undefined;
+    })
+    .toBe(true);
+  await expect(rowOf(page, trashed)).toHaveCount(0);
+  expect(await trashSeen()).toEqual(["open", "gone"]);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+}
