@@ -1121,3 +1121,15 @@ a + .muted,
   gap: 8px;
   min-height: 24px;
 }
+
+/* A text with its pen at the end of its first line: the context. */
+.penned {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.penned > [data-fact] {
+  flex: 1 1 auto;
+  min-width: 0;
+}

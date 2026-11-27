@@ -2,6 +2,7 @@
 import type { z } from "zod";
 import type { AnyEntry, Filled } from "./define.ts";
 import { entryAdd } from "./entries/entry-add.ts";
+import { entryEdit } from "./entries/entry-edit.ts";
 import { folderManage } from "./entries/folder-manage.ts";
 import { groupManage } from "./entries/group-manage.ts";
 import { historyRedo } from "./entries/history-redo.ts";
@@ -38,6 +39,8 @@ export const registry = [
   entryAdd,
   // After the notes entry.add writes: it takes back one of them and puts it back.
   noteRemove,
+  // After the notes entry.add writes: it corrects one of them.
+  entryEdit,
   taskFinish,
   taskReopen,
   receiptGet,

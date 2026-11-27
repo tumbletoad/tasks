@@ -11,8 +11,10 @@
 // open offers to open again with it, or says that the person took the request back. Copy on a log
 // entry shows on hover and on focus, and always without hover. Remove, a bin on a note or a
 // session's request, is always in sight: it takes the note back, and the card's removed line puts
-// it back.
-import { useLayoutEffect, useRef, useState } from "react";
+// it back. A pen on every note and log entry, whoever wrote it, opens its words to correct
+// (TextEditor.tsx), once the card holds all of them; a corrected one says so after its time. A session's and a run's entries are
+// records of what happened: no pen.
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { localDate } from "@ttasks/contracts/day";
 import type { Instance, Receipt, Run } from "../api.ts";
 import { classes } from "../app/css.ts";
@@ -21,11 +23,13 @@ import { ViewIcon } from "../app/Icons.tsx";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import { formatInstant, type Clock } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
-import type { DetailLog, DetailNote } from "./detail.ts";
+import { TEXT_MAX, type TextPart } from "../unsent.ts";
+import type { DetailLog, DetailNote, Edited } from "./detail.ts";
 import css from "./Expanded.module.css";
 import { Markdown } from "./markdown.tsx";
 import { Asked, RunBody } from "./RunBody.tsx";
 import { runLabel } from "./runs.ts";
+import { LOG_MAX, NotSaved, Pen, TextEditor, useEditing, useSaved } from "./TextEditor.tsx";
 
 const styles = classes(css, [
   "line",
@@ -169,6 +173,15 @@ interface Item {
   readonly inT3?: () => void;
   /** A run's entry: its record, drawn by RunBody in place of the text. */
   readonly run?: Run;
+  /** A note's or a log entry's words, for the person to correct. */
+  readonly words?: {
+    readonly ref: TextPart;
+    readonly pen: string;
+    readonly box: string;
+    readonly edited?: Edited | undefined;
+    /** The card holds only part of the words: they are not corrected from here. */
+    readonly partial?: true | undefined;
+  };
 }
 
 /** "14:02" today, "12 Nov" another day. */
@@ -205,6 +218,17 @@ export interface ThreadProps {
   readonly runsFailed?: boolean;
   /** The person's Stop of a run. */
   readonly onStop?: (run: Run) => void;
+  /** How the person corrects an entry's words: none in a card that only reads. */
+  readonly edit?: EntryEdit | undefined;
+}
+
+/** The task's entries' corrections: their task, and the save of an entry's words from a base. */
+export interface EntryEdit {
+  readonly space: string;
+  readonly task: string;
+  /** Where the feed was when the entries were read: a correction is made from it. */
+  readonly base: string;
+  readonly save: (entry: string, words: string, base: string | undefined) => Promise<unknown>;
 }
 
 export function Thread({
@@ -223,6 +247,7 @@ export function Thread({
   onRemove,
   runsFailed = false,
   onStop,
+  edit,
 }: ThreadProps) {
   const t = useT();
   const say = useToast();
@@ -265,6 +290,13 @@ export function Thread({
       markdown: true,
       kind: "note",
       note,
+      words: {
+        ref: note.ref as TextPart,
+        pen: note.author === "user" ? t("thread.editMine") : t("thread.editNote", { who }),
+        box: t("thread.entryWords", { who }),
+        edited: note.edited,
+        partial: note.partial,
+      },
     });
   }
   const taken = new Set(removed.map((note) => note.ref));
@@ -292,6 +324,13 @@ export function Thread({
       text: entry.text,
       markdown: true,
       kind: "log",
+      words: {
+        ref: entry.ref as TextPart,
+        pen: t("thread.editEntry", { who }),
+        box: t("thread.entryWords", { who }),
+        edited: entry.edited,
+        partial: entry.partial,
+      },
     });
   }
   for (const receipt of receipts) {
@@ -445,118 +484,59 @@ export function Thread({
         }}
       >
         {shown.map((item) => (
-          <li
+          <EntryLine
             key={item.key}
-            data-entry-key={item.key}
-            tabIndex={-1}
-            className={styles.entry}
-            data-entry={item.kind}
-            data-state={item.state}
-            data-ring={item.ring}
-          >
-            <span className={styles.mark} aria-hidden="true">
-              {item.mark}
-            </span>
-            <div>
-              <div className={styles.meta}>
-                <span className={styles.who} dir="auto">
-                  {item.who}
-                </span>
-                {item.mode === undefined ? null : <span>{item.mode}</span>}
-                {Number.isFinite(item.at) && item.at > 0 ? (
-                  <time className={styles.when} dateTime={new Date(item.at).toISOString()}>
-                    {when(item.at, clock)}
-                  </time>
+            item={item}
+            time={Number.isFinite(item.at) && item.at > 0 ? when(item.at, clock) : undefined}
+            edit={edit}
+            onStop={onStop}
+            acts={
+              <>
+                {item.kind === "log" ? (
+                  <button
+                    type="button"
+                    className={styles.act}
+                    data-quiet=""
+                    aria-label={t("thread.copyEntry", { who: item.who })}
+                    data-tip={t("thread.copy")}
+                    onClick={() => {
+                      navigator.clipboard.writeText(item.text).then(
+                        () => {
+                          say(t("row.copied"));
+                        },
+                        () => {
+                          say(t("row.copyFailed"));
+                        },
+                      );
+                    }}
+                  >
+                    {t("thread.copy")}
+                  </button>
                 ) : null}
-              </div>
-              {item.asked === undefined ? null : <Asked words={item.asked.text} part="asked" />}
-              {item.askedRemoved === true ? (
-                <p className={`${styles.text} ${styles.state}`} data-part="asked-removed">
-                  {t("thread.requestRemoved")}
-                </p>
-              ) : null}
-              {item.run !== undefined ? (
-                <RunBody
-                  run={item.run}
-                  label={item.who}
-                  {...(onStop === undefined ? {} : { onStop })}
-                />
-              ) : item.markdown ? (
-                <div data-part="entry-text">
-                  <Markdown text={item.text} className={styles.text} />
-                </div>
-              ) : item.text === "" ? null : (
-                <p className={`${styles.text} ${styles.state}`} data-part="entry-text" dir="auto">
-                  {item.text}
-                </p>
-              )}
-              {item.again === undefined ? null : (
-                <button
-                  type="button"
-                  className={styles.again}
-                  data-part="open-again"
-                  aria-label={t("thread.openAgainLabel", { label: item.who })}
-                  onClick={item.again}
-                >
-                  {t("thread.openAgain")}
-                </button>
-              )}
-              {item.inT3 === undefined ? null : (
-                <button
-                  type="button"
-                  className={styles.again}
-                  data-part="open-in-t3"
-                  onClick={item.inT3}
-                >
-                  {t("row.openInT3")}
-                </button>
-              )}
-            </div>
-            <span className={styles.acts}>
-              {item.kind === "log" ? (
-                <button
-                  type="button"
-                  className={styles.act}
-                  data-quiet=""
-                  aria-label={t("thread.copyEntry", { who: item.who })}
-                  data-tip={t("thread.copy")}
-                  onClick={() => {
-                    navigator.clipboard.writeText(item.text).then(
-                      () => {
-                        say(t("row.copied"));
-                      },
-                      () => {
-                        say(t("row.copyFailed"));
-                      },
-                    );
-                  }}
-                >
-                  {t("thread.copy")}
-                </button>
-              ) : null}
-              {item.note === undefined || onRemove === undefined ? null : (
-                <button
-                  type="button"
-                  className={styles.act}
-                  data-part="remove-note"
-                  aria-label={t(
-                    item.kind === "session"
-                      ? "thread.removeRequest"
-                      : item.note.author === "user"
-                        ? "thread.removeMine"
-                        : "thread.removeNote",
-                    { who: item.who },
-                  )}
-                  data-tip={t("thread.remove")}
-                  onClick={() => {
-                    if (item.note !== undefined) onRemove(item.note);
-                  }}
-                >
-                  <ViewIcon view="trash" />
-                </button>
-              )}
-            </span>
-          </li>
+                {item.note === undefined || onRemove === undefined ? null : (
+                  <button
+                    type="button"
+                    className={styles.act}
+                    data-part="remove-note"
+                    aria-label={t(
+                      item.kind === "session"
+                        ? "thread.removeRequest"
+                        : item.note.author === "user"
+                          ? "thread.removeMine"
+                          : "thread.removeNote",
+                      { who: item.who },
+                    )}
+                    data-tip={t("thread.remove")}
+                    onClick={() => {
+                      if (item.note !== undefined) onRemove(item.note);
+                    }}
+                  >
+                    <ViewIcon view="trash" />
+                  </button>
+                )}
+              </>
+            }
+          />
         ))}
       </ol>
     </>
@@ -565,4 +545,131 @@ export function Thread({
 
 function entryOf(list: HTMLOListElement | null, key: string): HTMLElement | null {
   return list?.querySelector<HTMLElement>(`[data-entry-key="${CSS.escape(key)}"]`) ?? null;
+}
+
+/**
+ * One entry of the thread: its mark, who and when, then its words, or the box that corrects them
+ * once its pen is pressed; its actions at its end, the pen last, so every pen keeps one place.
+ */
+function EntryLine({
+  item,
+  time,
+  edit,
+  onStop,
+  acts,
+}: {
+  readonly item: Item;
+  /** When it was written, in the thread's short words. */
+  readonly time: string | undefined;
+  readonly edit: EntryEdit | undefined;
+  readonly onStop: ((run: Run) => void) | undefined;
+  /** Its other actions, before the pen. */
+  readonly acts: ReactNode;
+}) {
+  const t = useT();
+  const words = edit === undefined ? undefined : item.words;
+  const [editing, setEditing] = useEditing(
+    edit?.space ?? "",
+    edit?.task ?? "",
+    words?.ref ?? "summary",
+    item.text,
+    words !== undefined && words.partial === undefined,
+  );
+  // Saved words show at once, until the card's next read brings them.
+  const [text, saved] = useSaved(item.text);
+  return (
+    <li
+      data-entry-key={item.key}
+      tabIndex={-1}
+      className={styles.entry}
+      data-entry={item.kind}
+      data-state={item.state}
+      data-ring={item.ring}
+    >
+      <span className={styles.mark} aria-hidden="true">
+        {item.mark}
+      </span>
+      <div>
+        <div className={styles.meta}>
+          <span className={styles.who} dir="auto">
+            {item.who}
+          </span>
+          {item.mode === undefined ? null : <span>{item.mode}</span>}
+          {time === undefined ? null : (
+            <time className={styles.when} dateTime={new Date(item.at).toISOString()}>
+              {time}
+            </time>
+          )}
+          {item.words?.edited === undefined ? null : (
+            <span data-part="edited">{t("thread.edited", { by: item.words.edited.by })}</span>
+          )}
+        </div>
+        {item.asked === undefined ? null : <Asked words={item.asked.text} part="asked" />}
+        {item.askedRemoved === true ? (
+          <p className={`${styles.text} ${styles.state}`} data-part="asked-removed">
+            {t("thread.requestRemoved")}
+          </p>
+        ) : null}
+        {item.run !== undefined ? (
+          <RunBody run={item.run} label={item.who} {...(onStop === undefined ? {} : { onStop })} />
+        ) : editing && edit !== undefined && words !== undefined ? (
+          <div className={styles.text}>
+            <TextEditor
+              space={edit.space}
+              task={edit.task}
+              part={words.ref}
+              label={words.box}
+              text={text}
+              max={item.kind === "log" ? LOG_MAX : TEXT_MAX}
+              base={edit.base}
+              save={(next, base) => edit.save(words.ref, next, base)}
+              onDone={(next) => {
+                saved(next);
+                setEditing(false);
+              }}
+            />
+          </div>
+        ) : item.markdown ? (
+          <div data-part="entry-text">
+            <Markdown text={text} className={styles.text} />
+          </div>
+        ) : item.text === "" ? null : (
+          <p className={`${styles.text} ${styles.state}`} data-part="entry-text" dir="auto">
+            {item.text}
+          </p>
+        )}
+        {edit === undefined || words === undefined ? null : (
+          <NotSaved space={edit.space} task={edit.task} part={words.ref} />
+        )}
+        {item.again === undefined ? null : (
+          <button
+            type="button"
+            className={styles.again}
+            data-part="open-again"
+            aria-label={t("thread.openAgainLabel", { label: item.who })}
+            onClick={item.again}
+          >
+            {t("thread.openAgain")}
+          </button>
+        )}
+        {item.inT3 === undefined ? null : (
+          <button type="button" className={styles.again} data-part="open-in-t3" onClick={item.inT3}>
+            {t("row.openInT3")}
+          </button>
+        )}
+      </div>
+      <span className={styles.acts}>
+        {acts}
+        {words === undefined || editing ? null : (
+          <Pen
+            label={words.pen}
+            why={words.partial === undefined ? undefined : t("text.partial")}
+            onPress={() => {
+              setEditing(true);
+            }}
+          />
+        )}
+      </span>
+    </li>
+  );
 }

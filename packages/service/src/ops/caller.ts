@@ -166,6 +166,10 @@ const USER_ONLY_WORDS: Readonly<Record<string, { message: string; hint: string }
     message: "Only the user takes back a note or puts one back: agents cannot remove notes.",
     hint: "Tell the user which note you would remove and why.",
   },
+  "entry.edit": {
+    message: "Only the user corrects the words of a note or a log entry.",
+    hint: "Log a new entry, or tell the user what you would correct and why.",
+  },
 };
 
 /**

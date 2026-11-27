@@ -332,6 +332,7 @@ function columnsOf(entity: Entity, field: string): readonly string[] {
           entity === "runs" ||
           entity === "learnings" ||
           entity === "notes" ||
+          entity === "log_entries" ||
           entity === "preferences" ||
           entity === "areas" ||
           entity === "projects" ||
@@ -614,6 +615,10 @@ const SQL = {
   removeNote: "UPDATE notes SET deleted_at = $at WHERE id = $id",
   reviveNote: "UPDATE notes SET deleted_at = NULL WHERE id = $id",
   noteVersions: "UPDATE notes SET version = $seq, fv = $fv, fp = $fp WHERE id = $id",
+  patchNote: "UPDATE notes SET body = $body WHERE id = $id",
+  logOf: "SELECT * FROM log_entries WHERE task_id = $task AND ordinal = $ordinal",
+  patchLog: "UPDATE log_entries SET body = $body WHERE id = $id",
+  logVersions: "UPDATE log_entries SET version = $seq, fv = $fv, fp = $fp WHERE id = $id",
   insertNote:
     "INSERT INTO notes (id, task_id, ordinal, author_id, addressee, audience, body, created_at, " +
     "edited_at, deleted_at, created_seq, version, fv, fp) VALUES ($id, $task, $ordinal, $author, " +
@@ -879,6 +884,8 @@ function setVersions(
     conn.prepare(SQL.learningVersions).run({ ...maps, id: row.id });
   } else if (row.entity === "notes") {
     conn.prepare(SQL.noteVersions).run({ ...maps, id: row.id });
+  } else if (row.entity === "log_entries") {
+    conn.prepare(SQL.logVersions).run({ ...maps, id: row.id });
   } else if (row.entity === "preferences") {
     conn.prepare(SQL.preferenceVersions).run({ ...maps, id: row.id });
   } else if (row.entity === "task_sources") {
@@ -2100,6 +2107,35 @@ export class SpaceWriter {
           const touch: Touch = { entity: "notes", id, field: "deleted", task: parent };
           return { i, op, target: id, task: parent, touches: [touch], record };
         }
+        case "note.patch":
+        case "log.patch": {
+          const parent = task(op.task, "task");
+          const entity = op.kind === "note.patch" ? "notes" : "log_entries";
+          const row = drafts.has(parent)
+            ? undefined
+            : conn
+                .prepare(op.kind === "note.patch" ? SQL.noteOf : SQL.logOf)
+                .get({ task: parent, ordinal: op.ordinal });
+          if (row === undefined) {
+            return problem("NOT_FOUND", "The task has no entry with this number", i, "ordinal");
+          }
+          const id = new RowReader(entity, row).id("id", op.kind === "note.patch" ? "n" : "l");
+          // A removed entry, as the request's earlier operations leave it, is not found.
+          const live =
+            (entity === "notes" ? notes.get(id) : undefined) ?? row["deleted_at"] === null;
+          if (!live) {
+            return problem("NOT_FOUND", "The task has no entry with this number", i, "ordinal");
+          }
+          const record = { task: parent, ...inputOf(op, "task") };
+          if (row["body"] === op.body) {
+            return { i, op, target: id, task: parent, touches: [], record, skip: true };
+          }
+          const startKey = rowKey(entity, id);
+          if (!starts.has(startKey))
+            starts.set(startKey, rowState(entity, row, CHILD_FIELDS[entity]));
+          const touch: Touch = { entity, id, field: "body", task: parent };
+          return { i, op, target: id, task: parent, touches: [touch], record };
+        }
         case "source.unlink":
         case "source.relink": {
           const parent = task(op.task, "task");
@@ -3241,8 +3277,11 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
         };
       }
       case "note.delete":
-      case "note.restore": {
-        const r = new RowReader("notes", readRow(conn, "notes", staged.target));
+      case "note.restore":
+      case "note.patch":
+      case "log.patch": {
+        const entity = op.kind === "log.patch" ? "log_entries" : "notes";
+        const r = new RowReader(entity, readRow(conn, entity, staged.target));
         const task = r.id("task_id", "t");
         return {
           i,
@@ -3250,7 +3289,7 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           id: staged.target,
           task,
           ref: refOf(task),
-          entry: formatEntryRef("note", r.int("ordinal", "ordinal")),
+          entry: formatEntryRef(entity === "notes" ? "note" : "log", r.int("ordinal", "ordinal")),
           version: r.int("version", "seq"),
         };
       }
@@ -4377,6 +4416,15 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         .prepare(sql)
         .run({ id: staged.target, ...(op.kind === "note.delete" ? { at: run.at } : {}) });
       wrote(run, i, "notes", staged.target, task, ["deleted"]);
+      return;
+    }
+    case "note.patch":
+    case "log.patch": {
+      if (staged.skip === true) return;
+      const task = must(staged.task, "An entry has a task");
+      const note = op.kind === "note.patch";
+      conn.prepare(note ? SQL.patchNote : SQL.patchLog).run({ id: staged.target, body: op.body });
+      wrote(run, i, note ? "notes" : "log_entries", staged.target, task, ["body"]);
       return;
     }
     case "log.add": {

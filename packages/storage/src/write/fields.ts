@@ -56,8 +56,8 @@ export type PatchableField = (typeof PATCHABLE_FIELDS)[number];
  * learning's tombstone, which a wrap-up sets when it removes the learning (A1 3.11.2), the
  * tombstone `deleted` of notes, log entries and sources, which undo writes when it inverts their
  * create (A1 3.10), a preference's `value` (A1 3.16, `pref.set`), the fields of areas and
- * projects, and a folder's path and tombstone. Later steps add the fields their operations change
- * (`note.patch`, `source.patch`, the deletes).
+ * projects, a folder's path and tombstone, and the body of a note or log entry the person
+ * corrected. Later steps add the fields their operations change (`source.patch`, the deletes).
  */
 export const CHILD_FIELDS = {
   task_sources: { removed: ["removed_at"] },
@@ -65,8 +65,9 @@ export const CHILD_FIELDS = {
   launches: { state: ["state", "reason", "detail", "updated_at"] },
   runs: { state: ["state", "reason", "detail", "result", "started_at", "ended_at"] },
   learnings: { deleted: ["deleted_at"] },
-  notes: { deleted: ["deleted_at"] },
-  log_entries: { deleted: ["deleted_at"] },
+  // The person's correction of an entry's words (`note.patch`, `log.patch`) writes its body.
+  notes: { body: ["body"], deleted: ["deleted_at"] },
+  log_entries: { body: ["body"], deleted: ["deleted_at"] },
   sources: { deleted: ["deleted_at"] },
   // A preference's value with the version of its shape, which `pref.set` writes as a unit.
   preferences: { value: ["value", "schema_ver"] },

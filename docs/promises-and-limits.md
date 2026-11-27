@@ -28,13 +28,14 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Your undo history survives a restart and is shared by your windows and the command line.
 - In the page, Undo and Redo are for what is a nuisance to put back by hand: checking off and
   reopening, moving to the Trash and restoring, removing a note or a source and putting it back, a
-  title, setting questions aside, restoring a whole change from the Trash, a change of the effort
-  levels, and what the page has no other way to take back: a new project, area or unarchive, a
-  move out of the Inbox, and a task's first area. Any other change saves without Undo, and from
-  then on that tab offers no Undo or Redo of what came before it, so Undo never takes back
-  something you did not expect. A change made elsewhere since is never overwritten: Undo then says
-  who changed what. An Undo or Redo that got no answer keeps its step to try again. Limit: the page offers only what that tab did since it opened; `ttasks
-  undo` reaches the rest.
+  title, the words of a summary, a context, a note or a log entry, setting questions aside,
+  restoring a whole change from the Trash, a change of the effort levels, and what the page has no
+  other way to take back: a new project, area or unarchive, a move out of the Inbox, and a task's
+  first area. Any other change saves without Undo, and from then on that tab offers no Undo or Redo
+  of what came before it, so Undo never takes back something you did not expect. A change made
+  elsewhere since is never overwritten: Undo then says who changed what. An Undo or Redo that got no
+  answer keeps its step to try again. Limit: the page offers only what that tab did since it opened;
+  `ttasks undo` reaches the rest.
 - Checking off a task completes it at once and can be undone. Neither Undo nor Redo checks a task
   off or archives it again when someone else added to it or changed it since.
 - Wrapping up a task keeps its context, notes, activity and sources. Reopening keeps the earlier
@@ -232,6 +233,12 @@ the behaviour it describes, and keep each one to a sentence or two.
   from then on no agent and no search reads it, the task's readable file loses it within about a
   second, a launch it was the request of says the request was taken back, and Put back brings it
   back as it was. Only you take notes back, and nothing is deleted for good.
+- You can correct the words of a task's summary and context and of any note or log entry in its
+  thread, whoever wrote them, behind the pen beside them. The words before stay in the history and
+  Undo puts them back; a corrected note or entry says that you corrected it. Agents read the
+  corrected words from then on, and no agent tool rewrites what someone else wrote. A correction
+  always holds the whole text, and one refused because the words changed meanwhile is never sent
+  again: your words wait under the text as not saved, to copy or discard.
 - A question an agent logs on a task, or a background run ends with, waits for you under Needs you
   on the Agents page, also once the task is finished or dropped, until you write a note on the task
   after it or dismiss it. A run's question is also answered by a run you start after it that gets

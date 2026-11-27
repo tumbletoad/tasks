@@ -12,10 +12,13 @@ import {
   forgetTask,
   keepDraft,
   keepNote,
+  keepRefusedText,
+  keepTextDraft,
   keepTitleDraft,
   keptTitles,
   letGo,
   onUnsent,
+  readTextDraft,
   readTitleDraft,
   unsavedKeeper,
   unsentOf,
@@ -141,6 +144,29 @@ describe("[A5.trash.web.unsent] every unsent word goes through one module", () =
     expect(unsentOf(SPACE)).toEqual([]);
   });
 
+  test("words typed in place of a summary, a context or an entry are listed with their part, let go only as shown, and forgotten with their task", () => {
+    keepTextDraft(SPACE, TASK, "n3", { typed: "Call the landlord on Monday", before: "Call him" });
+    keepTextDraft(SPACE, TASK, "context", { typed: "The flat has two rooms", before: "" });
+    expect(readTextDraft(SPACE, TASK, "n3")?.typed).toBe("Call the landlord on Monday");
+    const shown = unsentOf(SPACE).flatMap((word) => (word.kind === "text" ? [word] : []));
+    expect(shown.map((word) => [word.part, word.task])).toEqual([
+      ["context", TASK],
+      ["n3", TASK],
+    ]);
+    expect(listed()).toEqual(["text: Call the landlord on Monday", "text: The flat has two rooms"]);
+    expect(unsentTasks(SPACE)).toEqual([TASK]);
+    // Typed on before the Discard: the newer words stay.
+    keepTextDraft(SPACE, TASK, "n3", { typed: "Call the landlord on Tuesday", before: "Call him" });
+    for (const word of shown) letGo(SPACE, word);
+    expect(listed()).toEqual(["text: Call the landlord on Tuesday"]);
+    // Refused words wait apart: a new draft of the same text never takes their place.
+    keepRefusedText(SPACE, TASK, "n3", { typed: "Call the landlord first", before: "Call him" });
+    keepTextDraft(SPACE, TASK, "n3", { typed: "Call him today", before: "Call him" });
+    expect(listed()).toEqual(["text: Call him today", "text: Call the landlord first"]);
+    forgetTask(SPACE, TASK);
+    expect(unsentOf(SPACE)).toEqual([]);
+  });
+
   test("a change of any kind, made here or in another tab, is heard; a kept edit let go anywhere is told to the tab that kept it", () => {
     let heard = 0;
     const stop = onUnsent(() => {
@@ -149,7 +175,7 @@ describe("[A5.trash.web.unsent] every unsent word goes through one module", () =
     keepDraft(SPACE, TASK, "Ask about the deposit");
     expect(heard).toBe(1);
     // Another tab keeps each kind: the storage event is all this tab gets.
-    for (const kind of ["draft", "note", "title", "unsaved"]) {
+    for (const kind of ["draft", "note", "title", "text", "unsaved"]) {
       window.dispatchEvent(
         new StorageEvent("storage", {
           key: `${PRODUCT_ID}.${kind}.${SPACE}.${TASK}`,
@@ -158,7 +184,7 @@ describe("[A5.trash.web.unsent] every unsent word goes through one module", () =
         }),
       );
     }
-    expect(heard).toBe(5);
+    expect(heard).toBe(6);
     stop();
 
     // This tab kept an edit; the foot of the Trash, or another tab, lets it go.

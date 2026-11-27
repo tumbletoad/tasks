@@ -161,6 +161,110 @@
       "errors": [
         "invalid_input",
         "not_found",
+        "conflict",
+        "forbidden",
+        "too_large",
+        "request_id_conflict",
+        "applied_earlier"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "entry": {
+            "description": "The entry: n2 for a note, l3 for a log entry",
+            "maxLength": 7,
+            "pattern": "^[nl][1-9][0-9]{0,5}$",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "task": {
+            "description": "Task ref (M-14) or ID",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "text": {
+            "description": "Its new words, in Markdown",
+            "maxLength": 65536,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task",
+          "entry",
+          "text",
+          "base",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "entry.edit",
+      "ops": [
+        "note.patch",
+        "log.patch"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "This write's position: your next base. Names and lists here may be newer",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "entry": {
+            "description": "The entry, such as n2",
+            "pattern": "^[nl][1-9][0-9]{0,5}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True on a retry: what the write did, with names and lists as of now",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "edited, or the words were these already",
+            "enum": [
+              "edited",
+              "no_change"
+            ],
+            "type": "string"
+          },
+          "task": {
+            "description": "Task reference",
+            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result",
+          "task",
+          "entry",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Correct the words of a note or a log entry. The words before stay in the history."
+    },
+    {
+      "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "none",
+      "errors": [
+        "invalid_input",
+        "not_found",
         "ambiguous",
         "conflict",
         "forbidden",
@@ -5358,6 +5462,25 @@
                       "minimum": 0,
                       "type": "integer"
                     },
+                    "edited": {
+                      "additionalProperties": false,
+                      "description": "Its words were corrected since it was written",
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "by": {
+                          "description": "Who corrected it",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "by"
+                      ],
+                      "type": "object"
+                    },
                     "for_agents": {
                       "description": "A note from the user addressed to agents",
                       "type": "boolean"
@@ -5451,6 +5574,25 @@
                     "author": {
                       "description": "Actor that wrote it, from history",
                       "type": "string"
+                    },
+                    "edited": {
+                      "additionalProperties": false,
+                      "description": "Its words were corrected since it was written",
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "by": {
+                          "description": "Who corrected it",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "by"
+                      ],
+                      "type": "object"
                     },
                     "for_agents": {
                       "description": "A note from the user addressed to agents",
@@ -5790,6 +5932,25 @@
                           "minimum": 0,
                           "type": "integer"
                         },
+                        "edited": {
+                          "additionalProperties": false,
+                          "description": "Its words were corrected since it was written",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Who corrected it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
                         "for_agents": {
                           "description": "A note from the user addressed to agents",
                           "type": "boolean"
@@ -5906,6 +6067,25 @@
                           "maximum": 9007199254740991,
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "edited": {
+                          "additionalProperties": false,
+                          "description": "Its words were corrected since it was written",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Who corrected it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
                         },
                         "kind": {
                           "description": "Entry kind",
@@ -6033,6 +6213,25 @@
                           "maximum": 9007199254740991,
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "edited": {
+                          "additionalProperties": false,
+                          "description": "Its words were corrected since it was written",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Who corrected it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
                         },
                         "for_agents": {
                           "description": "A note from the user addressed to agents",
@@ -6339,6 +6538,25 @@
                       "minimum": 0,
                       "type": "integer"
                     },
+                    "edited": {
+                      "additionalProperties": false,
+                      "description": "Its words were corrected since it was written",
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "by": {
+                          "description": "Who corrected it",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "by"
+                      ],
+                      "type": "object"
+                    },
                     "for_agents": {
                       "description": "A note from the user addressed to agents",
                       "type": "boolean"
@@ -6558,6 +6776,25 @@
                           "minimum": 0,
                           "type": "integer"
                         },
+                        "edited": {
+                          "additionalProperties": false,
+                          "description": "Its words were corrected since it was written",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Who corrected it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
                         "for_agents": {
                           "description": "A note from the user addressed to agents",
                           "type": "boolean"
@@ -6657,6 +6894,25 @@
                           "minimum": 0,
                           "type": "integer"
                         },
+                        "edited": {
+                          "additionalProperties": false,
+                          "description": "Its words were corrected since it was written",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Who corrected it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
                         "kind": {
                           "description": "Entry kind",
                           "enum": [
@@ -6738,6 +6994,25 @@
                           "maximum": 9007199254740991,
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "edited": {
+                          "additionalProperties": false,
+                          "description": "Its words were corrected since it was written",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Who corrected it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
                         },
                         "for_agents": {
                           "description": "A note from the user addressed to agents",

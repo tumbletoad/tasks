@@ -22,12 +22,21 @@ type NoteOutput = NonNullable<Sections["notes"]>[number];
 type RemovedOutput = NonNullable<DigestView["removed_notes"]>[number];
 type LogOutput = NonNullable<Sections["log"]>[number];
 
+/** The person corrected an entry's words: when, and who (`user`). */
+export interface Edited {
+  readonly at: string;
+  readonly by: string;
+}
+
 export interface DetailNote {
   readonly kind: "note";
   readonly ref: string;
   readonly author: string;
   readonly at: string;
   readonly text: string;
+  readonly edited?: Edited;
+  /** The pages read so far hold only part of its text: it cannot be corrected from here. */
+  readonly partial?: true;
   readonly forAgents: boolean;
   /** The launches this note was the person's request for, oldest first, by reference. */
   readonly requestFor?: readonly { readonly launch: string; readonly instance: string }[];
@@ -44,12 +53,17 @@ export interface DetailLog {
   readonly author: string;
   readonly at: string;
   readonly text: string;
+  readonly edited?: Edited;
+  /** The pages read so far hold only part of its text: it cannot be corrected from here. */
+  readonly partial?: true;
   readonly logKind: string;
 }
 
 export interface Detail {
   readonly task: TaskFacts;
   readonly context: string;
+  /** The pages read hold only part of the context: it cannot be corrected from here. */
+  readonly contextPartial?: true;
   /** Every note, oldest first. */
   readonly notes: readonly DetailNote[];
   /** Every log entry, oldest first. */
@@ -88,23 +102,35 @@ const SECTIONS = ["instructions", "context", "notes", "log", "sources", "outcome
 /** A note reference's ordinal: `n12` is 12. */
 const ordinal = (ref: string): number => Number(ref.slice(1));
 
+type Slice = NonNullable<Sections["context_slice"]>;
+
+/** Whether parts of one text, in order, hold all of it: from its first character to its last. */
+const holdsAll = (first: Slice | undefined, last: Slice | undefined): boolean =>
+  (first === undefined || first.from === 0) && (last === undefined || last.to === last.of);
+
 /**
  * Joins the entries of successive pages, newest first as they come. A text a page boundary split
- * comes as parts of one entry with the same ref, each with its slice: they join into one.
+ * comes as parts of one entry with the same ref, each with its slice: they join into one, which is
+ * `partial` when the pages read hold only part of it.
  */
-function joined<T extends { ref: string; text: string }>(pages: readonly (readonly T[])[]): T[] {
-  const out: T[] = [];
+function joined<T extends { ref: string; text: string; slice?: Slice | undefined }>(
+  pages: readonly (readonly T[])[],
+): (T & { partial?: true })[] {
+  const out: { entry: T; first: Slice | undefined; last: Slice | undefined }[] = [];
   for (const page of pages) {
     for (const entry of page) {
       const last = out.at(-1);
-      if (last !== undefined && last.ref === entry.ref) {
-        out[out.length - 1] = { ...last, text: last.text + entry.text };
+      if (last !== undefined && last.entry.ref === entry.ref) {
+        last.entry = { ...last.entry, text: last.entry.text + entry.text };
+        last.last = entry.slice;
       } else {
-        out.push(entry);
+        out.push({ entry, first: entry.slice, last: entry.slice });
       }
     }
   }
-  return out;
+  return out.map(({ entry, first, last }) =>
+    holdsAll(first, last) ? entry : { ...entry, partial: true as const },
+  );
 }
 
 /**
@@ -129,12 +155,14 @@ export function mergePages(
     .join("")
     .trim();
   const learnings = pages.flatMap((p) => p.outcome?.learnings ?? []);
-  const toNote = (n: NoteOutput): DetailNote => ({
+  const toNote = (n: NoteOutput & { partial?: true }): DetailNote => ({
     kind: "note",
     ref: n.ref,
     author: n.author,
     at: n.at,
     text: n.text,
+    ...(n.edited === undefined ? {} : { edited: n.edited }),
+    ...(n.partial === undefined ? {} : { partial: n.partial }),
     forAgents: n.for_agents,
     ...(n.request_for === undefined ? {} : { requestFor: n.request_for }),
   });
@@ -143,6 +171,12 @@ export function mergePages(
   return {
     task,
     context: pages.map((p) => p.context ?? "").join(""),
+    ...(holdsAll(
+      pages.find((p) => p.context !== undefined)?.context_slice,
+      pages.findLast((p) => p.context !== undefined)?.context_slice,
+    )
+      ? {}
+      : { contextPartial: true as const }),
     notes: [...paged, ...whole.values()].map(toNote).sort(byTime),
     log: log
       .map((l): DetailLog => ({
@@ -151,6 +185,8 @@ export function mergePages(
         author: l.author,
         at: l.at,
         text: l.text,
+        ...(l.edited === undefined ? {} : { edited: l.edited }),
+        ...(l.partial === undefined ? {} : { partial: l.partial }),
         logKind: l.kind,
       }))
       .sort(byTime),

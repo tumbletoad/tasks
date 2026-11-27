@@ -646,6 +646,18 @@ export interface NoteRestore {
   ordinal: number;
 }
 
+/**
+ * `note.patch` and `log.patch`: the person's new words for one note or log entry of a task, by its
+ * ordinal. The entry keeps its ordinal, author and time, and the same words are unchanged. A removed
+ * entry is not found. Needs a base.
+ */
+export interface EntryPatch {
+  kind: "note.patch" | "log.patch";
+  task: string;
+  ordinal: number;
+  body: string;
+}
+
 /** `log.add` (A1 3.6): a new log entry. Its session and run come from the credential. */
 export interface LogAdd {
   kind: "log.add";
@@ -1074,6 +1086,7 @@ export type Operation =
   | NoteDelete
   | NoteRestore
   | LogAdd
+  | EntryPatch
   | SourceAdd
   | SourceUnlink
   | SourceRelink
@@ -1102,7 +1115,9 @@ export const OPERATION_KINDS = [
   "note.add",
   "note.delete",
   "note.restore",
+  "note.patch",
   "log.add",
+  "log.patch",
   "source.add",
   "source.unlink",
   "source.relink",
@@ -1726,6 +1741,19 @@ function checkOperation(value: unknown, i: number): Operation {
         ordinal: f.int("ordinal", 1, RANGES.seq.max),
       };
       op = note;
+      break;
+    }
+    case "note.patch":
+    case "log.patch": {
+      const patch: EntryPatch = {
+        kind,
+        task: f.reference("task"),
+        ordinal: f.int("ordinal", 1, RANGES.seq.max),
+        body: f.text("body", {
+          bytes: kind === "note.patch" ? WRITE_LIMITS.note : WRITE_LIMITS.log,
+        }),
+      };
+      op = patch;
       break;
     }
     case "log.add": {
