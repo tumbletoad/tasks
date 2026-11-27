@@ -181,7 +181,7 @@ class World {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -2281,6 +2281,85 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
       expect.objectContaining({ task: "t_00002", set: { effort: "M" }, base: w.asOf(11) }),
     ]);
   });
+
+  test.each(["answer", "receipt"])(
+    "a stalled page handles the ready answer before the overdue %s deadline",
+    async (stage) => {
+      const row = task(1);
+      const w = new World([row]);
+      const first = Promise.withResolvers<ReturnType<typeof updated>>();
+      w.answer("task.update", () => first.promise);
+      w.edits.edit(row, priorityChange(1));
+      w.edits.edit(row, effortChange("M", w.levels));
+      if (stage === "receipt") {
+        w.answer("task.update", never);
+        w.answer("receipt.get", never);
+        await vi.advanceTimersByTimeAsync(ASK_MS);
+      }
+      const sent = w.calls.length;
+      const reply = updated(w, 11);
+      // The service has answered. On resume the overdue timer runs before the response callback.
+      vi.setSystemTime(Date.now() + 30_000);
+      await vi.advanceTimersToNextTimerAsync();
+      w.answer("task.update", () => updated(w, 12));
+      first.resolve(reply);
+      await flush();
+
+      expect(w.calls.slice(sent)).toMatchObject([
+        { name: "task.update", input: { set: { effort: "M" }, base: w.asOf(11) } },
+      ]);
+      expect(w.toasts).toEqual([]);
+      expect(w.edits.getState().unsaved.size).toBe(0);
+    },
+  );
+
+  test("a late receipt deadline gives an unanswered edit only one more wait, even if the page stalls again", async () => {
+    const row = task(1);
+    const w = new World([row]);
+    w.answer("task.update", never);
+    w.answer("task.update", never);
+    w.answer("receipt.get", never);
+    w.edits.edit(row, priorityChange(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+
+    vi.setSystemTime(Date.now() + 30_000);
+    await vi.advanceTimersToNextTimerAsync();
+    expect(w.edits.unsaved(row.id, "priority")).toBeUndefined();
+    vi.setSystemTime(Date.now() + 30_000);
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    expect(w.edits.unsaved(row.id, "priority")).toMatchObject({ reason: "failed" });
+    expect(w.lastToast()?.action?.label.id).toBe("toast.tryAgain");
+  });
+
+  test.each(["effort", "check-off"])(
+    "an unanswered priority restores the row and keeps the queued %s from going out",
+    async (next) => {
+      const row = task(1);
+      const w = new World([row]);
+      w.answer("task.update", never);
+      w.answer("task.update", never);
+      w.answer("receipt.get", never);
+      w.edits.edit(row, priorityChange(1));
+      if (next === "effort") {
+        w.edits.edit(row, effortChange("M", w.levels));
+        expect(w.row(row.id)?.effort).toBe("M");
+      } else {
+        w.edits.checkOff(row);
+        expect(w.row(row.id)).toBeUndefined();
+      }
+      await vi.advanceTimersByTimeAsync(2 * ASK_MS);
+
+      expect(names(w)).toEqual(["task.update", "task.update", "receipt.get"]);
+      expect(w.calls[1]).toEqual(w.calls[0]);
+      expect(w.edits.unsaved(row.id, "priority")).toMatchObject({ reason: "failed" });
+      expect(w.row(row.id)).toMatchObject({ lifecycle: "active", status: "open" });
+      if (next === "effort") {
+        expect(w.edits.unsaved(row.id, "effort")).toMatchObject({ reason: "failed" });
+        expect(w.row(row.id)?.effort).toBeUndefined();
+        expect(w.lastToast()?.action?.label.id).toBe("toast.tryAgain");
+      }
+    },
+  );
 
   test("an edit without an answer: the next edit of the task waits for its receipt, and its base moves past it", async () => {
     const w = new World([task(1)]);
