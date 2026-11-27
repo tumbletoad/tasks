@@ -393,8 +393,9 @@ function keyRef(kind: string, key: string): string | undefined {
 
 /**
  * The folder's line: where the task opens here (its own folder or its project's, the home as `~`),
- * a folder not found, another machine, or the work folder. Quiet words at its end set, change or
- * clear the task's own folder; after an Open refused on the folder they are the ways on.
+ * a folder not found, another machine, or the work folder. Its folder icon sets or changes the
+ * task's own folder, and a quiet Clear at its end clears it; after an Open refused on the folder,
+ * words at its end are the ways on.
  */
 function PlaceLine({
   task,
@@ -427,7 +428,27 @@ function PlaceLine({
   const folder = detail?.task.folder;
   const own = folder !== undefined && "path" in folder && folder.of === "task" ? folder : undefined;
   const marker = refused?.anyway;
-  const ways = (choose: MessageId) =>
+  /** The line's folder icon: in a card that changes the task, the button that chooses its folder. */
+  const lead = (icon: ReactNode, choose: MessageId) =>
+    writes === undefined ? (
+      <span className={styles.icon} aria-hidden="true">
+        {icon}
+      </span>
+    ) : (
+      <button
+        type="button"
+        className={styles.icon}
+        data-part="choose-folder"
+        aria-label={t(choose)}
+        data-tip={t(choose)}
+        onClick={() => {
+          setChoosing(true);
+        }}
+      >
+        {icon}
+      </button>
+    );
+  const ways =
     writes === undefined ? null : (
       <>
         {marker === undefined ? null : (
@@ -435,15 +456,16 @@ function PlaceLine({
             {t("row.openAnyway")}
           </Button>
         )}
-        <Button
-          className={line.act}
-          data-quiet={refused === undefined || undefined}
-          onPress={() => {
-            setChoosing(true);
-          }}
-        >
-          {t(refused === undefined ? choose : "row.chooseFolder")}
-        </Button>
+        {refused === undefined ? null : (
+          <Button
+            className={line.act}
+            onPress={() => {
+              setChoosing(true);
+            }}
+          >
+            {t("row.chooseFolder")}
+          </Button>
+        )}
         {own === undefined || refused !== undefined ? null : (
           <Button
             className={line.act}
@@ -522,9 +544,7 @@ function PlaceLine({
     const repo = "repo" in shown ? shown.repo : undefined;
     return (
       <li className={styles.link} data-part="place" data-state={missing ? "missing" : "here"}>
-        <span className={styles.icon} aria-hidden="true">
-          <FolderIcon />
-        </span>
+        {lead(<FolderIcon />, own === undefined ? "folder.chooseOwn" : "folder.changeOwn")}
         <span data-fact="">
           <span
             className={`${styles.mono} ${missing ? styles.muted : ""}`}
@@ -553,7 +573,7 @@ function PlaceLine({
           >
             <CopyIcon />
           </button>
-          {ways(own === undefined ? "folder.ownChange" : "folder.change")}
+          {ways}
         </span>
         {chooser}
       </li>
@@ -568,13 +588,11 @@ function PlaceLine({
   if (elsewhere !== undefined) {
     return (
       <li className={styles.link} data-part="place" data-state="elsewhere">
-        <span className={styles.icon} aria-hidden="true">
-          <FolderElsewhereIcon />
-        </span>
+        {lead(<FolderElsewhereIcon />, "folder.chooseHere")}
         <span className={styles.muted} data-fact="" data-machine="" dir="auto">
           {t("place.elsewhere", { machine: elsewhere })}
         </span>
-        <span className={styles.acts}>{ways("folder.chooseHere")}</span>
+        <span className={styles.acts}>{ways}</span>
         {chooser}
       </li>
     );
@@ -583,15 +601,13 @@ function PlaceLine({
   if (detail === undefined || task.place !== undefined) return null;
   return (
     <li className={styles.link} data-part="place" data-state="work_folder">
-      <span className={styles.icon} aria-hidden="true">
-        <FolderIcon />
-      </span>
+      {lead(<FolderIcon />, "folder.choose")}
       <span className={styles.muted} data-fact="" data-tip={t("place.workFolderTip")}>
         {t("place.workFolder")}
       </span>
       <span className={styles.acts}>
         {show}
-        {ways("folder.choose")}
+        {ways}
       </span>
       {chooser}
     </li>

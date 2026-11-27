@@ -156,6 +156,24 @@
   height: 16px;
 }
 
+/* The folder line's icon, where it chooses the folder: a 24 px target around the same 16 px icon,
+   so the line's text stays where it is. */
+button.icon {
+  width: 24px;
+  height: 24px;
+  margin: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+button.icon:hover {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
 .key {
   margin-inline-end: 6px;
   color: var(--k-muted);
