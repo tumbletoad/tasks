@@ -156,6 +156,8 @@ export const FAIL_REASONS = [
   "folder_mismatch",
   /** T3 does not offer the instance's model, and made no thread. */
   "model_unavailable",
+  /** T3's project has no default model to open the thread on, and T3 made no thread. */
+  "no_default_model",
   /** T3's pairing does not allow what the launch asks (read only, or a narrower mode): no thread. */
   "pairing_denied",
   /** Clipboard: the service stopped before the copy was reported. */

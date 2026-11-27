@@ -191,7 +191,16 @@ export interface ClaimReply {
   readonly credential: string;
   /** Where the shim writes `exit.json` when the service cannot be reached (A4 3.6.3 step 9). */
   readonly exit_file: string;
+  /** A fixed line to print under the announce line. */
+  readonly notice?: Notice;
 }
+
+/**
+ * Lines the shim prints under its announce line, by code: `brief_sent`, the app is too old to
+ * hold the brief in its prompt box, so it was sent (catalogue.ts RouteDef `since`).
+ */
+export const NOTICES = ["brief_sent"] as const;
+export type Notice = (typeof NOTICES)[number];
 
 /** `launch.attach`'s params (A4 3.6.3 "Re-attaching"). */
 export interface AttachParams {

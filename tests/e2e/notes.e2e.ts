@@ -53,9 +53,10 @@ test.describe("[A5.note.retract.e2e] A note is taken back from the thread and pu
     const line = notes.filter({ hasText: wrong });
     await expect(notes).toHaveCount(3, { timeout: SLOW_MS });
 
-    // Remove takes the note back; the toast's Undo puts it back.
-    await line.hover();
-    await line.getByRole("button", { name: "Remove your note" }).click();
+    // Remove, a bin in sight without hover, takes the note back; the toast's Undo puts it back.
+    const remove = line.getByRole("button", { name: "Remove your note" });
+    await expect(remove).toHaveCSS("opacity", "1");
+    await remove.click();
     await expect(toast(page)).toHaveText(`Note removed from ${ref}`);
     await expect(line).toHaveCount(0);
     await expect(body.locator('[data-part="removed"]')).toContainText("1 note removed");

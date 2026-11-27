@@ -56,7 +56,6 @@
         "openPermission": "inherit",
         "runPermission": "full-access",
         "extraArgs": [],
-        "prompt": "sent",
         "viaLoginShell": false,
         "remoteAllowed": false,
         "enabled": true
@@ -74,7 +73,6 @@
         "openPermission": "inherit",
         "runPermission": "full-access",
         "extraArgs": [],
-        "prompt": "prefill",
         "viaLoginShell": false,
         "remoteAllowed": false,
         "enabled": false
@@ -92,15 +90,9 @@
         "openPermission": "full-access",
         "runPermission": "inherit",
         "extraArgs": [],
-        "prompt": "sent",
         "viaLoginShell": false,
         "remoteAllowed": true,
-        "enabled": true,
-        "t3": {
-          "environment": "local",
-          "providerInstance": "codex",
-          "model": ""
-        }
+        "enabled": true
       },
       {
         "id": "codex-app",
@@ -115,7 +107,6 @@
         "openPermission": "inherit",
         "runPermission": "inherit",
         "extraArgs": [],
-        "prompt": "sent",
         "viaLoginShell": false,
         "remoteAllowed": false,
         "enabled": true

@@ -115,9 +115,7 @@
       "label": "T3 Code",
       "account": "default",
       "source": "app",
-      "needs": [
-        "t3_provider_instance"
-      ]
+      "needs": []
     }
   ],
   "configured": []

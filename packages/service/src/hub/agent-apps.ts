@@ -65,8 +65,6 @@ import {
   homeAnswer,
   homeGroups,
   toolsOf,
-  t3Proposals,
-  t3SettingsOf,
   wireOf,
   withSetupLock,
   type AgentApp,
@@ -371,12 +369,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     const made = instanceEntry({ ...proposal, id });
     if (!made.ok)
       return fixed(key, false, made.needs.includes("exec") ? "no_command" : "needs_home");
-    byRow.set(key, {
-      id,
-      label: proposal.label,
-      entry: made.entry,
-      ...(proposal.t3 === undefined ? {} : { modelFrom: proposal.t3.modelFrom }),
-    });
+    byRow.set(key, { id, label: proposal.label, entry: made.entry });
     return "offer";
   };
 
@@ -442,25 +435,20 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     });
   }
 
-  // T3 Code: one row per provider instance its settings turn on. Its tools are the homes' above.
+  // T3 Code: one row, whose profile and model the person picks in T3. Its tools are the homes'
+  // above.
   const t3 = detection.proposals.find((p) => p.target === "t3");
-  const settings = t3 === undefined ? undefined : t3SettingsOf({ platform, userHome, env });
-  for (const proposal of settings === undefined || t3 === undefined
-    ? []
-    : t3Proposals(settings, platform)) {
-    const provider = proposal.t3?.providerInstance;
-    const key = JSON.stringify(["t3", provider ?? proposal.id]);
-    const owner = machine.instances.find(
-      (i) => i.target === "t3" && i.t3?.providerInstance === provider,
-    );
-    accounts.set(key, owner?.account ?? proposal.account);
+  if (t3 !== undefined) {
+    const key = JSON.stringify(["t3"]);
+    const owner = machine.instances.find((i) => i.target === "t3");
+    accounts.set(key, owner?.account ?? t3.account);
     out.push({
       key,
       app: "t3",
-      label: owner?.label ?? proposal.label,
+      label: owner?.label ?? t3.label,
       home: null,
       also: [],
-      open: owner !== undefined ? ownedPart(key, owner) : offerPart(key, proposal, proposal.id),
+      open: owner !== undefined ? ownedPart(key, owner) : offerPart(key, t3, t3.id),
     });
   }
 

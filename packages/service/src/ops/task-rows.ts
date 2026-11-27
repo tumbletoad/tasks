@@ -61,6 +61,8 @@ export interface CompactRun {
 /** The instances (machine.toml's keys) the task was last opened in and last ran with. */
 export interface CompactLast {
   readonly open?: string;
+  /** The route of that Open: a key no longer in machine.toml still says T3 Code (`t3-mcp`). */
+  readonly open_route?: string;
   readonly run?: string;
 }
 
@@ -154,9 +156,12 @@ const newestRun = (where: string, order = "r.queued_at DESC, r.id DESC") =>
  * The instances the task was last opened in and last ran with: what its Open and Run use. A copy of
  * the brief opens no agent, and a refused Open is not the person's choice of agent.
  */
+const LAST_OPEN =
+  "FROM launches l WHERE l.task_id = t.id AND l.route <> 'clipboard' AND l.state <> 'failed' " +
+  "ORDER BY l.created_at DESC, l.id DESC LIMIT 1";
 const LAST_USED =
-  "json_object('open', (SELECT l.instance_id FROM launches l WHERE l.task_id = t.id AND " +
-  "l.route <> 'clipboard' AND l.state <> 'failed' ORDER BY l.created_at DESC, l.id DESC LIMIT 1), " +
+  `json_object('open', (SELECT l.instance_id ${LAST_OPEN}), ` +
+  `'open_route', (SELECT l.route ${LAST_OPEN}), ` +
   "'run', (SELECT r.instance_id FROM runs r WHERE r.task_id = t.id " +
   "ORDER BY r.queued_at DESC, r.id DESC LIMIT 1)) AS x_last";
 
@@ -304,10 +309,11 @@ export function runOf(open: unknown, asks?: unknown): CompactRun | undefined {
 function lastOf(value: unknown): CompactLast | undefined {
   const used = parsed(value);
   if (!isPlain(used)) return undefined;
-  const { open, run } = used;
+  const { open, open_route: route, run } = used;
   if (typeof open !== "string" && typeof run !== "string") return undefined;
   return {
     ...(typeof open === "string" ? { open } : {}),
+    ...(typeof route === "string" ? { open_route: route } : {}),
     ...(typeof run === "string" ? { run } : {}),
   };
 }

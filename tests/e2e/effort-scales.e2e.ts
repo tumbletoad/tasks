@@ -1,7 +1,8 @@
 // A space's own effort levels in the page, end to end in Chromium and Firefox against the real
 // service: one level, ten (four of them of the longest name a person sets, five with a time and a
 // line), and a longer name an earlier build let be set, in the expanded task's control and the row
-// at 1,440 and 390 px; the largest level chosen in the card still there after a reload; and
+// at 1,440 and 390 px; the control on one line where the names fit and wrapping where they do not;
+// the largest level chosen in the card still there after a reload; and
 // resting on a level, by mouse or by keyboard, says its time and what belongs on it. Screenshots
 // go to the results folder for review. Fixture data only.
 import { expect, type Locator, type Page } from "@playwright/test";
@@ -18,7 +19,7 @@ import { SLOW_MS, startWorld } from "./world.ts";
 const STATUSES = ["open", "waiting", "review", "backlog"];
 const LONG = ["Half a day", "Deep-work", "two_days"].map((n) => n.padEnd(EFFORT_NAME_MAX, "x"));
 const LONGEST = "W".repeat(EFFORT_NAME_MAX);
-/** A name of the length an earlier build allowed: shown cut, whole in its tip. */
+/** A name of the length an earlier build allowed: whole where it fits, as in its tip. */
 const EARLIER = "Deep-work_2.0".padEnd(EFFORT_KEY_MAX, "x");
 const SCALES: readonly Scales[] = [
   { statuses: STATUSES, efforts: ["M"] },
@@ -28,6 +29,9 @@ const SCALES: readonly Scales[] = [
     efforts: [...EFFORT_LEVELS.slice(0, 3), { key: EARLIER, about: "Deep work over several days" }],
   },
 ];
+
+/** Whether each scale's names fit on one line of the card's control, at both widths. */
+const ONE_LINE = [true, false, true];
 
 const tipOf = (key: string, scale: Scales): string => levelTip(key, levelsOf(scale));
 
@@ -43,6 +47,14 @@ async function renameInSettings(page: Page, from: string, to: string): Promise<v
   await expect(page.locator('[data-part="toast-text"]')).toContainText(`${from} renamed to ${to}`);
   await page.goBack();
 }
+
+/** How many lines the options of a segmented control take. */
+const linesOf = (group: Locator) =>
+  group
+    .getByRole("radio")
+    .evaluateAll(
+      (cells) => new Set(cells.map((c) => Math.round(c.getBoundingClientRect().top))).size,
+    );
 
 /** Presses Tab until `target` has focus, at most 30 times. */
 async function tabTo(page: Page, target: Locator): Promise<void> {
@@ -115,8 +127,8 @@ test.describe("[A5.3.7.e2e.effort-scales] one level, ten levels and the longest 
           const effort = facts.getByRole("radiogroup", { name: "Effort" });
           await expect(effort.getByRole("radio")).toHaveCount(sizes.length, { timeout: SLOW_MS });
           expect(await effort.getByRole("radio").allInnerTexts()).toEqual(sizes);
-          // A name a person sets shows whole; only a longer one an earlier build let be set is cut.
-          expect(await cut(effort)).toEqual(earlier);
+          // Every name shows whole, also a longer one an earlier build let be set.
+          expect(await cut(effort)).toEqual([]);
           await picture(facts, `effort-card-${String(at)}.png`);
 
           // Resting on a level, by mouse, says its time and what belongs on it; so does focus.
@@ -131,7 +143,7 @@ test.describe("[A5.3.7.e2e.effort-scales] one level, ten levels and the longest 
           for (const name of earlier) {
             await effort.getByRole("radio", { name, exact: true }).hover();
             await expect(tooltip).toHaveText(tipOf(name, scale));
-            await picture(page, `effort-card-cut-${String(at)}-1440.png`);
+            await picture(page, `effort-card-earlier-${String(at)}-1440.png`);
             await page.mouse.move(0, 0);
           }
 
@@ -154,12 +166,11 @@ test.describe("[A5.3.7.e2e.effort-scales] one level, ten levels and the longest 
             const chosen = effort.getByRole("radio", { name: largest, exact: true });
             await expect(chosen).toHaveAttribute("aria-checked", "true", { timeout: SLOW_MS });
             expect(await sideways(page), `sideways at ${String(width)} px`).toBeLessThanOrEqual(0);
-            // Where the options take the room they need (390 px), a long name may show whole.
-            const shortened = await cut(effort);
-            expect(
-              shortened.filter((name) => !earlier.includes(name)),
-              `cut at ${String(width)} px`,
-            ).toEqual([]);
+            expect(await cut(effort), `cut at ${String(width)} px`).toEqual([]);
+            // One line while the names fit; more only when they do not.
+            const lines = await linesOf(effort);
+            if (ONE_LINE[at] === true) expect(lines, `lines at ${String(width)} px`).toBe(1);
+            else expect(lines, `lines at ${String(width)} px`).toBeGreaterThan(1);
             await picture(page, `effort-card-${String(at)}-${String(width)}.png`);
             // By keyboard: the chosen level holds the group's tab stop, and its tip shows on focus.
             const first = effort.getByRole("radio").first();

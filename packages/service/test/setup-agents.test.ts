@@ -156,7 +156,6 @@ function claudeInstance(id: string, env: Record<string, string>): Instance {
     openPermission: "inherit",
     runPermission: "inherit",
     extraArgs: [],
-    prompt: "sent",
     viaLoginShell: false,
     remoteAllowed: false,
     enabled: true,

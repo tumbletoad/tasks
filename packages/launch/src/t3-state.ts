@@ -122,8 +122,6 @@ export interface T3Plan {
   readonly strategy: T3Strategy;
   /** `<task reference> <title>`, sanitised by the caller. */
   readonly title: string;
-  /** T3's provider instance and model, when the instance names them. */
-  readonly modelSelection?: { readonly instanceId?: string; readonly model: string };
   readonly runtimeMode?: string;
   /** The resolved folder's identity, compared with the thread's folder (decimal text). */
   readonly folder: { readonly dev: string; readonly ino: string };
@@ -135,7 +133,7 @@ const isText = (value: unknown, max: number): value is string =>
 
 function checkPlan(value: unknown): T3Plan | undefined {
   if (!isObject(value)) return undefined;
-  const { projectId, strategy, title, modelSelection, runtimeMode, folder, createdAt } = value;
+  const { projectId, strategy, title, runtimeMode, folder, createdAt } = value;
   if (!isText(projectId, 256) || !isText(title, 1024) || !isInstant(createdAt)) return undefined;
   if (!isObject(folder) || !isText(folder["dev"], 40) || !isText(folder["ino"], 40)) {
     return undefined;
@@ -149,22 +147,11 @@ function checkPlan(value: unknown): T3Plan | undefined {
   ) {
     way = { type: "existing_worktree", worktreePath: strategy["worktreePath"] };
   } else return undefined;
-  let model: T3Plan["modelSelection"];
-  if (modelSelection !== undefined) {
-    if (!isObject(modelSelection) || !isText(modelSelection["model"], 256)) return undefined;
-    const instanceId = modelSelection["instanceId"];
-    if (instanceId !== undefined && !isText(instanceId, 64)) return undefined;
-    model = {
-      model: modelSelection["model"],
-      ...(instanceId === undefined ? {} : { instanceId }),
-    };
-  }
   if (runtimeMode !== undefined && !isText(runtimeMode, 64)) return undefined;
   return {
     projectId,
     strategy: way,
     title,
-    ...(model === undefined ? {} : { modelSelection: model }),
     ...(runtimeMode === undefined ? {} : { runtimeMode }),
     folder: { dev: folder["dev"], ino: folder["ino"] },
     createdAt,

@@ -2,8 +2,8 @@
 // tasks), end to end in Chromium and Firefox against the real service: the side menu, Today, a
 // status view, an area, a project and an expanded task at 1,280, 1,440, 1,920 and 390 px in both
 // themes, nothing scrolling sideways; and the expanded task's facts with two, four and six
-// statuses and effort keys, each in one calm block. Screenshots go to the results folder for
-// review. Fixture data only.
+// statuses and effort keys, each in one calm block: every option whole and inside it, on one line
+// while the names fit. Screenshots go to the results folder for review. Fixture data only.
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { picture, showsSpace, signIn, themes } from "./page.ts";
@@ -32,11 +32,23 @@ async function open(page: Page, world: World, path: string): Promise<void> {
 const sideways = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
-/** The left edges of a control's options, rounded. */
-const edges = (control: Locator) =>
-  control
-    .getByRole("radio")
-    .evaluateAll((cells) => cells.map((cell) => Math.round(cell.getBoundingClientRect().left)));
+/** The options of a control whose name is cut, or that reach outside the facts' block. */
+const astray = async (control: Locator, block: Locator) =>
+  control.getByRole("radio").evaluateAll(
+    (cells, dl) => {
+      const box = dl.getBoundingClientRect();
+      return cells
+        .filter((c) => {
+          const at = c.getBoundingClientRect();
+          const outside = at.left < box.left - 1 || at.right > box.right + 1;
+          return (
+            outside || c.scrollWidth > c.clientWidth + 1 || c.scrollHeight > c.clientHeight + 1
+          );
+        })
+        .map((c) => c.textContent);
+    },
+    await block.elementHandle(),
+  );
 
 /** The distinct top edges of a control's options: one per row. */
 const rows = async (control: Locator) =>
@@ -129,6 +141,8 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
         efforts: ["S", "M", "L"],
       },
     ];
+    /** Whether each scale's statuses fit on one line of the 304 px facts column. */
+    const oneLine = [true, true, false, false];
     // No tool sets a space's statuses yet: one service, with a space of its own per scale, each
     // set before the service opens it.
     const world = await startWorld(ui, { scales });
@@ -165,26 +179,14 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
             timeout: SLOW_MS,
           });
           await expect(effort.getByRole("radio")).toHaveCount(scale.efforts.length);
-          // Statuses in one row up to four, else in even rows of three: never one left alone.
-          expect(await rows(statuses)).toBe(scale.statuses.length <= 4 ? 1 : 2);
-          // No option's name is cut.
-          const cut = await statuses
-            .getByRole("radio")
-            .evaluateAll((cells) =>
-              cells
-                .filter((c) => c.scrollWidth > c.clientWidth || c.scrollHeight > c.clientHeight)
-                .map((c) => c.textContent),
-            );
-          expect(cut).toEqual([]);
-          // Priority's options sit over effort's.
-          const p = await edges(priority);
-          const e = await edges(effort);
-          for (let i = 0; i < Math.min(p.length, e.length); i += 1) {
-            expect(
-              Math.abs((p[i] ?? 0) - (e[i] ?? 0)),
-              `option ${String(i + 1)}`,
-            ).toBeLessThanOrEqual(1);
+          // Every option whole and inside the block; one line while the names fit, more only
+          // when they do not. These effort keys and the priorities always fit.
+          for (const control of [statuses, priority, effort]) {
+            expect(await astray(control, facts)).toEqual([]);
           }
+          expect((await rows(statuses)) === 1).toBe(oneLine[at]);
+          expect(await rows(priority)).toBe(1);
+          expect(await rows(effort)).toBe(1);
           await picture(facts, `owner-facts-${scale.statuses.join("-")}.png`);
         });
       }

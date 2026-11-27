@@ -290,14 +290,19 @@ const invalid = (message: string, field?: string): AppError =>
     ...(field === undefined ? {} : { data: { field } }),
   });
 
+const LAST_OPEN =
+  "FROM launches WHERE machine_id = $machine AND route <> 'clipboard' AND state <> 'failed' " +
+  "ORDER BY created_at DESC, id DESC LIMIT 1";
 const LAST_SQL =
-  "SELECT (SELECT instance_id FROM launches WHERE machine_id = $machine AND route <> 'clipboard' " +
-  "AND state <> 'failed' ORDER BY created_at DESC, id DESC LIMIT 1) AS open, (SELECT instance_id FROM runs " +
-  "WHERE machine_id = $machine ORDER BY queued_at DESC, id DESC LIMIT 1) AS run";
+  `SELECT (SELECT instance_id ${LAST_OPEN}) AS open, (SELECT route ${LAST_OPEN}) AS open_route, ` +
+  "(SELECT instance_id FROM runs WHERE machine_id = $machine ORDER BY queued_at DESC, id DESC " +
+  "LIMIT 1) AS run";
 
 /** The instance a space's last Open here used, and its last Run's, by key. */
 export interface UiLast {
   readonly open?: string;
+  /** The route of that Open: a key no longer in machine.toml still says T3 Code (`t3-mcp`). */
+  readonly open_route?: string;
   readonly run?: string;
 }
 
@@ -466,9 +471,10 @@ export class UiLaunches {
     const { reader } = this.#space(spaceRef, copy);
     if (reader === undefined) return {};
     const [row] = await reader.all(LAST_SQL, { machine: this.#options.host.machine.id });
-    const { open, run } = row ?? {};
+    const { open, open_route: route, run } = row ?? {};
     return {
       ...(typeof open === "string" ? { open } : {}),
+      ...(typeof route === "string" ? { open_route: route } : {}),
       ...(typeof run === "string" ? { run } : {}),
     };
   }

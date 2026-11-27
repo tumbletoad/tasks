@@ -292,15 +292,20 @@ the behaviour it describes, and keep each one to a sentence or two.
   instance's environment. Not protected: a federation profile shared by all homes can still
   outrank a home's own sign-in, and a cloud provider's own credentials (`AWS_*`, `GOOGLE_*`) stay,
   so an instance that selects that provider can use them.
+- Open puts the brief in the agent's prompt box and waits for you to send it, so you can switch
+  the model or add a word first: Claude Code, T3 Code, Claude Desktop and the Codex app. Codex has
+  no way to wait, so Open sends the brief there as its first turn. So does a Claude Code older than
+  2.1.332, or one whose version Open cannot read, and Open says so in the terminal and on the page.
+  A background run starts working at once.
 - Open sends a prompt to an agent only with everything its instance sets: its permission, extra
-  arguments, environment and home. Claude Code set to prefill opens in a terminal for them, with
-  the brief on the clipboard to paste. Where no way of opening here carries them, as a link or a
+  arguments, environment and home. Where no way of opening here carries them, as a link or a
   desktop app, it opens without them, leaves the prompt for you to send, and says what it left
   out. A Claude Code instance with a home of its own never opens in the default account instead:
   where no terminal can start, Open starts nothing and says so. The desktop apps open with their
   own account, and Open says so.
 - Open in T3 Code opens one thread on the task, in exactly its folder, with the brief in the
-  composer unsent and the task's reference and title as its name. A folder that is no T3
+  composer unsent and the task's reference and title as its name. It opens on T3 Code's default
+  profile and model, which you change in T3 Code. A folder that is no T3
   project's root or worktree is added to T3 Code's projects as it is, never opened in a project
   that only contains it, and removing it there is yours to do.
 - A pairing with T3 Code is approved on T3 Code's own page and lasts the 30 days T3 Code gives it;

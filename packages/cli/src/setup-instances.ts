@@ -19,9 +19,7 @@
 // the entries (hub/instances.ts), through machine.toml's own editor, and Open uses them at once.
 // Claude Code and Codex homes with a command found are proposed: a wrapper without a home of its
 // own and a home without a command are named with what is missing, for the person to write by
-// hand. T3 Code gets one complete instance per enabled Codex or Claude provider instance its
-// settings name (read-only, through setup's reader: @ttasks/service/setup `t3SettingsOf`), labelled
-// with T3's display name, with T3's default model for it or the catalogue's for its driver.
+// hand. T3 Code gets one instance: the person picks its profile and model in T3 Code.
 //
 // This changes nothing in any agent app. `ttasks setup agents` registers TTasks's tools in each agent
 // home, which the agent needs to read and update tasks; this command makes a home a place Open can
@@ -51,8 +49,6 @@ import {
   blockOf,
   setupRecords,
   samePath,
-  t3Proposals,
-  t3SettingsOf,
   wireOf,
   type HomeRecord,
   type Offer,
@@ -125,22 +121,14 @@ const forbidden = (): AppError =>
 /** A proposal it does not offer, and what is missing for the person to write by hand. */
 interface Left {
   readonly id: string;
-  readonly reason: "no_command" | "needs_home" | "needs_t3_provider" | "id_taken";
+  readonly reason: "no_command" | "needs_home" | "id_taken";
 }
 
 const LEFT_TEXT: Readonly<Record<Left["reason"], string>> = {
   no_command: "its command was not found on this PATH",
   needs_home:
     "it is a wrapper, which selects its own home: write its config_home into machine.toml by hand",
-  needs_t3_provider:
-    "T3 Code's settings name no Codex or Claude provider instance that is turned on: turn one on in T3 Code and run this again",
   id_taken: "another instance has its ID: write it into machine.toml by hand with another ID",
-};
-
-/** The line under a T3 instance's block that says where its model came from. */
-const MODEL_TEXT: Readonly<Record<NonNullable<Offer["modelFrom"]>, string>> = {
-  t3: "T3 Code's default model, which its settings give for this provider instance",
-  catalogue: `T3 Code's default model for this kind of agent; for another, change t3_model in machine.toml after adding it`,
 };
 
 interface Survey {
@@ -178,10 +166,9 @@ async function surveyOf(
   const digest = machineDigest(layout.config);
   const machine = loadMachineConfig(layout.config, io.platform).config;
   const existing = asIfNone ? [] : machine.instances;
-  // T3 instances are told apart by their provider instance below, not by detection's single "t3".
   const detection = await detect(
     nodeDetectHost({ platform: io.platform, env, home: userHome }),
-    existing.filter((i) => i.target !== "t3"),
+    existing,
   );
   // Setup agents' records of both files; when they cannot be read, the proposals keep detection's
   // IDs. A home's `applied` record names its instance before a pending one.
@@ -193,29 +180,7 @@ async function surveyOf(
   const taken = new Set(existing.map((i) => i.id));
   const offers: Offer[] = [];
   const left: Left[] = [];
-  // T3 Code (A4 3.2): one complete instance per enabled provider instance its settings name, read
-  // through setup's reader. One whose provider instance a T3 instance of machine.toml names is
-  // configured already.
-  const proposals: Proposal[] = [];
   for (const found of detection.proposals) {
-    if (found.target !== "t3") {
-      proposals.push(found);
-      continue;
-    }
-    const settings = t3SettingsOf({ platform: io.platform, userHome, env });
-    const t3 = settings === undefined ? [] : t3Proposals(settings, io.platform);
-    const fresh = t3.filter(
-      (p) =>
-        !existing.some(
-          (i) => i.target === "t3" && i.t3?.providerInstance === p.t3?.providerInstance,
-        ),
-    );
-    if (t3.length === 0 && (only === undefined || only === found.id)) {
-      left.push({ id: found.id, reason: "needs_t3_provider" });
-    }
-    proposals.push(...fresh);
-  }
-  for (const found of proposals) {
     // A home setup agents registered keeps the instance ID its entry names.
     const record = records.find(
       (r) =>
@@ -237,12 +202,7 @@ async function surveyOf(
       });
       continue;
     }
-    offers.push({
-      id: proposal.id,
-      label: proposal.label,
-      entry: made.entry,
-      ...(proposal.t3 === undefined ? {} : { modelFrom: proposal.t3.modelFrom }),
-    });
+    offers.push({ id: proposal.id, label: proposal.label, entry: made.entry });
   }
   return {
     detection,
@@ -383,11 +343,7 @@ function preview(io: Io, globals: Globals, survey: Survey, plan: string, parsed:
         })),
         homes: detection.homes.map((h) => ({ target: h.target, home: h.path })),
         configured: survey.configured,
-        add: survey.offers.map((o) => ({
-          id: o.id,
-          entry: wireOf(o.entry),
-          ...(o.modelFrom === undefined ? {} : { model_from: o.modelFrom }),
-        })),
+        add: survey.offers.map((o) => ({ id: o.id, entry: wireOf(o.entry) })),
         left: survey.left,
         ...(survey.offers.length === 0 ? {} : { plan, apply }),
       })}\n`,
@@ -416,9 +372,6 @@ function preview(io: Io, globals: Globals, survey: Survey, plan: string, parsed:
   survey.offers.forEach((offer, n) => {
     out.push(`${String(n + 1)}. ${offer.label} (instance ${offer.id}): adds to machine.toml`);
     for (const line of blockOf(offer.entry)) out.push(`     ${line}`);
-    if (offer.modelFrom !== undefined) {
-      out.push(`     (t3_model: ${MODEL_TEXT[offer.modelFrom]}.)`);
-    }
   });
   for (const l of survey.left) out.push(`Not added: ${l.id}: ${LEFT_TEXT[l.reason]}.`);
   if (survey.offers.length === 0) {

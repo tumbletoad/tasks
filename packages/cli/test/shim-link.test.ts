@@ -337,6 +337,7 @@ describe("[A4.5.shim.reply] the shim reads the claim's reply strictly, and repor
       ["an environment value that is not text", { ...reply, env: { PATH: 1 } }],
       ["an environment value past its bound", { ...reply, env: { PATH: "a".repeat(32_769) } }],
       ["an after_exit mode it does not know", { ...reply, after_exit: "linger" }],
+      ["a notice it does not know", { ...reply, notice: "anything" }],
       ["a protocol that is not a number", { ...reply, protocol: "1" }],
     ];
     for (const [what, sent] of broken) {
@@ -561,8 +562,9 @@ describe("[A4.5.shim.client] via_login_shell and the shell after exit", () => {
       const order: string[] = [];
       const started: { argv: readonly string[]; env: Readonly<Record<string, string>> }[] = [];
       const entered: string[] = [];
+      const lines: string[] = [];
       const code = await runShim(["0".repeat(24)], {
-        io: { ...fakeIo([], entered), platform: "linux" },
+        io: { ...fakeIo(lines, entered), platform: "linux" },
         startTime: () => Promise.resolve("windows:1"),
         connect: () => Promise.resolve(session.session),
         checkFolder: () => {
@@ -579,9 +581,10 @@ describe("[A4.5.shim.client] via_login_shell and the shell after exit", () => {
           });
         },
       });
-      return { code, order, started, entered, session };
+      return { code, order, started, entered, session, lines };
     };
     const direct = await run(reply);
+    expect(direct.lines).not.toContain(TEXT.notice.brief_sent);
     expect(direct.code).toBe(0);
     expect(direct.entered).toEqual([folder]);
     expect(direct.order).toEqual(["check", "agent"]);
@@ -593,6 +596,11 @@ describe("[A4.5.shim.client] via_login_shell and the shell after exit", () => {
     expect(shell.entered).toEqual([]);
     expect(shell.started).toEqual([]);
     expect(shell.session.calls).toContain("launch.failed");
+    // An app too old to hold the brief unsent: its line, then the agent as usual.
+    const sent = await run({ ...reply, notice: "brief_sent" });
+    expect(sent.code).toBe(0);
+    expect(sent.lines).toContain(TEXT.notice.brief_sent);
+    expect(sent.order).toEqual(["check", "agent"]);
   });
 
   test("after_exit shell starts the person's shell in the folder without the product's variables, then exits with the agent's code", async () => {
