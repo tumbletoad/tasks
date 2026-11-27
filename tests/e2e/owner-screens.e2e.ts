@@ -36,11 +36,11 @@ const sideways = (page: Page) =>
 const astray = async (control: Locator, block: Locator) =>
   control.getByRole("radio").evaluateAll(
     (cells, dl) => {
-      const box = dl?.getBoundingClientRect();
+      const box = dl.getBoundingClientRect();
       return cells
         .filter((c) => {
           const at = c.getBoundingClientRect();
-          const outside = box === undefined || at.left < box.left - 1 || at.right > box.right + 1;
+          const outside = at.left < box.left - 1 || at.right > box.right + 1;
           return (
             outside || c.scrollWidth > c.clientWidth + 1 || c.scrollHeight > c.clientHeight + 1
           );
