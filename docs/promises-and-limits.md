@@ -285,8 +285,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   so an instance that selects that provider can use them.
 - Open puts the brief in the agent's prompt box and waits for you to send it, so you can switch
   the model or add a word first: Claude Code, T3 Code, Claude Desktop and the Codex app. Codex has
-  no way to wait, so Open sends the brief there as its first turn. A background run starts working
-  at once.
+  no way to wait, so Open sends the brief there as its first turn. So does a Claude Code older than
+  2.1.332, or one whose version Open cannot read, and Open says so in the terminal and on the page.
+  A background run starts working at once.
 - Open sends a prompt to an agent only with everything its instance sets: its permission, extra
   arguments, environment and home. Where no way of opening here carries them, as a link or a
   desktop app, it opens without them, leaves the prompt for you to send, and says what it left

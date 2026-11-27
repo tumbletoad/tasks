@@ -98,6 +98,8 @@ export interface Busy {
 /** The instances a space last opened a task in and ran one with on this machine, by key. */
 export interface LastUsed {
   readonly open?: string;
+  /** The route of that Open (`t3-mcp`), which still names its app when its key is gone. */
+  readonly open_route?: string;
   readonly run?: string;
 }
 
@@ -139,6 +141,8 @@ export interface Opened {
   readonly leftOut: readonly string[];
   /** T3 Code: false when the thread exists and did not come up, so Open in T3 can bring it. */
   readonly linkOpened?: boolean;
+  /** The app is too old to hold the brief in its prompt box: it was sent. */
+  readonly briefSent?: true;
 }
 
 /** Open's terminal as Settings shows it (the service's TerminalView): fixed words only. */
@@ -518,6 +522,7 @@ export class Api {
       note: result.note,
       leftOut: launch.left_out ?? [],
       ...(result.link_opened === undefined ? {} : { linkOpened: result.link_opened }),
+      ...(result.brief_sent === true ? { briefSent: true as const } : {}),
     };
   }
 

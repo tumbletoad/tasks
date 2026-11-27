@@ -734,3 +734,21 @@ export function nodeDetectHost(options: NodeHostOptions): DetectHost {
     },
   };
 }
+
+/**
+ * The `a.b.c` an instance's command reports with `--version`, run as Open runs it (its `{exec}`,
+ * in `env`), or undefined when it gives none in time. Only for an instance Open starts anyway.
+ */
+export async function instanceVersion(
+  instance: Pick<Instance, "exec" | "argsPrefix">,
+  options: { readonly env: Env; readonly cwd: string; readonly timeoutMs?: number },
+): Promise<string | undefined> {
+  if (instance.exec === undefined) return undefined;
+  const out = await helperOutput([instance.exec, ...instance.argsPrefix, "--version"], {
+    env: options.env,
+    cwd: options.cwd,
+    deadlineMs: options.timeoutMs ?? 5_000,
+    maxChars: VERSION_OUTPUT_CHARS,
+  });
+  return out === undefined ? undefined : versionIn(out);
+}

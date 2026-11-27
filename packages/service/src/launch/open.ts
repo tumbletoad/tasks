@@ -221,6 +221,8 @@ export interface OpenTaskResult {
   readonly removed: boolean;
   /** T3 Code: whether the thread came up; false when it exists and its link did not open. */
   readonly linkOpened?: boolean;
+  /** Claude Code too old to hold the brief in its prompt box: the brief was sent. */
+  readonly briefSent?: true;
 }
 
 /** The route an instance takes for a click, and its brief. */
@@ -231,6 +233,8 @@ export interface Choice {
   readonly budget: number;
   /** The brief goes on the clipboard as well (Copy, a link whose app may drop it). */
   readonly copy: boolean;
+  /** The app is too old to hold the brief unsent (RouteDef `since`): it is sent, and Open says so. */
+  readonly briefSent?: true;
   /** What the instance sets that the route cannot carry: said to the person, never sent. */
   readonly leftOut: readonly LeftOut[];
 }

@@ -1509,6 +1509,11 @@
       "output": {
         "additionalProperties": false,
         "properties": {
+          "brief_sent": {
+            "const": true,
+            "description": "The brief was sent: this version of the app cannot hold it in its prompt box",
+            "type": "boolean"
+          },
           "copy": {
             "description": "Text for the clipboard: the pointer brief, context pack or brief to paste",
             "maxLength": 200000,

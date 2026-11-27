@@ -18,6 +18,7 @@
 //   and it adds its PID as a line to `<ref>.pids` there, so a test can end it as a closed window
 //   would, and the session ID its `--session-id` names to `<ref>.sessions`, so a test can make
 //   the Agent Monitor report that session.
+// - FAKE_CLI_VERSION: what it answers to `--version` alone (default 2.1.332, which holds a prefill).
 // Its stdin is never read. No real agent, account or home is touched. Tests only.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -51,6 +52,12 @@ export interface CliAgentReport {
 const startedIn = statSync(".", { bigint: true });
 const argv = process.argv.slice(2);
 const env = process.env;
+
+// `--version` alone, as Open asks it before it starts Claude Code: the version and nothing else.
+if (argv.length === 1 && argv[0] === "--version") {
+  process.stdout.write(`${env["FAKE_CLI_VERSION"] ?? "2.1.332"} (fake)\n`);
+  process.exit(0);
+}
 
 /**
  * The task's reference in the brief's first line, and the arguments of the command its second

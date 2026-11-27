@@ -35,11 +35,13 @@ import {
   FAILED_REASONS,
   isBoundedText,
   isPid,
+  NOTICES,
   REPLY_BOUNDS,
   START_TIME,
   type AfterExit,
   type ExitFile,
   type FailedReason,
+  type Notice,
 } from "./wire.ts";
 
 /** A plan's folder: the task's or its project's folder on this machine. */
@@ -95,6 +97,8 @@ export interface SpawnPlan {
    * launch's thread ID, after the agent started. Absent: no match.
    */
   readonly match?: { readonly home: string };
+  /** A fixed line the shim prints under its announce line (wire.ts NOTICES). Absent: none. */
+  readonly notice?: Notice;
 }
 
 /** One launch's machine state. */
@@ -201,7 +205,7 @@ export function checkPlanFolder(value: unknown): PlanFolder | null | undefined {
 /** The plan, checked: a plan that is not one starts nothing. */
 export function checkPlan(value: unknown): SpawnPlan | undefined {
   if (!isObject(value)) return undefined;
-  const { argv, env, title, afterExit, loginShell, folderArgs, match, ownHome } = value;
+  const { argv, env, title, afterExit, loginShell, folderArgs, match, ownHome, notice } = value;
   if (!Array.isArray(argv) || argv.length === 0 || argv.length > REPLY_BOUNDS.argv) {
     return undefined;
   }
@@ -213,6 +217,7 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
   if (ownHome !== undefined && (typeof ownHome !== "string" || !isBuiltInTarget(ownHome))) {
     return undefined;
   }
+  if (notice !== undefined && !(NOTICES as readonly unknown[]).includes(notice)) return undefined;
   // The folder's elements: distinct indices of empty elements after the executable.
   if (folderArgs !== undefined) {
     if (!Array.isArray(folderArgs) || folderArgs.length > 16) return undefined;
@@ -240,6 +245,7 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
       : { folderArgs: folderArgs as number[] }),
     ...(match === undefined ? {} : { match: { home: (match as { home: string }).home } }),
     ...(ownHome === undefined ? {} : { ownHome }),
+    ...(notice === undefined ? {} : { notice: notice as Notice }),
   };
   return Buffer.byteLength(JSON.stringify(plan), "utf8") <= PLAN_MAX_BYTES ? plan : undefined;
 }

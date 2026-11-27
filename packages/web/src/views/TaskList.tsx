@@ -927,6 +927,9 @@ export function TaskList({
               // What this way of opening could not carry is said before the person sends anything.
               // A second click while the first was opening got that launch: its words are a note.
               const said = [
+                ...(opened.briefSent === true
+                  ? [t("row.briefSent", { label: instance.label })]
+                  : []),
                 ...(opened.leftOut.length > 0
                   ? [
                       t("row.openedWithout", {
@@ -943,7 +946,9 @@ export function TaskList({
               // T3 Code refused before making a thread: why, and what to do.
               if (
                 receipt.state === "failed" &&
-                (receipt.reason === "model_unavailable" || receipt.reason === "pairing_denied")
+                (receipt.reason === "model_unavailable" ||
+                  receipt.reason === "no_default_model" ||
+                  receipt.reason === "pairing_denied")
               ) {
                 say(
                   t("row.openT3", { why: receipt.reason, label: instance.label }),

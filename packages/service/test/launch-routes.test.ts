@@ -32,6 +32,7 @@ import {
   settingsOf,
   REQUEST_LINE,
   STEP_DEADLINE_MS,
+  WAIT_LINE,
   type LaunchIntent,
   type SpawnRequest,
   type SpawnedProcess,
@@ -303,6 +304,7 @@ interface Opened {
   };
   readonly copy?: string;
   readonly text: string;
+  readonly brief_sent?: true;
   readonly note?: string;
 }
 
@@ -438,6 +440,33 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       for (const secret of ["quotes", "Café", "Look at", "tests (v2)", launch.reference]) {
         expect(log).not.toContain(secret);
       }
+      expect(result.brief_sent).toBeUndefined();
+    },
+  );
+
+  test(
+    "a Claude Code too old to hold the brief in its prompt box gets it sent, and the result and the terminal's plan say so",
+    { timeout: 300_000 },
+    async () => {
+      const r = await rig("claude-old", 0, {
+        instances: [{ id: "claude-old", env: { FAKE_CLI_VERSION: "2.1.300" } }],
+      });
+      const task = await addTask(r, "Fixture old Claude Code");
+      const { result, requestId } = await open(r, { task: task.ref, instance: "claude-old" });
+      expect(result.launch).toMatchObject({ route: "terminal", instance: "claude-old" });
+      expect(result.brief_sent).toBe(true);
+      expect(r.lab.running.launches.host.record(result.launch.id)?.plan.notice).toBe("brief_sent");
+      const report = await reportAt(r.report("claude-old"));
+      const brief = briefFor("sent", r.lab.spaceId, task, result.launch.reference);
+      expect(report.argv).toEqual([
+        "--session-id",
+        presetSession(r.lab.spaceId, requestId),
+        "-n",
+        `${task.ref} Fixture old Claude Code`,
+        "--",
+        brief,
+      ]);
+      expect(brief.split("\n").at(-1)).toBe(WAIT_LINE);
     },
   );
 

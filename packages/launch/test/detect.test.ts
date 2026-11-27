@@ -18,8 +18,8 @@ const LINUX: FakeHostSpec = {
     HOME: "/home/mira",
   },
   entries: {
-    "/home/mira/.local/bin/claude": { kind: "link", to: "../share/claude/versions/2.1.332" },
-    "/home/mira/.local/share/claude/versions/2.1.332": { kind: "file", executable: true },
+    "/home/mira/.local/bin/claude": { kind: "link", to: "../share/claude/versions/2.1.322" },
+    "/home/mira/.local/share/claude/versions/2.1.322": { kind: "file", executable: true },
     // The fixture user's wrappers (A4 3.2): one per account.
     "/home/mira/.local/bin/codex-work": { kind: "file", executable: true },
     "/home/mira/.local/bin/codex-second": { kind: "file", executable: true },
@@ -44,7 +44,7 @@ const LINUX: FakeHostSpec = {
     "/home/mira/.t3/userdata/server-runtime.json": { kind: "file" },
   },
   outputs: {
-    "/home/mira/.local/bin/claude --version": "2.1.332 (Claude Code)\n",
+    "/home/mira/.local/bin/claude --version": "2.1.322 (Claude Code)\n",
     [`${NVM}/bin/node ${NVM}/lib/node_modules/@openai/codex/bin/codex.js --version`]:
       "codex-cli 0.166.0\n",
     "/home/mira/.local/bin/t3 --version": "0.1.7\n",
@@ -76,7 +76,7 @@ const WINDOWS: FakeHostSpec = {
     "C:\\Users\\mira\\.claude_second\\.credentials.json": { kind: "file" },
   },
   outputs: {
-    "C:\\Users\\mira\\.local\\bin\\claude.exe --version": "2.1.332 (Claude Code)\r\n",
+    "C:\\Users\\mira\\.local\\bin\\claude.exe --version": "2.1.322 (Claude Code)\r\n",
     "C:\\Program Files\\nodejs\\node.exe C:\\Users\\mira\\npm-global\\node_modules\\@openai\\codex\\bin\\codex.js --version":
       "codex-cli 0.201.0\r\n",
   },

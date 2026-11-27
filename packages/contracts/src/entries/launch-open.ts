@@ -99,6 +99,10 @@ export const LaunchOpenResult = z.strictObject({
     .boolean()
     .describe("T3 Code: whether its thread came up; false leaves it to open again")
     .optional(),
+  brief_sent: z
+    .literal(true)
+    .describe("The brief was sent: this version of the app cannot hold it in its prompt box")
+    .optional(),
 });
 
 const BRIEF = [

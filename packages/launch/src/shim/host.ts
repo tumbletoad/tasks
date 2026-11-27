@@ -454,6 +454,7 @@ export class ShimHost {
             after_exit: latest.plan.afterExit,
             credential,
             exit_file: this.#records.exitPath(launch),
+            ...(latest.plan.notice === undefined ? {} : { notice: latest.plan.notice }),
           },
           held,
         );

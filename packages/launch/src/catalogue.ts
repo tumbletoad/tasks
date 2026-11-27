@@ -65,6 +65,11 @@ export interface RouteDef {
    * the launch reference confirms it (A4 3.9.2).
    */
   readonly confirmFolder?: boolean;
+  /**
+   * The app's first version known to take this route. An app that reports an older version, or
+   * none Open can read, takes the target's sent terminal route instead, and Open says so.
+   */
+  readonly since?: string;
   /** Terminal routes: whole-element placeholders only for {exec}, {permission}, {extra_args}. */
   readonly argv?: readonly Template[];
   /** Link routes: each value percent-encoded once when the route runs. */
@@ -168,10 +173,35 @@ export const CATALOGUE: readonly TargetDef[] = [
     routes: [
       {
         // `--prefill` puts the brief in Claude Code's prompt box unsent: the person picks the model
-        // or adds a word, then presses Enter. Claude Code's own flag, which its link handler uses.
+        // or adds a word, then presses Enter. Claude Code's own flag, which its link handler uses;
+        // its help does not list it, so `since` is the version it was tried on.
         kind: "terminal",
         folder: "cwd",
         prompt: "prefilled",
+        nativeId: "preset",
+        maxPrompt: COMMAND_LINE_LIMIT,
+        budget: TERMINAL_BUDGET,
+        trust: "once-per-root",
+        needsGui: true,
+        copyBriefToo: false,
+        carries: SETTINGS,
+        since: "2.1.332",
+        argv: [
+          "{exec}",
+          "--session-id",
+          "{session}",
+          "-n",
+          "{task.id} {task.title}",
+          "{permission}",
+          "{extra_args}",
+          "--prefill={brief}",
+        ],
+      },
+      {
+        // A Claude Code older than the prefill route's `since`: the brief is its first turn.
+        kind: "terminal",
+        folder: "cwd",
+        prompt: "sent",
         nativeId: "preset",
         maxPrompt: COMMAND_LINE_LIMIT,
         budget: TERMINAL_BUDGET,
@@ -187,7 +217,8 @@ export const CATALOGUE: readonly TargetDef[] = [
           "{task.id} {task.title}",
           "{permission}",
           "{extra_args}",
-          "--prefill={brief}",
+          "--",
+          "{brief}",
         ],
       },
       {
@@ -221,8 +252,7 @@ export const CATALOGUE: readonly TargetDef[] = [
       },
       urlScheme: "claude-cli",
     },
-    // `--prefill` is not in Claude Code's help: the lower bound is the version it was tried on.
-    testedVersions: ">=2.1.332 <3.0.0",
+    testedVersions: ">=2.1.0 <3.0.0",
     permissionArgs: {
       // A4 3.11.6: Claude runs with `inherit` are refused, like Codex's.
       inherit: { open: [], run: null },

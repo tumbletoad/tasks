@@ -215,14 +215,16 @@ export function routeOf(
 
 /**
  * A CLI instance's terminal command line (A4 3.4.2, 3.4.3): Claude Code's or Codex's terminal route
- * of the catalogue, the instance's executable, open permission and extra arguments.
+ * of the catalogue with this prompt (its first when none is named), the instance's executable,
+ * open permission and extra arguments.
  */
 export function cliArgv(
   instance: Instance,
   values: Omit<ArgvValues, "exec" | "permission" | "extraArgs">,
+  prompt?: RouteDef["prompt"],
 ): ExpandedArgv {
   if (!isBuiltInTarget(instance.target)) throw new RouteUnavailable("no_route");
-  const route = routeOf(instance.target, "terminal");
+  const route = routeOf(instance.target, "terminal", prompt);
   if (route?.argv === undefined) throw new RouteUnavailable("no_route");
   const permission = targetDef(instance.target).permissionArgs[instance.openPermission].open;
   return expandArgv(route.argv, {

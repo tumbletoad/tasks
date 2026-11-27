@@ -662,6 +662,7 @@ Open a task in an agent app on this machine, or Copy its pointer brief.
 | `text` | "none" \| "inline" \| "note" \| "request" | yes | Your words: none, in the copy, saved as a note, or this launch's request |
 | `note` | string | no | The note on the task that holds your words |
 | `link_opened` | boolean | no | T3 Code: whether its thread came up; false leaves it to open again |
+| `brief_sent` | true | no | The brief was sent: this version of the app cannot hold it in its prompt box |
 
 ### Examples
 
