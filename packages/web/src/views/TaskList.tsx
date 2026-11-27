@@ -612,7 +612,7 @@ export function TaskList({
             : change.actor.kind === "human"
               ? "user"
               : change.actor.label;
-          edits.hold(before, by, Date.now());
+          edits.hold(before, by, Date.now(), change.request_id);
         }
       }),
     [live, edits],

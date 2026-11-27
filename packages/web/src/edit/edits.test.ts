@@ -1017,16 +1017,10 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
 });
 
 describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their conflicts", () => {
-  test("a check-off holds the row checked for 4 s, then it collapses and leaves; clicking again during the hold undoes it", async () => {
+  test("a check-off shows the row checked for a moment and then it leaves, never open again while its write is on its way; clicking again during the hold undoes it", async () => {
     const w = new World([task(1), task(2)]);
-    w.answer("task.finish", () => ({
-      result: "completed",
-      task: "M-1",
-      lifecycle: "completed",
-      learnings: 0,
-      follow_ups: [],
-      as_of: w.asOf(11),
-    }));
+    let answer!: (value: unknown) => void;
+    w.answer("task.finish", () => new Promise((resolve) => (answer = resolve)));
     w.edits.checkOff(task(1));
     expect(w.calls[0]).toMatchObject({
       name: "task.finish",
@@ -1034,18 +1028,30 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
     });
     expect(w.edits.getState().leaving.get("t_00001")).toMatchObject({ done: true, out: false });
     expect(w.lastToast()).toMatchObject({ kind: "undo", text: { id: "toast.done" } });
-    await flush();
-    w.feed(
-      [task(1, { lifecycle: "completed", version: 2 })],
-      String(w.calls[0]?.input["request_id"]),
-      ["lifecycle"],
-    );
-    // It left the working set; the hold keeps its row.
+    // The store's row goes at once: only the hold shows it, checked.
     expect(w.row("t_00001")).toBeUndefined();
-    expect(w.edits.getState().leaving.get("t_00001")?.row.title).toBe("Task 1");
+    expect(HOLD_MS + COLLAPSE_MS).toBeLessThan(600);
     await vi.advanceTimersByTimeAsync(HOLD_MS);
     expect(w.edits.getState().leaving.get("t_00001")?.out).toBe(true);
     await vi.advanceTimersByTimeAsync(COLLAPSE_MS);
+    expect(w.edits.getState().leaving.has("t_00001")).toBe(false);
+    // The answer and the feed come late: the row stays gone, and the feed holds it no second time.
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(w.row("t_00001")).toBeUndefined();
+    answer({
+      result: "completed",
+      task: "M-1",
+      lifecycle: "completed",
+      learnings: 0,
+      follow_ups: [],
+      as_of: w.asOf(11),
+    });
+    await flush();
+    expect(w.row("t_00001")).toBeUndefined();
+    const request = String(w.calls[0]?.input["request_id"]);
+    w.feed([task(1, { lifecycle: "completed", version: 2 })], request, ["lifecycle"]);
+    w.edits.hold(task(1), undefined, 0, request);
+    expect(w.row("t_00001")).toBeUndefined();
     expect(w.edits.getState().leaving.has("t_00001")).toBe(false);
 
     // The second one: the box clicked again during its hold is its undo, by its commit.

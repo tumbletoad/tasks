@@ -8,9 +8,8 @@
 //   field, with the person's value ready to apply again with one click: after a conflict ("Changed
 //   by Codex just now · Apply mine") and after a failed call ("Not saved · Try again"). Nothing is
 //   overwritten silently: "Apply mine" is the person's explicit choice.
-// - A check-off by mistake is undone with one action. The row stays, checked and struck through,
-//   for the hold (4 s), its toast's Undo names its own commit, and clicking the box again during
-//   the hold undoes it too.
+// - A check-off by mistake is undone with one action. The row shows checked and struck through for
+//   a moment, then leaves at once; its toast's Undo names its own commit.
 // - Two windows, or a person and an agent, on one task: every edit carries a base (A1 3.5), so the
 //   service refuses a write over a change the person did not see, and the conflict names who made it.
 //
@@ -58,8 +57,8 @@ function readOnlyText(error: unknown): Msg | undefined {
     : { id: "edit.notSavedReadOnly", values: { why: readOnlyWhy(reason) } };
 }
 
-/** How long a checked-off row stays where it is (A5 3.12). */
-export const HOLD_MS = 4_000;
+/** How long a checked-off row stays where it is: long enough to see the check land. */
+export const HOLD_MS = 300;
 /** Then it collapses (A5 3.12, 3.20). */
 export const COLLAPSE_MS = 180;
 /** A row whose undo answered waits this long at most for the feed to bring it back. */
@@ -828,14 +827,18 @@ export class Edits {
     // Checked again after its undo: the row that waited to come back holds again.
     if (entry !== undefined) this.#drop(task.id);
     this.#leave(task, {});
+    // The store's row goes with the write, so the row never shows open again while it is on its
+    // way, however late the feed confirms it.
     const sent = this.#sendWith(
       task.id,
       ["lifecycle"],
       this.seen(task, ["lifecycle"]),
       (base, request) =>
         this.#deps.client.task.finish({ task: task.id, base: base ?? "", request_id: request }),
+      { tasks: [{ id: task.id, remove: true }] },
     );
     this.#checks.set(task.id, sent);
+    this.#checkedOff.add(sent.request);
     const done: Omit<Toast, "key"> = {
       kind: "undo",
       text: { id: "toast.done" },
@@ -942,6 +945,7 @@ export class Edits {
       this.seen(task, ["deleted"]),
       (base, request) =>
         this.#deps.client.task.delete({ tasks: [task.id], base: base ?? "", request_id: request }),
+      { tasks: [{ id: task.id, remove: true }] },
     );
     const moved: Omit<Toast, "key"> = {
       kind: "undo",
@@ -1116,6 +1120,8 @@ export class Edits {
 
   /** The check-offs of this tab still in their hold, with their writes. */
   readonly #checks = new Map<string, Named>();
+  /** This tab's check-off requests: the row left already, and their feed event holds it no more. */
+  readonly #checkedOff = new Set<string>();
 
   /**
    * The box clicked again during the hold: the check-off is undone, by its commit, or for a redone
@@ -1142,7 +1148,8 @@ export class Edits {
    * A task the view shows was completed by a write the tab did not hold yet (A5 3.12): another
    * actor's (it strikes through, says who, and leaves after the hold), or the tab's own redo.
    */
-  hold(row: TaskRow, by: string | undefined, at: number): void {
+  hold(row: TaskRow, by: string | undefined, at: number, request?: string): void {
+    if (request !== undefined && this.#checkedOff.has(request)) return;
     const entry = this.#state.leaving.get(row.id);
     if (entry?.done === true) return;
     // A row back from an undo that is completed again (a redo) holds again, checked.
