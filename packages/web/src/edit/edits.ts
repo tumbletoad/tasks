@@ -708,9 +708,11 @@ export class Edits {
     };
     void sent.settled.then(shown, shown);
     // Any other field shows its value at once and needs no toast: it is put back by choosing again.
-    const saved: Omit<Toast, "key"> | undefined = change.fields.every((f) => STEP_FIELDS.has(f))
+    const step = change.fields.every((f) => STEP_FIELDS.has(f));
+    if (!step) this.#moved();
+    const saved: Omit<Toast, "key"> | undefined = step
       ? { kind: "undo", text: change.said, action: this.#stepped(sent) }
-      : this.#moved();
+      : undefined;
     const toast = saved === undefined ? undefined : this.#toast(saved);
     void sent.commit.then((commit) => {
       if (commit !== undefined) this.#fieldsOf.set(commit, change.fields);
@@ -1273,7 +1275,8 @@ export class Edits {
     this.#release(sent.answer, () => {
       if (this.#gate === turn) this.#gate = undefined;
     });
-    const action = options.undo === true ? this.#stepped(sent) : this.#moved();
+    const action = options.undo === true ? this.#stepped(sent) : undefined;
+    if (action === undefined) this.#moved();
     return sent.answer.then((value) => {
       // A write that changed nothing has nothing to undo.
       const text = WROTE_NOTHING.has(String(value.result)) ? undefined : said(value);
@@ -1905,13 +1908,12 @@ export class Edits {
    * The person changed something that is no step: the history's newest change is that one, so
    * nothing before it is offered for Undo or Redo any more, and a toast that offered it goes.
    */
-  #moved(): undefined {
+  #moved(): void {
     this.#era += 1;
     this.#undoable = [];
     this.#redoable = [];
     if (this.#offer !== undefined) this.#untoast(this.#offer);
     this.#offer = undefined;
-    return undefined;
   }
 
   /** After an Undo or a Redo: the two side by side, each in its place also when it has no step. */
