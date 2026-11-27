@@ -71,7 +71,6 @@ account = "second"
 exec = "/home/mira/.local/bin/codex-second"
 config_home = "/home/mira/.codex-second"
 run_permission = "full-access"
-prompt = "prefill"            # A4 L7: the assisted open, the person sends the first message
 enabled = false
 
 [[instance]]
@@ -79,9 +78,6 @@ id = "t3-codex-work"
 target = "t3"
 label = "T3 · Codex"
 account = "work"
-t3_environment = "local"
-t3_provider_instance = "codex"
-t3_model = ""
 open_permission = "full-access"
 remote_allowed = true
 

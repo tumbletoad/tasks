@@ -68,8 +68,11 @@ describe("[A4.3.2.catalogue.invariants] the built-in target catalogue", () => {
     expect(targetDef("codex-cli").routes[0]?.argv).toContain("--no-daemon");
   });
 
-  test("template checks refuse unknown placeholders, split whole elements and a brief before --", () => {
+  test("template checks refuse unknown placeholders, split whole elements and a brief before -- other than one option's value", () => {
     expect(checkArgvTemplate(["{exec}", "--", "{brief}"])).toEqual([]);
+    expect(checkArgvTemplate(["{exec}", "--prefill={brief}"])).toEqual([]);
+    expect(checkArgvTemplate(["{exec}", "-p={brief}"])).toEqual(["brief_before_separator"]);
+    expect(checkArgvTemplate(["{exec}", "x{brief}"])).toEqual(["brief_before_separator"]);
     expect(checkArgvTemplate(["{exec}", "{nope}"])).toEqual(["unknown_placeholder"]);
     expect(checkArgvTemplate(["--bin={exec}"])).toEqual(["split_element"]);
     expect(checkArgvTemplate(["{exec}", "{brief}", "--"])).toEqual(["brief_before_separator"]);

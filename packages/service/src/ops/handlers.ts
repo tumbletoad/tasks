@@ -3542,6 +3542,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       text: opened.composer,
       ...(opened.note === undefined ? {} : { note: opened.note }),
       ...(opened.linkOpened === undefined ? {} : { link_opened: opened.linkOpened }),
+      ...(opened.briefSent === true ? { brief_sent: true } : {}),
     };
   },
 

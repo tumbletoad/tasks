@@ -15,7 +15,6 @@ export {
   t3Folder,
   t3Homes,
   t3ProviderInstances,
-  t3Proposals,
   t3SettingsFile,
   type HostsInput,
   type T3AgentDriver,

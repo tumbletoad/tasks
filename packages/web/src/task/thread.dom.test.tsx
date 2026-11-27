@@ -233,7 +233,7 @@ describe("[A4.3.4.1.t3.open] a T3 Code launch's entry brings its thread up in T3
     expect(asked).toEqual(["la_t3000"]);
     const text = entries().map((e) => e.querySelector("[data-part='entry-text']")?.textContent);
     expect(text).toContain(
-      "Did not open: T3 Code does not offer this instance's model: set its t3_model to one T3 Code offers",
+      "Did not open: T3 Code does not offer its default model: choose another in T3 Code",
     );
     expect(text).toContain(
       "Did not open: the pairing with T3 Code does not allow it: pair again, choosing Full access",

@@ -39,11 +39,14 @@ export const PROBLEM_CODES = [
   "unknown_target",
   /** A template names a placeholder that does not exist (A4 3.6.4). */
   "unknown_placeholder",
-  /** A key that this entry's target does not take (a T3 key on a Codex instance). */
+  /** A key that this entry's target does not take (`via_login_shell` on Windows). */
   "not_for_target",
   /** A second instance of a target that has a single instance (A4 3.2). */
   "single_instance",
-  /** A section this build no longer reads (`[roots]`): its lines do nothing. A warning. */
+  /**
+   * A section or key this build no longer reads (`[roots]`, an instance's `prompt` or T3 keys): its
+   * lines do nothing. A warning.
+   */
   "retired",
   /**
    * A preference this build declares and does not read yet (`LATER_PREFERENCES`): its value changes
@@ -182,6 +185,13 @@ export class TableReader {
 
   has(name: string): boolean {
     return Object.hasOwn(this.#table, name);
+  }
+
+  /** A key this build no longer reads: present, it is a `retired` warning and changes nothing. */
+  retired(name: string): void {
+    if (!this.has(name)) return;
+    this.#seen.add(name);
+    this.#problems.warn(this.key(name), "retired");
   }
 
   string(name: string, rule: StringRule = {}): string | undefined {

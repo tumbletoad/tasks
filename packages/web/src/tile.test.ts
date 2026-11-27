@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { Latest } from "./latest.ts";
-import { busyByTask, tileClick, tileState } from "./row/launch.ts";
+import type { Instance } from "./api.ts";
+import { agentFor, busyByTask, tileClick, tileState } from "./row/launch.ts";
+import type { TaskRow } from "./store/rows.ts";
 
 describe("[A5.3.6.web.tile] the launch tile's states and clicks", () => {
   test("the tile shows what busies its agent app with the task here, as the service says, else Ready", () => {
@@ -48,6 +50,35 @@ describe("[A5.3.6.web.tile] the launch tile's states and clicks", () => {
     expect(tileClick("copy_only")).toBe("copy");
     expect(tileClick("elsewhere")).toBe("none");
     expect(tileClick("none")).toBe("none");
+  });
+});
+
+describe("[A5.3.6.web.tile] the agent a task's Open uses by default", () => {
+  test("after the upgrade to one T3 Code entry, a task last opened in a T3 profile that is gone opens in T3 Code, not in the first agent", () => {
+    // What Open lists for a machine.toml with Codex first and two old T3 profiles: Codex, then the
+    // first T3 instance, which is now the one T3 Code entry (`t3-claude` was the second).
+    const list: Instance[] = [
+      { key: "codex", app: "Codex", label: "Codex", glyph: "Cx", ring: 0, route: "terminal" },
+      { key: "t3-codex", app: "T3 Code", label: "T3 Code", glyph: "T3", ring: 1, route: "t3-mcp" },
+    ];
+    const task = (last?: TaskRow["last"]): TaskRow =>
+      ({
+        id: "t1",
+        ref: "M-1",
+        title: "Fixture",
+        ...(last === undefined ? {} : { last }),
+      }) as TaskRow;
+    const gone = { open: "t3-claude", open_route: "t3-mcp" } as const;
+    expect(agentFor(list, "open", task(gone), {})?.key).toBe("t3-codex");
+    expect(agentFor(list, "open", task(), gone)?.key).toBe("t3-codex");
+    // The task's own last choice still comes before the space's.
+    expect(agentFor(list, "open", task({ open: "codex", open_route: "terminal" }), gone)?.key).toBe(
+      "codex",
+    );
+    // An instance that is gone and was no T3 Code: the first, as before.
+    expect(
+      agentFor(list, "open", task({ open: "claude-old", open_route: "terminal" }), {})?.key,
+    ).toBe("codex");
   });
 });
 

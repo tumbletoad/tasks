@@ -32,7 +32,7 @@ beforeAll(async () => {
   cleanup = temp.cleanup;
   home = join(temp.root, "h");
   fake = await FakeT3.start(join(temp.root, "t3home"));
-  // A T3 instance with a provider instance and model, and one without.
+  // The T3 Code instance.
   mkdirSync(configOf(home), { recursive: true, mode: 0o700 });
   writeFileSync(
     join(configOf(home), "machine.toml"),
@@ -41,14 +41,7 @@ beforeAll(async () => {
       'id = "t3-codex"',
       'target = "t3"',
       'label = "T3 Codex"',
-      't3_provider_instance = "codex"',
-      't3_model = "fixture-model"',
       'open_permission = "full-access"',
-      "",
-      "[[instance]]",
-      'id = "t3-plain"',
-      'target = "t3"',
-      'label = "T3 plain"',
       "",
     ].join("\n"),
     { mode: 0o600 },
@@ -136,12 +129,6 @@ describe("[A4.3.4.1.t3.setup] ttasks setup t3 through the service", () => {
             reason: "not_paired",
             message: "Pair TTasks with T3 Code first: ttasks setup t3",
           },
-          {
-            id: "t3-plain",
-            route: null,
-            reason: "not_paired",
-            message: "Pair TTasks with T3 Code first: ttasks setup t3",
-          },
         ],
       });
 
@@ -180,10 +167,7 @@ describe("[A4.3.4.1.t3.setup] ttasks setup t3 through the service", () => {
         state: "ready",
         message: "Paired with T3 Code.",
         running: true,
-        instances: [
-          { id: "t3-codex", route: "t3-mcp" },
-          { id: "t3-plain", route: "t3-mcp" },
-        ],
+        instances: [{ id: "t3-codex", route: "t3-mcp" }],
       });
       expect(status.stdout).not.toContain(token);
     },
@@ -223,13 +207,10 @@ describe("[A4.3.4.1.t3.setup] ttasks setup t3 through the service", () => {
         running: false,
         instances: [
           { id: "t3-codex", route: null, reason: "not_running", message: "Start T3 Code" },
-          { id: "t3-plain", route: null, reason: "not_running", message: "Start T3 Code" },
         ],
       });
       const words = await run(["setup", "t3", "--status"]);
-      expect(words.stdout).toBe(
-        "Start T3 Code\n  t3-codex: Start T3 Code\n  t3-plain: Start T3 Code\n",
-      );
+      expect(words.stdout).toBe("Start T3 Code\n  t3-codex: Start T3 Code\n");
       await fake.restart();
       expect(pairing()["grant"]).toBe(after["grant"]);
     },

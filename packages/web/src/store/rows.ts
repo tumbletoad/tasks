@@ -474,7 +474,10 @@ const isRun = (v: unknown): boolean =>
   isRecord(v) && isString(v["id"]) && isString(v["state"]) && isString(v["instance"]);
 
 const isLast = (v: unknown): boolean =>
-  isRecord(v) && optional(v["open"], isString) && optional(v["run"], isString);
+  isRecord(v) &&
+  optional(v["open"], isString) &&
+  optional(v["open_route"], isString) &&
+  optional(v["run"], isString);
 
 const isQuestion = (v: unknown): boolean =>
   isRecord(v) &&

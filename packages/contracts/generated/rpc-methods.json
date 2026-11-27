@@ -1509,6 +1509,11 @@
       "output": {
         "additionalProperties": false,
         "properties": {
+          "brief_sent": {
+            "const": true,
+            "description": "The brief was sent: this version of the app cannot hold it in its prompt box",
+            "type": "boolean"
+          },
           "copy": {
             "description": "Text for the clipboard: the pointer brief, context pack or brief to paste",
             "maxLength": 200000,
@@ -4959,6 +4964,10 @@
                       "description": "The instance of its newest Open that was not refused",
                       "type": "string"
                     },
+                    "open_route": {
+                      "description": "How that Open opened: t3-mcp names T3 Code also when its instance is gone",
+                      "type": "string"
+                    },
                     "run": {
                       "description": "The instance of its newest run",
                       "type": "string"
@@ -7762,6 +7771,10 @@
                   "properties": {
                     "open": {
                       "description": "The instance of its newest Open that was not refused",
+                      "type": "string"
+                    },
+                    "open_route": {
+                      "description": "How that Open opened: t3-mcp names T3 Code also when its instance is gone",
                       "type": "string"
                     },
                     "run": {

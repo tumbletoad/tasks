@@ -203,15 +203,22 @@ export const openers = (instances: readonly Instance[]): Instance[] =>
  * that can: the one the task last used for it, else the one the space last used for it here, else
  * the first in Settings' order. Both come from the launches and runs the service took, so a pick it
  * refused never becomes the default, and a launch from another tab counts as one from this one.
+ * An Open in a T3 Code instance machine.toml no longer has (one per T3 profile, before T3 Code
+ * became one entry) stays with T3 Code.
  */
 export const agentFor = (
   list: readonly Instance[],
-  kind: keyof LastUsed,
+  kind: "open" | "run",
   task: TaskRow,
   space: LastUsed,
-): Instance | undefined =>
-  [task.last?.[kind], space[kind]].flatMap((key) => list.filter((i) => i.key === key))[0] ??
-  list[0];
+): Instance | undefined => {
+  const found = (last: LastUsed | undefined): Instance | undefined =>
+    list.find((i) => i.key === last?.[kind]) ??
+    (kind === "open" && last?.open_route === "t3-mcp"
+      ? list.find((i) => i.route === "t3-mcp")
+      : undefined);
+  return found(task.last) ?? found(space) ?? list[0];
+};
 
 /**
  * Why an instance refused the last Open the page asked of it, by its key: the service's code, such
