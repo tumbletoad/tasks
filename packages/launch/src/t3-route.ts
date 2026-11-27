@@ -60,8 +60,6 @@ export type T3Unavailable =
   | "no_answer"
   /** The folder is no T3 project root or worktree, and T3 did not add it as one. */
   | "not_registered"
-  /** The instance names a T3 provider instance without a model; T3 needs both together. */
-  | "model_required"
   /** The pairing allows less than opening here needs: pair again, choosing Full access. */
   | "pairing_denied";
 
@@ -72,7 +70,6 @@ export const T3_TEXT = {
   reconnect: `T3 Code no longer accepts ${PRODUCT_NAME}'s pairing. Pair again: ${CLI_NAME} setup t3`,
   no_answer: "T3 Code did not answer. Try again.",
   not_registered: `T3 Code did not add this folder as a project. Add it in T3 Code, or pair again choosing Full access: ${CLI_NAME} setup t3`,
-  model_required: "Set t3_model for this instance: T3 takes a provider instance with its model.",
   pairing_denied: `The pairing with T3 Code does not allow this. Pair again, choosing Full access: ${CLI_NAME} setup t3`,
 } as const satisfies Record<T3Unavailable, string>;
 
@@ -133,7 +130,7 @@ export interface T3PlanInput {
   readonly strategy: T3Strategy;
   /** `<task reference> <sanitised title>`, the thread's title. No control characters. */
   readonly title: string;
-  readonly instance: Pick<Instance, "openPermission" | "t3">;
+  readonly instance: Pick<Instance, "openPermission">;
   /** The resolved folder's identity, for the folder check. */
   readonly folder: FolderIdentity;
 }
@@ -363,19 +360,11 @@ export class T3Route {
   ):
     | { readonly kind: "ready"; readonly grant: string }
     | { readonly kind: "unavailable"; readonly reason: T3Unavailable } {
-    const t3 = input.instance.t3;
-    const provider = t3?.providerInstance;
-    const model = t3?.model ?? "";
     const runtimeMode = T3_RUNTIME_MODES[input.instance.openPermission];
     const plan: T3Plan = {
       projectId: input.projectId,
       strategy: input.strategy,
       title: input.title,
-      ...(model === ""
-        ? {}
-        : {
-            modelSelection: { model, ...(provider === undefined ? {} : { instanceId: provider }) },
-          }),
       ...(runtimeMode === undefined ? {} : { runtimeMode }),
       folder: { dev: input.folder.dev.toString(), ino: input.folder.ino.toString() },
       createdAt: this.#now(),
@@ -444,8 +433,8 @@ export class T3Route {
     const args: Record<string, unknown> = {
       projectId: plan.projectId,
       title: plan.title,
+      // No model selection: the thread opens on T3's own default, which the person changes there.
       workspaceStrategy: plan.strategy,
-      ...(plan.modelSelection === undefined ? {} : { modelSelection: plan.modelSelection }),
       ...(plan.runtimeMode === undefined ? {} : { runtimeMode: plan.runtimeMode }),
       clientRequestId: intent.id,
     };

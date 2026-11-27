@@ -462,7 +462,7 @@ export class Api {
 
   /**
    * A click on a tile, or on Copy without an instance (A4's `launch.open`): the launch's receipt,
-   * and for Copy (or an open whose app takes the brief by paste) the text for the clipboard.
+   * and for Copy (or a link whose app may drop the brief) the text for the clipboard.
    * `text` is what the person typed in the composer: the agent's request, which Open saves on the
    * task; `request` opens again with a note of theirs already there.
    */

@@ -7,7 +7,7 @@
       "exec": [
         "C:\\Users\\mira\\.local\\bin\\claude.exe"
       ],
-      "version": "2.1.322",
+      "version": "2.1.332",
       "tested": true
     },
     {
@@ -116,9 +116,7 @@
       "label": "T3 Code",
       "account": "default",
       "source": "app",
-      "needs": [
-        "t3_provider_instance"
-      ]
+      "needs": []
     }
   ],
   "configured": []

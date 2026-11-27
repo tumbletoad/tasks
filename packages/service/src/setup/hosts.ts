@@ -18,14 +18,7 @@
 //   the shared file, so the shared home is the one with the entry (codexSharedHome).
 import { lstatSync, readdirSync, readlinkSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
-import {
-  envValue,
-  INSTANCE_ID,
-  instanceLabel,
-  targetDef,
-  type Env,
-  type Proposal,
-} from "@ttasks/launch";
+import { envValue, INSTANCE_ID, type Env } from "@ttasks/launch";
 import type { AgentApp } from "./state.ts";
 
 const pathOf = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
@@ -200,8 +193,6 @@ export interface T3Settings {
   /** The keys of instances of those drivers that T3 has turned off, their homes not worked out. */
   readonly off: readonly string[];
   readonly skipped: readonly { readonly id: string; readonly reason: T3Skip }[];
-  /** T3's `defaultModelSelection`, when it names a provider instance and a plain model. */
-  readonly defaultModel?: { readonly instance: string; readonly model: string };
 }
 
 /** One home a T3 provider instance runs its agent in. */
@@ -434,69 +425,7 @@ export function t3ProviderInstances(
       skipped.push({ id: driver, reason: error.reason });
     }
   }
-  // T3's default model selection (`instanceId`, or the legacy `provider`, and `model`).
-  const selection = settings["defaultModelSelection"];
-  let defaultModel: T3Settings["defaultModel"];
-  if (isObject(selection)) {
-    const instance = selection["instanceId"] ?? selection["provider"];
-    const model = selection["model"];
-    if (typeof instance === "string" && typeof model === "string" && T3_MODEL.test(model)) {
-      defaultModel = { instance, model };
-    }
-  }
-  return { file, instances, off, skipped, ...(defaultModel === undefined ? {} : { defaultModel }) };
-}
-
-/** A model as T3's `--model` and `t3_model` take it: one word that cannot be read as a flag. */
-const T3_MODEL = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$/u;
-
-/** A home's account word: the suffix of `.codex-<suffix>`, `.claude_<suffix>` and the like. */
-function homeAccount(home: string, platform: NodeJS.Platform): string {
-  const m = HOME_SUFFIX.exec(pathOf(platform).basename(home).toLowerCase());
-  return m?.[2] ?? "default";
-}
-
-/** The instance ID a T3 provider instance is proposed under: `t3-codex`, `t3-claude-second`. */
-function t3ProposalId(instance: T3ProviderInstance): string {
-  if (instance.id === "codex") return "t3-codex";
-  if (instance.id === "claudeAgent") return "t3-claude";
-  const slug = instance.id
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, "-")
-    .replace(/^-+|-+$/gu, "");
-  return `t3-${slug}`.slice(0, 40).replace(/-+$/u, "");
-}
-
-/**
- * `ttasks setup instances` for T3 (A4 3.2): one complete proposal per enabled provider instance of a
- * driver TTasks opens through T3. The label
- * is T3's display name (T3's own name for the driver when the settings give none), the account the
- * home folder's suffix, and the model T3's default selection when it names this provider instance,
- * else the catalogue's default for the driver.
- */
-export function t3Proposals(settings: T3Settings, platform: NodeJS.Platform): Proposal[] {
-  const models = targetDef("t3").t3Models ?? {};
-  const proposals: Proposal[] = [];
-  for (const instance of settings.instances) {
-    const own = settings.defaultModel?.instance === instance.id ? settings.defaultModel.model : "";
-    const model = own !== "" ? own : (models[instance.driver] ?? "");
-    // Without a display name, a provider instance other than the driver's own is told apart by
-    // its key, which stays as long as T3's settings keep it.
-    const driver = instance.driver === "codex" ? "Codex" : "Claude";
-    const builtIn = instance.id === "codex" || instance.id === "claudeAgent";
-    const name = instance.displayName ?? (builtIn ? driver : `${driver} (${instance.id})`);
-    proposals.push({
-      id: t3ProposalId(instance),
-      target: "t3",
-      // T3 Code's own, so never the same as the label of the app's home beside it.
-      label: instanceLabel(name, targetDef("t3").label),
-      account: homeAccount(instance.home, platform),
-      source: "app",
-      t3: { providerInstance: instance.id, model, modelFrom: own !== "" ? "t3" : "catalogue" },
-      needs: [],
-    });
-  }
-  return proposals;
+  return { file, instances, off, skipped };
 }
 
 /** The homes T3's enabled provider instances run their agents in (setup's hosts, doctor's row). */

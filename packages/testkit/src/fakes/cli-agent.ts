@@ -57,7 +57,11 @@ const env = process.env;
  * line says to run without the tools, as an agent reads them.
  */
 function briefOf(args: readonly string[]): { task: string; command: string[] } | undefined {
-  const lines = (args[args.indexOf("--") + 1] ?? "").split("\n");
+  // Claude Code's brief waits in its prompt box (`--prefill=`): the fake sends it, as the person
+  // pressing Enter does.
+  const prefilled = args.find((arg) => arg.startsWith("--prefill="))?.slice("--prefill=".length);
+  const sent = args.indexOf("--") === -1 ? undefined : args[args.indexOf("--") + 1];
+  const lines = (prefilled ?? sent ?? "").split("\n");
   const task = / task (\S+) (?:"[^"]*" )?\(launch L[0-9A-Z]{5}\)\./u.exec(lines[0] ?? "")?.[1];
   const command = /run `\S+ ([^`]+)`\.$/u.exec(lines[1] ?? "")?.[1];
   return task === undefined || command === undefined

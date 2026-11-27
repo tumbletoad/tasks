@@ -211,7 +211,7 @@ export type PackContent = Omit<
 /** What the click gives back. */
 export interface OpenTaskResult {
   readonly intent: LaunchIntent;
-  /** Text for the person's clipboard: Copy's pointer brief, the Codex assisted open's brief. */
+  /** Text for the person's clipboard: Copy's pointer brief, a link's brief its app may drop. */
   readonly copy: string | undefined;
   /** Where the composer text went: `request` is the note the launch names, which the agent reads. */
   readonly composer: BriefComposer;
@@ -229,9 +229,7 @@ export interface Choice {
   readonly kind: BriefKind;
   /** The route's budget (A4 3.15.3). */
   readonly budget: number;
-  /** Terminal routes: `sent`, or Codex's assisted open (`clipboard`). */
-  readonly prompt?: "sent" | "clipboard";
-  /** The brief goes on the clipboard as well (Copy, the assisted open). */
+  /** The brief goes on the clipboard as well (Copy, a link whose app may drop it). */
   readonly copy: boolean;
   /** What the instance sets that the route cannot carry: said to the person, never sent. */
   readonly leftOut: readonly LeftOut[];
@@ -274,11 +272,10 @@ export const COPY_INSTANCE = "clipboard";
 /**
  * The route a click takes on an instance (A4 3.4), the one place that decides it for the tiles and
  * for Open: the first of its target's routes usable here that carries everything the instance sets
- * (settingsOf), routes of the instance's prompt mode first (`prompt = "prefill"` asks for the
- * prefill route, A4 L7). When none carries it all, the usable route that leaves the prompt unsent
- * and leaves out the least, naming what it leaves out: the person reads that before anything
- * reaches the agent. A prompt is sent only on a route that carries it all. A fallback is never
- * chosen after a dispatch.
+ * (settingsOf). When none carries it all, the usable route that leaves the prompt unsent and leaves
+ * out the least, naming what it leaves out: the person reads that before anything reaches the
+ * agent. A prompt is sent only on a route that carries it all. A fallback is never chosen after a
+ * dispatch.
  *
  * Throws LaunchUnavailable: `not_for_space` (servesSpace); `no_terminal` (or `not_set_up` without
  * a command) when only a terminal route opens the target, `own_home` when only a terminal opens it
@@ -307,11 +304,8 @@ export function chooseRoute(
   const lost = (route: RouteDef): Setting[] => settings.filter((s) => !route.carries.includes(s));
   const target = targetDef(instance.target);
   const routes = target.routes.filter((r) => r.kind === "terminal" || r.kind === "link");
-  const asked = (r: RouteDef): boolean => (instance.prompt === "sent") === (r.prompt === "sent");
   const terminal = options.terminal && instance.exec !== undefined;
-  const usable = [...routes.filter(asked), ...routes.filter((r) => !asked(r))].filter(
-    (r) => r.kind === "link" || terminal,
-  );
+  const usable = routes.filter((r) => r.kind === "link" || terminal);
   // An app that keeps its accounts in homes opens another account's session on a route that
   // leaves the home out: what the person types there goes to that account, so it is never taken.
   const otherAccount = (r: RouteDef): boolean =>
@@ -343,12 +337,10 @@ export function chooseRoute(
       leftOut,
     };
   }
-  const prompt = route.prompt === "sent" ? "sent" : "clipboard";
   return {
     route: "terminal",
-    kind: prompt === "sent" ? "sent" : "prefilled",
+    kind: route.prompt === "sent" ? "sent" : "prefilled",
     budget: route.budget,
-    prompt,
     copy: route.copyBriefToo,
     leftOut,
   };

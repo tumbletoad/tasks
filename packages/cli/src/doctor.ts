@@ -184,11 +184,16 @@ export function configCheck(io: Pick<Io, "env" | "platform">): Check {
       ...(keys.length === 0
         ? []
         : [`machine.toml has problems that drop only their entry: ${named(keys)}.`]),
-      ...(retired.length === 0
-        ? []
-        : [
+      ...(retired.some((p) => p.key === "roots")
+        ? [
             `machine.toml's [roots] lines do nothing now: a task opens in its own folder or its project's. ${PRODUCT_NAME} leaves them as they are, and you can remove them.`,
-          ]),
+          ]
+        : []),
+      ...(retired.some((p) => p.key !== "roots")
+        ? [
+            `machine.toml's ${named(retired.filter((p) => p.key !== "roots").map((p) => p.key))} do nothing now: Open leaves the brief unsent wherever the app can, and T3 Code opens on the profile and model chosen in T3 Code. ${PRODUCT_NAME} leaves them as they are, and you can remove them.`,
+          ]
+        : []),
       ...notRead.map((p) => notReadNote(p.key.slice("preferences.".length))),
     ];
     return { id: "config", status: "warn", detail: parts.join(" ") };

@@ -30,10 +30,7 @@ let opened: string[];
 let now: number;
 let roots: RootFolder[];
 
-const INSTANCE = {
-  openPermission: "full-access",
-  t3: { environment: "local", providerInstance: "codex", model: "fixture-model" },
-} as const;
+const INSTANCE = { openPermission: "full-access" } as const;
 const BRIEF = "M-14 Fixture task. Read the task with TTasks's tools (launch L7KQ2M).";
 
 function newRoute(): T3Route {
@@ -161,7 +158,8 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
         clientRequestId: intent.id,
         message: false,
         runtimeMode: "full-access",
-        modelSelection: { instanceId: "codex", model: "fixture-model" },
+        // No model selection: T3's own default, which the person changes in T3.
+        modelSelection: null,
         title: "M-14 Fixture task",
       });
       const confirmed = await m.report(intent.id, await route.confirm(dispatched as LaunchIntent));
@@ -182,7 +180,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   );
 
   test(
-    "T3's refusal of the model, a narrower mode or a read-only pairing is Failed with its reason at once: no repeat, no thread",
+    "T3's refusal of its default model, a narrower mode or a read-only pairing is Failed with its reason at once: no repeat, no thread",
     async () => {
       fake.addProject(folder("lumen"));
       fake.models = ["another-model"];

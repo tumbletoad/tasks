@@ -106,16 +106,10 @@ export interface TargetDef {
   readonly glyph: string;
   /** Primary first, then fallbacks. */
   readonly routes: readonly RouteDef[];
-  readonly instances: "per-home" | "single" | "per-provider-instance";
+  readonly instances: "per-home" | "single";
   readonly detect: DetectRule;
   /** Semver range. Outside it doctor warns; launches still work. Empty: not checked. */
   readonly testedVersions: string;
-  /**
-   * T3 only: the model a proposed T3 instance opens with, per T3 driver, when T3's own default
-   * selection does not name its provider instance (A4 3.2 `ttasks setup instances`). These are T3's
-   * own defaults per driver at the T3 commit A4 names.
-   */
-  readonly t3Models?: Readonly<Record<string, string>>;
   readonly permissionArgs: Readonly<
     Record<Permission, { readonly open: readonly string[]; readonly run: readonly string[] | null }>
   >;
@@ -154,7 +148,8 @@ export const CATALOGUE: readonly TargetDef[] = [
         carries: ["permission"],
       },
     ],
-    instances: "per-provider-instance",
+    // One entry: the person picks the profile, the provider and the model in T3 Code itself.
+    instances: "single",
     detect: {
       binaries: ["t3"],
       appFolder: ".t3",
@@ -163,7 +158,6 @@ export const CATALOGUE: readonly TargetDef[] = [
       urlScheme: "t3code",
     },
     testedVersions: ">=0.1.7 <0.2.0",
-    t3Models: { codex: "gpt-6-astra", claudeAgent: "claude-opus-5-5" },
     // A4 3.11.6: T3 takes a runtime mode per thread, not flags. M2.09 maps the permission.
     permissionArgs: NO_ARGS,
   },
@@ -173,9 +167,11 @@ export const CATALOGUE: readonly TargetDef[] = [
     glyph: "Cc",
     routes: [
       {
+        // `--prefill` puts the brief in Claude Code's prompt box unsent: the person picks the model
+        // or adds a word, then presses Enter. Claude Code's own flag, which its link handler uses.
         kind: "terminal",
         folder: "cwd",
-        prompt: "sent",
+        prompt: "prefilled",
         nativeId: "preset",
         maxPrompt: COMMAND_LINE_LIMIT,
         budget: TERMINAL_BUDGET,
@@ -191,8 +187,7 @@ export const CATALOGUE: readonly TargetDef[] = [
           "{task.id} {task.title}",
           "{permission}",
           "{extra_args}",
-          "--",
-          "{brief}",
+          "--prefill={brief}",
         ],
       },
       {
@@ -207,29 +202,6 @@ export const CATALOGUE: readonly TargetDef[] = [
         copyBriefToo: false,
         carries: [],
         url: "claude-cli://open?cwd={cwd}&q={brief}",
-      },
-      {
-        // The assisted open, as Codex's: no prompt in argv, the brief on the clipboard to paste.
-        // A prefill instance takes it when the link cannot carry what the instance sets.
-        kind: "terminal",
-        folder: "cwd",
-        prompt: "clipboard",
-        nativeId: "preset",
-        maxPrompt: null,
-        budget: TERMINAL_BUDGET,
-        trust: "once-per-root",
-        needsGui: true,
-        copyBriefToo: true,
-        carries: SETTINGS,
-        argv: [
-          "{exec}",
-          "--session-id",
-          "{session}",
-          "-n",
-          "{task.id} {task.title}",
-          "{permission}",
-          "{extra_args}",
-        ],
       },
     ],
     instances: "per-home",
@@ -249,7 +221,8 @@ export const CATALOGUE: readonly TargetDef[] = [
       },
       urlScheme: "claude-cli",
     },
-    testedVersions: ">=2.1.0 <3.0.0",
+    // `--prefill` is not in Claude Code's help: the lower bound is the version it was tried on.
+    testedVersions: ">=2.1.332 <3.0.0",
     permissionArgs: {
       // A4 3.11.6: Claude runs with `inherit` are refused, like Codex's.
       inherit: { open: [], run: null },
@@ -274,6 +247,7 @@ export const CATALOGUE: readonly TargetDef[] = [
     glyph: "Cx",
     routes: [
       {
+        // Codex has no way to start with a prompt in its box unsent: the brief is its first turn.
         kind: "terminal",
         folder: "cwd",
         prompt: "sent",
@@ -294,28 +268,6 @@ export const CATALOGUE: readonly TargetDef[] = [
           "{extra_args}",
           "--",
           "{brief}",
-        ],
-      },
-      {
-        // The assisted open (A4 3.4.3): no prompt in argv, the UI copies the brief.
-        kind: "terminal",
-        folder: "cwd",
-        prompt: "clipboard",
-        nativeId: "reference-match",
-        maxPrompt: null,
-        budget: TERMINAL_BUDGET,
-        trust: "once-per-root",
-        needsGui: true,
-        copyBriefToo: true,
-        carries: SETTINGS,
-        argv: [
-          "{exec}",
-          "-C",
-          "{cwd}",
-          "--no-daemon",
-          "{tool_env}",
-          "{permission}",
-          "{extra_args}",
         ],
       },
     ],
@@ -488,10 +440,13 @@ export function placeholdersIn(text: string): string[] {
 
 export type TemplateProblem = "unknown_placeholder" | "split_element" | "brief_before_separator";
 
+/** An element that gives `{brief}` as one option's value, which no parser reads as another option. */
+export const BRIEF_OPTION = /^--[a-z][a-z0-9-]*=\{brief\}$/u;
+
 /**
  * Checks an argv template against A4 3.6.4: known placeholders only, whole-element placeholders
- * alone in their element, and `{brief}` only after `--`. Returns the problems found, empty when
- * the template is good.
+ * alone in their element, and `{brief}` only after `--` or as the value of `--name={brief}`.
+ * Returns the problems found, empty when the template is good.
  */
 export function checkArgvTemplate(argv: readonly Template[]): TemplateProblem[] {
   const problems = new Set<TemplateProblem>();
@@ -503,7 +458,7 @@ export function checkArgvTemplate(argv: readonly Template[]): TemplateProblem[] 
       if ((WHOLE_ELEMENT_PLACEHOLDERS as readonly string[]).includes(name)) {
         if (element !== `{${name}}`) problems.add("split_element");
       }
-      if (name === "brief" && (separator === -1 || i < separator)) {
+      if (name === "brief" && !BRIEF_OPTION.test(element) && (separator === -1 || i < separator)) {
         problems.add("brief_before_separator");
       }
     }

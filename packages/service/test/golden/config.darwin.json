@@ -51,7 +51,6 @@
         "openPermission": "inherit",
         "runPermission": "inherit",
         "extraArgs": [],
-        "prompt": "sent",
         "viaLoginShell": true,
         "remoteAllowed": false,
         "enabled": true

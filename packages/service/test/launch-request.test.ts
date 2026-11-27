@@ -151,20 +151,7 @@ async function rig(label: string): Promise<Rig> {
           open_permission: "full-access",
           ...fake("codex"),
         }),
-        instanceToml({
-          id: "codex-assisted",
-          target: "codex-cli",
-          label: "Codex assisted · test",
-          config_home: codexHome,
-          prompt: "prefill",
-          ...fake("codex-assisted"),
-        }),
-        instanceToml({
-          id: "claude-link",
-          target: "claude-cli",
-          label: "Claude link · test",
-          prompt: "prefill",
-        }),
+        instanceToml({ id: "claude-link", target: "claude-cli", label: "Claude link · test" }),
         instanceToml({ id: "desktop", target: "claude-desktop", label: "Claude Desktop · test" }),
         instanceToml({ id: "codex-app", target: "codex-app", label: "Codex app · test" }),
       ].join("");
@@ -470,8 +457,11 @@ describe("[A4.5.routes.request] what a person types before Open is on the task a
         expect(result.text).toBe("request");
         await expectOnTask(r, task.ref, result, words, instance);
         const report = await reportAt(r.report(instance));
-        // The brief after `--` is the pointer, whose last line says the request comes with it.
-        const brief = report.argv.at(-1) ?? "";
+        // The brief (Claude Code's in its prompt box, Codex's after `--`) is the pointer, whose
+        // last line says the request comes with it.
+        const last = report.argv.at(-1) ?? "";
+        const brief = instance === "claude" ? last.replace(/^--prefill=/u, "") : last;
+        if (instance === "claude") expect(last.startsWith("--prefill=")).toBe(true);
         expect(brief.split("\n").at(-1)).toBe(REQUEST_LINE);
         expect(report.read).toEqual({
           code: 0,
@@ -559,33 +549,6 @@ describe("[A4.5.routes.request] what a person types before Open is on the task a
         LONG_MS,
         "both agents ending",
       );
-    },
-  );
-
-  test(
-    "Codex's assisted open: no prompt on the command line, the brief to paste points at the request, which the agent reads",
-    { timeout: 600_000 },
-    async () => {
-      opened.length = 0;
-      const r = await rig("request-assisted");
-      const task = await addTask(r, "folder-assisted");
-      const marker = newMarker();
-      const words = requestOf(marker, 3_000);
-      const result = await open(r, { task: task.ref, instance: "codex-assisted", text: words });
-      expect(result.text).toBe("request");
-      // The brief goes on the clipboard in the person's click: a pointer, without the words.
-      expect(result.copy?.split("\n").at(-1)).toBe(REQUEST_LINE);
-      expect(result.copy).not.toContain(marker);
-      const report = await reportAt(r.report("codex-assisted"));
-      expect(report.argv).not.toContain("--");
-      // The person pastes the brief; the agent reads the task with its reference.
-      expect(briefReference(result.copy ?? "")).toBe(result.launch.reference);
-      await expectOnlyInSpace(r, marker);
-      expect((await cliShow(r, result.copy ?? "")).request).toEqual({
-        note: result.note,
-        text: words,
-      });
-      writeFileSync(r.release, "");
     },
   );
 

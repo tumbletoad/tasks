@@ -89,7 +89,7 @@ export interface FoundWrapper {
   readonly suffix: string;
 }
 
-export type ProposalNeed = "exec" | "config_home" | "t3_provider_instance";
+export type ProposalNeed = "exec" | "config_home";
 
 export interface Proposal {
   readonly id: string;
@@ -101,16 +101,6 @@ export interface Proposal {
   readonly argsPrefix?: readonly string[];
   readonly configHome?: string;
   readonly env?: Readonly<Record<string, string>>;
-  /**
-   * T3 only: the provider instance read from T3's settings and the model the instance opens with
-   * (`t3`: T3's own default selection names this provider instance; `catalogue`: the catalogue's
-   * default for its driver, `TargetDef.t3Models`).
-   */
-  readonly t3?: {
-    readonly providerInstance: string;
-    readonly model: string;
-    readonly modelFrom: "t3" | "catalogue";
-  };
   /** What the person must still give before the proposal can become an instance. */
   readonly needs: readonly ProposalNeed[];
 }
@@ -583,16 +573,15 @@ export async function detect(
     )?.kind === "dir";
   const t3 = commands.find((c) => c.target === "t3");
   if (t3 !== undefined || t3Folder) {
-    // T3's provider instances live in its settings, which TTasks reads only through T3's own
-    // API once paired (A4 3.4.1, M2.09): the person picks one. T3 opens through its server, so
-    // the instance names no program.
+    // One T3 Code instance: T3 opens through its server, so it names no program, and the person
+    // picks the profile and the model in T3.
     proposals.push({
       id: "t3",
       target: "t3",
       label: t3Def.label,
       account: "default",
       source: "app",
-      needs: ["t3_provider_instance"],
+      needs: [],
     });
   }
 
@@ -601,12 +590,12 @@ export async function detect(
     const covered = existing.some(
       (instance) =>
         instance.id === proposal.id ||
+        (proposal.target === "t3" && instance.target === "t3") ||
         (proposal.source === "wrapper" &&
           instance.exec !== undefined &&
           proposal.exec !== undefined &&
           samePath(host.platform, instance.exec, proposal.exec)) ||
-        (proposal.target !== "t3" &&
-          instance.target === proposal.target &&
+        (instance.target === proposal.target &&
           instance.configHome !== undefined &&
           proposal.configHome !== undefined &&
           samePath(host.platform, instance.configHome, proposal.configHome)),
@@ -625,7 +614,6 @@ export type InstanceValue = string | boolean | readonly string[] | Readonly<Reco
 export interface ProposalChoices {
   readonly exec?: string;
   readonly configHome?: string;
-  readonly t3ProviderInstance?: string;
 }
 
 /**
@@ -640,14 +628,10 @@ export function instanceEntry(
   | { readonly ok: false; readonly needs: readonly ProposalNeed[] } {
   const exec = choices.exec ?? proposal.exec;
   const configHome = choices.configHome ?? proposal.configHome;
-  const provider = choices.t3ProviderInstance ?? proposal.t3?.providerInstance;
-  // The proposal's model belongs to its own provider instance only.
-  const model = provider === proposal.t3?.providerInstance ? (proposal.t3?.model ?? "") : "";
   const needs = proposal.needs.filter(
     (need) =>
       (need === "exec" && exec === undefined) ||
-      (need === "config_home" && configHome === undefined) ||
-      (need === "t3_provider_instance" && provider === undefined),
+      (need === "config_home" && configHome === undefined),
   );
   if (needs.length > 0) return { ok: false, needs };
   const entry = new Map<string, InstanceValue>();
@@ -675,12 +659,6 @@ export function instanceEntry(
       ? { ...proposal.env, [homeVariable]: choices.configHome }
       : proposal.env;
   if (env !== undefined) entry.set("env", env);
-  if (proposal.target === "t3" && provider !== undefined) {
-    entry.set("t3_environment", "local");
-    entry.set("t3_provider_instance", provider);
-    // T3 takes a provider instance with its model (A4 3.4.1 `model_required`).
-    if (model !== "") entry.set("t3_model", model);
-  }
   entry.set("remote_allowed", false);
   return { ok: true, entry };
 }

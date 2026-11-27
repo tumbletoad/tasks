@@ -155,9 +155,8 @@ const noTerminalHost = (_session: unknown, path: readonly string[]) => ({
 
 /**
  * A lab whose machine.toml has the fake Claude Code and Codex as instances: Claude Code with full
- * access (`claude`), Claude Code with the prefill route and nothing it cannot carry
- * (`claude-link`), Codex with the brief sent (`codex`) and assisted (`codex-assisted`), with a
- * Codex home of the lab's own whose TTasks entry lacks `env_vars`.
+ * access (`claude`), Claude Code without a command, which opens through its link (`claude-link`),
+ * and Codex (`codex`), with a Codex home of the lab's own whose TTasks entry lacks `env_vars`.
  */
 async function rig(label: string, opener: number | "hang" = 0, more: RigMore = {}): Promise<Rig> {
   const fake = (name: string, extra: Record<string, string> = {}) => ({
@@ -200,14 +199,7 @@ async function rig(label: string, opener: number | "hang" = 0, more: RigMore = {
           open_permission: "full-access",
           ...withReport("claude"),
         }),
-        instanceToml({
-          id: "claude-link",
-          target: "claude-cli",
-          label: "Claude link · test",
-          prompt: "prefill",
-          exec: process.execPath,
-          args_prefix: [FAKE_CLI_AGENT],
-        }),
+        instanceToml({ id: "claude-link", target: "claude-cli", label: "Claude link · test" }),
         instanceToml({
           id: "codex",
           target: "codex-cli",
@@ -215,14 +207,6 @@ async function rig(label: string, opener: number | "hang" = 0, more: RigMore = {
           config_home: codexHome,
           open_permission: "full-access",
           ...withReport("codex", { FAKE_CLI_ROLLOUT_HOME: codexHome }),
-        }),
-        instanceToml({
-          id: "codex-assisted",
-          target: "codex-cli",
-          label: "Codex assisted · test",
-          config_home: codexHome,
-          prompt: "prefill",
-          ...withReport("codex-assisted"),
         }),
         instanceToml({ id: "t3-later", target: "t3", label: "T3 · test" }),
         ...(more.instances ?? []).map(({ env, ...fields }) => {
@@ -386,7 +370,7 @@ function briefFor(
 
 describe("[A4.5.routes.service] Open and Copy through the service: golden argv, and the brief reaches the fake agent byte-identical", () => {
   test(
-    "Claude Code's terminal route: the fake agent gets the golden argv, each element byte for byte, in the resolved folder",
+    "Claude Code's terminal route: the fake agent gets the golden argv, each element byte for byte, in the resolved folder, the brief in its prompt box unsent",
     { timeout: 300_000 },
     async () => {
       const r = await rig("claude-terminal");
@@ -417,7 +401,9 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       const report = await reportAt(r.report("claude"));
 
       const session = presetSession(r.lab.spaceId, requestId);
-      const brief = briefFor("sent", r.lab.spaceId, task, launch.reference, { composer: COMPOSER });
+      const brief = briefFor("prefilled", r.lab.spaceId, task, launch.reference, {
+        composer: COMPOSER,
+      });
       const golden = [
         "--session-id",
         session,
@@ -425,8 +411,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         `${task.ref} ${sanitiseTitle(HOSTILE_TITLE)}`,
         "--permission-mode",
         "bypassPermissions",
-        "--",
-        brief,
+        `--prefill=${brief}`,
       ];
       expect(report.argv).toEqual(golden);
       expect(report.utf8).toEqual(golden.map(hex8));
@@ -490,25 +475,6 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(matched.evidence.thread).toMatch(/^[0-9a-f-]{36}$/);
       const events = readLog(r.lab.home).filter((e) => e["ev"] === "launch.native_id");
       expect(events.map((e) => e["result"])).toEqual(["matched"]);
-    },
-  );
-
-  test(
-    "Codex's assisted open: no prompt in argv, and the prefilled brief comes back to be copied",
-    { timeout: 300_000 },
-    async () => {
-      const r = await rig("codex-assisted");
-      const task = await addTask(r, "Fix appointment time zones");
-      const { result } = await open(r, { task: task.ref, instance: "codex-assisted" });
-      const report = await reportAt(r.report("codex-assisted"));
-      expect(report.argv).not.toContain("--");
-      expect(report.argv.slice(0, 1)).toEqual(["-C"]);
-      expect(report.argv.slice(2)).toEqual([
-        "--no-daemon",
-        "-c",
-        `mcp_servers.${MCP_SERVER_KEY}.env_vars=["${envVar("TICKET")}"]`,
-      ]);
-      expect(result.copy).toBe(briefFor("prefilled", r.lab.spaceId, task, result.launch.reference));
     },
   );
 
@@ -772,7 +738,6 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       openPermission: "inherit",
       runPermission: "inherit",
       extraArgs: [],
-      prompt: "prefill",
       viaLoginShell: false,
       remoteAllowed: false,
       enabled: true,
@@ -939,7 +904,6 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
     openPermission: "inherit",
     runPermission: "inherit",
     extraArgs: [],
-    prompt: "sent",
     viaLoginShell: false,
     remoteAllowed: false,
     enabled: true,
@@ -955,76 +919,62 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
     return undefined;
   };
 
-  test("Open takes the route that carries what the instance sets; without one it opens with the prompt unsent and names what it left out", () => {
+  test("Open takes the route that carries what the instance sets, with the prompt unsent where the app can; without one it names what it left out", () => {
     type Given = Parameters<typeof chooseRoute>[0];
     const pick = (instance: Given, terminal: boolean) => {
       const chosen = chooseRoute(instance, { ...here, terminal });
       // A route that leaves something out never sends the prompt: the person reads what it left
       // out first.
       if (chosen.leftOut.length > 0) expect(chosen.kind).toBe("prefilled");
-      return [chosen.route, chosen.prompt ?? "unsent", [...chosen.leftOut]];
+      return [chosen.route, chosen.kind, [...chosen.leftOut]];
     };
-    const prefill = { ...base, prompt: "prefill" } as const;
     const desktop = { ...base, id: "desktop", target: "claude-desktop", exec: undefined } as const;
     const codex = { ...base, id: "codex-x", target: "codex-cli" } as const;
     const ownHome = { configHome: "/home/mira/.claude-work" } as const;
     // instance, with a terminal, without one.
     const table: readonly (readonly [string, Given, unknown, unknown])[] = [
-      ["nothing set, prefill", prefill, ["link", "unsent", []], ["link", "unsent", []]],
-      ["nothing set, sent", base, ["terminal", "sent", []], ["link", "unsent", []]],
+      ["nothing set", base, ["terminal", "prefilled", []], ["link", "prefilled", []]],
       [
-        "read-only, prefill",
-        { ...prefill, openPermission: "read-only" },
-        ["terminal", "clipboard", []],
-        ["link", "unsent", ["read-only"]],
-      ],
-      [
-        "read-only, sent",
+        "read-only",
         { ...base, openPermission: "read-only" },
-        ["terminal", "sent", []],
-        ["link", "unsent", ["read-only"]],
+        ["terminal", "prefilled", []],
+        ["link", "prefilled", ["read-only"]],
       ],
       [
         "arguments",
-        { ...prefill, extraArgs: ["--model", "fixture"] },
-        ["terminal", "clipboard", []],
-        ["link", "unsent", ["arguments"]],
+        { ...base, extraArgs: ["--model", "fixture"] },
+        ["terminal", "prefilled", []],
+        ["link", "prefilled", ["arguments"]],
       ],
       [
         "environment",
-        { ...prefill, env: { FIXTURE_SETTING: "1" } },
-        ["terminal", "clipboard", []],
-        ["link", "unsent", ["environment"]],
+        { ...base, env: { FIXTURE_SETTING: "1" } },
+        ["terminal", "prefilled", []],
+        ["link", "prefilled", ["environment"]],
       ],
       [
         // The agent never gets a TTASKS_* variable: it is no setting to carry.
         "a reserved variable only",
-        { ...prefill, env: { [envVar("FIXTURE")]: "1" } },
-        ["link", "unsent", []],
-        ["link", "unsent", []],
+        { ...base, env: { [envVar("FIXTURE")]: "1" } },
+        ["terminal", "prefilled", []],
+        ["link", "prefilled", []],
       ],
       [
         // Its link would open the default home's Claude Code: what the person types there goes
         // to another account. Only a terminal opens it (below).
         "a home of its own",
         { ...base, ...ownHome },
-        ["terminal", "sent", []],
-        null,
-      ],
-      [
-        "a home of its own, prefill",
-        { ...prefill, ...ownHome },
-        ["terminal", "clipboard", []],
+        ["terminal", "prefilled", []],
         null,
       ],
       [
         "an app with its own settings",
         { ...desktop, openPermission: "auto-edit", env: { FIXTURE_SETTING: "1" }, ...ownHome },
-        ["link", "unsent", ["auto-edit", "environment", "home"]],
-        ["link", "unsent", ["auto-edit", "environment", "home"]],
+        ["link", "prefilled", ["auto-edit", "environment", "home"]],
+        ["link", "prefilled", ["auto-edit", "environment", "home"]],
       ],
-      ["Codex, sent", { ...codex, openPermission: "read-only" }, ["terminal", "sent", []], null],
-      ["Codex, prefill", { ...codex, prompt: "prefill" }, ["terminal", "clipboard", []], null],
+      // Codex cannot start with its prompt unsent: it sends the brief, as its first turn.
+      ["Codex", { ...codex, openPermission: "read-only" }, ["terminal", "sent", []], null],
     ];
     for (const [name, instance, withTerminal, without] of table) {
       expect(pick(instance, true), name).toEqual(withTerminal);
@@ -1038,7 +988,7 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
     // A home of its own opens only where a route carries it: never the default home instead.
     for (const own of [
       { ...base, ...ownHome },
-      { ...prefill, ...ownHome, openPermission: "read-only" },
+      { ...base, ...ownHome, openPermission: "read-only" },
       { ...base, env: { CLAUDE_CONFIG_DIR: "/home/mira/.claude-work" } },
     ] as const) {
       expect(reason(() => chooseRoute(own, { ...here, terminal: false }))).toBe("own_home");
@@ -1087,13 +1037,13 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
   });
 
   test(
-    "through the service: read-only with prefill opens in a terminal in plan mode with the brief to paste; an instance for another space is not offered and opens nothing",
+    "through the service: read-only opens in a terminal in plan mode with the brief in its prompt box; an instance for another space is not offered and opens nothing",
     { timeout: 300_000 },
     async () => {
       opened.length = 0;
       const r = await rig("chosen", 0, {
         instances: [
-          { id: "claude-plan", prompt: "prefill", open_permission: "read-only" },
+          { id: "claude-plan", open_permission: "read-only" },
           { id: "claude-research", spaces: ["Research"] },
           { id: "desktop-plan", target: "claude-desktop", open_permission: "read-only" },
         ],
@@ -1126,9 +1076,12 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
       const { result } = await open(r, { task: task.ref, instance: "claude-plan" });
       expect(result.launch.route).toBe("terminal");
       const report = await reportAt(r.report("claude-plan"));
-      expect(report.argv.slice(4)).toEqual(["--permission-mode", "plan"]);
-      expect(report.argv).not.toContain("--");
-      expect(result.copy).toBe(briefFor("prefilled", r.lab.spaceId, task, result.launch.reference));
+      expect(report.argv.slice(4)).toEqual([
+        "--permission-mode",
+        "plan",
+        `--prefill=${briefFor("prefilled", r.lab.spaceId, task, result.launch.reference)}`,
+      ]);
+      expect(result.copy).toBeUndefined();
       expect(opened).toHaveLength(0);
 
       const started = r.lab.folders.size;
@@ -1186,8 +1139,8 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
       const r = await rig("chosen-no-terminal", 0, {
         noTerminal: true,
         instances: [
-          { id: "claude-plan", prompt: "prefill", open_permission: "read-only" },
-          { id: "claude-work", prompt: "prefill", config_home: join(homes.root, "claude-work") },
+          { id: "claude-plan", open_permission: "read-only" },
+          { id: "claude-work", config_home: join(homes.root, "claude-work") },
         ],
       });
       const task = await addTask(r, "Fixture no terminal");

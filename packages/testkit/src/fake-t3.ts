@@ -160,7 +160,10 @@ export class FakeT3 {
   access: FakeT3Access = "full-access";
   /** Seconds an access token lives: T3's 30 days. Undefined for no `expires_in`. */
   expiresIn: number | undefined = 30 * 24 * 60 * 60;
-  /** The models T3 offers, or undefined for any. A launch with another is `model_unavailable`. */
+  /**
+   * The models T3 offers, or undefined for any. A launch with another, or without one while
+   * `default` is not offered, is `model_unavailable`.
+   */
   models: readonly string[] | undefined = undefined;
   /** Answer MCP requests as an SSE stream instead of a JSON body. */
   sse = false;
@@ -747,13 +750,11 @@ export class FakeT3 {
     if (project === undefined || project.archivedAt !== null) {
       throw new Refusal("invalid_request", "The project was not found.");
     }
+    // Without a selection the thread takes T3's default, which T3 checks the same way.
     const selection = args["modelSelection"] as { model?: unknown } | undefined;
-    if (
-      this.models !== undefined &&
-      typeof selection?.model === "string" &&
-      !this.models.includes(selection.model)
-    ) {
-      throw new Refusal("model_unavailable", `Model ${selection.model} is not advertised.`);
+    const model = typeof selection?.model === "string" ? selection.model : "default";
+    if (this.models !== undefined && !this.models.includes(model)) {
+      throw new Refusal("model_unavailable", `Model ${model} is not advertised.`);
     }
     const strategy = (args["workspaceStrategy"] ?? { type: "root" }) as Record<string, unknown>;
     let worktreePath: string | null = null;

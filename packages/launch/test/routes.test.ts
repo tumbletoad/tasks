@@ -39,7 +39,6 @@ const instance = (over: Partial<Instance> & Pick<Instance, "id" | "target">): In
   viaLoginShell: false,
   remoteAllowed: false,
   enabled: true,
-  prompt: "sent",
   ...over,
 });
 
@@ -88,8 +87,8 @@ const OS = {
 const values = { task: "M-14", title: "Fix appointment time zones", reference: REF } as const;
 
 describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compared as arrays", () => {
-  test("Claude Code's terminal route: --session-id, -n with the task's reference and title, the permission, extra arguments, then the brief after --", () => {
-    const linux = cliArgv(OS.linux.claude, "sent", {
+  test("Claude Code's terminal route: --session-id, -n with the task's reference and title, the permission, extra arguments, then the brief in its prompt box with --prefill=", () => {
+    const linux = cliArgv(OS.linux.claude, {
       ...values,
       session: SESSION,
       brief: BRIEF,
@@ -106,12 +105,11 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
         "bypassPermissions",
         "--model",
         "opus",
-        "--",
-        BRIEF,
+        `--prefill=${BRIEF}`,
       ],
       folderArgs: [],
     });
-    const windows = cliArgv(OS.win32.claude, "sent", {
+    const windows = cliArgv(OS.win32.claude, {
       ...values,
       session: SESSION,
       brief: BRIEF,
@@ -125,15 +123,14 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
         SESSION,
         "-n",
         "M-14 Fix appointment time zones",
-        "--",
-        BRIEF,
+        `--prefill=${BRIEF}`,
       ],
       folderArgs: [],
     });
   });
 
   test("Codex's terminal route: -C with the folder filled at the claim, --no-daemon, the permission, then the brief after --", () => {
-    const linux = cliArgv(OS.linux.codex, "sent", { ...values, brief: BRIEF, toolEnv: [] });
+    const linux = cliArgv(OS.linux.codex, { ...values, brief: BRIEF, toolEnv: [] });
     expect(linux).toEqual({
       argv: [
         "/home/mira/.local/bin/codex-work",
@@ -161,7 +158,7 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
       "--",
       BRIEF,
     ]);
-    const windows = cliArgv(OS.win32.codex, "sent", {
+    const windows = cliArgv(OS.win32.codex, {
       ...values,
       brief: BRIEF,
       toolEnv: codexToolEnv(),
@@ -178,21 +175,6 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
       "--",
       BRIEF,
     ]);
-  });
-
-  test("the assisted open of Codex and Claude Code: the same command line without a prompt, so nothing is sent", () => {
-    for (const os of ["linux", "win32"] as const) {
-      for (const [target, given] of [
-        ["codex", { toolEnv: [] }],
-        ["claude", { session: SESSION, toolEnv: [] }],
-      ] as const) {
-        const assisted = cliArgv(OS[os][target], "clipboard", { ...values, ...given });
-        const primary = cliArgv(OS[os][target], "sent", { ...values, ...given, brief: BRIEF });
-        expect(assisted.argv, `${os} ${target}`).toEqual(primary.argv.slice(0, -2));
-        expect(assisted.argv).not.toContain("--");
-        expect(assisted.folderArgs).toEqual(primary.folderArgs);
-      }
-    }
   });
 
   test("the claude-cli:// link: the folder and the brief, each percent-encoded once, decoded back exactly", () => {
@@ -218,17 +200,16 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
 
   test("hostile values stay one element each: a brief or title is never split or read as an option", () => {
     const hostile = '--help "; rm -rf ~ & echo %PATH% ^| `x` $(y)\ntwo\\';
-    const built = cliArgv(OS.linux.claude, "sent", {
+    const built = cliArgv(OS.linux.claude, {
       ...values,
       title: hostile.replace(/\n/gu, " "),
       session: SESSION,
       brief: hostile,
       toolEnv: [],
     });
-    expect(built.argv.at(-1)).toBe(hostile);
-    expect(built.argv.at(-2)).toBe("--");
+    expect(built.argv.at(-1)).toBe(`--prefill=${hostile}`);
     expect(built.argv[4]).toBe(`M-14 ${hostile.replace(/\n/gu, " ")}`);
-    expect(built.argv).toHaveLength(11);
+    expect(built.argv).toHaveLength(10);
   });
 
   test("Codex's env_vars override keeps the names the home's entry lists, and adds the ticket's", () => {
@@ -253,7 +234,7 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
 
   test("refused before anything starts: no executable, a session or reference of the wrong form, {cwd} inside an element", () => {
     expect(() =>
-      cliArgv(instance({ id: "x", target: "claude-cli" }), "sent", {
+      cliArgv(instance({ id: "x", target: "claude-cli" }), {
         ...values,
         session: SESSION,
         brief: BRIEF,
@@ -261,7 +242,7 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
       }),
     ).toThrow(RouteUnavailable);
     expect(() =>
-      cliArgv(OS.linux.claude, "sent", {
+      cliArgv(OS.linux.claude, {
         ...values,
         session: "not-a-uuid",
         brief: BRIEF,

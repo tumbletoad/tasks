@@ -221,23 +221,11 @@ export interface Instance {
   readonly openPermission: Permission;
   readonly runPermission: Permission;
   readonly extraArgs: readonly string[];
-  /**
-   * A4 L7: `sent` opens with the brief sent ("Read the task, then wait for my instructions");
-   * `prefill` uses the target's prefill route instead (Claude Code's link, Codex's assisted open),
-   * so the person sends the first message. Default `sent`.
-   */
-  readonly prompt: "sent" | "prefill";
   readonly viaLoginShell: boolean;
   /** Reserved for L1 (A6): may a command from another machine use this instance. v1 stores it. */
   readonly remoteAllowed: boolean;
   /** False keeps a written instance out of every launch without deleting it. */
   readonly enabled: boolean;
-  /** T3 only (A4 3.4.1). */
-  readonly t3?: {
-    readonly environment: string;
-    readonly providerInstance: string | undefined;
-    readonly model: string;
-  };
 }
 
 /** Whether an instance is for `space`: its `spaces` name none, or name it by ID or by name. */
@@ -250,7 +238,11 @@ export function servesSpace(
   return instance.spaces.some((s) => s === space.id || s.toLowerCase() === name);
 }
 
-const T3_KEYS = ["t3_environment", "t3_provider_instance", "t3_model"] as const;
+/**
+ * Keys an instance no longer takes. Open leaves the prompt unsent wherever the app can, and T3 Code
+ * opens on its own default profile and model, which the person changes in T3.
+ */
+const RETIRED_KEYS = ["prompt", "t3_environment", "t3_provider_instance", "t3_model"] as const;
 
 /**
  * `[[instance]]`. An entry with any error is dropped (the rest stay), so a half-understood
@@ -346,27 +338,10 @@ function readInstance(
   const openPermission = r.oneOf("open_permission", PERMISSIONS, "inherit");
   const runPermission = r.oneOf("run_permission", PERMISSIONS, "inherit");
   const extraArgs = r.strings("extra_args") ?? [];
-  const prompt = r.oneOf("prompt", ["sent", "prefill"], "sent");
   const viaLoginShell = r.bool("via_login_shell", false);
   const remoteAllowed = r.bool("remote_allowed", false);
   const enabled = r.bool("enabled", true);
-
-  let t3: Instance["t3"];
-  if (target === "t3") {
-    const environment = r.string("t3_environment", { nonEmpty: true, max: 64 }) ?? "local";
-    // Remote T3 environments are not targets in v1 (A4 3.2).
-    if (environment !== "local") r.error("t3_environment", "invalid_value");
-    const providerInstance = r.string("t3_provider_instance", { nonEmpty: true, max: 64 });
-    const model = r.string("t3_model", { max: 128 }) ?? "";
-    t3 = { environment, providerInstance, model };
-  } else {
-    for (const name of T3_KEYS) {
-      if (r.has(name)) {
-        r.raw(name);
-        r.error(name, "not_for_target");
-      }
-    }
-  }
+  for (const name of RETIRED_KEYS) r.retired(name);
   if (platform === "win32" && viaLoginShell) r.error("via_login_shell", "not_for_target");
   r.done();
   if (r.failed || id === undefined || target === undefined || label === undefined) {
@@ -385,11 +360,9 @@ function readInstance(
     openPermission,
     runPermission,
     extraArgs,
-    prompt,
     viaLoginShell,
     remoteAllowed,
     enabled,
-    ...(t3 === undefined ? {} : { t3 }),
   };
 }
 

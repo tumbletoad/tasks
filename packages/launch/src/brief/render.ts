@@ -23,7 +23,7 @@ import { isBriefSafe, sanitiseComposer, sanitisePath, sanitiseTitle } from "./sa
 
 /**
  * Which template (A4 3.15.2): `sent` for the CLI terminal routes (the brief is the first turn),
- * `prefilled` for routes that put it in a composer unsent (a link, the Codex assisted open), and
+ * `prefilled` for routes that put it in a composer unsent (Claude Code, a link, T3 Code), and
  * `pointer` for Copy (A4 3.15.4).
  */
 export type BriefKind = "sent" | "prefilled" | "pointer";

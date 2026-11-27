@@ -843,13 +843,13 @@ export class LaunchService {
       const title = sanitiseTitle(task.title);
       planFor = (reference) => {
         const text = brief(reference);
-        const built = cliArgv(chosen, choice.prompt ?? "sent", {
+        const built = cliArgv(chosen, {
           task: task.ref,
           title,
           reference,
           toolEnv,
           ...(session === undefined ? {} : { session }),
-          ...(choice.prompt === "clipboard" || text.status !== "ok" ? {} : { brief: text.text }),
+          ...(text.status !== "ok" ? {} : { brief: text.text }),
         });
         return {
           argv: built.argv,
@@ -965,10 +965,6 @@ export class LaunchService {
       // Pairing needs T3's server: when it does not run, Start T3 Code comes first.
       const running = available.state === "not_running" || (await t3.running());
       throw refuse(running ? available.state : "not_running");
-    }
-    // T3 takes a provider instance only with its model: without one the account could be another.
-    if (instance.t3?.providerInstance !== undefined && instance.t3.model === "") {
-      throw refuse("model_required");
     }
     const { task, requestId } = request;
     const set = this.#planFolder(task.folder);

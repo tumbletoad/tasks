@@ -18,8 +18,8 @@ const LINUX: FakeHostSpec = {
     HOME: "/home/mira",
   },
   entries: {
-    "/home/mira/.local/bin/claude": { kind: "link", to: "../share/claude/versions/2.1.322" },
-    "/home/mira/.local/share/claude/versions/2.1.322": { kind: "file", executable: true },
+    "/home/mira/.local/bin/claude": { kind: "link", to: "../share/claude/versions/2.1.332" },
+    "/home/mira/.local/share/claude/versions/2.1.332": { kind: "file", executable: true },
     // The fixture user's wrappers (A4 3.2): one per account.
     "/home/mira/.local/bin/codex-work": { kind: "file", executable: true },
     "/home/mira/.local/bin/codex-second": { kind: "file", executable: true },
@@ -44,7 +44,7 @@ const LINUX: FakeHostSpec = {
     "/home/mira/.t3/userdata/server-runtime.json": { kind: "file" },
   },
   outputs: {
-    "/home/mira/.local/bin/claude --version": "2.1.322 (Claude Code)\n",
+    "/home/mira/.local/bin/claude --version": "2.1.332 (Claude Code)\n",
     [`${NVM}/bin/node ${NVM}/lib/node_modules/@openai/codex/bin/codex.js --version`]:
       "codex-cli 0.166.0\n",
     "/home/mira/.local/bin/t3 --version": "0.1.7\n",
@@ -76,7 +76,7 @@ const WINDOWS: FakeHostSpec = {
     "C:\\Users\\mira\\.claude_second\\.credentials.json": { kind: "file" },
   },
   outputs: {
-    "C:\\Users\\mira\\.local\\bin\\claude.exe --version": "2.1.322 (Claude Code)\r\n",
+    "C:\\Users\\mira\\.local\\bin\\claude.exe --version": "2.1.332 (Claude Code)\r\n",
     "C:\\Program Files\\nodejs\\node.exe C:\\Users\\mira\\npm-global\\node_modules\\@openai\\codex\\bin\\codex.js --version":
       "codex-cli 0.201.0\r\n",
   },
@@ -191,7 +191,6 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
         openPermission: "inherit",
         runPermission: "full-access",
         extraArgs: [],
-        prompt: "sent",
         viaLoginShell: false,
         remoteAllowed: false,
         enabled: true,
@@ -327,7 +326,15 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
     ]);
     const t3 = detection.proposals.find((p) => p.id === "t3");
     if (t3 === undefined) throw new Error("no t3 proposal");
-    expect(instanceEntry(t3)).toEqual({ ok: false, needs: ["t3_provider_instance"] });
+    // One T3 Code instance, which names no profile or model: the person picks those in T3.
+    const t3Entry = instanceEntry(t3);
+    expect(t3Entry.ok && [...t3Entry.entry]).toEqual([
+      ["id", "t3"],
+      ["target", "t3"],
+      ["label", "T3 Code"],
+      ["account", "default"],
+      ["remote_allowed", false],
+    ]);
   });
 });
 

@@ -882,8 +882,8 @@ export function TaskList({
           changed.current?.(task);
         }
       },
-      // Open (A4's `launch.open`). An app that takes the brief by paste (Codex's assisted open)
-      // gets it on the clipboard too.
+      // Open (A4's `launch.open`). A link whose app may drop the brief (Claude Desktop, the Codex
+      // app) puts it on the clipboard too.
       // A folder whose marker says it may be another one opens only when the person says so: the
       // toast asks, and its action opens it there and marks it. The composer's words stay in its
       // field until then. Once the service saved them on the task the field clears, as for Note.
