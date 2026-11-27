@@ -79,6 +79,10 @@ If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checko
   notes a rare corner in one line.
 - Work on branches and merge through pull requests. Merge main into the branch first. Name the
   files in every commit: never `git add -A`.
+- A pull request lands on main as one commit (a squash merge), so every commit on main is a
+  state that passed CI. Its title becomes that commit's subject and its description the body:
+  write both to be read in the history. Start a branch from main, not from a branch that has
+  not merged.
 - Names come from `packages/brand`.
 
 ## Never
