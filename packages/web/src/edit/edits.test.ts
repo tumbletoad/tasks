@@ -1597,7 +1597,7 @@ describe("[A5.3.12.web.undo-steps] Undo for the steps worth it, and Redo beside 
           ],
         },
       ],
-    } as BatchMessage);
+    });
     w.store.flush();
     expect(w.lastToast()).toMatchObject({ text: { id: "toast.done" } });
     w.feed([task(2, { priority: 3, version: 3 })], "other-window", ["priority"]);
