@@ -5078,7 +5078,7 @@
     },
     {
       "id": "A5.3.3.e2e.owner-screens",
-      "title": "Playwright against the real service with a space the size of one in use (five areas, thirty-two projects, about a hundred open tasks): the side menu, Today, Open, an area, a project and an expanded task at 1,280, 1,440, 1,920 and 390 px in Sumi and Washi with nothing scrolling sideways, the drawer at 390 px; the expanded task's facts with two, four and six statuses and effort keys: statuses in one row up to four and in two even rows past it, priority's options over effort's (Washi and the screenshots in Chromium only)",
+      "title": "Playwright against the real service with a space the size of one in use (five areas, thirty-two projects, about a hundred open tasks): the side menu, Today, Open, an area, a project and an expanded task at 1,280, 1,440, 1,920 and 390 px in Sumi and Washi with nothing scrolling sideways, the drawer at 390 px; the expanded task's facts with two, four and six statuses and effort keys: every option whole and inside the facts' block, each control on one line while its names fit and wrapping only when they do not (Washi and the screenshots in Chromium only)",
       "source": "A5 3.3, A5 3.7",
       "owner": "M5",
       "kind": "ci",
@@ -5142,7 +5142,7 @@
     },
     {
       "id": "A5.3.7.e2e.card-controls",
-      "title": "In Chromium and Firefox against the real service, at 1,440 and 390 px: a click on the empty space of a row's title column expands it and makes it current, while its star and a mouse selection of its summary do not; in the card, a note's Remove is a bin in sight without hover, the folder line's icon opens the folder chooser by mouse and by keyboard with its tip, the default five effort levels sit on one line, and Move to Trash is an icon with its tip at the end of the Created line; axe finds nothing",
+      "title": "In Chromium and Firefox against the real service, at 1,440 and 390 px: a click on the empty space of a row's title column expands it and makes it current, while its star and a mouse selection of its summary do not; in the card, a note's Remove is a bin in sight without hover, the folder line's icon opens the folder chooser by mouse and by keyboard with its tip, the default five effort levels sit on one line, and Move to Trash is an icon with its tip, the last control on the Created line; the page meets no content-security-policy violation",
       "source": "A5 3.6, A5 3.7",
       "owner": "M5",
       "kind": "ci",
