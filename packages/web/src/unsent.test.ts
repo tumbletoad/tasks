@@ -147,8 +147,8 @@ describe("[A5.trash.web.unsent] every unsent word goes through one module", () =
     keepTextDraft(SPACE, TASK, "n3", { typed: "Call the landlord on Monday", before: "Call him" });
     keepTextDraft(SPACE, TASK, "context", { typed: "The flat has two rooms", before: "" });
     expect(readTextDraft(SPACE, TASK, "n3")?.typed).toBe("Call the landlord on Monday");
-    const shown = unsentOf(SPACE).filter((word) => word.kind === "text");
-    expect(shown.map((word) => [word.kind === "text" ? word.part : "", word.task])).toEqual([
+    const shown = unsentOf(SPACE).flatMap((word) => (word.kind === "text" ? [word] : []));
+    expect(shown.map((word) => [word.part, word.task])).toEqual([
       ["context", TASK],
       ["n3", TASK],
     ]);
