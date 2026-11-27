@@ -169,6 +169,7 @@ function TrashList({ q, task, onExpand }: TrashProps & { readonly q: string }) {
                   values: { count: value.moved.length, already, later },
                 };
           },
+          { undo: true },
         )
         .then(
           (value) => {

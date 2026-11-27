@@ -204,7 +204,6 @@ test.describe("[A7.3.12.m5-10.e2e.search] Search results are a list like any oth
     await expect(toast(page)).toHaveText("Done");
     await expect(toastAction(page)).toHaveText("Undo");
     await expect(page.getByRole("status").filter({ hasText: "Results changed." })).toBeVisible();
-    await expect(row).toHaveAttribute("data-leaving", "hold");
     await expect(row).not.toHaveAttribute("data-leaving", /./, { timeout: SLOW_MS });
     await expect(row.locator('[data-part="check"]')).toBeChecked();
     await expect(titles(page, "To do")).toHaveCount(2);

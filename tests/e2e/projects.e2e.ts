@@ -22,6 +22,7 @@ import { SLOW_MS, type World } from "./world.ts";
 
 const toast = (page: Page) => page.locator('[data-part="toast-text"]');
 const toastAction = (page: Page) => page.locator('[data-part="toast-action"]');
+const toastButton = (page: Page, name: string) => toastAction(page).filter({ hasText: name });
 const newProject = (page: Page) => page.getByRole("button", { name: "New project", exact: true });
 const folderField = (scope: Page | Locator) => scope.getByRole("combobox", { name: "Folder" });
 
@@ -89,7 +90,7 @@ test.describe("[A7.3.12.m5-14.e2e.add-project] New project from a folder, and it
       await toastAction(page).click();
       await expect(toast(page)).toHaveText("Undone");
       await expect(link).toHaveCount(0, { timeout: SLOW_MS });
-      await toastAction(page).click();
+      await toastButton(page, "Redo").click();
       await expect(toast(page)).toHaveText("Redone");
       await expect(link).toBeVisible({ timeout: SLOW_MS });
       expect(await violations(page)).toEqual([]);
@@ -174,7 +175,7 @@ test.describe("[A7.3.12.m5-14.e2e.add-project] New project from a folder, and it
 });
 
 test.describe("[A7.3.12.m5-14.e2e.project-folder] A project's folder changed after a move takes its tasks' folders along", () => {
-  test("the line shows the folder, Change after a move says what followed, the task's folder follows, and Undo, Clear and Ctrl+Z put each back @one-browser", async ({
+  test("the line shows the folder, Change after a move says what followed, the task's folder follows, and Clear takes the folder away; a folder change offers no Undo @one-browser", async ({
     page,
     world,
   }) => {
@@ -218,20 +219,17 @@ test.describe("[A7.3.12.m5-14.e2e.project-folder] A project's folder changed aft
       await row.locator('[data-part="title"]').click();
       const place = row.locator('[data-part="place"]');
       await expect(place).toContainText(join("two", `billing-${browser}`, "invoices"));
+      // The folder followed the one on disk: there is nothing to put back.
+      await expect(toastAction(page)).toHaveCount(0);
 
-      // Undo puts both back where they were: the old folder, not there now.
-      await toastAction(page).click();
-      await expect(toast(page)).toHaveText("Undone");
-      await expect(line).toHaveAttribute("data-state", "missing", { timeout: SLOW_MS });
-      await expect(line).toContainText(join("one", `billing-${browser}`));
-      await expect(place).toContainText(join("one", `billing-${browser}`, "invoices"));
-
-      // Clear, then Ctrl+Z.
+      // Clear: the folder goes, with no Undo; Ctrl+Z takes back nothing.
       await line.getByRole("button", { name: "Clear" }).click();
       await expect(toast(page)).toHaveText("Folder cleared");
+      await expect(toastAction(page)).toHaveCount(0);
       await expect(line).toHaveAttribute("data-state", "none");
       await page.locator("body").press("Control+z");
-      await expect(line).toHaveAttribute("data-state", "missing", { timeout: SLOW_MS });
+      await expect(toast(page)).toHaveText("Nothing to undo");
+      await expect(line).toHaveAttribute("data-state", "none");
       expect(await violations(page)).toEqual([]);
     } finally {
       temp.done();
@@ -240,7 +238,7 @@ test.describe("[A7.3.12.m5-14.e2e.project-folder] A project's folder changed aft
 });
 
 test.describe("[A7.3.12.m5-14.e2e.task-folder] A task's own folder set and cleared from its folder line", () => {
-  test("Choose folder sets it, Clear takes it away, and Ctrl+Z gives it back", async ({
+  test("Choose folder sets it and Clear takes it away, each with no Undo, and Choose folder sets it again", async ({
     page,
     world,
   }) => {
@@ -267,11 +265,17 @@ test.describe("[A7.3.12.m5-14.e2e.task-folder] A task's own folder set and clear
       await expect(place).toContainText(`notes-${browser}`);
       await expect(toast(page)).toContainText(`Folder set to`);
 
+      await expect(toastAction(page)).toHaveCount(0);
+
       await place.hover();
       await place.getByRole("button", { name: "Clear" }).click();
       await expect(toast(page)).toHaveText("Folder cleared");
+      await expect(toastAction(page)).toHaveCount(0);
       await expect(place).toHaveAttribute("data-state", "work_folder", { timeout: SLOW_MS });
-      await page.locator("body").press("Control+z");
+      await place.hover();
+      await place.getByRole("button", { name: "Choose folder" }).click();
+      await folderField(dialog).fill(folder);
+      await dialog.getByRole("button", { name: "Use this folder" }).click();
       await expect(place).toHaveAttribute("data-state", "here", { timeout: SLOW_MS });
       await expect(place).toContainText(`notes-${browser}`);
       expect(await violations(page)).toEqual([]);

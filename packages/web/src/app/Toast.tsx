@@ -1,6 +1,6 @@
 // The toast (A5 3.12): one at a time, at the foot of the main column, a short past-tense sentence
-// and at most one action. A new one replaces the old; the replaced change stays undoable with
-// Ctrl+Z. Undo toasts last 6 s and plain ones 2.5 s, or as long as their sentence takes to read,
+// and its action; after an Undo or a Redo, Undo and Redo side by side. A new one replaces the old;
+// the replaced step stays undoable with Ctrl+Z. Undo toasts last 6 s and plain ones 2.5 s, or as long as their sentence takes to read,
 // and errors stay until they are dismissed. A timer pauses while the pointer or focus is on the
 // toast. F6 moves focus to its action, and focus goes back where it was once the action ran or
 // Escape left the toast.
@@ -12,7 +12,7 @@ import { useT } from "../i18n/intl.tsx";
 import { is } from "../keys/keymap.ts";
 import type { Msg } from "../row/model.ts";
 import { namesMachine, sayMsg } from "../row/say.ts";
-import type { ToastKind } from "../edit/edits.ts";
+import type { ToastAction, ToastKind } from "../edit/edits.ts";
 import { classes } from "./css.ts";
 import css from "./Toast.module.css";
 
@@ -41,7 +41,8 @@ export interface Shown {
   readonly key: number;
   readonly kind: ToastKind;
   readonly text: string | Msg;
-  readonly action?: { readonly label: Msg; readonly run: () => void };
+  readonly action?: ToastAction;
+  readonly second?: ToastAction;
 }
 
 export interface ToastHandle {
@@ -59,7 +60,6 @@ export function Toast({
   readonly handle: { current: ToastHandle | undefined };
 }) {
   const t = useT();
-  const action = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLDivElement>(null);
   /** Where focus was before F6 took it to the toast. */
   const back = useRef<Element | null>(null);
@@ -67,9 +67,12 @@ export function Toast({
 
   handle.current = {
     focusAction: () => {
-      if (action.current === null) return false;
+      const action = box.current?.querySelector<HTMLButtonElement>(
+        '[data-part="toast-action"]:enabled',
+      );
+      if (action === null || action === undefined) return false;
       back.current = document.activeElement;
-      action.current.focus();
+      action.focus();
       return true;
     },
   };
@@ -136,21 +139,23 @@ export function Toast({
           >
             {text}
           </span>
-          {toast.action === undefined ? null : (
-            <button
-              ref={action}
-              type="button"
-              className={styles.action}
-              data-part="toast-action"
-              onClick={() => {
-                const run = toast.action?.run;
-                returnFocus();
-                onDone(toast.key);
-                run?.();
-              }}
-            >
-              {sayMsg(t, toast.action.label)}
-            </button>
+          {[toast.action, toast.second].map((action, n) =>
+            action === undefined ? null : (
+              <button
+                key={n}
+                type="button"
+                className={styles.action}
+                data-part="toast-action"
+                disabled={action.disabled}
+                onClick={() => {
+                  returnFocus();
+                  onDone(toast.key);
+                  action.run();
+                }}
+              >
+                {sayMsg(t, action.label)}
+              </button>
+            ),
           )}
           {toast.kind === "error" ? (
             <button

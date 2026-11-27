@@ -30,6 +30,9 @@ import {
   type UnsavedKeeper,
 } from "./edits.ts";
 
+/** A step a toast names, as its Undo or Redo does. */
+const STEP = `op_${"9".padStart(26, "0")}`;
+
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
 const INCARNATION = "ai_0123456789abcdefghjkmnpq";
 const TAG = "01234567";
@@ -188,7 +191,7 @@ const flush = async () => {
 };
 
 describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refusals kept, undo by commit", () => {
-  test("an edit shows at once, carries the applied cursor as its base, and its toast's Undo names its commit", async () => {
+  test("an edit shows at once and carries the applied cursor as its base; a title's toast's Undo names its commit, a priority shows no toast", async () => {
     const w = new World([task(1)]);
     w.answer("task.update", () => ({
       result: "updated",
@@ -204,29 +207,47 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       set: { priority: 1 },
       base: w.asOf(10),
     });
-    expect(w.lastToast()?.text).toEqual({
-      id: "toast.priority",
-      values: { value: { id: "row.priority", values: { level: 1 } } },
-    });
+    expect(w.toasts).toEqual([]);
     await flush();
     w.feed([task(1, { priority: 1, version: 2 })], String(w.calls[0]?.input["request_id"]), [
       "priority",
     ]);
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["title"],
+      as_of: w.asOf(12),
+      warnings: [],
+    }));
+    w.edits.edit(task(1, { priority: 1, version: 2 }), titleChange("Order the lamps"));
+    expect(w.row("t_00001")?.title).toBe("Order the lamps");
+    expect(w.lastToast()).toMatchObject({ kind: "undo", action: { label: { id: "toast.undo" } } });
+    await flush();
+    w.feed(
+      [task(1, { priority: 1, title: "Order the lamps", version: 3 })],
+      String(w.calls[1]?.input["request_id"]),
+      ["title"],
+    );
     w.answer("history.undo", () => ({
       result: "undone",
       commit: "op_x",
       tasks: ["M-1"],
       task_count: 1,
-      as_of: w.asOf(12),
+      as_of: w.asOf(13),
     }));
     w.lastToast()?.action?.run();
     await flush();
-    expect(w.calls[1]).toMatchObject({
+    expect(w.calls[2]).toMatchObject({
       name: "history.undo",
-      input: { commit: `op_${"11".padStart(26, "0")}` },
+      input: { commit: `op_${"12".padStart(26, "0")}` },
     });
-    expect(w.lastToast()?.text).toEqual({ id: "toast.undone" });
-    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.redo" });
+    // Undone: Undo keeps its place, with nothing older to take back, and Redo is beside it.
+    expect(w.lastToast()).toMatchObject({
+      text: { id: "toast.undone" },
+      action: { label: { id: "toast.undo" }, disabled: true },
+      second: { label: { id: "toast.redo" } },
+    });
+    expect(w.lastToast()?.second?.disabled).toBeUndefined();
   });
 
   test("two quick edits of one task go out in turn: the second waits for the first's answer and takes its as_of", async () => {
@@ -360,14 +381,14 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     expect(w.edits.unsaved("t_00001", "title")).toBeDefined();
   });
 
-  test("Ctrl+Z waits for the person's edits on their way, so it takes back the newest", async () => {
+  test("Ctrl+Z waits for the person's edits on their way, and takes back the newest step by its commit", async () => {
     const w = new World([task(1)]);
     let answerFirst!: (value: unknown) => void;
     w.answer("task.update", () => new Promise((resolve) => (answerFirst = resolve)));
     w.answer("task.update", () => ({
       result: "updated",
       task: "M-1",
-      fields: ["effort"],
+      fields: ["title"],
       as_of: w.asOf(12),
       warnings: [],
     }));
@@ -378,20 +399,28 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       task_count: 1,
       as_of: w.asOf(13),
     }));
-    w.edits.edit(task(1), priorityChange(1));
-    w.edits.edit(task(1), effortChange("M", w.levels));
+    w.edits.edit(task(1), titleChange("First"));
+    w.edits.edit(task(1), titleChange("Second"));
     const undone = w.edits.undo();
     await flush();
     expect(w.calls.map((c) => c.name)).toEqual(["task.update"]);
     answerFirst({
       result: "updated",
       task: "M-1",
-      fields: ["priority"],
+      fields: ["title"],
       as_of: w.asOf(11),
       warnings: [],
     });
+    await flush();
+    w.feed([task(1, { title: "First", version: 2 })], String(w.calls[0]?.input["request_id"]), [
+      "title",
+    ]);
+    w.feed([task(1, { title: "Second", version: 3 })], String(w.calls[1]?.input["request_id"]), [
+      "title",
+    ]);
     await undone;
     expect(w.calls.map((c) => c.name)).toEqual(["task.update", "task.update", "history.undo"]);
+    expect(w.calls[2]?.input).toMatchObject({ commit: `op_${"12".padStart(26, "0")}` });
   });
 
   test("an edit made after Ctrl+Z waits for the undo, so the undo never takes back that newer edit", async () => {
@@ -412,7 +441,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       as_of: w.asOf(13),
       warnings: [],
     }));
-    w.edits.edit(task(1), priorityChange(1));
+    w.edits.edit(task(1), titleChange("First"));
     const undone = w.edits.undo();
     // Another task's edit, after Ctrl+Z: it shows at once and goes out after the undo.
     w.edits.edit(task(2), effortChange("M", w.levels));
@@ -422,10 +451,14 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     answerFirst({
       result: "updated",
       task: "M-1",
-      fields: ["priority"],
+      fields: ["title"],
       as_of: w.asOf(11),
       warnings: [],
     });
+    await flush();
+    w.feed([task(1, { title: "First", version: 2 })], String(w.calls[0]?.input["request_id"]), [
+      "title",
+    ]);
     await undone;
     await flush();
     expect(w.calls.map((c) => [c.name, c.input["task"]])).toEqual([
@@ -507,7 +540,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       as_of: w.asOf(12),
       warnings: [],
     }));
-    await w.edits.undo();
+    await w.edits.undo("op_u");
     // The feed has not brought the undo yet: the screen is still at seq 10.
     w.edits.edit(task(1), priorityChange(2));
     await flush();
@@ -1176,7 +1209,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
         newer_work: [{ task: "M-1", by: "Codex", at: "2026-11-12T10:42:00.000Z" }],
       });
     });
-    await w.edits.undo();
+    await w.edits.undo(STEP);
     const sent = w.calls.length;
     const shown = w.lastToast();
     expect(said(shown?.text)).toBe("Not undone: Codex changed M-1 since");
@@ -1184,39 +1217,6 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
     expect(shown?.action).toBeUndefined();
     await flush();
     expect(w.calls.length).toBe(sent);
-  });
-
-  test("a conflict whose commit is not named never acts on whatever is newest: no Undo the rest, even for the tab's own step", async () => {
-    const w = new World([task(1)]);
-    w.answer("task.update", () => ({
-      result: "updated",
-      task: "M-1",
-      fields: ["priority", "due"],
-      as_of: w.asOf(11),
-      warnings: [],
-    }));
-    w.edits.edit(task(1), { ...priorityChange(1), fields: ["priority", "due"] });
-    await flush();
-    w.feed([task(1, { priority: 1, version: 2 })], String(w.calls[0]?.input["request_id"]), [
-      "priority",
-      "due",
-    ]);
-    const conflict = {
-      task: "M-1",
-      field: "priority",
-      value: 2,
-      wrote: 1,
-      restore: 3,
-      version: 12,
-      by: "Codex",
-      at: "2026-11-12T10:42:00.000Z",
-    };
-    w.answer("history.undo", () => {
-      throw appError("conflict", { cause: "UNDO_CONFLICT", conflicts: [conflict] });
-    });
-    await w.edits.undo();
-    expect(w.lastToast()).toMatchObject({ kind: "error" });
-    expect(w.lastToast()?.action).toBeUndefined();
   });
 
   test("a redone check-off's box undoes the redo's commit, never the person's newest change elsewhere", async () => {
@@ -1348,7 +1348,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
     // A fresh page (a reload, another window) does not know the step's other fields.
     const fresh = new World([task(1, { priority: 1 })]);
     fresh.answer("history.undo", refusal);
-    await fresh.edits.undo();
+    await fresh.edits.undo(STEP);
     expect(fresh.lastToast()).toMatchObject({ kind: "error" });
     expect(fresh.lastToast()?.action).toBeUndefined();
   });
@@ -1391,7 +1391,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
         newer_work: newer,
       });
     });
-    await w.edits.redo();
+    await w.edits.redo(STEP);
     const shown = w.lastToast();
     expect(said(shown?.text)).toBe(`Not redone: ${String(newerText(newer))}`);
     expect(said(shown?.text)).toBe(
@@ -1409,7 +1409,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
         newer_work: [work(undefined, "import")],
       });
     });
-    await w.edits.undo();
+    await w.edits.undo(STEP);
     expect(said(w.lastToast()?.text)).toBe("Not undone: the import changed it since");
   });
 
@@ -1428,7 +1428,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
         newer_work: [work("M-1", "Codex · work"), work("M-2", "Codex · work")],
       });
     });
-    await w.edits.redo();
+    await w.edits.redo(STEP);
     const shown = w.lastToast();
     expect(said(shown?.text)).toBe("Not redone: Codex · work changed M-1 and M-2 since");
     expect(shown?.action).toBeUndefined();
@@ -1456,7 +1456,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
         newer_work: [work("M-1", "Codex · work")],
       });
     });
-    await w.edits.redo();
+    await w.edits.redo(STEP);
     const shown = w.lastToast();
     expect(said(shown?.text)).toBe("Not redone: Codex · work changed M-1 since");
     expect(shown?.action).toBeUndefined();
@@ -1483,38 +1483,10 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
         newer_work: [work("M-1", "Codex · work")],
       });
     });
-    await w.edits.undo();
+    await w.edits.undo(STEP);
     const shown = w.lastToast();
     expect(said(shown?.text)).toBe("Not undone: Codex · work changed M-1 since");
     expect(shown?.action).toBeUndefined();
-  });
-
-  test("a redo that passed over older changes says who changed which tasks, beside Redone, and its Undo takes back the change redone", async () => {
-    const w = new World([task(1)]);
-    const redone = `op_${"21".padStart(26, "0")}`;
-    w.answer("history.redo", () => ({
-      result: "redone",
-      commit: redone,
-      tasks: ["M-2"],
-      task_count: 1,
-      as_of: w.asOf(12),
-      passed_over: [`op_${"11".padStart(26, "0")}`],
-      newer_work: [work("M-1", "Codex · work")],
-    }));
-    await w.edits.redo();
-    const shown = w.lastToast();
-    expect(said(shown?.text)).toBe("Redone. Not redone: Codex · work changed M-1 since");
-    expect(shown?.action?.label).toEqual({ id: "toast.undo" });
-    w.answer("history.undo", () => ({
-      result: "undone",
-      commit: redone,
-      tasks: ["M-2"],
-      task_count: 1,
-      as_of: w.asOf(13),
-    }));
-    shown?.action?.run();
-    await flush();
-    expect(w.calls.at(-1)).toMatchObject({ name: "history.undo", input: { commit: redone } });
   });
 
   test("nothing to undo, a newer change first, and a toast whose commit is unknown each say so and change nothing", async () => {
@@ -1522,7 +1494,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
     w.answer("history.undo", () => {
       throw appError("not_found", { cause: "NOTHING_TO_UNDO" });
     });
-    await w.edits.undo();
+    await w.edits.undo(STEP);
     expect(w.lastToast()?.text).toEqual({ id: "toast.nothingToUndo" });
     w.answer("history.undo", () => {
       throw appError("conflict", { cause: "INVALID_TRANSITION" });
@@ -1535,6 +1507,131 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
     await w.edits.undo({ commit: Promise.resolve(undefined), request: "rq-gone" });
     expect(w.calls.map((c) => c.name).filter((n) => n.startsWith("history"))).toHaveLength(2);
     expect(w.lastToast()?.text).toEqual({ id: "toast.undoUnknown" });
+  });
+});
+
+describe("[A5.3.12.web.undo-steps] Undo for the steps worth it, and Redo beside it", () => {
+  const commitAt = (seq: number) => `op_${String(seq).padStart(26, "0")}`;
+  /** A check-off of `n` that lands at `seq`, the feed confirming it. */
+  async function checkedOff(w: World, n: number, seq: number): Promise<void> {
+    w.answer("task.finish", () => ({
+      result: "completed",
+      task: `M-${String(n)}`,
+      lifecycle: "completed",
+      learnings: 0,
+      follow_ups: [],
+      as_of: w.asOf(seq),
+    }));
+    w.edits.checkOff(task(n));
+    await flush();
+    w.feed(
+      [task(n, { lifecycle: "completed", version: 2 })],
+      String(w.calls.at(-1)?.input["request_id"]),
+      ["lifecycle"],
+    );
+  }
+  const undone = (w: World, commit: string, seq: number) => () => ({
+    result: "undone",
+    commit,
+    tasks: [],
+    task_count: 0,
+    as_of: w.asOf(seq),
+  });
+  const history = (w: World) => w.calls.filter((c) => c.name.startsWith("history"));
+
+  test("a priority change after a check-off shows no toast, takes the check-off's Undo away, and Ctrl+Z then undoes nothing", async () => {
+    const w = new World([task(1), task(2)]);
+    await checkedOff(w, 1, 11);
+    expect(w.lastToast()).toMatchObject({ text: { id: "toast.done" } });
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-2",
+      fields: ["priority"],
+      as_of: w.asOf(12),
+      warnings: [],
+    }));
+    w.edits.edit(task(2), priorityChange(1));
+    expect(w.lastToast()).toBeUndefined();
+    await flush();
+    await w.edits.undo();
+    expect(history(w)).toEqual([]);
+    expect(w.lastToast()?.text).toEqual({ id: "toast.nothingToUndo" });
+  });
+
+  test("the person's change made elsewhere ends this tab's Undo as well; an agent's does not", async () => {
+    const w = new World([task(1), task(2)]);
+    await checkedOff(w, 1, 11);
+    w.feed([task(2, { priority: 2, version: 2 })], "agent-1", ["priority"], "agent");
+    expect(w.lastToast()).toMatchObject({ text: { id: "toast.done" } });
+    w.feed([task(2, { priority: 3, version: 3 })], "other-window", ["priority"]);
+    expect(w.lastToast()).toBeUndefined();
+    await w.edits.undo();
+    expect(history(w)).toEqual([]);
+  });
+
+  test("Ctrl+Z takes back a run of steps newest first, by their commits", async () => {
+    const w = new World([task(1), task(2)]);
+    await checkedOff(w, 1, 11);
+    await checkedOff(w, 2, 12);
+    w.answer("history.undo", undone(w, commitAt(12), 13));
+    w.answer("history.undo", undone(w, commitAt(11), 14));
+    await w.edits.undo();
+    await w.edits.undo();
+    expect(history(w).map((c) => c.input["commit"])).toEqual([commitAt(12), commitAt(11)]);
+    await w.edits.undo();
+    expect(history(w)).toHaveLength(2);
+  });
+
+  test("Undo then Redo of a check-off: Undo and Redo side by side, Redo by its commit, and another change ends Redo", async () => {
+    const w = new World([task(1), task(2)]);
+    await checkedOff(w, 1, 11);
+    w.answer("history.undo", undone(w, commitAt(11), 12));
+    w.lastToast()?.action?.run();
+    await flush();
+    const after = w.lastToast();
+    expect(after).toMatchObject({
+      kind: "undo",
+      text: { id: "toast.undone" },
+      action: { label: { id: "toast.undo" }, disabled: true },
+      second: { label: { id: "toast.redo" } },
+    });
+    expect(after?.second?.disabled).toBeUndefined();
+    w.answer("history.redo", () => ({
+      result: "redone",
+      commit: commitAt(11),
+      tasks: ["M-1"],
+      lifecycles: ["M-1"],
+      task_count: 1,
+      as_of: w.asOf(13),
+    }));
+    after?.second?.run();
+    await flush();
+    expect(history(w).at(-1)).toMatchObject({
+      name: "history.redo",
+      input: { commit: commitAt(11) },
+    });
+    expect(w.lastToast()).toMatchObject({
+      text: { id: "toast.redone" },
+      action: { label: { id: "toast.undo" } },
+      second: { label: { id: "toast.redo" }, disabled: true },
+    });
+    expect(w.lastToast()?.action?.disabled).toBeUndefined();
+    // Undone once more, then another change: nothing is left to redo.
+    w.answer("history.undo", undone(w, commitAt(11), 14));
+    await w.edits.undo();
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-2",
+      fields: ["priority"],
+      as_of: w.asOf(15),
+      warnings: [],
+    }));
+    w.edits.edit(task(2), priorityChange(1));
+    await flush();
+    const sent = history(w).length;
+    await w.edits.redo();
+    expect(history(w)).toHaveLength(sent);
+    expect(w.lastToast()?.text).toEqual({ id: "toast.nothingToRedo" });
   });
 });
 
@@ -1557,11 +1654,11 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
       off_list: [{ effort: "Medium", tasks: ["M-2"], count: 1 }],
       as_of: w.asOf(12),
     }));
-    await w.edits.undo();
+    await w.edits.undo(STEP);
     expect(said(w.lastToast()?.text)).toBe(
       "Effort levels put back. 1 task is on a size that is not a level now: M-2",
     );
-    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.redo" });
+    expect(w.lastToast()?.second?.label).toEqual({ id: "toast.redo" });
     expect(w.edits.getState().leaving.get("t_00001")).toMatchObject({ done: true });
   });
 
@@ -1576,7 +1673,7 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
       lifecycles: ["M-1"],
       as_of: w.asOf(12),
     }));
-    await w.edits.redo();
+    await w.edits.redo(STEP);
     w.edits.hold(task(1), undefined, 0);
     // The swap of two sizes, redone after it: it names the task too, and checks nothing off.
     w.answer("history.redo", () => ({
@@ -1587,7 +1684,7 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
       levels: { list: false, tasks: 2 },
       as_of: w.asOf(13),
     }));
-    await w.edits.redo();
+    await w.edits.redo(STEP);
     expect(w.edits.getState().leaving.get("t_00001")).toMatchObject({ done: true });
     w.answer("history.undo", () => ({
       result: "undone",
@@ -1621,7 +1718,7 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
         },
       ],
     }));
-    await w.edits.undo(undefined, true);
+    await w.edits.undo(STEP, true);
     expect(said(w.lastToast()?.text)).toBe(
       "Nothing of the change of the effort levels was left to undo: 1 task kept a newer size",
     );
@@ -1639,30 +1736,11 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
       off_list: [{ effort: "Medium", tasks: ["M-2"], count: 1 }],
       as_of: w.asOf(12),
     }));
-    await w.edits.redo();
+    await w.edits.redo(STEP);
     expect(said(w.lastToast()?.text)).toBe(
       "Nothing of the change of the effort levels was left to redo. 1 task is on a size that is not a level now: M-2",
     );
     expect(w.lastToast()?.action).toBeUndefined();
-  });
-
-  test("a redo that passed over an older change says what the change of levels it redid wrote", async () => {
-    const w = new World([task(1)]);
-    w.answer("history.redo", () => ({
-      result: "redone",
-      commit: "op_l",
-      tasks: ["M-2"],
-      task_count: 1,
-      levels: { list: false, tasks: 1 },
-      as_of: w.asOf(12),
-      passed_over: [`op_${"11".padStart(26, "0")}`],
-      newer_work: [{ task: "M-1", by: "Codex · work", at: "2026-11-12T10:42:00.000Z" }],
-    }));
-    await w.edits.redo();
-    expect(said(w.lastToast()?.text)).toBe(
-      "Sizes changed again. Not redone: Codex · work changed M-1 since",
-    );
-    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.undo" });
   });
 
   test("a size kept unsent is not sent again, by its line or its toast, once the levels changed", async () => {
@@ -1682,7 +1760,7 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
     expect(w.edits.unsaved("t_00001", "effort")?.change.set).toEqual({ effort: "M" });
   });
 
-  test("a refused one offers Undo the rest from a page that did not make it", async () => {
+  test("a refused one offers Undo the rest, also where the page does not know the step's fields", async () => {
     const w = new World([task(1)]);
     const step = `op_${"12".padStart(26, "0")}`;
     const list = {
@@ -1700,7 +1778,7 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
         conflicts: [{ ...list, version: 13 }],
       });
     });
-    await w.edits.undo();
+    await w.edits.undo(step);
     expect(w.lastToast()?.action?.label).toEqual({ id: "toast.undoRest" });
     // The rest of a change of levels whose list someone changed since is nothing: it says so.
     w.answer("history.undo", () => ({
@@ -1742,7 +1820,7 @@ describe("[A5.3.12.web.undo-levels] Undo of a change of the effort levels, made 
         ],
       });
     });
-    await w.edits.undo();
+    await w.edits.undo(STEP);
     expect(w.lastToast()?.action).toBeUndefined();
   });
 
@@ -1800,7 +1878,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     const w = new World([task(1), task(2)]);
     w.answer("history.undo", never);
     w.answer("history.undo", never);
-    void w.edits.undo();
+    void w.edits.undo(STEP);
     // The person edits two tasks after Ctrl+Z: each shows at once, and waits for the undo.
     w.edits.edit(task(2), effortChange("M", w.levels));
     w.edits.edit(task(1), priorityChange(1));
@@ -1830,7 +1908,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     const w = new World([task(1)]);
     w.answer("history.undo", never);
     w.answer("history.undo", never);
-    void w.edits.undo();
+    void w.edits.undo(STEP);
     await flush();
     const off = [{ effort: "Medium", tasks: ["M-1"], count: 1 }];
     w.answer("receipt.get", (input) => {
@@ -1854,7 +1932,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     w.answer("history.undo", () => undone(w, 11));
     w.answer("receipt.get", () => ({ found: false }));
     w.answer("task.update", () => updated(w, 12));
-    void w.edits.undo();
+    void w.edits.undo(STEP);
     w.edits.edit(task(2), effortChange("M", w.levels));
     await flush();
     expect(names(w)).toEqual(["history.undo"]);
@@ -1874,7 +1952,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     w.answer("history.undo", never);
     w.answer("receipt.get", () => ({ found: false }));
     w.answer("task.update", () => updated(w, 12));
-    void w.edits.undo();
+    void w.edits.undo(STEP);
     w.edits.edit(task(2), effortChange("M", w.levels));
     await vi.advanceTimersByTimeAsync(ASK_MS);
     await flush();
@@ -1891,7 +1969,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     // The service is down: the receipt and the second send fail on the way.
     w.answer("history.undo", down);
     w.answer("receipt.get", down);
-    void w.edits.undo();
+    void w.edits.undo(STEP);
     w.edits.edit(task(2), effortChange("M", w.levels));
     await vi.advanceTimersByTimeAsync(ASK_MS);
     await flush();
@@ -1970,14 +2048,14 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     w.answer("task.update", () => updated(w, 11));
     w.answer("history.undo", () => undone(w, 12));
     w.answer("task.update", () => updated(w, 13));
-    w.edits.edit(task(1), priorityChange(1));
+    w.edits.edit(task(1), titleChange("Renamed"));
     await flush();
     // The answer came; the feed has not named the commit yet. Undo, then another task's edit.
     w.lastToast()?.action?.run();
     w.edits.edit(task(2), effortChange("M", w.levels));
     await flush();
     expect(names(w)).toEqual(["task.update"]);
-    w.feed([task(1, { priority: 1, version: 2 })], requestOf(w, "task.update"), ["priority"]);
+    w.feed([task(1, { title: "Renamed", version: 2 })], requestOf(w, "task.update"), ["title"]);
     await flush();
     expect(w.calls.map((c) => [c.name, c.input["task"] ?? c.input["commit"]])).toEqual([
       ["task.update", "t_00001"],
@@ -1991,7 +2069,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     w.answer("task.update", () => updated(w, 11));
     w.answer("history.undo", () => undone(w, 12));
     w.answer("task.update", () => updated(w, 13));
-    w.edits.edit(task(1), priorityChange(1));
+    w.edits.edit(task(1), titleChange("Renamed"));
     await flush();
     const write = requestOf(w, "task.update");
     w.answer("receipt.get", (input) => applied(w, String(input["request"]), 11));
@@ -2168,10 +2246,10 @@ describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives 
     await vi.advanceTimersByTimeAsync(ASK_MS);
     await flush();
     w.answer("task.update", () => updated(w, 12));
-    w.edits.edit(task(1), priorityChange(2));
+    w.edits.edit(task(1), titleChange("Renamed"));
     await flush();
     const newer = w.lastToast();
-    expect(newer?.text.id).toBe("toast.priority");
+    expect(newer?.text.id).toBe("toast.title");
     two.reject?.(conflict);
     await flush();
     expect(w.lastToast()).toBe(newer);
@@ -2199,16 +2277,16 @@ describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives 
   test("a success decided late takes the not-saved line and its Try again away, and the toast offers Undo again", async () => {
     const w = new World([task(1)]);
     const first = hanging(w, "task.update");
-    w.edits.edit(task(1), priorityChange(1));
+    w.edits.edit(task(1), titleChange("Renamed"));
     await vi.advanceTimersByTimeAsync(ASK_MS);
     await flush();
     expect(w.lastToast()?.action?.label).toEqual({ id: "toast.tryAgain" });
     first.resolve?.(updated(w, 11));
     await flush();
-    expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
+    expect(w.edits.unsaved("t_00001", "title")).toBeUndefined();
     expect(w.lastToast()).toMatchObject({
       kind: "undo",
-      text: { id: "toast.priority" },
+      text: { id: "toast.title" },
       action: { label: { id: "toast.undo" } },
     });
   });
@@ -2216,7 +2294,7 @@ describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives 
   test("an undo that said it failed for want of an answer, and then turns out done, says so with Redo", async () => {
     const w = new World([task(1)]);
     const first = hanging(w, "history.undo");
-    const done = w.edits.undo();
+    const done = w.edits.undo(STEP);
     await vi.advanceTimersByTimeAsync(ASK_MS);
     await done;
     expect(w.lastToast()?.text).toEqual({ id: "toast.undoFailed" });
@@ -2230,7 +2308,7 @@ describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives 
     await flush();
     expect(w.lastToast()).toMatchObject({
       text: { id: "toast.undone" },
-      action: { label: { id: "toast.redo" } },
+      second: { label: { id: "toast.redo" } },
     });
   });
 
@@ -2250,8 +2328,8 @@ describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives 
   });
 });
 
-describe("[A7.3.12.m5-14.web-write] a folder or project write: in turn, its toast's Undo names its commit, a refusal is the caller's", () => {
-  test("waits for the edit before it, shows its toast once it applied, and Undo names its own commit", async () => {
+describe("[A7.3.12.m5-14.web-write] a write that is no field of a task: in turn, a step's toast's Undo names its commit, a refusal is the caller's", () => {
+  test("waits for the edit before it, shows its toast once it applied, and a step's Undo names its own commit; a folder's toast offers no Undo", async () => {
     const w = new World([task(1)]);
     let answerEdit!: (value: unknown) => void;
     w.answer("task.update", () => new Promise((resolve) => (answerEdit = resolve)));
@@ -2262,7 +2340,8 @@ describe("[A7.3.12.m5-14.web-write] a folder or project write: in turn, its toas
         sent.push(request);
         return Promise.resolve({ result: "set", as_of: w.asOf(12) });
       },
-      () => ({ id: "toast.folderCleared" }),
+      () => ({ id: "toast.noteRemoved", values: { ref: "M-1" } }),
+      { undo: true },
     );
     await flush();
     // The folder write waits for the edit made before it.
@@ -2277,7 +2356,7 @@ describe("[A7.3.12.m5-14.web-write] a folder or project write: in turn, its toas
     await flush();
     expect(sent).toHaveLength(1);
     expect(await written).toEqual({ result: "set", as_of: w.asOf(12) });
-    expect(w.lastToast()).toMatchObject({ kind: "undo", text: { id: "toast.folderCleared" } });
+    expect(w.lastToast()).toMatchObject({ kind: "undo", text: { id: "toast.noteRemoved" } });
     w.feed([task(1, { version: 2 })], sent[0] ?? "", []);
     w.answer("history.undo", () => ({
       result: "undone",
@@ -2292,6 +2371,13 @@ describe("[A7.3.12.m5-14.web-write] a folder or project write: in turn, its toas
       name: "history.undo",
       input: { commit: `op_${"11".padStart(26, "0")}` },
     });
+    // A folder is set again by hand: its toast says what happened and offers nothing.
+    await w.edits.write(
+      () => Promise.resolve({ result: "cleared", as_of: w.asOf(14) }),
+      () => ({ id: "toast.folderCleared" }),
+    );
+    expect(w.lastToast()).toMatchObject({ kind: "info", text: { id: "toast.folderCleared" } });
+    expect(w.lastToast()?.action).toBeUndefined();
   });
 
   test("a refusal reaches the caller and shows no toast; a write that changed nothing offers no Undo, whatever its caller would say", async () => {
@@ -2358,6 +2444,6 @@ describe("[A7.3.12.m5-14.web-write] a folder or project write: in turn, its toas
     await vi.advanceTimersByTimeAsync(ASK_MS);
     await flush();
     expect(await written).toEqual({ result: "updated", as_of: w.asOf(11), receipt: true });
-    expect(w.lastToast()).toMatchObject({ kind: "undo", text: { id: "toast.folderCleared" } });
+    expect(w.lastToast()).toMatchObject({ text: { id: "toast.folderCleared" } });
   });
 });

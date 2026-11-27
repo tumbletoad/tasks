@@ -234,7 +234,7 @@ export function EffortLevels({ headingClass }: { readonly headingClass: string }
             mode: "apply",
           }),
         (result) => savedMsg(edit, result),
-        { overlay: overlayOf(write, live.getState().tasks) },
+        { overlay: overlayOf(write, live.getState().tasks), undo: true },
       )
       .then(
         (): Outcome => {
