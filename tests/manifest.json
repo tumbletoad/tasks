@@ -5856,6 +5856,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.12.e2e.checkoff-pending",
+      "title": "In Chromium and Firefox against the real service: with the answer to a check-off held past the hold, an expanded card and a collapsed search result stay checked, and neither shows open again once the answer and the feed come",
+      "source": "A5 3.12, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.12.e2e.checkoff-leaves",
       "title": "In Chromium and Firefox against the real service, in a list of a few hundred tasks: a check-off shows the row checked and takes it away while its answer is held, and a move to the Trash by its key takes it away at once; neither row shows open again once the answer and the feed come",
       "source": "A5 3.12, A5 3.15",

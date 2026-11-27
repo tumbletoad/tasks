@@ -1061,8 +1061,10 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
     });
     expect(w.edits.getState().leaving.get("t_00001")).toMatchObject({ done: true, out: false });
     expect(w.lastToast()).toMatchObject({ kind: "undo", text: { id: "toast.done" } });
-    // The store's row goes at once: only the hold shows it, checked.
+    // The store's row goes at once: only the hold shows it, checked, and every view of the task
+    // shows it finished until the write is confirmed.
     expect(w.row("t_00001")).toBeUndefined();
+    expect(w.edits.getState().finishing.get("t_00001")?.lifecycle).toBe("completed");
     expect(HOLD_MS + COLLAPSE_MS).toBeLessThan(600);
     await vi.advanceTimersByTimeAsync(HOLD_MS);
     expect(w.edits.getState().leaving.get("t_00001")?.out).toBe(true);
@@ -1082,7 +1084,10 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
     await flush();
     expect(w.row("t_00001")).toBeUndefined();
     const request = String(w.calls[0]?.input["request_id"]);
+    expect(w.edits.getState().finishing.has("t_00001")).toBe(true);
     w.feed([task(1, { lifecycle: "completed", version: 2 })], request, ["lifecycle"]);
+    await flush();
+    expect(w.edits.getState().finishing.has("t_00001")).toBe(false);
     w.edits.hold(task(1), undefined, 0, request);
     expect(w.row("t_00001")).toBeUndefined();
     expect(w.edits.getState().leaving.has("t_00001")).toBe(false);

@@ -1,6 +1,7 @@
-// A check-off and a move to the Trash in a list of a few hundred tasks, against the real service in
-// Chromium and Firefox: the row shows checked and leaves while the write is still on its way, and
-// never shows open again, however late the answer comes. The page's answer is held with a route;
+// A check-off and a move to the Trash, against the real service in Chromium and Firefox: in a list
+// of a few hundred tasks the row shows checked and leaves while the write is still on its way, an
+// expanded card and a search result stay checked, and none shows open again, however late the
+// answer comes. The page's answer is held with a route;
 // each frame's state of the row is recorded in the page. Fixture data only.
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
@@ -69,6 +70,61 @@ test.describe("[A5.3.12.e2e.checkoff-leaves] A checked-off task leaves at once a
     } finally {
       await world.close();
     }
+  });
+});
+
+test.describe("[A5.3.12.e2e.checkoff-pending] A task checked off in its card or in Search stays checked while its write is on its way", () => {
+  test("with the answer held past the hold, an expanded card and a search result stay checked, and never show open", async ({
+    page,
+    world,
+  }) => {
+    const word = `marigold${test.info().project.name}${String(test.info().workerIndex)}`;
+    const added = (await world.op(world.mira.id, "task.add", {
+      tasks: [
+        { title: `Water the ${word} bed`, area: "home" },
+        { title: `Feed the ${word} pots`, area: "home" },
+      ],
+    })) as { tasks: { ref: string }[] };
+    const [card, found] = added.tasks.map((task) => task.ref);
+    if (card === undefined || found === undefined) throw new Error("the tasks were not added");
+    const lifecycleOf = async (task: string) =>
+      ((await world.op(world.mira.id, "task.get", { task })) as { task: { lifecycle: string } })
+        .task.lifecycle;
+    // The page's own clock: the hold ends when the test moves it, whatever the machine's speed.
+    await page.clock.install();
+
+    // The card, expanded from its link.
+    await signIn(page, world, `/s/${world.mira.id}/task/${card}`);
+    await showsSpace(page, world.mira.name);
+    const cardRow = rowOf(page, card);
+    await expect(cardRow.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true", {
+      timeout: SLOW_MS,
+    });
+    let release = await hold(page, "task.finish");
+    let seen = await watchRow(page, card);
+    await cardRow.locator('[data-part="check"]').first().click();
+    await page.clock.runFor(2_000);
+    await expect(cardRow.locator('[data-part="check"]').first()).toBeChecked();
+    release();
+    await expect.poll(() => lifecycleOf(card)).toBe("completed");
+    await expect(cardRow.locator('[data-part="check"]').first()).toBeChecked();
+    expect(await seen()).toEqual(["open", "checked"]);
+    await page.unroute("**/api/v1/op/task.finish");
+
+    // A search result, collapsed.
+    await page.goto(`${world.origin}/s/${world.mira.id}/search?q=${word}`);
+    const foundRow = rowOf(page, found);
+    await expect(foundRow).toBeVisible({ timeout: SLOW_MS });
+    release = await hold(page, "task.finish");
+    seen = await watchRow(page, found);
+    await foundRow.locator('[data-part="check"]').click();
+    await page.clock.runFor(2_000);
+    await expect(foundRow.locator('[data-part="check"]')).toBeChecked();
+    release();
+    await expect.poll(() => lifecycleOf(found)).toBe("completed");
+    await expect(foundRow.locator('[data-part="check"]')).toBeChecked();
+    expect(await seen()).toEqual(["open", "checked"]);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 });
 

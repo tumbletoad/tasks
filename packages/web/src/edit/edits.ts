@@ -139,6 +139,11 @@ export interface EditState {
    */
   readonly retrying: ReadonlyMap<string, Unsaved>;
   readonly leaving: ReadonlyMap<string, Leaving>;
+  /**
+   * The tasks this tab checked off or moved to the Trash, as that write leaves them, until it is
+   * confirmed or refused: every view of such a task shows it so, never an older copy of its own.
+   */
+  readonly finishing: ReadonlyMap<string, TaskRow>;
 }
 
 /** Someone else changed a field while an editor was open (A5 3.15 item 9). */
@@ -542,7 +547,12 @@ export class Edits {
   readonly #deps: EditDeps;
   readonly #listeners = new Set<() => void>();
   readonly #toastListeners = new Set<(toast: Toast | undefined) => void>();
-  #state: EditState = { unsaved: new Map(), retrying: new Map(), leaving: new Map() };
+  #state: EditState = {
+    unsaved: new Map(),
+    retrying: new Map(),
+    leaving: new Map(),
+    finishing: new Map(),
+  };
   /** The newest write's turn per task, until its outcome is known: the next edit waits for it. */
   readonly #chains = new Map<string, Turn>();
   /**
@@ -854,6 +864,7 @@ export class Edits {
     );
     this.#checks.set(task.id, sent);
     this.#checkedOff.add(sent.request);
+    this.#finishing(sent, { ...task, lifecycle: "completed", completed_at: Date.now() });
     const done: Omit<Toast, "key"> = {
       kind: "undo",
       text: { id: "toast.done" },
@@ -952,6 +963,7 @@ export class Edits {
         this.#deps.client.task.delete({ tasks: [task.id], base: base ?? "", request_id: request }),
       { tasks: [{ id: task.id, remove: true }] },
     );
+    this.#finishing(sent, { ...task, deleted_at: Date.now() });
     const moved: Omit<Toast, "key"> = {
       kind: "undo",
       text: {
@@ -1776,6 +1788,18 @@ export class Edits {
     for (const each of unsaved.change.fields) next.delete(keyOf(task, each));
     next.delete(keyOf(task, field));
     this.#set({ ...this.#state, unsaved: next });
+  }
+
+  /** `row` is how the views show the task until `sent` is confirmed or refused. */
+  #finishing(sent: Pick<Sent<unknown>, "settled">, row: TaskRow): void {
+    this.#set({ ...this.#state, finishing: new Map(this.#state.finishing).set(row.id, row) });
+    const done = () => {
+      if (this.#state.finishing.get(row.id) !== row) return;
+      const finishing = new Map(this.#state.finishing);
+      finishing.delete(row.id);
+      this.#set({ ...this.#state, finishing });
+    };
+    sent.settled.then(done, done);
   }
 
   #leave(row: TaskRow, who: { by?: string; at?: number }): void {
