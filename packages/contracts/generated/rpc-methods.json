@@ -4964,6 +4964,10 @@
                       "description": "The instance of its newest Open that was not refused",
                       "type": "string"
                     },
+                    "open_route": {
+                      "description": "How that Open opened: t3-mcp names T3 Code also when its instance is gone",
+                      "type": "string"
+                    },
                     "run": {
                       "description": "The instance of its newest run",
                       "type": "string"
@@ -7767,6 +7771,10 @@
                   "properties": {
                     "open": {
                       "description": "The instance of its newest Open that was not refused",
+                      "type": "string"
+                    },
+                    "open_route": {
+                      "description": "How that Open opened: t3-mcp names T3 Code also when its instance is gone",
                       "type": "string"
                     },
                     "run": {
