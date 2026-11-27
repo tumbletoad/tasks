@@ -7,7 +7,7 @@
 import { expect, type Page } from "@playwright/test";
 import { beforeMidnight, day, onOneDay } from "./days.ts";
 import { test } from "./fixture.ts";
-import { axeFound, picture, pictures, showsSpace, signIn, themes } from "./page.ts";
+import { axeFound, picture, pictures, showsSpace, signIn, stopClock, themes } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const adding = (page: Page) => page.getByRole("textbox", { name: "New task" });
@@ -480,6 +480,30 @@ test.describe("[A5.3.13.e2e.search-now] A search result changes the task as it s
 });
 
 test.describe("[A5.3.13.e2e.search-address] What the person types in the top field stays out of the address", () => {
+  test("a result opened while typing stays expanded when the refined query lands", async ({
+    page,
+    world,
+  }) => {
+    const word = wordOf("mulberry");
+    const query = `${word} jam`;
+    const [ref] = await addTasks(world, [{ title: query, area: "home" }]);
+    await page.clock.install();
+    await openSearch(page, world, word);
+    const title = titles(page, "To do").filter({ hasText: query });
+    await expect(title).toBeVisible();
+    await stopClock(page);
+    await searching(page).fill(query);
+    await title.click();
+    const address = `${world.origin}/s/${world.mira.id}/search?task=${ref ?? ""}`;
+    await expect(page).toHaveURL(address);
+
+    await page.clock.resume();
+    await expect(page.getByRole("button", { name: `Add “${query}” as a task` })).toBeVisible();
+    await expect(page).toHaveURL(address);
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+    await picture(page, "search-opened-during-typing.png");
+  });
+
   test("a draft switched to search, the search typed on and its expanded result: the address holds none of the words; a reload, Back and Forward bring the search back", async ({
     page,
     world,
@@ -501,6 +525,9 @@ test.describe("[A5.3.13.e2e.search-address] What the person types in the top fie
     const entries = await page.evaluate(() => history.length);
     await searching(page).fill("");
     await searching(page).pressSequentially(word);
+    await expect(
+      page.getByRole("button", { name: `Add “${word}” as a task`, exact: true }),
+    ).toBeVisible();
     await expect(titles(page, "To do")).toHaveCount(2);
     await expect(page).toHaveURL(address);
     expect(await page.evaluate(() => history.length)).toBe(entries);
