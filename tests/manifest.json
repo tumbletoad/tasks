@@ -2327,8 +2327,15 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.entry.correct.web.whole",
+      "title": "A context, note or log entry longer than the pages the card read so far is marked partial, and whole once the rest is read: the card opens a box only on a whole text",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.entry.correct.web.thread",
-      "title": "In the thread, every note and log entry has a pen named for whose words it edits, a session's entry and a card that only reads none; the pen opens the words in a focused box, Enter saves them from the base and the entry shows them at once; Escape lets them go; words not sent come back in the box after a reload; a refused save keeps the box open with the words and says why; a corrected entry says who corrected it",
+      "title": "In the thread, every note and log entry has a pen that opens its words, a session's entry and a card that only reads none; Enter saves the words exactly as typed from the base and the entry shows them at once; a box the person did not change writes nothing, also when the words changed under it; words not sent come back after a reload; a refused save is never sent again: the box closes on the words as they are now and the person's wait under them, also after a reload, until discarded; an entry held only in part opens no box; a corrected entry says who corrected it",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

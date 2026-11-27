@@ -1,31 +1,50 @@
 // The person's correction of a task's text in place: its summary, its context, and the words of
-// any note or log entry, whoever wrote them. A pen opens the words as an editable box where they
-// stand. Enter saves (Shift+Enter is a new line), Escape lets go, and leaving the box saves, as the
-// title's editor does. What is typed is kept in this browser (unsent.ts) until the service holds
-// it: after a reload the box opens again with it. The save is made from where the page was when
-// the box opened, so a change someone made meanwhile is a refusal, never overwritten; the box then
-// keeps the person's words and says why, and only a second Enter saves them over what is there now.
+// any note or log entry, whoever wrote them. A pen opens the whole text as an editable box where it
+// stands; a text the card holds only in part has no box to save from. Enter saves the words as
+// typed (Shift+Enter is a new line), Escape lets go, and leaving the box saves, as the title's
+// editor does; a box whose words the person did not change writes nothing. What is typed is kept
+// in this browser (unsent.ts) until the service holds it: after a reload the box opens again with
+// it. The save is made from where the page was when the box opened, so a change someone made
+// meanwhile is a refusal, never overwritten: the box closes on the text as it is now, and the
+// person's words wait under it as not saved, with Copy and Discard.
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
+import unsaved from "../edit/Unsaved.module.css";
 import { refusalText } from "../folder/FolderDialog.tsx";
 import { useT } from "../i18n/intl.tsx";
 import { PencilIcon } from "../row/icons.tsx";
 import {
+  keepRefusedText,
   keepTextDraft,
   letGo,
   pageLeaving,
   readTextDraft,
-  wordsOf,
+  useRefusedTexts,
   type TextDraft,
   type TextPart,
 } from "../unsent.ts";
 import css from "./TextEditor.module.css";
 
-const styles = classes(css, ["pen", "box", "field", "status"]);
+const styles = classes(css, ["pen", "box", "field"]);
+const line = classes(unsaved, ["line", "why", "act", "value"]);
 
-/** The pen that opens a text for the person to correct: always in sight, named for what it edits. */
-export function Pen({ label, onPress }: { readonly label: string; readonly onPress: () => void }) {
+/** A log entry's own limit, the writer's: shorter than a note's or a context's. */
+export const LOG_MAX = 16_384;
+
+/**
+ * The pen that opens a text for the person to correct: always in sight, named for what it edits.
+ * With `why`, it opens nothing and its tip says why.
+ */
+export function Pen({
+  label,
+  onPress,
+  why,
+}: {
+  readonly label: string;
+  readonly onPress: () => void;
+  readonly why?: string | undefined;
+}) {
   const t = useT();
   return (
     <button
@@ -33,11 +52,13 @@ export function Pen({ label, onPress }: { readonly label: string; readonly onPre
       className={styles.pen}
       data-part="pen"
       aria-label={label}
-      data-tip={t("text.edit")}
+      aria-disabled={why === undefined ? undefined : true}
+      {...(why === undefined ? {} : { "aria-description": why })}
+      data-tip={why ?? t("text.edit")}
       onClick={(event) => {
         // The text around it asks an agent on a click: the pen only edits.
         event.stopPropagation();
-        onPress();
+        if (why === undefined) onPress();
       }}
     >
       <PencilIcon />
@@ -64,7 +85,7 @@ export function useEditing(
     if (!editable) return;
     const kept = readTextDraft(space, task, part);
     if (kept === undefined) return;
-    if (wordsOf(kept.typed) !== wordsOf(latest.current)) setOpen(true);
+    if (kept.typed !== latest.current) setOpen(true);
     else letGo(space, { kind: "text", task, part, text: kept.typed });
   }, [editable, space, task, part]);
   return [open && editable, setOpen];
@@ -86,22 +107,74 @@ export function useSaved(text: string): readonly [string, (words: string | undef
   ];
 }
 
+/**
+ * The person's words for `part` that the service refused, each on a line under the text: not
+ * saved, with Copy and Discard. They are put in by opening the pen again on the text as it is now.
+ */
+export function NotSaved({
+  space,
+  task,
+  part,
+}: {
+  readonly space: string;
+  readonly task: string;
+  readonly part: TextPart;
+}) {
+  const t = useT();
+  const say = useToast();
+  return useRefusedTexts(space, task, part).map(({ tab, typed }) => (
+    <span key={tab} className={line.line} data-part="not-saved" role="status">
+      <span className={line.why}>{t("edit.notSaved")}</span>
+      <span className={line.value} dir="auto" data-part="not-saved-value">
+        {typed}
+      </span>
+      <button
+        type="button"
+        className={line.act}
+        aria-label={t("edit.copyValue", { value: typed })}
+        onClick={() => {
+          navigator.clipboard.writeText(typed).then(
+            () => {
+              say(t("row.copied"));
+            },
+            () => {
+              say(t("row.copyFailed"));
+            },
+          );
+        }}
+      >
+        {t("row.copy")}
+      </button>
+      <button
+        type="button"
+        className={line.act}
+        data-part="discard-not-saved"
+        onClick={() => {
+          letGo(space, { kind: "text", task, part, text: typed, tab, refused: true });
+        }}
+      >
+        {t("edit.discard")}
+      </button>
+    </span>
+  ));
+}
+
 export interface TextEditorProps {
   readonly space: string;
   readonly task: string;
   readonly part: TextPart;
   /** The box's name for a screen reader. */
   readonly label: string;
-  /** The words as the card shows them now. */
+  /** The whole text as the card shows it now. */
   readonly text: string;
   /** One line, as the summary is: Enter saves and no new line is typed. */
   readonly line?: boolean;
   readonly max: number;
   /** Where the page is now: the base of a save made from here. */
-  readonly base: () => string | undefined;
+  readonly base: string | undefined;
   /** Saves the words from `base`: resolves once the service holds them, rejects with its refusal. */
   readonly save: (words: string, base: string | undefined) => Promise<unknown>;
-  /** The box closes: with the words saved, or with none when the person let go. */
+  /** The box closes: with the words saved, or with none. */
   readonly onDone: (saved: string | undefined) => void;
 }
 
@@ -111,7 +184,7 @@ export function TextEditor({
   part,
   label,
   text,
-  line = false,
+  line: single = false,
   max,
   base,
   save,
@@ -122,19 +195,20 @@ export function TextEditor({
   const field = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
   // Taken once, as the box opens: the words it began from and the base of their save, also when a
   // reload brought back what was typed.
-  const [opened] = useState((): TextDraft => {
-    const kept = readTextDraft(space, task, part);
-    const now = base();
-    return kept ?? { typed: text, before: text, ...(now === undefined ? {} : { base: now }) };
-  });
-  const from = useRef(opened.base);
-  /** A save on its way: the box takes no other until it is answered. */
+  const [opened] = useState(
+    (): TextDraft =>
+      readTextDraft(space, task, part) ?? {
+        typed: text,
+        before: text,
+        ...(base === undefined ? {} : { base }),
+      },
+  );
+  /** A save on its way: the box takes no other. */
   const sending = useRef(false);
   const [saving, setSaving] = useState(false);
-  const [refused, setRefused] = useState<string>();
   const fit = () => {
     const box = field.current;
-    if (line || box === null) return;
+    if (single || box === null) return;
     box.style.height = "auto";
     box.style.height = `${String(box.scrollHeight + 2)}px`;
   };
@@ -144,19 +218,13 @@ export function TextEditor({
     box?.focus({ preventScroll: true });
     box?.setSelectionRange(box.value.length, box.value.length);
   }, []);
+  const draft = (typed: string): TextDraft => ({
+    typed,
+    before: opened.before,
+    ...(opened.base === undefined ? {} : { base: opened.base }),
+  });
   const keep = (typed: string) => {
-    keepTextDraft(
-      space,
-      task,
-      part,
-      typed === opened.before
-        ? undefined
-        : {
-            typed,
-            before: opened.before,
-            ...(from.current === undefined ? {} : { base: from.current }),
-          },
-    );
+    keepTextDraft(space, task, part, typed === opened.before ? undefined : draft(typed));
   };
   const release = () => {
     const kept = readTextDraft(space, task, part);
@@ -165,30 +233,26 @@ export function TextEditor({
   const finish = (send: boolean) => {
     if (sending.current) return;
     const typed = field.current?.value ?? "";
-    const words = line ? typed.trim() : wordsOf(typed);
-    // Nothing to save: an emptied text is taken back with its own control, not by clearing it.
-    if (!send || words === "" || words === wordsOf(text)) {
+    // Nothing the person changed, or nothing at all, is never sent: an emptied text is taken back
+    // with its own control, and a box opened over words that changed since writes nothing.
+    if (!send || typed === opened.before || typed.trim() === "") {
       release();
       onDone(undefined);
       return;
     }
     sending.current = true;
     setSaving(true);
-    save(words, from.current).then(
+    save(typed, opened.base).then(
       () => {
         letGo(space, { kind: "text", task, part, text: typed });
-        onDone(words);
+        onDone(typed);
       },
       (error: unknown) => {
-        // Refused: the words stay, kept, and the next save is made from what the page shows now.
-        const why = refusalText(error, t("text.notSaved"));
-        sending.current = false;
-        setSaving(false);
-        setRefused(why);
-        from.current = base();
-        keep(typed);
-        say(why);
-        field.current?.focus({ preventScroll: true });
+        // Refused: never sent again from here. The words wait under the text as not saved.
+        keepRefusedText(space, task, part, draft(typed));
+        release();
+        say(refusalText(error, t("text.notSaved")));
+        onDone(undefined);
       },
     );
   };
@@ -204,7 +268,6 @@ export function TextEditor({
     dir: "auto",
     onInput: (event: { currentTarget: { value: string } }) => {
       keep(event.currentTarget.value);
-      setRefused(undefined);
       fit();
     },
     onKeyDown: (event: KeyboardEvent) => {
@@ -221,19 +284,13 @@ export function TextEditor({
     },
     onBlur: () => {
       // The window lost focus or the page goes away: the box keeps what was typed for its return.
-      // After a refusal only Enter saves over what is there now, never a click elsewhere.
-      if (!document.hasFocus() || pageLeaving() || refused !== undefined) return;
+      if (!document.hasFocus() || pageLeaving()) return;
       finish(true);
     },
   };
   return (
     <div className={styles.box} data-part="text-editor">
-      {line ? <input {...props} /> : <textarea {...props} rows={1} />}
-      {refused === undefined ? null : (
-        <p className={styles.status} role="status" data-part="text-refused">
-          {refused}
-        </p>
-      )}
+      {single ? <input {...props} /> : <textarea {...props} rows={1} />}
     </div>
   );
 }

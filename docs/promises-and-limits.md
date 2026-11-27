@@ -236,7 +236,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - You can correct the words of a task's summary and context and of any note or log entry in its
   thread, whoever wrote them, behind the pen beside them. The words before stay in the history and
   Undo puts them back; a corrected note or entry says that you corrected it. Agents read the
-  corrected words from then on, and no agent tool rewrites what someone else wrote.
+  corrected words from then on, and no agent tool rewrites what someone else wrote. A correction
+  always holds the whole text, and one refused because the words changed meanwhile is never sent
+  again: your words wait under the text as not saved, to copy or discard.
 - A question an agent logs on a task, or a background run ends with, waits for you under Needs you
   on the Agents page, also once the task is finished or dropped, until you write a note on the task
   after it or dismiss it. A run's question is also answered by a run you start after it that gets

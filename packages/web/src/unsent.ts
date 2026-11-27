@@ -259,6 +259,8 @@ export function useKeptTitles(space: string, task: string): readonly KeptTitle[]
 
 // A text being typed in place of a task's own: its summary, its context, or the words of a note or
 // a log entry. Each tab keeps its own, as for a title, under the text's part and the tab's name.
+// Words the service refused are kept apart, not saved, until the person copies or discards them:
+// the editor opens again on the text as it is now, and a new draft never takes their place.
 
 /** What a text editor corrects: the summary, the context, or an entry by reference (n3, l4). */
 export type TextPart = "summary" | "context" | `${"n" | "l"}${number}`;
@@ -285,8 +287,10 @@ function textOf(value: unknown): TextDraft | undefined {
   return { typed, before, ...(typeof base === "string" ? { base } : {}) };
 }
 
-const textName = (space: string, task: string, part: TextPart, tab = TAB) =>
-  `${textPrefix(space, task)}${part}.${tab}`;
+const REFUSED = "refused";
+
+const textName = (space: string, task: string, part: TextPart, tab = TAB, refused = false) =>
+  `${textPrefix(space, task)}${part}.${tab}${refused ? `.${REFUSED}` : ""}`;
 
 /** What this tab typed in place of the task's text `part`, if it kept any. */
 export function readTextDraft(space: string, task: string, part: TextPart): TextDraft | undefined {
@@ -303,21 +307,53 @@ export function keepTextDraft(
   keep(textName(space, task, part), draft === undefined ? undefined : JSON.stringify(draft));
 }
 
-/** Every text kept for the task, of every tab, with its part. */
-function keptTexts(
+/** Keeps words of this tab's that the service refused for `part`: not saved, until let go. */
+export function keepRefusedText(
   space: string,
   task: string,
-): { readonly part: TextPart; readonly tab: string; readonly draft: TextDraft }[] {
+  part: TextPart,
+  draft: TextDraft,
+): void {
+  keep(textName(space, task, part, TAB, true), JSON.stringify(draft));
+}
+
+interface KeptText {
+  readonly part: TextPart;
+  readonly tab: string;
+  readonly draft: TextDraft;
+  /** The service refused these words: they wait as not saved. */
+  readonly refused: boolean;
+}
+
+/** Every text kept for the task, of every tab, with its part. */
+function keptTexts(space: string, task: string): KeptText[] {
   const prefix = textPrefix(space, task);
   return browserKept
     .names(prefix)
     .sort()
     .flatMap((name) => {
-      const [part = "", tab = "", ...rest] = name.slice(prefix.length).split(".");
+      const [part = "", tab = "", flag, ...rest] = name.slice(prefix.length).split(".");
       if (rest.length > 0 || !isTextPart(part) || !TAB_NAME.test(tab)) return [];
+      if (flag !== undefined && flag !== REFUSED) return [];
       const draft = textOf(browserKept.json(name));
-      return draft === undefined ? [] : [{ part, tab, draft }];
+      return draft === undefined ? [] : [{ part, tab, draft, refused: flag === REFUSED }];
     });
+}
+
+/** The refused words kept for the task's `part`, of every tab, as they come and go. */
+export function useRefusedTexts(
+  space: string,
+  task: string,
+  part: TextPart,
+): readonly { readonly tab: string; readonly typed: string }[] {
+  const kept = useSyncExternalStore(onUnsent, () =>
+    JSON.stringify(
+      keptTexts(space, task)
+        .filter((text) => text.refused && text.part === part)
+        .map(({ tab, draft }) => ({ tab, typed: draft.typed })),
+    ),
+  );
+  return useMemo(() => JSON.parse(kept) as { tab: string; typed: string }[], [kept]);
 }
 
 /**
@@ -528,6 +564,8 @@ export type Unsent =
       readonly text: string;
       /** The tab that typed it. */
       readonly tab: string;
+      /** The service refused it. */
+      readonly refused: boolean;
     }
   | {
       readonly kind: "edit";
@@ -580,9 +618,10 @@ export function unsentOf(space: string): Unsent[] {
   }
   for (const task of new Set(after(`text.${space}.`).map(editTask))) {
     if (task === "") continue;
-    for (const { part, tab, draft } of keptTexts(space, task)) {
+    for (const { part, tab, draft, refused } of keptTexts(space, task)) {
       if (draft.typed.trim() === "") continue;
-      out.push({ kind: "text", key: `${task}:${part}:${tab}`, task, part, text: draft.typed, tab });
+      const key = `${task}:${part}:${tab}${refused ? ":refused" : ""}`;
+      out.push({ kind: "text", key, task, part, text: draft.typed, tab, refused });
     }
   }
   for (const { unsaved, value } of keptEditsOf(space)) {
@@ -645,6 +684,7 @@ export type Held =
       readonly part: TextPart;
       readonly text: string;
       readonly tab?: string;
+      readonly refused?: boolean;
     }
   | {
       readonly kind: "edit";
@@ -671,7 +711,7 @@ export function letGo(space: string, held: Held): void {
       return;
     }
     case "text": {
-      const name = textName(space, held.task, held.part, held.tab);
+      const name = textName(space, held.task, held.part, held.tab, held.refused);
       if (textOf(browserKept.json(name))?.typed === held.text) keep(name, undefined);
       return;
     }

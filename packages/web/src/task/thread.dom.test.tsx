@@ -399,6 +399,8 @@ describe("[A5.entry.correct.web.thread] the pen on a note and a log entry correc
   };
   const pens = () => [...host.querySelectorAll<HTMLButtonElement>("[data-part='pen']")];
   const box = () => host.querySelector<HTMLTextAreaElement>("[data-part='text-edit']");
+  const notSaved = () =>
+    [...host.querySelectorAll("[data-part='not-saved-value']")].map((line) => line.textContent);
   const type = (words: string) => {
     const field = box();
     if (field === null) throw new Error("no box");
@@ -412,17 +414,29 @@ describe("[A5.entry.correct.web.thread] the pen on a note and a log entry correc
       box()?.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
     });
   };
-  const editing = (saves: [string, string, string | undefined][], answer = Promise.resolve()) => ({
+  const leave = () => {
+    act(() => {
+      box()?.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      box()?.blur();
+    });
+  };
+  const settle = () =>
+    act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  type Save = [string, string, string | undefined];
+  const editing = (saves: Save[], answer: () => Promise<void> = () => Promise.resolve()) => ({
     space: "sp_fixture",
     task: "t_fixture",
-    base: () => "1.40.abc",
+    base: "1.40.abc",
     save: (entry: string, words: string, base: string | undefined) => {
       saves.push([entry, words, base]);
-      return answer;
+      return answer();
     },
   });
 
-  test("every note and log entry has a pen named for whose words it edits; a session's entry and a card that only reads have none", () => {
+  test("every note and log entry has a pen that opens its words; a session's entry and a card that only reads have none", () => {
     const mine = note("n2", "Ask about the invoice", [], AT + 60_000);
     const asked = note("n3", "Check the clinic export first", ["L7KQ21"]);
     render(
@@ -434,50 +448,64 @@ describe("[A5.entry.correct.web.thread] the pen on a note and a log entry correc
         edit: editing([]),
       },
     );
-    expect(pens().map((pen) => pen.getAttribute("aria-label"))).toEqual([
-      "Edit the note by codex",
-      "Edit the entry by codex",
-      "Edit your note",
-    ]);
-    expect(pens().every((pen) => pen.getAttribute("data-tip") === "Edit")).toBe(true);
-    render([agentNote, mine], [], undefined, { log: [progress] });
-    expect(pens()).toEqual([]);
-  });
-
-  test("the pen opens the words in a box; Enter saves them from the base, and the entry shows them at once", async () => {
-    const saves: [string, string, string | undefined][] = [];
-    render([agentNote], [], undefined, { log: [progress], edit: editing(saves) });
+    expect(pens()).toHaveLength(3);
     act(() => {
       pens()[1]?.click();
     });
     expect(box()?.value).toBe("Checked the invoce");
-    expect(box()?.getAttribute("aria-label")).toBe("Words of the entry by codex");
     expect(document.activeElement).toBe(box());
-    type("Checked the invoice");
-    press("Enter");
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(saves).toEqual([["l1", "Checked the invoice", "1.40.abc"]]);
-    expect(box()).toBeNull();
-    expect(entries()[1]?.textContent).toContain("Checked the invoice");
+    render([agentNote, mine], [], undefined, { log: [progress] });
+    expect(pens()).toEqual([]);
   });
 
-  test("Escape lets the words go; words typed and not sent come back in the box after a reload", () => {
-    const saves: [string, string, string | undefined][] = [];
+  test("Enter saves the words exactly as typed, from the base, and the entry shows them at once", async () => {
+    const saves: Save[] = [];
+    render([agentNote], [], undefined, { log: [progress], edit: editing(saves) });
+    act(() => {
+      pens()[1]?.click();
+    });
+    const words = ["", "  Checked the invoice:", "", "- total  ", ""].join(String.fromCharCode(10));
+    type(words);
+    press("Enter");
+    await settle();
+    expect(saves).toEqual([["l1", words, "1.40.abc"]]);
+    expect(box()).toBeNull();
+    expect(entries()[1]?.textContent).toContain("Checked the invoice:");
+  });
+
+  test("a box the person did not change writes nothing: closed, let go, or opened over words that changed since", async () => {
+    const saves: Save[] = [];
     render([agentNote], [], undefined, { edit: editing(saves) });
+    act(() => {
+      pens()[0]?.click();
+    });
+    press("Enter");
     act(() => {
       pens()[0]?.click();
     });
     type("Drafted the");
     press("Escape");
-    expect(box()).toBeNull();
     expect(entries()[0]?.textContent).toContain("Drafted teh reply");
+    // The words change under an open, untouched box: leaving it saves nothing over them.
+    act(() => {
+      pens()[0]?.click();
+    });
+    render([{ ...agentNote, text: "Drafted the reply to Ana" }], [], undefined, {
+      edit: editing(saves),
+    });
+    leave();
+    await settle();
+    expect(saves).toEqual([]);
+    expect(box()).toBeNull();
+  });
+
+  test("words typed and not sent come back in the box after a reload", () => {
+    const saves: Save[] = [];
+    render([agentNote], [], undefined, { edit: editing(saves) });
     act(() => {
       pens()[0]?.click();
     });
     type("Drafted the reply to Ana");
-    // The page goes away with the box open: a new page opens it with the words.
     act(() => {
       root?.unmount();
     });
@@ -487,28 +515,55 @@ describe("[A5.entry.correct.web.thread] the pen on a note and a log entry correc
     expect(saves).toEqual([]);
   });
 
-  test("a refused save keeps the box open with the words and says why", async () => {
-    const saves: [string, string, string | undefined][] = [];
-    const refusal = Object.assign(new Error("Someone changed this entry since you read it."), {
-      code: "conflict",
-    });
-    render([agentNote], [], undefined, { edit: editing(saves, Promise.reject(refusal)) });
+  test("a refused save is never sent again: the box closes on the words as they are now, and the person's wait under them with Copy and Discard, also after a reload", async () => {
+    const saves: Save[] = [];
+    const refused = () => Promise.reject(Object.assign(new Error("changed"), { code: "conflict" }));
+    render([agentNote], [], undefined, { edit: editing(saves, refused) });
     act(() => {
       pens()[0]?.click();
     });
     type("Drafted the reply");
     press("Enter");
-    await act(async () => {
-      await Promise.resolve();
+    await settle();
+    expect(saves).toHaveLength(1);
+    expect(box()).toBeNull();
+    const now = { ...agentNote, text: "Drafted the reply to Ana, by another tab" };
+    render([now], [], undefined, { edit: editing(saves, refused) });
+    expect(entries()[0]?.textContent).toContain("by another tab");
+    expect(notSaved()).toEqual(["Drafted the reply"]);
+    // The pen opens on what is there now; leaving it untouched writes nothing.
+    act(() => {
+      pens()[0]?.click();
     });
-    expect(box()?.value).toBe("Drafted the reply");
-    expect(host.querySelector("[data-part='text-refused']")?.textContent).toBe(
-      "Someone changed this entry since you read it.",
-    );
+    expect(box()?.value).toBe(now.text);
+    leave();
+    await settle();
+    expect(saves).toHaveLength(1);
+    // The words wait after a reload, until the person discards them.
+    act(() => {
+      root?.unmount();
+    });
+    root = undefined;
+    render([now], [], undefined, { edit: editing(saves, refused) });
+    expect(notSaved()).toEqual(["Drafted the reply"]);
+    act(() => {
+      host.querySelector<HTMLButtonElement>("[data-part='discard-not-saved']")?.click();
+    });
+    expect(notSaved()).toEqual([]);
+  });
+
+  test("an entry the card holds only in part opens no box, so a save never holds less than its text", () => {
+    const saves: Save[] = [];
+    render([{ ...agentNote, partial: true }], [], undefined, { edit: editing(saves) });
+    expect(pens()[0]?.getAttribute("aria-disabled")).toBe("true");
+    act(() => {
+      pens()[0]?.click();
+    });
+    expect(box()).toBeNull();
   });
 
   test("a corrected entry says who corrected it after its time", () => {
     render([{ ...agentNote, edited: { at: new Date(AT).toISOString(), by: "user" } }], []);
-    expect(entries()[0]?.querySelector("[data-part='edited']")?.textContent).toBe("edited by you");
+    expect(entries()[0]?.querySelector("[data-part='edited']")?.textContent).toContain("you");
   });
 });

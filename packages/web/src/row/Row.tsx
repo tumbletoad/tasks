@@ -28,7 +28,7 @@ import { is } from "../keys/keymap.ts";
 import { useIntl } from "react-intl";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 import { Expanded } from "../task/Expanded.tsx";
-import { Pen, TextEditor, useEditing, useSaved } from "../task/TextEditor.tsx";
+import { NotSaved, Pen, TextEditor, useEditing, useSaved } from "../task/TextEditor.tsx";
 import { useTextWrites } from "../task/textWrites.ts";
 import { agentMarker } from "../task/runs.ts";
 import { placeFact, sourceFacts } from "../task/sources.ts";
@@ -797,7 +797,7 @@ function RowView({
               text={summary}
               line
               max={SUMMARY_MAX}
-              base={() => edits.seen(task, ["summary"])}
+              base={edits.seen(task, ["summary"])}
               save={(words, base) => writes.summary(task, words, base)}
               onDone={(words) => {
                 setSummed(words);
@@ -843,6 +843,7 @@ function RowView({
               ) : null}
             </div>
           )}
+          {expanded && editable ? <NotSaved space={space} task={task.id} part="summary" /> : null}
           {/* A title the person typed while the task was finished stays readable, with Copy and
               Discard; Try again only once the task is active again (A5 3.11). */}
           {expanded ? (

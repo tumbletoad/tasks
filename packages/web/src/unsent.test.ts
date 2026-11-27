@@ -12,6 +12,7 @@ import {
   forgetTask,
   keepDraft,
   keepNote,
+  keepRefusedText,
   keepTextDraft,
   keepTitleDraft,
   keptTitles,
@@ -158,6 +159,10 @@ describe("[A5.trash.web.unsent] every unsent word goes through one module", () =
     keepTextDraft(SPACE, TASK, "n3", { typed: "Call the landlord on Tuesday", before: "Call him" });
     for (const word of shown) letGo(SPACE, word);
     expect(listed()).toEqual(["text: Call the landlord on Tuesday"]);
+    // Refused words wait apart: a new draft of the same text never takes their place.
+    keepRefusedText(SPACE, TASK, "n3", { typed: "Call the landlord first", before: "Call him" });
+    keepTextDraft(SPACE, TASK, "n3", { typed: "Call him today", before: "Call him" });
+    expect(listed()).toEqual(["text: Call him today", "text: Call the landlord first"]);
     forgetTask(SPACE, TASK);
     expect(unsentOf(SPACE)).toEqual([]);
   });

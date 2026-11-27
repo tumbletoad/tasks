@@ -57,7 +57,7 @@ import { Facts } from "./Facts.tsx";
 import { LINK_REL, Markdown } from "./markdown.tsx";
 import { useSourceWrites, type SourceWrites } from "./sourceWrites.ts";
 import { useNoteWrites, type NoteWrites } from "./noteWrites.ts";
-import { Pen, TextEditor, useEditing, useSaved } from "./TextEditor.tsx";
+import { NotSaved, Pen, TextEditor, useEditing, useSaved } from "./TextEditor.tsx";
 import { useTextWrites, type TextWrites } from "./textWrites.ts";
 import { TEXT_MAX } from "../unsent.ts";
 import { actorOf, Thread } from "./Thread.tsx";
@@ -669,6 +669,7 @@ function Context({
   base,
   onAsk,
   write,
+  partial,
 }: {
   readonly task: TaskRow;
   readonly text: string;
@@ -677,6 +678,8 @@ function Context({
   readonly onAsk: ((event: MouseEvent<HTMLElement>) => void) | undefined;
   /** How the context is corrected: none in a card that only reads. */
   readonly write: TextWrites["context"] | undefined;
+  /** The card holds only part of the context: it is not corrected from here. */
+  readonly partial: boolean;
 }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
@@ -684,7 +687,13 @@ function Context({
   const [long, setLong] = useState(false);
   const { live } = useContext(Session);
   const space = live.spaceId ?? "";
-  const [editing, setEditing] = useEditing(space, task.id, "context", read, write !== undefined);
+  const [editing, setEditing] = useEditing(
+    space,
+    task.id,
+    "context",
+    read,
+    write !== undefined && !partial,
+  );
   // Saved words show at once, until the card's next read brings them.
   const [text, saved] = useSaved(read);
   useLayoutEffect(() => {
@@ -692,6 +701,9 @@ function Context({
     if (element === null || open) return;
     setLong(element.scrollHeight > element.clientHeight + 1);
   }, [text, open, editing]);
+  // The person's refused words, kept in sight while the box is open again to put them in.
+  const notSaved =
+    write === undefined ? null : <NotSaved space={space} task={task.id} part="context" />;
   if (editing && write !== undefined) {
     return (
       <div className={styles.context} data-part="context">
@@ -702,44 +714,49 @@ function Context({
           label={t("task.context")}
           text={text}
           max={TEXT_MAX}
-          base={() => base}
+          base={base}
           save={(words, from) => write(task, words, from)}
           onDone={(words) => {
             saved(words);
             setEditing(false);
           }}
         />
+        {notSaved}
       </div>
     );
   }
   return (
-    <div className={styles.context} data-part="context" {...asks(onAsk, t("ask.tip"))}>
-      <div className={styles.penned}>
-        <div ref={box} data-clamped={!open} data-fact="">
-          <Markdown text={text} />
+    <>
+      <div className={styles.context} data-part="context" {...asks(onAsk, t("ask.tip"))}>
+        <div className={styles.penned}>
+          <div ref={box} data-clamped={!open} data-fact="">
+            <Markdown text={text} />
+          </div>
+          {write === undefined ? null : (
+            <Pen
+              label={t("text.editContext")}
+              why={partial ? t("text.partial") : undefined}
+              onPress={() => {
+                setEditing(true);
+              }}
+            />
+          )}
         </div>
-        {write === undefined ? null : (
-          <Pen
-            label={t("text.editContext")}
-            onPress={() => {
-              setEditing(true);
+        {long || open ? (
+          <button
+            type="button"
+            className={styles.more}
+            aria-expanded={open}
+            onClick={() => {
+              setOpen(!open);
             }}
-          />
-        )}
+          >
+            {t(open ? "task.less" : "task.more")}
+          </button>
+        ) : null}
       </div>
-      {long || open ? (
-        <button
-          type="button"
-          className={styles.more}
-          aria-expanded={open}
-          onClick={() => {
-            setOpen(!open);
-          }}
-        >
-          {t(open ? "task.less" : "task.more")}
-        </button>
-      ) : null}
-    </div>
+      {notSaved}
+    </>
   );
 }
 
@@ -853,6 +870,7 @@ export function Expanded({
             onAsk={writes?.ask("context")}
             // Only an open task's context changes, as its summary and title.
             write={task.lifecycle === "active" ? writes?.text.context : undefined}
+            partial={detail.contextPartial === true}
           />
         )}
         <ul className={styles.links}>
@@ -918,7 +936,7 @@ export function Expanded({
                 : {
                     space: live.spaceId ?? "",
                     task: task.id,
-                    base: () => base,
+                    base,
                     save: (entry, words, from) =>
                       writes.text.entry(task, entry, words, from ?? base),
                   }

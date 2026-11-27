@@ -191,3 +191,51 @@ describe("[A5.while-away.web.thread-pages] a thread reads as many pages as the p
     expect(read.detail.partial).toBe(true);
   });
 });
+
+describe("[A5.entry.correct.web.whole] the card knows which texts it holds whole", () => {
+  test("a text longer than the pages read so far is partial, and whole once the rest is read", () => {
+    const part = (text: string, from: number, of: number) => ({
+      ref: "n2",
+      author: "agent:codex",
+      for_agents: false,
+      at: "2026-11-12T09:00:00Z",
+      text,
+      slice: { from, to: from + text.length, of },
+    });
+    const log = (text: string, from: number, of: number) => ({
+      ref: "l1",
+      kind: "progress" as const,
+      author: "agent:codex",
+      at: "2026-11-12T10:00:00Z",
+      text,
+      slice: { from, to: from + text.length, of },
+    });
+    const first = {
+      context: "Times drift ",
+      context_slice: { from: 0, to: 12, of: 24 },
+      notes: [part("Drafted ", 0, 17)],
+      log: [log("Checked ", 0, 16)],
+    };
+    const cut = mergePages(FACTS, [first], true);
+    expect(cut.contextPartial).toBe(true);
+    expect(cut.notes.map((n) => [n.text, n.partial])).toEqual([["Drafted ", true]]);
+    expect(cut.log.map((l) => [l.text, l.partial])).toEqual([["Checked ", true]]);
+
+    const all = mergePages(
+      FACTS,
+      [
+        first,
+        {
+          context: "by one hour.",
+          context_slice: { from: 12, to: 24, of: 24 },
+          notes: [part("the reply", 8, 17)],
+          log: [log("the site", 8, 16)],
+        },
+      ],
+      false,
+    );
+    expect(all.contextPartial).toBeUndefined();
+    expect(all.notes.map((n) => [n.text, n.partial])).toEqual([["Drafted the reply", undefined]]);
+    expect(all.log.map((l) => [l.text, l.partial])).toEqual([["Checked the site", undefined]]);
+  });
+});

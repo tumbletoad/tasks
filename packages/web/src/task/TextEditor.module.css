@@ -56,10 +56,3 @@
 .field[aria-busy="true"] {
   color: var(--k-text-2);
 }
-
-.status {
-  margin: 4px 0 0;
-  font-size: 0.75rem;
-  line-height: 1.125rem;
-  color: var(--k-late);
-}

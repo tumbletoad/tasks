@@ -12,7 +12,7 @@
 // entry shows on hover and on focus, and always without hover. Remove, a bin on a note or a
 // session's request, is always in sight: it takes the note back, and the card's removed line puts
 // it back. A pen on every note and log entry, whoever wrote it, opens its words to correct
-// (TextEditor.tsx); a corrected one says so after its time. A session's and a run's entries are
+// (TextEditor.tsx), once the card holds all of them; a corrected one says so after its time. A session's and a run's entries are
 // records of what happened: no pen.
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { localDate } from "@ttasks/contracts/day";
@@ -29,7 +29,7 @@ import css from "./Expanded.module.css";
 import { Markdown } from "./markdown.tsx";
 import { Asked, RunBody } from "./RunBody.tsx";
 import { runLabel } from "./runs.ts";
-import { Pen, TextEditor, useEditing, useSaved } from "./TextEditor.tsx";
+import { LOG_MAX, NotSaved, Pen, TextEditor, useEditing, useSaved } from "./TextEditor.tsx";
 
 const styles = classes(css, [
   "line",
@@ -179,6 +179,8 @@ interface Item {
     readonly pen: string;
     readonly box: string;
     readonly edited?: Edited | undefined;
+    /** The card holds only part of the words: they are not corrected from here. */
+    readonly partial?: true | undefined;
   };
 }
 
@@ -224,7 +226,8 @@ export interface ThreadProps {
 export interface EntryEdit {
   readonly space: string;
   readonly task: string;
-  readonly base: () => string | undefined;
+  /** Where the feed was when the entries were read: a correction is made from it. */
+  readonly base: string;
   readonly save: (entry: string, words: string, base: string | undefined) => Promise<unknown>;
 }
 
@@ -292,6 +295,7 @@ export function Thread({
         pen: note.author === "user" ? t("thread.editMine") : t("thread.editNote", { who }),
         box: t("thread.entryWords", { who }),
         edited: note.edited,
+        partial: note.partial,
       },
     });
   }
@@ -325,6 +329,7 @@ export function Thread({
         pen: t("thread.editEntry", { who }),
         box: t("thread.entryWords", { who }),
         edited: entry.edited,
+        partial: entry.partial,
       },
     });
   }
@@ -568,7 +573,7 @@ function EntryLine({
     edit?.task ?? "",
     words?.ref ?? "summary",
     item.text,
-    words !== undefined,
+    words !== undefined && words.partial === undefined,
   );
   // Saved words show at once, until the card's next read brings them.
   const [text, saved] = useSaved(item.text);
@@ -615,7 +620,7 @@ function EntryLine({
               part={words.ref}
               label={words.box}
               text={text}
-              max={TEXT_MAX}
+              max={item.kind === "log" ? LOG_MAX : TEXT_MAX}
               base={edit.base}
               save={(next, base) => edit.save(words.ref, next, base)}
               onDone={(next) => {
@@ -632,6 +637,9 @@ function EntryLine({
           <p className={`${styles.text} ${styles.state}`} data-part="entry-text" dir="auto">
             {item.text}
           </p>
+        )}
+        {edit === undefined || words === undefined ? null : (
+          <NotSaved space={edit.space} task={edit.task} part={words.ref} />
         )}
         {item.again === undefined ? null : (
           <button
@@ -655,6 +663,7 @@ function EntryLine({
         {words === undefined || editing ? null : (
           <Pen
             label={words.pen}
+            why={words.partial === undefined ? undefined : t("text.partial")}
             onPress={() => {
               setEditing(true);
             }}
