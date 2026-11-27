@@ -1775,6 +1775,57 @@ describe("[A5.3.12.web.undo-late] Undo and Redo when answers come late, or not a
     ]);
   });
 
+  test("a field edit made while an undo or a redo is on its way is sent after it, and saved", async () => {
+    const w = new World([task(1), task(2)]);
+    await checkedOff(w, 1, 11);
+    let undone!: (value: unknown) => void;
+    w.answer("history.undo", () => new Promise((resolve) => (undone = resolve)));
+    void w.edits.undo();
+    await flush();
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-2",
+      fields: ["priority"],
+      as_of: w.asOf(13),
+      warnings: [],
+    }));
+    w.edits.edit(task(2), priorityChange(1));
+    expect(w.row("t_00002")?.priority).toBe(1);
+    undone({
+      result: "undone",
+      commit: commitAt(11),
+      tasks: ["M-1"],
+      task_count: 1,
+      as_of: w.asOf(12),
+    });
+    await flush();
+    expect(w.calls.filter((c) => c.name === "task.update")).toHaveLength(1);
+
+    // The same behind a redo.
+    let redone!: (value: unknown) => void;
+    w.answer("history.redo", () => new Promise((resolve) => (redone = resolve)));
+    void w.edits.redo(commitAt(11));
+    await flush();
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-2",
+      fields: ["priority"],
+      as_of: w.asOf(15),
+      warnings: [],
+    }));
+    w.edits.edit(task(2, { priority: 1, version: 2 }), priorityChange(2));
+    redone({
+      result: "redone",
+      commit: commitAt(11),
+      tasks: ["M-1"],
+      task_count: 1,
+      as_of: w.asOf(14),
+    });
+    await flush();
+    expect(w.calls.filter((c) => c.name === "task.update")).toHaveLength(2);
+    expect(w.edits.unsaved("t_00002", "priority")).toBeUndefined();
+  });
+
   test("an undo that got no answer keeps its step: Ctrl+Z tries the same step again", async () => {
     const w = new World([task(1)]);
     await checkedOff(w, 1, 11);

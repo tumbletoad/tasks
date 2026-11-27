@@ -222,12 +222,17 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
     await other.locator('[data-part="check"]').click();
     await expect(toast(page)).toHaveText("Done");
     await expect.poll(async () => (await read(world, next)).task.lifecycle).toBe("completed");
+    // The rows below move up once the checked-off one has left: the next click waits for that.
+    await expect(other).toHaveCount(0);
     const thirdTitle = rowOf(page, third).locator('[data-part="title"]');
-    await thirdTitle.click();
-    await rowOf(page, third)
+    await thirdTitle.focus();
+    await page.keyboard.press("Enter");
+    await expect(thirdTitle).toHaveAttribute("aria-expanded", "true");
+    const p1 = rowOf(page, third)
       .getByRole("radiogroup", { name: "Priority" })
-      .getByRole("radio", { name: "P1" })
-      .click();
+      .getByRole("radio", { name: "P1" });
+    await p1.click();
+    await expect(p1).toHaveAttribute("aria-checked", "true");
     await expect(toast(page)).toHaveCount(0);
     await expect.poll(async () => (await read(world, third)).task.priority).toBe(1);
     await page.locator("main").focus();

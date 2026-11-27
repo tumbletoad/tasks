@@ -5833,7 +5833,7 @@
     },
     {
       "id": "A5.3.12.web.undo-late",
-      "title": "Undo and Redo with answers late or missing: Ctrl+Shift+Z pressed before an undo's answer redoes that undo's step; the feed naming the tab's own step before its answer leaves the step and its Undo; an undo that got no decision keeps its step for Ctrl+Z to try again; a late answer offers no Undo after a priority chosen since, and no Redo after a check-off made since",
+      "title": "Undo and Redo with answers late or missing: a field edit made while an undo or redo is on its way is sent after it and saved; Ctrl+Shift+Z pressed before an undo's answer redoes that undo's step; the feed naming the tab's own step before its answer leaves the step and its Undo; an undo that got no decision keeps its step for Ctrl+Z to try again; a late answer offers no Undo after a priority chosen since, and no Redo after a check-off made since",
       "source": "A5 3.12, A5 3.11",
       "owner": "M5",
       "kind": "ci",
