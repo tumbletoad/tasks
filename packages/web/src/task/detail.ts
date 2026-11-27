@@ -22,12 +22,19 @@ type NoteOutput = NonNullable<Sections["notes"]>[number];
 type RemovedOutput = NonNullable<DigestView["removed_notes"]>[number];
 type LogOutput = NonNullable<Sections["log"]>[number];
 
+/** The person corrected an entry's words: when, and who (`user`). */
+export interface Edited {
+  readonly at: string;
+  readonly by: string;
+}
+
 export interface DetailNote {
   readonly kind: "note";
   readonly ref: string;
   readonly author: string;
   readonly at: string;
   readonly text: string;
+  readonly edited?: Edited;
   readonly forAgents: boolean;
   /** The launches this note was the person's request for, oldest first, by reference. */
   readonly requestFor?: readonly { readonly launch: string; readonly instance: string }[];
@@ -44,6 +51,7 @@ export interface DetailLog {
   readonly author: string;
   readonly at: string;
   readonly text: string;
+  readonly edited?: Edited;
   readonly logKind: string;
 }
 
@@ -135,6 +143,7 @@ export function mergePages(
     author: n.author,
     at: n.at,
     text: n.text,
+    ...(n.edited === undefined ? {} : { edited: n.edited }),
     forAgents: n.for_agents,
     ...(n.request_for === undefined ? {} : { requestFor: n.request_for }),
   });
@@ -151,6 +160,7 @@ export function mergePages(
         author: l.author,
         at: l.at,
         text: l.text,
+        ...(l.edited === undefined ? {} : { edited: l.edited }),
         logKind: l.kind,
       }))
       .sort(byTime),

@@ -10,8 +10,9 @@
 //   shows here and nowhere else in the card; the row's columns for them are hidden while it is
 //   expanded.
 //
-// A click on an agent-only field (the context, the outcome, a source's line, a learning, the summary
-// in the header) starts a request for an agent there. Everything a task holds is untrusted text: it
+// A click on an agent-only field (the outcome, a source's line, a learning) starts a request for an
+// agent there, and so does a click on the context or the summary in the header, which the person
+// also corrects behind their pens (TextEditor.tsx). Everything a task holds is untrusted text: it
 // is rendered as text or as Markdown that is never HTML, and links open only through allowed
 // schemes (A5 3.26).
 import {
@@ -56,6 +57,9 @@ import { Facts } from "./Facts.tsx";
 import { LINK_REL, Markdown } from "./markdown.tsx";
 import { useSourceWrites, type SourceWrites } from "./sourceWrites.ts";
 import { useNoteWrites, type NoteWrites } from "./noteWrites.ts";
+import { Pen, TextEditor, useEditing, useSaved } from "./TextEditor.tsx";
+import { useTextWrites, type TextWrites } from "./textWrites.ts";
+import { TEXT_MAX } from "../unsent.ts";
 import { actorOf, Thread } from "./Thread.tsx";
 import { useDetail } from "./useDetail.ts";
 
@@ -64,6 +68,7 @@ const styles = classes(css, [
   "content",
   "outcome",
   "context",
+  "penned",
   "more",
   "links",
   "link",
@@ -625,6 +630,7 @@ interface CardWrites {
   readonly sources: SourceWrites;
   readonly notes: NoteWrites;
   readonly folder: FolderWrites;
+  readonly text: TextWrites;
   /** Opens a note of the person's again in an agent, as its request. */
   readonly openAgain: (note: DetailNote, instance: Instance) => void;
 }
@@ -653,27 +659,73 @@ function asks(
   return onAsk === undefined ? {} : { "data-ask": "", "data-tip": tip, onClick: onAsk };
 }
 
-/** The context, clamped at ten lines with More when it is longer. */
+/**
+ * The context, clamped at ten lines with More when it is longer, with its pen at its end: the
+ * person corrects it in place, whoever wrote it.
+ */
 function Context({
-  text,
+  task,
+  text: read,
+  base,
   onAsk,
+  write,
 }: {
+  readonly task: TaskRow;
   readonly text: string;
+  /** Where the feed was when the context was read: a correction is made from it. */
+  readonly base: string | undefined;
   readonly onAsk: ((event: MouseEvent<HTMLElement>) => void) | undefined;
+  /** How the context is corrected: none in a card that only reads. */
+  readonly write: TextWrites["context"] | undefined;
 }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [long, setLong] = useState(false);
+  const { live } = useContext(Session);
+  const space = live.spaceId ?? "";
+  const [editing, setEditing] = useEditing(space, task.id, "context", read, write !== undefined);
+  // Saved words show at once, until the card's next read brings them.
+  const [text, saved] = useSaved(read);
   useLayoutEffect(() => {
     const element = box.current;
     if (element === null || open) return;
     setLong(element.scrollHeight > element.clientHeight + 1);
-  }, [text, open]);
+  }, [text, open, editing]);
+  if (editing && write !== undefined) {
+    return (
+      <div className={styles.context} data-part="context">
+        <TextEditor
+          space={space}
+          task={task.id}
+          part="context"
+          label={t("task.context")}
+          text={text}
+          max={TEXT_MAX}
+          base={() => base}
+          save={(words, from) => write(task, words, from)}
+          onDone={(words) => {
+            saved(words);
+            setEditing(false);
+          }}
+        />
+      </div>
+    );
+  }
   return (
     <div className={styles.context} data-part="context" {...asks(onAsk, t("ask.tip"))}>
-      <div ref={box} data-clamped={!open} data-fact="">
-        <Markdown text={text} />
+      <div className={styles.penned}>
+        <div ref={box} data-clamped={!open} data-fact="">
+          <Markdown text={text} />
+        </div>
+        {write === undefined ? null : (
+          <Pen
+            label={t("text.editContext")}
+            onPress={() => {
+              setEditing(true);
+            }}
+          />
+        )}
       </div>
       {long || open ? (
         <button
@@ -737,6 +789,7 @@ export function Expanded({
   const notes = useNoteWrites();
   const say = useToast();
   const folder = useFolderWrites();
+  const text = useTextWrites();
   // A task in the Trash is for reading: Copy, Stop, Restore and its links work, nothing changes it.
   // This is the card's one decision about it. A control takes its way to change the task from
   // `writes`, so one added later changes nothing in the Trash either.
@@ -747,6 +800,7 @@ export function Expanded({
           sources,
           notes,
           folder,
+          text,
           openAgain: (note, instance) => {
             void actions.open(task, instance, { request: note.ref });
           },
@@ -792,7 +846,14 @@ export function Expanded({
           </div>
         )}
         {detail === undefined || detail.context.trim() === "" ? null : (
-          <Context text={detail.context} onAsk={writes?.ask("context")} />
+          <Context
+            task={task}
+            text={detail.context}
+            base={base}
+            onAsk={writes?.ask("context")}
+            // Only an open task's context changes, as its summary and title.
+            write={task.lifecycle === "active" ? writes?.text.context : undefined}
+          />
         )}
         <ul className={styles.links}>
           <Sources task={task} detail={detail} base={base} writes={writes} />
@@ -851,6 +912,17 @@ export function Expanded({
                   }
             }
             runsFailed={runsFailed}
+            edit={
+              writes === undefined || base === undefined
+                ? undefined
+                : {
+                    space: live.spaceId ?? "",
+                    task: task.id,
+                    base: () => base,
+                    save: (entry, words, from) =>
+                      writes.text.entry(task, entry, words, from ?? base),
+                  }
+            }
             // A tab whose copy of the space is gone stops nothing: its copy's runs are not the
             // space's.
             {...(ended

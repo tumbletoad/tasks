@@ -9,8 +9,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { Instance, Receipt, ReceiptState } from "../api.ts";
 import { I18n } from "../i18n/intl.tsx";
-import type { DetailNote } from "./detail.ts";
-import { Thread } from "./Thread.tsx";
+import type { DetailLog, DetailNote } from "./detail.ts";
+import { Thread, type EntryEdit } from "./Thread.tsx";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -71,7 +71,12 @@ function render(
   notes: readonly DetailNote[],
   receipts: readonly Receipt[],
   onOpenAgain?: (note: DetailNote, instance: Instance) => void,
-  taken: { removed?: readonly DetailNote[]; onRemove?: (note: DetailNote) => void } = {},
+  taken: {
+    removed?: readonly DetailNote[];
+    onRemove?: (note: DetailNote) => void;
+    log?: readonly DetailLog[];
+    edit?: EntryEdit;
+  } = {},
 ): void {
   act(() => {
     root ??= createRoot(host);
@@ -375,5 +380,135 @@ describe("[A5.note.retract.web.thread] a note is taken back from its line in the
     );
     expect(entries()[0]?.textContent).not.toContain("Check the clinic export first");
     expect(removeButtons()).toEqual([]);
+  });
+});
+
+describe("[A5.entry.correct.web.thread] the pen on a note and a log entry corrects its words in place", () => {
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  const agentNote: DetailNote = { ...note("n1", "Drafted teh reply", []), author: "agent:codex" };
+  const progress: DetailLog = {
+    kind: "log",
+    ref: "l1",
+    author: "agent:codex",
+    at: new Date(AT + 30_000).toISOString(),
+    text: "Checked the invoce",
+    logKind: "progress",
+  };
+  const pens = () => [...host.querySelectorAll<HTMLButtonElement>("[data-part='pen']")];
+  const box = () => host.querySelector<HTMLTextAreaElement>("[data-part='text-edit']");
+  const type = (words: string) => {
+    const field = box();
+    if (field === null) throw new Error("no box");
+    act(() => {
+      field.value = words;
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const press = (key: string) => {
+    act(() => {
+      box()?.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    });
+  };
+  const editing = (saves: [string, string, string | undefined][], answer = Promise.resolve()) => ({
+    space: "sp_fixture",
+    task: "t_fixture",
+    base: () => "1.40.abc",
+    save: (entry: string, words: string, base: string | undefined) => {
+      saves.push([entry, words, base]);
+      return answer;
+    },
+  });
+
+  test("every note and log entry has a pen named for whose words it edits; a session's entry and a card that only reads have none", () => {
+    const mine = note("n2", "Ask about the invoice", [], AT + 60_000);
+    const asked = note("n3", "Check the clinic export first", ["L7KQ21"]);
+    render(
+      [agentNote, mine, asked],
+      [receipt("la_1", "L7KQ21", "confirmed", AT + 90_000)],
+      undefined,
+      {
+        log: [progress],
+        edit: editing([]),
+      },
+    );
+    expect(pens().map((pen) => pen.getAttribute("aria-label"))).toEqual([
+      "Edit the note by codex",
+      "Edit the entry by codex",
+      "Edit your note",
+    ]);
+    expect(pens().every((pen) => pen.getAttribute("data-tip") === "Edit")).toBe(true);
+    render([agentNote, mine], [], undefined, { log: [progress] });
+    expect(pens()).toEqual([]);
+  });
+
+  test("the pen opens the words in a box; Enter saves them from the base, and the entry shows them at once", async () => {
+    const saves: [string, string, string | undefined][] = [];
+    render([agentNote], [], undefined, { log: [progress], edit: editing(saves) });
+    act(() => {
+      pens()[1]?.click();
+    });
+    expect(box()?.value).toBe("Checked the invoce");
+    expect(box()?.getAttribute("aria-label")).toBe("Words of the entry by codex");
+    expect(document.activeElement).toBe(box());
+    type("Checked the invoice");
+    press("Enter");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(saves).toEqual([["l1", "Checked the invoice", "1.40.abc"]]);
+    expect(box()).toBeNull();
+    expect(entries()[1]?.textContent).toContain("Checked the invoice");
+  });
+
+  test("Escape lets the words go; words typed and not sent come back in the box after a reload", () => {
+    const saves: [string, string, string | undefined][] = [];
+    render([agentNote], [], undefined, { edit: editing(saves) });
+    act(() => {
+      pens()[0]?.click();
+    });
+    type("Drafted the");
+    press("Escape");
+    expect(box()).toBeNull();
+    expect(entries()[0]?.textContent).toContain("Drafted teh reply");
+    act(() => {
+      pens()[0]?.click();
+    });
+    type("Drafted the reply to Ana");
+    // The page goes away with the box open: a new page opens it with the words.
+    act(() => {
+      root?.unmount();
+    });
+    root = undefined;
+    render([agentNote], [], undefined, { edit: editing(saves) });
+    expect(box()?.value).toBe("Drafted the reply to Ana");
+    expect(saves).toEqual([]);
+  });
+
+  test("a refused save keeps the box open with the words and says why", async () => {
+    const saves: [string, string, string | undefined][] = [];
+    const refusal = Object.assign(new Error("Someone changed this entry since you read it."), {
+      code: "conflict",
+    });
+    render([agentNote], [], undefined, { edit: editing(saves, Promise.reject(refusal)) });
+    act(() => {
+      pens()[0]?.click();
+    });
+    type("Drafted the reply");
+    press("Enter");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(box()?.value).toBe("Drafted the reply");
+    expect(host.querySelector("[data-part='text-refused']")?.textContent).toBe(
+      "Someone changed this entry since you read it.",
+    );
+  });
+
+  test("a corrected entry says who corrected it after its time", () => {
+    render([{ ...agentNote, edited: { at: new Date(AT).toISOString(), by: "user" } }], []);
+    expect(entries()[0]?.querySelector("[data-part='edited']")?.textContent).toBe("edited by you");
   });
 });

@@ -28,6 +28,8 @@ import { is } from "../keys/keymap.ts";
 import { useIntl } from "react-intl";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 import { Expanded } from "../task/Expanded.tsx";
+import { Pen, TextEditor, useEditing, useSaved } from "../task/TextEditor.tsx";
+import { useTextWrites } from "../task/textWrites.ts";
 import { agentMarker } from "../task/runs.ts";
 import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
@@ -42,6 +44,7 @@ import {
   letGo,
   pageLeaving,
   readTitleDraft,
+  SUMMARY_MAX,
   TITLE_MAX,
   type TitleDraft,
   useHasDraft,
@@ -608,6 +611,18 @@ function RowView({
   const [editing, setEditing] = useState<false | { readonly brought?: TitleDraft }>(false);
   // In the Trash the title is read, never edited: a kept one waits there with Copy and Discard.
   const editable = active && !still;
+  // The summary is corrected in place behind its pen, as the context is, once the card is open.
+  const summary = task.summary ?? "";
+  const [summing, setSumming] = useEditing(
+    live.spaceId ?? "",
+    task.id,
+    "summary",
+    summary,
+    editable && expanded && summary !== "",
+  );
+  const [summed, setSummed] = useSaved(summary);
+  const text = summary === "" || model.ending !== undefined ? line : summed;
+  const writes = useTextWrites();
   // The row the person moved out of the view (A5 3.5): while focus holds it there with the data it
   // had (3.15 item 6), its move is done, so the button goes. Newer data (an undo) brings it back.
   const [movedFrom, setMovedFrom] = useState<TaskRow | undefined>(undefined);
@@ -773,15 +788,32 @@ function RowView({
               </button>
             )}
           </div>
-          {model.prefix === undefined && line === undefined ? null : (
+          {summing ? (
+            <TextEditor
+              space={space}
+              task={task.id}
+              part="summary"
+              label={t("task.summary")}
+              text={summary}
+              line
+              max={SUMMARY_MAX}
+              base={() => edits.seen(task, ["summary"])}
+              save={(words, base) => writes.summary(task, words, base)}
+              onDone={(words) => {
+                setSummed(words);
+                setSumming(false);
+              }}
+            />
+          ) : model.prefix === undefined && line === undefined ? null : (
             <div
               className={styles.summary}
               data-part={model.ending === undefined ? "summary" : "ending"}
               data-tip={expanded && !trashed ? t("ask.tip") : undefined}
-              onClick={() => {
+              onClick={(event) => {
                 // Expanded, the line is an agent's to change: a click asks one (A5 3.11), unless
-                // it ends a selection of its text.
+                // it ends a selection of its text or was on its pen.
                 if (!expanded || !(window.getSelection()?.isCollapsed ?? true)) return;
+                if ((event.target as Element).closest("button") !== null) return;
                 actions.ask(task, model.ending === undefined ? "summary" : "outcome");
               }}
             >
@@ -796,11 +828,19 @@ function RowView({
                   <span dir="auto">{model.prefix.text}</span>
                 </span>
               )}
-              {line === undefined ? null : (
+              {text === undefined ? null : (
                 <span className={styles.text} dir="auto">
-                  {line}
+                  {text}
                 </span>
               )}
+              {expanded && editable && model.ending === undefined && summary !== "" ? (
+                <Pen
+                  label={t("text.editSummary")}
+                  onPress={() => {
+                    setSumming(true);
+                  }}
+                />
+              ) : null}
             </div>
           )}
           {/* A title the person typed while the task was finished stays readable, with Copy and

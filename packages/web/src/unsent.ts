@@ -1,5 +1,5 @@
 // What a person typed for a task and has not sent: a composer's draft, a note on its way, a title
-// being typed (each tab its own) and a field edit the service did not take. Each is kept in the
+// or a text being typed (each tab its own) and a field edit the service did not take. Each is kept in the
 // browser (kept.ts), so a reload or a crash of the tab brings it back, and this module is the only
 // way to them: it lists every kept value of a space, lets go of exactly the value a caller holds,
 // and tells of every change, made in this tab or in another.
@@ -18,11 +18,16 @@ import { browserKept, onKept, onKeptUnder, tabKept } from "./kept.ts";
 export const DRAFT_MAX = 20_000;
 /** The title editor's own limit. */
 export const TITLE_MAX = 500;
+/** The summary's editor's own limit. */
+export const SUMMARY_MAX = 400;
+/** A text editor's own limit: a note's or a context's, the longest text a person corrects. */
+export const TEXT_MAX = 65_536;
 
 const draftName = (space: string, task: string) => `draft.${space}.${task}`;
 /** Each note on its way is kept under its own request ID; a name without one is an earlier build's. */
 const notePrefix = (space: string, task: string) => `note.${space}.${task}`;
 const titlePrefix = (space: string, task: string) => `title.${space}.${task}.`;
+const textPrefix = (space: string, task: string) => `text.${space}.${task}.`;
 /**
  * Each refused edit under its own ID. An empty ID is an earlier build's, one per field, under a
  * prefix that build reads and clears of every name it cannot parse: the others stay out of it.
@@ -37,7 +42,7 @@ const editNames = (space: string): string[] => [
   ...browserKept.names(editPrefix(space)),
   ...browserKept.names(legacyPrefix(space)),
 ];
-const KINDS = ["draft.", "note.", "title.", "edit.", "unsaved."] as const;
+const KINDS = ["draft.", "note.", "title.", "text.", "edit.", "unsaved."] as const;
 
 const listeners = new Set<() => void>();
 let hearing: (() => void) | undefined;
@@ -252,6 +257,69 @@ export function useKeptTitles(space: string, task: string): readonly KeptTitle[]
   return kept;
 }
 
+// A text being typed in place of a task's own: its summary, its context, or the words of a note or
+// a log entry. Each tab keeps its own, as for a title, under the text's part and the tab's name.
+
+/** What a text editor corrects: the summary, the context, or an entry by reference (n3, l4). */
+export type TextPart = "summary" | "context" | `${"n" | "l"}${number}`;
+
+const PART = /^(?:summary|context|[nl][1-9][0-9]{0,5})$/u;
+
+export const isTextPart = (value: string): value is TextPart => PART.test(value);
+
+export interface TextDraft {
+  /** What the person typed. */
+  readonly typed: string;
+  /** The words when the editor opened. */
+  readonly before: string;
+  /** Where the page was when the editor opened: the save's base. */
+  readonly base?: string;
+}
+
+function textOf(value: unknown): TextDraft | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { typed, before, base } = value as Partial<Record<keyof TextDraft, unknown>>;
+  if (typeof typed !== "string" || typed.length > TEXT_MAX || typeof before !== "string") {
+    return undefined;
+  }
+  return { typed, before, ...(typeof base === "string" ? { base } : {}) };
+}
+
+const textName = (space: string, task: string, part: TextPart, tab = TAB) =>
+  `${textPrefix(space, task)}${part}.${tab}`;
+
+/** What this tab typed in place of the task's text `part`, if it kept any. */
+export function readTextDraft(space: string, task: string, part: TextPart): TextDraft | undefined {
+  return textOf(browserKept.json(textName(space, task, part)));
+}
+
+/** Keeps what this tab's editor of `part` holds; undefined when it holds nothing unsent. */
+export function keepTextDraft(
+  space: string,
+  task: string,
+  part: TextPart,
+  draft: TextDraft | undefined,
+): void {
+  keep(textName(space, task, part), draft === undefined ? undefined : JSON.stringify(draft));
+}
+
+/** Every text kept for the task, of every tab, with its part. */
+function keptTexts(
+  space: string,
+  task: string,
+): { readonly part: TextPart; readonly tab: string; readonly draft: TextDraft }[] {
+  const prefix = textPrefix(space, task);
+  return browserKept
+    .names(prefix)
+    .sort()
+    .flatMap((name) => {
+      const [part = "", tab = "", ...rest] = name.slice(prefix.length).split(".");
+      if (rest.length > 0 || !isTextPart(part) || !TAB_NAME.test(tab)) return [];
+      const draft = textOf(browserKept.json(name));
+      return draft === undefined ? [] : [{ part, tab, draft }];
+    });
+}
+
 /**
  * The page is going away (a reload, a close): a browser may take focus from a field then, and that
  * is no leaving of it. A navigation that did not happen ends with the person's next key or pointer.
@@ -453,6 +521,15 @@ export type Unsent =
       readonly tab: string;
     }
   | {
+      readonly kind: "text";
+      readonly key: string;
+      readonly task: string;
+      readonly part: TextPart;
+      readonly text: string;
+      /** The tab that typed it. */
+      readonly tab: string;
+    }
+  | {
       readonly kind: "edit";
       readonly key: string;
       readonly task: string;
@@ -499,6 +576,13 @@ export function unsentOf(space: string): Unsent[] {
     for (const { tab, draft } of keptTitles(space, task)) {
       if (draft.typed.trim() === "") continue;
       out.push({ kind: "title", key: `${task}:title:${tab}`, task, text: draft.typed, tab });
+    }
+  }
+  for (const task of new Set(after(`text.${space}.`).map(editTask))) {
+    if (task === "") continue;
+    for (const { part, tab, draft } of keptTexts(space, task)) {
+      if (draft.typed.trim() === "") continue;
+      out.push({ kind: "text", key: `${task}:${part}:${tab}`, task, part, text: draft.typed, tab });
     }
   }
   for (const { unsaved, value } of keptEditsOf(space)) {
@@ -556,6 +640,13 @@ export type Held =
   /** Without `tab`, this tab's. */
   | { readonly kind: "title"; readonly task: string; readonly text: string; readonly tab?: string }
   | {
+      readonly kind: "text";
+      readonly task: string;
+      readonly part: TextPart;
+      readonly text: string;
+      readonly tab?: string;
+    }
+  | {
       readonly kind: "edit";
       readonly task: string;
       readonly field: Field;
@@ -579,6 +670,11 @@ export function letGo(space: string, held: Held): void {
       if (titleOf(browserKept.json(name))?.typed === held.text) keep(name, undefined);
       return;
     }
+    case "text": {
+      const name = textName(space, held.task, held.part, held.tab);
+      if (textOf(browserKept.json(name))?.typed === held.text) keep(name, undefined);
+      return;
+    }
     case "edit": {
       const name = editName(space, held.task, held.field, held.id);
       if (browserKept.read(name) === held.value) keep(name, undefined);
@@ -593,6 +689,7 @@ export function unsentTasks(space: string): string[] {
     ...after(`draft.${space}.`),
     ...after(`note.${space}.`).map(noteTask),
     ...after(`title.${space}.`).map(taskOf),
+    ...after(`text.${space}.`).map(editTask),
     ...after(editPrefix(space)).map(editTask),
     ...after(legacyPrefix(space)).map(editTask),
   ];
@@ -606,7 +703,10 @@ export function forgetTask(space: string, task: string): void {
   for (const name of browserKept.names(`${notePrefix(space, task)}.`)) {
     browserKept.keep(name, undefined);
   }
-  for (const name of browserKept.names(titlePrefix(space, task))) {
+  for (const name of [
+    ...browserKept.names(titlePrefix(space, task)),
+    ...browserKept.names(textPrefix(space, task)),
+  ]) {
     browserKept.keep(name, undefined);
   }
   for (const name of [

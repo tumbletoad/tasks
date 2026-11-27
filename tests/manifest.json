@@ -2313,6 +2313,27 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.entry.correct.e2e",
+      "title": "In the page against the real service, every note and log entry has its pen in sight; an agent's note is corrected by Enter and put back by the toast's Undo, its mark coming and going; the agent's log entry is corrected by keyboard; the context's words typed and not sent come back after a reload and save; the summary's are let go with Escape and the card stays open; an agent reads the corrected words",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.entry.correct.e2e.screens",
+      "title": "The description and the thread with their pens, a corrected entry with its mark, and the box open, at 1,440 px and 390 px in Sumi and Washi, axe clean, nothing wider than the screen",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.entry.correct.web.thread",
+      "title": "In the thread, every note and log entry has a pen named for whose words it edits, a session's entry and a card that only reads none; the pen opens the words in a focused box, Enter saves them from the base and the entry shows them at once; Escape lets them go; words not sent come back in the box after a reload; a refused save keeps the box open with the words and says why; a corrected entry says who corrected it",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.note.retract.web.thread",
       "title": "In the thread, Remove on a note and on a session's request takes back that note, named for whose it is; a card that only reads offers none; a session whose request was taken back says so without its words",
       "owner": "M5",
