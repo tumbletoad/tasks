@@ -32,13 +32,15 @@ const INTO_NEW_PROJECT = filedIntoNewGroup(
 
 /** How the tree's change rows show each kind Undo is for (undo-rule.ts). */
 const KINDS: KindRows = {
-  // A routine's time done or skipped is its check-off, with the open time it moves on.
+  // A routine's time done or skipped is its check-off, with the open time it moves on and the
+  // queued run it cancels.
   finish:
     "(c.entity = 'tasks' AND c.field = 'lifecycle') " +
     `OR (c.entity = 'tasks' AND c.field = 'wrap' AND ${sameNode("lifecycle")}) ` +
     "OR c.entity = 'occurrences' " +
-    "OR (c.entity = 'routines' AND c.field = 'open' AND EXISTS (SELECT 1 FROM changes d " +
-    "WHERE d.seq = c.seq AND d.entity = 'occurrences' AND d.node_id = c.node_id))",
+    `OR (c.entity IN ('routines', 'runs') AND c.field IN ('open', 'state') ` +
+    `AND EXISTS (SELECT 1 FROM changes d WHERE d.seq = c.seq AND d.entity = 'occurrences' ` +
+    "AND d.node_id = c.node_id))",
   trash:
     `(c.entity = 'nodes' AND c.field = 'deleted' AND ${IS_TASK}) ` +
     "OR (c.entity = 'pages' AND c.field = 'deleted') " +
@@ -57,7 +59,11 @@ const KINDS: KindRows = {
     `(c.entity = 'nodes' AND c.field = 'place' AND ${IS_TASK} ` +
     "AND json_extract(c.before, '$.parent_id') = (SELECT space_id FROM space)) " +
     `OR (c.entity = 'nodes' AND c.field = 'place' AND ${IS_TASK} AND ${INTO_NEW_PROJECT})`,
-  group: `c.entity = 'nodes' AND ${IS_PROJECT} AND (c.action = 'create' OR c.field = 'archived')`,
+  // An archive pauses the routines in its project, and an unarchive leaves them paused.
+  group:
+    `(c.entity = 'nodes' AND ${IS_PROJECT} AND (c.action = 'create' OR c.field = 'archived')) ` +
+    "OR (c.entity = 'routines' AND c.field = 'paused' AND EXISTS (SELECT 1 FROM changes d " +
+    "WHERE d.seq = c.seq AND d.entity = 'nodes' AND d.field = 'archived'))",
   dismissal: "c.entity = 'tasks' AND c.field = 'reviewed_at'",
 };
 
@@ -259,7 +265,8 @@ function oppositeOf(conn: Connection, changes: readonly Stored[]): Call[] {
       });
       continue;
     }
-    if (first.entity === "routines") continue;
+    // A routine's open time goes back with its entry; its pause and a cancelled run stay.
+    if (first.entity === "routines" || first.entity === "runs") continue;
     if (first.entity === "pages") {
       const deleted = of("deleted");
       if (deleted !== undefined) {
@@ -434,6 +441,12 @@ function newerOn(
       field: c.action === "create" ? null : c.field,
       task: null,
     });
+  }
+  // A routine's open time written back under a schedule changed since would follow the old one.
+  for (const c of changes) {
+    if (c.entity !== "routines" || c.field !== "open") continue;
+    const schedule = { entity: "routines", id: c.id, field: "schedule", task: null };
+    if (work.add({ since, principal, anyone: true, ...schedule })) moved = true;
   }
   // A finish that left no wrap-up of its own: one written since is newer work a reopen would clear.
   for (const c of changes) {
