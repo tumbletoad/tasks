@@ -88,13 +88,16 @@ export function nodeNamed(nodes: Nodes, area?: string, project?: string): string
   const inArea =
     area === undefined || project === undefined
       ? undefined
-      : [...nodes.values()].find(
-          (p) =>
+      : [...nodes.values()].find((p) => {
+          // The level above is a project: the space's own name names no area.
+          const above = p.parent === undefined ? undefined : nodes.get(p.parent);
+          return (
             p.kind === "project" &&
             p.title === project &&
-            p.parent !== undefined &&
-            nodes.get(p.parent)?.title === area,
-        );
+            above?.kind === "project" &&
+            above.title === area
+          );
+        });
   const named =
     inArea ??
     (area === undefined

@@ -54,6 +54,21 @@ describe("[A5.tree.client.tree] the space's tree in the store", () => {
     expect(nodeNamed(deep, "Home")).toBe("p_home");
   });
 
+  test("an area and a project of one name, and an area named as the space: the read's project is the one under its area", () => {
+    // Areas Work and Design, and a project Design under Work.
+    const design = areaNode({ id: "a_design", title: "Design", position: "a0" });
+    const work = areaNode({ id: "a_work", title: "Work", position: "a1" });
+    const inWork = projectNode("a_work", { id: "p_design", title: "Design", position: "b0" });
+    const twins = treeOf(design, work, inWork);
+    expect(nodeNamed(twins, "Work", "Design")).toBe("p_design");
+    expect(nodeNamed(twins, "Design")).toBe("a_design");
+    // A project at the top named as a project of an area named as the space ("Mira").
+    const top = areaNode({ id: "p_top", title: "Design", position: "a0" });
+    const mira = areaNode({ id: "a_mira", title: "Mira", position: "a1" });
+    const inMira = projectNode("a_mira", { id: "p_inmira", title: "Design", position: "b0" });
+    expect(nodeNamed(treeOf(top, mira, inMira), "Mira", "Design")).toBe("p_inmira");
+  });
+
   test("a read's names find the project under its area, else the area, else a project at the top, else the space", () => {
     expect(nodeNamed(nodes, "Lumen", "Portal")).toBe("p_portal");
     expect(nodeNamed(nodes, "Lumen")).toBe("a_lumen");

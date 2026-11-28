@@ -221,6 +221,13 @@ test.describe("[S2.tree.e2e] a space on the new storage, four levels deep, as a 
     await expect(toast(page)).toHaveText("This space cannot do this yet.");
     await expect(brief(page).getByRole("button", { name: "Edit the brief" })).toHaveCount(0);
     await expect(brief(page)).toHaveText(tree.worktop.brief);
+    // The words typed wait under it, with Copy and Discard, until the person lets them go.
+    const kept = page.locator('[data-part="not-saved"]');
+    await expect(kept.locator('[data-part="not-saved-value"]')).toHaveText(
+      "Oak, oiled, fitted by March",
+    );
+    await kept.locator('[data-part="discard-not-saved"]').click();
+    await expect(kept).toHaveCount(0);
 
     // What the space cannot do yet: a quiet word, nothing to try again.
     await menu(page).getByRole("link", { name: "Activity" }).click();
