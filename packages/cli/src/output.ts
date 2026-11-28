@@ -859,13 +859,9 @@ export function render(entry: string, result: Result, space: string, asked: Aske
           result["action"] === "describe"
             ? `${str(pref["summary"])} (${str(pref["shape"])})`
             : `${prefShown(pref["value"])}${pref["is_default"] === true ? " (default)" : ""}`;
-        const inForce =
-          "in_force" in pref
-            ? ` · in force: ${JSON.stringify(pref["in_force"])}, as this build does not read it yet`
-            : "";
         const fixed = pref["fixed"] === true ? " · fixed in this build" : "";
         lines.push(
-          `${str(pref["key"])}: ${shown}${pref["policy"] === true ? " · policy" : ""}${fixed}${inForce}`,
+          `${str(pref["key"])}: ${shown}${pref["policy"] === true ? " · policy" : ""}${fixed}`,
           ...(result["action"] === "describe" ? [] : levelLines(pref["value"])),
         );
       }

@@ -43,11 +43,6 @@ export const PROBLEM_CODES = [
   "not_for_target",
   /** A second instance of a target that has a single instance. */
   "single_instance",
-  /**
-   * A preference this build declares and does not read yet (`LATER_PREFERENCES`): its value changes
-   * nothing. A warning.
-   */
-  "not_read",
 ] as const;
 
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
