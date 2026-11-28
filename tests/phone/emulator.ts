@@ -1,5 +1,6 @@
-// pnpm phone-emulator --app <apk> --test <apk>: the phone app on a running Android emulator against
-// the real service in this process, counted on the computer's side of the link.
+// pnpm phone-emulator --app <apk> --test <apk> [--shots <folder>]: the phone app on a running
+// Android emulator against the real service in this process, counted on the computer's side of the
+// link; with --shots, a picture of each state the screen reaches, for the pull request.
 //
 // 1. A pairing code from Settings > Phones goes to the emulator as a file, never on a command line.
 // 2. Inside the installed app (apps/phone/android-test), a wrong pin fails the handshake: the phone
@@ -17,7 +18,7 @@
 // data only. It exits with 0 when every step held and 1 at the first that did not.
 import "../../packages/bridge/src/safe-exit.ts";
 import { execFile } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { Server } from "node:https";
 import { join } from "node:path";
 import { parseArgs, promisify } from "node:util";
@@ -26,14 +27,14 @@ import { post } from "../../packages/service/test/http-client.ts";
 import { httpWorld, signIn } from "../../packages/service/test/http-world.ts";
 
 const { values } = parseArgs({
-  options: { app: { type: "string" }, test: { type: "string" } },
+  options: { app: { type: "string" }, test: { type: "string" }, shots: { type: "string" } },
   strict: true,
 });
 if (values.app === undefined || values.test === undefined) {
   console.error("usage: pnpm phone-emulator --app <apk> --test <apk>");
   process.exit(2);
 }
-const { app, test } = values;
+const { app, test, shots } = values;
 
 const PAIRING_FILE = "/data/local/tmp/ttasks-pairing.txt";
 const RUNNER = `${ANDROID_APP_ID}.test/androidx.test.runner.AndroidJUnitRunner`;
@@ -56,6 +57,17 @@ const reset = () => {
 const run = promisify(execFile);
 const adb = async (...args: string[]): Promise<string> =>
   (await run("adb", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })).stdout;
+
+/** A picture of the screen as it is, for the pull request, when `--shots` names a folder. */
+async function shot(name: string): Promise<void> {
+  if (shots === undefined) return;
+  mkdirSync(shots, { recursive: true });
+  const png = await run("adb", ["exec-out", "screencap", "-p"], {
+    encoding: "buffer",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  writeFileSync(join(shots, `${name}.png`), png.stdout);
+}
 
 function check(holds: boolean, what: string): void {
   console.log(`${holds ? "ok  " : "FAIL"} ${what}`);
@@ -138,6 +150,13 @@ try {
     "Scan the code, the code read, the phone named, Pair: the screen says Connected",
   );
   check(seen.upgrades > 0, `the code went to the computer (${String(seen.upgrades)} upgrades)`);
+  if (shots !== undefined) {
+    await adb(
+      "pull",
+      `/sdcard/Android/data/${ANDROID_APP_ID}/files/name.png`,
+      join(shots, "2-name.png"),
+    );
+  }
   const paired = await phones();
   check(paired.length === 1 && paired[0]?.name === "Emulator", "one phone is paired, by its name");
   const before = paired[0]?.last_used_at;
@@ -149,6 +168,7 @@ try {
     `the started app was served again without a code (${String(seen.upgrades)} upgrade)`,
   );
   check(await shows("Mira", "Connected"), "the screen shows the space and Connected");
+  await shot("3-connected");
   check((await phones()).length === 1, "still one paired phone");
 
   const resumed = (await phones())[0]?.last_used_at;
@@ -169,12 +189,14 @@ try {
     await shows("This phone was removed on the computer.", "Scan the code"),
     `the started app is told it was removed (${String(seen.upgrades)} upgrade)`,
   );
+  await shot("4-removed");
   await restart();
   check(
     await shows("Not paired with a computer.", "Scan the code"),
     "started again, it is not paired",
   );
   check(seen.connections === 0, `and opens no connection (${String(seen.connections)} TCP)`);
+  await shot("1-not-paired");
 } catch (error) {
   failed = true;
   console.error(error instanceof Error ? error.message : error);

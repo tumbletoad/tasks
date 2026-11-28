@@ -100,6 +100,8 @@ class LinkTest {
       device.wait(Until.findObject(By.clazz("android.widget.EditText")), 1_000L)
     } ?: throw AssertionError("no field for the phone's name")
     name.text = "Emulator"
+    // For the pull request's pictures; the harness pulls it.
+    context.getExternalFilesDir(null)?.let { device.takeScreenshot(java.io.File(it, "name.png")) }
     shown(device, "Pair").click()
     shown(device, "Connected")
   }
