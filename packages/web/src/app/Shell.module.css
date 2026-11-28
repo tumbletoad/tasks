@@ -56,6 +56,9 @@
 
 .main {
   scroll-margin-top: var(--k-top);
+  /* The views keep the reader's place themselves (List.tsx, Activity.tsx). The browser's anchoring
+     would take what follows a list as its anchor and scroll the page when a card above it grows. */
+  overflow-anchor: none;
 }
 
 .main:focus {
