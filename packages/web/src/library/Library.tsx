@@ -23,7 +23,8 @@ import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
 import { Markdown } from "../task/markdown.tsx";
 import { TEXT_MAX } from "../unsent.ts";
-import type { LibraryCalls, NodeView } from "./calls.ts";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
+import type { NodeView } from "./calls.ts";
 import css from "./Library.module.css";
 import { listsOf, type Level, type LibraryNode } from "./lists.ts";
 import { NewPage } from "./NewPage.tsx";
@@ -406,7 +407,7 @@ function Above({
 const MAX_PARTS = 20;
 
 /** A node's texts, its description whole: a long one is read on with the answer's cursor. */
-async function readNode(calls: LibraryCalls, target: string): Promise<NodeView | undefined> {
+async function readNode(calls: Client, target: string): Promise<NodeView | undefined> {
   const first = await calls.page.read({ target });
   if (first.view !== "node") return undefined;
   let { description, slice, cursor } = first;
@@ -465,7 +466,7 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
   );
   useEffect(() => {
     let current = true;
-    readNode(api.library, target).then(
+    readNode(api.client, target).then(
       (answer) => {
         if (!current || answer === undefined) return;
         const now = shown.current;

@@ -23,7 +23,8 @@ import { useLive } from "../store/hooks.ts";
 import type { PageRow } from "../store/rows.ts";
 import { Markdown } from "../task/markdown.tsx";
 import { TEXT_MAX } from "../unsent.ts";
-import type { LibraryCalls, PageView, Version } from "./calls.ts";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
+import type { PageView, Version } from "./calls.ts";
 import { LibraryLink } from "./Library.tsx";
 import css from "./Library.module.css";
 import { Penned, useChanged, whoOf } from "./parts.tsx";
@@ -76,7 +77,7 @@ interface Read {
 const codeOf = (error: unknown): unknown =>
   typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
 
-async function readPage(calls: LibraryCalls, ref: string): Promise<Read | "gone"> {
+async function readPage(calls: Client, ref: string): Promise<Read | "gone"> {
   const first = await calls.page.read({ target: ref });
   if (first.view !== "page") return "gone";
   let body = first.body ?? "";
@@ -177,7 +178,7 @@ function Versions({
   const [again, setAgain] = useState(0);
   useEffect(() => {
     let current = true;
-    api.library.page.history({ target: page }).then(
+    api.client.page.history({ target: page }).then(
       (answer) => {
         if (!current || answer.view !== "versions") return;
         setFailed(false);
@@ -194,7 +195,7 @@ function Versions({
   const older = () => {
     const cursor = list?.cursor;
     if (cursor === undefined) return;
-    api.library.page.history({ target: page, cursor }).then(
+    api.client.page.history({ target: page, cursor }).then(
       (answer) => {
         if (answer.view !== "versions") return;
         setList((now) => ({
@@ -317,7 +318,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
   }, []);
   useEffect(() => {
     let current = true;
-    readPage(api.library, ref).then(
+    readPage(api.client, ref).then(
       (answer) => {
         if (current) setRead(answer);
       },
@@ -401,7 +402,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
   const base = view.as_of;
   const whenOf = (version: Version) => formatWhen(Date.parse(version.at), clock);
   const show = (version: Version) => {
-    api.library.page.history({ target: view.ref, seq: version.seq }).then(
+    api.client.page.history({ target: view.ref, seq: version.seq }).then(
       (answer) => {
         if (answer.view === "version") setShown({ version, text: answer.text });
       },

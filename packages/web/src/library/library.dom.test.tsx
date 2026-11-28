@@ -88,8 +88,8 @@ beforeEach(() => {
       return answer(input);
     };
   api = {
-    client: { receipt: { get: () => new Promise(() => undefined) } },
-    library: {
+    client: {
+      receipt: { get: () => new Promise(() => undefined) },
       page: {
         read: record("page.read", (input) =>
           Promise.resolve(input["target"] === PAGE.ref ? PAGE : nodeRead(input)),
