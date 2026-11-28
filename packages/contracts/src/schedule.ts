@@ -203,7 +203,10 @@ export function formatRule(value: Rule): string {
 
 /** A stored schedule's rule, or undefined when the schedule cannot be used. */
 export function readSchedule(schedule: Schedule): Rule | undefined {
-  if (dayNumber(schedule.start) === undefined || !isTimeZone(schedule.zone)) return undefined;
+  // A start that is no date of the calendar (30 February) would otherwise roll into the next month.
+  const start = dayNumber(schedule.start);
+  if (start === undefined || dateOf(start) !== schedule.start) return undefined;
+  if (!isTimeZone(schedule.zone)) return undefined;
   return parseRule(schedule.rule);
 }
 

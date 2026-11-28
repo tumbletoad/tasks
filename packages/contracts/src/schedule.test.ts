@@ -16,6 +16,7 @@ import {
   parseRule,
   presets,
   previousDate,
+  readSchedule,
   type MonthDay,
   type Pattern,
   type Rule,
@@ -179,6 +180,15 @@ describe("[A4.routines.schedule.rule] the stored form of a schedule", () => {
     expect(formatRule(presets.monthlyOn(-1, "FR"))).toBe("FREQ=MONTHLY;BYDAY=-1FR");
     expect(formatRule(presets.yearly(12, 14))).toBe("FREQ=YEARLY;BYMONTH=12;BYMONTHDAY=14");
     expect(formatRule(presets.weekly(["TH", "MO"], 2))).toBe("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH");
+  });
+
+  test("a start that is no date of the calendar makes no schedule", () => {
+    for (const start of ["2025-02-29", "2026-02-30", "2026-04-31", "2026-13-01", "2026-00-10"]) {
+      const s = schedule(presets.daily(), start, "UTC");
+      expect(readSchedule(s), start).toBeUndefined();
+      expect(nextDate(s, "2025-01-01"), start).toBeUndefined();
+    }
+    expect(readSchedule(schedule(presets.daily(), "2028-02-29", "UTC"))).toBeDefined();
   });
 
   test("a text outside the subset is no rule", () => {
