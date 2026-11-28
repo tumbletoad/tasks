@@ -54,6 +54,23 @@ export const WORDS = {
   doneToast: (title: string) => `Done: ${title}`,
   undo: "Undo",
 
+  open: (title: string) => `Open: ${title}`,
+  back: "Back",
+  brief: "Brief",
+  description: "Description",
+  thread: "Notes and log",
+  knowledge: "Knowledge",
+  fromAbove: "From above",
+  question: (by: string) => `Question from ${by}`,
+  planned: (day: string) => `Planned for ${day}`,
+  priority: (n: number) => `Priority ${String(n)}`,
+  effort: (effort: string) => `Effort: ${effort}`,
+  waitingOn: (who: string) => `Waiting on ${who}`,
+  who: (by: string) =>
+    by === "user" ? "You" : by === "import" ? "Imported" : by === "agent" ? "An agent" : by,
+  notLoaded: "Not loaded yet. It loads when the computer can be reached.",
+  nothingYet: "Nothing written yet.",
+
   newTask: "New task",
   addTask: "Add a task",
   addedTo: (where: string) => `Added to ${where}`,
