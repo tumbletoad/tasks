@@ -815,10 +815,14 @@ describe("[S2.replay.feed] the feed of both backends: the snapshot and each batc
       // A space of each backend of its own: the feed sends all of a space, and the order of what
       // other sequences left at one position or one instant is chance.
       const spaces = await newSpaces(w, "feed");
-      await both(
-        { today: feedBackend(() => spaces.today), tree: feedBackend(() => spaces.tree) },
-        FEED,
-      );
+      try {
+        await both(
+          { today: feedBackend(() => spaces.today), tree: feedBackend(() => spaces.tree) },
+          FEED,
+        );
+      } finally {
+        await spaces.close();
+      }
     },
     LONG,
   );

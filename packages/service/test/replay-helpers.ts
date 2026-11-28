@@ -18,17 +18,20 @@ import { classSession } from "./ops-helpers.ts";
 
 /**
  * A new space of each backend in the world's service, named and prefixed alike, so what one
- * shows of itself (its name, its prefix) is the other's too.
+ * shows of itself (its name, its prefix) is the other's too. `close` closes both, with their
+ * workers: a run of many sequences holds only the spaces of the one it runs.
  */
 export async function newSpaces(
   w: ContractWorld & { root: string },
   name: string,
-): Promise<{ today: string; tree: string }> {
+): Promise<{ today: string; tree: string; close(): Promise<void> }> {
   const checked = await CheckedDriver.check(await loadDriver(DEFAULT_DRIVER));
   const person = await classSession(w.home, w.path, "cli-interactive");
   try {
+    const folders: string[] = [];
     const open = async (tree: boolean) => {
       const folder = join(w.root, "s", `${name}-${tree ? "tree" : "today"}`);
+      folders.push(folder);
       createSpace(checked, folder, {
         name: "Mira",
         refPrefix: "M",
@@ -41,7 +44,20 @@ export async function newSpaces(
       };
       return opened.space.id;
     };
-    return { today: await open(false), tree: await open(true) };
+    const today = await open(false);
+    const tree = await open(true);
+    return {
+      today,
+      tree,
+      close: async () => {
+        const closer = await classSession(w.home, w.path, "cli-interactive");
+        try {
+          for (const folder of folders) await closer.call("space/close", { space: folder });
+        } finally {
+          closer.close();
+        }
+      },
+    };
   } finally {
     person.close();
   }

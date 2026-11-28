@@ -340,13 +340,17 @@ describe("[S2.replay.generated] random ordinary sequences of the tree's families
         fc.asyncProperty(sequence, async (steps) => {
           n += 1;
           const spaces = await newSpaces(w, `gen-${String(n)}`);
-          await both(
-            {
-              today: marked(backend(w.service.ops, () => spaces.today)),
-              tree: marked(backend(w.service.ops, () => spaces.tree)),
-            },
-            steps as Sequence<Step>,
-          );
+          try {
+            await both(
+              {
+                today: marked(backend(w.service.ops, () => spaces.today)),
+                tree: marked(backend(w.service.ops, () => spaces.tree)),
+              },
+              steps as Sequence<Step>,
+            );
+          } finally {
+            await spaces.close();
+          }
         }),
         { seed, numRuns: Number(process.env["FC_RUNS"] ?? 80), endOnFailure: true },
       );
