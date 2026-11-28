@@ -125,6 +125,8 @@ const words = fc.constantFrom(
   "Paint it green",
   "Done by Friday",
 );
+/** A size a task takes: levels a space has at first, and one only a changed list has. */
+const size = fc.constantFrom("S", "M", "XL", "Huge");
 /** A group by today's names: a project always in an area. */
 const group = fc.constantFrom(
   {},
@@ -149,6 +151,7 @@ const add = fc
     due: fc.option(fc.constantFrom("2026-12-01", "tomorrow"), { nil: undefined }),
     focus: fc.boolean(),
     waiting: fc.option(fc.constantFrom("The bank", "A reply"), { nil: undefined }),
+    effort: fc.option(size, { nil: undefined }),
     key: fc.option(fc.constantFrom("fixture:gen-1", "fixture:gen-2"), { nil: undefined }),
     log: fc.option(words, { nil: undefined }),
     who,
@@ -164,6 +167,7 @@ const add = fc
           ...(r.due === undefined ? {} : { due: r.due }),
           ...(r.focus ? { focus: true } : {}),
           ...(r.waiting === undefined ? {} : { waiting_on: r.waiting }),
+          ...(r.effort === undefined ? {} : { effort: r.effort }),
           ...(r.key === undefined
             ? {}
             : { sources: [{ key: r.key, kind: "ticket", title: "Fixture ticket" }] }),
@@ -187,6 +191,7 @@ const update = fc
       group.map((g) => ({ set: g })),
       fc.constantFrom("2026-12-05", "+3d").map((d) => ({ set: { due: d } })),
       fc.boolean().map((f) => ({ set: { focus: f } })),
+      size.map((effort) => ({ set: { effort } })),
       fc.constant({ clear: ["due", "waiting_on"] }),
     ),
     who,
@@ -441,6 +446,71 @@ const folders = fc.oneof(
     .map((r): Step => ({ op: "task.search", input: { q: r.q, cwd: r.cwd }, ...r.who })),
 );
 
+/**
+ * Preferences: the keys read, a number set and reset, and the effort levels changed, with or
+ * without the moves of the tasks on a level the change drops, as a preview or for real.
+ */
+const preferences = fc.oneof(
+  fc
+    .record({ action: fc.constantFrom("get", "describe"), who })
+    .map((r): Step => ({ op: "prefs.manage", input: { action: r.action }, ...r.who })),
+  fc
+    .record({
+      change: fc.oneof(
+        fc.constantFrom(7, 30, "21").map((value) => ({ value })),
+        fc.constant({ reset: true }),
+      ),
+      who,
+      sent,
+    })
+    .map((r): Step => ({
+      op: "prefs.manage",
+      input: { action: "set", set: [{ key: "tasks.dedupe_window_days", ...r.change }] },
+      ...r.who,
+      ...r.sent,
+    })),
+  fc
+    .record({
+      change: fc.oneof(
+        fc
+          .constantFrom("XS, S, M, L, XL, Huge", "S, M, L", "M, S, Huge", "XS, S, M, L, XL")
+          .map((value) => ({ value })),
+        fc.constant({ reset: true }),
+      ),
+      moves: fc.option(
+        fc.subarray(
+          [
+            { from: "XS", to: "S" },
+            { from: "XL", to: "Huge" },
+            { from: "XL", to: null },
+            { from: "Huge", to: "M" },
+            { from: "L", to: "M" },
+          ],
+          { minLength: 1 },
+        ),
+        { nil: undefined },
+      ),
+      preview: fc.boolean(),
+      sent,
+    })
+    .map((r): Step => ({
+      op: "prefs.manage",
+      input: {
+        action: "set",
+        set: [
+          {
+            key: "tasks.effort_scale",
+            ...r.change,
+            ...(r.moves === undefined ? {} : { moves: r.moves }),
+          },
+        ],
+        ...(r.preview ? { dry_run: true } : {}),
+      },
+      user: true,
+      ...r.sent,
+    })),
+);
+
 /** The vocabulary: one maker per call of the families on a tree space. */
 const VOCABULARY: fc.Arbitrary<Step>[] = [
   add,
@@ -459,6 +529,7 @@ const VOCABULARY: fc.Arbitrary<Step>[] = [
   sections,
   reads,
   folders,
+  preferences,
 ];
 
 /** Steps that come together: a draft filed by its folder and sent twice, then Undo or Redo. */

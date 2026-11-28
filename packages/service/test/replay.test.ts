@@ -839,6 +839,36 @@ const FEED_FOLDERS: Sequence<Step> = [
   manage({ action: "clear", project: "Garden/Fence" }, { base: true }),
 ];
 
+/** How a setting is sent unless a step says otherwise: by the person, from the latest read. */
+const PERSON: Partial<Step> = { user: true, base: true };
+
+const prefs = (input: Record<string, unknown>, how: Partial<Step> = { user: true }): Step => ({
+  op: "prefs.manage",
+  input,
+  ...how,
+});
+const setPref = (
+  key: string,
+  change: Record<string, unknown>,
+  how: Partial<Step> = PERSON,
+  rest: Record<string, unknown> = {},
+): Step => prefs({ action: "set", set: [{ key, ...change }], ...rest }, how);
+
+const LEVELS = "tasks.effort_scale";
+const WINDOW = "tasks.dedupe_window_days";
+
+/** The feed's settings and the rows of the tasks a change of levels moves. */
+const FEED_PREFS: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Fixture large", effort: "L" }, { title: "Fixture small" }] },
+    user: true,
+  },
+  setPref(WINDOW, { value: 14 }),
+  setPref(LEVELS, { value: "XS, S, M, XL", moves: [{ from: "L", to: "XL" }] }),
+  setPref(WINDOW, { reset: true }),
+];
+
 describe("[S2.replay.feed] the feed of both backends: the snapshot and each batch", () => {
   test(
     "the tree of areas and projects, a task's row, a question waiting, a finish and the Trash",
@@ -866,6 +896,22 @@ describe("[S2.replay.feed] the feed of both backends: the snapshot and each batc
         await both(
           { today: feedBackend(() => spaces.today), tree: feedBackend(() => spaces.tree) },
           FEED_FOLDERS,
+        );
+      } finally {
+        await spaces.close();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a setting changed and reset, and the row of a task a change of levels moved",
+    async () => {
+      const spaces = await newSpaces(w, "feed-prefs");
+      try {
+        await both(
+          { today: feedBackend(() => spaces.today), tree: feedBackend(() => spaces.tree) },
+          FEED_PREFS,
         );
       } finally {
         await spaces.close();
@@ -1049,6 +1095,91 @@ describe("[S2.replay.folders] today's service requests through both backends: ma
     "a move with more folders inside than an answer names, taken along and left: the same twenty by path when it is sent again, and the tasks of one folder by their references",
     async () => {
       await replayIn("many-folders", MANY);
+    },
+    LONG,
+  );
+});
+
+/** A space's settings, as the settings page and `prefs-set.test.ts` send them. */
+const PREFS: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: {
+      tasks: [
+        { title: "Fixture small", effort: "S" },
+        { title: "Fixture medium", effort: "M" },
+        { title: "Fixture large", effort: "L" },
+      ],
+    },
+    as: "small",
+  },
+  { op: "task.finish", input: { task: "{small}", outcome: "Done" }, base: true, user: true },
+  prefs({ action: "describe" }),
+  prefs({ action: "get" }),
+  prefs({ action: "get", keys: ["tasks.*"] }, {}),
+  // A number: set, its lost reply, the same value again, by an agent, from a stale read, reset.
+  setPref(WINDOW, { value: 14 }),
+  setPref(WINDOW, { value: 14 }, { ...PERSON, again: 6 }),
+  setPref(WINDOW, { value: 14 }),
+  setPref(WINDOW, { value: 7 }, { base: true }),
+  setPref(WINDOW, { value: 60 }, { user: true, baseFrom: 5 }),
+  setPref(WINDOW, { value: "21" }),
+  setPref(WINDOW, { reset: true }),
+  setPref(WINDOW, { reset: true }),
+  // The levels: one added by name, the list reordered, and a task on the new level.
+  setPref(LEVELS, { value: "XS, S, M, L, XL, Two weeks" }),
+  setPref(LEVELS, { value: "S, XS, M, L, XL, Two weeks" }),
+  { op: "task.add", input: { tasks: [{ title: "Fixture long", effort: "Two weeks" }] } },
+  { op: "task.add", input: { tasks: [{ title: "Fixture huge", effort: "XXL" }] } },
+  // A draft that finds its task by its source is held to the space's sizes and statuses too.
+  { op: "task.add", input: { tasks: [{ title: "Keyed", sources: [ticket("fixture:prefs-1")] }] } },
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Keyed", effort: "XXL", sources: [ticket("fixture:prefs-1")] }] },
+  },
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Keyed", status: "parked", sources: [ticket("fixture:prefs-1")] }] },
+  },
+  { op: "task.search", input: { q: 'effort:"Two weeks"' } },
+  // A level dropped while tasks hold it: refused with how many, previewed with its move, then
+  // done, the tasks moving with it; and a level renamed by its move.
+  setPref(LEVELS, { value: "XS, S, M, XL, Two weeks" }),
+  setPref(LEVELS, { value: "XS, S, M, XL, Two weeks", moves: [{ from: "L", to: "XL" }] }, PERSON, {
+    dry_run: true,
+  }),
+  setPref(LEVELS, { value: "XS, S, M, XL, Two weeks", moves: [{ from: "L", to: "XL" }] }),
+  setPref(LEVELS, { value: "XS, Small, M, XL", moves: [{ from: "S", to: "Small" }] }),
+  setPref(LEVELS, {
+    value: "XS, Small, M, XL",
+    moves: [
+      { from: "S", to: "Small" },
+      { from: "Two weeks", to: null },
+    ],
+  }),
+  prefs({ action: "get", keys: [LEVELS] }),
+  // A change of a setting is no step of the person's: Undo takes the step before it, the finish.
+  { op: "history.undo", input: {}, user: true },
+  { op: "history.redo", input: {}, user: true },
+  // The whole value with its base: a change in between is a conflict, not written over.
+  setPref(LEVELS, {
+    value: [{ key: "Quick", time: { amount: 15, unit: "minutes" } }, { key: "M" }],
+  }),
+  setPref(LEVELS, { value: "XS, M" }, { user: true, baseFrom: 23 }),
+  setPref(LEVELS, { reset: true, moves: [{ from: "Quick", to: "XS" }] }),
+  // What a build fixes, a key no build has, a value that does not fit, a name too long.
+  setPref("tasks.statuses", { value: "open,parked,waiting" }),
+  setPref("tasks.dedupe_window", { value: 3 }),
+  setPref(WINDOW, { value: "soon" }),
+  setPref(LEVELS, { value: "XS, A level with a far too long name" }),
+  { op: "space.status", input: {}, user: true },
+];
+
+describe("[S2.replay.prefs] today's service requests through both backends: preferences", () => {
+  test(
+    "the keys and their values; a number set, sent again, by an agent, from a stale read and reset; the levels added to, reordered, dropped with and without a move, previewed and renamed; Undo, which leaves a setting as it is",
+    async () => {
+      await replayIn("prefs", PREFS);
     },
     LONG,
   );
