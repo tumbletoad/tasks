@@ -6422,6 +6422,10 @@
                   "description": "Owner",
                   "type": "string"
                 },
+                "parent": {
+                  "description": "The node it sits under: a task, a project or the space",
+                  "type": "string"
+                },
                 "parent_id": {
                   "description": "Parent task ID",
                   "type": "string"
@@ -6661,6 +6665,7 @@
                 "lifecycle",
                 "status",
                 "inbox",
+                "parent",
                 "position",
                 "finished_at",
                 "created_at",
@@ -9626,6 +9631,10 @@
                   "description": "Owner",
                   "type": "string"
                 },
+                "parent": {
+                  "description": "The node it sits under: a task, a project or the space",
+                  "type": "string"
+                },
                 "parent_id": {
                   "description": "Parent task ID",
                   "type": "string"
@@ -9912,6 +9921,7 @@
                 "lifecycle",
                 "status",
                 "inbox",
+                "parent",
                 "position",
                 "created_at",
                 "version",
