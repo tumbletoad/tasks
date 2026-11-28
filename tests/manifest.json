@@ -2448,14 +2448,28 @@
     },
     {
       "id": "A5.entry.correct.e2e",
-      "title": "In the page against the real service, every note and log entry has its pen in sight; an agent's note is corrected by Enter and put back by the toast's Undo, its mark coming and going; the agent's log entry is corrected by keyboard; the context's words typed and not sent come back after a reload and save; the summary's are let go with Escape and the card stays open; an agent reads the corrected words",
+      "title": "In the page against the real service, every note and log entry has its pen in sight; an agent's note is corrected by Enter and put back by the toast's Undo, its mark coming and going; the agent's log entry is corrected by keyboard; the description's words typed and not sent come back after a reload and save by Ctrl+Enter; the brief's are let go with Escape and the card stays open; an agent reads the corrected words",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A5.entry.correct.e2e.screens",
-      "title": "The description and the thread with their pens, a corrected entry with its mark, and the box open, at 1,440 px and 390 px in Sumi and Washi, axe clean, nothing wider than the screen",
+      "title": "The brief, the description and the thread with their pens, a corrected entry with its mark, the box open, the description's Preview, and a task with neither text, at 1,440 px and 390 px in Sumi and Washi, axe clean, nothing wider than the screen",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.text.add.e2e",
+      "title": "In the page against the real service, a task without a brief is given one by keyboard alone and keeps it after a reload; a description is added with Enter as a new line, its Preview shows the Markdown, and Ctrl+Enter from the Preview saves the words an agent then reads",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.text.add.web.card",
+      "title": "In the card, the brief and the description are named so; a task without one has an Add on the brief's line that opens an empty box and saves what is typed; emptying either takes it away with Undo; Preview shows the typed Markdown and Ctrl+Enter or Escape hold there; a refused save keeps the words as not saved; a finished task's card offers no pen and no Add, as the service refuses its change",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

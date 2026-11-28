@@ -29,7 +29,7 @@ import { is } from "../keys/keymap.ts";
 import { useIntl } from "react-intl";
 import type { NodeRow, TaskRow } from "@ttasks/client/store";
 import { Expanded } from "../task/Expanded.tsx";
-import { NotSaved, Pen, TextEditor, useEditing, useSaved } from "../task/TextEditor.tsx";
+import { Add, NotSaved, Pen, TextEditor, useEditing, useSaved } from "../task/TextEditor.tsx";
 import { useTextWrites } from "../task/textWrites.ts";
 import { agentMarker } from "../task/runs.ts";
 import { placeFact, sourceFacts } from "../task/sources.ts";
@@ -75,6 +75,7 @@ const styles = classes(css, [
   "title",
   "chip",
   "summary",
+  "adds",
   "prefix",
   "dot",
   "text",
@@ -612,17 +613,20 @@ function RowView({
   const [editing, setEditing] = useState<false | { readonly brought?: TitleDraft }>(false);
   // In the Trash the title is read, never edited: a kept one waits there with Copy and Discard.
   const editable = active && !still;
-  // The summary is corrected in place behind its pen, as the context is, once the card is open.
+  // The brief is written and corrected in place behind its pen, as the description is, once the
+  // card is open. Its line holds the way to add either text when the task has none.
   const summary = task.summary ?? "";
   const [summing, setSumming] = useEditing(
     live.spaceId ?? "",
     task.id,
     "summary",
     summary,
-    editable && expanded && summary !== "",
+    editable && expanded,
   );
   const [summed, setSummed] = useSaved(summary);
-  const text = summary === "" || model.ending !== undefined ? line : summed;
+  const text = model.ending !== undefined ? line : summed === "" ? undefined : summed;
+  const texts = expanded && editable && model.ending === undefined;
+  const [adds, setAdds] = useState<HTMLElement | null>(null);
   const writes = useTextWrites();
   // The row the person moved out of the view: while focus holds it there with the data it
   // had, its move is done, so the button goes. Newer data (an undo) brings it back.
@@ -795,8 +799,9 @@ function RowView({
               owner={task.id}
               part="summary"
               label={t("task.summary")}
-              text={summary}
+              text={summed}
               line
+              clears
               max={SUMMARY_MAX}
               base={edits.seen(task, ["summary"])}
               save={(words, base) => writes.summary(task, words, base)}
@@ -805,15 +810,16 @@ function RowView({
                 setSumming(false);
               }}
             />
-          ) : model.prefix === undefined && line === undefined ? null : (
+          ) : model.prefix === undefined && text === undefined && !texts ? null : (
             <div
               className={styles.summary}
               data-part={model.ending === undefined ? "summary" : "ending"}
-              data-tip={expanded && !trashed ? t("ask.tip") : undefined}
+              data-tip={expanded && !trashed && text !== undefined ? t("ask.tip") : undefined}
               onClick={(event) => {
                 // Expanded, the line is an agent's to change: a click asks one, unless
                 // it ends a selection of its text or was on its pen.
-                if (!expanded || !(window.getSelection()?.isCollapsed ?? true)) return;
+                if (!expanded || text === undefined) return;
+                if (!(window.getSelection()?.isCollapsed ?? true)) return;
                 if ((event.target as Element).closest("button") !== null) return;
                 actions.ask(task, model.ending === undefined ? "summary" : "outcome");
               }}
@@ -834,14 +840,23 @@ function RowView({
                   {text}
                 </span>
               )}
-              {expanded && editable && model.ending === undefined && summary !== "" ? (
+              {!texts ? null : text === undefined ? (
+                <Add
+                  label={t("text.addSummary")}
+                  part="add-summary"
+                  onPress={() => {
+                    setSumming(true);
+                  }}
+                />
+              ) : (
                 <Pen
                   label={t("text.editSummary")}
                   onPress={() => {
                     setSumming(true);
                   }}
                 />
-              ) : null}
+              )}
+              {texts ? <span ref={setAdds} className={styles.adds} /> : null}
             </div>
           )}
           {expanded && editable ? <NotSaved space={space} owner={task.id} part="summary" /> : null}
@@ -899,6 +914,7 @@ function RowView({
             cannot={cannot}
             actions={actions}
             refused={refused}
+            adds={adds}
           />
         </div>
       ) : null}

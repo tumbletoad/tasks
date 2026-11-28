@@ -1,7 +1,8 @@
 /*
  * The pen and the box it opens (TextEditor.tsx). The pen is the card's 24 px target around a 16 px
  * icon, muted like the bin and the folder beside it, and always in sight. The box takes the text's
- * own place, size and line height, its words where the text's were. Tokens only.
+ * own place, size and line height, its words where the text's were; a box of Markdown has its
+ * Preview where the pen stood, and the Preview keeps the box's height. Tokens only.
  */
 
 .pen {
@@ -27,6 +28,34 @@
 .pen svg {
   width: 16px;
   height: 16px;
+}
+
+/* The way to a text the task has none of: as quiet as the line it stands on, no taller. */
+.add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  margin-inline-end: 10px;
+  padding: 0 6px 0 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--k-muted);
+  vertical-align: top;
+  cursor: pointer;
+}
+
+.add:hover {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+.add svg {
+  width: 14px;
+  height: 14px;
 }
 
 .box {
@@ -55,4 +84,32 @@
 
 .field[aria-busy="true"] {
   color: var(--k-text-2);
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.row > .field,
+.row > .preview {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.preview {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--k-h);
+  margin: 0 0 0 -6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--k-control);
+}
+
+.pen[aria-pressed="true"] {
+  background: var(--k-hover);
+  color: var(--k-text);
 }

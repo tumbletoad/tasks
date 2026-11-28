@@ -23,10 +23,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   not what it says.
 - Undo and Redo take back what is a nuisance to put back by hand: checking off and reopening,
   moving to the Trash and restoring, a whole change from the Trash too, removing a note and putting
-  it back, the words of a title, a summary, a context, a note or a log entry, the words of a page
-  and moving it to the Trash and back, a description, the space's brief and a text for agents, a
-  move out of the Inbox or into it, a task's first area, setting questions aside, a new project
-  or area, and archiving or unarchiving one. Anything else you change back by doing it again, and
+  it back, the words of a title, a task's brief or description, a note or a log entry, the words
+  of a page and moving it to the Trash and back, a description, the space's brief and a text for
+  agents, a move out of the Inbox or into it, a task's first area, setting questions aside, a new
+  project or area, and archiving or unarchiving one. Anything else you change back by doing it again, and
   Undo passes over it, in the page and at the command line alike.
 - Undo and Redo never write over a change made since: not where what your change wrote was changed
   again, by anyone, you included, not where a wrap-up was written since a finish, and never by
@@ -253,8 +253,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   from then on no agent and no search reads it, the task's readable file loses it within about a
   second, a launch it was the request of says the request was taken back, and Put back brings it
   back as it was. Only you take notes back, and nothing is deleted for good.
-- You can correct the words of a task's summary and context and of any note or log entry in its
-  thread, whoever wrote them, behind the pen beside them. The words before stay in the history and
+- You can write, correct or empty an open task's brief and description, and correct any note or log
+  entry in its thread, whoever wrote them, behind the pen beside them. A finished task's brief and
+  description are only read: reopen it to change them. The words before stay in the history and
   Undo puts them back; a corrected note or entry says that you corrected it. Agents read the
   corrected words from then on, and no agent tool rewrites what someone else wrote. A correction
   always holds the whole text, and one refused because the words changed meanwhile is never sent

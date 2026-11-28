@@ -3,18 +3,27 @@
 // stands; a text the card holds only in part has no box to save from. Enter saves the words as
 // typed (Shift+Enter is a new line), Escape lets go, and leaving the box saves, as the title's
 // editor does; in a page's body, which is written in paragraphs, Enter is a new line and
-// Ctrl+Enter saves. A box whose words the person did not change writes nothing. What is typed is kept
-// in this browser (unsent.ts) until the service holds it: after a reload the box opens again with
-// it. The save is made from where the page was when the box opened, so a change someone made
-// meanwhile is a refusal, never overwritten: the box closes on the text as it is now, and the
+// Ctrl+Enter saves. A box of Markdown has a Preview beside it, where the pen stood, that shows the
+// words as they will read. A box whose words the person did not change writes nothing. What is
+// typed is kept in this browser (unsent.ts) until the service holds it: after a reload the box
+// opens again with it. The save is made from where the page was when the box opened, so a change
+// someone made meanwhile is a refusal, never overwritten: the box closes on the text as it is now, and the
 // person's words wait under it as not saved, with Copy and Discard.
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import unsaved from "../edit/Unsaved.module.css";
 import { refusalText } from "../folder/FolderDialog.tsx";
 import { useT } from "../i18n/intl.tsx";
-import { PencilIcon } from "../row/icons.tsx";
+import { EyeIcon, PencilIcon } from "../row/icons.tsx";
 import {
   keepRefusedText,
   keepTextDraft,
@@ -27,7 +36,7 @@ import {
 } from "../unsent.ts";
 import css from "./TextEditor.module.css";
 
-const styles = classes(css, ["pen", "box", "field"]);
+const styles = classes(css, ["pen", "add", "box", "row", "field", "preview"]);
 const line = classes(unsaved, ["line", "why", "act", "value"]);
 
 /** A log entry's own limit, the writer's: shorter than a note's or a context's. */
@@ -63,6 +72,32 @@ export function Pen({
       }}
     >
       <PencilIcon />
+    </button>
+  );
+}
+
+/** The pen with its words, quiet on the card's brief line, for a text the task has none of. */
+export function Add({
+  label,
+  part,
+  onPress,
+}: {
+  readonly label: string;
+  readonly part: string;
+  readonly onPress: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={styles.add}
+      data-part={part}
+      onClick={(event) => {
+        event.stopPropagation();
+        onPress();
+      }}
+    >
+      <PencilIcon />
+      {label}
     </button>
   );
 }
@@ -174,6 +209,8 @@ export interface TextEditorProps {
   readonly paragraphs?: boolean;
   /** An emptied box is sent: it takes the text away (the text for agents, a description). */
   readonly clears?: boolean;
+  /** The words as the text shows them: the box offers a Preview of what is typed. */
+  readonly preview?: ((typed: string) => ReactNode) | undefined;
   readonly max: number;
   /** Where the page is now: the base of a save made from here. */
   readonly base: string | undefined;
@@ -192,6 +229,7 @@ export function TextEditor({
   line: single = false,
   paragraphs = false,
   clears = false,
+  preview,
   max,
   base,
   save,
@@ -200,6 +238,16 @@ export function TextEditor({
   const t = useT();
   const say = useToast();
   const field = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  /** The Preview in sight: what was typed, in the height the box had. */
+  const [shown, setShown] = useState<{ readonly typed: string; readonly height: number }>();
+  /** Back from the Preview: the words take the focus again once they are in sight. */
+  const back = useRef(false);
+  useLayoutEffect(() => {
+    if (shown !== undefined || !back.current) return;
+    back.current = false;
+    field.current?.focus({ preventScroll: true });
+  }, [shown]);
   // Taken once, as the box opens: the words it began from and the base of their save, also when a
   // reload brought back what was typed.
   const [opened] = useState(
@@ -214,16 +262,16 @@ export function TextEditor({
   const sending = useRef(false);
   const [saving, setSaving] = useState(false);
   const fit = () => {
-    const box = field.current;
-    if (single || box === null) return;
-    box.style.height = "auto";
-    box.style.height = `${String(box.scrollHeight + 2)}px`;
+    const area = field.current;
+    if (single || area === null || shown !== undefined) return;
+    area.style.height = "auto";
+    area.style.height = `${String(area.scrollHeight + 2)}px`;
   };
   useLayoutEffect(fit);
   useEffect(() => {
-    const box = field.current;
-    box?.focus({ preventScroll: true });
-    box?.setSelectionRange(box.value.length, box.value.length);
+    const area = field.current;
+    area?.focus({ preventScroll: true });
+    area?.setSelectionRange(area.value.length, area.value.length);
   }, []);
   const draft = (typed: string): TextDraft => ({
     typed,
@@ -249,10 +297,12 @@ export function TextEditor({
     }
     sending.current = true;
     setSaving(true);
-    save(typed, opened.base).then(
+    // An emptied box takes the text away: spaces alone are no text.
+    const words = typed.trim() === "" ? "" : typed;
+    save(words, opened.base).then(
       () => {
         letGo(space, { kind: "text", task: owner, part, text: typed });
-        onDone(typed);
+        onDone(words);
       },
       (error: unknown) => {
         // Refused: never sent again from here. The words wait under the text as not saved.
@@ -277,28 +327,81 @@ export function TextEditor({
       keep(event.currentTarget.value);
       fit();
     },
-    onKeyDown: (event: KeyboardEvent) => {
-      if (event.nativeEvent.isComposing) return;
-      const saves = paragraphs ? event.ctrlKey || event.metaKey : !event.shiftKey;
-      if (event.key === "Enter" && saves) {
-        event.preventDefault();
-        finish(true);
-      } else if (event.key === "Escape") {
-        // Escape leaves the box only: the list must not collapse the card.
-        event.preventDefault();
-        event.stopPropagation();
-        finish(false);
-      }
-    },
-    onBlur: () => {
-      // The window lost focus or the page goes away: the box keeps what was typed for its return.
-      if (!document.hasFocus() || pageLeaving()) return;
-      finish(true);
-    },
   };
+  // The keys and the leaving are the box's, so they hold while the Preview has the focus.
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.nativeEvent.isComposing) return;
+    const saves = paragraphs
+      ? event.ctrlKey || event.metaKey
+      : !event.shiftKey && event.target === field.current;
+    if (event.key === "Enter" && saves) {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === "Escape") {
+      // Escape leaves the box only: the list must not collapse the card.
+      event.preventDefault();
+      event.stopPropagation();
+      finish(false);
+    }
+  };
+  const onBlur = (event: { relatedTarget: EventTarget | null }) => {
+    // Focus moving to the Preview and back stays in the box.
+    if (event.relatedTarget instanceof Node && box.current?.contains(event.relatedTarget)) return;
+    // The window lost focus or the page goes away: the box keeps what was typed for its return.
+    if (!document.hasFocus() || pageLeaving()) return;
+    finish(true);
+  };
+  const input = single ? (
+    <input {...props} />
+  ) : (
+    <textarea {...props} rows={1} hidden={shown !== undefined} />
+  );
   return (
-    <div className={styles.box} data-part="text-editor">
-      {single ? <input {...props} /> : <textarea {...props} rows={1} />}
+    <div
+      ref={box}
+      className={styles.box}
+      data-part="text-editor"
+      onKeyDown={onKeyDown}
+      onBlur={onBlur}
+    >
+      {preview === undefined ? (
+        input
+      ) : (
+        <div className={styles.row}>
+          {input}
+          {shown === undefined ? null : (
+            <div
+              className={styles.preview}
+              data-part="text-preview"
+              style={{ "--k-h": `${String(shown.height)}px` } as CSSProperties}
+            >
+              {preview(shown.typed)}
+            </div>
+          )}
+          <button
+            type="button"
+            className={styles.pen}
+            data-part="text-preview-toggle"
+            aria-label={t("text.preview")}
+            aria-pressed={shown !== undefined}
+            data-tip={t("text.preview")}
+            onClick={(event) => {
+              const area = field.current;
+              if (area === null) return;
+              if (shown === undefined) {
+                // The focus stays in the box, on the Preview, where Escape and Ctrl+Enter hold.
+                event.currentTarget.focus();
+                setShown({ typed: area.value, height: area.offsetHeight });
+              } else {
+                back.current = true;
+                setShown(undefined);
+              }
+            }}
+          >
+            <EyeIcon />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

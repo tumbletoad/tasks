@@ -3,18 +3,18 @@
 //
 // - Content, with no section labels: first the composer (Composer.tsx), its field and the strip of
 //   what the text goes to, then the outcome and the task's own learnings once it is done, the
-//   context (Markdown, clamped at ten lines with More), one line per source with its own text and
-//   Remove, one collapsed line for the sources and notes removed from it with Put back, the place
-//   on this machine, a hairline, then the thread (Thread.tsx).
+//   description (Markdown, clamped at ten lines with More), one line per source with its own text
+//   and Remove, one collapsed line for the sources and notes removed from it with Put back, the
+//   place on this machine, a hairline, then the thread (Thread.tsx).
 // - Facts (Facts.tsx): short muted labels and their controls, edited in place. Each fact
 //   shows here and nowhere else in the card; the row's columns for them are hidden while it is
 //   expanded.
 //
 // A click on an agent-only field (the outcome, a source's line, a learning) starts a request for an
-// agent there, and so does a click on the context or the summary in the header, which the person
-// also corrects behind their pens (TextEditor.tsx). Everything a task holds is untrusted text: it
-// is rendered as text or as Markdown that is never HTML, and links open only through allowed
-// schemes.
+// agent there, and so does a click on the description or the brief in the header, which the person
+// also writes and corrects behind their pens (TextEditor.tsx). Everything a task holds is untrusted
+// text: it is rendered as text or as Markdown that is never HTML, and links open only through
+// allowed schemes.
 import {
   useContext,
   useLayoutEffect,
@@ -24,6 +24,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "@tanstack/react-router";
 import type { Instance, LastUsed } from "@ttasks/contracts/runs";
 import type { Receipt, Run } from "../api.ts";
@@ -58,7 +59,7 @@ import { Facts } from "./Facts.tsx";
 import { LINK_REL, Markdown } from "./markdown.tsx";
 import { useSourceWrites, type SourceWrites } from "./sourceWrites.ts";
 import { useNoteWrites, type NoteWrites } from "./noteWrites.ts";
-import { NotSaved, Pen, TextEditor, useEditing, useSaved } from "./TextEditor.tsx";
+import { Add, NotSaved, Pen, TextEditor, useEditing, useSaved } from "./TextEditor.tsx";
 import { useTextWrites, type TextWrites } from "./textWrites.ts";
 import { TEXT_MAX } from "../unsent.ts";
 import { actorOf, Thread } from "./Thread.tsx";
@@ -109,6 +110,8 @@ export interface ExpandedProps {
   readonly actions: RowActions;
   /** The last Open of this task, refused on its folder; none once an Open went through. */
   readonly refused?: FolderRefusal | undefined;
+  /** Where on the brief's line the description's Add stands, while the task has none. */
+  readonly adds?: HTMLElement | null;
 }
 
 /** Two texts a person reads as the same: case, spacing and a closing full stop aside. */
@@ -665,8 +668,9 @@ function asks(
 }
 
 /**
- * The context, clamped at ten lines with More when it is longer, with its pen at its end: the
- * person corrects it in place, whoever wrote it.
+ * The description, clamped at ten lines with More when it is longer, with its pen at its end: the
+ * person corrects it in place, whoever wrote it. A task without one has its Add on the brief's
+ * line.
  */
 function Context({
   task,
@@ -675,6 +679,7 @@ function Context({
   onAsk,
   write,
   partial,
+  adds,
 }: {
   readonly task: TaskRow;
   readonly text: string;
@@ -685,6 +690,7 @@ function Context({
   readonly write: TextWrites["context"] | undefined;
   /** The card holds only part of the context: it is not corrected from here. */
   readonly partial: boolean;
+  readonly adds: HTMLElement | null | undefined;
 }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
@@ -718,6 +724,9 @@ function Context({
           part="context"
           label={t("task.context")}
           text={text}
+          paragraphs
+          clears
+          preview={(typed) => <Markdown text={typed} />}
           max={TEXT_MAX}
           base={base}
           save={(words, from) => write(task, words, from)}
@@ -728,6 +737,25 @@ function Context({
         />
         {notSaved}
       </div>
+    );
+  }
+  if (text.trim() === "") {
+    return (
+      <>
+        {write === undefined || adds === null || adds === undefined
+          ? null
+          : createPortal(
+              <Add
+                label={t("text.addContext")}
+                part="add-context"
+                onPress={() => {
+                  setEditing(true);
+                }}
+              />,
+              adds,
+            )}
+        {notSaved}
+      </>
     );
   }
   return (
@@ -778,6 +806,7 @@ export function Expanded({
   cannot,
   actions,
   refused,
+  adds,
 }: ExpandedProps) {
   const t = useT();
   const clock = useClock(false);
@@ -874,15 +903,17 @@ export function Expanded({
             </div>
           </div>
         )}
-        {detail === undefined || detail.context.trim() === "" ? null : (
+        {detail === undefined ? null : (
           <Context
             task={task}
             text={detail.context}
             base={base}
             onAsk={writes?.ask("context")}
-            // Only an open task's context changes, as its summary and title.
+            // Only an open task's description changes, as its brief and title: the service
+            // refuses a finished one's.
             write={task.lifecycle === "active" ? writes?.text.context : undefined}
             partial={detail.contextPartial === true}
+            adds={adds}
           />
         )}
         <ul className={styles.links}>

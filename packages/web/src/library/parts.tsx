@@ -69,6 +69,7 @@ export function Penned({
   line = false,
   paragraphs = false,
   clears = false,
+  preview,
   partial,
   save,
   onDone,
@@ -87,6 +88,8 @@ export function Penned({
   readonly line?: boolean;
   readonly paragraphs?: boolean;
   readonly clears?: boolean;
+  /** The words as the text shows them, for the box's Preview. */
+  readonly preview?: (typed: string) => ReactNode;
   /** Why the pen opens nothing here: only part of the text is loaded. */
   readonly partial?: string | undefined;
   /** Undefined: the text is not corrected from here. */
@@ -122,6 +125,7 @@ export function Penned({
           line={line}
           paragraphs={paragraphs}
           clears={clears}
+          preview={preview}
           max={max}
           base={base}
           save={save}
