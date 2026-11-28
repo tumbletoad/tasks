@@ -505,6 +505,40 @@ function target(conn: Connection, kind: "undo" | "redo", principal: string): Row
   return conn.prepare(kind === "undo" ? RULE.undoTarget : RULE.redoTarget).get({ principal });
 }
 
+const FACTS = {
+  id: "SELECT id FROM commits WHERE seq = $seq",
+  // In the order the step changed them, as a person selected them.
+  tasks:
+    "SELECT t.ref FROM changes c JOIN tasks t ON t.id = c.node_id WHERE c.seq = $seq " +
+    "GROUP BY t.ref ORDER BY min(c.n)",
+  lifecycles:
+    "SELECT t.ref FROM changes c JOIN tasks t ON t.id = c.entity_id WHERE c.seq = $seq " +
+    "AND c.entity = 'tasks' AND c.field = 'lifecycle' GROUP BY t.ref ORDER BY min(c.n)",
+} as const;
+
+/** Most tasks an answer names of a step, as today's answer names them. */
+const NAMED_TASKS = 50;
+
+/**
+ * What an answer names of the step Undo or Redo takes, at `seq`: its commit, the tasks it changed
+ * (the first 50, and how many), and those it finished or reopened.
+ */
+export function stepFacts(conn: Connection, seq: number, prefix: string) {
+  const refs = (sql: string) =>
+    conn
+      .prepare(sql)
+      .all({ seq })
+      .map((r) => formatTaskRef(prefix, Number(r["ref"])));
+  const tasks = refs(FACTS.tasks);
+  const lifecycles = refs(FACTS.lifecycles);
+  return {
+    commit: String(conn.prepare(FACTS.id).get({ seq })?.["id"]),
+    tasks: tasks.slice(0, NAMED_TASKS),
+    task_count: tasks.length,
+    ...(lifecycles.length === 0 ? {} : { lifecycles: lifecycles.slice(0, NAMED_TASKS) }),
+  };
+}
+
 /** What an undo or a redo runs, or why it runs nothing. */
 export function planHistory(
   tx: Tx,

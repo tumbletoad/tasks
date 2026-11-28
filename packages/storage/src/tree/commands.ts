@@ -9,7 +9,8 @@ import { positionBetween } from "../write/positions.ts";
 import { freeSlug } from "../write/slugs.ts";
 import { listPreference, type ScaleKey } from "../preferences.ts";
 import { dedupeWindowMs, finishedOf } from "../write/dedupe.ts";
-import { Fields, sourceFields, WRITE_LIMITS } from "../write/request.ts";
+import { alreadyThere } from "../write/pages.ts";
+import { Fields, OTHER_SPACE_TASK, sourceFields, WRITE_LIMITS } from "../write/request.ts";
 import type { Command, Tx } from "./tx.ts";
 
 type Run = Command["run"];
@@ -32,7 +33,7 @@ const SQL = {
   liveSource: "SELECT id FROM sources WHERE source_key = $key AND deleted_at IS NULL",
   /** The newest live task a source is the origin of. */
   originTask:
-    "SELECT t.id, t.ref, t.lifecycle, t.fp, t.created_seq, n.title FROM tasks t " +
+    "SELECT t.id, t.ref, t.lifecycle, t.fp, t.created_seq, n.title, n.parent_id FROM tasks t " +
     "JOIN nodes n ON n.id = t.id " +
     "WHERE t.origin_source_id = $source AND n.deleted_at IS NULL ORDER BY n.created_seq DESC LIMIT 1",
   node: "SELECT * FROM nodes WHERE id = $id",
@@ -40,6 +41,11 @@ const SQL = {
     "SELECT 1 FROM notes WHERE owner_id = $owner AND body = $body AND deleted_at IS NULL " +
     "AND kind NOT IN ('note', 'learning')",
   taskByRef: "SELECT id FROM tasks WHERE ref = $ref",
+  refOf: "SELECT ref FROM tasks WHERE id = $id",
+  /** A project inside another project. */
+  projectIn:
+    "SELECT p.title FROM nodes p JOIN nodes g ON g.id = p.parent_id " +
+    "WHERE p.id = $id AND p.kind = 'project' AND g.kind = 'project'",
   child:
     "SELECT * FROM nodes WHERE parent_id = $parent AND kind = 'project' AND (slug = $slug OR lower(title) = $title)",
   lastPosition: "SELECT max(position) AS p FROM nodes WHERE parent_id = $parent AND kind = $kind",
@@ -122,6 +128,10 @@ function liveTask(
   deleted: boolean | "either" = false,
   kinds: readonly string[] = ["task"],
 ): Row {
+  const parsed = typeof key === "string" ? parseTaskRef(key) : undefined;
+  if (parsed !== undefined && parsed.prefix !== tx.space.refPrefix) {
+    problem("SPACE_MISMATCH", OTHER_SPACE_TASK, field);
+  }
   const found = findNode(tx, key);
   if (found === undefined || !kinds.includes(String(found["kind"])))
     return problem("NOT_FOUND", "The space has no such task", field);
@@ -134,6 +144,20 @@ function liveTask(
     );
   }
   return task;
+}
+
+/** A due date, or a due time with its zone, as a task's columns hold it; none clears it. */
+function dueColumns(due: unknown): {
+  due_date: string | null;
+  due_at: number | null;
+  due_tz: string | null;
+} {
+  const value = (due ?? {}) as Record<string, unknown>;
+  return {
+    due_date: typeof value["date"] === "string" ? value["date"] : null,
+    due_at: typeof value["at"] === "number" ? value["at"] : null,
+    due_tz: typeof value["tz"] === "string" ? value["tz"] : null,
+  };
 }
 
 /** The end of a parent's children of one kind. */
@@ -209,7 +233,7 @@ function known(tx: Tx, list: ScaleKey, value: unknown, field: string): string {
  * finish names, so an archive and a backdated completion count too. One this request finished is
  * no match: a draft after it is new work.
  */
-function captured(tx: Tx, key: string): { task: Row | undefined; source: string | null } {
+export function captured(tx: Tx, key: string): { task: Row | undefined; source: string | null } {
   const source = tx.get(SQL.liveSource, { key })?.["id"];
   if (typeof source !== "string") return { task: undefined, source: null };
   const task = tx.get(SQL.originTask, { source });
@@ -219,28 +243,42 @@ function captured(tx: Tx, key: string): { task: Row | undefined; source: string 
   return { task: counts ? task : undefined, source };
 }
 
+/**
+ * The project a task shows as today's project: its parent, when that is a project inside another
+ * one. A task directly under a top-level project shows that project as its area alone.
+ */
+function projectTitle(tx: Tx, parent: string): { project?: string } {
+  const row = tx.get(SQL.projectIn, { id: parent });
+  return typeof row?.["title"] === "string" ? { project: row["title"] } : {};
+}
+
 const tasksAdd: Run = (tx, input) => {
   const drafts = input["tasks"] as Input[];
+  const found = drafts.map((draft) => {
+    const source = draft["source"] as Input | undefined;
+    const key = source === undefined ? undefined : str(source, "key");
+    return key === undefined ? undefined : captured(tx, key);
+  });
   return {
     tasks: drafts.map((draft, i) => {
       const at = (field: string) => `tasks.${String(i)}.${field}`;
       const log = str(draft, "log");
       const source = draft["source"] as Input | undefined;
-      const key = source === undefined ? undefined : str(source, "key");
-      const found = key === undefined ? undefined : captured(tx, key);
-      if (found?.task !== undefined) {
-        const id = String(found.task["id"]);
+      const match = found[i];
+      if (match?.task !== undefined) {
+        const id = String(match.task["id"]);
         // As today: the log follows an active match only, and once.
         const follows =
-          found.task["lifecycle"] === "active" &&
+          match.task["lifecycle"] === "active" &&
           tx.get(SQL.sameLog, { owner: id, body: log ?? "" }) === undefined;
         if (log !== undefined && follows) addNote(tx, id, id, log, "progress");
         return {
           status: "exists",
           id,
-          ref: refText(tx, found.task["ref"]),
-          title: found.task["title"],
-          lifecycle: found.task["lifecycle"],
+          ref: refText(tx, match.task["ref"]),
+          title: match.task["title"],
+          lifecycle: match.task["lifecycle"],
+          ...projectTitle(tx, String(match.task["parent_id"])),
           log_added: log !== undefined && follows,
         };
       }
@@ -265,8 +303,9 @@ const tasksAdd: Run = (tx, input) => {
       );
       // The source the task is made from: the one that holds the key already, else a new one on the
       // task. A repeat capture of the key finds the task through it, wherever it moves.
-      let origin = found?.source ?? null;
-      if (source !== undefined && origin === null) {
+      // A source whose key the space holds already is linked to the new task, as today's is.
+      let origin = match?.source ?? null;
+      if (source !== undefined) {
         const made = tx.call("source.add", { on: id, source }) as { source: { id: string } };
         origin = made.source.id;
       }
@@ -283,6 +322,9 @@ const tasksAdd: Run = (tx, input) => {
               : known(tx, "tasks.effort_scale", draft["effort"], at("effort")),
           inbox: draft["inbox"] === true ? 1 : 0,
           priority,
+          ...dueColumns(draft["due"]),
+          focus_on: typeof draft["focus"] === "string" ? draft["focus"] : null,
+          waiting_on: str(draft, "waiting_on") ?? null,
           created_session: tx.request.actor.session_id ?? null,
         },
         id,
@@ -294,6 +336,7 @@ const tasksAdd: Run = (tx, input) => {
         ref: refText(tx, ref),
         title: str(draft, "title") ?? "",
         lifecycle: "active",
+        ...projectTitle(tx, String(parent["id"])),
         log_added: log !== undefined,
       };
     }),
@@ -322,12 +365,20 @@ const taskUpdate: Run = (tx, input) => {
   if (set["priority"] !== undefined) fields["priority"] = Number(set["priority"]);
   if (set["reviewed_at"] !== undefined) fields["reviewed_at"] = set["reviewed_at"] as SqlValue;
   if (set["waiting_on"] !== undefined) fields["waiting_on"] = str(set, "waiting_on") ?? null;
+  if (set["focus"] !== undefined) fields["focus"] = str(set, "focus") ?? null;
   if (Object.keys(node).length > 0) tx.set("nodes", id, id, node);
-  if (Object.keys(fields).length > 0) tx.set("tasks", id, id, fields);
+  const due = set["due"] === undefined ? {} : { due: dueColumns(set["due"]) };
+  if (Object.keys(fields).length > 0 || set["due"] !== undefined) {
+    tx.set("tasks", id, id, { ...fields, ...due });
+  }
   // The fields it changed, in the order they were given: a value it already held is no change.
   const changed = Object.keys(set).filter((key) => {
-    const column = { reviewed_at: "reviewed_at", waiting_on: "waiting_on" }[key] ?? key;
-    const now = column in node ? node[column] : fields[column];
+    if (key === "due") {
+      const want = dueColumns(set["due"]);
+      return Object.entries(want).some(([column, value]) => task[column] !== value);
+    }
+    const column = { focus: "focus_on" }[key] ?? key;
+    const now = key in node ? node[key] : fields[key];
     return now !== undefined && now !== task[column];
   });
   return { task: { id, ref: refText(tx, task["ref"]) }, fields: changed };
@@ -341,9 +392,9 @@ const taskMove: Run = (tx, input) => {
   if (tx.get(SQL.below, { under: to, id }) !== undefined) {
     problem("INVALID_TRANSITION", "A task cannot go under itself or its subtasks", "under");
   }
-  if (task["parent_id"] !== to)
-    tx.set("nodes", id, id, { place: { parent_id: to, position: endOf(tx, to, "task") } });
-  return { task: { id, ref: refText(tx, task["ref"]) } };
+  const moved = task["parent_id"] !== to;
+  if (moved) tx.set("nodes", id, id, { place: { parent_id: to, position: endOf(tx, to, "task") } });
+  return { task: { id, ref: refText(tx, task["ref"]) }, moved };
 };
 
 function finishOne(tx: Tx, id: string, dropped: boolean, at: number, reason: string | null) {
@@ -523,11 +574,20 @@ function findNote(tx: Tx, input: Input): Row {
   return row ?? problem("NOT_FOUND", "The space has no such note", "note");
 }
 
+/** The task a note is on, by its reference, when it is on a task. */
+function taskOfNote(tx: Tx, owner: string): { task?: string } {
+  const ref = tx.get(SQL.refOf, { id: owner })?.["ref"];
+  return ref === undefined ? {} : { task: refText(tx, ref) };
+}
+
 const noteAdd: Run = (tx, input) => {
   const { owner, node } = noteHolder(tx, input["on"]);
   const kind = str(input, "kind") ?? "note";
   const body = String(input["body"]);
-  return { note: addNote(tx, owner, node, body, kind, input["for_agents"] === true) };
+  return {
+    note: addNote(tx, owner, node, body, kind, input["for_agents"] === true),
+    ...taskOfNote(tx, owner),
+  };
 };
 
 /** A note's words, and its removal, are the person's to correct: an agent writes a new note. */
@@ -541,18 +601,31 @@ function personsNote(tx: Tx, input: Input): Row {
 const noteEdit: Run = (tx, input) => {
   const note = personsNote(tx, input);
   const body = String(input["body"]);
-  if (note["body"] !== body) {
+  const edited = note["body"] !== body;
+  if (edited) {
     tx.set("notes", String(note["id"]), nodeOf(tx, note), { body: { body, edited_at: tx.at } });
   }
-  return { note: { id: note["id"], ordinal: note["ordinal"] } };
+  return {
+    note: { id: note["id"], ordinal: note["ordinal"], kind: note["kind"] },
+    edited,
+    ...taskOfNote(tx, String(note["owner_id"])),
+  };
 };
 
 const noteGone =
   (gone: boolean): Run =>
   (tx, input) => {
     const note = personsNote(tx, input);
-    tx.set("notes", String(note["id"]), nodeOf(tx, note), { deleted: gone ? tx.at : null });
-    return { note: { id: note["id"], ordinal: note["ordinal"] } };
+    // As today: a note removed already, or there already, changes nothing.
+    const done = alreadyThere(note["deleted_at"] !== null, !gone);
+    if (!done) {
+      tx.set("notes", String(note["id"]), nodeOf(tx, note), { deleted: gone ? tx.at : null });
+    }
+    return {
+      note: { id: note["id"], ordinal: note["ordinal"] },
+      changed: !done,
+      ...taskOfNote(tx, String(note["owner_id"])),
+    };
   };
 
 const projectCreate: Run = (tx, input) => {
@@ -646,6 +719,9 @@ function draft(f: Fields): Input {
     inbox: (k) => f.boolean(k),
     priority: (k) => f.int(k, 1, 4),
     effort: (k) => f.level(k),
+    due: (k) => f.due(k),
+    focus: (k) => f.dateOrNull(k),
+    waiting_on: (k) => f.nullableText(k, { chars: WRITE_LIMITS.line, line: true }),
     log: (k) => f.text(k, { bytes: WRITE_LIMITS.log }),
     source: (k) => ({ ...sourceFields(f.sub(k)) }),
   });
@@ -680,6 +756,8 @@ const checkUpdate: Check = (f) => {
     effort: (k) => (s.raw(k) === null ? null : s.level(k)),
     reviewed_at: (k) => s.instantOrNull(k),
     waiting_on: (k) => s.nullableText(k, { chars: WRITE_LIMITS.line, line: true }),
+    due: (k) => s.due(k),
+    focus: (k) => s.dateOrNull(k),
   });
   f.done();
   return { task, set };
@@ -687,7 +765,10 @@ const checkUpdate: Check = (f) => {
 
 const checkMove: Check = (f) => {
   required(f, "task");
-  return read(f, { task: (k) => f.text(k, KEY), under: (k) => f.text(k, KEY) });
+  return read(f, {
+    task: (k) => f.text(k, KEY),
+    under: (k) => f.text(k, KEY),
+  });
 };
 
 const checkFinish: Check = (f) => {
