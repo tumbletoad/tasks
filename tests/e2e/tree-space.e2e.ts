@@ -79,6 +79,8 @@ test.describe("[S2.tree.e2e] a space on the new storage, four levels deep, as a 
     // Today: the focused task, named by its own project at the fourth level.
     await menu(page).getByRole("link", { name: "Today" }).click();
     await expect(row(page, tree.measure.title)).toContainText("Worktop");
+    // No Open or Copy tile on a row: the space cannot open tasks yet.
+    await expect(main(page).locator('[data-part="tile"]')).toHaveCount(0);
 
     // A project's screen at each depth: its crumbs, its brief, its status and the groups below.
     await goTo(page, tree.home);

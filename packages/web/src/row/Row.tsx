@@ -40,6 +40,7 @@ import { tileClick, type BusyOf, type Cannot, type FolderRefusal } from "./launc
 import { formatInstant } from "@ttasks/client/today";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
+import { useServes } from "../store/hooks.ts";
 import { KeptTitles } from "./KeptTitles.tsx";
 import {
   keepTitleDraft,
@@ -175,6 +176,8 @@ function Slots({
   const say = (m: Parameters<typeof sayMsg>[1]) => sayMsg(t, m);
   const { launch, folder } = model;
   const tileTip = say(launch.tip);
+  // Copy is Open's too: a space that cannot open tasks yet shows no tile.
+  const launches = useServes("launch/busy");
   return (
     <div className={styles.slots}>
       <span
@@ -299,7 +302,7 @@ function Slots({
         </span>
       ) : null}
       <span className={`${styles.slot} ${styles.launch}`}>
-        {launch.state === "none" || still ? null : (
+        {launch.state === "none" || still || !launches ? null : (
           <button
             type="button"
             className={styles.tile}
