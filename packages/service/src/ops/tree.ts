@@ -6,6 +6,7 @@
 import { AppError, type AnyEntry } from "@ttasks/contracts";
 import type {
   Id,
+  SpaceWriterHandle,
   TreeRequest,
   TreeResult,
   WorkerConnection,
@@ -15,7 +16,14 @@ import type { Caller, Principal } from "./caller.ts";
 import { resultFailure, spaceUnavailable, storageFailure } from "./errors.ts";
 import { checkGrant, type HomeGate } from "./grant.ts";
 import type { SessionPort } from "./binding.ts";
-import type { ServedSpace } from "./handlers.ts";
+
+/** A space as a tree entry reads and writes it (handlers.ts `ServedSpace`). */
+export interface TreeSpace {
+  readonly id: string;
+  readonly state: string;
+  readonly writer: SpaceWriterHandle | undefined;
+  readonly reader: WorkerConnection | undefined;
+}
 
 /** What a tree entry is given: the call after the contract's rules, on a tree space. */
 export interface TreeCall {
@@ -27,7 +35,7 @@ export interface TreeCall {
   readonly caller: Caller;
   readonly principal: Principal;
   readonly entry: AnyEntry;
-  readonly space: ServedSpace & { readonly id: string };
+  readonly space: TreeSpace;
   readonly input: Record<string, unknown>;
   readonly today: string;
 }
@@ -35,7 +43,8 @@ export interface TreeCall {
 type TreeEntry = (call: TreeCall) => Promise<unknown>;
 
 /** Whether a space is served by a tree's writer. */
-export const isTree = (space: ServedSpace): boolean => space.writer?.backend === "tree";
+export const isTree = (space: Pick<TreeSpace, "writer">): boolean =>
+  space.writer?.backend === "tree";
 
 /** The entries moved to the tree, by name. */
 const TREE_ENTRIES: Readonly<Record<string, TreeEntry>> = {};

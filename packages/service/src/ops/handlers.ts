@@ -215,6 +215,7 @@ import {
 import { readFinished } from "./task-rows.ts";
 import { readChangeTasks, readTrash } from "./trash.ts";
 import { readActivity } from "./activity.ts";
+import { isTree, treeEntry, type TreeCall } from "./tree.ts";
 import { trailOff } from "../trial.ts";
 import {
   holderName,
@@ -490,6 +491,10 @@ async function callWith(
     if (space === undefined) throw unpicked;
     return space;
   };
+  // A tree space's call is one named command, whose writer answers a retry from its receipt.
+  if (space !== undefined && isTree(space)) {
+    return treeCall(host, caller, entry, principal, space, input);
+  }
   const requestId = input["request_id"];
   // A launch is the user's record of its own, which answers a repeated click itself.
   if (
@@ -519,6 +524,29 @@ async function callWith(
   }
   // Another request under this ID: the writer refuses it (REQUEST_ID_REUSED).
   return decideCall(host, caller, entry, principal, picked, input);
+}
+
+/** A call on a tree space: the input's rules, then the entry's tree handler (tree.ts). */
+async function treeCall(
+  host: OpsHost,
+  caller: Caller,
+  entry: AnyEntry,
+  principal: Principal,
+  space: UsableSpace,
+  input: Record<string, unknown>,
+): Promise<unknown> {
+  const parsed = checkedInput(entry, principal, input);
+  const now = (host.now ?? Date.now)();
+  const call: TreeCall = {
+    host,
+    caller,
+    principal,
+    entry,
+    space,
+    input: parsed,
+    today: localDate(now, (host.timeZone ?? localTimeZone)()),
+  };
+  return checked(host, entry, await treeEntry(entry.name)(call));
 }
 
 /**

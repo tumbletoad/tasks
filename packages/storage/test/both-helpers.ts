@@ -24,9 +24,10 @@ export type Who = "person" | "agent";
 /** A step, and the line that says why the writers may differ at it. */
 export type Sequence<Step> = readonly (Step | { readonly step: Step; readonly differs: string })[];
 
+/** One writer, or one backend of the service: each step said in its words, and its reader's view. */
 export interface Side<Step, S> {
   open(): Promise<S>;
-  step(session: S, step: Step): Answer;
+  step(session: S, step: Step): Answer | Promise<Answer>;
   seen(session: S): unknown;
   close(session: S): void;
 }
@@ -46,10 +47,13 @@ export async function both<Step, T, R>(
 ): Promise<void> {
   const run = async <S>(side: Side<Step, S>) => {
     const session = await side.open();
+    const out: { answer: Answer; seen: unknown }[] = [];
     try {
-      return sequence.map((s) => {
-        return { answer: side.step(session, stepOf(s)), seen: side.seen(session) };
-      });
+      for (const s of sequence) {
+        const answer = await side.step(session, stepOf(s));
+        out.push({ answer, seen: await side.seen(session) });
+      }
+      return out;
     } finally {
       side.close(session);
     }
@@ -58,7 +62,7 @@ export async function both<Step, T, R>(
   const tree = await run(sides.tree);
   sequence.forEach((s, i) => {
     if (isMarked(s)) return;
-    const at = `step ${String(i + 1)}: ${JSON.stringify(s)}`;
+    const at = `step ${String(i + 1)}: ${JSON.stringify(s).slice(0, 200)}`;
     expect(tree[i]?.answer, `${at}, the answer`).toEqual(today[i]?.answer);
     expect(tree[i]?.seen, `${at}, what a reader sees`).toEqual(today[i]?.seen);
   });
