@@ -116,7 +116,7 @@ describe("[A5.3.15.web.store.frames] per-frame batching", () => {
           // Every message applied, in order: the same rows as applying them one by one.
           const want = reference.publish();
           expect(store.getState().tasks).toEqual(want?.tasks);
-          expect(store.getState().areas).toEqual(want?.areas);
+          expect(store.getState().nodes).toEqual(want?.nodes);
           // One render per frame at most.
           expect(emits).toBeLessThanOrEqual(frameCount);
           expect(frames.asked).toBe(0);

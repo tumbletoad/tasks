@@ -25,6 +25,7 @@ const TASK: TaskRow = {
   title: "Plan the garden shed",
   status: "open",
   inbox: false,
+  parent: "sp_0123456789abcdefghjkmnpqrs",
   lifecycle: "active",
   position: "p00001",
   created_at: Date.UTC(2026, 10, 1),
@@ -36,8 +37,7 @@ const snapshot: SnapshotMessage = {
   space: SPACE,
   cursor: { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 },
   tasks: [TASK],
-  areas: [],
-  projects: [],
+  nodes: [],
   instances: [],
 };
 

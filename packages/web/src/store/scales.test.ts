@@ -29,8 +29,7 @@ const snapshotText = (preferences: unknown) =>
     space: SPACE,
     cursor: CURSOR,
     tasks: [],
-    areas: [],
-    projects: [],
+    nodes: [],
     instances: [],
     preferences,
   });
@@ -160,6 +159,7 @@ describe("[A5.3.7.web.effort-lists] any list of sizes reaches the card and the r
                 title: "Fixture",
                 status: "open",
                 inbox: false,
+                parent: "sp_0123456789abcdefghjkmnpqrs",
                 lifecycle: "active",
                 position: "a0",
                 created_at: CLOCK.now,

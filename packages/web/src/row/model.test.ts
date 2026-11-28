@@ -68,6 +68,7 @@ function task(fields: Partial<TaskRow> & { title: string }): TaskRow {
     ref: `M-${String(next)}`,
     status: "open",
     inbox: false,
+    parent: "sp_0123456789abcdefghjkmnpqrs",
     lifecycle: "active",
     position: "a0",
     created_at: daysAgo(1),

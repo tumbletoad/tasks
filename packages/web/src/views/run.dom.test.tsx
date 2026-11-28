@@ -5,6 +5,7 @@
 // that got no answer is the same run when pressed again, and a Stop that did not reach the service
 // leaves the run with its Stop.
 import { act, type ReactNode } from "react";
+import { areaNode, nodesOf } from "@ttasks/client/test/nodes";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { CLI_NAME } from "@ttasks/brand";
@@ -30,7 +31,7 @@ const TASK: TaskRow = {
   status: "open",
   inbox: false,
   lifecycle: "active",
-  area_id: "a_1",
+  parent: "a_1",
   position: "p00001",
   created_at: Date.UTC(2026, 10, 1),
   version: 1,
@@ -50,8 +51,7 @@ const snapshot = (): SnapshotMessage => ({
   space: SPACE,
   cursor: { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 },
   tasks: [TASK],
-  areas: [{ id: "a_1", title: "Lumen", position: "a" }],
-  projects: [],
+  nodes: nodesOf(SPACE.id, areaNode({ id: "a_1", title: "Lumen", position: "a" }, SPACE.id)),
   instances: [CODEX],
 });
 

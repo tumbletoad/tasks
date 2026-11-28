@@ -6,6 +6,7 @@
 // beside each button holds every agent, grouped by app, from the keyboard too. The fake service
 // sends a task's row again after an Open or a run it took, as the service's feed does.
 import { act } from "react";
+import { areaNode, nodesOf } from "@ttasks/client/test/nodes";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { Refused, type Api, type Busy, type Receipt, type Run } from "../api.ts";
@@ -28,7 +29,7 @@ const taskOf = (n: number): TaskRow => ({
   status: "open",
   inbox: false,
   lifecycle: "active",
-  area_id: "a_1",
+  parent: "a_1",
   position: `p0000${String(n)}`,
   created_at: Date.UTC(2026, 10, 1),
   version: 1,
@@ -248,8 +249,7 @@ function serve(instances: readonly Instance[]) {
       space: SPACE,
       cursor: { ...CURSOR, seq },
       tasks: [...rows.values()],
-      areas: [{ id: "a_1", title: "Lumen", position: "a" }],
-      projects: [],
+      nodes: nodesOf(SPACE.id, areaNode({ id: "a_1", title: "Lumen", position: "a" }, SPACE.id)),
       instances: [...instances],
     } satisfies SnapshotMessage);
     live.store.flush();

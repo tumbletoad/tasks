@@ -49,6 +49,7 @@ function task(n: number, fields: Partial<TaskRow> = {}): TaskRow {
     position: `p${String(n)}`,
     created_at: Date.UTC(2026, 10, 1),
     version: 1,
+    parent: SPACE.id,
     ...fields,
   };
 }
@@ -84,8 +85,7 @@ class World {
       space: SPACE,
       cursor: { epoch: 1, incarnation: INCARNATION, seq: this.seq },
       tasks: rows,
-      areas: [],
-      projects: [],
+      nodes: [],
       instances: [],
     };
     this.store.push(snapshot);
@@ -117,6 +117,7 @@ class World {
       failed: () => false,
       onChanges: (listener) => this.store.onChanges(listener),
       rowOf: (ref) => [...this.store.getState().tasks.values()].find((t) => t.ref === ref),
+      space: () => SPACE.id,
       levels: () => this.levels,
       newRequest: () => `rq-${String((requests += 1))}`,
       ...(keeper === undefined ? {} : { keeper: { onGone: () => () => undefined, ...keeper } }),
@@ -875,8 +876,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       space: SPACE,
       cursor: { epoch: 2, incarnation: "ai_zzzzzzzzzzzzzzzzzzzzzzzzzz", seq: 4 },
       tasks: [task(1)],
-      areas: [],
-      projects: [],
+      nodes: [],
       instances: [],
     });
     restored.store.flush();
@@ -1452,7 +1452,7 @@ describe("[A5.3.12.web.undo-steps] Undo for the steps worth it, and Redo beside 
   });
 
   test("a change whose old value the page cannot choose again keeps Undo: out of the Inbox, and a first area; a move between areas does not", async () => {
-    const w = new World([task(1, { inbox: true }), task(2), task(3, { area_id: "a_home" })]);
+    const w = new World([task(1, { inbox: true }), task(2), task(3, { parent: "a_home" })]);
     const answered = (ref: string) => () => ({
       result: "updated",
       task: ref,
@@ -1468,7 +1468,7 @@ describe("[A5.3.12.web.undo-steps] Undo for the steps worth it, and Redo beside 
     expect(w.lastToast()).toMatchObject({ kind: "undo", action: { label: { id: "toast.undo" } } });
     w.answer("task.update", answered("M-3"));
     w.edits.edit(
-      task(3, { area_id: "a_home" }),
+      task(3, { parent: "a_home" }),
       groupingChange({ id: "a_yard", title: "Yard" }, undefined),
     );
     expect(w.lastToast()).toBeUndefined();

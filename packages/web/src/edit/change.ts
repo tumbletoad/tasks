@@ -7,7 +7,7 @@
 // same field the edit does.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { Msg } from "../row/model.ts";
-import type { TaskField, TaskRow } from "@ttasks/client/store";
+import { filedAs, type TaskField, type TaskRow } from "@ttasks/client/store";
 
 type UpdateInput = Parameters<Client["task"]["update"]>[0];
 export type UpdateSet = NonNullable<UpdateInput["set"]>;
@@ -224,7 +224,19 @@ export function waitingChange(person: string | undefined): Change {
       };
 }
 
-/** Into an area, or a project of it (the service moves the task with `task.move`). */
+/** The IDs `task.move` takes for an area and a project of it. */
+function filedSet(area: { id: string }, project: { id: string } | undefined): UpdateSet {
+  const filed = filedAs(area, project);
+  return {
+    ...(filed.area === undefined ? {} : { area: filed.area.id }),
+    ...(filed.project === undefined ? {} : { project: filed.project.id }),
+  };
+}
+
+/**
+ * Into an area, or a project of it (the service moves the task with `task.move`). A project made
+ * without an area takes the task as its project.
+ */
 export function groupingChange(
   area: { id: string; title: string },
   project: { id: string; title: string } | undefined,
@@ -235,11 +247,8 @@ export function groupingChange(
       : { id: "fact.areaProject", values: { area: area.title, project: project.title } };
   return {
     fields: ["grouping"],
-    set: { area: area.id, ...(project === undefined ? {} : { project: project.id }) },
-    overlay:
-      project === undefined
-        ? { set: { area_id: area.id }, clear: ["project_id"] }
-        : { set: { area_id: area.id, project_id: project.id } },
+    set: filedSet(area, project),
+    overlay: { set: { parent: project?.id ?? area.id } },
     said: { id: "toast.moved", values: { value: shown } },
     shown,
     source: {
@@ -297,10 +306,7 @@ export function changeTo(field: string, value: unknown): Change | undefined {
       return {
         fields: ["grouping"],
         set: { area, ...(typeof project === "string" ? { project } : {}) },
-        overlay:
-          typeof project === "string"
-            ? { set: { area_id: area, project_id: project } }
-            : { set: { area_id: area }, clear: ["project_id"] },
+        overlay: { set: { parent: typeof project === "string" ? project : area } },
         // Compared, never shown: the area's and project's names are not known here.
         said: none,
         shown: none,

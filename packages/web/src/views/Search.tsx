@@ -122,8 +122,7 @@ function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
         input.cursor === undefined ? { ...input, time_zone: pageDay().timeZone } : input,
       );
     const rowOf = (row: SearchRow, found: Found, read: number) => {
-      const { areas, projects } = live.getState();
-      return rowOfFound(row, found, areas, projects, read);
+      return rowOfFound(row, found, live.getState().nodes, read);
     };
     return {
       open: searchSource({ search, q, found: "open", rowOf, all: true }),

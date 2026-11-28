@@ -22,7 +22,7 @@ export function ProjectFolder({ project }: { readonly project: string }) {
   const say = useToast();
   const { api, live } = useContext(Session);
   const writes = useFolderWrites();
-  const name = useLive().projects.get(project)?.title ?? "";
+  const name = useLive().nodes.get(project)?.title ?? "";
   const [view, setView] = useState<ProjectFolderView | "failed">();
   const [choosing, setChoosing] = useState(false);
   // Where the feed was when the folder shown was read: its Change and Clear go with this base, so
