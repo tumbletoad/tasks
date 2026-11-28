@@ -1,0 +1,101 @@
+/* Activity: one quiet line per change an agent made, its time in a column of its own. */
+
+.log {
+  margin: 8px 0 0;
+  padding: 0 0 0 40px;
+  list-style: none;
+  /* The screen keeps the reader's place itself (Activity.tsx): the browser's would move it twice. */
+  overflow-anchor: none;
+}
+
+.line {
+  display: grid;
+  grid-template-columns: 7.5em minmax(0, 1fr);
+  gap: 0 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--k-line);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--k-text-2);
+}
+
+.time {
+  font-variant-numeric: tabular-nums;
+  color: var(--k-muted);
+  white-space: nowrap;
+}
+
+.what {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.by {
+  font-weight: 500;
+  color: var(--k-text);
+}
+
+.task {
+  border-radius: 4px;
+  color: var(--k-text);
+  text-decoration: none;
+}
+
+.task:hover {
+  text-decoration: underline;
+}
+
+.sep::before {
+  content: " · ";
+  white-space: pre;
+  color: var(--k-muted);
+}
+
+.empty {
+  margin: 24px 0 24px 40px;
+  color: var(--k-muted);
+}
+
+@media (max-width: 640px) {
+  .log {
+    padding-left: 0;
+  }
+
+  .line {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .empty {
+    margin-left: 0;
+  }
+}
+
+/* Several things the same happened to: the count opens their list under the line. */
+.count {
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  color: var(--k-text);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.count:hover {
+  text-decoration-style: solid;
+}
+
+.each {
+  grid-column: 2;
+  margin: 4px 0 0;
+  padding: 0 0 0 16px;
+  list-style: none;
+}
+
+@media (max-width: 640px) {
+  .each {
+    grid-column: 1;
+  }
+}

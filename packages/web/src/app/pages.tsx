@@ -1,7 +1,7 @@
 // The content of each route: Today's sections (views/Today.tsx), each status view's list grouped
-// as A5 3.5 says (`VIEW_LIST`), the area and project views, Completed (views/Completed.tsx) and
-// Agents (views/Agents.tsx). No view has a heading (U3); the sidebar's active item and the tab's
-// title name it.
+// as A5 3.5 says (`VIEW_LIST`), the area and project views, Completed (views/Completed.tsx),
+// Agents (views/Agents.tsx) and Activity (views/Activity.tsx). No view has a heading (U3); the
+// sidebar's active item and the tab's title name it.
 //
 // A view holds its expanded task in the URL (`?task=<ref>`, A5 3.3): expanding a row writes it
 // there without a new history entry, collapsing removes it, and a reload, Back and Forward expand
@@ -31,6 +31,7 @@ import {
 } from "./views.ts";
 import { areaGroups, projectGroups } from "../groups.ts";
 import { ProjectFolder } from "../folder/ProjectFolder.tsx";
+import { ActivityPage } from "../views/Activity.tsx";
 import { AgentsPage } from "../views/Agents.tsx";
 import { CompletedPage } from "../views/Completed.tsx";
 import { TaskList } from "../views/TaskList.tsx";
@@ -81,6 +82,7 @@ export function ViewPage({
   }
   if (view === "completed") return <CompletedPage task={task} onExpand={onExpand} />;
   if (view === "agents") return <AgentsPage task={task} onExpand={onExpand} />;
+  if (view === "activity") return <ActivityPage />;
   if (view === "trash") return <TrashPage task={task} onExpand={onExpand} />;
   if (filter === undefined || !isCounted(view)) return null;
   const list = VIEW_LIST[view];

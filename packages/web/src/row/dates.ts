@@ -3,7 +3,7 @@
 // calendar, which the clock names, so every function here is pure: the same clock gives the same
 // answer on every machine, and tests pass their own. The calendar arithmetic is day.ts's, shared
 // with the service.
-import { dayNumber, type DayClock } from "@ttasks/contracts/day";
+import { dayNumber, localDate, type DayClock } from "@ttasks/contracts/day";
 
 /** The viewer's calendar and its locale. */
 export interface Clock extends DayClock {
@@ -51,4 +51,11 @@ export function formatInstant(
   options: Intl.DateTimeFormatOptions,
 ): string {
   return formatter(clock.locale, clock.timeZone, options).format(ms);
+}
+
+/** "14:02" today, "23 Nov, 14:02" another day: when something happened. */
+export function formatWhen(ms: number, clock: Clock): string {
+  const time = formatInstant(ms, clock, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  if (localDate(ms, clock.timeZone) === clock.today) return time;
+  return `${formatInstant(ms, clock, { day: "numeric", month: "short" })}, ${time}`;
 }

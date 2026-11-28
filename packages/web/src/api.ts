@@ -313,6 +313,7 @@ export async function redeem(code: string): Promise<string | null> {
 
 /** The entries that only read: a tab that saves nothing more may still send these. */
 export const READ_ENTRIES: ReadonlySet<string> = new Set([
+  "activity.list",
   "receipt.get",
   "space.status",
   "task.finished",

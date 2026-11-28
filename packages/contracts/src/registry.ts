@@ -1,6 +1,7 @@
 // The registry: every entry, and the types the faces derive from it (A3 3.2).
 import type { z } from "zod";
 import type { AnyEntry, Filled } from "./define.ts";
+import { activityList } from "./entries/activity-list.ts";
 import { entryAdd } from "./entries/entry-add.ts";
 import { entryEdit } from "./entries/entry-edit.ts";
 import { folderManage } from "./entries/folder-manage.ts";
@@ -55,6 +56,8 @@ export const registry = [
   // Last: their examples leave a task of the world in the Trash, which the Trash's example reads.
   taskDelete,
   taskTrash,
+  // After the writes: it reads the lines of what the examples' agents changed.
+  activityList,
 ] as const satisfies readonly AnyEntry[];
 
 type Registry = (typeof registry)[number];
