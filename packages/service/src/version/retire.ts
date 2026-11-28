@@ -16,6 +16,7 @@
 // launchers, doctor and the service of an older version.
 import { randomBytes } from "node:crypto";
 import {
+  type Stats,
   closeSync,
   lstatSync,
   openSync,
@@ -74,6 +75,8 @@ export interface RetireOptions {
   readonly state: string;
   readonly platform: NodeJS.Platform;
   readonly inUse?: InUse;
+  /** Tests only: how recovery looks at a folder (lstatSync). */
+  readonly lookAt?: (path: string) => Stats;
 }
 
 const isDir = (path: string): boolean => {
@@ -188,7 +191,6 @@ function judge(
  * what is left is that version's manifest and files it lists, or nothing but empty folders.
  */
 function leftoverProblem(folder: string, version: string): string | undefined {
-  if (!isDir(folder)) return "it is a link, not a folder";
   try {
     const listing = listFolder(folder);
     if (listing.problems[0] !== undefined) return listing.problems[0];
@@ -210,18 +212,41 @@ function leftoverProblem(folder: string, version: string): string | undefined {
   }
 }
 
+/** What a cut-off removal comes to, decided once: its record cleared, its folder deleted, or both kept. */
+type Recovery =
+  | { readonly pending: Retiring; readonly act: "clear"; readonly retired: boolean }
+  | { readonly pending: Retiring; readonly act: "delete" }
+  | { readonly pending: Retiring; readonly act: "keep"; readonly problem: string };
+
 /**
- * A removal that was cut off: undefined when there is none or nothing is left of it, else its
- * folder's path and what stands against deleting it. A version still under its own name was never
- * renamed, so a folder at the recorded name is not the removal's.
+ * A removal that was cut off, from lookups that all answered: only ENOENT is "not there", any
+ * other error keeps both folders. A version still under its own name was never renamed, so a
+ * folder at the recorded name is not the removal's; one renamed is deleted only once what is left
+ * in it is that version's.
  */
-function pendingOf(install: Owned): { pending: Retiring; problem?: string } | undefined {
+function recoveryOf(options: RetireOptions, install: Owned): Recovery | undefined {
   const pending = pendingRetiring(install.record);
   if (pending === undefined) return undefined;
-  const left = join(install.versions, pending.folder);
-  if (exists(join(install.versions, pending.version)) || !exists(left)) return { pending };
-  const problem = leftoverProblem(left, pending.version);
-  return problem === undefined ? { pending } : { pending, problem };
+  const look = options.lookAt ?? lstatSync;
+  const kind = (path: string): "absent" | "folder" | "other" | { code: string } => {
+    try {
+      const stat = look(path);
+      return stat.isDirectory() && !stat.isSymbolicLink() ? "folder" : "other";
+    } catch (error) {
+      return codeOf(error) === "ENOENT" ? "absent" : { code: codeOf(error) };
+    }
+  };
+  const original = kind(join(install.versions, pending.version));
+  const left = kind(join(install.versions, pending.folder));
+  const unknown = [original, left].find((k) => typeof k === "object");
+  if (typeof unknown === "object") {
+    return { pending, act: "keep", problem: `it cannot be looked at (${unknown.code})` };
+  }
+  if (original !== "absent") return { pending, act: "clear", retired: false };
+  if (left === "absent") return { pending, act: "clear", retired: true };
+  if (left === "other") return { pending, act: "keep", problem: "it is a link, not a folder" };
+  const problem = leftoverProblem(join(install.versions, pending.folder), pending.version);
+  return problem === undefined ? { pending, act: "delete" } : { pending, act: "keep", problem };
 }
 
 /** What a pass would do, changing nothing, for doctor: undefined when the install is not provably this one. */
@@ -231,17 +256,12 @@ export function planRetirement(options: RetireOptions): RetirePlan | undefined {
   const verdicts = [...new Set(strings(install.record["versions"]))].flatMap(
     (version) => judge(options, install, version) ?? [],
   );
-  const cut = pendingOf(install);
+  const cut = recoveryOf(options, install);
   return {
     verdicts,
     ...(cut === undefined
       ? {}
-      : {
-          pending: {
-            ...cut.pending,
-            ...(cut.problem === undefined ? {} : { problem: cut.problem }),
-          },
-        }),
+      : { pending: { ...cut.pending, ...(cut.act === "keep" ? { problem: cut.problem } : {}) } }),
   };
 }
 
@@ -275,17 +295,14 @@ export async function retireLocked(options: RetireOptions): Promise<Retired> {
   try {
     const install = owned(options);
     if (install === undefined) return { removed };
-    const cut = pendingOf(install);
+    const cut = recoveryOf(options, install);
+    // Left as it is while what is in it cannot be proved the version's: doctor names it.
+    if (cut?.act === "keep") return { removed };
+    if (cut?.act === "delete") await removeVersion(join(install.versions, cut.pending.folder));
     if (cut !== undefined) {
-      // Left as it is while what is in it cannot be proved the version's: doctor names it.
-      if (cut.problem !== undefined) return { removed };
-      const { version, folder } = cut.pending;
-      const renamed = !exists(join(install.versions, version));
-      if (renamed && exists(join(install.versions, folder))) {
-        await removeVersion(join(install.versions, folder));
-      }
-      record({ retiring: null, ...(renamed ? { retired: version } : {}) });
-      if (renamed) removed.push(version);
+      const retired = cut.act === "delete" || cut.retired;
+      record({ retiring: null, ...(retired ? { retired: cut.pending.version } : {}) });
+      if (retired) removed.push(cut.pending.version);
     }
     for (const version of new Set(strings(install.record["versions"]))) {
       await turn();

@@ -649,8 +649,13 @@ export function withVersions(
   ];
   const left = [
     ...plan.verdicts.flatMap((v) => (v.kind === "foreign" ? [[v.version, v.problem]] : [])),
-    ...(pending?.problem === undefined ? [] : [[pending.folder, pending.problem]]),
   ].map(([folder, problem]) => `versions/${folder ?? ""} was left as it is: ${problem ?? ""}.`);
+  // A cut-off removal that cannot be proved holds every later one back until the folder is moved.
+  if (pending?.problem !== undefined) {
+    left.push(
+      `versions/${pending.folder} was left as it is: ${pending.problem}. No old version is removed until it is gone: move that folder out of versions, then run ${CLI_NAME} update --repair.`,
+    );
+  }
   const detail = [
     check.detail,
     ...(kept.length > 0 ? [`Kept: ${kept.join(", ")}.`] : []),

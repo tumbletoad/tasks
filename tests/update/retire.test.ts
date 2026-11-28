@@ -7,6 +7,7 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -278,6 +279,53 @@ describe("[A2.3.12.6.update.retire] an update removes the old version folders it
     expect(row.detail).toContain(
       `versions/${recorded} was left as it is: not in manifest.json: notes.txt.`,
     );
+  });
+
+  test("a removal cut off where a lookup fails with anything but ENOENT deletes nothing, and doctor says the way out", async () => {
+    const eio = (path: string) => (seen: string) => {
+      if (seen === path) throw Object.assign(new Error("i/o"), { code: "EIO" });
+      return lstatSync(seen);
+    };
+    // Both folders there, the original cannot be looked at: a stranger's folder at the name.
+    const both = await world("cut-eio-both");
+    const name = ".retiring-0.1.0-00000000000000ee";
+    mkdirSync(join(both.versions, name));
+    writeFileSync(join(both.versions, name, "keep.txt"), "mine");
+    edit(both.state, (r) => ({ ...r, retiring: { version: "0.1.0", folder: name } }));
+    const bothBefore = tree(both.versions);
+    const lookBoth = { ...both.options, lookAt: eio(join(both.versions, "0.1.0")) };
+    expect(await retireLocked(lookBoth)).toEqual({ removed: [] });
+    expect(tree(both.versions)).toEqual(bothBefore);
+    expect(readFileSync(join(both.versions, name, "keep.txt"), "utf8")).toBe("mine");
+    expect(planRetirement(lookBoth)?.pending).toEqual({
+      version: "0.1.0",
+      folder: name,
+      problem: "it cannot be looked at (EIO)",
+    });
+    // Only the renamed folder there, with a person's file, and it cannot be looked at.
+    const only = await world("cut-eio-only");
+    const renamed = ".retiring-0.2.0-00000000000000ff";
+    edit(only.state, (r) => ({ ...r, retiring: { version: "0.2.0", folder: renamed } }));
+    renameSync(join(only.versions, "0.2.0"), join(only.versions, renamed));
+    writeFileSync(join(only.versions, renamed, "keep.txt"), "mine");
+    const onlyBefore = tree(only.versions);
+    const lookOnly = { ...only.options, lookAt: eio(join(only.versions, renamed)) };
+    expect(await retireLocked(lookOnly)).toEqual({ removed: [] });
+    expect(tree(only.versions)).toEqual(onlyBefore);
+    expect(readFileSync(join(only.versions, renamed, "keep.txt"), "utf8")).toBe("mine");
+    // Doctor names the folder, why, and what to do; moved out, the next pass goes on.
+    const row = withVersions(
+      { id: "update", status: "ok", detail: "Updated." },
+      only.root,
+      only.state,
+      os,
+    );
+    expect(row.detail).toContain(
+      `versions/${renamed} was left as it is: not in manifest.json: keep.txt. No old version is removed until it is gone: move that folder out of versions, then run ttasks update --repair.`,
+    );
+    renameSync(join(only.versions, renamed), join(only.dir, "moved-aside"));
+    expect(await retireLocked(only.options)).toEqual({ removed: ["0.2.0", "0.1.0"] });
+    expect(readFileSync(join(only.dir, "moved-aside", "keep.txt"), "utf8")).toBe("mine");
   });
 
   test("a receipt of another root or install lends this one none of its versions, removal or pins", async () => {
