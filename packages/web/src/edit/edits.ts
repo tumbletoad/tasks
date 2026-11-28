@@ -708,9 +708,10 @@ export class Edits {
           if (late) {
             for (const part of stillShown()) this.#forget(task.id, part.fields[0] ?? "title");
           }
-          // Nothing changed (the value was already so): there is nothing to undo.
+          // Nothing changed (the value was already so): there is nothing to undo. Saved after all:
+          // its Undo, or for a change without one nothing, takes its "not saved" toast away.
           if ((decision.value as { result?: unknown }).result === "no_change") say(undefined);
-          else if (late && saved !== undefined) say(saved);
+          else if (late) say(saved);
           return;
         }
         // Kept part by part: a part whose field the person edited again since gives way to that

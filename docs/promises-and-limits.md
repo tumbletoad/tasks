@@ -438,6 +438,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 ## The page
 
+- An edit the page cannot confirm says "not saved" only after it has kept asking the service for
+  5 s, so a tab back from sleep, or a service that restarts, saves it without you.
 - A field edit that failed or conflicted stays visible until you decide what to do with it, also
   after a reload, and so does one still waiting behind your previous edit when the page closed.
   Each tab's is kept on its own: two tabs' edits of one field both show under it, with their words.
