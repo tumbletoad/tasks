@@ -117,6 +117,9 @@ export function receiptText(receipt: Receipt, label: string, t: Translate): stri
       // A link or T3 only asked the app: it says so until the agent connects.
       return t(receipt.route === "clipboard" ? "receipt.copied" : "receipt.asked", { label });
     case "confirmed":
+      if (receipt.session === "running" && receipt.activity !== undefined) {
+        return t("receipt.thread", { opened, activity: receipt.activity });
+      }
       if (receipt.session === "running") return t("receipt.running", { opened });
       if (receipt.session === "restored") return t("receipt.restored", { opened });
       if (receipt.session === "ended") {

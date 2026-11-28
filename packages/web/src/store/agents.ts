@@ -10,6 +10,7 @@ import {
   type AgentsAccount,
   type AgentsNested,
   type AgentsPicture,
+  type AgentsThread,
   type AgentsSession,
   type AgentsTask,
   type AgentsView,
@@ -49,7 +50,7 @@ function taskOf(v: unknown): AgentsTask | null {
   const fields = [v["space"], v["spaceName"], v["id"], v["ref"], v["of"]];
   if (
     !fields.every((f) => typeof f === "string") ||
-    (started !== "run" && started !== "terminal")
+    (started !== "run" && started !== "terminal" && started !== "t3")
   ) {
     return null;
   }
@@ -61,6 +62,16 @@ function taskOf(v: unknown): AgentsTask | null {
     started,
     of: text(v["of"]),
   };
+}
+
+/** A task's T3 thread; null for another shape. */
+function threadOf(o: Obj): AgentsThread | null {
+  const task = taskOf(o["task"]);
+  const activity = o["activity"];
+  if (task === null || (activity !== "working" && activity !== "waiting" && activity !== "idle")) {
+    return null;
+  }
+  return { task, activity };
 }
 
 function sessionOf(o: Obj): AgentsSession {
@@ -160,6 +171,7 @@ export function parseAgents(message: Obj): AgentsView | undefined {
           settling: p["settling"] === true,
           sessions: list(p["sessions"], sessionOf),
           unseen: list(p["unseen"], (o) => taskOf(o)).filter((t) => t !== null),
+          threads: list(p["threads"], threadOf).filter((t) => t !== null),
           accounts: list(p["accounts"], accountOf),
         };
   return { picture, trouble };

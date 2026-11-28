@@ -4,7 +4,8 @@
 // waits for the person asks as much as an agent that waits. TTasks' record decides what an agent is: a
 // background run's state is TTasks' own, an agent in a terminal's is the monitor's, and a
 // terminal agent TTasks holds as running that the monitor has not seen is shown as such, never
-// as idle: also one of a task in the Trash, from its launch's record, with no monitor at all.
+// as idle: also one of a task in the Trash, from its launch's record, with no monitor at all. A
+// task's T3 Code thread is an agent of the task in the state T3 Code tells.
 import type { AgentsPicture, AgentsSession } from "@ttasks/contracts/monitor";
 import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 
@@ -27,7 +28,7 @@ export interface TaskAgent {
   readonly state: AgentState;
   /** The monitor's session, with the agents inside it; null for one the monitor does not show. */
   readonly session: AgentsSession | null;
-  readonly started: "run" | "terminal";
+  readonly started: "run" | "terminal" | "t3";
   /** The agent of the task's current background run, in TTasks' own state. */
   readonly current: boolean;
 }
@@ -95,7 +96,7 @@ export function linkedOutside(
   for (const session of picture.sessions) {
     if (session.task?.space === space && !rows.has(session.task.id)) ids.add(session.task.id);
   }
-  for (const task of picture.unseen) {
+  for (const task of [...picture.unseen, ...picture.threads.map((thread) => thread.task)]) {
     if (task.space === space && !rows.has(task.id)) ids.add(task.id);
   }
   return [...ids].sort();
@@ -142,6 +143,16 @@ export function mergeAgents(
         state: "unseen",
         session: null,
         started: "terminal",
+        current: false,
+      });
+    }
+    for (const { task, activity } of picture.threads) {
+      if (task.space !== space || !rows.has(task.id)) continue;
+      add(task.id, {
+        key: `t3:${task.of}`,
+        state: activity,
+        session: null,
+        started: "t3",
         current: false,
       });
     }

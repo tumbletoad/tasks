@@ -46,6 +46,34 @@ describe("[A5.3.9.service.session] a Confirmed launch's session: running only wh
   });
 });
 
+describe("[A4.3.4.1.t3.thread] a task's T3 Code thread on its entry: what T3 Code tells", () => {
+  const t3 = (evidence: Record<string, unknown>) => ({
+    ...row({ thread: "mcp:launch:1", folder_checked: true, ...evidence }, "confirmed"),
+    route: "t3-mcp",
+  });
+
+  test("running with what its agent does while T3 has it, ended once T3 no longer has it, as opened when T3 does not tell", () => {
+    const told = (activity: "working" | "waiting" | "idle" | "gone") => () => activity;
+    expect(receiptOf(t3({}), undefined, false, told("waiting"))).toMatchObject({
+      session: "running",
+      activity: "waiting",
+    });
+    expect(receiptOf(t3({}), undefined, false, told("idle"))).toMatchObject({
+      session: "running",
+      activity: "idle",
+    });
+    const gone = receiptOf(t3({}), undefined, false, told("gone"));
+    expect(gone).toMatchObject({ session: "ended" });
+    expect(gone).not.toHaveProperty("activity");
+    // T3 cannot be asked, or this is an earlier thread of the task: only that it opened.
+    expect(receiptOf(t3({}))).not.toHaveProperty("session");
+    // A thread the service found gone stays so, whatever T3 says.
+    expect(receiptOf(t3({ lost_at: 5 }), undefined, false, told("working"))).not.toHaveProperty(
+      "activity",
+    );
+  });
+});
+
 describe("[A4.5.routes.chosen] the page's receipt names what its click left out", () => {
   test("the codes the launch recorded at the click, and nothing it does not know", () => {
     const left = leftOutEvidence(["read-only", "home"]);

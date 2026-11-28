@@ -16,13 +16,15 @@
 // Agents page opens or a tab showing one gets the focus back.
 //
 // Each answer is joined with the agent sessions TTasks holds, read after the answer came, so an
-// agent shows with the task TTasks started it for (links.ts).
+// agent shows with the task TTasks started it for (links.ts), and with the tasks' T3 Code threads
+// as T3 Code tells them then.
 //
 // Attention is read on the steady clock when a request is made, so a request that falls due late
 // (a machine that slept) asks for what the tabs' attention is then. Ages count on the same clock
 // from the moment a snapshot arrived, never from a time in it.
 import type {
   AgentsTask,
+  AgentsThread,
   AgentsView,
   AgentsWatch,
   MonitorProblem,
@@ -78,6 +80,8 @@ export interface PaceOptions {
   readonly now: () => number;
   /** The agent sessions TTasks holds now, in every open space. Default: none. */
   readonly held?: () => Promise<readonly HeldSession[]>;
+  /** The tasks' T3 Code threads now, in every open space. Default: none. */
+  readonly threads?: () => Promise<readonly AgentsThread[]>;
   /** Whose path rules join TTasks' agent homes to TTAM's. */
   readonly platform: NodeJS.Platform;
   /** How long a running agent must be missed before it is not seen. Default: UNSEEN_MS. */
@@ -89,6 +93,7 @@ interface Newest {
   readonly answer: MonitorAnswer & { ok: true };
   readonly links: ReadonlyMap<string, AgentsTask>;
   readonly unseen: readonly AgentsTask[];
+  readonly threads: readonly AgentsThread[];
   readonly at: number;
 }
 
@@ -262,8 +267,10 @@ export class MonitorPace {
     this.#again = false;
     const usage = this.#level() === "looked" ? "live" : "cached";
     void this.#options.monitor.ask(usage).then(async (answer) => {
-      const held = answer.ok ? await this.#held() : [];
-      this.#answered(answer, held);
+      const [held, threads] = answer.ok
+        ? await Promise.all([this.#held(), this.#threads()])
+        : [[], []];
+      this.#answered(answer, held, threads);
     });
   }
 
@@ -276,7 +283,20 @@ export class MonitorPace {
     }
   }
 
-  #answered(answer: MonitorAnswer, held: readonly HeldSession[]): void {
+  /** The tasks' T3 threads; none when they cannot be read now. */
+  async #threads(): Promise<readonly AgentsThread[]> {
+    try {
+      return (await this.#options.threads?.()) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  #answered(
+    answer: MonitorAnswer,
+    held: readonly HeldSession[],
+    threads: readonly AgentsThread[],
+  ): void {
     this.#asking = false;
     if (this.#closed) return;
     const now = this.#options.now();
@@ -294,6 +314,7 @@ export class MonitorPace {
           answer,
           links: linksOf(snapshot, held, platform),
           unseen: this.#unseen.next(snapshot, held, platform, now),
+          threads,
           at: now,
         };
       }
@@ -316,6 +337,7 @@ export class MonitorPace {
             Math.max(0, this.#options.now() - newest.at),
             newest.links,
             newest.unseen,
+            newest.threads,
           );
     const trouble = this.#problem ?? (this.#slow ? { kind: "slow" as const } : null);
     return { picture, trouble };

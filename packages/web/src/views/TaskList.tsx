@@ -455,7 +455,8 @@ export function TaskList({
   );
 
   // The minute reads again the runs of every task with a working run, and while its card is open
-  // what a read failed to bring: the task's runs, or the task a fresh snapshot left out. Keyed by
+  // what a read failed to bring: the task's runs, or the task a fresh snapshot left out, and the
+  // receipts of a task with a T3 Code thread, whose state T3 Code tells only when asked. Keyed by
   // what it reads, not by each read: a read of another task's runs must not start the minute again.
   const again = useMemo(
     () =>
@@ -470,10 +471,14 @@ export function TaskList({
         ...(unresolved?.failed === true && unresolved.id === expanded
           ? [`task:${unresolved.id}`]
           : []),
+        ...(expanded !== undefined &&
+        receipts.get(expanded)?.some((receipt) => receipt.activity !== undefined) === true
+          ? [`receipts:${expanded}`]
+          : []),
       ]
         .sort()
         .join(" "),
-    [runs, runsFailed, expanded, unresolved],
+    [runs, runsFailed, expanded, unresolved, receipts],
   );
 
   // A launch event refreshes what busies the agent apps, for every row, and the receipts of its
@@ -550,13 +555,14 @@ export function TaskList({
       for (const key of again.split(" ")) {
         const [kind, task = ""] = key.split(":");
         if (kind === "task") readAgain(task);
+        else if (kind === "receipts") loadReceipts(task);
         else loadRuns(task);
       }
     }, WORKING_REREAD_MS);
     return () => {
       clearInterval(timer);
     };
-  }, [again, loadRuns, readAgain]);
+  }, [again, loadRuns, readAgain, loadReceipts]);
 
   // An update that takes the expanded task out of the live rows (completed, archived) carries its
   // newest row: the card shows it until it is collapsed, as an injected row (A5 3.4, 3.15). A fresh

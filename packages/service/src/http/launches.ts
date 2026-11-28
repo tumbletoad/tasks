@@ -36,6 +36,7 @@ import {
   type IntentState,
   type OpenResult,
   type Route,
+  type T3Activity,
 } from "@ttasks/launch";
 import { leftOutOf, type LeftOut } from "../launch/open.ts";
 import { copyGone, findSpace, isAmbiguity } from "../ops/copies.ts";
@@ -87,6 +88,8 @@ export interface UiLaunchPort {
   pairT3?(): Promise<"opened" | "not_opened" | "not_running">;
   /** Brings a T3 launch's thread up in T3 Code (LaunchService.openThread). */
   openThread?(space: string, launch: string): Promise<boolean>;
+  /** What T3 Code says of each T3 thread of a task, by launch (LaunchService.t3Activity). */
+  t3Activity?(space: string, task: string): Promise<ReadonlyMap<string, T3Activity>>;
 }
 
 /**
@@ -230,12 +233,15 @@ export interface UiReceipt {
   /** The note on the task that holds what the person asked the launch's agent, such as `n2`. */
   readonly request?: string;
   /**
-   * A Confirmed launch's session: `running` while this service follows it and it runs, `ended`
-   * once its agent's end was reported, `restored` once a claim or a restore in place ended it as a
-   * backup's. Absent when the service does not know: a link or a T3 launch, a shim that went
-   * without a word, a launch of another computer or of an earlier build.
+   * A Confirmed launch's session: `running` while this service follows it and it runs, or while
+   * T3 Code has the task's thread; `ended` once its agent's end was reported or T3 Code no longer
+   * has the thread; `restored` once a claim or a restore in place ended it as a backup's. Absent
+   * when the service does not know: a link, a shim that went without a word, a launch of another
+   * computer or of an earlier build, an earlier thread of the task.
    */
   readonly session?: "running" | "ended" | "restored";
+  /** The task's T3 thread: what its agent does, as T3 Code tells. */
+  readonly activity?: Exclude<T3Activity, "gone">;
   /** How long its agent ran, when its end was reported with it. */
   readonly ran_ms?: number;
   /** What of its instance's settings its click could not carry (LeftOut codes). */
@@ -320,6 +326,7 @@ export function receiptOf(
   row: Record<string, unknown>,
   runs: (launch: string) => boolean = () => false,
   restored = false,
+  thread: (launch: string) => T3Activity | undefined = () => undefined,
 ): UiReceipt | undefined {
   let parsed: unknown;
   try {
@@ -356,12 +363,15 @@ export function receiptOf(
   const leftOut = leftOutOf(evidence);
   const recorded = restored && isOpenLaunch({ state, route, evidence });
   const record = state === "confirmed" && !recorded ? sessionRecord(evidence) : undefined;
+  const activity = record === "open" ? thread(id) : undefined;
   const session =
     record === "ended" || record === "restored"
       ? record
-      : record === "open" && runs(id)
-        ? "running"
-        : undefined;
+      : activity === "gone"
+        ? "ended"
+        : record === "open" && (runs(id) || activity !== undefined)
+          ? "running"
+          : undefined;
   return {
     id,
     reference: String(row["reference"]),
@@ -373,6 +383,7 @@ export function receiptOf(
     ...(terminal === undefined ? {} : { terminal }),
     ...(request === undefined ? {} : { request }),
     ...(session === undefined ? {} : { session }),
+    ...(activity === undefined || activity === "gone" ? {} : { activity }),
     ...(ranMs === undefined ? {} : { ran_ms: ranMs }),
     ...(leftOut.length === 0 ? {} : { left_out: leftOut }),
   };
@@ -562,7 +573,11 @@ export class UiLaunches {
     // open launches as recorded.
     const runs = (launch: string): boolean => port?.running?.(launch, space.copy) ?? false;
     const restored = space.restored !== undefined;
-    return rows.flatMap((r) => receiptOf(r, runs, restored) ?? []).reverse();
+    const threads = restored
+      ? new Map<string, T3Activity>()
+      : await (port?.t3Activity?.(space.id ?? "", task) ?? Promise.resolve(new Map()));
+    const thread = (launch: string): T3Activity | undefined => threads.get(launch);
+    return rows.flatMap((r) => receiptOf(r, runs, restored, thread) ?? []).reverse();
   }
 
   /**

@@ -1,7 +1,12 @@
 // Where the Agents page places a task: by what asks most of the person, TTasks' own record first;
 // and a task in the Trash, read because the monitor links an agent to it, by the same rule as a
 // live one, only its mark differing. Fixture data only.
-import type { AgentsPicture, AgentsSession, AgentsTask } from "@ttasks/contracts/monitor";
+import type {
+  AgentsPicture,
+  AgentsSession,
+  AgentsTask,
+  AgentsThread,
+} from "@ttasks/contracts/monitor";
 import { describe, expect, test } from "vitest";
 import type { TaskRow } from "../store/rows.ts";
 import { linkedOutside, mergeAgents } from "./agents-merge.ts";
@@ -60,7 +65,7 @@ const numbered = (n: number, fields: Partial<TaskRow> = {}): TaskRow => ({
   ...fields,
 });
 
-const task = (n: number, space = SPACE, started: "run" | "terminal" = "run"): AgentsTask => ({
+const task = (n: number, space = SPACE, started: AgentsTask["started"] = "run"): AgentsTask => ({
   space,
   spaceName: "Mira",
   id: `t_${String(n).padStart(5, "0")}`,
@@ -83,11 +88,16 @@ const session = (n: number, space = SPACE, started: "run" | "terminal" = "run"):
   nested: [],
 });
 
-const picture = (sessions: AgentsSession[], unseen: AgentsTask[] = []): AgentsPicture => ({
+const picture = (
+  sessions: AgentsSession[],
+  unseen: AgentsTask[] = [],
+  threads: AgentsThread[] = [],
+): AgentsPicture => ({
   ageMs: 0,
   settling: false,
   sessions,
   unseen,
+  threads,
   accounts: [],
 });
 
@@ -138,5 +148,32 @@ describe("[A5.trash.web.agents] a task in the Trash on the Agents page", () => {
     // Its end recorded, the row read again holds none: nothing places it.
     const ended = numbered(5, { deleted_at: 1 });
     expect(mergeAgents(null, SPACE, new Map([[ended.id, ended]])).tasks.has(ended.id)).toBe(false);
+  });
+});
+
+describe("[A4.3.4.1.t3.thread] a task's T3 Code thread on the Agents page", () => {
+  test("is an agent of its task in the state T3 Code tells, which places the task, in this space only", () => {
+    const one = numbered(1);
+    const two = numbered(2);
+    const rows = new Map([one, two].map((r) => [r.id, r]));
+    const shown = picture(
+      [session(1)],
+      [],
+      [
+        { task: task(1, SPACE, "t3"), activity: "working" },
+        { task: task(2, SPACE, "t3"), activity: "waiting" },
+        { task: task(3, OTHER, "t3"), activity: "waiting" },
+      ],
+    );
+    const merged = mergeAgents(shown, SPACE, rows);
+    expect(merged.tasks.get(one.id)?.agents.map((a) => [a.started, a.state])).toEqual([
+      ["run", "idle"],
+      ["t3", "working"],
+    ]);
+    expect(merged.tasks.get(one.id)?.state).toBe("working");
+    expect(merged.tasks.get(two.id)?.state).toBe("waiting");
+    expect(merged.tasks.size).toBe(2);
+    // A task in the Trash with a thread is read like one the monitor links.
+    expect(linkedOutside(shown, SPACE, new Map([[one.id, one]]))).toEqual([two.id]);
   });
 });
