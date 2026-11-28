@@ -566,6 +566,10 @@ function runOne(plan: Plan, i: number): Done {
     case "task.complete":
     case "task.archive": {
       const task = taskRow(plan, op.task);
+      const id = String(task["id"]);
+      // The base first, as today's writer checks it: a finish from a stale read is a conflict.
+      const fields = op.kind === "task.archive" ? ["lifecycle"] : ["lifecycle", "wrap"];
+      if (tx.held("tasks", id, id, fields)) return finished(tx, id, false);
       if (task["lifecycle"] !== "active" && op.if_active !== true) {
         problem(
           "INVALID_TRANSITION",
@@ -586,6 +590,9 @@ function runOne(plan: Plan, i: number): Done {
       return wrapUp(plan, op.task, op.outcome, op.once === true);
     case "task.reopen": {
       const task = taskRow(plan, op.task);
+      if (tx.held("tasks", String(task["id"]), String(task["id"]), ["lifecycle", "wrap"])) {
+        return finished(tx, String(task["id"]), true);
+      }
       if (task["lifecycle"] === "active") problem("INVALID_TRANSITION", NOT_NOW.reopen, "task");
       call(tx, "task.reopen", { task: String(task["id"]) });
       return finished(tx, String(task["id"]), true);

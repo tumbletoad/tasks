@@ -240,6 +240,13 @@ const NOTES =
   "e.fp FROM main.notes e JOIN main.nodes h ON h.id = e.owner_id AND h.kind = 'task' " +
   "WHERE e.kind = 'note')";
 
+/** A task's learnings: the entries of its one thread that are learnings. */
+const LEARNINGS =
+  "learnings AS (SELECT e.id, e.owner_id AS task_id, printf('%012d', e.ordinal) AS position, " +
+  "e.body, e.author_id AS created_by, e.created_at, e.deleted_at, e.created_seq, e.version, " +
+  "e.fv, e.fp FROM main.notes e JOIN main.nodes h ON h.id = e.owner_id AND h.kind = 'task' " +
+  "WHERE e.kind = 'learning')";
+
 const SOURCES =
   "sources AS (SELECT s.id, s.source_key, s.kind, s.title, s.who, s.outside_ref AS ref, s.url, " +
   "s.at, s.created_at, s.created_by, s.deleted_at, s.created_seq, s.version, s.fv, s.fp, " +
@@ -288,6 +295,7 @@ const VIEWS = [
   DOCS,
   LOG_ENTRIES,
   NOTES,
+  LEARNINGS,
   SOURCES,
   TASK_SOURCES,
   FOLDERS,

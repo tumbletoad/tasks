@@ -660,6 +660,9 @@ const REVIEWED: Sequence<Step> = [
     differs:
       "today counts the texts' row its text for agents made as a first, empty version; the tree has the description's own",
   },
+  // An open task reopened from a read before it was made: a conflict first, as today's.
+  { op: "task.add", input: { tasks: [{ title: "Made after the read" }] }, as: "late", user: true },
+  { op: "task.reopen", input: { task: "{late}" }, baseFrom: 16, user: true },
 ];
 
 describe("[S2.replay.reviewed] what review found in the four families, through both backends", () => {
@@ -717,6 +720,14 @@ const SEARCH: Sequence<Step> = [
   search("photo"),
   search("photo", { scope: "all" }),
   search("is:completed"),
+  // A task's words hold its area's and its project's names, and two words find it together.
+  search("Home"),
+  search("Home passport"),
+  search("is:overdue"),
+  search("photo", { scope: "learnings" }),
+  // An agent searches too.
+  { op: "task.search", input: { q: "invoice" } },
+  { op: "task.search", input: { q: "id:{b}" } },
   { op: "task.finished", input: {}, user: true },
   { op: "space.status", input: {}, user: true },
   { op: "space.status", input: {} },
@@ -741,7 +752,11 @@ const feedBackend = (space: () => string): Side<Step, Session & { seq: number }>
     return found;
   };
   return {
-    open: async () => ({ ...(await inner.open()), seq: 0 }),
+    // From the space as it is when the sequence starts: the first batch is the first step's.
+    open: async () => {
+      const session = await inner.open();
+      return { ...session, seq: (await readSnapshot(reader(session), undefined, 0)).cursor.seq };
+    },
     step: (s, step) => inner.step(s, step),
     seen: async (s) => {
       const read = await readSnapshot(reader(s), undefined, 0);
@@ -755,10 +770,9 @@ const feedBackend = (space: () => string): Side<Step, Session & { seq: number }>
         nodes: [...read.nodes].sort((a, b) => a.title.localeCompare(b.title)),
       };
       const { batch } = await readBatch(reader(s), s.seq);
-      const from = s.seq;
       s.seq = snapshot.cursor.seq;
-      // The batch since the step before, its commits of earlier sequences left out.
-      return normal({ snapshot, batch: from === 0 ? undefined : batch }, s);
+      // The batch since the step before.
+      return normal({ snapshot, batch }, s);
     },
     close: () => undefined,
   };

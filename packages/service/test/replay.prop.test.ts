@@ -10,7 +10,8 @@
 // S2.replay.reviewed), and a task's history section (refused on a tree for now). One difference
 // the sequences meet is left out of both answers (`KNOWN`).
 //
-// A failure prints its seed; FC_SEED replays it, and FC_RUNS sets how many sequences run.
+// A failure prints its seed; FC_SEED replays it, and FC_RUNS sets how many sequences run: 80 by
+// default, about a minute.
 // Fixture text only.
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, onTestFailed, test } from "vitest";
@@ -286,9 +287,14 @@ const reads = fc.oneof(
       "is:inbox",
       "is:focus",
       "is:completed",
+      "is:overdue",
       "bank -photo",
+      "Home passport",
+      "gate Garden",
+      "id:{t0}",
+      "id:{t1}",
     )
-    .map((q): Step => ({ op: "task.search", input: { q }, user: true })),
+    .chain((q) => who.map((by): Step => ({ op: "task.search", input: { q }, ...by }))),
   fc.constant<Step>({ op: "task.finished", input: {}, user: true }),
   fc.constant<Step>({ op: "space.status", input: {}, user: true }),
 );
@@ -338,7 +344,7 @@ describe("[S2.replay.generated] random ordinary sequences of the tree's families
             steps as Sequence<Step>,
           );
         }),
-        { seed, numRuns: Number(process.env["FC_RUNS"] ?? 6), endOnFailure: true },
+        { seed, numRuns: Number(process.env["FC_RUNS"] ?? 80), endOnFailure: true },
       );
     },
     LONG,
