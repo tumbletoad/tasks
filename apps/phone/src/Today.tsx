@@ -5,21 +5,36 @@
 // be sent. One session holds the link: it opens at launch and when the app comes back to the front,
 // again on another network, retries while it is down, and holds nothing in the background.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Pressable, SectionList, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  AppState,
+  BackHandler,
+  Pressable,
+  SectionList,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { PRODUCT_NAME } from "@ttasks/brand";
 import { captureGroups, parseCapture, type CaptureDraft } from "@ttasks/client/capture";
-import { spaceSession, type Saved, type SpaceSession, type SpaceView } from "@ttasks/client/link";
+import {
+  spaceSession,
+  type PageLink,
+  type Saved,
+  type SpaceSession,
+  type SpaceView,
+} from "@ttasks/client/link";
 import type { NodeRow, TaskRow } from "@ttasks/client/store";
 import { formatDay, todayOf, type Clock } from "@ttasks/client/today";
 import { localDate } from "@ttasks/contracts/day";
-import { connectSocket, native } from "./link/socket.ts";
+import { Card, PageView } from "./Card.tsx";
+import { connectSocket, keep, native } from "./link/socket.ts";
 import { Button, shared, type Colors } from "./ui.tsx";
+import { ago } from "./time.ts";
 import { WORDS } from "./words.ts";
 
 /** How long a checked-off row stays at its place, with Undo. */
 const HOLD_MS = 5_000;
-
-const keep = { read: (name: string) => native.kept(name), write: native.keep.bind(native) };
 
 /** Now, today and the phone's own zone and language: read again every minute. */
 function useClock(): Clock {
@@ -38,14 +53,6 @@ function useClock(): Clock {
     };
   }, []);
   return clock;
-}
-
-function ago(ms: number, now: number): string {
-  const minutes = Math.floor((now - ms) / 60_000);
-  if (minutes < 1) return WORDS.justNow;
-  if (minutes < 60) return WORDS.minutes(minutes);
-  const hours = Math.floor(minutes / 60);
-  return hours < 24 ? WORDS.hours(hours) : WORDS.days(Math.floor(hours / 24));
 }
 
 /** Where a capture went, as the page names it: its project or area, Waiting, or the Inbox. */
@@ -76,6 +83,24 @@ export function Today(props: {
   const [mine, setMine] = useState<string | undefined>(undefined);
   const [note, setNote] = useState<string | undefined>(undefined);
   const session = useRef<SpaceSession | undefined>(undefined);
+  /** The card open over Today, and the page open over the card. Today stays where it was. */
+  const [open, setOpen] = useState<TaskRow | undefined>(undefined);
+  /** Why a card closed by itself: its task was finished or trashed on the computer. */
+  const [closed, setClosed] = useState<string | undefined>(undefined);
+  /** The tasks this phone checked off: their card closes without a word. */
+  const checkedHere = useRef(new Set<string>());
+  const [reading, setReading] = useState<PageLink | undefined>(undefined);
+  useEffect(() => {
+    if (open === undefined) return undefined;
+    const back = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (reading !== undefined) setReading(undefined);
+      else setOpen(undefined);
+      return true;
+    });
+    return () => {
+      back.remove();
+    };
+  }, [open, reading]);
   const removed = useRef(onRemoved);
   removed.current = onRemoved;
 
@@ -129,6 +154,7 @@ export function Today(props: {
     const live = session.current;
     if (live === undefined || held.has(task.id)) return;
     const request = live.finish(task);
+    checkedHere.current.add(task.id);
     setHeld((now) => new Map(now).set(task.id, { task, request }));
     setTimeout(() => {
       setHeld((now) => {
@@ -141,6 +167,7 @@ export function Today(props: {
   };
   const undo = (hold: Held) => {
     session.current?.undo(hold.request);
+    checkedHere.current.delete(hold.task.id);
     setHeld((now) => {
       const next = new Map(now);
       next.delete(hold.task.id);
@@ -181,104 +208,179 @@ export function Today(props: {
           ? WORDS.addedLater
           : undefined;
 
+  const live = view?.link.kind === "connected";
+  const openHeld = open === undefined ? undefined : held.get(open.id);
+  const shownCard = open === undefined ? undefined : (view?.tasks.get(open.id) ?? openHeld?.task);
+  // A card whose task is no longer open closes to Today, saying what happened on the computer.
+  useEffect(() => {
+    if (open === undefined || shownCard !== undefined || view?.loaded !== true) return undefined;
+    const why = view.left.get(open.id);
+    setOpen(undefined);
+    setReading(undefined);
+    if (checkedHere.current.has(open.id)) return undefined;
+    setClosed(
+      why === "trash" ? WORDS.movedToTrash : why === "done" ? WORDS.doneThere : WORDS.noLongerOpen,
+    );
+    const timer = setTimeout(() => {
+      setClosed(undefined);
+    }, 6_000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [open, shownCard, view]);
+
   return (
     <View style={shared.fill}>
-      <View style={[styles.head, { borderColor: colors.line }]}>
-        <Text style={[styles.space, { color: colors.text }]}>
-          {space === "" ? PRODUCT_NAME : space}
-        </Text>
-        <Text style={[shared.small, { color: colors.muted }]}>
-          {state}
-          {view?.live !== true && view?.asOf !== undefined && view.loaded
-            ? ` ${WORDS.updated(ago(view.asOf, clock.now))}`
-            : ""}
-        </Text>
-        {link.kind === "offline" && link.pin ? (
-          <Text style={[shared.small, { color: colors.muted }]}>{WORDS.otherKey}</Text>
-        ) : null}
-        {link.kind === "offline" ? (
-          <Button
-            label={WORDS.tryNow}
-            onPress={() => session.current?.now()}
+      {shownCard !== undefined && session.current !== undefined ? (
+        reading !== undefined ? (
+          <PageView
+            page={reading}
+            clock={clock}
             colors={colors}
-            quiet
+            session={session.current}
+            live={live}
+            onBack={() => {
+              setReading(undefined);
+            }}
           />
-        ) : null}
-        {view !== undefined && view.waiting.length > 0 ? (
-          <Text style={[shared.small, { color: colors.muted }]}>
-            {WORDS.waiting(view.waiting.length)}
+        ) : (
+          <Card
+            task={shownCard}
+            done={openHeld !== undefined}
+            {...(openHeld === undefined
+              ? {}
+              : {
+                  onUndo: () => {
+                    undo(openHeld);
+                  },
+                })}
+            nodes={view?.nodes ?? new Map()}
+            clock={clock}
+            colors={colors}
+            session={session.current}
+            live={live}
+            onBack={() => {
+              setOpen(undefined);
+            }}
+            onCheck={(task) => {
+              setOpen(undefined);
+              check(task);
+            }}
+            onPage={setReading}
+          />
+        )
+      ) : null}
+      <View style={[shared.fill, shownCard === undefined ? null : styles.hidden]}>
+        <View style={[styles.head, { borderColor: colors.line }]}>
+          <Text style={[styles.space, { color: colors.text }]}>
+            {space === "" ? PRODUCT_NAME : space}
           </Text>
-        ) : null}
-        {view?.refused.map((refusal) => (
-          <View key={refusal.request} style={styles.refused}>
-            <Text style={[shared.small, styles.grow, { color: colors.text }]}>
-              {WORDS.notSaved(refusal.words, refusal.why)}
-            </Text>
+          {closed === undefined ? null : (
+            <Text style={[shared.small, { color: colors.text }]}>{closed}</Text>
+          )}
+          <Text style={[shared.small, { color: colors.muted }]}>
+            {state}
+            {view?.live !== true && view?.asOf !== undefined && view.loaded
+              ? ` ${WORDS.updated(ago(view.asOf, clock.now))}`
+              : ""}
+          </Text>
+          {link.kind === "offline" && link.pin ? (
+            <Text style={[shared.small, { color: colors.muted }]}>{WORDS.otherKey}</Text>
+          ) : null}
+          {link.kind === "offline" ? (
             <Button
-              label={WORDS.dismiss}
-              onPress={() => session.current?.dismiss(refusal.request)}
+              label={WORDS.tryNow}
+              onPress={() => session.current?.now()}
               colors={colors}
               quiet
             />
-          </View>
-        ))}
-      </View>
-      <SectionList
-        style={shared.fill}
-        sections={sections}
-        keyExtractor={(task) => task.id}
-        stickySectionHeadersEnabled={false}
-        renderSectionHeader={({ section }) => (
-          <Text style={[styles.section, { color: colors.muted }]}>{section.title}</Text>
-        )}
-        renderItem={({ item }) => (
-          <Row task={item} done={held.has(item.id)} colors={colors} clock={clock} onCheck={check} />
-        )}
-        ListEmptyComponent={
-          <Text style={[shared.body, styles.empty, { color: colors.muted }]}>
-            {view?.loaded === true ? WORDS.nothing : WORDS.loading}
-          </Text>
-        }
-        ListFooterComponent={
-          <View style={styles.footer}>
-            <Button label={WORDS.scanNew} onPress={onScan} colors={colors} quiet />
-          </View>
-        }
-      />
-      {lastHold === undefined ? null : (
-        <View style={[styles.toast, { backgroundColor: colors.text }]}>
-          <Text style={[shared.small, styles.grow, { color: colors.background }]} numberOfLines={1}>
-            {WORDS.doneToast(lastHold.task.title)}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              undo(lastHold);
-            }}
-            hitSlop={12}
-          >
-            <Text style={[styles.undo, { color: colors.background }]}>{WORDS.undo}</Text>
-          </Pressable>
+          ) : null}
+          {view !== undefined && view.waiting.length > 0 ? (
+            <Text style={[shared.small, { color: colors.muted }]}>
+              {WORDS.waiting(view.waiting.length)}
+            </Text>
+          ) : null}
+          {view?.refused.map((refusal) => (
+            <View key={refusal.request} style={styles.refused}>
+              <Text style={[shared.small, styles.grow, { color: colors.text }]}>
+                {WORDS.notSaved(refusal.words, refusal.why)}
+              </Text>
+              <Button
+                label={WORDS.dismiss}
+                onPress={() => session.current?.dismiss(refusal.request)}
+                colors={colors}
+                quiet
+              />
+            </View>
+          ))}
         </View>
-      )}
-      <View style={[styles.capture, { borderColor: colors.line }]}>
-        {(note ?? captured) ? (
-          <Text style={[shared.small, { color: colors.muted }]}>{note ?? captured}</Text>
-        ) : null}
-        <TextInput
-          style={[shared.input, { color: colors.text, borderColor: colors.muted }]}
-          value={text}
-          onChangeText={(next) => {
-            setText(next);
-            setNote(undefined);
-          }}
-          onSubmitEditing={add}
-          submitBehavior="submit"
-          returnKeyType="done"
-          placeholder={WORDS.addTask}
-          placeholderTextColor={colors.muted}
-          accessibilityLabel={WORDS.newTask}
+        <SectionList
+          style={shared.fill}
+          sections={sections}
+          keyExtractor={(task) => task.id}
+          stickySectionHeadersEnabled={false}
+          renderSectionHeader={({ section }) => (
+            <Text style={[styles.section, { color: colors.muted }]}>{section.title}</Text>
+          )}
+          renderItem={({ item }) => (
+            <Row
+              task={item}
+              done={held.has(item.id)}
+              colors={colors}
+              clock={clock}
+              onCheck={check}
+              onOpen={setOpen}
+            />
+          )}
+          ListEmptyComponent={
+            <Text style={[shared.body, styles.empty, { color: colors.muted }]}>
+              {view?.loaded === true ? WORDS.nothing : WORDS.loading}
+            </Text>
+          }
+          ListFooterComponent={
+            <View style={styles.footer}>
+              <Button label={WORDS.scanNew} onPress={onScan} colors={colors} quiet />
+            </View>
+          }
         />
+        {lastHold === undefined ? null : (
+          <View style={[styles.toast, { backgroundColor: colors.text }]}>
+            <Text
+              style={[shared.small, styles.grow, { color: colors.background }]}
+              numberOfLines={1}
+            >
+              {WORDS.doneToast(lastHold.task.title)}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                undo(lastHold);
+              }}
+              hitSlop={12}
+            >
+              <Text style={[styles.undo, { color: colors.background }]}>{WORDS.undo}</Text>
+            </Pressable>
+          </View>
+        )}
+        <View style={[styles.capture, { borderColor: colors.line }]}>
+          {(note ?? captured) ? (
+            <Text style={[shared.small, { color: colors.muted }]}>{note ?? captured}</Text>
+          ) : null}
+          <TextInput
+            style={[shared.input, { color: colors.text, borderColor: colors.muted }]}
+            value={text}
+            onChangeText={(next) => {
+              setText(next);
+              setNote(undefined);
+            }}
+            onSubmitEditing={add}
+            submitBehavior="submit"
+            returnKeyType="done"
+            placeholder={WORDS.addTask}
+            placeholderTextColor={colors.muted}
+            accessibilityLabel={WORDS.newTask}
+          />
+        </View>
       </View>
     </View>
   );
@@ -290,8 +392,9 @@ function Row(props: {
   colors: Colors;
   clock: Clock;
   onCheck: (task: TaskRow) => void;
+  onOpen: (task: TaskRow) => void;
 }) {
-  const { task, done, colors, clock, onCheck } = props;
+  const { task, done, colors, clock, onCheck, onOpen } = props;
   return (
     <View style={styles.row}>
       <Pressable
@@ -308,7 +411,14 @@ function Row(props: {
           done ? { backgroundColor: colors.accent, borderColor: colors.accent } : null,
         ]}
       />
-      <View style={styles.grow}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityHint={WORDS.open(task.title)}
+        onPress={() => {
+          onOpen(task);
+        }}
+        style={styles.grow}
+      >
         <Text
           style={[
             shared.body,
@@ -329,7 +439,7 @@ function Row(props: {
             )}
           </Text>
         )}
-      </View>
+      </Pressable>
     </View>
   );
 }
@@ -369,4 +479,6 @@ const styles = StyleSheet.create({
   },
   undo: { fontSize: 15, fontWeight: "700" },
   capture: { padding: 16, gap: 6, borderTopWidth: 1 },
+  // Kept mounted under a card, so Back finds Today where it was.
+  hidden: { display: "none" },
 });

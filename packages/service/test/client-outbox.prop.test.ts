@@ -1,5 +1,5 @@
 // The generated interleavings of the phone's outbox: random sequences of what the person does on
-// the phone (check off, Undo, capture), of faults at the link's socket (an answer lost with the
+// the phone (check off, Undo, capture, a card opened), of faults at the link's socket (an answer lost with the
 // link or on an open one, the link dropped, the feed or the answers held back), of a restart of the
 // app (a new session on the same kept files), and of the computer changing the same tasks (finished,
 // reopened, to the Trash) and closing and opening the space. Against the real service.
@@ -37,6 +37,8 @@ afterAll(async () => {
 type Step =
   | { readonly t: "finish"; readonly i: number }
   | { readonly t: "undo" }
+  /** A task's card opened: a read on the same link while changes wait. */
+  | { readonly t: "card"; readonly i: number }
   | { readonly t: "capture" }
   | { readonly t: "dropAnswer" }
   | { readonly t: "withholdAnswer" }
@@ -55,6 +57,7 @@ const task = fc.integer({ min: 0, max: TASKS - 1 });
 const step: fc.Arbitrary<Step> = fc.oneof(
   { weight: 4, arbitrary: task.map((i) => ({ t: "finish" as const, i })) },
   { weight: 3, arbitrary: fc.constant({ t: "undo" as const }) },
+  { weight: 2, arbitrary: task.map((i) => ({ t: "card" as const, i })) },
   { weight: 3, arbitrary: fc.constant({ t: "capture" as const }) },
   { weight: 2, arbitrary: fc.constant({ t: "dropAnswer" as const }) },
   { weight: 2, arbitrary: fc.constant({ t: "withholdAnswer" as const }) },
@@ -210,6 +213,11 @@ describe("[S5.phone.interleavings] the phone's outbox through generated sequence
                   s.live.undo(last.request);
                   meant[last.i] = true;
                 }
+                break;
+              }
+              case "card": {
+                const read = await s.live.card(refs[st.i]?.id ?? "");
+                expect(["read", "none"]).toContain(read.kind);
                 break;
               }
               case "capture": {

@@ -3281,7 +3281,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // What is known above the task, and its own pages: with the digest and with every sections
     // read, since many agents read only sections.
     const trail = isTree(call.space) ? treeTrail : trailOf;
-    const library = await trail(reader, read.space, read.row);
+    const listed = await trail(reader, read.space, read.row);
+    // A page is read only while what holds it is out of the Trash (page.read): a task in the Trash
+    // lists none of its own.
+    const library =
+      listed === undefined ||
+      read.row["deleted_at"] === null ||
+      read.row["deleted_at"] === undefined
+        ? listed
+        : { ...listed, pages: [], count: 0 };
     if (sections.length === 0) {
       const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
       const more = digest["more"] as Record<string, unknown>;

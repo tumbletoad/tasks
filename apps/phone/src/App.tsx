@@ -5,9 +5,9 @@
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { PRODUCT_NAME } from "@ttasks/brand";
-import { readSaved, type Saved } from "@ttasks/client/link";
+import { forgetReads, readSaved, type Saved } from "@ttasks/client/link";
 import type { Pairing } from "@ttasks/contracts/link";
-import { native } from "./link/socket.ts";
+import { keep, native } from "./link/socket.ts";
 import { Name, Scanner } from "./Pairing.tsx";
 import { Today } from "./Today.tsx";
 import { Button, shared, useColors } from "./ui.tsx";
@@ -70,6 +70,13 @@ export function App() {
           qr={screen.qr}
           colors={colors}
           onPaired={(saved) => {
+            const before = readSaved(native.pairing());
+            if (
+              before !== undefined &&
+              (before.pin !== saved.pin || before.space.id !== saved.space.id)
+            ) {
+              forgetReads(keep, before);
+            }
             native.savePairing(JSON.stringify(saved));
             setScreen({ kind: "paired", saved });
           }}

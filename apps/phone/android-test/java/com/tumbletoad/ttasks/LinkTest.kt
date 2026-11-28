@@ -133,6 +133,26 @@ class LinkTest {
     picture(device, "capture.png")
   }
 
+  /**
+   * A task's card from Today: its note shows, then the note the computer adds while it is open (the
+   * harness adds it once this test marks the card open), and Back returns to Today.
+   */
+  @Test
+  fun opensCard() {
+    val marker = instrumentation.targetContext.getExternalFilesDir(null)?.let { java.io.File(it, "card-open") }
+    marker?.delete()
+    val device = launch()
+    shown(device, "Read the card").click()
+    shown(device, "First note on the card")
+    marker?.writeText("")
+    shown(device, "A note while the card is open")
+    picture(device, "card.png")
+    device.pressBack()
+    if (!device.wait(Until.gone(By.text("Back")), WAIT_MS)) throw AssertionError("the card stayed open")
+    shown(device, "Read the card")
+    shown(device, "Focus")
+  }
+
   private fun checkOff(title: String, device: UiDevice = launch()) {
     shown(device, title)
     val box = device.wait(Until.findObject(By.desc("Done: $title")), WAIT_MS)

@@ -61,3 +61,11 @@ export const connectSocket: Connect = (url, pin, events) => {
   sockets.set(id, socket);
   return socket;
 };
+
+/** The app's private files: what the session keeps across a restart. */
+export const keep = {
+  read: (name: string) => native.kept(name),
+  write: (name: string, text: string) => {
+    native.keep(name, text);
+  },
+};

@@ -12,7 +12,8 @@
 //    code, the computer serves it, and the screen shows the space and Connected. Sent to the
 //    background and brought back, it opens the link again.
 // 5. Today: a task the computer adds shows without a pull; its box checks it off, with Undo, and the
-//    check-off reaches the computer; a capture reaches it once. With the service stopped, a
+//    check-off reaches the computer; a capture reaches it once. A task's card opens from Today,
+//    shows a note the computer adds while it is open, and Back returns to Today. With the service stopped, a
 //    check-off waits, outlasts a restart of the app, and arrives once the service is back.
 // 6. The phone is removed on the computer. Started again, the app is told so, forgets the pairing
 //    and offers to scan a code; started once more, it is not paired and opens no connection.
@@ -256,6 +257,31 @@ try {
   // The end of an instrumented test ends the app's process: start it as a person does.
   await restart();
 
+  // A task's card: opened from Today, a note the computer adds while it is open, and back.
+  const card = await added("Read the card");
+  const note = async (text: string) =>
+    op("entry.add", {
+      task: card,
+      kind: "note",
+      text,
+      request_id: `fixture-${String(Date.now())}-note`,
+    });
+  await note("First note on the card");
+  check(await shows("Read the card"), "a task to read shows on Today");
+  const files = `/sdcard/Android/data/${ANDROID_APP_ID}/files/`;
+  const opening = instrument("opensCard");
+  check(
+    await until(async () => (await adb("shell", "ls", files)).includes("card-open"), 120_000),
+    "its card opened from Today, with its note",
+  );
+  await note("A note while the card is open");
+  check(
+    await opening,
+    "the note the computer added shows on the open card, and Back returns to Today",
+  );
+  await pull("card.png", "7-card");
+  await restart();
+
   const vet = await added("Call the vet");
   check(await shows("Call the vet"), "a second task shows");
   await world.stop();
@@ -268,7 +294,7 @@ try {
     await shows("1 change waits for the computer."),
     "started again without the service, it still waits",
   );
-  await shot("7-away");
+  await shot("8-away");
   await world.restart(link);
   ({ token } = await signIn(world));
   check(
@@ -286,7 +312,7 @@ try {
     await shows("This phone was removed on the computer.", "Scan the code"),
     `the started app is told it was removed (${String(seen.upgrades)} upgrade)`,
   );
-  await shot("8-removed");
+  await shot("9-removed");
   await restart();
   check(
     await shows("Not paired with a computer.", "Scan the code"),
