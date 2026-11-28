@@ -376,8 +376,8 @@ export function changeOf(source: unknown): Change | undefined {
     }
     case "effort":
       if (s["effort"] === undefined) return effortChange(undefined);
-      return text(s["effort"], 40)
-        ? effortChange(s["effort"], typeof s["levels"] === "string" ? s["levels"] : undefined)
+      return text(s["effort"], 40) && typeof s["levels"] === "string"
+        ? effortChange(s["effort"], s["levels"])
         : undefined;
     case "due": {
       const date = s["date"];

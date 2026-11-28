@@ -747,21 +747,19 @@ export class Edits {
     );
   }
 
-  /**
-   * Whether a kept edit was made against a history the screen no longer shows: its base is of
-   * another history (the space was restored since), or a failed edit has none (kept by an earlier
-   * build). No base makes sending it again an informed choice, so it is not sent:
-   * its value can be copied or discarded.
-   */
   /** Whether a kept size was chosen from effort levels the screen no longer shows (levelsKey). */
   relevelled(unsaved: Unsaved): boolean {
     const { source } = unsaved.change;
     const now = this.#deps.levels?.();
     if (source?.kind !== "effort" || source.effort === undefined || now === undefined) return false;
-    // A size kept by an earlier build does not say its levels: it is chosen again.
     return source.levels !== now;
   }
 
+  /**
+   * Whether a kept edit was made against a history the screen no longer shows: its base is of
+   * another history (the space was restored since), or a failed edit has none. No base makes
+   * sending it again an informed choice, so it is not sent: its value can be copied or discarded.
+   */
   restored(unsaved: Unsaved): boolean {
     if (unsaved.base === undefined) return unsaved.reason === "failed";
     const now = this.#deps.asOf();
