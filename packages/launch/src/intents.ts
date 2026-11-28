@@ -235,8 +235,8 @@ export const EVIDENCE_FIELDS = {
   /** Terminal: the agent ended after running this long, as its shim measured it. */
   ran_ms: "count",
   /**
-   * Terminal: when the service found the shim of a Confirmed launch gone without a report. Its
-   * agent most likely ended with it, but nothing says when or whether it did.
+   * When the service found the session of a Confirmed launch gone without a report: a terminal's
+   * shim, whose agent most likely ended with it, or a T3 thread that T3 no longer has.
    */
   lost_at: "instant",
   /**

@@ -153,7 +153,7 @@ function timer(ms: number, signal: AbortSignal): Promise<void> {
 
 /** How a run's record says its processes started; undefined when it does not say. */
 function kindOf(run: RunRecord): ProcessGroupKind | undefined {
-  const kind = run.evidence.container;
+  const kind = run.evidence.process_group;
   return kind === "cgroup" || kind === "job" || kind === "tree" ? kind : undefined;
 }
 
@@ -340,7 +340,7 @@ export class RunHost {
       // How the run's processes will be held is recorded before anything of it starts: recovery
       // asks the question that fits it.
       const group = await this.#groups.kind();
-      begun = await this.#machine.begin(id, { container: group });
+      begun = await this.#machine.begin(id, { process_group: group });
     } catch (error) {
       this.#flows.delete(id);
       throw error;
