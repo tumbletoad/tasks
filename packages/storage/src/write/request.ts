@@ -367,6 +367,8 @@ export interface WriteResult {
    * step left the stack, and `newer` says whose work it was. Accepted, so a resend replays it.
    */
   kept?: true;
+  /** A kept undo's or redo's that could not be applied at all: why, such as a task in the Trash. */
+  why?: string;
   /** A kept undo's or redo's newer work: who changed which task since. */
   newer?: NewerWork;
   /** One per operation, for `applied` and `unchanged`. */

@@ -1,16 +1,19 @@
 // Undo and redo (A1 3.10.1). A person's commit is a step on their undo stack when every row it
 // changed is of the few kinds Undo is for: a check-off or a reopen, the Trash and out of it, a
-// removed note, words, out of the Inbox, a first filing or one into a group just made, a new group
-// or an unarchive (stepSql).
+// removed note, words, out of the Inbox, a first filing or one into a group just made, a dismissal
+// of questions, a new group or an unarchive (stepSql).
 // Undo takes a step back with the ordinary operations that write what its change rows held
 // before (oppositeOf), and Redo does the same to the undo's own commit, so both change only what
-// the commit they answer changed. Neither writes over someone else's newer work (newerOn).
+// the commit they answer changed. Neither writes over a change made since: only where every field
+// it writes still holds what the step wrote (superseded), and never takes a task or a note out of
+// sight that someone else worked on since (hiddenWork).
 import { newerBy } from "@ttasks/contracts/newer-work";
 import type { Connection, Row } from "../driver.ts";
 import { misuse } from "../errors.ts";
 import { isId, type Id } from "../ids.ts";
 import { formatTaskRef } from "../refs.ts";
 import { invalidValue, RowReader } from "../rows.ts";
+import { CHILD_FIELDS, columnsValue, fieldJson, TASK_FIELDS } from "./fields.ts";
 import type { NewerWork, Operation } from "./request.ts";
 
 /** A change row of commit `c` whose task `c` also changed `field`. */
@@ -30,7 +33,8 @@ const INTO_NEW_GROUP =
 
 /** A change row `c` of a kind Undo is for, or one that comes with such a row in its commit. */
 const KEPT_ROW =
-  "(c.entity = 'tasks' AND c.field IN ('lifecycle', 'deleted', 'title', 'summary', 'context')) " +
+  "(c.entity = 'tasks' AND c.field IN ('lifecycle', 'deleted', 'title', 'summary', 'context', " +
+  "'reviewed_at')) " +
   `OR (c.entity = 'tasks' AND c.field = 'wrap' AND ${sameTask("lifecycle")}) ` +
   "OR (c.entity = 'tasks' AND c.field = 'inbox' AND c.before = '1' AND c.after = '0') " +
   `OR (c.entity = 'tasks' AND c.field = 'status' AND ${sameTask("inbox")}) ` +
@@ -201,6 +205,10 @@ export function oppositeOf(conn: Connection, changes: readonly StoredChange[]): 
               task: id,
               ...(typeof reason === "string" ? { reason } : {}),
             });
+            // A dropped task wrapped up goes back with its outcome as the result.
+            if (columns(of("wrap")?.before ?? null)["wrap_state"] === "wrapped") {
+              ops.push({ kind: "task.wrap_up", task: id });
+            }
           } else {
             const wrap = columns(of("wrap")?.before ?? null);
             const outcome = wrap["wrap_state"] === "wrapped" ? wrap["outcome"] : undefined;
@@ -279,17 +287,17 @@ const RUNS_OF_TASK =
 
 /**
  * Who changed, after `$since`, field `$field` of row `$entity` `$id` (every field when it is
- * null), or anything of task `$task`: each author once with the time of their newest change. The
- * principal's own changes do not count, but for a run's own work, which the run machine writes
- * with the person's credential.
+ * null), or anything of task `$task`: each author once with the time of their newest change. With
+ * `$anyone` 0 the principal's own changes do not count, but for a run's own work, which the run
+ * machine writes with the person's credential.
  */
 const newerSql = (runs: string): string =>
   "SELECT coalesce(c.task_id, CASE c.entity WHEN 'runs' THEN $task END) AS task, " +
   `(c.entity = 'runs' AND NOT ${STOP}) AS run, k.author_id AS actor, a.kind AS kind, ` +
   "a.label AS label, k.origin AS origin, max(k.at) AS at " +
   "FROM changes c JOIN commits k ON k.seq = c.seq JOIN actors a ON a.id = k.author_id " +
-  "WHERE c.seq > $since AND NOT (k.principal_id = $principal AND NOT " +
-  `${RUN_WORK}) AND ((c.entity = $entity AND c.entity_id = $id AND ($field IS NULL OR c.field = $field)) ` +
+  `WHERE c.seq > $since AND ($anyone = 1 OR NOT (k.principal_id = $principal AND NOT ${RUN_WORK})) ` +
+  "AND ((c.entity = $entity AND c.entity_id = $id AND ($field IS NULL OR c.field = $field)) " +
   `OR ($task IS NOT NULL AND (c.task_id = $task${runs}))) ` +
   "GROUP BY 1, 2, k.author_id, k.origin";
 
@@ -298,44 +306,78 @@ const SQL = {
   newerWithRuns: newerSql(RUNS_OF_TASK),
   runs: "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'runs'",
   taskRef: "SELECT ref FROM tasks WHERE id = $id",
+  row: {
+    tasks: "SELECT * FROM tasks WHERE id = $id",
+    notes: "SELECT * FROM notes WHERE id = $id",
+    log_entries: "SELECT * FROM log_entries WHERE id = $id",
+    areas: "SELECT * FROM areas WHERE id = $id",
+    projects: "SELECT * FROM projects WHERE id = $id",
+  },
 } as const;
 
+type Rowed = keyof typeof SQL.row;
+const isRowed = (entity: string): entity is Rowed => Object.hasOwn(SQL.row, entity);
+
 /**
- * Someone else's work since commit `since` that undoing its rows would write over: a field it
- * changed, and anything on a task or a note that the opposite takes out of sight again. Each task
- * and author once, with their newest time.
+ * The change rows whose fields an opposite writes (oppositeOf): not what comes along with them,
+ * such as a restore's regrouping or a new project's folder.
  */
-export function newerOn(
-  conn: Connection,
-  changes: readonly StoredChange[],
-  since: number,
-  principal: Id<"ac">,
-  refPrefix: string,
-): NewerWork["work"] {
-  const runs = conn.prepare(SQL.runs).get() !== undefined;
-  const work = new Map<string, NewerWork["work"][number]>();
-  const refs = new Map<string, string>();
-  const refOf = (task: string): string => {
-    let ref = refs.get(task);
-    if (ref === undefined) {
-      const row = conn.prepare(SQL.taskRef).get({ id: task });
-      if (row === undefined) throw invalidValue("changes", "task_id");
-      ref = formatTaskRef(refPrefix, new RowReader("tasks", row).int("ref", "taskRef"));
-      refs.set(task, ref);
-    }
-    return ref;
-  };
-  for (const c of changes) {
-    const whole = hides(c);
-    const task = whole && c.entity === "tasks" ? c.entityId : null;
-    const rows = conn.prepare(runs && task !== null ? SQL.newerWithRuns : SQL.newer).all({
-      since,
-      principal,
-      entity: c.entity,
-      id: c.entityId,
-      field: whole || c.action === "create" ? null : c.field,
-      task,
-    });
+function written(changes: readonly StoredChange[]): StoredChange[] {
+  const deletedTasks = new Set(
+    changes.filter((c) => c.entity === "tasks" && c.field === "deleted").map((c) => c.entityId),
+  );
+  const finished = new Set(
+    changes.filter((c) => c.entity === "tasks" && c.field === "lifecycle").map((c) => c.entityId),
+  );
+  return changes.filter((c) => {
+    if (!isRowed(c.entity)) return false;
+    if (c.entity !== "tasks") return true;
+    if (deletedTasks.has(c.entityId)) return c.field === "deleted";
+    if (finished.has(c.entityId)) return c.field === "lifecycle" || c.field === "wrap";
+    return true;
+  });
+}
+
+/** What field `c` holds now, in the form of a change row's value; undefined for a row that is gone. */
+function valueNow(conn: Connection, c: StoredChange): string | undefined {
+  if (!isRowed(c.entity)) return undefined;
+  const row = conn.prepare(SQL.row[c.entity]).get({ id: c.entityId });
+  if (row === undefined) return undefined;
+  // A new group's create is undone by its archive: what it wrote there is its lifecycle.
+  const field = c.action === "create" ? "lifecycle" : (c.field ?? "");
+  const fields: Readonly<Record<string, readonly string[]>> =
+    c.entity === "tasks" ? TASK_FIELDS : CHILD_FIELDS[c.entity];
+  return fieldJson(columnsValue(row, fields[field] ?? []));
+}
+
+/** What `c` wrote, as valueNow gives it. */
+const wrote = (c: StoredChange): string =>
+  c.action === "create" ? fieldJson(columns(c.after)["lifecycle"] ?? null) : c.after;
+
+/** Who worked since, as newerSql reads it, each task and author once with their newest time. */
+class Work {
+  readonly #conn: Connection;
+  readonly #refPrefix: string;
+  readonly #runs: boolean;
+  readonly #work = new Map<string, NewerWork["work"][number]>();
+  readonly #refs = new Map<string, string>();
+  constructor(conn: Connection, refPrefix: string) {
+    this.#conn = conn;
+    this.#refPrefix = refPrefix;
+    this.#runs = conn.prepare(SQL.runs).get() !== undefined;
+  }
+
+  add(params: {
+    since: number;
+    principal: Id<"ac">;
+    anyone: boolean;
+    entity: string;
+    id: string;
+    field: string | null;
+    task: string | null;
+  }): boolean {
+    const sql = this.#runs && params.task !== null ? SQL.newerWithRuns : SQL.newer;
+    const rows = this.#conn.prepare(sql).all({ ...params, anyone: params.anyone ? 1 : 0 });
     for (const row of rows) {
       const r = new RowReader("commits", row);
       const at = r.int("at", "instant");
@@ -348,14 +390,85 @@ export function newerOn(
       const run = r.int("run", "count") === 1;
       const changed = r.optText("task", (v) => isId(v, "t")) as Id<"t"> | null;
       const key = `${changed ?? ""}|${newerBy(by, run)}`;
-      if ((work.get(key)?.at ?? -1) >= at) continue;
-      work.set(key, {
-        ...(changed === null ? {} : { task: changed, ref: refOf(changed) }),
+      if ((this.#work.get(key)?.at ?? -1) >= at) continue;
+      this.#work.set(key, {
+        ...(changed === null ? {} : { task: changed, ref: this.#refOf(changed) }),
         by,
         run,
         at,
       });
     }
+    return rows.length > 0;
   }
-  return [...work.values()];
+
+  get list(): NewerWork["work"] {
+    return [...this.#work.values()];
+  }
+
+  #refOf(task: string): string {
+    let ref = this.#refs.get(task);
+    if (ref === undefined) {
+      const row = this.#conn.prepare(SQL.taskRef).get({ id: task });
+      if (row === undefined) throw invalidValue("changes", "task_id");
+      ref = formatTaskRef(this.#refPrefix, new RowReader("tasks", row).int("ref", "taskRef"));
+      this.#refs.set(task, ref);
+    }
+    return ref;
+  }
+}
+
+/**
+ * Whether a change since stands in the way of undoing `changes`, and whose it is: a field the
+ * opposite would write that no longer holds what the step wrote, whoever changed it, the person
+ * included; or someone else's work on a task or a note the opposite takes out of sight again.
+ * Undefined when nothing does.
+ */
+export function newerOn(
+  conn: Connection,
+  changes: readonly StoredChange[],
+  since: number,
+  principal: Id<"ac">,
+  refPrefix: string,
+): NewerWork["work"] | undefined {
+  const work = new Work(conn, refPrefix);
+  let moved = false;
+  for (const c of written(changes)) {
+    if (valueNow(conn, c) === wrote(c)) continue;
+    moved = true;
+    const field = c.action === "create" ? null : c.field;
+    work.add({
+      since,
+      principal,
+      anyone: true,
+      entity: c.entity,
+      id: c.entityId,
+      field,
+      task: null,
+    });
+  }
+  let hidden = false;
+  for (const c of changes.filter(hides)) {
+    const task = c.entity === "tasks" ? c.entityId : null;
+    const id = c.entityId;
+    if (work.add({ since, principal, anyone: false, entity: c.entity, id, field: null, task })) {
+      hidden = true;
+    }
+  }
+  return moved || hidden ? work.list : undefined;
+}
+
+/** Someone else's work since on the tasks of `changes`: who to name when an opposite cannot apply. */
+export function workOnTasks(
+  conn: Connection,
+  changes: readonly StoredChange[],
+  since: number,
+  principal: Id<"ac">,
+  refPrefix: string,
+): NewerWork["work"] {
+  const work = new Work(conn, refPrefix);
+  const tasks = new Set(changes.flatMap((c) => (c.taskId === null ? [] : [c.taskId])));
+  for (const task of tasks) {
+    work.add({ since, principal, anyone: false, entity: "tasks", id: task, field: null, task });
+  }
+  return work.list;
 }

@@ -87,6 +87,7 @@ import {
   oppositeOf,
   readChanges,
   redoTarget,
+  workOnTasks,
   stepSql,
   undoTarget,
   type StackCommit,
@@ -2950,9 +2951,10 @@ export class SpaceWriter {
    * An undo or a redo: the principal's newest step, or the one it undid last, taken back with the
    * ordinary operations that write back what the step's last application, or its undo, changed
    * (steps.ts). They are staged and applied as any request's, without a base: what guards them is
-   * that nobody else changed those rows since. When someone did, nothing changes, the step leaves
+   * that every field they write still holds what the step wrote (steps.ts newerOn). When a change
+   * since stands in the way, or the opposite cannot be applied, nothing changes, the step leaves
    * the stack so the next undo or redo reaches the one before it, and the answer, accepted so a
-   * resend replays it, names who.
+   * resend replays it, names who or why.
    */
   #history(
     conn: Connection,
@@ -2995,11 +2997,19 @@ export class SpaceWriter {
     }
     const answered = readChanges(conn, target.applied);
     const newer = newerOn(conn, answered, target.applied, principal, space.refPrefix);
-    if (newer.length > 0) return kept(conn, space, target, answered, newer, asOf);
+    if (newer !== undefined) return kept(conn, space, target, answered, newer, asOf);
     // A request of its own, with no base (request.ts): the guard above is newer work.
     const checked: CheckedRequest = { ...request, ops: oppositeOf(conn, answered) };
-    const plan = this.#stage(conn, checked, space, at, wall);
-    return this.#execute(conn, checked, space, plan, asOf, at, { kind: op.kind, target });
+    try {
+      const plan = this.#stage(conn, checked, space, at, wall);
+      return this.#execute(conn, checked, space, plan, asOf, at, { kind: op.kind, target });
+    } catch (error) {
+      // An opposite that cannot be applied now, such as on a task in the Trash or a group an
+      // earlier build removed, never holds the stack: the step is kept and leaves it.
+      if (!(error instanceof RequestProblem)) throw error;
+      const work = workOnTasks(conn, answered, target.applied, principal, space.refPrefix);
+      return kept(conn, space, target, answered, work, asOf, error.problem.message);
+    }
   }
 
   /** Closes the connection. Safe to call twice. */
@@ -3437,8 +3447,8 @@ function stepTasks(
 }
 
 /**
- * An undo or redo that changed nothing: someone else's `newer` work stood in the way of the step,
- * or it was already as it was before. The step leaves the stack in the same transaction as the
+ * An undo or redo that changed nothing: a change since stood in the way of the step (`newer` says
+ * whose), it could not be applied (`why`), or it was already as it was before. The step leaves the stack in the same transaction as the
  * answer's receipt, so a resend replays this answer and never reaches the step below.
  */
 function kept(
@@ -3448,6 +3458,7 @@ function kept(
   answered: readonly StoredChange[],
   newer: NewerWork["work"],
   asOf: AsOf,
+  why?: string,
 ): WriteResult {
   conn.prepare(SQL.markDead).run({ target: target.seq });
   return {
@@ -3462,6 +3473,7 @@ function kept(
       },
     ],
     kept: true,
+    ...(why === undefined ? {} : { why }),
     ...(newer.length === 0 ? {} : { newer: { work: newer } }),
   };
 }

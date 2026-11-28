@@ -1,9 +1,10 @@
 // Undo and redo by the writer: a person's check-off, reopen, Trash and restore, removed note, words,
 // move out of the Inbox, first filing, new area and unarchive are steps, undone and redone with
 // the ordinary operations that write back what the commit changed; any other change is no step and
-// Undo passes over it, also one an earlier version stored as a step. Someone else's newer work
-// keeps the step as they left it, takes it off the stack and is named, in an answer a resend
-// replays. Fixture text only.
+// Undo passes over it, also one an earlier version stored as a step. A change since to what the step
+// wrote, anyone's, or someone else's work on what Undo would take out of sight, keeps the step as it
+// is; so does an opposite that cannot be applied. A kept step leaves the stack, and the answer, which
+// a resend replays, names who or why. Fixture text only.
 import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
@@ -182,8 +183,11 @@ describe("[A1.5.history.undo-redo] undo and redo of the steps a person takes bac
     const raw = openWriter(await checkedDriver(), join(fx.folder, "space.db"));
     raw.prepare("UPDATE commits SET undo_status = 'done' WHERE seq = $s").run({ s: later.seq });
     raw.close();
-    applied(undo());
-    expect(row("tasks", other)["area_id"]).toBeNull();
+    // The first filing was moved on since, by the person: Undo keeps the newer area.
+    const kept = undo();
+    expect(kept.kept).toBe(true);
+    expect(kept.newer?.work).toMatchObject([{ by: { kind: "human" } }]);
+    expect(row("tasks", other)["area_id"]).toBe(fx.areas.home);
     applied(undo(done.commit));
     expect(row("tasks", id)["lifecycle"]).toBe("active");
     expect(status(later.seq)).toBe("done");
@@ -225,6 +229,56 @@ describe("[A1.5.history.undo-redo] undo and redo of the steps a person takes bac
     ).toEqual({
       deleted_at: null,
     });
+  });
+
+  test("a title changed again since, with a priority, is kept: Undo never writes over the newer words", () => {
+    const id = task();
+    send([{ kind: "task.patch", task: id, set: { title: "Renew both passports" } }]);
+    send([{ kind: "task.patch", task: id, set: { title: "Renew the passports", priority: 1 } }]);
+    const kept = undo();
+    expect(kept.kept).toBe(true);
+    expect(row("tasks", id)["title"]).toBe("Renew the passports");
+    expect(undo().error?.code).toBe("NOTHING_TO_UNDO");
+  });
+
+  test("a step whose task an agent moved to the Trash is kept with why and who, and the next Undo reaches the step below", () => {
+    const first = task();
+    const done = send([{ kind: "task.complete", task: first }]);
+    const id = task({ title: "Book the dentist" });
+    send([{ kind: "task.patch", task: id, set: { title: "Book the dentist early" } }]);
+    send([{ kind: "task.delete", task: id }], fx.codex);
+    const kept = undo();
+    expect(kept).toMatchObject({ status: "unchanged", kept: true, why: "The task is deleted" });
+    expect(kept.newer?.work).toMatchObject([{ task: id, by: { kind: "agent" } }]);
+    applied(undo(done.commit));
+    expect(row("tasks", first)["lifecycle"]).toBe("active");
+  });
+
+  test("undoing the reopen of a dropped task drops it again with its outcome", () => {
+    const id = task();
+    send([
+      { kind: "task.archive", task: id, reason: "Not needed" },
+      { kind: "task.wrap_up", task: id, outcome: "The old one is still valid" },
+    ]);
+    send([{ kind: "task.reopen", task: id }]);
+    applied(undo());
+    expect(row("tasks", id)).toMatchObject({
+      lifecycle: "archived",
+      archived_reason: "Not needed",
+      wrap_state: "wrapped",
+      outcome: "The old one is still valid",
+    });
+  });
+
+  test("setting questions aside is a step: Undo puts the earlier mark back", () => {
+    const id = task();
+    send([{ kind: "task.patch", task: id, set: { reviewed_at: 1_794_470_400_000 } }]);
+    const dismissed = send([
+      { kind: "task.patch", task: id, set: { reviewed_at: 1_794_470_500_000 } },
+    ]);
+    expect(status(dismissed.seq)).toBe("done");
+    applied(undo());
+    expect(row("tasks", id)["reviewed_at"]).toBe(1_794_470_400_000);
   });
 
   test("a named commit that is not the newest step leaves the stack alone", () => {
