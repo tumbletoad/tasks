@@ -11,7 +11,7 @@
 //   empty batch that still advances coverage, and the feed sends empty batches as heartbeats.
 // - The compact form: each event names its commit (`seq`, `op_id`, `request_id`, actor, kind) and
 //   the entities it touched, `{type, id, task?, row, changed, created?}`. `row` is the compact row
-//   of a task, area or project (the working set's kinds) and null for the rest (notes, log
+//   of a task, area, project or node (the working set's kinds) and null for the rest (notes, log
 //   entries, sources, links, places, launches): a client refetches the task those touch. No body
 //   of a note, no context, outcome or other long text is in the feed, and of a log entry only the
 //   start of an agent's question that waits for the person, on its task's row.
@@ -26,7 +26,7 @@
 //   one that changes a project's folder carries the rows of the project's tasks the batch holds,
 //   so the row the client holds never shows a source, a folder, a run state or a question the
 //   space no longer has.
-import type { PreferenceRead } from "@ttasks/contracts";
+import type { CompactNode, PreferenceRead } from "@ttasks/contracts";
 import { RUN_WAITS, WAITS, type Row, type WorkerConnection } from "@ttasks/storage";
 import { hasFolderTable, hasPageTable } from "../ops/read.ts";
 import { COMPACT_PAGE, compactPage, LIVE_PAGES } from "../ops/library.ts";
@@ -104,6 +104,12 @@ export interface SnapshotMessage {
   readonly asking: readonly CompactRow[];
   readonly areas: readonly CompactRow[];
   readonly projects: readonly CompactRow[];
+  /**
+   * The space's tree above its tasks: the space, then every live project, each under its parent.
+   * A task row's `parent` names one of them. A batch carries a changed project's row as an entity
+   * of type `node`.
+   */
+  readonly nodes: readonly CompactNode[];
   /**
    * Every page the space shows, without its body (contracts' CompactPage). A batch carries a
    * page's row as an entity of type `page`; one whose row has `deleted_at` leaves the lists, also
@@ -258,6 +264,38 @@ const PAGE_ROWS =
   "AND entity = 'pages') OR p.owner_id IN (SELECT entity_id FROM changes WHERE seq > $after " +
   "AND seq <= $upto AND entity IN ('tasks', 'projects', 'areas') AND field = 'deleted')";
 
+/**
+ * The feed's adapter from today's areas and projects to the tree, which lives until the tree is
+ * the space's own: an area is a top-level project, and a project sits under its area, or under
+ * the space when it has none. A project without an area sorts after every area, as the side menu
+ * lists it: `~` sorts after every position.
+ */
+function nodeOf(table: "areas" | "projects", row: Row, space: string): CompactNode & CompactRow {
+  const area = table === "projects" ? row["area_id"] : undefined;
+  const position = String(row["position"]);
+  const color = row["color"];
+  const deleted = row["deleted_at"];
+  return {
+    id: String(row["id"]),
+    kind: "project",
+    parent: typeof area === "string" ? area : space,
+    title: String(row["title"]),
+    position: table === "projects" && typeof area !== "string" ? `~${position}` : position,
+    ...(typeof color === "string" ? { color } : {}),
+    state: row["lifecycle"] === "archived" ? "archived" : "active",
+    ...(typeof deleted === "number" ? { deleted_at: deleted } : {}),
+  };
+}
+
+/** The node's field each of an area's or a project's changed fields is. */
+const NODE_FIELDS: Readonly<Record<string, string>> = {
+  title: "title",
+  color: "color",
+  lifecycle: "state",
+  grouping: "place",
+  deleted: "deleted",
+};
+
 /** The words entities are named by in the feed. Another table is `other`. */
 export const ENTITY_TYPES: Readonly<Record<string, string>> = {
   tasks: "task",
@@ -346,6 +384,11 @@ export async function readSnapshot(
     asking: await taskRows(asking as Row[], head.ref_prefix, here),
     areas: (areas as Row[]).map((row) => compact(row)),
     projects: (projects as Row[]).map((row) => compact(row)),
+    nodes: [
+      { id: head.id, kind: "space", title: head.name, state: "active" },
+      ...(areas as Row[]).map((row) => nodeOf("areas", row, head.id)),
+      ...(projects as Row[]).map((row) => nodeOf("projects", row, head.id)),
+    ],
     ...(pages === undefined ? {} : { pages }),
     preferences: spacePreferencesOf(preferences as Row[]),
   };
@@ -418,8 +461,16 @@ export async function readBatch(
     const id = row["id"];
     if (typeof id === "string") rows.set(`tasks:${id}`, row);
   }
-  for (const row of areas as Row[]) rows.set(`areas:${String(row["id"])}`, compact(row));
-  for (const row of projects as Row[]) rows.set(`projects:${String(row["id"])}`, compact(row));
+  const nodes = new Map<string, CompactRow>();
+  for (const [table, list] of [
+    ["areas", areas],
+    ["projects", projects],
+  ] as const) {
+    for (const row of list as Row[]) {
+      rows.set(`${table}:${String(row["id"])}`, compact(row));
+      nodes.set(String(row["id"]), nodeOf(table, row, head.id));
+    }
+  }
   /** The pages of each task, project or area a batch moved to the Trash or back. */
   const pagesOn = new Map<string, string[]>();
   for (const row of (pageRows ?? []) as Row[]) {
@@ -515,6 +566,26 @@ export async function readBatch(
     }
     const field = change["field"];
     if (typeof field === "string" && !found.changed.includes(field)) found.changed.push(field);
+    // An area or a project is a node of the tree too: the event carries its node row after it.
+    if (table === "areas" || table === "projects") {
+      let node = entities.get(`nodes:${id}`);
+      if (node === undefined) {
+        const changed: string[] = [];
+        node = {
+          changed,
+          entity: {
+            type: "node",
+            id,
+            row: withheld.has(key) ? null : (nodes.get(id) ?? null),
+            changed,
+            ...(change["action"] === "create" ? { created: true as const } : {}),
+          },
+        };
+        entities.set(`nodes:${id}`, node);
+      }
+      const as = typeof field === "string" ? NODE_FIELDS[field] : undefined;
+      if (as !== undefined && !node.changed.includes(as)) node.changed.push(as);
+    }
     // A source, link, folder, run or launch of a task, and a folder of its project, change what
     // the task's row shows: the event carries the task's row too, after the child, as a change
     // that names no field of the task.

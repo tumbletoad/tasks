@@ -409,6 +409,7 @@ describe("[S5.link.snapshot] a phone's feed carries the space's data and nothing
       "areas",
       "asking",
       "cursor",
+      "nodes",
       "preferences",
       "projects",
       "space",
