@@ -1,6 +1,6 @@
-// `ttasks brief <task> [--pack] [--copy]` (A4 3.4.6): Copy from a terminal. The verb is the
-// registry's `launch.open` without an instance; `--pack` is its own input (the context pack, A4
-// 3.15.5). `--copy` is the CLI's: the text goes to the OS's clipboard tool through its standard
+// `ttasks brief <task> [--pack] [--copy]`: Copy from a terminal. The verb is the
+// registry's `launch.open` without an instance; `--pack` is its own input (the context
+// pack). `--copy` is the CLI's: the text goes to the OS's clipboard tool through its standard
 // input (`@ttasks/launch/clipboard`), and the person is told it did. When no tool is here, or the
 // tool fails, the CLI says so plainly and prints the text instead: a copy that did not happen is
 // never reported.

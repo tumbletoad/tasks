@@ -1,4 +1,4 @@
-// `ttasks setup t3` (A4 3.4.1 "Pairing", A7 3.9 M2.11): the CLI hands T3's approval page to the
+// `ttasks setup t3`: the CLI hands T3's approval page to the
 // browser, the service runs the OAuth flow against a fake T3 and keeps the token in machine state:
 // a 0600 file in a 0700 folder, and nowhere else (not machine.toml, the log, service.json or any
 // answer). Only the user pairs. A real service in this process, the CLI in this process with an
@@ -117,7 +117,7 @@ describe("[A4.3.4.1.t3.setup] ttasks setup t3 through the service", () => {
       expect(browsed).toHaveLength(0);
 
       // Not paired: no route, also for the instance with a `t3` command, whose command line has no
-      // project list (A4 3.4.1): each says how to pair.
+      // project list: each says how to pair.
       expect(JSON.parse((await run(["setup", "t3", "--status", "--json"], false)).stdout)).toEqual({
         state: "not_paired",
         message: "Pair TTasks with T3 Code first: ttasks setup t3",

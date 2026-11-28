@@ -1,16 +1,16 @@
-// How the shim starts its agent (A4 3.6.3 step 6): a direct child, with the claim's argv and
+// How the shim starts its agent: a direct child, with the claim's argv and
 // environment, the terminal as its stdio, never through a shell. Nothing runs between the shim's
 // folder check and the agent: `via_login_shell` is the service's fresh snapshot of the person's
-// login shell, taken in the task's folder before the launch (A4 3.8),
+// login shell, taken in the task's folder before the launch,
 // not a shell around the agent whose profile could change the folder or the environment after
 // the check and the scrub. The same seam starts the shell of `after_exit = "shell"`.
 //
 // No working-directory option: the agent inherits the shim's own working directory, the folder
-// the shim's check just found to be the resolved one (A4 3.3). A `cwd` here would resolve
+// the shim's check just found to be the resolved one. A `cwd` here would resolve
 // the folder's path again, and the path may name another directory by then.
 //
 // The agent is a normal child of the shim: on Windows it sits in the shim's kill-on-close job, so
-// closing the shim's window ends both (A4 3.7); on Linux and macOS it stays in the terminal's
+// closing the shim's window ends both; on Linux and macOS it stays in the terminal's
 // foreground process group and gets the terminal's signals itself.
 import { spawn } from "node:child_process";
 

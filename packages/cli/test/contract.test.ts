@@ -1,8 +1,8 @@
-// The contract suite (@ttasks/service/test/contract) through the CLI's --json (A3 5 "Parity", A7 3.9
-// M2.03): every example goes in as `ttasks <verb> --input - --json`, the CLI's own path from the
+// The contract suite (@ttasks/service/test/contract) through the CLI's --json:
+// every example goes in as `ttasks <verb> --input - --json`, the CLI's own path from the
 // arguments to `op/call` and back, run in this process against a service in this process. The
 // user's calls come from a terminal (`cli-interactive`), the agent's from a script (`cli-script`).
-// The grant gate's refusal (A3 3.7.8) goes the same way, from an agent's shell whose ticket maps
+// The grant gate's refusal goes the same way, from an agent's shell whose ticket maps
 // the call to a session of a home whose row was revoked (`cli-agent`).
 import { expect } from "vitest";
 import { EXIT_CODES, type ErrorBody } from "@ttasks/contracts";
@@ -71,7 +71,7 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --
       const error = out["error"] as ErrorBody | undefined;
       if (error === undefined)
         throw new Error(`ttasks exited ${String(ran.code)} without an error`);
-      // The CLI adds A2's class to A3's body; the suite compares A3's.
+      // The CLI adds its class to the error body; the suite compares the body.
       throw new ContractError({
         code: error.code,
         message: error.message,
@@ -101,7 +101,7 @@ grantSuite(
         const error = (JSON.parse(ran.stdout) as { error?: ErrorBody & { class?: string } }).error;
         if (error === undefined)
           throw new Error(`ttasks exited ${String(ran.code)} without an error`);
-        // The CLI adds A2's class to A3's body; the suite compares A3's.
+        // The CLI adds its class to the error body; the suite compares the body.
         expect(error.class, entry).toBe("forbidden");
         return {
           code: error.code,

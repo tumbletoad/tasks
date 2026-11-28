@@ -1,4 +1,4 @@
-// `ttasks service` through the CLI (A2 3.10.1, M1.12's entries). Only routes that end
+// `ttasks service` through the CLI. Only routes that end
 // before anything is read are run here: a usage error, and an agent's shell, which install,
 // uninstall and stop refuse first. No test of the CLI reaches the real Run key, a unit folder or a
 // service manager; the commands themselves are tested in packages/service with stand-ins.

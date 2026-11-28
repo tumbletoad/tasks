@@ -1,5 +1,5 @@
-// `ttasks setup agents --parts block` and `print-block` through the CLI (A3 3.12, 3.13.1, 3.14;
-// A7 3.11 M4.04): the block part names no space and needs no service, so this runs the CLI in this
+// `ttasks setup agents --parts block` and `print-block` through the CLI:
+// the block part names no space and needs no service, so this runs the CLI in this
 // process with no service at all, on scratch homes in a temporary folder. No test reads or changes
 // a real agent home: detection looks only in the scratch user folder, with an empty PATH.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";

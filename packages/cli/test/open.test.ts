@@ -1,7 +1,7 @@
-// `ttasks open` with the fragment code (A2 3.8.4, 3.9) and `ttasks service port` (A2 3.8.2 step 5),
+// `ttasks open` with the fragment code and `ttasks service port`,
 // against a real service: the code is minted over the socket, the listener is proved by its HMAC
 // before the port is trusted, the URL carries the code in its fragment only, and a browser (a
-// Node client sending what a browser sends) redeems it once. A blocked UI prints A2's message, a
+// Node client sending what a browser sends) redeems it once. A blocked UI prints its message, a
 // moved port its line, and an agent's shell is told to ask the user. No browser is opened: the
 // opener is recorded.
 import { createServer as createHttpServer } from "node:http";
@@ -430,7 +430,7 @@ describe("[A2.3.9.cli.open-start] ttasks open starts a stopped service first", (
       expect(beaten.code).toBe(0);
       expect(beaten.stderr).not.toContain("Started");
       // Started by hand on Linux, where no unit of this install is installed: one more line says
-      // it does not start by itself (A2 3.3.3).
+      // it does not start by itself.
       await w.stop();
       const byHand = await runMain(["open", "--print-url"], {
         home: w.home,

@@ -1,5 +1,5 @@
 // `ttasks doctor`'s agent checks and `ttasks setup agents` for the remaining apps, through the CLI
-// and a real service (A3 3.13, 3.14; A7 3.11 M4.05): doctor checks pass against fakes, each fault
+// and a real service: doctor checks pass against fakes, each fault
 // gives a row with the command that fixes it, `--live` asks fake apps for a headless call and the
 // service must see it, and apply then remove leaves every file as it was.
 //
@@ -405,7 +405,7 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
       expect(read()).toEqual(before);
       expect(existsSync(join(user, ".claude", "settings.json"))).toBe(false);
 
-      // The instruction block's preview and print-block write nothing either (A3 3.12).
+      // The instruction block's preview and print-block write nothing either.
       expect((await run(["setup", "agents", "--parts", "block"], agents(), false)).code).toBe(0);
       expect((await run(["setup", "agents", "print-block", "--for", "claude"])).code).toBe(0);
       expect(existsSync(join(user, ".claude", "CLAUDE.md"))).toBe(false);

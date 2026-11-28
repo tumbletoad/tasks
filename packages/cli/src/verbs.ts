@@ -1,5 +1,5 @@
-// A generated verb (A2 3.10.1, A3 3.4.13): its arguments into the entry's input, the fields the CLI
-// fills itself (A3 3.2.2's `auto`), one `op/call`, and the result printed.
+// A generated verb: its arguments into the entry's input, the fields the CLI
+// fills itself (the `auto` fields), one `op/call`, and the result printed.
 //
 // Retries. A write gets a request ID from --request-id, or a new one that the CLI prints on stderr
 // with --json, and on a failure or a Ctrl+C after which the write may have applied, so a retry can
@@ -27,10 +27,10 @@ import { connectService, transportError, type ConnectOptions, type Session } fro
 import { personAtTerminal, type Io } from "./io.ts";
 import { bodyOf, printError, printUsage, render } from "./output.ts";
 
-/** A new request ID: 128 random bits, 22 characters from A3 3.4.1's alphabet. */
+/** A new request ID: 128 random bits, 22 characters of base64url. */
 export const newRequestId = (): string => randomBytes(16).toString("base64url");
 
-/** A transport failure from the client library, as A3's body. */
+/** A transport failure from the client library, as the TTasks error body. */
 export function asAppError(error: unknown): unknown {
   return error instanceof LocalError
     ? transportError(error.reason, error.retryable, error.detail)
@@ -189,7 +189,7 @@ export async function runVerb(
   hooks?: VerbHooks,
 ): Promise<number> {
   // `--space` may name a folder, as the space verbs' <space> does: sent absolute, it names the
-  // space that folder serves (A2 3.10.5).
+  // space that folder serves.
   const named = given.space;
   const globals: Globals =
     named !== undefined && (isAbsolute(named) || named.includes("/") || named.includes("\\"))
@@ -211,7 +211,7 @@ export async function runVerb(
     if (error instanceof UsageError) return printUsage(io, globals.json, error.message);
     throw error;
   }
-  // A mixed verb's read action (`ttasks area list`) is a read: no request ID, no base (A3 3.2.3).
+  // A mixed verb's read action (`ttasks area list`) is a read: no request ID, no base.
   const write = writes(verb, input);
   if (verb.auto.includes("cwd") && input["cwd"] === undefined) input["cwd"] = io.cwd;
   absoluteFolders(input, io.cwd);
@@ -241,7 +241,7 @@ export async function runVerb(
   try {
     session = await connectService(io, options);
     if (write && verb.auto.includes("base") && input["base"] === undefined) {
-      // A retry finds its receipt first and reads no fresh base (A3 3.4.1): any request ID the
+      // A retry finds its receipt first and reads no fresh base: any request ID the
       // caller gave, through --request-id or --input, may be a retry.
       if (!generated && requestId !== undefined) {
         const receipt = (await opCall(session, globals, "receipt.get", {
