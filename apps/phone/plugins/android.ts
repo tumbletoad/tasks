@@ -2,9 +2,6 @@
 // - Android 10 (API 29) at least, because the link speaks only TLS 1.3;
 // - no R8 in the release build: the installed-app test runs inside it and calls its classes, which
 //   R8 renames and drops, and a sideloaded app gains little from a smaller APK;
-// - the release build signed with the owner's key when TTASKS_ANDROID_KEYSTORE names it at build
-//   time, so a new build installs over the old one and the pairing stays; otherwise with the
-//   template's throwaway key, for CI's own tests;
 // - the installed-app test in android-test/, built against the release build.
 import { withAppBuildGradle, withGradleProperties, type ConfigPlugin } from "expo/config-plugins";
 
@@ -16,17 +13,6 @@ const PROPERTIES: Record<string, string> = {
 
 const APP_GRADLE = `
 // From apps/phone/plugins/android.ts.
-def ttasksKeystore = System.getenv("TTASKS_ANDROID_KEYSTORE")
-if (ttasksKeystore) {
-    android.signingConfigs.create("ttasks") {
-        storeFile file(ttasksKeystore)
-        storeType "pkcs12"
-        storePassword System.getenv("TTASKS_ANDROID_KEYSTORE_PASSWORD")
-        keyAlias "ttasks"
-        keyPassword System.getenv("TTASKS_ANDROID_KEYSTORE_PASSWORD")
-    }
-    android.buildTypes.release.signingConfig android.signingConfigs.ttasks
-}
 android {
     testBuildType "release"
     defaultConfig {

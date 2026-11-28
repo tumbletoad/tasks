@@ -4,10 +4,11 @@ name: phone
 # the app on an Android 10 emulator against the real service (pnpm phone-emulator). It runs when the
 # app or what it shares with the computer changes.
 #
-# The APK is signed with the owner's key when the repository has it (TTASKS_ANDROID_KEYSTORE_BASE64
-# and TTASKS_ANDROID_KEYSTORE_PASSWORD), so a new build installs over the old one and the phone stays
-# paired. Without it the build is signed with a throwaway key and named a test build: it is for
-# this job's own tests, not for a phone.
+# Gradle signs with the template's throwaway key, for this job's own tests. Only a build of main
+# that passed the emulator is signed again with the owner's key, when the repository has it
+# (TTASKS_ANDROID_KEYSTORE_BASE64 and TTASKS_ANDROID_KEYSTORE_PASSWORD), by apksigner alone: no
+# pull request and no dependency's code sees the key. That APK installs over the last one and the
+# phone stays paired; every other artifact is named a test build, not for a phone.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -57,20 +58,10 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # basic: the action's MIT cache, not its default commercial one.
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
-
-      - name: The owner's signing key, when the repository has it
-        id: key
-        env:
-          KEYSTORE: ${{ secrets.TTASKS_ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          if [ -n "$KEYSTORE" ]; then
-            printf '%s' "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/ttasks.p12"
-            echo "TTASKS_ANDROID_KEYSTORE=$RUNNER_TEMP/ttasks.p12" >> "$GITHUB_ENV"
-            echo "artifact=ttasks-android" >> "$GITHUB_OUTPUT"
-          else
-            echo "artifact=ttasks-android-test-build" >> "$GITHUB_OUTPUT"
-          fi
+        with:
+          cache-provider: basic
 
       - name: Prebuild
         working-directory: apps/phone
@@ -81,8 +72,6 @@ jobs:
 
       - name: Build the release APK and the installed-app test
         working-directory: apps/phone/android
-        env:
-          TTASKS_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.TTASKS_ANDROID_KEYSTORE_PASSWORD }}
         run: ./gradlew :app:assembleRelease :app:assembleReleaseAndroidTest -PreactNativeArchitectures=arm64-v8a,x86_64
 
       # One OkHttp: the one React Native ships, which the link module compiles against.
@@ -91,12 +80,6 @@ jobs:
         run: |
           ./gradlew -q :app:dependencyInsight --configuration releaseRuntimeClasspath --dependency com.squareup.okhttp3:okhttp | tee "$RUNNER_TEMP/okhttp.txt"
           { echo '### OkHttp on the release runtime classpath'; echo '```'; cat "$RUNNER_TEMP/okhttp.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ steps.key.outputs.artifact }}
-          path: apps/phone/android/app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
 
       - name: Enable KVM
         run: |
@@ -111,3 +94,25 @@ jobs:
           arch: x86_64
           disable-animations: true
           script: pnpm phone-emulator --app apps/phone/android/app/build/outputs/apk/release/app-release.apk --test apps/phone/android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk
+
+      - name: Signed with the owner's key (main only, after the emulator passed)
+        id: sign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          KEYSTORE: ${{ secrets.TTASKS_ANDROID_KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.TTASKS_ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          [ -n "$KEYSTORE" ] || exit 0
+          apk=apps/phone/android/app/build/outputs/apk/release/app-release.apk
+          tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          printf '%s' "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/ttasks.p12"
+          "$tools/apksigner" sign --ks "$RUNNER_TEMP/ttasks.p12" --ks-type PKCS12 --ks-key-alias ttasks --ks-pass env:PASSWORD --key-pass env:PASSWORD "$apk"
+          rm "$RUNNER_TEMP/ttasks.p12"
+          "$tools/apksigner" verify "$apk"
+          echo "artifact=ttasks-android" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.sign.outputs.artifact || 'ttasks-android-test-build' }}
+          path: apps/phone/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
