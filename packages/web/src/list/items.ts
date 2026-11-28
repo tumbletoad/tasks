@@ -1,8 +1,12 @@
 // A grouped list as one sequence of items (A5 3.25: "Group headings are virtual items too"): each
 // group's heading, each project's label, then its rows, in order. Pure, so the order, the set sizes
 // and the positions are unit tests, and the list (List.tsx) only lays out what this gives it.
-import type { Group } from "../groups.ts";
-import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
+import type { AreaRow, ProjectRow, TaskRow } from "@ttasks/client/store";
+import type { Group as KeyedGroup } from "@ttasks/client/today";
+import type { MessageId } from "../i18n/intl.tsx";
+
+/** A list's group, its heading a message of the page's catalogue. */
+export type Group = KeyedGroup<MessageId>;
 
 export interface GroupItem {
   readonly kind: "group";

@@ -7,18 +7,12 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  Refused,
-  type Api,
-  type Busy,
-  type Instance,
-  type LastUsed,
-  type Receipt,
-} from "../api.ts";
+import { Refused, type Api, type Busy, type Receipt } from "../api.ts";
+import type { Instance, LastUsed } from "@ttasks/contracts/runs";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
 

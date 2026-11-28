@@ -14,7 +14,7 @@ import {
 } from "react-aria-components";
 import { Refused } from "../api.ts";
 import { useT } from "../i18n/intl.tsx";
-import { formatWhen } from "../row/dates.ts";
+import { formatWhen } from "@ttasks/client/today";
 import { useClock } from "../row/useClock.ts";
 import { classes } from "./css.ts";
 import { useToast } from "./frame.ts";

@@ -3,7 +3,7 @@
 // hour" for a ticket, its key first. The words around the parts come from the catalogue.
 import type { Translate } from "../i18n/intl.tsx";
 import type { PlaceFact, SourceFact } from "../row/model.ts";
-import type { RowPlace, RowSource } from "../store/rows.ts";
+import type { RowPlace, RowSource } from "@ttasks/client/store";
 
 /** A source's text: its key, its title and its person, as the catalogue joins them. */
 export function sourceText(t: Translate, source: RowSource): string {

@@ -13,7 +13,7 @@ import {
 } from "react";
 import type { Api } from "../api.ts";
 import type { TokenStore } from "../stored.ts";
-import type { MachinePreference } from "../store/rows.ts";
+import type { MachinePreference } from "../store/messages.ts";
 import {
   applyTheme,
   forgetLegacyTheme,

@@ -1,7 +1,7 @@
 // Today (A5 3.4): today's date and a few numbers about the day, then Focus, This week, Next and
 // Changes, with no heading above them, and after the tasks the pages agents changed (PageChanges).
-// The sections and their membership are `todayOf` (app/views.ts), a pure function of the live
-// rows; this component hands their rows to the one list (TaskList), which draws every row and
+// The sections and their membership are `todayOf` (@ttasks/client/today), a pure function of the
+// live rows; this component hands their rows to the one list (TaskList), which draws every row and
 // keeps the list's rules: nothing moves under focus, and the expanded task stays at its place in
 // its section until it is collapsed (`holdExpanded`), its reference in the URL's `?task=`.
 //
@@ -22,13 +22,14 @@ import {
   todayOf,
   weekStartOf,
   type DayNumbers,
-} from "../app/views.ts";
+  formatDay,
+  type Clock,
+} from "@ttasks/client/today";
 import { Session } from "../context.ts";
-import type { Group } from "../groups.ts";
+import type { Group } from "../list/items.ts";
 import { useT, type MessageId } from "../i18n/intl.tsx";
-import { formatDay, type Clock } from "../row/dates.ts";
 import { affects } from "../store/queries.ts";
-import type { TaskRow } from "../store/rows.ts";
+import type { TaskRow } from "@ttasks/client/store";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import { countFinished, type FinishedCounts } from "./finished.ts";

@@ -18,7 +18,7 @@ import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
+import type { BatchMessage, SnapshotMessage, TaskRow } from "@ttasks/client/store";
 import { TodayPage } from "./Today.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
 

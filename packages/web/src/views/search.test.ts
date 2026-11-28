@@ -3,7 +3,7 @@
 // what an older space without the word index can still search.
 import { describe, expect, test } from "vitest";
 import { PagedQuery } from "../store/queries.ts";
-import { withTaskRow, type TaskRow } from "../store/rows.ts";
+import { withTaskRow, type TaskRow } from "@ttasks/client/store";
 import {
   filtersOnly,
   hasWords,

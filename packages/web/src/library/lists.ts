@@ -1,6 +1,6 @@
 // What a Library lists, from the live store's pages: the node's own pages, the pages of its tasks,
 // and the levels above it with theirs, each by title. Pure, so the lists are unit tests.
-import type { AreaRow, PageRow, ProjectRow } from "../store/rows.ts";
+import type { AreaRow, PageRow, ProjectRow } from "@ttasks/client/store";
 
 /** The space, an area or a project: what holds a Library. */
 export type LibraryNode =

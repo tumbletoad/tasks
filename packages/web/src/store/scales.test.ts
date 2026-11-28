@@ -1,7 +1,7 @@
-// The space's statuses and effort scale in the page (rows.ts `scalesOf`, core.ts): read from the
-// snapshot's preferences, the defaults for anything that does not read as a list of keys, and a
-// batch that changes a preference asks for a snapshot, which carries its new value. Any list of
-// sizes the contract allows reaches the card's options and the row as it is.
+// The space's statuses and effort scale in the page (@ttasks/client/store: `scalesOf`, LiveCore):
+// read from the snapshot's preferences, the defaults for anything that does not read as a list of
+// keys, and a batch that changes a preference asks for a snapshot, which carries its new value. Any
+// list of sizes the contract allows reaches the card's options and the row as it is.
 import fc from "fast-check";
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
@@ -11,14 +11,14 @@ import en from "../i18n/en.json" with { type: "json" };
 import type { MessageId, Values } from "../i18n/intl.tsx";
 import { contextFor, renderRow } from "../row/model.ts";
 import { sayMsg } from "../row/say.ts";
-import { LiveCore } from "./core.ts";
 import {
+  LiveCore,
   DEFAULT_SCALES,
   effortOptions,
   parseMessage,
   scalesOf,
   type SnapshotMessage,
-} from "./rows.ts";
+} from "@ttasks/client/store";
 
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
 const CURSOR = { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 };
