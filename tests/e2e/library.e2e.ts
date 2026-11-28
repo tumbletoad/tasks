@@ -93,9 +93,6 @@ const sideways = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 test.describe("[A5.pages.e2e.library] the library in the page", () => {
-  // The service serves pages once the storage lane's handlers are on main; wiring removes this line.
-  test.fixme(true, "waits for the page handlers");
-
   test("a project's Library lists an agent's page as it comes, opens it, and Back returns focus to its row", async ({
     page,
     library: world,
