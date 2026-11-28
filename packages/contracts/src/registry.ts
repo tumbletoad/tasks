@@ -9,7 +9,12 @@ import { groupManage } from "./entries/group-manage.ts";
 import { historyRedo } from "./entries/history-redo.ts";
 import { historyUndo } from "./entries/history-undo.ts";
 import { launchOpen } from "./entries/launch-open.ts";
+import { nodeInstruct } from "./entries/node-instruct.ts";
 import { noteRemove } from "./entries/note-remove.ts";
+import { pageHistory } from "./entries/page-history.ts";
+import { pageRead } from "./entries/page-read.ts";
+import { pageTrashed } from "./entries/page-trashed.ts";
+import { pageWrite } from "./entries/page-write.ts";
 import { prefsManage } from "./entries/prefs-manage.ts";
 import { receiptGet } from "./entries/receipt-get.ts";
 import { spaceStatus } from "./entries/space-status.ts";
@@ -56,6 +61,12 @@ export const registry = [
   taskTrash,
   // After the writes: it reads the lines of what the examples' agents changed.
   activityList,
+  // The library: its reads, then its writes, which leave pages and a node's texts in the world.
+  pageRead,
+  pageHistory,
+  pageTrashed,
+  pageWrite,
+  nodeInstruct,
 ] as const satisfies readonly AnyEntry[];
 
 type Registry = (typeof registry)[number];

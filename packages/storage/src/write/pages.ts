@@ -8,8 +8,11 @@ import { normaliseStored, WRITE_LIMITS } from "./request.ts";
 /** The characters of a page an unapplied edit answers with: the rest is read with its cursor. */
 export const EXCERPT_CHARS = 1_200;
 
-/** A page whose holder lives: its row, and the task that holds it when one does. */
-const LIVE_OWNER =
+/**
+ * Whether page row `p` is shown: what holds it lives. A page on a task or project in the Trash goes
+ * with it, unwritten.
+ */
+export const PAGE_SHOWN =
   "((p.owner_kind = 'task' AND EXISTS (SELECT 1 FROM tasks t WHERE t.id = p.owner_id " +
   "AND t.deleted_at IS NULL)) " +
   "OR (p.owner_kind = 'project' AND EXISTS (SELECT 1 FROM projects r WHERE r.id = p.owner_id " +
@@ -19,8 +22,8 @@ const LIVE_OWNER =
   "OR p.owner_kind = 'space')";
 
 export const PAGE_SQL = {
-  byId: `SELECT p.*, ${LIVE_OWNER} AS shown FROM pages p WHERE p.id = $id`,
-  byRef: `SELECT p.*, ${LIVE_OWNER} AS shown FROM pages p WHERE p.ref = $ref`,
+  byId: `SELECT p.*, ${PAGE_SHOWN} AS shown FROM pages p WHERE p.id = $id`,
+  byRef: `SELECT p.*, ${PAGE_SHOWN} AS shown FROM pages p WHERE p.ref = $ref`,
   page: "SELECT * FROM pages WHERE id = $id",
   insert:
     "INSERT INTO pages (id, ref, owner_kind, owner_id, title, brief, body, created_at, " +

@@ -112,7 +112,7 @@ async function useClient(
 
 describe("[A3.3.3.mcp.clients] official clients of both eras through ttasks mcp", () => {
   test(
-    "each lists the eleven tools, reads the instructions and calls status, through the CLI's entry and the bridge's",
+    "each lists the thirteen tools, reads the instructions and calls status, through the CLI's entry and the bridge's",
     { timeout: 300_000 },
     async () => {
       const temp = tempRoot("oc");
@@ -148,10 +148,12 @@ describe("[A3.3.3.mcp.clients] official clients of both eras through ttasks mcp"
             "get_task",
             "organize",
             "preferences",
+            "read",
             "reopen_task",
             "search",
             "status",
             "update_task",
+            "write_page",
           ]);
           expect(seen.eager, label).toEqual(["get_task", "status"]);
           expect(seen.instructions, label).toBe(INSTRUCTIONS);
