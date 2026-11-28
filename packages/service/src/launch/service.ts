@@ -1756,14 +1756,11 @@ ${instance}`;
 
   /**
    * The launch machine of `space` while it is served from `copy`, the copy a launch's click was
-   * made in: a report or evidence never lands in another copy. An earlier build's record names no
-   * copy.
+   * made in: a report or evidence never lands in another copy.
    */
   async #machineOf(space: string, copy: string | undefined): Promise<LaunchMachine | undefined> {
     const hosted = await this.#space(space);
-    return hosted !== undefined && (copy === undefined || hosted.copy === copy)
-      ? hosted.machine
-      : undefined;
+    return hosted !== undefined && hosted.copy === copy ? hosted.machine : undefined;
   }
 
   /**

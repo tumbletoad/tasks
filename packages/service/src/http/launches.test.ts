@@ -24,7 +24,7 @@ describe("[A5.3.9.service.session] a Confirmed launch's session: running only wh
   const confirmed = (evidence: Record<string, unknown>) =>
     receiptOf(row({ claim: "c1", folder_checked: true, ...evidence }, "confirmed"), runs);
 
-  test("running while followed; ended with how long it ran, also by an earlier build's exit code", () => {
+  test("running while followed; ended with how long it ran", () => {
     expect(confirmed({})).toMatchObject({ session: "running" });
     expect(confirmed({ exit_code: 0, ran_ms: 125_000 })).toMatchObject({
       session: "ended",
@@ -32,8 +32,6 @@ describe("[A5.3.9.service.session] a Confirmed launch's session: running only wh
     });
     // An end the record names wins over a shim record not yet released.
     expect(confirmed({ ran_ms: 9_000 })).toMatchObject({ session: "ended" });
-    expect(confirmed({ exit_code: 0 })).toMatchObject({ session: "ended" });
-    expect(confirmed({ exit_code: 0 })).not.toHaveProperty("ran_ms");
   });
 
   test("never running where the service cannot follow it: a lost shim, another computer, an earlier build's record", () => {

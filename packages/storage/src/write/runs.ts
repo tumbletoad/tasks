@@ -257,17 +257,6 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
- * A run's evidence with the key that once named its process group, `container`, read as
- * `process_group`, so the next write of the run keeps only the new key. Kept until step 2's
- * tables, into which the spaces made before it are moved by hand.
- */
-function renamed(evidence: Record<string, unknown>): Record<string, unknown> {
-  if (!Object.hasOwn(evidence, "container")) return evidence;
-  const { container, ...rest } = evidence;
-  return { process_group: container, ...rest };
-}
-
-/**
  * Decodes a run row, or SPACE_INVALID naming the column (never the value). The JSON columns are
  * checked for their shape; the execution store checks each key against A4's lists.
  */
@@ -301,7 +290,7 @@ export function decodeRun(row: Row): RunRow {
     state: r.oneOf("state", RUN_STATES),
     reason: r.optText("reason"),
     attempt: r.int("attempt", "count"),
-    evidence: renamed(detail["evidence"]) as RunEvidence,
+    evidence: detail["evidence"] as RunEvidence,
     at,
     result: Object.keys(result).length === 0 ? null : (result as unknown as RunResultRow),
     queued_at: r.int("queued_at", "instant"),

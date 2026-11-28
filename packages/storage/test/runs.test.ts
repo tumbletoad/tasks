@@ -4,14 +4,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
-import {
-  decodeRun,
-  RUN_EDGES,
-  RUN_REASONS,
-  RUN_SQL,
-  RUN_STATES,
-  type RunState,
-} from "../src/write/runs.ts";
+import { RUN_EDGES, RUN_REASONS, RUN_SQL, RUN_STATES, type RunState } from "../src/write/runs.ts";
 import { TEST_MACHINE, tempFolders } from "./space-helpers.ts";
 import { checkHistory, expectStatus, type Fixture, fixtureCopies } from "./write-helpers.ts";
 
@@ -199,18 +192,13 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     expect(lastSeq()).toBe(seq);
   });
 
-  test("a run records its process group, and a record of before names it under its old key", () => {
+  test("a run records its process group under that key only", () => {
     const id = create();
     expectStatus(move(id, "queued", "starting", { evidence: { process_group: "job" } }), "applied");
     expect(fx.writer.run(id)?.evidence).toEqual({ process_group: "job" });
     expect(
       move(id, "starting", "starting", { evidence: { container: "job" } }).error,
     ).toMatchObject({ code: "VALIDATION_FAILED" });
-    // A record written before the rename holds `container`: it reads as the process group.
-    const row = fx.reader.prepare("SELECT * FROM runs WHERE id = $id").get({ id }) ?? {};
-    const before = { ...row, detail: String(row["detail"]).replace("process_group", "container") };
-    expect(before.detail).toContain('"container":"job"');
-    expect(decodeRun(before).evidence).toEqual({ process_group: "job" });
   });
 
   test("the compare-and-set refuses a stale state or version, other evidence and a second result", () => {
