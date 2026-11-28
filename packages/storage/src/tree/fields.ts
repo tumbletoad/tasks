@@ -53,7 +53,6 @@ export const FIELDS = {
     open: ["due_date", "due_at"],
     instance: ["instance"],
     instruction: ["instruction"],
-    role: ["role"],
     paused: ["paused", "enabled_by"],
   },
   // A time done or skipped is written once; only Undo takes it back.

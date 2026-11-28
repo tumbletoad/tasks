@@ -196,14 +196,12 @@ export const TREE_STATEMENTS: readonly string[] = [
   `CREATE TABLE routines (
   id TEXT PRIMARY KEY REFERENCES tasks(id),
   rule TEXT NOT NULL, start TEXT NOT NULL, tz TEXT NOT NULL, due_date TEXT NOT NULL, due_at INTEGER,
-  instance TEXT, instruction TEXT, role TEXT CHECK (role IN ('refresh')),
+  instance TEXT, instruction TEXT,
   paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0,1)), enabled_by TEXT REFERENCES actors(id),
   ${VERSIONS},
   CHECK ((instance IS NULL) = (instruction IS NULL)),
-  CHECK (instance IS NULL OR (due_at IS NOT NULL AND enabled_by IS NOT NULL)),
-  CHECK (role IS NULL OR instance IS NOT NULL)
+  CHECK (instance IS NULL OR (due_at IS NOT NULL AND enabled_by IS NOT NULL))
 ) STRICT`,
-  "CREATE UNIQUE INDEX routines_role ON routines(role) WHERE role IS NOT NULL",
   // Each time of a routine done or skipped, once per due time; no due time is an extra run's.
   `CREATE TABLE occurrences (
   id TEXT PRIMARY KEY, routine_id TEXT NOT NULL REFERENCES routines(id),
