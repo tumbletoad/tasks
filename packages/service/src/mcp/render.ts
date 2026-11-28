@@ -21,6 +21,7 @@ import {
   fitsWhole,
   floorTokens,
   fixed,
+  wholeTokens,
   textLines,
   type Part,
   type Random,
@@ -34,6 +35,14 @@ export const ERROR_TOKENS = 300;
  * together. A target: the request and the user's texts for agents get room of their own above it.
  */
 export const DIGEST_TOKENS = 2_500;
+
+/**
+ * The room a sections read gives the trail on top of its page, which fills its own budget: as
+ * much as the trail needs up to TRAIL_TOKENS, and always its head lines and the user's texts for
+ * agents above the task. The trial's trail of three levels, about 940 characters, takes about 630
+ * by this estimate.
+ */
+export const TRAIL_TOKENS = 700;
 
 type Status = OutputOf<"space.status">;
 type TaskGet = OutputOf<"task.get">;
@@ -495,10 +504,8 @@ function levelPart(level: Level): Part {
  * far level's pages go before the near ones, and the task's log, sources and learnings, which come
  * below, go before any of them.
  */
-function trailParts(result: Digest): Part[] {
-  const trail = result.trail ?? [];
-  const pages = result.task.pages ?? [];
-  const total = pages.length + (result.task.more.pages ?? 0);
+function trailParts(pages: readonly PageLine[], more: number, trail: readonly Level[]): Part[] {
+  const total = pages.length + more;
   return [
     {
       data: true,
@@ -512,6 +519,19 @@ function trailParts(result: Digest): Part[] {
       : [{ data: true, fixed: true, units: [["Known above this task, nearest first:"]] }]),
     ...trail.map(levelPart),
   ];
+}
+
+function trailRoom(result: Extract<TaskGet, { view: "sections" }>): number {
+  const trail = result.trail ?? [];
+  const forAgents = levelInstructions(trail);
+  const rendered: Rendered = {
+    parts: [
+      ...(forAgents.length === 0 ? [] : [{ fixed: true, whole: true, units: [forAgents] }]),
+      ...trailParts(result.pages ?? [], result.pages_more ?? 0, trail),
+    ],
+    more: "",
+  };
+  return Math.min(wholeTokens(rendered), Math.max(TRAIL_TOKENS, floorTokens(rendered)));
 }
 
 function digestRendered(result: Digest, getTask: string): Rendered {
@@ -565,7 +585,7 @@ function digestRendered(result: Digest, getTask: string): Rendered {
       title: (_kept, total) => (total === 0 ? undefined : "Context"),
       units: task.context === "" ? [] : [textLines(withCut(task.context, cut.context), "  ")],
     },
-    ...trailParts(result),
+    ...trailParts(task.pages ?? [], task.more.pages ?? 0, result.trail ?? []),
     {
       data: true,
       total: task.log.length + more.log,
@@ -621,6 +641,8 @@ function sectionsRendered(
   const parts: Part[] = [fixed(headerLine(task, result.as_of))];
   parts.push(fixed(sessionOfRead(result.bound, task.ref)));
   parts.push(...requestPart(result.request, getTask, task.ref));
+  const forAgents = levelInstructions(result.trail ?? []);
+  if (forAgents.length > 0) parts.push({ fixed: true, whole: true, units: [forAgents] });
   let byOthers: Note[] = [];
   if (sections.instructions !== undefined) {
     // Only what the user wrote stands outside the data block as instructions (A3 3.10).
@@ -684,6 +706,8 @@ function sectionsRendered(
       ),
     );
   }
+  // Last, so a page that fills its budget loses the trail's pages before any section's line.
+  parts.push(...trailParts(result.pages ?? [], result.pages_more ?? 0, result.trail ?? []));
   if (result.before !== undefined) {
     parts.push(
       fixed(
@@ -1289,7 +1313,8 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
         extra: Math.max(request, floorTokens(shaped) - DIGEST_TOKENS),
       };
     }
-    return { ...sectionsRendered(result, getTask), extra: request };
+    const shaped = sectionsRendered(result, getTask);
+    return { ...shaped, extra: request + trailRoom(result) };
   },
   "task.update": (result: OutputOf<"task.update">) => {
     const fields = result.fields.length === 0 ? "" : `: ${result.fields.join(", ")}`;

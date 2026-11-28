@@ -8,9 +8,12 @@ export const TRANSPORT_REASONS = {
   not_running: { retryable: false },
   /** The endpoint exists but cannot be reached, for example from inside a sandbox (`EPERM`). */
   unreachable: { retryable: false },
-  /** The endpoint failed the handshake before its proof verified. Nothing but the hello was sent. */
+  /** The endpoint answered the handshake wrongly. Nothing but the hello was sent. */
   untrusted_endpoint: { retryable: false },
-  /** The connection ended after the service's proof verified. A retry is safe. */
+  /**
+   * The connection ended or stalled: before the service's proof (only the hello was sent) or after
+   * it. A retry is safe.
+   */
   connection_lost: { retryable: true },
   /** The service refused this client's protocol as too old (`client_too_old`). */
   restart_session: { retryable: false },

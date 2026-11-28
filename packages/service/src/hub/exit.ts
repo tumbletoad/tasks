@@ -21,7 +21,6 @@ export type ExitCode = (typeof EXIT)[keyof typeof EXIT];
 export const REFUSALS = [
   "root",
   "elevated",
-  "elevation_unknown",
   "packaged",
   "unsafe_permissions",
   /** A umask that takes away the person's own access to new files (A2 3.2.2 rule 5). */

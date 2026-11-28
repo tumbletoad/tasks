@@ -165,6 +165,8 @@ export const EVENTS = {
     c: "hub",
     fields: { reason: REFUSALS, format: "int", knows: "int" },
   },
+  /** Windows did not say in time whether the token is elevated: the service starts anyway. */
+  "service.elevation_unknown": { lvl: "warn", c: "hub", fields: {} },
   "service.locked": { lvl: "warn", c: "hub", fields: { holder: "int" } },
   "service.lock_failed": { lvl: "error", c: "hub", fields: { code: STORAGE_ERROR_CODES } },
   "service.lock_acquired": { lvl: "debug", c: "hub", fields: { ms: "int" } },
