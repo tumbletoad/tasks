@@ -11,7 +11,15 @@ import { CheckedDriver, createSpace, loadDriver, DEFAULT_DRIVER } from "@ttasks/
 import { both, type Sequence } from "../../storage/test/both-helpers.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { classSession } from "./ops-helpers.ts";
-import { backend, type Step } from "./replay-helpers.ts";
+import { readBatch, readSnapshot } from "../src/http/feed.ts";
+import {
+  backend,
+  newSpaces,
+  normal,
+  type Session,
+  type Side,
+  type Step,
+} from "./replay-helpers.ts";
 
 const LONG = 180_000;
 let w: ContractWorld & { root: string };
@@ -23,7 +31,8 @@ beforeAll(async () => {
   const folder = join(w.root, "s", "tree");
   createSpace(checked, folder, {
     name: "Mira",
-    refPrefix: "T",
+    // The prefix of the contract world's space: a status shows it.
+    refPrefix: "M",
     machineId: w.service.ops.machine.id as `m_${string}`,
     ownerLabel: "user",
     tree: true,
@@ -661,6 +670,9 @@ const REVIEWED: Sequence<Step> = [
     differs:
       "today counts the texts' row its text for agents made as a first, empty version; the tree has the description's own",
   },
+  // An open task reopened from a read before it was made: a conflict first, as today's.
+  { op: "task.add", input: { tasks: [{ title: "Made after the read" }] }, as: "late", user: true },
+  { op: "task.reopen", input: { task: "{late}" }, baseFrom: 16, user: true },
 ];
 
 describe("[S2.replay.reviewed] what review found in the four families, through both backends", () => {
@@ -668,6 +680,149 @@ describe("[S2.replay.reviewed] what review found in the four families, through b
     "a guarded Undo after a script's change, a removed note's edit, an area's trail, a stale filing, a Trash's order",
     async () => {
       await replay(REVIEWED);
+    },
+    LONG,
+  );
+});
+
+const search = (q: string, more: Record<string, unknown> = {}): Step => ({
+  op: "task.search",
+  input: { q, ...more },
+  user: true,
+});
+
+/** Search by words and the filters a person and an agent use most, as the search tests send it. */
+const SEARCH: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: {
+      tasks: [
+        { title: "Renew the passport", summary: "Bring a photo", area: "Home", project: "Papers" },
+      ],
+    },
+    as: "a",
+    user: true,
+  },
+  { op: "task.add", input: { tasks: [{ title: "Pay the invoice", due: "2026-12-01" }] }, as: "b" },
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Call the bank", focus: true, area: "Home" }] },
+    as: "c",
+    user: true,
+  },
+  { op: "task.update", input: { task: "{b}", set: { status: "waiting" } }, base: true },
+  {
+    op: "entry.add",
+    input: { task: "{a}", kind: "note", text: "Ask about the photo booth" },
+    user: true,
+  },
+  search("photo"),
+  search("passport OR invoice"),
+  search("status:waiting"),
+  search("due<2026-12-05"),
+  search("area:Home"),
+  search("project:Papers photo"),
+  search("is:inbox"),
+  search("is:focus"),
+  search("id:{a}"),
+  search("bank -photo"),
+  { op: "task.finish", input: { task: "{a}", outcome: "Renewed" }, base: true, user: true },
+  search("photo"),
+  search("photo", { scope: "all" }),
+  search("is:completed"),
+  // A task's words hold its area's and its project's names, and two words find it together.
+  search("Home"),
+  search("Home passport"),
+  search("is:overdue"),
+  search("photo", { scope: "learnings" }),
+  // An agent searches too.
+  { op: "task.search", input: { q: "invoice" } },
+  { op: "task.search", input: { q: "id:{b}" } },
+  { op: "task.finished", input: {}, user: true },
+  { op: "space.status", input: {}, user: true },
+  { op: "space.status", input: {} },
+];
+
+describe("[S2.replay.search] today's service requests through both backends: search", () => {
+  test(
+    "words, OR and a negation, status, due, area and project, the Inbox, the star, id:, a finished task by scope",
+    async () => {
+      await replay(SEARCH);
+    },
+    LONG,
+  );
+});
+
+/** A backend whose reader then sees the feed: the snapshot, and the batch since the last step. */
+const feedBackend = (space: () => string): Side<Step, Session & { seq: number }> => {
+  const inner = backend(w.service.ops, space);
+  const reader = (s: Session) => {
+    const found = w.service.ops.spaces().find((x) => x.id === s.space)?.reader;
+    if (found === undefined) throw new Error("The space is not served");
+    return found;
+  };
+  return {
+    // From the space as it is when the sequence starts: the first batch is the first step's.
+    open: async () => {
+      const session = await inner.open();
+      return { ...session, seq: (await readSnapshot(reader(session), undefined, 0)).cursor.seq };
+    },
+    step: (s, step) => inner.step(s, step),
+    seen: async (s) => {
+      const read = await readSnapshot(reader(s), undefined, 0);
+      // Tasks at one position under different parents come in the order of their random IDs; a
+      // page places each under its parent, so they are compared in the order they were made.
+      const byRef = (row: { ref?: unknown }) => Number(String(row.ref).split("-")[1]);
+      // Projects at one position in different areas, likewise, so nodes are compared by title.
+      const snapshot = {
+        ...read,
+        tasks: [...read.tasks].sort((a, b) => byRef(a) - byRef(b)),
+        nodes: [...read.nodes].sort((a, b) => a.title.localeCompare(b.title)),
+      };
+      const { batch } = await readBatch(reader(s), s.seq);
+      s.seq = snapshot.cursor.seq;
+      // The batch since the step before.
+      return normal({ snapshot, batch }, s);
+    },
+    close: () => undefined,
+  };
+};
+
+/** What the page's feed sends of a tree space: the tree from the tree, and each change. */
+const FEED: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Fix the gate", area: "Garden", project: "Fence" }] },
+    as: "gate",
+    user: true,
+  },
+  { op: "task.add", input: { tasks: [{ title: "Water the beds", area: "Garden" }] }, as: "beds" },
+  {
+    op: "task.update",
+    input: { task: "{beds}", set: { title: "Water the raised beds", priority: 2 } },
+    base: true,
+    user: true,
+  },
+  { op: "entry.add", input: { task: "{gate}", kind: "question", text: "Which paint?" } },
+  { op: "task.finish", input: { task: "{beds}", outcome: "Watered" }, base: true, user: true },
+  { op: "task.delete", input: { tasks: ["{gate}"] }, base: true, user: true },
+];
+
+describe("[S2.replay.feed] the feed of both backends: the snapshot and each batch", () => {
+  test(
+    "the tree of areas and projects, a task's row, a question waiting, a finish and the Trash",
+    async () => {
+      // A space of each backend of its own: the feed sends all of a space, and the order of what
+      // other sequences left at one position or one instant is chance.
+      const spaces = await newSpaces(w, "feed");
+      try {
+        await both(
+          { today: feedBackend(() => spaces.today), tree: feedBackend(() => spaces.tree) },
+          FEED,
+        );
+      } finally {
+        await spaces.close();
+      }
     },
     LONG,
   );

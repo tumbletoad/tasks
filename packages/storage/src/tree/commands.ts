@@ -177,9 +177,8 @@ export function parentFor(tx: Tx, under: unknown, field: string): Row {
     return problem("NOT_FOUND", "Nothing of that name to put it under", field);
   if (found["kind"] === "routine") problem("VALIDATION_FAILED", "A routine holds no tasks", field);
   if (found["deleted_at"] !== null) problem("DELETED", "That task is in the Trash", field);
-  if (found["archived_at"] !== null && found["archived_at"] !== undefined) {
-    problem("INVALID_TRANSITION", "That project is archived", field);
-  }
+  // As today's: a task can still be filed into an archived project; nothing of the person's is
+  // refused.
   return found;
 }
 

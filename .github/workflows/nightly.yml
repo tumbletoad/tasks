@@ -45,7 +45,8 @@ jobs:
 
   # The tests that run deeper with TTASKS_DEEP=1: the projection model's 2,000-run soak (its
   # failure prints the seed and path that become a counterexample), the launch state machine at
-  # 50,000 runs in memory and 300 on the database, and the bundle stress corpus at full size.
+  # 50,000 runs in memory and 300 on the database, the bundle stress corpus at full size, and the
+  # tree's generated replay with a new seed and 300 sequences (its failure prints the seed).
   deep:
     name: deep (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -62,6 +63,7 @@ jobs:
         packages/projection/test/model-replay.test.ts
         packages/launch/test/machine.prop.test.ts
         packages/storage/test/bundle.test.ts
+        packages/service/test/replay.prop.test.ts
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
