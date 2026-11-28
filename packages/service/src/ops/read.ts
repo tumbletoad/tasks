@@ -1159,6 +1159,7 @@ const LAUNCHES_RESTORED: Statement = {
     "SELECT l.id FROM launches l, space s WHERE s.one = 1 AND l.created_seq < s.authority_since " +
     "AND (l.state IN ('prepared','dispatching') OR (l.route = 'terminal' AND (l.state = 'dispatched' " +
     "OR (l.state = 'confirmed' AND json_extract(l.detail, '$.evidence.ran_ms') IS NULL " +
+    "AND json_extract(l.detail, '$.evidence.exit_code') IS NULL " +
     "AND json_extract(l.detail, '$.evidence.restored_at') IS NULL " +
     "AND json_extract(l.detail, '$.evidence.lost_at') IS NULL))))",
   mode: "all",

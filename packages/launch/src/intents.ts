@@ -41,14 +41,14 @@ export const isOpening = (launch: { readonly state: string; readonly route: stri
 
 /**
  * How a Confirmed launch's record says its session stands: `ended` once its agent's end was
- * reported, `restored` once a claim or a restore in
+ * reported (an earlier build recorded the exit code alone), `restored` once a claim or a restore in
  * place ended it as a backup's, `lost` once its shim went without a word, else `open`, which the
  * shim host decides.
  */
 export function sessionRecord(
   evidence: Readonly<Record<string, unknown>>,
 ): "ended" | "restored" | "lost" | "open" {
-  if (evidence["ran_ms"] !== undefined) return "ended";
+  if (evidence["ran_ms"] !== undefined || evidence["exit_code"] !== undefined) return "ended";
   if (evidence["restored_at"] !== undefined) return "restored";
   return evidence["lost_at"] === undefined ? "open" : "lost";
 }
@@ -76,6 +76,7 @@ export const isOpenLaunch = (launch: {
 export const heldAgentSql = (l: string): string =>
   `((${l}.state = 'dispatched' AND json_extract(${l}.detail, '$.evidence.claim') IS NOT NULL) OR ` +
   `(${l}.state = 'confirmed' AND json_extract(${l}.detail, '$.evidence.ran_ms') IS NULL AND ` +
+  `json_extract(${l}.detail, '$.evidence.exit_code') IS NULL AND ` +
   `json_extract(${l}.detail, '$.evidence.restored_at') IS NULL AND ` +
   `json_extract(${l}.detail, '$.evidence.lost_at') IS NULL))`;
 
