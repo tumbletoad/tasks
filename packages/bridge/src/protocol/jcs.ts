@@ -1,4 +1,4 @@
-// RFC 8785 canonical JSON (JCS), which the transcript hash and the bound proof cover (A2 3.6.3).
+// RFC 8785 canonical JSON (JCS), which the transcript hash and the bound proof cover.
 // Object keys sorted by UTF-16 code units, no whitespace, strings and numbers as ECMAScript's
 // JSON.stringify writes them. Values that JSON cannot carry (undefined, functions, NaN,
 // Infinity, BigInt), strings or keys with a lone surrogate (RFC 8785 3.2.2.2 requires I-JSON),

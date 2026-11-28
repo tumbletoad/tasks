@@ -1,4 +1,4 @@
-// Finding the service (A2 3.6.1): the folders by A2 3.2.1 and 3.2.2, then service.json and
+// Finding the service: the install's folders, then service.json and
 // ipc.key, each failure with its reason. packages/service/test/bridge-names.test.ts checks the
 // folders against the hub's own layout.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

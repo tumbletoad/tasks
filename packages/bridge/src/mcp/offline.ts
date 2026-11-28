@@ -1,7 +1,7 @@
-// The offline responder (A2 3.7.3, 3.7.4). While the bridge cannot reach the service, it answers
+// The offline responder. While the bridge cannot reach the service, it answers
 // from `<cache>/mcp-offline.json` when that file parses and its `build` is the bridge's own, and
-// otherwise from `lib/mcp-offline.json` in its own version folder. A3 owns every result in the
-// file. The bridge only fills in IDs, the legacy era's negotiated version, and the text of a tool
+// otherwise from `lib/mcp-offline.json` in its own version folder.
+// The bridge only fills in IDs, the legacy era's negotiated version, and the text of a tool
 // call's error.
 import { readFileSync, statSync } from "node:fs";
 import type { JsonObject } from "../protocol/index.ts";
@@ -9,7 +9,7 @@ import { VERSION_META, eraOf, isObject, type Era, type RequestId } from "./messa
 import { PRODUCT_NAME } from "./names.ts";
 import type { OfflineReason } from "./unavailable.ts";
 
-/** The texts a tool call gets, one per reason (A2 3.7.3; A3 3.5's reasons). */
+/** The texts a tool call gets, one per reason. */
 export const TEXT_KEYS = [
   "service_down",
   "starting",
@@ -21,7 +21,7 @@ export const TEXT_KEYS = [
 ] as const;
 export type TextKey = (typeof TEXT_KEYS)[number];
 
-/** Which text a reason gets. `not_running` is `service_down` (A3 3.5). */
+/** Which text a reason gets. `not_running` is `service_down`. */
 export const TEXT_OF: Readonly<Record<OfflineReason, TextKey>> = {
   not_running: "service_down",
   starting: "starting",
@@ -32,7 +32,7 @@ export const TEXT_OF: Readonly<Record<OfflineReason, TextKey>> = {
   connection_lost: "connection_lost",
 };
 
-/** The file's format (A2 3.7.3, with the additions decision M2.01 records). */
+/** The file's format. */
 export interface OfflineContent {
   readonly format: 1;
   readonly build: string;
@@ -126,14 +126,14 @@ export interface OfflineRequest {
 /** The newest version: MCP versions are dates, so the largest string. */
 const newest = (versions: readonly string[]): string => versions.reduce((a, b) => (b > a ? b : a));
 
-/** A tool call's error result for `key`'s text (A2 3.7.4). */
+/** A tool call's error result for `key`'s text. */
 function toolError(content: OfflineContent, era: Era, key: TextKey): JsonObject {
   const body = { content: [{ type: "text", text: content.texts[key] }], isError: true };
   return era === "modern" ? { ...body, ...content.modern_result_fields } : body;
 }
 
 /**
- * The offline reply to one request (A2 3.7.4's table). `key` is the text a tool call gets. A
+ * The offline reply to one request. `key` is the text a tool call gets. A
  * 2026-07-28 request is first checked for its protocol version, as that specification requires.
  * `session` is the era the session began in, when known: every request of a 2026-07-28 session
  * is checked, also one that carries no 2026-07-28 field at all.
@@ -180,7 +180,7 @@ export function offlineReply(
     case "tools/call":
       return result(id, toolError(content, era, key));
     case "ping":
-      // 2026-07-28 removed ping: the live endpoint answers it as an unknown method (M2.02).
+      // 2026-07-28 removed ping: the live endpoint answers it as an unknown method.
       return era === "modern" ? failure(id, METHOD_NOT_FOUND, "Method not found") : result(id, {});
     default:
       return failure(id, METHOD_NOT_FOUND, "Method not found");
@@ -192,7 +192,7 @@ export const NO_OFFLINE_TEXT =
   "This MCP server's offline answers are missing from its installation, and its service cannot be reached. Ask the user to repair the installation.";
 
 /**
- * The reply to a request that was in flight when the connection was lost (A2 3.7.5). A tool call
+ * The reply to a request that was in flight when the connection was lost. A tool call
  * gets the `connection_lost` text, so the model retries it with the same request ID. A request
  * whose answer does not depend on the service (initialize, discover, tools/list, ping) gets the
  * offline answer, which is the answer a live connection gives. Anything else gets a JSON-RPC error

@@ -1,4 +1,4 @@
-// What a client sends before the service has proved itself (A2 3.6.3, A2 3.7.6, A2 5, A3 5 X2):
+// What a client sends before the service has proved itself:
 // against a fake endpoint that sends a challenge and then a bad, missing or late proof, the
 // exact bytes it receives are one hello line whose params hold only protocol, mode, nonce and
 // proof. No context, ticket, handle, cwd, environment, client details or mcp_init.
@@ -37,7 +37,7 @@ const SENTINELS = [
   "SENTINEL-PACKAGE",
 ];
 
-/** A bind context with a sentinel in every field A3 3.7.2 lists. */
+/** A bind context with a sentinel in every field of the bind context. */
 const sentinelContext: JsonObject = {
   space: "sp_SENTINEL-SPACE",
   instance: "codex-work",
