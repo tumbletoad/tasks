@@ -52,7 +52,7 @@ async function round(plan: TreePlan, afterMs?: number): Promise<RoundEnd> {
 
 /** The requests of round `n`: adds, a finish with follow-ups, edits on fresh and stale bases. */
 function requests(n: number): TreePlanned[] {
-  const id = (k: number) => `r${String(n)}-${String(k)}`;
+  const id = (k: number) => `round-${String(n)}-request-${String(k)}`;
   const parent = `t_${String(n + 1).padStart(26, "0")}`;
   return [
     {

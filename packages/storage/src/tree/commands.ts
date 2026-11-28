@@ -1,21 +1,34 @@
 // The tree's named commands. Each reads what it needs and writes through its Tx, statement by
 // statement, so every statement sees the ones before it; nothing is predicted in memory. A command
-// returns what it did, which the receipt stores. Input is checked here as well as by the service:
-// storage never trusts a caller with the space.
+// returns what it did, which the receipt stores. Its input is checked first, by the command's check
+// below and before any transaction, as today's writer checks a request: storage never trusts a
+// caller with the space.
 import type { Row, SqlValue } from "../driver.ts";
-import { isId } from "../ids.ts";
 import { formatTaskRef, parseTaskRef } from "../refs.ts";
 import { positionBetween } from "../write/positions.ts";
 import { freeSlug } from "../write/slugs.ts";
+import { Fields, WRITE_LIMITS } from "../write/request.ts";
 import type { Command, Tx } from "./tx.ts";
+
+type Run = Command["run"];
 import { TreeProblem } from "./fields.ts";
 
 type Input = Record<string, unknown>;
 
-const NOTE_KINDS = ["note", "progress", "evidence", "blocker", "decision", "question", "handoff"];
+const NOTE_KINDS = [
+  "note",
+  "progress",
+  "evidence",
+  "blocker",
+  "decision",
+  "question",
+  "handoff",
+  "learning",
+] as const;
 
 const SQL = {
   node: "SELECT * FROM nodes WHERE id = $id",
+  alias: "SELECT entity_id FROM aliases WHERE namespace = 'planning' AND alias = $alias",
   taskByRef: "SELECT id FROM tasks WHERE ref = $ref",
   child:
     "SELECT * FROM nodes WHERE parent_id = $parent AND kind = 'project' AND (slug = $slug OR lower(title) = $title)",
@@ -50,32 +63,11 @@ const problem = (code: string, message: string, field?: string, data?: unknown):
   throw new TreeProblem(code, message, field, data);
 };
 
-const text = (input: Input, field: string, max: number, oneLine = true): string | undefined => {
-  const value = input[field];
-  if (value === undefined) return undefined;
-  if (typeof value !== "string" || value.length > max || (oneLine && value.includes("\n"))) {
-    return problem(
-      "VALIDATION_FAILED",
-      `Expected ${field} as text of at most ${String(max)}`,
-      field,
-    );
-  }
-  return value;
+/** A text the input holds, as check() left it. */
+const str = (input: Input, key: string): string | undefined => {
+  const value = input[key];
+  return typeof value === "string" ? value : undefined;
 };
-
-const title = (input: Input): string => {
-  const value = text(input, "title", 300);
-  if (value === undefined || value.trim() === "")
-    problem("VALIDATION_FAILED", "A title is needed", "title");
-  return value as string;
-};
-
-/** An ID the caller chose for a new row: one of its kind that the space does not hold yet. */
-function givenId(value: unknown, prefix: "t" | "p", field: string): string | undefined {
-  if (value === undefined) return undefined;
-  if (!isId(value, prefix)) return problem("VALIDATION_FAILED", "Not an ID of that kind", field);
-  return value;
-}
 
 /** A node by ID, or a task by its reference (`M-14`). Undefined when the space has none. */
 function findNode(tx: Tx, key: unknown): Row | undefined {
@@ -89,6 +81,9 @@ function findNode(tx: Tx, key: unknown): Row | undefined {
   if (key === "space") return tx.get(SQL.node, { id: tx.space.spaceId });
   const byId = tx.get(SQL.node, { id: key });
   if (byId !== undefined) return byId;
+  // A task's ID from the prototype the space was imported from, which text written then holds.
+  const alias = tx.get(SQL.alias, { alias: key })?.["entity_id"];
+  if (typeof alias === "string") return tx.get(SQL.node, { id: alias });
   // A project path: each part is a project's slug or title, ignoring case.
   let at: Row | undefined = tx.get(SQL.node, { id: tx.space.spaceId });
   for (const part of key.split("/")) {
@@ -158,23 +153,16 @@ function addNote(tx: Tx, owner: string, node: string, body: string, kind = "note
   return { id, ordinal };
 }
 
-const tasksAdd: Command = (tx, input) => {
-  const drafts = input["tasks"];
-  if (!Array.isArray(drafts) || drafts.length === 0 || drafts.length > 25) {
-    return problem("VALIDATION_FAILED", "Expected 1 to 25 tasks", "tasks");
-  }
+const tasksAdd: Run = (tx, input) => {
+  const drafts = input["tasks"] as Input[];
   return {
-    tasks: drafts.map((raw: unknown, i) => {
-      const draft = (typeof raw === "object" && raw !== null ? raw : {}) as Input;
+    tasks: drafts.map((draft, i) => {
       const at = (field: string) => `tasks.${String(i)}.${field}`;
-      const log = text(draft, "log", 4000, false);
+      const log = str(draft, "log");
       const parent = parentFor(tx, draft["under"], at("under"));
-      const id = givenId(draft["id"], "t", at("id")) ?? tx.newId("t");
+      const id = str(draft, "id") ?? tx.newId("t");
       const ref = tx.ref();
-      const priority = draft["priority"] ?? 4;
-      if (typeof priority !== "number" || ![1, 2, 3, 4].includes(priority)) {
-        problem("VALIDATION_FAILED", "A priority is 1 to 4", at("priority"));
-      }
+      const priority = typeof draft["priority"] === "number" ? draft["priority"] : 4;
       tx.create(
         "nodes",
         {
@@ -182,9 +170,9 @@ const tasksAdd: Command = (tx, input) => {
           kind: "task",
           parent_id: String(parent["id"]),
           position: endOf(tx, String(parent["id"]), "task"),
-          title: title(draft),
-          brief: text(draft, "brief", 400) ?? "",
-          description: text(draft, "description", 64_000, false) ?? "",
+          title: str(draft, "title") ?? "",
+          brief: str(draft, "brief") ?? "",
+          description: str(draft, "description") ?? "",
           created_at: tx.at,
           created_by: tx.author,
         },
@@ -195,9 +183,9 @@ const tasksAdd: Command = (tx, input) => {
         {
           id,
           ref,
-          status: text(draft, "status", 40) ?? "open",
+          status: str(draft, "status") ?? "open",
           inbox: draft["inbox"] === true ? 1 : 0,
-          priority: priority as number,
+          priority,
           created_session: tx.request.actor.session_id ?? null,
         },
         id,
@@ -208,37 +196,26 @@ const tasksAdd: Command = (tx, input) => {
   };
 };
 
-/** The fields `task.update` sets: on the node, or on the task. */
-const NODE_SET = ["title", "brief", "description"] as const;
-const TASK_SET = ["status", "inbox", "priority", "reviewed_at", "waiting_on"] as const;
-
-const taskUpdate: Command = (tx, input) => {
+const taskUpdate: Run = (tx, input) => {
   const task = liveTask(tx, input["task"]);
   const id = String(task["id"]);
   const set = (input["set"] ?? {}) as Input;
-  const unknown = Object.keys(set).find(
-    (k) =>
-      !(NODE_SET as readonly string[]).includes(k) && !(TASK_SET as readonly string[]).includes(k),
-  );
-  if (unknown !== undefined)
-    problem("VALIDATION_FAILED", "Not a field this sets", `set.${unknown}`);
   const node: Record<string, SqlValue> = {};
-  if (set["title"] !== undefined) node["title"] = title(set);
-  if (set["brief"] !== undefined) node["brief"] = text(set, "brief", 400) ?? "";
-  if (set["description"] !== undefined)
-    node["description"] = text(set, "description", 64_000, false) ?? "";
+  if (set["title"] !== undefined) node["title"] = str(set, "title") ?? "";
+  if (set["brief"] !== undefined) node["brief"] = str(set, "brief") ?? "";
+  if (set["description"] !== undefined) node["description"] = str(set, "description") ?? "";
   const fields: Record<string, SqlValue> = {};
-  if (set["status"] !== undefined) fields["status"] = text(set, "status", 40) ?? "open";
+  if (set["status"] !== undefined) fields["status"] = str(set, "status") ?? "open";
   if (set["inbox"] !== undefined) fields["inbox"] = set["inbox"] === true ? 1 : 0;
   if (set["priority"] !== undefined) fields["priority"] = Number(set["priority"]);
   if (set["reviewed_at"] !== undefined) fields["reviewed_at"] = set["reviewed_at"] as SqlValue;
-  if (set["waiting_on"] !== undefined) fields["waiting_on"] = text(set, "waiting_on", 400) ?? null;
+  if (set["waiting_on"] !== undefined) fields["waiting_on"] = str(set, "waiting_on") ?? null;
   if (Object.keys(node).length > 0) tx.set("nodes", id, id, node);
   if (Object.keys(fields).length > 0) tx.set("tasks", id, id, fields);
   return { task: { id, ref: refText(tx, task["ref"]) } };
 };
 
-const taskMove: Command = (tx, input) => {
+const taskMove: Run = (tx, input) => {
   const task = liveTask(tx, input["task"]);
   const id = String(task["id"]);
   const parent = parentFor(tx, input["under"], "under");
@@ -265,12 +242,12 @@ function finishOne(tx: Tx, id: string, dropped: boolean, at: number, reason: str
   });
 }
 
-const taskFinish: Command = (tx, input) => {
+const taskFinish: Run = (tx, input) => {
   const task = liveTask(tx, input["task"]);
   const id = String(task["id"]);
   const dropped = input["status"] === "dropped";
-  const outcome = text(input, "outcome", 4000, false);
-  const reason = text(input, "reason", 400) ?? null;
+  const outcome = str(input, "outcome");
+  const reason = str(input, "reason") ?? null;
   const at = typeof input["at"] === "number" ? input["at"] : tx.at;
   const open = tx.all(SQL.subtree, { id }).filter((t) => t["lifecycle"] === "active");
   const choice = input["subtasks"];
@@ -312,7 +289,7 @@ const taskFinish: Command = (tx, input) => {
   };
 };
 
-const taskReopen: Command = (tx, input) => {
+const taskReopen: Run = (tx, input) => {
   const task = liveTask(tx, input["task"]);
   const id = String(task["id"]);
   if (task["lifecycle"] === "active") problem("INVALID_TRANSITION", "The task is open", "task");
@@ -328,7 +305,7 @@ const taskReopen: Command = (tx, input) => {
   return { task: { id, ref: refText(tx, task["ref"]) } };
 };
 
-const nodesTrash: Command = (tx, input) => {
+const nodesTrash: Run = (tx, input) => {
   const task = liveTask(tx, input["task"], "task", "either");
   // A task in the Trash already is no change: two tabs that both asked get the same answer.
   if (task["deleted_at"] !== null)
@@ -347,7 +324,7 @@ const nodesTrash: Command = (tx, input) => {
   return { task: { id: ids[0], ref: refText(tx, task["ref"]) }, tasks: ids.length };
 };
 
-const nodesRestore: Command = (tx, input) => {
+const nodesRestore: Run = (tx, input) => {
   const task = liveTask(tx, input["task"], "task", "either");
   const id = String(task["id"]);
   if (task["deleted_at"] === null) return { task: { id, ref: refText(tx, task["ref"]) }, tasks: 0 };
@@ -375,18 +352,14 @@ function findNote(tx: Tx, input: Input): Row {
   return row ?? problem("NOT_FOUND", "The space has no such note", "note");
 }
 
-const noteAdd: Command = (tx, input) => {
+const noteAdd: Run = (tx, input) => {
   const owner = findNode(tx, input["on"]);
   if (owner === undefined || owner["deleted_at"] !== null)
     problem("NOT_FOUND", "Nothing of that name to write on", "on");
-  const kind = input["kind"] ?? "note";
-  if (typeof kind !== "string" || !NOTE_KINDS.includes(kind))
-    problem("VALIDATION_FAILED", "Not a kind of note", "kind");
-  const body = text(input, "body", 16_000, false);
-  if (body === undefined || body.trim() === "")
-    return problem("VALIDATION_FAILED", "A note needs words", "body");
+  const kind = str(input, "kind") ?? "note";
+  const body = String(input["body"]);
   const id = String(owner?.["id"]);
-  return { note: addNote(tx, id, id, body, kind as string, input["for_agents"] === true) };
+  return { note: addNote(tx, id, id, body, kind, input["for_agents"] === true) };
 };
 
 /** A note's words, and its removal, are the person's to correct: an agent writes a new note. */
@@ -397,11 +370,9 @@ function personsNote(tx: Tx, input: Input): Row {
   return findNote(tx, input);
 }
 
-const noteEdit: Command = (tx, input) => {
+const noteEdit: Run = (tx, input) => {
   const note = personsNote(tx, input);
-  const body = text(input, "body", 16_000, false);
-  if (body === undefined || body.trim() === "")
-    return problem("VALIDATION_FAILED", "A note needs words", "body");
+  const body = String(input["body"]);
   if (note["body"] !== body) {
     tx.set("notes", String(note["id"]), String(note["owner_id"]), {
       body: { body, edited_at: tx.at },
@@ -411,25 +382,25 @@ const noteEdit: Command = (tx, input) => {
 };
 
 const noteGone =
-  (gone: boolean): Command =>
+  (gone: boolean): Run =>
   (tx, input) => {
     const note = personsNote(tx, input);
     tx.set("notes", String(note["id"]), String(note["owner_id"]), { deleted: gone ? tx.at : null });
     return { note: { id: note["id"], ordinal: note["ordinal"] } };
   };
 
-const projectCreate: Command = (tx, input) => {
+const projectCreate: Run = (tx, input) => {
   const parent = parentFor(tx, input["under"], "under");
   if (parent["kind"] === "task")
     problem("VALIDATION_FAILED", "A project sits in the space or a project", "under");
-  const name = title(input);
+  const name = str(input, "title") ?? "";
   const under = String(parent["id"]);
   const slug = freeSlug(
     name,
     "project",
     (s) => tx.get(SQL.slugTaken, { parent: under, slug: s }) !== undefined,
   );
-  const id = givenId(input["id"], "p", "id") ?? tx.newId("p");
+  const id = str(input, "id") ?? tx.newId("p");
   tx.create(
     "nodes",
     {
@@ -438,7 +409,7 @@ const projectCreate: Command = (tx, input) => {
       parent_id: under,
       position: endOf(tx, under, "project"),
       title: name,
-      brief: text(input, "brief", 400) ?? "",
+      brief: str(input, "brief") ?? "",
       slug,
       created_at: tx.at,
       created_by: tx.author,
@@ -449,7 +420,7 @@ const projectCreate: Command = (tx, input) => {
 };
 
 const projectArchived =
-  (archived: boolean): Command =>
+  (archived: boolean): Run =>
   (tx, input) => {
     const project = findNode(tx, input["project"]);
     if (project?.["kind"] !== "project")
@@ -460,19 +431,160 @@ const projectArchived =
     return { project: { id } };
   };
 
+// ---------------------------------------------------------------------------------------------
+// The checks: each reads a command's input through the one `Fields` today's writer reads with
+// (write/request.ts), so text is normalised the same way, limits are the same, and a key the
+// command does not know is refused without its text.
+
+/** A node's key: an ID, a task's reference, `space`, or a project's path. */
+const KEY = { chars: 250, line: true } as const;
+const TITLE = { chars: WRITE_LIMITS.title, line: true } as const;
+const BRIEF = { chars: WRITE_LIMITS.summary, line: true, empty: true } as const;
+const DESCRIPTION = { bytes: WRITE_LIMITS.context, empty: true } as const;
+const NOTE = { bytes: WRITE_LIMITS.note } as const;
+
+type Check = Command["check"];
+
+/** Copies the keys present, each read by its own reader, and refuses any other. */
+function read(f: Fields, readers: Record<string, (key: string) => unknown>): Input {
+  const out: Input = {};
+  for (const [key, reader] of Object.entries(readers)) if (f.has(key)) out[key] = reader(key);
+  f.done();
+  return out;
+}
+
+const required = (f: Fields, key: string): void => {
+  if (!f.has(key)) f.fail("VALIDATION_FAILED", "This field is needed", key);
+};
+
+const oneTask: Check = (f) => {
+  required(f, "task");
+  return read(f, { task: (k) => f.text(k, KEY) });
+};
+
+function draft(f: Fields): Input {
+  required(f, "title");
+  return read(f, {
+    id: (k) => f.id(k, "t"),
+    under: (k) => f.text(k, KEY),
+    title: (k) => f.text(k, TITLE),
+    brief: (k) => f.text(k, BRIEF),
+    description: (k) => f.text(k, DESCRIPTION),
+    status: (k) => f.key(k),
+    inbox: (k) => f.boolean(k),
+    priority: (k) => f.int(k, 1, 4),
+    log: (k) => f.text(k, { bytes: WRITE_LIMITS.log }),
+  });
+}
+
+/** 1 to 25 task drafts at `key`, each refused under its own path (`tasks.0.title`). */
+function drafts(f: Fields, key: string): Input[] {
+  const list = f.raw(key);
+  if (!Array.isArray(list) || list.length === 0 || list.length > 25) {
+    return f.fail("VALIDATION_FAILED", "Expected 1 to 25 tasks", key);
+  }
+  return list.map((value: unknown, i) => draft(new Fields(value, `${key}.${String(i)}`)));
+}
+
+const checkTasksAdd: Check = (f) => {
+  const tasks = drafts(f, "tasks");
+  f.done();
+  return { tasks };
+};
+
+const checkUpdate: Check = (f) => {
+  required(f, "task");
+  const task = f.text("task", KEY);
+  const s = f.sub("set");
+  const set = read(s, {
+    title: (k) => s.text(k, TITLE),
+    brief: (k) => s.text(k, BRIEF),
+    description: (k) => s.text(k, DESCRIPTION),
+    status: (k) => s.key(k),
+    inbox: (k) => s.boolean(k),
+    priority: (k) => s.int(k, 1, 4),
+    reviewed_at: (k) => s.instantOrNull(k),
+    waiting_on: (k) => s.nullableText(k, { chars: WRITE_LIMITS.line, line: true }),
+  });
+  f.done();
+  return { task, set };
+};
+
+const checkMove: Check = (f) => {
+  required(f, "task");
+  return read(f, { task: (k) => f.text(k, KEY), under: (k) => f.text(k, KEY) });
+};
+
+const checkFinish: Check = (f) => {
+  required(f, "task");
+  const out = read(f, {
+    task: (k) => f.text(k, KEY),
+    status: (k) => f.oneOf(k, ["done", "dropped"]),
+    reason: (k) => f.text(k, { chars: WRITE_LIMITS.line, line: true }),
+    outcome: (k) => f.text(k, { bytes: WRITE_LIMITS.outcome }),
+    at: (k) => f.instant(k),
+    subtasks: (k) => f.oneOf(k, ["only", "all"]),
+    follow_ups: (k) => drafts(f, k),
+  });
+  return out;
+};
+
+/** A note by its ID, or by what it is on and its number there. */
+const noteKey = (f: Fields) => ({
+  note: (k: string) => f.id(k, "n"),
+  on: (k: string) => f.text(k, KEY),
+  ordinal: (k: string) => f.int(k, 1, 1_000_000_000),
+});
+
+const checkNoteAdd: Check = (f) => {
+  required(f, "on");
+  required(f, "body");
+  return read(f, {
+    on: (k) => f.text(k, KEY),
+    body: (k) => f.text(k, NOTE),
+    kind: (k) => f.oneOf(k, NOTE_KINDS),
+    for_agents: (k) => f.boolean(k),
+  });
+};
+
+const checkNoteEdit: Check = (f) => {
+  required(f, "body");
+  return read(f, { ...noteKey(f), body: (k) => f.text(k, NOTE) });
+};
+
+const checkNote: Check = (f) => read(f, noteKey(f));
+
+const checkProjectCreate: Check = (f) => {
+  required(f, "title");
+  return read(f, {
+    id: (k) => f.id(k, "p"),
+    under: (k) => f.text(k, KEY),
+    title: (k) => f.text(k, TITLE),
+    brief: (k) => f.text(k, BRIEF),
+  });
+};
+
+const checkProject: Check = (f) => {
+  required(f, "project");
+  return read(f, { project: (k) => f.text(k, KEY) });
+};
+
+/** An undo or a redo: of the newest step, or of the one change it names. */
+export const checkHistory: Check = (f) => read(f, { commit: (k) => f.id(k, "op") });
+
 export const COMMANDS: Readonly<Record<string, Command>> = {
-  "tasks.add": tasksAdd,
-  "task.update": taskUpdate,
-  "task.move": taskMove,
-  "task.finish": taskFinish,
-  "task.reopen": taskReopen,
-  "nodes.trash": nodesTrash,
-  "nodes.restore": nodesRestore,
-  "note.add": noteAdd,
-  "note.edit": noteEdit,
-  "note.remove": noteGone(true),
-  "note.put_back": noteGone(false),
-  "project.create": projectCreate,
-  "project.archive": projectArchived(true),
-  "project.unarchive": projectArchived(false),
+  "tasks.add": { check: checkTasksAdd, run: tasksAdd },
+  "task.update": { check: checkUpdate, run: taskUpdate },
+  "task.move": { check: checkMove, run: taskMove },
+  "task.finish": { check: checkFinish, run: taskFinish },
+  "task.reopen": { check: oneTask, run: taskReopen },
+  "nodes.trash": { check: oneTask, run: nodesTrash },
+  "nodes.restore": { check: oneTask, run: nodesRestore },
+  "note.add": { check: checkNoteAdd, run: noteAdd },
+  "note.edit": { check: checkNoteEdit, run: noteEdit },
+  "note.remove": { check: checkNote, run: noteGone(true) },
+  "note.put_back": { check: checkNote, run: noteGone(false) },
+  "project.create": { check: checkProjectCreate, run: projectCreate },
+  "project.archive": { check: checkProject, run: projectArchived(true) },
+  "project.unarchive": { check: checkProject, run: projectArchived(false) },
 };

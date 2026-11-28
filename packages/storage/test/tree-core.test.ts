@@ -86,10 +86,10 @@ describe("[S2.tree.core] the tree writer's commands in a disposable tree space",
 
   test("a resend replays the stored answer; the same ID with another intent is refused", () => {
     add({ title: "Renew the passport" });
-    const first = fx.send("task.finish", { task: "M-1" }, { request_id: "finish-1" });
-    const again = fx.send("task.finish", { task: "M-1" }, { request_id: "finish-1" });
+    const first = fx.send("task.finish", { task: "M-1" }, { request_id: "finish-request-0001" });
+    const again = fx.send("task.finish", { task: "M-1" }, { request_id: "finish-request-0001" });
     expect(again).toEqual({ ...first, replayed: true });
-    const other = fx.send("task.reopen", { task: "M-1" }, { request_id: "finish-1" });
+    const other = fx.send("task.reopen", { task: "M-1" }, { request_id: "finish-request-0001" });
     expect(other.error?.code).toBe("REQUEST_ID_REUSED");
     expect(readTreeTask(fx.conn, "M-1")?.lifecycle).toBe("completed");
   });

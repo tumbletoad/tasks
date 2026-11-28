@@ -17,7 +17,7 @@ import { formatTaskRef } from "../refs.ts";
 import { invalidValue, RowReader } from "../rows.ts";
 import { CHILD_FIELDS, columnsValue, fieldJson, TASK_FIELDS } from "./fields.ts";
 import type { NewerWork, NodeSet, Operation, PageSet, TextNode } from "./request.ts";
-import { undoRule, type KindRows } from "../undo-rule.ts";
+import { filedIntoNewGroup, undoRule, type KindRows } from "../undo-rule.ts";
 
 /** A change row of commit `c` whose task `c` also changed `field`. */
 const sameTask = (field: string): string =>
@@ -28,11 +28,10 @@ const sameTask = (field: string): string =>
  * A move of task row `c` into an area or project that the same person's commit right before made:
  * the page's new area or project, made and then filed into.
  */
-const INTO_NEW_GROUP =
-  "EXISTS (SELECT 1 FROM changes g WHERE g.action = 'create' AND g.entity IN ('areas', 'projects') " +
-  "AND g.entity_id IN (json_extract(c.after, '$.area_id'), json_extract(c.after, '$.project_id')) " +
-  "AND g.seq = (SELECT max(p.seq) FROM commits p JOIN commits me ON me.seq = c.seq " +
-  "WHERE p.principal_id = me.principal_id AND p.seq < c.seq))";
+const INTO_NEW_GROUP = filedIntoNewGroup(
+  "json_extract(c.after, '$.area_id'), json_extract(c.after, '$.project_id')",
+  "g.entity IN ('areas', 'projects')",
+);
 
 /** How this schema's change rows show each kind Undo is for (undo-rule.ts). */
 const KINDS: KindRows = {

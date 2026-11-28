@@ -98,6 +98,12 @@ export const TREE_STATEMENTS: readonly string[] = [
   "CREATE INDEX tasks_open ON tasks(lifecycle, status)",
   "CREATE INDEX tasks_due ON tasks(due_date) WHERE lifecycle = 'active'",
   "CREATE INDEX tasks_done ON tasks(completed_at) WHERE lifecycle = 'completed'",
+  // The prototype import's task IDs, which text written before may hold: a task is found by them.
+  `CREATE TABLE aliases (
+  namespace TEXT NOT NULL CHECK (namespace IN ('planning')), alias TEXT NOT NULL,
+  entity_id TEXT NOT NULL REFERENCES nodes(id), created_at INTEGER NOT NULL,
+  PRIMARY KEY (namespace, alias)
+) STRICT, WITHOUT ROWID`,
   // Notes, log entries and learnings in one thread, numbered per owner.
   `CREATE TABLE notes (
   id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, ordinal INTEGER NOT NULL,
