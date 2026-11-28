@@ -17,6 +17,7 @@ import { formatTaskRef } from "../refs.ts";
 import { invalidValue, RowReader } from "../rows.ts";
 import { CHILD_FIELDS, columnsValue, fieldJson, TASK_FIELDS } from "./fields.ts";
 import type { NewerWork, NodeSet, Operation, PageSet, TextNode } from "./request.ts";
+import { filedIntoNewGroup, undoRule, type KindRows } from "../undo-rule.ts";
 
 /** A change row of commit `c` whose task `c` also changed `field`. */
 const sameTask = (field: string): string =>
@@ -27,34 +28,45 @@ const sameTask = (field: string): string =>
  * A move of task row `c` into an area or project that the same person's commit right before made:
  * the page's new area or project, made and then filed into.
  */
-const INTO_NEW_GROUP =
-  "EXISTS (SELECT 1 FROM changes g WHERE g.action = 'create' AND g.entity IN ('areas', 'projects') " +
-  "AND g.entity_id IN (json_extract(c.after, '$.area_id'), json_extract(c.after, '$.project_id')) " +
-  "AND g.seq = (SELECT max(p.seq) FROM commits p JOIN commits me ON me.seq = c.seq " +
-  "WHERE p.principal_id = me.principal_id AND p.seq < c.seq))";
+const INTO_NEW_GROUP = filedIntoNewGroup(
+  "json_extract(c.after, '$.area_id'), json_extract(c.after, '$.project_id')",
+  "g.entity IN ('areas', 'projects')",
+);
 
-/** A change row `c` of a kind Undo is for, or one that comes with such a row in its commit. */
-const KEPT_ROW =
-  "(c.entity = 'tasks' AND c.field IN ('lifecycle', 'deleted', 'title', 'summary', 'context', " +
-  "'reviewed_at')) " +
-  `OR (c.entity = 'tasks' AND c.field = 'wrap' AND ${sameTask("lifecycle")}) ` +
-  "OR (c.entity = 'tasks' AND c.field = 'inbox') " +
-  `OR (c.entity = 'tasks' AND c.field = 'status' AND ${sameTask("inbox")}) ` +
-  "OR (c.entity = 'tasks' AND c.field = 'grouping' " +
-  "AND json_extract(c.before, '$.area_id') IS NULL AND json_extract(c.before, '$.project_id') IS NULL) " +
-  `OR (c.entity = 'tasks' AND c.field = 'grouping' AND ${INTO_NEW_GROUP}) ` +
-  "OR (c.entity IN ('tasks', 'task_sources') AND c.field IN ('grouping', 'inbox', 'removed') " +
-  `AND ${sameTask("deleted")}) ` +
-  "OR (c.entity = 'notes' AND c.field IN ('deleted', 'body')) " +
-  "OR (c.entity = 'log_entries' AND c.field = 'body') " +
-  // A page's words, and its move to the Trash and out of it; a node's texts, the words alone.
-  "OR (c.entity = 'pages' AND c.field IN ('title', 'brief', 'body', 'deleted')) " +
-  "OR (c.entity = 'node_texts') " +
-  "OR (c.entity IN ('areas', 'projects') " +
-  "AND (c.action = 'create' OR (c.field = 'lifecycle' " +
-  "AND '\"archived\"' IN (c.before, c.after)))) " +
-  "OR (c.entity IN ('folders', 'places') AND c.action = 'create' AND EXISTS (SELECT 1 FROM changes p " +
-  "WHERE p.seq = c.seq AND p.entity = 'projects' AND p.action = 'create'))";
+/** How this schema's change rows show each kind Undo is for (undo-rule.ts). */
+const KINDS: KindRows = {
+  finish:
+    "(c.entity = 'tasks' AND c.field = 'lifecycle') " +
+    `OR (c.entity = 'tasks' AND c.field = 'wrap' AND ${sameTask("lifecycle")})`,
+  trash:
+    "(c.entity = 'tasks' AND c.field = 'deleted') " +
+    "OR (c.entity = 'pages' AND c.field = 'deleted') " +
+    "OR (c.entity IN ('tasks', 'task_sources') AND c.field IN ('grouping', 'inbox', 'removed') " +
+    `AND ${sameTask("deleted")})`,
+  note: "c.entity = 'notes' AND c.field = 'deleted'",
+  words:
+    "(c.entity = 'tasks' AND c.field IN ('title', 'summary', 'context')) " +
+    "OR (c.entity IN ('notes', 'log_entries') AND c.field = 'body') " +
+    // A page's words; a node's texts, the words alone.
+    "OR (c.entity = 'pages' AND c.field IN ('title', 'brief', 'body')) " +
+    "OR (c.entity = 'node_texts')",
+  inbox:
+    "(c.entity = 'tasks' AND c.field = 'inbox') " +
+    `OR (c.entity = 'tasks' AND c.field = 'status' AND ${sameTask("inbox")})`,
+  filing:
+    "(c.entity = 'tasks' AND c.field = 'grouping' " +
+    "AND json_extract(c.before, '$.area_id') IS NULL AND json_extract(c.before, '$.project_id') IS NULL) " +
+    `OR (c.entity = 'tasks' AND c.field = 'grouping' AND ${INTO_NEW_GROUP})`,
+  group:
+    "(c.entity IN ('areas', 'projects') " +
+    "AND (c.action = 'create' OR (c.field = 'lifecycle' " +
+    "AND '\"archived\"' IN (c.before, c.after)))) " +
+    "OR (c.entity IN ('folders', 'places') AND c.action = 'create' AND EXISTS (SELECT 1 FROM changes p " +
+    "WHERE p.seq = c.seq AND p.entity = 'projects' AND p.action = 'create'))",
+  dismissal: "c.entity = 'tasks' AND c.field = 'reviewed_at'",
+};
+
+const RULE = undoRule(KINDS);
 
 /**
  * Whether commit `seq` (an SQL expression) is a step: it changed something, and every row it
@@ -62,9 +74,7 @@ const KEPT_ROW =
  * writer marks a person's commit by it, and Undo and Redo choose their target by it, so a step an
  * earlier version stored of a kind that has left Undo is passed over.
  */
-export const stepSql = (seq: string): string =>
-  `(EXISTS (SELECT 1 FROM changes c WHERE c.seq = ${seq}) AND NOT EXISTS (SELECT 1 FROM changes c ` +
-  `WHERE c.seq = ${seq} AND NOT coalesce(${KEPT_ROW}, 0)))`;
+export const stepSql = RULE.step;
 
 /**
  * When the person last applied commit `seq` before commit `before` (SQL expressions): its newest
@@ -77,25 +87,12 @@ export const appliedSql = (seq: string, before: string): string =>
 
 /**
  * The step an undo of principal `$principal` takes, with `applied`, the commit that last applied
- * it: of its `done` steps, the one applied last, by its newest redo or else by its own seq. The
- * writer and the service's question before an undo both read it here.
+ * it. The writer and the service's question before an undo both read it here.
  */
-export const UNDO_TARGET_SQL =
-  "WITH newest AS (SELECT seq, id, undo_status, undone_by, seq AS applied FROM commits k " +
-  `WHERE principal_id = $principal AND undo_status = 'done' AND ${stepSql("k.seq")} ` +
-  "ORDER BY seq DESC LIMIT 1) " +
-  "SELECT * FROM (SELECT t.seq AS seq, t.id AS id, t.undo_status AS undo_status, " +
-  "t.undone_by AS undone_by, r.seq AS applied FROM commits r JOIN commits t ON t.seq = r.redo_of " +
-  "WHERE r.seq > coalesce((SELECT seq FROM newest), 0) AND r.principal_id = $principal " +
-  `AND r.kind = 'redo' AND t.undo_status = 'done' AND ${stepSql("t.seq")} ` +
-  "ORDER BY r.seq DESC LIMIT 1) " +
-  "UNION ALL SELECT * FROM newest ORDER BY applied DESC LIMIT 1";
+export const UNDO_TARGET_SQL = RULE.undoTarget;
 
 /** The step a redo takes: the one the principal undid last. */
-const REDO_TARGET_SQL =
-  "SELECT seq, id, undo_status, undone_by, undone_by AS applied FROM commits k " +
-  `WHERE principal_id = $principal AND undo_status = 'undone' AND ${stepSql("k.seq")} ` +
-  "ORDER BY undone_by DESC LIMIT 1";
+const REDO_TARGET_SQL = RULE.redoTarget;
 
 /** A step on a principal's undo stack. */
 export interface StackCommit {

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { DEFAULT_DRIVER, StorageWorker } from "@ttasks/storage";
+import { DurableGrants } from "./grants.ts";
 import { SERVICE_DB, SERVICE_DB_VERSION, ServiceDb } from "./service-db.ts";
 
 let root: string;
@@ -68,5 +69,41 @@ describe("[A2.3.2.3.service-db.newer] an older service does not write into a ser
     } finally {
       await again.close();
     }
+  });
+});
+
+describe("[S5.link.run-saved] a phone's Run switch lasts a restart of the service", () => {
+  test("Run switched on, then off, reads back as switched after the store is closed and opened again", async () => {
+    const dir = join(root, "run-switch");
+    mkdirSync(dir);
+    const reopen = async (check: (grants: DurableGrants) => void | Promise<void>) => {
+      const db = await ServiceDb.open(dir);
+      try {
+        await check(await DurableGrants.open(db));
+      } finally {
+        await db.close();
+      }
+    };
+    let id = "";
+    await reopen(async (grants) => {
+      const { grant } = grants.create({
+        kind: "device",
+        principal: "user",
+        spaces: ["sp_a"],
+        scopes: ["space:read", "space:write"],
+        attrs: { key: "fixture-pin" },
+      });
+      id = grant.grant_id;
+      grants.setScopes(id, ["space:read", "space:write", "launch:run"]);
+      await grants.flush();
+    });
+    await reopen(async (grants) => {
+      expect(grants.get(id)?.scopes).toContain("launch:run");
+      grants.setScopes(id, ["space:read", "space:write"]);
+      await grants.flush();
+    });
+    await reopen((grants) => {
+      expect(grants.get(id)?.scopes).toEqual(["space:read", "space:write"]);
+    });
   });
 });

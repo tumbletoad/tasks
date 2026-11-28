@@ -132,10 +132,10 @@ import {
 import { provenanceOf, rowState, versionOf, type RowState } from "./row-state.ts";
 import { EFFORT_HOLDERS_SQL, inTrashSql } from "./trash.ts";
 import {
+  checkBaseOf,
   checkRequest,
   FOLDER_OPERATIONS,
   formatAsOf,
-  incarnationTag,
   isHistoryOperation,
   LAUNCH_FAIL_REASONS,
   LAUNCH_UNKNOWN_REASONS,
@@ -145,7 +145,6 @@ import {
   SYSTEM_SCOPE,
   WRITE_LIMITS,
   type AsOf,
-  type Base,
   type CheckedRequest,
   type ConflictEntity,
   type Due,
@@ -1440,7 +1439,7 @@ export class SpaceWriter {
     wall: number,
   ): WriteResult {
     try {
-      if (request.base !== undefined) checkBase(request.base, asOf);
+      if (request.base !== undefined) checkBaseOf(request.base, asOf);
       // An undo or redo is a request of its own (request.ts), guarded by newer work (steps.ts).
       const [first] = request.ops;
       if (first !== undefined && isHistoryOperation(first)) {
@@ -3803,24 +3802,6 @@ function checkActor(conn: Connection, request: CheckedRequest): void {
       undefined,
       "actor.author_id",
     );
-  }
-}
-
-/** A1 3.5: a base from another epoch or incarnation, or from the future, is refused. */
-function checkBase(base: Base, asOf: AsOf): void {
-  const incarnation = isId(base.incarnation, "ai")
-    ? base.incarnation === asOf.incarnation
-    : base.incarnation === incarnationTag(asOf.incarnation);
-  if (base.epoch !== asOf.epoch || !incarnation) {
-    problem(
-      "EPOCH_CHANGED",
-      "The base is from another copy of the space, or from before it was restored: read again",
-      undefined,
-      "base",
-    );
-  }
-  if (base.seq > asOf.seq) {
-    problem("BASE_FROM_FUTURE", "The base is newer than the space", undefined, "base");
   }
 }
 

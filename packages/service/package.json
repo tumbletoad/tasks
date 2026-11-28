@@ -27,6 +27,7 @@
     "./runtime-gate": "./src/version/runtime-gate.ts",
     "./version-folder": "./src/version/folder.ts",
     "./version-install": "./src/version/install.ts",
+    "./version-retire": "./src/version/retire.ts",
     "./version-update": "./src/version/update.ts"
   },
   "dependencies": {
