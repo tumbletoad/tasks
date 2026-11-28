@@ -3,6 +3,218 @@
   "methods": [
     {
       "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "space_unavailable",
+        "forbidden"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "description": "Lines of changes after this commit number",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "before": {
+            "description": "Lines of changes before this commit number",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Lines per page; default 50",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "read",
+      "name": "activity.list",
+      "ops": [],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "lines": {
+            "description": "Newest first",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "actor": {
+                  "description": "Who made it: an agent or a routine",
+                  "enum": [
+                    "agent",
+                    "routine"
+                  ],
+                  "type": "string"
+                },
+                "acts": {
+                  "description": "What it did, in order",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "field": {
+                        "description": "The task's field it set",
+                        "maxLength": 60,
+                        "type": "string"
+                      },
+                      "from": {
+                        "anyOf": [
+                          {
+                            "maxLength": 300,
+                            "type": "string"
+                          },
+                          {
+                            "maximum": 8640000000000000,
+                            "minimum": -8640000000000000,
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "The value before, when it is no text"
+                      },
+                      "op": {
+                        "description": "The operation, such as task.patch or note.add",
+                        "maxLength": 60,
+                        "type": "string"
+                      },
+                      "to": {
+                        "anyOf": [
+                          {
+                            "maxLength": 300,
+                            "type": "string"
+                          },
+                          {
+                            "maximum": 8640000000000000,
+                            "minimum": -8640000000000000,
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "The value after, when it is no text; for a move or a create, its project or area"
+                      }
+                    },
+                    "required": [
+                      "op"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 40,
+                  "type": "array"
+                },
+                "at": {
+                  "description": "When, milliseconds since 1970",
+                  "maximum": 8640000000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "by": {
+                  "description": "The actor's label, such as agent:codex",
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "count": {
+                  "description": "How many tasks it touched",
+                  "maximum": 1000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "kind": {
+                  "description": "The change's kind when it is no plain change: undo, redo",
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "seq": {
+                  "description": "The change's commit number",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "tasks": {
+                  "description": "The first tasks it touched",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "description": "Task ID",
+                        "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                        "type": "string"
+                      },
+                      "ref": {
+                        "description": "Its reference, such as M-14",
+                        "maxLength": 20,
+                        "type": "string"
+                      },
+                      "title": {
+                        "description": "Its title now",
+                        "maxLength": 1000,
+                        "type": "string"
+                      },
+                      "trash": {
+                        "const": true,
+                        "description": "It is in the Trash now",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "ref",
+                      "title"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 3,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "seq",
+                "at",
+                "actor",
+                "by",
+                "tasks",
+                "count",
+                "acts"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "more": {
+            "description": "More lines lie past this page: older ones, or with `after`, newer ones",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "lines",
+          "more"
+        ],
+        "type": "object"
+      },
+      "remote": "read",
+      "scope": "space:read",
+      "summary": "What agents and routines did in the space, one line per change, newest first."
+    },
+    {
+      "actorKinds": [
         "human",
         "agent",
         "routine"

@@ -85,6 +85,15 @@ export {
   TaskDeleteResult,
 } from "./entries/task-delete.ts";
 export {
+  ActivityAct,
+  ActivityLine,
+  activityList,
+  ActivityListInput,
+  ActivityListResult,
+  ActivityTask,
+  ActivityValue,
+} from "./entries/activity-list.ts";
+export {
   TRASH_CURSOR,
   TrashChange,
   TrashRow,

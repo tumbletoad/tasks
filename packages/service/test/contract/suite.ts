@@ -438,6 +438,7 @@ const LATER: Readonly<Record<string, Later>> = {
 };
 
 const VERIFIED = new Set([
+  "activity.list 0",
   "space.status 2",
   "task.get 0",
   "task.get 1",
@@ -476,6 +477,18 @@ const refs = (list: unknown, key = "ref"): unknown[] =>
 /** What a result means, per entry: the parts an example documents that a world can reproduce. */
 function meaning(entry: string, value: Value): unknown {
   switch (entry) {
+    case "activity.list":
+      // The world's agents made other changes than the example's: a line by its form.
+      return {
+        lines: ((value["lines"] as Value[] | undefined) ?? []).map((l) => [
+          l["actor"],
+          typeof l["by"],
+          l["count"],
+          (l["tasks"] as unknown[]).length,
+          [...new Set((l["acts"] as Value[]).map((a) => a["op"]))],
+        ]),
+        more: value["more"],
+      };
     case "space.status": {
       const counts = value["counts"] as Value;
       return {

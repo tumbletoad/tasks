@@ -4735,6 +4735,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.activity.service",
+      "title": "The read behind the Activity screen against a real space: one line per change of an agent or a routine, newest first, none of the person's own; several fields set by one request on one line with their values before and after; several tasks made by one request on one line with their project's name; a text change says that it changed and never carries its words; a move names where from and to; a finish, a note and the Trash each name their operation and a task in the Trash says so; pages by commit number reach every line once, and the lines after a commit come in order",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.15.web.live",
       "title": "The tab's feed client applies a batch only when it reaches past its cursor without a gap, ignores a repeat, takes a fresh snapshot after a gap (asked for again on the next socket when the old one dropped) or on a refresh, on the same session, never applies another space's batch, and a feed that resumes from its cursor (after applying what it had queued) is live again without a snapshot, with its rows kept and its backoff reset",
       "source": "A5 3.15, A1 3.7, A7 3.9 M2.13",

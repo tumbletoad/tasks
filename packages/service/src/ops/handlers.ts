@@ -210,6 +210,7 @@ import {
 } from "./task-view.ts";
 import { readFinished } from "./task-rows.ts";
 import { readChangeTasks, readTrash } from "./trash.ts";
+import { readActivity } from "./activity.ts";
 import { listSkills, readSkills, servedText, type Catalog, type Skill } from "../skills/index.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
@@ -2817,6 +2818,20 @@ function answerOf(view: View, stored: WriteResult): Promise<Record<string, unkno
 }
 
 const HANDLERS: Readonly<Record<string, Handler>> = {
+  "activity.list": async (call) => {
+    const { input } = call;
+    const seq = (key: string) => (typeof input[key] === "number" ? input[key] : undefined);
+    try {
+      return await readActivity(readerOf(call.space), {
+        before: seq("before"),
+        after: seq("after"),
+        limit: Number(input["limit"]),
+      });
+    } catch (error) {
+      throw storageFailure(error);
+    }
+  },
+
   "space.status": async (call) => {
     const { input } = call;
     const asked = Array.isArray(input["skills"]) ? [...new Set(input["skills"] as string[])] : [];
