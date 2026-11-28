@@ -7,6 +7,7 @@ import android.os.Build
 import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import okhttp3.Response
@@ -75,6 +76,18 @@ class TTasksLinkModule : Module() {
       appContext.reactContext?.let { LinkStore.save(it, json) }
       Unit
     }
+
+    Function("kept") { name: String ->
+      appContext.reactContext?.let { Kept.read(it, name) }
+    }
+
+    Function("keep") { name: String, text: String ->
+      appContext.reactContext?.let { Kept.write(it, name, text) }
+      Unit
+    }
+
+    /** A request ID, fixed when the person acts. */
+    Function("newId") { UUID.randomUUID().toString() }
 
     /** The name the person gave the phone in Android's settings, else its model. */
     Function("deviceName") {

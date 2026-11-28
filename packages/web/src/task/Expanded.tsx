@@ -3,18 +3,18 @@
 //
 // - Content, with no section labels: first the composer (Composer.tsx), its field and the strip of
 //   what the text goes to, then the outcome and the task's own learnings once it is done, the
-//   context (Markdown, clamped at ten lines with More), one line per source with its own text and
-//   Remove, one collapsed line for the sources and notes removed from it with Put back, the place
-//   on this machine, a hairline, then the thread (Thread.tsx).
+//   description (Markdown, clamped at ten lines with More), one line per source with its own text
+//   and Remove, one collapsed line for the sources and notes removed from it with Put back, the
+//   place on this machine, a hairline, then the thread (Thread.tsx).
 // - Facts (Facts.tsx): short muted labels and their controls, edited in place. Each fact
 //   shows here and nowhere else in the card; the row's columns for them are hidden while it is
 //   expanded.
 //
 // A click on an agent-only field (the outcome, a source's line, a learning) starts a request for an
-// agent there, and so does a click on the context or the summary in the header, which the person
-// also corrects behind their pens (TextEditor.tsx). Everything a task holds is untrusted text: it
-// is rendered as text or as Markdown that is never HTML, and links open only through allowed
-// schemes.
+// agent there, and so does a click on the description or the brief in the header, which the person
+// also writes and corrects behind their pens (TextEditor.tsx). Everything a task holds is untrusted
+// text: it is rendered as text or as Markdown that is never HTML, and links open only through
+// allowed schemes.
 import {
   useContext,
   useLayoutEffect,
@@ -58,7 +58,7 @@ import { Facts } from "./Facts.tsx";
 import { LINK_REL, Markdown } from "./markdown.tsx";
 import { useSourceWrites, type SourceWrites } from "./sourceWrites.ts";
 import { useNoteWrites, type NoteWrites } from "./noteWrites.ts";
-import { NotSaved, Pen, TextEditor, useEditing, useSaved } from "./TextEditor.tsx";
+import { Add, NotSaved, Pen, TextEditor, useEditing, useSaved } from "./TextEditor.tsx";
 import { useTextWrites, type TextWrites } from "./textWrites.ts";
 import { TEXT_MAX } from "../unsent.ts";
 import { actorOf, Thread } from "./Thread.tsx";
@@ -665,8 +665,9 @@ function asks(
 }
 
 /**
- * The context, clamped at ten lines with More when it is longer, with its pen at its end: the
- * person corrects it in place, whoever wrote it.
+ * The description, clamped at ten lines with More when it is longer, with its pen at its end: the
+ * person corrects it in place, whoever wrote it. A task without one has its Add where it would
+ * stand.
  */
 function Context({
   task,
@@ -718,6 +719,9 @@ function Context({
           part="context"
           label={t("task.context")}
           text={text}
+          paragraphs
+          clears
+          preview={(typed) => <Markdown text={typed} />}
           max={TEXT_MAX}
           base={base}
           save={(words, from) => write(task, words, from)}
@@ -725,9 +729,30 @@ function Context({
             saved(words);
             setEditing(false);
           }}
+          reopen={() => {
+            setEditing(true);
+          }}
         />
         {notSaved}
       </div>
+    );
+  }
+  if (text.trim() === "") {
+    return (
+      <>
+        {write === undefined ? null : (
+          <div className={styles.context}>
+            <Add
+              label={t("text.addContext")}
+              part="add-context"
+              onPress={() => {
+                setEditing(true);
+              }}
+            />
+          </div>
+        )}
+        {notSaved}
+      </>
     );
   }
   return (
@@ -874,13 +899,14 @@ export function Expanded({
             </div>
           </div>
         )}
-        {detail === undefined || detail.context.trim() === "" ? null : (
+        {detail === undefined ? null : (
           <Context
             task={task}
             text={detail.context}
             base={base}
             onAsk={writes?.ask("context")}
-            // Only an open task's context changes, as its summary and title.
+            // Only an open task's description changes, as its brief and title: the service
+            // refuses a finished one's.
             write={task.lifecycle === "active" ? writes?.text.context : undefined}
             partial={detail.contextPartial === true}
           />

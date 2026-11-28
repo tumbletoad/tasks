@@ -379,7 +379,7 @@ test.describe("[A5.3.12.e2e.redo-passed-over] Redo of a step an agent added to s
 });
 
 test.describe("[A7.3.12.m5-08.e2e.ask] An agent-only field starts a request in the composer", () => {
-  test("a click on the context or the summary puts its request in the composer, after what was there, and the draft stays", async ({
+  test("a click on the description or the brief puts its request in the composer, after what was there, and the draft stays", async ({
     page,
     world,
   }) => {
@@ -400,16 +400,16 @@ test.describe("[A7.3.12.m5-08.e2e.ask] An agent-only field starts a request in t
     await expect(composer).toBeVisible({ timeout: SLOW_MS });
     await row.locator('[data-part="context"]').click();
     await expect(composer).toBeFocused();
-    await expect(composer).toHaveValue("Change the context: ");
+    await expect(composer).toHaveValue("Change the description: ");
     await page.keyboard.type("add the holiday hours");
     await row.locator('[data-part="summary"]').click();
     await expect(composer).toHaveValue(
-      "Change the context: add the holiday hours\nChange the summary: ",
+      "Change the description: add the holiday hours\nChange the brief: ",
     );
     // Nothing was sent, and the draft survives a reload.
     await page.reload();
     await expect(composer).toHaveValue(
-      "Change the context: add the holiday hours\nChange the summary: ",
+      "Change the description: add the holiday hours\nChange the brief: ",
       { timeout: SLOW_MS },
     );
   });

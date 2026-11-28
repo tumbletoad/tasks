@@ -337,8 +337,9 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     await expect(title).toHaveAttribute("aria-expanded", "true");
     await expect(page).toHaveURL(`${world.origin}${view}?task=${ref}`);
 
-    // Tab walks the header's controls, then the card: its facts, the composer, then the strip,
-    // which is one stop (the arrows walk it from Note to Copy), then its source link.
+    // Tab walks the header's controls, the brief's Add among them, then the card: its facts, the
+    // composer, then the strip, which is one stop (the arrows walk it from Note to Copy), the
+    // description's Add, then its source link.
     const active = () =>
       page.evaluate(() => {
         const e = document.activeElement;
@@ -353,7 +354,14 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     }
     expect(reached).toContain("button:star");
     expect(reached).toContain("button:collapse");
-    expect(reached.slice(-3)).toEqual(["textarea:composer", "button:note", "a:Van rental"]);
+    expect(reached).toContain("button:add-summary");
+    expect(reached.slice(-4)).toEqual([
+      "textarea:composer",
+      "button:note",
+      "button:add-context",
+      "a:Van rental",
+    ]);
+    await page.keyboard.press("Shift+Tab");
     await page.keyboard.press("Shift+Tab");
     for (let i = 0; i < 6 && (await active()) !== "button:copy"; i += 1) {
       await page.keyboard.press("ArrowRight");

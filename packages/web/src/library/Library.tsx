@@ -197,6 +197,7 @@ function Texts({
             max={TEXT_MAX}
             paragraphs
             clears
+            preview={(typed) => <Markdown text={typed} className={styles.md} headings />}
             partial={read.slice === undefined ? undefined : t("text.partial")}
             save={
               editable

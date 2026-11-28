@@ -1,7 +1,7 @@
-// The person's corrections of a task's text: its summary and its context through task.update, a
-// note's or a log entry's words through entry.edit. Each goes as the person, in turn with the
-// page's other edits, from the base the editor opened at, and its toast's Undo or Ctrl+Z puts the
-// words before back: words are a nuisance to type again.
+// The person's corrections of a task's text: its summary and its context through task.update (an
+// emptied one taken away), a note's or a log entry's words through entry.edit. Each goes as the
+// person, in turn with the page's other edits, from the base the editor opened at, and its toast's
+// Undo or Ctrl+Z puts the words before back: words are a nuisance to type again.
 import { useContext, useMemo } from "react";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { Session } from "../context.ts";
@@ -34,7 +34,7 @@ export function textWrites(client: Client, edits: Pick<Edits, "write">): TextWri
         (request, sent) =>
           client.task.update({
             task: task.ref,
-            set: { summary: words },
+            ...(words === "" ? { clear: ["summary" as const] } : { set: { summary: words } }),
             ...(sent === undefined ? {} : { base: sent }),
             request_id: request,
           }),

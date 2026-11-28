@@ -652,6 +652,9 @@ function EntryLine({
                 saved(next);
                 setEditing(false);
               }}
+              reopen={() => {
+                setEditing(true);
+              }}
             />
           </div>
         ) : item.markdown ? (

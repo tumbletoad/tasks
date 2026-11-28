@@ -17,6 +17,14 @@ export const PencilIcon = () => (
   </Icon>
 );
 
+/** An eye: the words as they will read. */
+export const EyeIcon = () => (
+  <Icon>
+    <path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+    <circle cx="12" cy="12" r="2.8" />
+  </Icon>
+);
+
 export const FolderIcon = () => (
   <Icon>
     <path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z" />
