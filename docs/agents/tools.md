@@ -3116,7 +3116,7 @@ MCP tool `get_task`, "Load a task": Use to load a task before working on it, or 
 | A1 operations | none |
 | Faces | MCP `get_task`, CLI `ttasks show`, UI |
 | Errors | `invalid_input`, `unbound`, `not_found`, `ambiguous`, `launch_unknown`, `forbidden` |
-| Definition, estimated tokens | 649, reported |
+| Definition, estimated tokens | 668, reported |
 | Result budget, estimated tokens | typical 1500, max 4000 |
 
 ### Input
@@ -3125,7 +3125,7 @@ MCP tool `get_task`, "Load a task": Use to load a task before working on it, or 
 |---|---|---|---|
 | `task` | string, max 40 | no | Task ref (M-14) or ID; default: this session's task |
 | `launch` | string, max 6 | no | Launch reference from the Brief: load its task |
-| `sections` | ("instructions" \| "context" \| "notes" \| "log" \| "sources" \| "outcome" \| "history")[], max 7 items | no | Return these in full instead of the digest |
+| `sections` | ("instructions" \| "context" \| "notes" \| "log" \| "sources" \| "outcome" \| "history")[], max 7 items | no | Return these in full instead of the digest; the pages known above come with both |
 | `log_limit` | integer, 1 to 50 | no | Log entries per page; default 20 |
 | `before` | string, max 200 | no | With sections: the before token of the last page |
 | `notes` | (string, max 7)[], max 64 items | no, user only | These notes too, whole, whatever their age |
@@ -3427,6 +3427,30 @@ When `view` is `"sections"`:
 | `sections.history[].actor` | string | yes | Actor that wrote it, from history |
 | `sections.history[].what` | string | yes | Operation kind and the fields it changed |
 | `before` | string | no | Paging token for the rest |
+| `pages` | object[], max 25 items | no | Pages on this task, by title |
+| `pages[].ref` | string, max 20 | yes | Page reference, such as M-180 |
+| `pages[].title` | string | yes | Title |
+| `pages[].brief` | string | yes | One line: what a reader finds in it; empty: none given |
+| `pages[].by` | string | yes | Who changed it last |
+| `pages[].at` | string | yes | When it was changed last |
+| `pages_more` | integer, 0 to 9007199254740991 | no | Pages on this task not here |
+| `trail` | object[], max 3 items | no | The levels above the task, nearest first: their pages |
+| `trail[].kind` | "space" \| "area" \| "project" | yes | What the level is |
+| `trail[].id` | string | yes | The space's, an area's or a project's ID |
+| `trail[].title` | string | yes | Its name |
+| `trail[].brief` | string | yes | One line: what it is; empty: none given |
+| `trail[].read` | string, max 40 | yes | Pass it to read for its description and all its pages |
+| `trail[].has_description` | boolean | yes | It has a description: read it |
+| `trail[].for_agents` | object | no | The user's instruction for every task below it |
+| `trail[].for_agents.text` | string | yes | The user's instruction for every task below |
+| `trail[].for_agents.at` | string | yes | When, ISO date and time |
+| `trail[].pages` | object[], max 25 items | yes | Its pages, by title |
+| `trail[].pages[].ref` | string, max 20 | yes | Page reference, such as M-180 |
+| `trail[].pages[].title` | string | yes | Title |
+| `trail[].pages[].brief` | string | yes | One line: what a reader finds in it; empty: none given |
+| `trail[].pages[].by` | string | yes | Who changed it last |
+| `trail[].pages[].at` | string | yes | When it was changed last |
+| `trail[].count` | integer, 0 to 1000000 | yes | Its pages in all |
 | `notes` | object[], max 64 items | no | The notes asked for by reference that the task has, whole |
 | `notes[].ref` | string | yes | Note ordinal, such as n2 |
 | `notes[].author` | string | yes | Actor that wrote it, from history |

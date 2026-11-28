@@ -1280,7 +1280,7 @@
         {
           "field": "sections",
           "flag": "--section",
-          "help": "Return these in full instead of the digest",
+          "help": "Return these in full instead of the digest; the pages known above come with both",
           "repeat": true,
           "required": false,
           "type": "string",

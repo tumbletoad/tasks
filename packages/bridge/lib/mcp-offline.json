@@ -653,7 +653,7 @@
                 "type": "integer"
               },
               "sections": {
-                "description": "Return these in full instead of the digest",
+                "description": "Return these in full instead of the digest; the pages known above come with both",
                 "items": {
                   "enum": [
                     "instructions",
@@ -1916,7 +1916,7 @@
                 "type": "integer"
               },
               "sections": {
-                "description": "Return these in full instead of the digest",
+                "description": "Return these in full instead of the digest; the pages known above come with both",
                 "items": {
                   "enum": [
                     "instructions",

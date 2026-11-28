@@ -6706,7 +6706,7 @@
             "type": "array"
           },
           "sections": {
-            "description": "Return these in full instead of the digest",
+            "description": "Return these in full instead of the digest; the pages known above come with both",
             "items": {
               "enum": [
                 "instructions",
@@ -8108,6 +8108,53 @@
                 "maxItems": 64,
                 "type": "array"
               },
+              "pages": {
+                "description": "Pages on this task, by title",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "description": "When it was changed last",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                      "type": "string"
+                    },
+                    "brief": {
+                      "description": "One line: what a reader finds in it; empty: none given",
+                      "type": "string"
+                    },
+                    "by": {
+                      "description": "Who changed it last",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "description": "Page reference, such as M-180",
+                      "maxLength": 20,
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Title",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "title",
+                    "brief",
+                    "by",
+                    "at"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 25,
+                "type": "array"
+              },
+              "pages_more": {
+                "description": "Pages on this task not here",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
               "request": {
                 "anyOf": [
                   {
@@ -8875,6 +8922,125 @@
                   "priority"
                 ],
                 "type": "object"
+              },
+              "trail": {
+                "description": "The levels above the task, nearest first: their pages",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "brief": {
+                      "description": "One line: what it is; empty: none given",
+                      "type": "string"
+                    },
+                    "count": {
+                      "description": "Its pages in all",
+                      "maximum": 1000000,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "for_agents": {
+                      "additionalProperties": false,
+                      "description": "The user's instruction for every task below it",
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                          "type": "string"
+                        },
+                        "text": {
+                          "description": "The user's instruction for every task below",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "has_description": {
+                      "description": "It has a description: read it",
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "description": "The space's, an area's or a project's ID",
+                      "pattern": "^(?:sp|a|p)_[0-9a-hjkmnp-tv-z]{26}$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "description": "What the level is",
+                      "enum": [
+                        "space",
+                        "area",
+                        "project"
+                      ],
+                      "type": "string"
+                    },
+                    "pages": {
+                      "description": "Its pages, by title",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": {
+                            "description": "When it was changed last",
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                            "type": "string"
+                          },
+                          "brief": {
+                            "description": "One line: what a reader finds in it; empty: none given",
+                            "type": "string"
+                          },
+                          "by": {
+                            "description": "Who changed it last",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "description": "Page reference, such as M-180",
+                            "maxLength": 20,
+                            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                            "type": "string"
+                          },
+                          "title": {
+                            "description": "Title",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "ref",
+                          "title",
+                          "brief",
+                          "by",
+                          "at"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 25,
+                      "type": "array"
+                    },
+                    "read": {
+                      "description": "Pass it to read for its description and all its pages",
+                      "maxLength": 40,
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Its name",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "title",
+                    "brief",
+                    "read",
+                    "has_description",
+                    "pages",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 3,
+                "type": "array"
               },
               "view": {
                 "const": "sections",
