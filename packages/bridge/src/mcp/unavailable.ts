@@ -20,9 +20,9 @@ export class Unavailable extends Error {
 
 /**
  * Any error of a connection attempt as an Unavailable. The client's LocalError keeps its reason,
- * except `connection_lost` during a handshake: the service took the hello and closed before the
- * bind result, which is a service on its way down or up. Anything else (a path or key the client
- * refuses) cannot be reached.
+ * except `connection_lost` during a handshake: the service closed or did not answer in time before
+ * the bind result, which is a service on its way down or up, or a busy one. Anything else (a path or
+ * key the client refuses) cannot be reached.
  */
 export function unavailableOf(error: unknown): Unavailable {
   if (error instanceof Unavailable) return error;

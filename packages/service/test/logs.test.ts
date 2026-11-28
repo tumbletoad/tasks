@@ -138,7 +138,7 @@ describe("[A2.3.13.hub.logs-content-free] logs and crash files of a running serv
         },
         context: { env },
       }),
-    ).rejects.toMatchObject({ reason: "untrusted_endpoint" });
+    ).rejects.toMatchObject({ reason: "connection_lost" });
     await waitFor(
       () => readLog(home).find((e) => e["ev"] === "local.handshake_failed"),
       READY_MS,

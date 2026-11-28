@@ -229,7 +229,7 @@ describe("[A2.3.7.bridge.handshake] the forwarder's handshake with good and bad 
   );
 
   test(
-    "a wrong key: the service never proves itself, and tools answer untrusted_endpoint",
+    "a wrong key: the service never proves itself and sends nothing, so tools answer that it is starting",
     { timeout: 120_000 },
     async () => {
       const where = home("wrongkey");
@@ -238,7 +238,7 @@ describe("[A2.3.7.bridge.handshake] the forwarder's handshake with good and bad 
       const bridge = procs.bridge(where);
       await bridge.initialize();
       const call = await bridge.call("echo", {});
-      expect(isOfflineText(call, "untrusted_endpoint")).toBe(true);
+      expect(isOfflineText(call, "starting")).toBe(true);
       expect(peerBinds(where)).toEqual([]);
       expect(bridge.stray).toEqual([]);
     },
