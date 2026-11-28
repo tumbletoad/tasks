@@ -332,7 +332,7 @@ export interface OpResult {
   /**
    * A folder set that moved its owner's folder on this machine: the folders that were inside the
    * old one when it wrote, those it took along (`carry`) and those it left where they are. A
-   * receipt keeps the first INSIDE_KEPT of each list, with the counts.
+   * receipt keeps those `insideKept` names of each list, with the counts.
    */
   inside?: {
     moved: number;
@@ -389,6 +389,43 @@ export interface InsideFolder {
 
 /** How many of the folders a move took along, and of those it left, a receipt keeps. */
 export const INSIDE_KEPT = 20;
+
+/** The number in a task's reference, 0 for a folder that is no task's. */
+const refNumber = (folder: InsideFolder): number =>
+  Number(/-(\d+)$/u.exec(folder.ref ?? "")?.[1] ?? 0);
+
+const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * The order of a move's folders: by where they were, then a task's by its reference. `tie` orders
+ * the projects that share one folder.
+ */
+export const byFolder =
+  (tie: (a: InsideFolder, b: InsideFolder) => number) =>
+  (a: InsideFolder, b: InsideFolder): number =>
+    byText(a.from, b.from) || refNumber(a) - refNumber(b) || tie(a, b);
+
+/**
+ * The folders of a move that an answer names and a receipt keeps: the first INSIDE_KEPT in the
+ * order of `byFolder`, the projects that share a folder by their IDs. One choice for both, so a
+ * request sent again names the same folders as its first answer.
+ */
+export function insideKept(list: readonly InsideFolder[]): InsideFolder[] {
+  return [...list].sort(byFolder((a, b) => byText(a.owner, b.owner))).slice(0, INSIDE_KEPT);
+}
+
+/** An operation's result as a receipt keeps it: of a move's folders, those `insideKept` names. */
+export const keptResult = (op: OpResult): OpResult =>
+  op.inside === undefined
+    ? op
+    : {
+        ...op,
+        inside: {
+          ...op.inside,
+          along: insideKept(op.inside.along),
+          left: insideKept(op.inside.left),
+        },
+      };
 
 /** A task's lifecycle (A1 3.11). */
 export type TaskLifecycle = "active" | "completed" | "archived";

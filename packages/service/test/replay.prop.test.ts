@@ -6,19 +6,21 @@
 //
 // The vocabulary is the list of step makers below, one per call. Each family that moves to the tree
 // adds its calls here. What the backends differ in by decision is left out of it, each with its
-// reason: a project without an area (S2.replay.projects marks it), a node's history (marked in
-// S2.replay.reviewed), and a task's history section (refused on a tree for now). What the
-// sequences meet that differs by decision is left out of both sides (`known`, `marked`).
+// reason: a project without an area (S2.replay.projects marks it, and S2.replay.folders holds the
+// folder the tree refuses it), a node's history (marked in S2.replay.reviewed), and a task's
+// history section (refused on a tree for now). What the sequences meet that differs by decision is
+// left out of both sides (`known`, `marked`).
 //
 // CI runs a fixed list of seeds, 13 sequences each, about a minute (`SEEDS`). A failure prints its
 // seed; FC_SEED runs one seed and FC_RUNS sets how many sequences it runs. The nightly deep job runs
 // a new seed with 300.
 // Fixture text only.
+import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, onTestFailed, test } from "vitest";
 import { both, type Answer, type Sequence, type Side } from "../../storage/test/both-helpers.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
-import { backend, newSpaces, type Session, type Step } from "./replay-helpers.ts";
+import { backend, foldersUnder, newSpaces, type Session, type Step } from "./replay-helpers.ts";
 
 /** The nightly deep job's 300 sequences take minutes. */
 const LONG = process.env["TTASKS_DEEP"] === "1" ? 3_600_000 : 600_000;
@@ -26,6 +28,7 @@ let w: ContractWorld & { root: string };
 
 beforeAll(async () => {
   w = await contractWorld("replay-prop");
+  foldersUnder(join(w.root, "work", "replay"));
 }, LONG);
 afterAll(async () => {
   await w.close();
@@ -354,6 +357,90 @@ const reads = fc.oneof(
   fc.constant<Step>({ op: "space.status", input: {}, user: true }),
 );
 
+/** A folder of the space's own: a project's, a task's, and one inside another. */
+const where = fc.constantFrom("{dir:a}", "{dir:a/inner}", "{dir:b}", "{dir:c}");
+/** A project a folder call names: by its name, which two areas may both have, or by its path. */
+const holder = fc.constantFrom("Holder", "Second", "Home/Holder", "Garden/Second", "Home/Papers");
+
+/** A draft filed by its folder, or by the caller's working folder, sometimes sent twice. */
+const filed = fc
+  .record({ as: task, title, folder: where, cwd: fc.boolean(), who, retry: fc.boolean() })
+  .map((r): Step => ({
+    op: "task.add",
+    input: {
+      tasks: [{ title: r.title, folder: r.cwd ? "cwd" : r.folder }],
+      ...(r.cwd ? { cwd: r.folder } : {}),
+    },
+    as: r.as,
+    ...r.who,
+    ...(r.retry ? { retry: true } : {}),
+  }));
+
+/**
+ * Folders: a project made for a folder, always in an area as the page makes one; a project's or a
+ * task's set and cleared, also after the person moved the folder on disk; a draft filed by its
+ * folder; and the searches that read folders.
+ */
+const folders = fc.oneof(
+  fc
+    .record({
+      project: fc.option(fc.constantFrom("Holder", "Second"), { nil: undefined }),
+      area: fc.constantFrom("Home", "Garden"),
+      folder: where,
+      retry: fc.boolean(),
+    })
+    .map((r): Step => ({
+      op: "folder.manage",
+      input: {
+        action: "add_project",
+        ...(r.project === undefined ? {} : { project: r.project }),
+        area: r.area,
+        folder: r.folder,
+      },
+      user: true,
+      ...(r.retry ? { retry: true } : {}),
+    })),
+  fc
+    .record({
+      owner: fc.oneof(
+        holder.map((project) => ({ project })),
+        task.map((t) => ({ task: `{${t}}` })),
+      ),
+      folder: fc.option(where, { nil: undefined }),
+      moved: fc.option(fc.constantFrom(["a", "b"] as const, ["b", "c"] as const), {
+        nil: undefined,
+      }),
+      sent,
+    })
+    .map((r): Step => ({
+      op: "folder.manage",
+      input:
+        r.folder === undefined
+          ? { action: "clear", ...r.owner }
+          : { action: "set", ...r.owner, folder: r.folder },
+      user: true,
+      ...(r.folder !== undefined && r.moved !== undefined ? { moved: r.moved } : {}),
+      ...r.sent,
+    })),
+  fc.record({ task, folder: fc.option(where, { nil: undefined }), who, sent }).map((r): Step => ({
+    op: "task.update",
+    input:
+      r.folder === undefined
+        ? { task: `{${r.task}}`, clear: ["folder"] }
+        : { task: `{${r.task}}`, set: { folder: r.folder } },
+    ...r.who,
+    ...r.sent,
+  })),
+  filed,
+  fc
+    .record({
+      q: fc.constantFrom("has:folder", "on:this-machine", "on:cwd", "folder:cwd", "folder:{dir:a}"),
+      cwd: where,
+      who,
+    })
+    .map((r): Step => ({ op: "task.search", input: { q: r.q, cwd: r.cwd }, ...r.who })),
+);
+
 /** The vocabulary: one maker per call of the families on a tree space. */
 const VOCABULARY: fc.Arbitrary<Step>[] = [
   add,
@@ -371,12 +458,24 @@ const VOCABULARY: fc.Arbitrary<Step>[] = [
   instruct,
   sections,
   reads,
+  folders,
 ];
+
+/** Steps that come together: a draft filed by its folder and sent twice, then Undo or Redo. */
+const filedThenHistory: fc.Arbitrary<Step[]> = fc
+  .tuple(filed, history)
+  .map(([draft, after]) => [{ ...draft, retry: true }, after]);
 
 /** A sequence starts by making something to act on. */
 const sequence: fc.Arbitrary<Step[]> = fc
-  .tuple(add, fc.array(fc.oneof(...VOCABULARY), { minLength: 3, maxLength: 16 }))
-  .map(([first, rest]) => [first, ...rest]);
+  .tuple(
+    add,
+    fc.array(fc.oneof(...VOCABULARY.map((one) => one.map((step) => [step])), filedThenHistory), {
+      minLength: 3,
+      maxLength: 16,
+    }),
+  )
+  .map(([first, rest]) => [first, ...rest.flat()]);
 
 describe("[S2.replay.generated] random ordinary sequences of the tree's families through both backends", () => {
   test(

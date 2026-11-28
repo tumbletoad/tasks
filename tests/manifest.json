@@ -2378,7 +2378,7 @@
     },
     {
       "id": "S2.replay.generated",
-      "title": "Random ordinary sequences of the tree's families through a new space of each backend, compared by the strict replay: writes sent twice under one request ID and from a stale base, Undo and Redo with and without the script check, notes and log entries edited while removed and put back, groups made by filing, tasks trashed and restored in any order, dates, the star and a wait, pages, a node's text, a task read by its sections; every task named and every node handed out read after each step; a failure prints its seed",
+      "title": "Random ordinary sequences of the tree's families through a new space of each backend, compared by the strict replay: writes sent twice under one request ID and from a stale base, Undo and Redo with and without the script check, notes and log entries edited while removed and put back, groups made by filing, tasks trashed and restored in any order, dates, the star and a wait, pages, a node's text, a task read by its sections, folders of projects and tasks set, cleared and moved on disk, drafts filed by their folders; every answer held to its entry's contract, every task named and every node handed out read after each step; a failure prints its seed",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2392,7 +2392,14 @@
     },
     {
       "id": "S2.replay.feed",
-      "title": "The feed of both backends after each step: the snapshot, with a tree space's nodes read from its tree, and the batch since the step before, for tasks filed in an area and a project, an update, an agent's question, a finish and the Trash",
+      "title": "The feed of both backends after each step: the snapshot, with a tree space's nodes read from its tree, and the batch since the step before, for tasks filed in an area and a project, an update, an agent's question, a finish and the Trash; and a task's row with its project's folder and with its own, as each is set, changed and cleared",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.folders",
+      "title": "Today's service requests through both backends: a project made for a folder in an area, another for the same folder and its retry, drafts filed by their folders, an agent's working folder, the searches that read folders, a project's folder set elsewhere with what stayed inside it and moved on disk with what moved along, a task's folder set and cleared twice, a stale set, Undo and Redo, with each folder's marker on disk, also of the folders inside one moved on disk; a move with more folders inside than an answer names, taken along and left, naming the same twenty by path when it is sent again and the tasks of one folder by their references; and a project at the top of a tree space refused a folder in one sentence, when it is made for one and when it is there already",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
