@@ -16,6 +16,7 @@ import {
   WrapState,
   patterns,
 } from "../schemas.ts";
+import { Routine, RoutineEntry, ROUTINE_ENTRIES } from "./routine-manage.ts";
 import { AS_OF, M14, M3 } from "./fixture.ts";
 
 /**
@@ -320,6 +321,19 @@ export const TaskGetResult = z.union([
     notes: NamedNotes,
     skills: Skills,
     skills_unread: SkillsUnread,
+  }),
+  z.strictObject({
+    view: z.literal("routine").describe("A routine: one task that comes back on a schedule"),
+    as_of: AsOf,
+    say: z.string().describe("What it is, and what you may do with it"),
+    routine: Routine.extend({
+      summary: z.string().describe("One line").optional(),
+      context: z.string().describe("Markdown context").optional(),
+    }).describe("The routine"),
+    history: z
+      .array(RoutineEntry)
+      .max(ROUTINE_ENTRIES)
+      .describe("Its newest entries, newest first"),
   }),
 ]);
 

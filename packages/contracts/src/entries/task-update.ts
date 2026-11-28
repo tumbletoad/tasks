@@ -15,6 +15,7 @@ import {
   Priority,
   ProposalId,
   Replayed,
+  RepeatWords,
   RequestId,
   SOURCE_AGENT_MAX,
   SourceInput,
@@ -86,6 +87,9 @@ export const TaskUpdateInput = z.strictObject({
     .max(10)
     .describe("Detached sources to link again; refused on an active task if another has the key")
     .optional(),
+  repeat: RepeatWords.describe(
+    'A routine you do: "every saturday" makes or changes one; "" pauses it',
+  ).optional(),
   base: Base.optional(),
   reason: safeText(200).describe("Why, shown in history").optional(),
   request_id: RequestId,
@@ -128,6 +132,8 @@ export const taskUpdate = defineEntry({
     // A new area or project name creates it, in the same commit as the move into it.
     "area.create",
     "project.create",
+    "routine.set",
+    "routine.pause",
   ],
   input: TaskUpdateInput,
   agent: {

@@ -59,6 +59,7 @@ Usage: `ttasks add <title> [flags]`
 | `--context` | `tasks[].context` | string | Markdown context |
 | `--log` | `tasks[].log` | string | Log entry; also added to a matched task that lacks it |
 | `--on-existing` | `tasks[].on_existing` | "return" \| "add_sources" \| "create_new" | When a source key matches; default return |
+| `--repeat` | `tasks[].repeat` | string | Makes it a routine you do: "every saturday"; alone in its call |
 
 Only through `--input`: `tasks[].sources`.
 
@@ -288,6 +289,7 @@ Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 | `--clear` | `clear` | "summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus" | Fields to clear (repeatable) |
 | `--remove-source` | `remove_sources` | string | Sources to detach (ID, key or URL): captures stop finding this task (repeatable) |
 | `--put-back-source` | `put_back_sources` | string | Detached sources to link again; refused on an active task if another has the key (repeatable) |
+| `--repeat` | `repeat` | string | A routine you do: "every saturday" makes or changes one; "" pauses it |
 | `--reason` | `reason` | string | Why, shown in history |
 | `--mode` | `mode` | "apply" | Always apply in this build |
 | `title=` | `set.title` | string | Title: read skill writing-tasks first |

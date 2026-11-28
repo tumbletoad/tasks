@@ -14,6 +14,7 @@ import {
   Mode,
   ProposalId,
   Replayed,
+  RepeatWords,
   RequestId,
   SeveralMatch,
   TaskDraft,
@@ -23,8 +24,14 @@ import {
 } from "../schemas.ts";
 import { AS_OF_NEXT, M14, M31, PORTAL, requestId } from "./fixture.ts";
 
+const AddDraft = TaskDraft.extend({
+  repeat: RepeatWords.describe(
+    'Makes it a routine you do: "every saturday"; alone in its call',
+  ).optional(),
+});
+
 export const TaskAddInput = z.strictObject({
-  tasks: z.array(TaskDraft).min(1).max(25).describe("The tasks to create, 1 to 25"),
+  tasks: z.array(AddDraft).min(1).max(25).describe("The tasks to create, 1 to 25"),
   request_id: RequestId,
   mode: Mode,
   cwd: Cwd.optional(),
@@ -53,6 +60,7 @@ export const TaskAddResult = z.strictObject({
         log_added: LogAdded,
         log_left_out: LogLeftOut.optional(),
         held: HeldSources.optional(),
+        repeats: z.string().describe("A routine's schedule in words: Every Saturday").optional(),
       }),
     )
     .describe("One row per draft, in order"),
@@ -70,7 +78,15 @@ export const taskAdd = defineEntry({
   remote: "write",
   audience: "caller",
   // A new area or project name creates it, in the same commit as the drafts that name it.
-  ops: ["task.create", "log.add", "source.add", "task.folder_set", "area.create", "project.create"],
+  ops: [
+    "task.create",
+    "log.add",
+    "source.add",
+    "task.folder_set",
+    "area.create",
+    "project.create",
+    "routine.set",
+  ],
   input: TaskAddInput,
   agent: { max: under("tasks[]", DRAFT_AGENT_MAX) },
   defaults: [["mode", "apply"]],
