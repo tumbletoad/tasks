@@ -121,8 +121,8 @@ export function Phones({ space }: { readonly space: string }) {
   );
 
   return (
-    <section className={settings.section} aria-labelledby="settings-phones">
-      <Heading id="settings-phones" level={2} className={settings.heading}>
+    <section className={settings.section}>
+      <Heading level={2} className={settings.heading}>
         {t("phones.title")}
       </Heading>
       <p className={settings.description}>{t("phones.lead")}</p>

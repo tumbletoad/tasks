@@ -14,7 +14,11 @@ async function open(page: Page, world: World): Promise<void> {
   await showsSpace(page, world.mira.name);
 }
 
-const phones = (page: Page) => page.getByRole("region", { name: "Phones" });
+/** Settings > Phones: the section its heading opens, like every other section of Settings. */
+const phones = (page: Page) =>
+  page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Phones", level: 2, exact: true }) });
 const dialog = (page: Page) => page.getByRole("dialog", { name: "Pair a phone" });
 
 /** Opens Pair a phone, and pairs a phone with the code the dialog shows. */
