@@ -29,6 +29,7 @@ import type { Socket } from "node:net";
 import type { TLSSocket } from "node:tls";
 import { PRODUCT_NAME } from "@ttasks/brand";
 import { AppError, ERROR_CODES } from "@ttasks/contracts";
+import { LINK_PATH, LINK_PROTOCOL, PAIRING_PREFIX, type Pairing } from "@ttasks/contracts/link";
 import { WebSocketServer, type WebSocket } from "ws";
 import { OneTimeSecrets } from "../http/auth.ts";
 import type { HttpLog } from "../http/events.ts";
@@ -42,11 +43,6 @@ import { phoneBatch, phoneSnapshot } from "./rows.ts";
 import { certPin } from "./cert.ts";
 import { keepPort, loadOrCreateHome, type LinkHome } from "./home.ts";
 
-/** The link protocol's number, in the phone's `open` and the hello. */
-export const LINK_PROTOCOL = 1;
-export const LINK_PATH = "/v1/link";
-/** What a pairing code is prefixed with in the QR code. Never a URL: nothing opens it but the app. */
-export const PAIRING_PREFIX = "TTASKS1:";
 /** A pairing code is valid this long. */
 export const PAIRING_MS = 5 * 60_000;
 /** At most this many codes wait at once. */
@@ -298,7 +294,7 @@ export class LinkService {
     const addresses = (this.#options.addresses ?? privateAddresses)().map(
       (a) => `${a}:${String(port)}`,
     );
-    const payload = {
+    const payload: Pairing = {
       v: LINK_PROTOCOL,
       addrs: addresses,
       pin: home.pin,
