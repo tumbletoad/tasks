@@ -63,6 +63,8 @@ export interface CheckedTreeRequest extends Envelope {
   entry?: string;
   /** A plan's: the caller's intent, whose fingerprint its receipt keeps. */
   intent?: Intent;
+  /** Today's request (plan.ts): answered, and kept in its receipt, as today's writer answers. */
+  plan?: true;
   input: Record<string, unknown>;
 }
 

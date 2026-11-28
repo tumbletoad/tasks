@@ -2270,6 +2270,34 @@
       "profiles": ["v1"]
     },
     {
+      "id": "S2.replay.notes",
+      "title": "Today's service requests through both backends: a note for agents, log entries with links, the refused forms, an edit and the same edit again, a removal, again and its put back, the space's text for agents twice; several tasks to the Trash in one call, again, its Undo, one the space lacks and one already there; Undo, a lost reply to it, Redo, a step kept by an agent's work since, a finish undone and redone, and nothing left to redo",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.projects",
+      "title": "Today's service requests through both backends: an area and a project named in drafts, the names a draft that finds its task gives make nothing, new names make their groups once in the drafts' own commit with the warning that says so, slugs resolve, a typo is refused with its suggestion; an update files a task under an area and a project, again, under new ones, and Undo of that filing; a project without an area differs by design, the tree's being a top-level project",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.pages",
+      "title": "Today's service requests through both backends: an agent's page without a brief refused, a page made on its task's project, read by heading and as a node with what is above it, an edit whose words are gone and one that applies, an append, a person's set, its history, a finish's library refused for a page the space lacks and taken for one it shows, the page moved to the space, the Trash, read refused there, the Trash listed, restored, a project's description set and its history, and the space read as a node",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.dates",
+      "title": "Today's service requests through both backends: a due date, a due phrase and one that is not a date; a star and a wait in a draft; an update of the due date, a finished status refused as the wrong tool, the star taken away, a due date and a wait cleared and cleared again, a wait set by an agent",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S2.tree.crash",
       "title": "The tree writer killed for real in a child process before a COMMIT, after one and by a timer, each followed by a resend of the lost request: every acknowledged result stays, a decision killed before its COMMIT leaves no receipt, no request is applied twice, and every row is its history played back with each commit's receipt",
       "owner": "M3",

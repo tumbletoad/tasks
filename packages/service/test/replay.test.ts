@@ -9,7 +9,7 @@
 // why. Fixture text only.
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { AppError, type ErrorBody } from "@ttasks/contracts";
+import { AppError, findEntry, type ErrorBody } from "@ttasks/contracts";
 import { CheckedDriver, createSpace, loadDriver, DEFAULT_DRIVER } from "@ttasks/storage";
 import { both, type Sequence, type Side } from "../../storage/test/both-helpers.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
@@ -52,6 +52,10 @@ interface Step {
   input: Record<string, unknown>;
   /** The task this call's answer names, by a name later steps use. */
   as?: string;
+  /** The entry this call's answer names (`n2`, `l3`), by a name later steps use. */
+  entry?: string;
+  /** The page this call's answer names (its `target`), by a name later steps use. */
+  page?: string;
   user?: true;
   base?: true;
   /** A stale base: the as_of after that earlier step (1 is the first). */
@@ -63,6 +67,8 @@ interface Step {
 interface Session {
   space: string;
   names: Map<string, string>;
+  /** The entries and pages steps named. */
+  entries: Map<string, string>;
   asOf: string | undefined;
   ids: Map<string, string>;
   sent: string[];
@@ -93,10 +99,15 @@ function token(s: Session, kind: string, value: string): string {
 /** Each space's own IDs, references, as_of and versions as tokens; its times left out. */
 function normal(value: unknown, s: Session): unknown {
   if (typeof value === "string") {
-    return value
-      .replace(/\b\d+\.\d+\.[0-9a-z]{8,}\b/gu, (asOf) => token(s, "as_of", asOf))
-      .replace(/\b\d{4}-\d\d-\d\dT[\d:.]+Z\b/gu, "<at>")
-      .replace(/\b(?:[a-z]{1,3}_[0-9a-z]{26}|[A-Z]{1,6}-\d+)\b/gu, (id) => token(s, "", id));
+    return (
+      value
+        .replace(/\b\d+\.\d+\.[0-9a-z]{8,}\b/gu, (asOf) => token(s, "as_of", asOf))
+        .replace(/\b\d{4}-\d\d-\d\dT[\d:.]+Z\b/gu, "<at>")
+        // An entry's number is its space's own: the tree numbers a task's notes and log in one thread.
+        .replace(/\b(?:[a-z]{1,3}_[0-9a-z]{26}|[A-Z]{1,6}-\d+|[nl][1-9]\d{0,5})\b/gu, (id) =>
+          token(s, "", id),
+        )
+    );
   }
   if (Array.isArray(value)) return value.map((v) => normal(v, s));
   if (typeof value === "object" && value !== null) {
@@ -117,7 +128,10 @@ function normal(value: unknown, s: Session): unknown {
 
 const filled = (value: unknown, s: Session): unknown => {
   if (typeof value === "string") {
-    return value.replace(/\{(\w+)\}/gu, (_, name: string) => s.names.get(name) ?? `{${name}}`);
+    return value.replace(
+      /\{(\w+)\}/gu,
+      (_, name: string) => s.names.get(name) ?? s.entries.get(name) ?? `{${name}}`,
+    );
   }
   if (Array.isArray(value)) return value.map((v) => filled(v, s));
   if (typeof value === "object" && value !== null) {
@@ -157,6 +171,7 @@ const backend = (space: () => string): Side<Step, Session> => ({
     Promise.resolve({
       space: space(),
       names: new Map(),
+      entries: new Map(),
       asOf: undefined,
       ids: new Map(),
       sent: [],
@@ -177,7 +192,8 @@ const backend = (space: () => string): Side<Step, Session> => ({
     s.sent.push(id);
     const input = {
       ...(filled(step.input, s) as Record<string, unknown>),
-      ...(step.op === "task.get" ? {} : { request_id: id }),
+      // A read takes no request ID.
+      ...(findEntry(step.op)?.kind === "read" ? {} : { request_id: id }),
       ...(step.base === true && s.asOf !== undefined ? { base: s.asOf } : {}),
       ...(step.baseFrom === undefined ? {} : { base: s.after[step.baseFrom - 1] }),
     };
@@ -197,6 +213,10 @@ const backend = (space: () => string): Side<Step, Session> => ({
       const refs = refsIn(got.ok);
       for (const ref of refs) s.refs.add(ref);
       if (step.as !== undefined && refs[0] !== undefined) s.names.set(step.as, refs[0]);
+      const entry = got.ok["entry"] ?? got.ok["note"];
+      if (step.entry !== undefined && typeof entry === "string") s.entries.set(step.entry, entry);
+      const target = got.ok["target"];
+      if (step.page !== undefined && typeof target === "string") s.entries.set(step.page, target);
       return { status: "ok", said: normal(got.ok, s) };
     }
     return { status: "error", code: got.error.code, said: normal(got.error, s) };
@@ -383,6 +403,353 @@ describe("[S2.replay.tasks] today's service requests through both backends: the 
     "a finish dropped and done, a finished task's edit, a future finish, the Trash's arguments, a refused batch, a reused ID, an edit before a retry",
     async () => {
       await replay(HELD);
+    },
+    LONG,
+  );
+});
+
+/** Notes, log entries and the person's texts, as the entry tests send them. */
+const NOTES: Sequence<Step> = [
+  { op: "task.add", input: { tasks: [{ title: "Renew the passport" }] }, as: "t" },
+  {
+    op: "entry.add",
+    input: { task: "{t}", kind: "note", text: "Bring the old one", for_agents: true },
+    entry: "note",
+    user: true,
+  },
+  {
+    op: "entry.add",
+    input: { task: "{t}", kind: "progress", text: "Called the office" },
+    entry: "log",
+  },
+  {
+    op: "entry.add",
+    input: {
+      task: "{t}",
+      kind: "decision",
+      text: "Go in person",
+      links: [{ title: "Opening hours", url: "https://example.org/hours" }],
+    },
+  },
+  {
+    op: "entry.add",
+    input: { task: "{t}", kind: "note", text: "Dated", at: "2026-11-01" },
+    user: true,
+  },
+  {
+    op: "entry.add",
+    input: { task: "{t}", kind: "progress", text: "For agents", for_agents: true },
+  },
+  {
+    op: "entry.edit",
+    input: { task: "{t}", entry: "{note}", text: "Bring the old one and a photo" },
+    base: true,
+    user: true,
+  },
+  {
+    op: "entry.edit",
+    input: { task: "{t}", entry: "{note}", text: "Bring the old one and a photo" },
+    base: true,
+    user: true,
+  },
+  { op: "note.remove", input: { task: "{t}", remove: "{note}" }, base: true, user: true },
+  { op: "note.remove", input: { task: "{t}", remove: "{note}" }, base: true, user: true },
+  { op: "note.remove", input: { task: "{t}", put_back: "{note}" }, base: true, user: true },
+  { op: "note.remove", input: { task: "{t}" }, base: true, user: true },
+  {
+    op: "node.instruct",
+    input: { target: "space", text: "Ask before you book anything" },
+    base: true,
+    user: true,
+  },
+  {
+    op: "node.instruct",
+    input: { target: "space", text: "Ask before you book anything" },
+    base: true,
+    user: true,
+  },
+];
+
+/** Undo and Redo of the person's steps, and a step kept by an agent's work since. */
+const HISTORY: Sequence<Step> = [
+  { op: "task.add", input: { tasks: [{ title: "Fixture task the person changes" }] }, as: "mine" },
+  {
+    op: "task.update",
+    input: { task: "{mine}", set: { summary: "Fixture summary to undo" } },
+    base: true,
+    user: true,
+  },
+  { op: "history.undo", input: {}, user: true },
+  { op: "history.undo", input: {}, again: 3, user: true },
+  { op: "history.redo", input: {}, user: true },
+  {
+    op: "task.update",
+    input: { task: "{mine}", set: { summary: "An agent's change since" } },
+    base: true,
+  },
+  { op: "history.undo", input: {}, user: true },
+  { op: "task.finish", input: { task: "{mine}", outcome: "Done" }, base: true, user: true },
+  { op: "history.undo", input: {}, user: true },
+  { op: "history.redo", input: {}, user: true },
+  { op: "history.redo", input: {}, user: true },
+];
+
+/** Several tasks to the Trash in one call, as a person selects rows, and its Undo. */
+const TRASH: Sequence<Step> = [
+  { op: "task.add", input: { tasks: [{ title: "Old invoice" }] }, as: "a" },
+  { op: "task.add", input: { tasks: [{ title: "Old receipt" }] }, as: "b" },
+  { op: "task.delete", input: { tasks: ["{a}", "{b}"] }, base: true, user: true },
+  { op: "task.delete", input: { tasks: ["{a}", "{b}"] }, base: true, user: true },
+  { op: "history.undo", input: {}, user: true },
+  { op: "task.delete", input: { tasks: ["{a}", "X-999"] }, base: true, user: true },
+  { op: "task.delete", input: { tasks: ["{b}"] }, base: true, user: true },
+  { op: "task.delete", input: { tasks: ["{a}", "{b}"] }, base: true, user: true },
+];
+
+describe("[S2.replay.notes] today's service requests through both backends: notes, texts, Undo", () => {
+  test(
+    "a note for agents, log entries with links, the refused forms, an edit, a removal and its put back, the space's text",
+    async () => {
+      await replay(NOTES);
+    },
+    LONG,
+  );
+
+  test(
+    "several tasks to the Trash in one call, again, its Undo, one the space lacks, and one already there",
+    async () => {
+      await replay(TRASH);
+    },
+    LONG,
+  );
+
+  test(
+    "Undo, a lost reply to it, Redo, and a step kept by an agent's work since",
+    async () => {
+      await replay(HISTORY);
+    },
+    LONG,
+  );
+});
+
+/** Areas and projects named in drafts, as `answers.test.ts` and the group rules send them. */
+const GROUPS: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Keyed work", sources: [ticket("fixture:groups-1")] }] },
+  },
+  {
+    op: "task.add",
+    input: {
+      tasks: [
+        {
+          title: "Keyed work again",
+          area: "Unused area",
+          project: "Unused project",
+          sources: [ticket("fixture:groups-1")],
+        },
+      ],
+    },
+  },
+  {
+    op: "task.add",
+    input: {
+      tasks: [
+        { title: "New in the shared project", area: "Shared area", project: "Shared project" },
+      ],
+    },
+    as: "shared",
+  },
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Another in the area", area: "Shared area" }] },
+    as: "inarea",
+  },
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "By its slugs", area: "shared-area", project: "shared-project" }] },
+    as: "byslug",
+  },
+  { op: "task.add", input: { tasks: [{ title: "A typo", area: "Shared aera" }] } },
+  {
+    op: "task.add",
+    input: {
+      tasks: [
+        { title: "First of two", area: "Farm", project: "Barn" },
+        { title: "Second of two", area: "Farm", project: "Barn" },
+      ],
+    },
+    as: "barn",
+    user: true,
+  },
+  { op: "task.add", input: { tasks: [{ title: "To be filed" }] }, as: "filed" },
+  {
+    op: "task.update",
+    input: { task: "{filed}", set: { area: "Shared area", project: "Shared project" } },
+    base: true,
+    user: true,
+  },
+  {
+    op: "task.update",
+    input: { task: "{filed}", set: { area: "Shared area", project: "Shared project" } },
+    base: true,
+    user: true,
+  },
+  {
+    op: "task.update",
+    input: { task: "{filed}", set: { area: "Workshop", project: "Bench" } },
+    base: true,
+    user: true,
+  },
+  { op: "history.undo", input: {}, user: true },
+  {
+    step: {
+      op: "task.add",
+      input: { tasks: [{ title: "A project alone", project: "Lone" }] },
+      as: "lone",
+    },
+    // The one task this step adds, as its answer and its read name it.
+    field: [
+      "answer.said.tasks.0.project",
+      "seen.<42>.task.area",
+      "seen.<42>.task.project",
+      "seen.<42>.trail.0.kind",
+    ],
+    differs:
+      "a project without an area: today's is a project, the tree's a top-level project, read as an area",
+  },
+];
+
+describe("[S2.replay.projects] today's service requests through both backends: areas and projects", () => {
+  test(
+    "names a found task's draft gives make nothing; new names make their groups once; slugs, a typo",
+    async () => {
+      await replay(GROUPS);
+    },
+    LONG,
+  );
+});
+
+const BODY = "## Steps\n\nBring a photo.\n\n## Fees\n\nPay at the desk.";
+
+/** Pages through the request path, as `library.test.ts` sends them. */
+const PAGES: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: { tasks: [{ title: "Renew the passport", area: "Home", project: "Papers" }] },
+    as: "t",
+    user: true,
+  },
+  { op: "page.write", input: { action: "create", task: "{t}", title: "Passport", why: "x" } },
+  {
+    op: "page.write",
+    input: {
+      action: "create",
+      task: "{t}",
+      title: "Passport",
+      brief: "What to bring",
+      body: BODY,
+      why: "what the renewal needs",
+    },
+    page: "page",
+  },
+  { op: "page.read", input: { target: "{page}", section: "Fees" } },
+  { op: "page.read", input: { target: "Home/Papers" } },
+  {
+    op: "page.write",
+    input: { action: "edit", target: "{page}", old: "Bring a pen.", new: "Bring two.", why: "fix" },
+  },
+  {
+    op: "page.write",
+    input: {
+      action: "edit",
+      target: "{page}",
+      old: "Bring a photo.",
+      new: "Bring two photos.",
+      why: "the office asks for two",
+    },
+  },
+  {
+    op: "page.write",
+    input: { action: "append", target: "{page}", text: "Take a pen.", why: "pen" },
+  },
+  {
+    op: "page.write",
+    input: { action: "set", target: "{page}", title: "Passport renewal" },
+    base: true,
+    user: true,
+  },
+  { op: "page.history", input: { target: "{page}" }, user: true },
+  {
+    op: "task.finish",
+    input: { task: "{t}", outcome: "Renewed.", library: ["X-999"] },
+    base: true,
+  },
+  {
+    op: "task.finish",
+    input: { task: "{t}", outcome: "Renewed.", library: ["{page}"] },
+    base: true,
+  },
+  { op: "page.write", input: { action: "move", target: "{page}", to: "space", why: "for all" } },
+  { op: "page.write", input: { action: "trash", target: "{page}", why: "the trip is off" } },
+  { op: "page.read", input: { target: "{page}" } },
+  { op: "page.trashed", input: {}, user: true },
+  { op: "page.write", input: { action: "restore", target: "{page}", why: "back" } },
+  {
+    op: "page.write",
+    input: { action: "set", target: "Home/Papers", description: "Papers to keep at home." },
+    base: true,
+    user: true,
+  },
+  { op: "page.history", input: { target: "Home/Papers" }, user: true },
+  { op: "page.read", input: { target: "space" } },
+];
+
+describe("[S2.replay.pages] today's service requests through both backends: pages", () => {
+  test(
+    "a page made on its task's project, read by heading and by node, edited, appended, set, its history, a finish's library, moved, the Trash and back",
+    async () => {
+      await replay(PAGES);
+    },
+    LONG,
+  );
+});
+
+/** Dates, a star and a wait in drafts and updates, and a finished status refused. */
+const DATES: Sequence<Step> = [
+  {
+    op: "task.add",
+    input: {
+      tasks: [{ title: "Pay the invoice", due: "2026-12-01", focus: true, waiting_on: "The bank" }],
+    },
+    as: "pay",
+    user: true,
+  },
+  { op: "task.add", input: { tasks: [{ title: "Call the office", due: "tomorrow" }] }, as: "call" },
+  { op: "task.add", input: { tasks: [{ title: "Undated", due: "someday soon" }] } },
+  { op: "task.update", input: { task: "{pay}", set: { due: "+3d" } }, base: true, user: true },
+  { op: "task.update", input: { task: "{pay}", set: { status: "done" } }, base: true, user: true },
+  { op: "task.update", input: { task: "{pay}", set: { focus: false } }, base: true, user: true },
+  {
+    op: "task.update",
+    input: { task: "{pay}", clear: ["due", "waiting_on"] },
+    base: true,
+    user: true,
+  },
+  {
+    op: "task.update",
+    input: { task: "{pay}", clear: ["due", "waiting_on"] },
+    base: true,
+    user: true,
+  },
+  { op: "task.update", input: { task: "{call}", set: { waiting_on: "A reply" } }, base: true },
+];
+
+describe("[S2.replay.dates] today's service requests through both backends: dates", () => {
+  test(
+    "a due date, a phrase and one refused; a star and a wait; a finished status refused; cleared twice",
+    async () => {
+      await replay(DATES);
     },
     LONG,
   );

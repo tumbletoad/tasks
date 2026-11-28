@@ -3,6 +3,7 @@
 // brief is the summary, its description the context. A task under a top-level project is in that
 // project as its area; under a project inside one, in both. Deeper levels show the nearest two.
 import type { Row, WorkerConnection } from "@ttasks/storage";
+import { REMOVED_NOTES } from "@ttasks/contracts";
 import { pageRow } from "./library.ts";
 import { treeTables } from "./tree.ts";
 import {
@@ -84,6 +85,20 @@ const TREE: Record<string, Statement> = {
       "AND ($nupto IS NULL OR e.ordinal <= $nupto) ORDER BY e.ordinal DESC LIMIT $nlimit",
     mode: "all",
   },
+  /**
+   * The notes taken back from the task, newest removal first, with who removed them: the person's
+   * alone to see and put back.
+   */
+  removed: {
+    sql:
+      `SELECT ${NOTE_COLUMNS}, e.deleted_at, CASE WHEN c.origin = 'import' THEN 'import' ` +
+      "WHEN rx.kind = 'human' THEN 'user' ELSE rx.label END AS removed_by " +
+      "FROM notes e JOIN actors x ON x.id = e.author_id " +
+      "JOIN commits c ON c.seq = json_extract(e.fp, '$.deleted') " +
+      `JOIN actors rx ON rx.id = c.author_id WHERE e.owner_id = ${MATCH} AND e.kind = 'note' ` +
+      "AND e.deleted_at IS NOT NULL ORDER BY e.deleted_at DESC, e.ordinal DESC LIMIT $removed",
+    mode: "all",
+  },
   counts: {
     sql:
       `SELECT count(*) FILTER (WHERE e.kind = 'note' AND ${INSTRUCTION}) AS i, ` +
@@ -134,6 +149,8 @@ export async function readTreeTask(
     readonly notes: EntryRange;
     readonly log: EntryRange;
     readonly trash?: boolean;
+    /** The notes taken back too: for the person, never for an agent. */
+    readonly removed?: boolean;
   },
 ): Promise<TaskRead> {
   const reader = treeTables(served);
@@ -148,8 +165,9 @@ export async function readTreeTask(
     nlimit: options.notes.limit,
     lupto: options.log.upto,
     llimit: options.log.limit,
+    removed: options.removed === true ? REMOVED_NOTES : 0,
   };
-  const [space, row, instructions, notes, counts, log, learnings, sources, folders] =
+  const [space, row, instructions, notes, counts, log, learnings, sources, folders, removed] =
     await snapshot(
       reader,
       [
@@ -162,6 +180,7 @@ export async function readTreeTask(
         TREE["learnings"],
         TREE["sources"],
         TREE["folders"],
+        TREE["removed"],
       ].map((s) => s as Statement),
       params,
     );
@@ -181,7 +200,7 @@ export async function readTreeTask(
     log: log as Row[],
     sources: sourceRows,
     removedSources: [],
-    removedNotes: [],
+    removedNotes: removed as Row[],
     folder: taskFolderOf(folders as Row[], [], options.machine),
     history: [],
     learnings: (learnings as Row[]).flatMap((learning, k) =>

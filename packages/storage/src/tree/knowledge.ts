@@ -170,12 +170,14 @@ const pageTrashed =
     return pageAnswer(tx, page);
   };
 
-/** Whole texts of a node, held to a base once its texts were written. */
-function setTexts(tx: Tx, node: Row, given: ReturnType<typeof nodeTexts>): void {
+/** Whole texts of a node, held to a base once its texts were written; whether any changed. */
+function setTexts(tx: Tx, node: Row, given: ReturnType<typeof nodeTexts>): boolean {
   const id = String(node["id"]);
   const { held, set } = textWrite(given, (field) => String(node[field]), textsWritten(node));
-  if (tx.held("nodes", id, id, held)) return;
-  if (Object.keys(set).length > 0) tx.set("nodes", id, id, set, false);
+  if (tx.held("nodes", id, id, held)) return false;
+  if (Object.keys(set).length === 0) return false;
+  tx.set("nodes", id, id, set, false);
+  return true;
 }
 
 /** A node's brief and description: the words a person or an agent reads first about it. */
@@ -194,8 +196,12 @@ const nodeInstruct: Run = (tx, input) => {
   if (node["kind"] === "task") {
     problem("VALIDATION_FAILED", "A task's instructions are its notes for agents", "node");
   }
-  setTexts(tx, node, nodeTexts({ kind: "node.instruct", text: str(input, "text") ?? "" }));
-  return { node: { id: node["id"] } };
+  const changed = setTexts(
+    tx,
+    node,
+    nodeTexts({ kind: "node.instruct", text: str(input, "text") ?? "" }),
+  );
+  return { node: { id: node["id"] }, changed };
 };
 
 // The checks: today's readers (write/request.ts), with the page and the node named by key.

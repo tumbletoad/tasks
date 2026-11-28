@@ -24,11 +24,21 @@ export const notOnTreeYet = (what: string): AppError =>
 /** The entries a tree space serves, with the fields of each whose family has not moved yet. */
 const ON_TREE: Readonly<Record<string, readonly string[]>> = {
   "task.add": [],
-  "task.update": ["folder", "clear", "add_sources", "remove_sources", "put_back_sources"],
-  "task.finish": ["library"],
+  "task.update": ["folder", "add_sources", "remove_sources", "put_back_sources"],
+  "task.finish": [],
   "task.reopen": [],
   "task.delete": [],
   "task.get": ["sections", "launch", "notes", "before"],
+  "entry.add": [],
+  "entry.edit": [],
+  "note.remove": [],
+  "node.instruct": [],
+  "history.undo": [],
+  "history.redo": [],
+  "page.write": [],
+  "page.read": [],
+  "page.history": [],
+  "page.trashed": [],
   "receipt.get": [],
 };
 
@@ -36,7 +46,9 @@ const ON_TREE: Readonly<Record<string, readonly string[]>> = {
 export function checkOnTree(entry: AnyEntry, input: Record<string, unknown>): void {
   const later = ON_TREE[entry.name];
   if (later === undefined) throw notOnTreeYet(entry.name);
-  const field = later.find((key) => input[key] !== undefined);
+  const field =
+    later.find((key) => input[key] !== undefined) ??
+    (Array.isArray(input["clear"]) && input["clear"].includes("folder") ? "folder" : undefined);
   if (field !== undefined) throw notOnTreeYet(`${entry.name} with ${field}`);
 }
 
@@ -64,8 +76,31 @@ const TASKS =
   "LEFT JOIN main.nodes g ON g.id = p.parent_id AND g.kind = 'project' WHERE n.kind = 'task')";
 
 const GROUP_COLUMNS =
-  "n.id, n.slug, n.title, n.brief, n.position, n.deleted_at, n.version, " +
-  "CASE WHEN n.archived_at IS NULL THEN 'active' ELSE 'archived' END AS lifecycle";
+  "n.id, n.slug, n.title, n.brief, n.color, n.position, n.deleted_at, n.created_seq, n.version, " +
+  "n.fv, n.fp, CASE WHEN n.archived_at IS NULL THEN 'active' ELSE 'archived' END AS lifecycle";
+
+/** What a node is by today's kinds: the space, an area at the top, or a project inside one. */
+const KIND_OF = (n: string, above: string) =>
+  `CASE ${n}.kind WHEN 'project' THEN CASE ${above}.kind WHEN 'space' THEN 'area' ` +
+  `ELSE 'project' END ELSE ${n}.kind END`;
+
+const PAGES =
+  `pages AS (SELECT p.id, p.ref, ${KIND_OF("o", "a")} AS owner_kind, p.owner_id, p.title, ` +
+  "p.brief, p.body, p.created_at, p.created_by, p.deleted_at, p.deleted_by, p.created_seq, " +
+  "p.version, p.fv, p.fp FROM main.pages p JOIN main.nodes o ON o.id = p.owner_id " +
+  "LEFT JOIN main.nodes a ON a.id = o.parent_id)";
+
+/**
+ * A node's texts, once they were written: the space's brief is here, an area's and a project's in
+ * their own rows.
+ */
+const NODE_TEXTS =
+  `node_texts AS (SELECT n.id AS owner_id, ${KIND_OF("n", "a")} AS owner_kind, ` +
+  "CASE n.kind WHEN 'space' THEN n.brief ELSE '' END AS brief, n.description, n.for_agents, " +
+  "n.created_seq, n.version, n.fv, n.fp FROM main.nodes n LEFT JOIN main.nodes a " +
+  "ON a.id = n.parent_id WHERE (n.kind = 'space' AND json_type(n.fv, '$.brief') IS NOT NULL) " +
+  "OR (n.kind IN ('space', 'project') AND (json_type(n.fv, '$.description') IS NOT NULL " +
+  "OR json_type(n.fv, '$.for_agents') IS NOT NULL)))";
 
 const AREAS =
   `areas AS (SELECT ${GROUP_COLUMNS} FROM main.nodes n JOIN main.nodes s ON s.id = n.parent_id ` +
@@ -75,12 +110,20 @@ const PROJECTS =
   `projects AS (SELECT ${GROUP_COLUMNS}, n.parent_id AS area_id FROM main.nodes n ` +
   "JOIN main.nodes a ON a.id = n.parent_id WHERE n.kind = 'project' AND a.kind = 'project')";
 
+/** A node's texts change on its node row; today's name them as the texts' own. */
+const CHANGES =
+  "changes AS (SELECT c.seq, c.n, 0 AS op, CASE WHEN c.entity = 'nodes' AND c.action = 'set' " +
+  "AND c.field IN ('description', 'for_agents') THEN 'node_texts' ELSE c.entity END AS entity, " +
+  "c.entity_id, CASE WHEN substr(c.node_id, 1, 2) = 't_' THEN c.node_id END AS task_id, " +
+  "c.node_id, c.action, c.field, c.before, c.after, c.before_ver, c.before_prov, c.after_prov " +
+  "FROM main.changes c)";
+
 /** A tree space keeps no aliases: none is found. */
 const ALIASES =
   "aliases AS (SELECT NULL AS namespace, NULL AS alias, NULL AS entity_kind, NULL AS entity_id " +
   "WHERE 0)";
 
-const VIEWS = [TASKS, AREAS, PROJECTS, ALIASES].join(", ");
+const VIEWS = [TASKS, AREAS, PROJECTS, PAGES, NODE_TEXTS, CHANGES, ALIASES].join(", ");
 
 /** A statement of today's reads as it runs on a tree space. */
 export function treeSql(sql: string): string {
