@@ -11,7 +11,8 @@ import { afterEach, describe, expect, test } from "vitest";
 import { SPACE_HEADER } from "../src/http/app.ts";
 import { PHONE_CALLS, phoneError } from "../src/link/allowed.ts";
 import { opCall } from "../src/ops/index.ts";
-import { LINK_PATH, PAIRING_MS } from "../src/link/service.ts";
+import { LINK_PATH } from "@ttasks/contracts/link";
+import { PAIRING_MS } from "../src/link/service.ts";
 import { post } from "./http-client.ts";
 import { httpWorld, signIn, type HttpWorld } from "./http-world.ts";
 import {
