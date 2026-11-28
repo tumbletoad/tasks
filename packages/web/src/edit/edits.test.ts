@@ -2354,6 +2354,18 @@ describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives 
     });
   });
 
+  test("a change without Undo that turns out saved takes its not-saved toast away too", async () => {
+    const w = new World([task(1)]);
+    const first = hanging(w, "task.update");
+    w.edits.edit(task(1), priorityChange(1));
+    await unanswered();
+    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.tryAgain" });
+    first.resolve?.(updated(w, 11));
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
+    expect(w.lastToast()).toBeUndefined();
+  });
+
   test("an undo that said it failed for want of an answer, and then turns out done, says so with Redo", async () => {
     const w = new World([task(1)]);
     const first = hanging(w, "history.undo");
