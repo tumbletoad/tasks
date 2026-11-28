@@ -11,6 +11,7 @@
     "./day-cases": "./src/day-cases.ts",
     "./monitor": "./src/monitor.ts",
     "./runs": "./src/runs.ts",
+    "./pages": "./src/pages.ts",
     "./newer-work": "./src/newer-work.ts",
     "./generated/client.ts": "./generated/client.ts",
     "./generated/http-routes.ts": "./generated/http-routes.ts",
