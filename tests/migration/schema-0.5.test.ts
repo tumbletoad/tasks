@@ -41,6 +41,7 @@ import { digestSchema, digestSpace } from "../../packages/testkit/src/digest.ts"
 import { RELEASED_SCHEMAS } from "../../packages/testkit/src/known.ts";
 import { checkedDriver, MIRA, seedMira } from "../../packages/testkit/src/mira.ts";
 import { faultingDriver, StatementFault } from "./faults.ts";
+import { backupsBeside } from "../../packages/storage/test/backup-helpers.ts";
 
 // Tests that open spaces, start workers and take backups get generous time limits: a slow runner
 // only waits.
@@ -199,7 +200,10 @@ describe("[A1.5.migration.from-0.4] the 0.4 fixture migrates to 0.5 behind its v
     const folder = copyOf();
     const worker = await workerWithSteps("0.5");
     try {
-      const writer = await worker.openSpaceWriter(folder, { machine: fixture.machine });
+      const writer = await worker.openSpaceWriter(folder, {
+        backupDir: backupsBeside(folder),
+        machine: fixture.machine,
+      });
       expect(writer.revision).toEqual({ major: 0, minor: 5 });
       expect(writer.migration).toMatchObject({
         from: { major: 0, minor: 4 },
@@ -292,7 +296,7 @@ describe("[A1.5.migration.from-0.4] the 0.4 fixture migrates to 0.5 behind its v
 
     // The way back is a restore of the pre-migration backup: the fixture's counts, last_seq and
     // rows, without the folders table.
-    const barrier = listBackups(join(folder, "backups")).backups.find(
+    const barrier = listBackups(backupsBeside(folder)).backups.find(
       (b) => b.sidecar?.kind === "pre-migrate",
     );
     if (barrier === undefined) throw new Error("no barrier backup");
@@ -317,7 +321,7 @@ describe("[A1.5.migration.statement-faults-0005] a fault at every statement boun
       migrateSpaceWith(
         faulting,
         folder,
-        {},
+        { backupDir: backupsBeside(folder) },
         {
           steps: STEPS_0_5,
           at: (point) => {
@@ -394,9 +398,16 @@ describe("[A1.5.migration.older-build-0005] a 0.4 build refuses to open a 0.5 sp
   test("the 0.4 chain's writer is refused and changes nothing, its reader reads, and it restores no 0.5 backup", async () => {
     const checked = await checkedDriver();
     const folder = copyOf();
-    expect((await migrateSpaceWith(checked, folder, {}, { steps: STEPS_0_5 })).state).toBe(
-      "migrated",
-    );
+    expect(
+      (
+        await migrateSpaceWith(
+          checked,
+          folder,
+          { backupDir: backupsBeside(folder) },
+          { steps: STEPS_0_5 },
+        )
+      ).state,
+    ).toBe("migrated");
     const before = digestSpace(checked, folder);
 
     let refused: unknown;
@@ -418,7 +429,9 @@ describe("[A1.5.migration.older-build-0005] a 0.4 build refuses to open a 0.5 sp
 
     const old = await workerWithSteps("0.4");
     try {
-      const error = await rejection(old.openSpaceWriter(folder, { machine: fixture.machine }));
+      const error = await rejection(
+        old.openSpaceWriter(folder, { backupDir: backupsBeside(folder), machine: fixture.machine }),
+      );
       expect(error.code).toBe("SPACE_TOO_NEW");
       const { conn, info } = await old.openSpaceReader(folder);
       expect(info.readOnlyReasons).toEqual(["newer_revision"]);
@@ -428,7 +441,10 @@ describe("[A1.5.migration.older-build-0005] a 0.4 build refuses to open a 0.5 sp
     }
     expect(digestSpace(checked, folder)).toBe(before);
 
-    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const backup = await backupSpace(checked, folder, {
+      backupDir: backupsBeside(folder),
+      kind: "manual",
+    });
     let restoreError: unknown;
     try {
       await restoreBackupWith(checked, backup.file, join(temp(), "mira"), {}, { steps: STEPS_0_4 });

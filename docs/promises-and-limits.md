@@ -99,13 +99,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A backup stays consistent while people and agents change tasks.
 - A space's backups go to its own folder beside the TTasks home (`~/.ttasks-backups`), so removing
   the home folder leaves them. `ttasks space list` and `ttasks doctor` say where they are.
-- Backups made before they went there, in the space's `backups` folder, are listed and restore
-  with the others, each once, wherever it stands, and are never cleaned up. They move there over
-  two starts of TTasks: a copy first, and the original goes only at a later start, once the copy
-  reads back whole. Nothing there is overwritten. One that is not whole, whose copy does not read
-  back, or whose name another file has there, stays, and `ttasks space list` and `ttasks doctor`
-  say so. Where the backups folder set for a space is its own `backups` folder, nothing moves, and
-  clean-up treats the daily backups there as ordinary ones, old ones too.
+- Backups an older build made in the space's own `backups` folder are not listed, restored or
+  cleaned up: TTasks leaves those files as they are.
 - A backup that is called verified has passed a trial restore. So has every backup you make with
   `ttasks space backup`.
 - While a space is open for changes, TTasks backs it up once a day. It keeps the backups of seven
@@ -126,8 +121,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   clock was set back. Clean-up never removes it, nor the newest backup that restores.
 - A space's backups folder that is not there, such as one you set on a drive that is not
   connected, or one TTasks cannot make, is said as not there, with its path. No backup goes to
-  another folder in its place, and nothing is cleaned up. An upgrade does not wait for it: its
-  backup goes to the space's own backups folder, and `ttasks space list` says where.
+  another folder in its place, and nothing is cleaned up. An upgrade waits for it: the space stays
+  readable at its old version, says why, and upgrades when it next opens with the folder there.
+- Keep a backups folder you set outside the space's folder: one inside it goes aside with the
+  space on a restore in place, and the space's backups are then not there.
 - Making a backup or an export never overwrites an existing file.
 - A restore checks the backup first. A backup that is broken or too new leaves nothing half
   restored.

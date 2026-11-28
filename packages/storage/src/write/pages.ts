@@ -151,9 +151,10 @@ export function textWrite(
 }
 
 /**
- * Whether a page's move to the Trash or out of it, or to another holder, finds it there already:
- * nothing to write. None of the three is held to a base: each says where the page goes, whatever
- * else changed.
+ * Whether a removal, or a putting back, finds what it names there already: a page in the Trash or
+ * out of it, a source's link removed or back. Nothing is written, and the answer is unchanged. A
+ * page's move to the Trash, out of it or to another holder is held to no base: each says where the
+ * page goes, whatever else changed.
  */
-export const pageInTrashAlready = (deleted: boolean, restoring: boolean): boolean =>
-  deleted !== restoring;
+export const alreadyThere = (removed: boolean, puttingBack: boolean): boolean =>
+  removed !== puttingBack;

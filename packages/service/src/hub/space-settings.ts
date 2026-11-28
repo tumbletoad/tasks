@@ -117,7 +117,7 @@ export interface LastMigration {
   readonly to: string;
   readonly at: string;
   readonly backup?: string;
-  /** The folder that backup went to. A record written before folders were recorded has none. */
+  /** The folder that backup went to. */
   readonly backup_folder?: string;
 }
 
@@ -125,8 +125,6 @@ export interface LastMigration {
  * Where a space's backups are written on this machine: `backup.dir` when this machine set one
  * (`set`: a person's choice, maybe on a drive that is away, so never made here and never cleaned),
  * else `<backups>/<space ID>` beside the TTasks home (paths.ts), which this service alone writes.
- * The space's own `backups/` (storage's backupsFolder), where backups went before, is read with
- * it, and its backups move from there (storage's moveOldBackups).
  */
 export function backupsFolderOf(
   settings: SpaceSettings,
@@ -141,8 +139,7 @@ export function backupsFolderOf(
 /**
  * The folder a backup is about to be written to. The default is made here with each new folder's
  * entry synced in its parent, so a power loss cannot keep an upgrade and lose the folder of the
- * backup from before it. When that fails: undefined, and the backups folder is not there. Only an
- * upgrade then goes on, behind a backup in the space's own `backups/` (storage's migrate runner).
+ * backup from before it. When that fails: undefined, and the backups folder is not there.
  */
 export function readyBackupsFolder(
   folder: { readonly dir: string; readonly set: boolean },

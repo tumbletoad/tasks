@@ -163,7 +163,7 @@ const str = (value: unknown): string => (typeof value === "string" ? value : "")
 const opt = (value: unknown): string | null => (typeof value === "string" ? value : null);
 
 /** The non-empty texts, one per line. */
-const lines = (values: readonly unknown[]): string =>
+export const lines = (values: readonly unknown[]): string =>
   values.filter((v): v is string => typeof v === "string" && v !== "").join("\n");
 
 const decoded = (text: string): string => {
@@ -184,11 +184,20 @@ const LINK_PARTS = /^(?:[a-z][a-z\d+.-]*:)?(?:\/\/(?:[^/?#]*@)?)?(?<address>[^?#
  * task; a query and a fragment are mostly tracking and session values; a user and password are
  * not the page's words, and a password must never find a task.
  */
-function linkWords(url: unknown): string | null {
+export function linkWords(url: unknown): string | null {
   if (typeof url !== "string" || url === "") return null;
   const address = LINK_PARTS.exec(url)?.groups?.["address"] ?? "";
   return decoded(address.replace(/^www\./iu, ""));
 }
+
+/** A source's words in the document of a task it is linked to: its title, who, ref, key and link. */
+export const sourceWords = (s: {
+  title: unknown;
+  who: unknown;
+  ref: unknown;
+  key: unknown;
+  url: unknown;
+}): unknown[] => [s.title, s.who, s.ref, s.key, linkWords(s.url)];
 
 function taskDocument(
   row: Row,
@@ -206,13 +215,15 @@ function taskDocument(
     title: str(row["title"]),
     body: lines([row["summary"], row["context"], row["outcome"]]),
     extra: lines([
-      ...sources.flatMap((s) => [
-        s["title"],
-        s["who"],
-        s["ref"],
-        s["source_key"],
-        linkWords(s["url"]),
-      ]),
+      ...sources.flatMap((s) =>
+        sourceWords({
+          title: s["title"],
+          who: s["who"],
+          ref: s["ref"],
+          key: s["source_key"],
+          url: s["url"],
+        }),
+      ),
       ...labels.map((l) => l["title"]),
       row["project_title"],
       row["area_title"],

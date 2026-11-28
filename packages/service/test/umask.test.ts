@@ -144,6 +144,9 @@ function checkModes(report: Report, umask: number): void {
     "sp/work/space.db",
     "sp/work/writer.lock",
     "sp/work/writer.json",
+    // The spaces' backups, beside the home: the space's own folder there.
+    "h-backups",
+    `h-backups/${report.space}`,
     // A launch through the shim (M2.08): its work folder, launch folder and files.
     "h/state/workdirs",
     `h/state/workdirs/space-${report.space}`,
@@ -165,9 +168,12 @@ function checkModes(report: Report, umask: number): void {
   expect(names.filter((n) => n.startsWith("h/state/crash/") && n.endsWith(".json"))).toHaveLength(
     1,
   );
-  expect(names.filter((n) => n.startsWith("sp/work/backups/") && n.endsWith(".db.gz")).length).toBe(
+  const backups = `h-backups/${report.space}/`;
+  expect(names.filter((n) => n.startsWith(backups) && n.endsWith(".db.gz")).length).toBe(
     report.backups,
   );
+  // Nothing is written into the space's own backups folder.
+  expect(names.filter((n) => n.startsWith("sp/work/backups"))).toEqual([]);
   expect(report.entries.filter((e) => e.type === "socket")).toHaveLength(1);
   expect(report.runtime).not.toBeNull();
   // The first start chose a port and wrote it to the machine.toml it made; later starts serve it.

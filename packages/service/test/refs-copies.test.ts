@@ -6,7 +6,12 @@ import { join } from "node:path";
 import { backupSpace, createSpace, restoreBackup } from "@ttasks/storage";
 import { checkedDriver } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
-import { rawWriter, readFacts, writeCommits } from "../../storage/test/backup-helpers.ts";
+import {
+  backupsBeside,
+  rawWriter,
+  readFacts,
+  writeCommits,
+} from "../../storage/test/backup-helpers.ts";
 import { TEST_MACHINE } from "../../storage/test/space-helpers.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { registerSpaces, removeRuntimeDir, serviceEnv, stateOf, tempRoot } from "./harness.ts";
@@ -46,7 +51,10 @@ describe("[A1.5.refs.copies] a claimed copy and a restore in place go on from ev
       machineId: TEST_MACHINE,
     });
     await writeCommits(original.folder, 2, "a");
-    const backup = await backupSpace(checked, original.folder, { kind: "manual" });
+    const backup = await backupSpace(checked, original.folder, {
+      backupDir: backupsBeside(original.folder),
+      kind: "manual",
+    });
     await writeCommits(original.folder, 3, "b");
     const copy = join(spaces, "copy");
     await restoreBackup(checked, backup.file, copy);
@@ -101,7 +109,10 @@ describe("[A1.5.refs.copies] a claimed copy and a restore in place go on from ev
       machineId: TEST_MACHINE,
     });
     await writeCommits(original.folder, 2, "a");
-    const backup = await backupSpace(checked, original.folder, { kind: "manual" });
+    const backup = await backupSpace(checked, original.folder, {
+      backupDir: backupsBeside(original.folder),
+      kind: "manual",
+    });
     await writeCommits(original.folder, 3, "b");
     const originalNext = (await readFacts(original.folder)).space.nextRef;
     // The original's space row stops passing its checks: it no longer opens as a space.

@@ -18,7 +18,7 @@ export type AdminJob =
       /** The label of the space's human, the `user` of A3 3.7.4. */
       readonly ownerLabel: string;
     }
-  | { readonly kind: "backup"; readonly folder: string; readonly backupDir?: string }
+  | { readonly kind: "backup"; readonly folder: string; readonly backupDir: string }
   | {
       readonly kind: "export";
       readonly folder: string;
@@ -37,8 +37,7 @@ export type AdminJob =
   | {
       /** The newest backup of the space that verifies, into a new folder (A1 3.2). */
       readonly kind: "restore-latest";
-      /** The space's backups folder, then a folder its backups were in before. */
-      readonly backupDirs: readonly [string, ...string[]];
+      readonly backupDir: string;
       readonly spaceId: Id<"sp">;
       readonly target: string;
       /** The incarnation of the copy this machine serves, when known: its history is taken first. */
