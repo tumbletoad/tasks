@@ -1,12 +1,13 @@
 // Undo and redo (A1 3.10.1). A person's commit is a step on their undo stack when every row it
 // changed is of the few kinds Undo is for: a check-off or a reopen, the Trash and out of it, a
-// removed note, words, out of the Inbox, a first filing or one into a group just made, a dismissal
-// of questions, a new group or an unarchive (stepSql).
+// removed note, words, out of the Inbox or into it, a first filing or one into a group just made,
+// a dismissal of questions, a new group, or a group archived or unarchived (stepSql).
 // Undo takes a step back with the ordinary operations that write what its change rows held
 // before (oppositeOf), and Redo does the same to the undo's own commit, so both change only what
-// the commit they answer changed. Neither writes over a change made since: only where every field
-// it writes still holds what the step wrote (superseded), and never takes a task or a note out of
-// sight that someone else worked on since (hiddenWork).
+// the commit they answer changed. Neither writes over a change made since (newerOn): only where
+// every field it writes still stands as the step left it, in the state a person sees (stateOf), a
+// finish's wrap-up included, and never takes a task or a note out of sight that someone else
+// worked on since.
 import { newerBy } from "@ttasks/contracts/newer-work";
 import type { Connection, Row } from "../driver.ts";
 import { misuse } from "../errors.ts";
@@ -36,7 +37,7 @@ const KEPT_ROW =
   "(c.entity = 'tasks' AND c.field IN ('lifecycle', 'deleted', 'title', 'summary', 'context', " +
   "'reviewed_at')) " +
   `OR (c.entity = 'tasks' AND c.field = 'wrap' AND ${sameTask("lifecycle")}) ` +
-  "OR (c.entity = 'tasks' AND c.field = 'inbox' AND c.before = '1' AND c.after = '0') " +
+  "OR (c.entity = 'tasks' AND c.field = 'inbox') " +
   `OR (c.entity = 'tasks' AND c.field = 'status' AND ${sameTask("inbox")}) ` +
   "OR (c.entity = 'tasks' AND c.field = 'grouping' " +
   "AND json_extract(c.before, '$.area_id') IS NULL AND json_extract(c.before, '$.project_id') IS NULL) " +
@@ -46,7 +47,8 @@ const KEPT_ROW =
   "OR (c.entity = 'notes' AND c.field IN ('deleted', 'body')) " +
   "OR (c.entity = 'log_entries' AND c.field = 'body') " +
   "OR (c.entity IN ('areas', 'projects') " +
-  "AND (c.action = 'create' OR (c.field = 'lifecycle' AND c.before = '\"archived\"'))) " +
+  "AND (c.action = 'create' OR (c.field = 'lifecycle' " +
+  "AND '\"archived\"' IN (c.before, c.after)))) " +
   "OR (c.entity IN ('folders', 'places') AND c.action = 'create' AND EXISTS (SELECT 1 FROM changes p " +
   "WHERE p.seq = c.seq AND p.entity = 'projects' AND p.action = 'create'))";
 
@@ -211,13 +213,17 @@ export function oppositeOf(conn: Connection, changes: readonly StoredChange[]): 
             }
           } else {
             const wrap = columns(of("wrap")?.before ?? null);
-            const outcome = wrap["wrap_state"] === "wrapped" ? wrap["outcome"] : undefined;
+            const wrapped = wrap["wrap_state"] === "wrapped";
+            const outcome = wrapped ? wrap["outcome"] : undefined;
             ops.push({
               kind: "task.complete",
               task: id,
               ...(typeof was["completed_at"] === "number" ? { at: was["completed_at"] } : {}),
               ...(typeof outcome === "string" ? { outcome } : {}),
             });
+            // Wrapped up without words, such as with a learning alone.
+            if (wrapped && typeof outcome !== "string")
+              ops.push({ kind: "task.wrap_up", task: id });
           }
           continue;
         }
@@ -354,6 +360,29 @@ function valueNow(conn: Connection, c: StoredChange): string | undefined {
 const wrote = (c: StoredChange): string =>
   c.action === "create" ? fieldJson(columns(c.after)["lifecycle"] ?? null) : c.after;
 
+/**
+ * The state a value of `c`'s field stands for, as a person sees it: in the Trash or not; open,
+ * completed or dropped; wrapped up or not, with which words; the group a task is in; the words.
+ * Never when it was written: an undo writes a state again with a time of its own.
+ */
+function stateOf(c: StoredChange, json: string | undefined): string | undefined {
+  if (json === undefined || c.action === "create") return json;
+  const value = columns(json);
+  switch (c.field) {
+    case "deleted":
+    case "removed":
+      return String(tombstoned(json));
+    case "lifecycle":
+      return c.entity === "tasks" ? String(value["lifecycle"]) : json;
+    case "wrap":
+      return fieldJson([value["wrap_state"] ?? null, value["outcome"] ?? null]);
+    case "grouping":
+      return fieldJson([value["area_id"] ?? null, value["project_id"] ?? null]);
+    default:
+      return json;
+  }
+}
+
 /** Who worked since, as newerSql reads it, each task and author once with their newest time. */
 class Work {
   readonly #conn: Connection;
@@ -433,7 +462,7 @@ export function newerOn(
   const work = new Work(conn, refPrefix);
   let moved = false;
   for (const c of written(changes)) {
-    if (valueNow(conn, c) === wrote(c)) continue;
+    if (stateOf(c, valueNow(conn, c)) === stateOf(c, wrote(c))) continue;
     moved = true;
     const field = c.action === "create" ? null : c.field;
     work.add({
@@ -445,6 +474,17 @@ export function newerOn(
       field,
       task: null,
     });
+  }
+  // A finish that left no wrap-up of its own: one written since is newer work its undo, a reopen,
+  // would clear.
+  for (const c of changes) {
+    if (c.entity !== "tasks" || c.field !== "lifecycle") continue;
+    if (columns(c.after)["lifecycle"] === "active") continue;
+    if (changes.some((d) => d.entityId === c.entityId && d.field === "wrap")) continue;
+    if (conn.prepare(SQL.row.tasks).get({ id: c.entityId })?.["wrap_state"] == null) continue;
+    moved = true;
+    const id = c.entityId;
+    work.add({ since, principal, anyone: true, entity: "tasks", id, field: "wrap", task: null });
   }
   let hidden = false;
   for (const c of changes.filter(hides)) {

@@ -289,4 +289,156 @@ describe("[A1.5.history.undo-redo] undo and redo of the steps a person takes bac
     expect(status(done.seq)).toBe("done");
     expect(redo().error?.code).toBe("NOTHING_TO_REDO");
   });
+
+  /** A task's state as a person sees it, and a note's: never when it was written. */
+  const seen = (id: string): unknown => {
+    const t = row("tasks", id);
+    const note = fx.reader
+      .prepare("SELECT body, deleted_at FROM notes WHERE task_id = $id AND ordinal = 1")
+      .get({ id });
+    return {
+      lifecycle: t["lifecycle"],
+      trash: t["deleted_at"] !== null,
+      wrap: t["wrap_state"],
+      outcome: t["outcome"],
+      title: t["title"],
+      inbox: t["inbox"],
+      status: t["status"],
+      reviewed: t["reviewed_at"],
+      note: note === undefined ? null : { body: note["body"], gone: note["deleted_at"] !== null },
+    };
+  };
+  const walks: [
+    string,
+    (id: Id<"t">) => Operation[],
+    (id: Id<"t">) => Operation[],
+    Operation[]?,
+  ][] = [
+    [
+      "a check-off",
+      (task) => [{ kind: "task.complete", task }],
+      (task) => [{ kind: "task.reopen", task }],
+    ],
+    [
+      "a drop",
+      (task) => [{ kind: "task.archive", task, reason: "Not needed" }],
+      (task) => [{ kind: "task.reopen", task }],
+    ],
+    [
+      "a reopen",
+      (task) => [{ kind: "task.reopen", task }],
+      (task) => [{ kind: "task.complete", task }],
+      [{ kind: "task.complete", task: "$", outcome: "Sent the form" }],
+    ],
+    [
+      "the Trash",
+      (task) => [{ kind: "task.delete", task }],
+      (task) => [{ kind: "task.restore", task }],
+    ],
+    [
+      "a restore",
+      (task) => [{ kind: "task.restore", task }],
+      (task) => [{ kind: "task.delete", task }],
+      [{ kind: "task.delete", task: "$" }],
+    ],
+    [
+      "a removed note",
+      (task) => [{ kind: "note.delete", task, ordinal: 1 }],
+      (task) => [{ kind: "note.restore", task, ordinal: 1 }],
+      [{ kind: "note.add", task: "$", body: "Ask for the old one back" }],
+    ],
+    [
+      "a note put back",
+      (task) => [{ kind: "note.restore", task, ordinal: 1 }],
+      (task) => [{ kind: "note.delete", task, ordinal: 1 }],
+      [
+        { kind: "note.add", task: "$", body: "Ask for the old one back" },
+        { kind: "note.delete", task: "$", ordinal: 1 },
+      ],
+    ],
+    [
+      "a title edited twice",
+      (task) => [{ kind: "task.patch", task, set: { title: "Renew both passports" } }],
+      (task) => [{ kind: "task.patch", task, set: { title: "Renew the passports" } }],
+    ],
+    [
+      "a note's words edited twice",
+      (task) => [{ kind: "note.patch", task, ordinal: 1, body: "Ask for both back" }],
+      (task) => [{ kind: "note.patch", task, ordinal: 1, body: "Ask for all of them back" }],
+      [{ kind: "note.add", task: "$", body: "Ask for the old one back" }],
+    ],
+    [
+      "out of the Inbox",
+      (task) => [{ kind: "task.patch", task, set: { inbox: false, status: "open" } }],
+      (task) => [{ kind: "task.patch", task, set: { inbox: true } }],
+      [{ kind: "task.patch", task: "$", set: { inbox: true, status: "waiting" } }],
+    ],
+    [
+      "a dismissal",
+      (task) => [{ kind: "task.patch", task, set: { reviewed_at: 1_794_470_500_000 } }],
+      (task) => [{ kind: "task.patch", task, set: { reviewed_at: 1_794_470_400_000 } }],
+      [{ kind: "task.patch", task: "$", set: { reviewed_at: 1_794_470_400_000 } }],
+    ],
+  ];
+
+  test.each(walks)(
+    "%s, its opposite by hand, two Undos and two Redos walk the state back and forth exactly",
+    (_, action, opposite, setup = []) => {
+      const id = task();
+      const ops = (list: Operation[]) => list.map((op) => ({ ...op, task: id }) as Operation);
+      for (const op of ops(setup)) send([op]);
+      const states = [seen(id)];
+      send(action(id));
+      states.push(seen(id));
+      send(opposite(id));
+      states.push(seen(id));
+      for (const at of [1, 0]) {
+        applied(undo());
+        expect(seen(id)).toEqual(states[at]);
+      }
+      for (const at of [1, 2]) {
+        applied(redo());
+        expect(seen(id)).toEqual(states[at]);
+      }
+    },
+  );
+
+  test("a new project, archived by hand, walks back to archived and forth to archived", () => {
+    const project = newId("p");
+    const lifecycle = () => row("projects", project)["lifecycle"];
+    send([{ kind: "project.create", id: project, title: "Garden" }]);
+    send([{ kind: "project.archive", project }]);
+    applied(undo());
+    expect(lifecycle()).toBe("active");
+    applied(undo());
+    expect(lifecycle()).toBe("archived");
+    applied(redo());
+    expect(lifecycle()).toBe("active");
+    applied(redo());
+    expect(lifecycle()).toBe("archived");
+  });
+
+  test("an outcome an agent wrote since a drop or a check-off keeps the finish, naming the agent", () => {
+    for (const finish of ["task.archive", "task.complete"] as const) {
+      const id = task();
+      send([{ kind: finish, task: id }]);
+      send([{ kind: "task.wrap_up", task: id, outcome: "Sent it in time" }], fx.codex);
+      const kept = undo();
+      expect(kept.kept).toBe(true);
+      expect(kept.newer?.work).toMatchObject([{ task: id, by: { kind: "agent" } }]);
+      expect(row("tasks", id)).toMatchObject({ wrap_state: "wrapped", outcome: "Sent it in time" });
+    }
+  });
+
+  test("undoing a reopen wraps up again a task wrapped up with a learning alone", () => {
+    const id = task();
+    send([
+      { kind: "task.complete", task: id },
+      { kind: "task.wrap_up", task: id, learnings: { add: ["Book a week ahead"] } },
+    ]);
+    expect(row("tasks", id)["wrap_state"]).toBe("wrapped");
+    send([{ kind: "task.reopen", task: id }]);
+    applied(undo());
+    expect(row("tasks", id)).toMatchObject({ lifecycle: "completed", wrap_state: "wrapped" });
+  });
 });
