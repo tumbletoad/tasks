@@ -42,7 +42,7 @@ const ABOUT = new Set(
     " ",
   ),
 );
-/** Hidden verbs that the router knows besides the table (A4 3.6.3's shim). */
+/** Hidden verbs that the router knows besides the table (the shim). */
 const HIDDEN = new Set(["shim"]);
 
 function files(dir: string): string[] {

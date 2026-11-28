@@ -1,4 +1,4 @@
-// Where the agent's environment comes from on this machine (A4 3.8): the service builds the base
+// Where the agent's environment comes from on this machine: the service builds the base
 // at each claim, and refreshes the Linux login-shell snapshot right before a terminal starts.
 //
 // - Linux and macOS: layer 1, the session, is read at each claim (`systemctl --user show-environment`,
@@ -47,7 +47,7 @@ import {
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-/** A4 3.8: the snapshot's hard deadline. */
+/** The snapshot's hard deadline. */
 export const SNAPSHOT_TIMEOUT_MS = 10_000;
 /** The most a snapshot's shell may print. */
 export const SNAPSHOT_MAX_BYTES = 4 * 1024 * 1024;
@@ -74,7 +74,7 @@ export interface EnvironmentSource {
   /** The session layer now (Linux and macOS), for a terminal's own environment. Never throws. */
   session(): Promise<Record<string, string>>;
   /**
-   * Doctor (A4 3.8, A3 3.14 `launch.env`): how the person's environment stands for launches. With
+   * Doctor (`launch.env`): how the person's environment stands for launches. With
    * `take` (`doctor --live`) the login shell runs now, as a launch's refresh runs it, and its
    * snapshot is kept when it succeeds; without, nothing runs but the registry read on Windows. A
    * source without it (a test's fixed one) is not checked. Never throws.
@@ -290,7 +290,7 @@ export function readStoredSnapshot(path: string): StoredSnapshot | undefined {
   }
 }
 
-/** The environment of this machine's account, as A4 3.8 builds it. */
+/** The environment of this machine's account. */
 export class UserEnvironment implements EnvironmentSource {
   readonly #o: UserEnvironmentOptions;
   readonly #capture: Capture;
@@ -435,8 +435,8 @@ export class UserEnvironment implements EnvironmentSource {
     if (!this.#posix) return undefined;
     try {
       const session = await this.session();
-      // The profile runs only in the very folder the launch resolved (A4 3.3's rule for
-      // the agent, applied to the shell): held open and checked first, else no snapshot at all.
+      // The profile runs only in the very folder the launch resolved (the agent's
+      // rule, applied to the shell): held open and checked first, else no snapshot at all.
       const held = (this.#o.holdFolder ?? holdFolder)(folder, identity);
       if (held === undefined) {
         this.#o.log?.("launch.env_snapshot", {
@@ -470,7 +470,7 @@ export class UserEnvironment implements EnvironmentSource {
   }
 
   /**
-   * One login-shell snapshot (A4 3.8 layer 2): `$SHELL -lic` with the fixed script, in the
+   * One login-shell snapshot (layer 2): `$SHELL -lic` with the fixed script, in the
    * account's minimal environment plus the session layer, with `cwd` (default: the home folder)
    * as its working folder.
    */

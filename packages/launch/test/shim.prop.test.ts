@@ -1,4 +1,4 @@
-// The launch state machine with real shim behaviour (A4 3.6.3, 3.9; A4 5.1): the
+// The launch state machine with real shim behaviour: the
 // real ShimHost in front of the real LaunchMachine, and shims that claim late, twice, at once with
 // a thief, after a restart, after their window, with another launch's ticket, their credential or
 // a wrong start time, whose reply is lost or never answered, that reattach and report, or die and

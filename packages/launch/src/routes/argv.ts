@@ -1,4 +1,4 @@
-// The CLI routes' command lines and the link routes' URLs (A4 3.4.2, 3.4.3, 3.6.4), from the
+// The CLI routes' command lines and the link routes' URLs, from the
 // catalogue's templates and an instance of machine.toml. Pure: the same inputs give the same argv
 // on every OS, so golden tests compare them as arrays per target, route and OS.
 //
@@ -6,8 +6,8 @@
 // permission flags, fixed flags, the session ID TTasks presets, the task's reference and sanitised
 // title (`-n`), the folder, and the rendered brief as one element after `--` or as the value of
 // one `--name=` element, so it is never read as an option. Every element is one argument of an array that the shim spawns without
-// a shell (A4 3.6.3 step 6); nothing is ever joined into a command string here. The folder is not
-// known at the click (it is resolved right before the launch, A4 3.3), so its element stays
+// a shell; nothing is ever joined into a command string here. The folder is not
+// known at the click (it is resolved right before the launch), so its element stays
 // empty and its index travels with the plan: the claim's reply puts the resolved folder there.
 import { createHash } from "node:crypto";
 import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
@@ -31,8 +31,8 @@ import { SESSION_UUID } from "../store.ts";
 export { SESSION_UUID };
 
 /**
- * The session ID a click presets for Claude Code (A4 3.4.2 `--session-id`), derived from the
- * space and the click's request ID: a repeated request (A1 3.8) records the same intent with the
+ * The session ID a click presets for Claude Code (`--session-id`), derived from the
+ * space and the click's request ID: a repeated request records the same intent with the
  * same ID, so it replays instead of conflicting, and a new click is a new request ID and so a new
  * session. Random-looking, version 4 in form; never reused across clicks.
  */
@@ -57,8 +57,8 @@ export const isToolEnvList = (names: readonly unknown[]): names is readonly stri
   names.every((name) => typeof name === "string" && ENV_NAME.test(name));
 
 /**
- * Codex's declaration that TTasks's MCP entry takes the ticket from the agent's environment (A4
- * 3.4.3): Codex clears a stdio server's environment and passes only the names its entry lists, so
+ * Codex's declaration that TTasks's MCP entry takes the ticket from the agent's environment:
+ * Codex clears a stdio server's environment and passes only the names its entry lists, so
  * without it the bridge never sees `TTASKS_TICKET`. Added only when the home's entry exists and
  * lacks it: an override on a home without the entry would make a server table without a command.
  * A `-c` override replaces the entry's whole list, so it repeats the names the entry already
@@ -76,16 +76,18 @@ export function codexToolEnv(existing: readonly string[] = []): readonly string[
 
 /** What the template's placeholders stand for in one launch. */
 export interface ArgvValues {
-  /** `{exec}`: the executable, then `args_prefix` (A4 3.6.4). */
+  /** `{exec}`: the executable, then `args_prefix`. */
   readonly exec: readonly string[];
-  /** `{permission}`: the mapped flags of the instance's open permission (A4 3.11.6). */
+  /** `{permission}`: the mapped flags of the instance's open permission. */
   readonly permission: readonly string[];
-  /** `{extra_args}`: the instance's own, after TTasks's (A4 3.2). */
+  /** `{extra_args}`: the instance's own, after TTasks's. */
   readonly extraArgs: readonly string[];
   /** `{tool_env}`: Codex's `-c` when the home's entry lacks it, else none. */
   readonly toolEnv: readonly string[];
   /** `{session}`: the preset session ID. */
   readonly session?: string;
+  /** `{resume}`: the ID of the app's own conversation that opens again. */
+  readonly resume?: string;
   /** `{task.id}`: the task's reference, such as `M-14`. */
   readonly task: string;
   /** `{task.title}`: the sanitised title. */
@@ -114,7 +116,7 @@ export class RouteUnavailable extends Error {
 }
 
 /**
- * A template's argv (A4 3.6.4): whole-element placeholders become zero or more elements, the
+ * A template's argv: whole-element placeholders become zero or more elements, the
  * others are replaced within their element, `{cwd}` must be a whole element (it is filled at the
  * claim) and `{brief}` one whole element after `--`, or the value of `--name={brief}`. IDs are
  * checked against their patterns.
@@ -123,6 +125,9 @@ export function expandArgv(template: readonly string[], values: ArgvValues): Exp
   if (checkArgvTemplate(template).length > 0) throw new RouteUnavailable("bad_value");
   if (!TASK_REF.test(values.task)) throw new RouteUnavailable("bad_value");
   if (values.session !== undefined && !SESSION_UUID.test(values.session)) {
+    throw new RouteUnavailable("bad_value");
+  }
+  if (values.resume !== undefined && !CONVERSATION_ID.test(values.resume)) {
     throw new RouteUnavailable("bad_value");
   }
   if (values.reference !== undefined && !isLaunchRef(values.reference)) {
@@ -174,6 +179,8 @@ function textValue(name: string, values: ArgvValues): string | undefined {
   switch (name) {
     case "session":
       return values.session;
+    case "resume":
+      return values.resume;
     case "task.id":
       return values.task;
     case "task.title":
@@ -196,7 +203,7 @@ export function withFolder(
   return out;
 }
 
-/** `{exec}` of an instance (A4 3.6.4): `[exec, ...args_prefix]`. Not set up without an `exec`. */
+/** `{exec}` of an instance: `[exec, ...args_prefix]`. Not set up without an `exec`. */
 export function execOf(instance: Instance): readonly string[] {
   if (instance.exec === undefined) throw new RouteUnavailable("not_set_up");
   return [instance.exec, ...instance.argsPrefix];
@@ -214,7 +221,7 @@ export function routeOf(
 }
 
 /**
- * A CLI instance's terminal command line (A4 3.4.2, 3.4.3): Claude Code's or Codex's terminal route
+ * A CLI instance's terminal command line: Claude Code's or Codex's terminal route
  * of the catalogue with this prompt (its first when none is named), the instance's executable,
  * open permission and extra arguments.
  */
@@ -235,7 +242,38 @@ export function cliArgv(
   });
 }
 
-/** What a link template's placeholders stand for (A4 3.6.4): each value percent-encoded once. */
+/**
+ * A conversation ID that opens again: a UUID of any version (Claude Code's are random, Codex's
+ * time-ordered), one plain element that no program reads as an option.
+ */
+const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+/** Whether `id` is a conversation ID that a terminal can open again (`{resume}`). */
+export const isConversationId = (id: string): boolean => CONVERSATION_ID.test(id);
+
+/**
+ * A CLI instance's terminal command line that opens one of its app's own conversations again (a
+ * background run's, for Continue), with the instance's executable, open permission and extra
+ * arguments, as an Open of it starts. No brief: the conversation already holds the task.
+ */
+export function resumeArgv(
+  instance: Instance,
+  values: Omit<ArgvValues, "exec" | "permission" | "extraArgs" | "brief" | "resume"> & {
+    readonly resume: string;
+  },
+): ExpandedArgv {
+  if (!isBuiltInTarget(instance.target)) throw new RouteUnavailable("no_route");
+  const def = targetDef(instance.target);
+  if (def.resume === undefined) throw new RouteUnavailable("no_route");
+  return expandArgv(def.resume, {
+    ...values,
+    exec: execOf(instance),
+    permission: def.permissionArgs[instance.openPermission].open,
+    extraArgs: instance.extraArgs,
+  });
+}
+
+/** What a link template's placeholders stand for: each value percent-encoded once. */
 export interface UrlValues {
   readonly cwd: string;
   readonly brief: string;
@@ -244,7 +282,7 @@ export interface UrlValues {
   readonly reference?: string;
 }
 
-/** A link route's URL (A4 3.4.2 `claude-cli://open?cwd=&q=`), each value encoded once. */
+/** A link route's URL (`claude-cli://open?cwd=&q=`), each value encoded once. */
 export function expandUrl(template: string, values: UrlValues): string {
   if (checkUrlTemplate(template).length > 0) throw new RouteUnavailable("bad_value");
   return template.replace(/\{([^{}]*)\}/gu, (_whole, key: string) => {
@@ -266,8 +304,8 @@ export function expandUrl(template: string, values: UrlValues): string {
 }
 
 /**
- * Whether a folder is a UNC path (`\\server\share`, `\\?\UNC\…`), which `claude-cli://` refuses
- * (A4 3.3 step 4): a UNC place disables that route.
+ * Whether a folder is a UNC path (`\\server\share`, `\\?\UNC\…`), which `claude-cli://` refuses:
+ * a UNC place disables that route.
  */
 export function isUncPath(folder: string): boolean {
   return /^(\\\\|\/\/)(?!\?\\[A-Za-z]:)/u.test(folder);

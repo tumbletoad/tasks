@@ -1,5 +1,5 @@
-// A child process for the working-folder tests (A1 3.15): the process that works in a
-// place's folder, as the shim (M2.08) will be. It is started in the folder, says `ready`, waits for
+// A child process for the working-folder tests: the process that works in a
+// place's folder, as the shim will be. It is started in the folder, says `ready`, waits for
 // one line (a FolderCheck as JSON) so the test can change the tree in between, runs
 // checkWorkingFolder there and prints one JSON line: the check's result, the identity of `.`, the
 // identity of the directory the kernel says it holds (Linux: /proc/self/cwd) and, when asked, the

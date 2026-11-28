@@ -92,6 +92,15 @@ function TargetLink({ target, space }: { readonly target: Target; readonly space
       >
         {target.name}
       </Link>
+    ) : target.kind === "page" && target.ref !== undefined && target.trash !== true ? (
+      <Link
+        to="/s/$space/page/$ref"
+        params={{ space, ref: target.ref }}
+        className={styles.task}
+        dir="auto"
+      >
+        {target.name}
+      </Link>
     ) : target.kind === "area" && target.trash !== true ? (
       <Link
         to="/s/$space/area/$area"

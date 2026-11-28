@@ -1,4 +1,4 @@
-// The release archives (A2 3.12.4): a gzipped ustar and a zip, deterministic and
+// The release archives: a gzipped ustar and a zip, deterministic and
 // read back unchanged. Fixture bytes only.
 import { gunzipSync } from "node:zlib";
 import { describe, expect, test } from "vitest";

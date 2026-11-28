@@ -1,5 +1,5 @@
-// Why the bridge has no service connection right now. The reasons are A3 3.5's transport reasons
-// of `service_unavailable`, plus `starting` (A3 3.5: the service is starting, or the bridge is
+// Why the bridge has no service connection right now. The reasons are the transport reasons
+// of `service_unavailable`, plus `starting` (the service is starting, or the bridge is
 // still reconnecting after a restart). Each picks the offline text a tool call gets.
 import { LocalError, type TransportReason } from "../protocol/index.ts";
 

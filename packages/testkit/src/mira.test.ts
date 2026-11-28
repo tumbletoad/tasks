@@ -1,4 +1,4 @@
-// The Mira sample space: deterministic from its seed, consistent with A1's invariants as far as
+// The Mira sample space: deterministic from its seed, consistent with the space's invariants as far as
 // they exist before the write path, and a fixture on which the schema's CHECKs refuse bad values.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,9 +22,9 @@ import { Rng } from "./rng.ts";
 
 /**
  * The tables of schema 0.2 that no operation writes yet, so the sample leaves them empty: labels
- * (the label operations), proposals (M4.02), exchanges (M7.05 and M7.06), attachments (after v1).
+ * (the label operations), proposals, exchanges, attachments (after v1).
  * The step that brings an operation moves its table's rows into the sample, as the StandIn comment
- * in mira.ts says: learnings came with M3.04's wrap-up.
+ * in mira.ts says: learnings came with the wrap-up.
  */
 const EMPTY_0_2 = [
   "labels",
@@ -37,7 +37,7 @@ const EMPTY_0_2 = [
 
 /**
  * The table of schema 0.3 that no operation writes yet: sessions, whose records still live in
- * machine state until binding writes them (A4 3.10). The sample writes runs (M6.01).
+ * machine state until binding writes them. The sample writes runs.
  */
 const EMPTY_0_3 = ["sessions"] as const;
 
@@ -112,8 +112,8 @@ function checkHistory(conn: Connection): void {
   expect(one("SELECT count(DISTINCT source_key) FROM sources")).toBe(
     one("SELECT count(*) FROM sources"),
   );
-  // Every request's commit has its receipt, and every applied receipt names its request's commit
-  // (A1 3.8). The machine's own system commit has none.
+  // Every request's commit has its receipt, and every applied receipt names its request's commit.
+  // The machine's own system commit has none.
   expect(
     one(
       `SELECT count(*) FROM commits k LEFT JOIN receipts r
@@ -273,7 +273,7 @@ describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () =
   });
 
   test("built with the 0.1 chain, the known sample is the one the 0.1 builds made", async () => {
-    // The 0.1 fixture builder (M3.01): a 0.1 space, through the same write path, with the digest
+    // The 0.1 fixture builder: a 0.1 space, through the same write path, with the digest
     // the released 0.1 builds gave the known sample.
     const checked = await checkedDriver();
     const { seed, tasks, digest } = FIXED_SAMPLE_0_1;

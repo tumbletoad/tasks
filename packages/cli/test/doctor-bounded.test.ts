@@ -1,4 +1,4 @@
-// The helper runner (@ttasks/launch helpers.ts; A3 3.14, M4.05): every program doctor and setup
+// The helper runner (@ttasks/launch helpers.ts): every program doctor and setup
 // start ends with what it started while it runs, at its deadline and when the process that started
 // it exits, and a signal the host handles itself stays the host's.
 // Each case starts a program that starts a descendant of its own, and checks both. On Windows the

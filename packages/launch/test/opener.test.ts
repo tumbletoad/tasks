@@ -1,4 +1,4 @@
-// The OS's URL opener (A4 3.6.5) over a recording spawner: which program gets the URL as one
+// The OS's URL opener over a recording spawner: which program gets the URL as one
 // argv element on each OS, what each outcome means for the launch, and that a fallback runs only
 // when the opener before it never started, so one launch never opens a URL twice. No real opener
 // runs and no real link is opened. Fixture data only.

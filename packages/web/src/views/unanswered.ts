@@ -132,9 +132,17 @@ export const runName = (space: string, task: string): string => `run.${space}.${
 export const openName = (space: string, task: string, instance: string): string =>
   `open.${space}.${task}.${instance}`;
 
-/** What an Open asks: a second session or not, and the words or the note it carries. */
-export const openAsked = (another: boolean, text?: string, request?: string): string =>
-  JSON.stringify([another, request ?? "", text ?? ""]);
+/**
+ * What an Open asks: a second session or not, and the words or the note it carries, or the run
+ * whose conversation it continues.
+ */
+export const openAsked = (
+  another: boolean,
+  text?: string,
+  request?: string,
+  run?: string,
+): string =>
+  JSON.stringify([another, request ?? "", text ?? "", ...(run === undefined ? [] : [run])]);
 
 /**
  * What the unanswered Open of the task in each app asked, by the app's key, kept current as one

@@ -1,11 +1,11 @@
-// T3 Code's primary route, `t3-mcp` (A4 3.4.1, L6, L14): TTasks as a paired MCP client of the local
+// T3 Code's primary route, `t3-mcp`: TTasks as a paired MCP client of the local
 // T3 server. A launch binds the task's exact folder to a T3 project (t3-binding.ts), creates an
 // idle thread with `t3_thread_launch` and no message, keyed by the launch ID as `clientRequestId`
 // under the grant recorded on the intent, checks the thread's folder, and opens the thread link
 // with the brief as an unsent draft. That thread is the task's session in T3 from then on: a later
 // Open brings it forward (`thread` reads what T3 says of it) until T3 no longer has it.
 //
-// The route is the launch machine's T3 step and recovery (A4 3.9.1): `dispatch`
+// The route is the launch machine's T3 step and recovery: `dispatch`
 // is the machine's external call after Dispatching is durable, `grant` and `replay` its recovery
 // steps. The machine decides; the route only answers what T3 said:
 // - A definite refusal (nothing reached T3, a 401, a request T3 refused before any tool ran) is
@@ -64,7 +64,7 @@ export type T3Unavailable =
   /** The pairing allows less than opening here needs: pair again, choosing Full access. */
   | "pairing_denied";
 
-/** A4 3.18's lines, for the UI and the CLI. */
+/** The T3 route's lines, for the UI and the CLI. */
 export const T3_TEXT = {
   not_paired: `Pair ${PRODUCT_NAME} with T3 Code first: ${CLI_NAME} setup t3`,
   not_running: "Start T3 Code",
@@ -79,12 +79,12 @@ export type T3Availability =
   | { readonly state: "ready"; readonly expiresAt?: number; readonly pairedAt: number }
   | { readonly state: "not_paired" | "not_running" | "reconnect" };
 
-/** The result of the Prepared step for T3 (A4 3.4.1 steps 1 to 4). */
+/** The result of the Prepared step for T3. */
 export type T3Prepared =
   | { readonly kind: "bound"; readonly projectId: string; readonly strategy: T3Strategy }
   | { readonly kind: "unavailable"; readonly reason: T3Unavailable };
 
-/** A4 3.2: an instance's permission as T3's runtime mode. `inherit` sends none. */
+/** An instance's permission as T3's runtime mode. `inherit` sends none. */
 export const T3_RUNTIME_MODES: Readonly<Record<Permission, string | undefined>> = {
   inherit: undefined,
   "full-access": "full-access",
@@ -119,7 +119,7 @@ const T3_WORKING: ReadonlySet<unknown> = new Set([
   "waiting",
 ]);
 
-/** A thread link's brief may hold this many characters (A4 3.4.1: T3's limit is 8,000). */
+/** A thread link's brief may hold this many characters (T3's limit). */
 export const T3_PROMPT_LIMIT = 8_000;
 
 /** A token this close to running out is not used: a request would reach T3 after it ran out. */
@@ -133,7 +133,7 @@ export interface T3RouteOptions {
   readonly home: string | undefined;
   /** Machine state (t3-state.ts). */
   readonly files: T3Files;
-  /** Opens a URL through the OS (A4 3.6.5): true when the opener accepted it. M2.09's opener. */
+  /** Opens a URL through the OS: true when the opener accepted it. */
   readonly open?: (url: string) => Promise<boolean>;
   readonly fetch?: Fetch;
   readonly now?: () => number;
@@ -226,8 +226,7 @@ export class T3Route {
   }
 
   /**
-   * Waits for the person's approval and keeps the grant with a new grant ID (A4 3.4.1 "Grant
-   * identity"): a re-pairing always starts a new one. Then reads T3's environment ID once.
+   * Waits for the person's approval and keeps the grant with a new grant ID: a re-pairing always starts a new one. Then reads T3's environment ID once.
    */
   async finishPairing(
     attempt: PairingAttempt,
@@ -308,9 +307,9 @@ export class T3Route {
   }
 
   // -------------------------------------------------------------------------------------------
-  // The Prepared step (A4 3.4.1 steps 1 to 5)
+  // The Prepared step
 
-  /** Every active project T3 lists, all pages (A4 3.4.1 step 1). */
+  /** Every active project T3 lists, all pages. */
   async #projects(): Promise<T3Project[]> {
     const projects = new Map<string, T3Project>();
     let cursor: number | null = 0;
@@ -323,7 +322,7 @@ export class T3Route {
         if (!isObject(item)) continue;
         const { id, workspaceRoot, archivedAt, deletedAt } = item;
         if (typeof id !== "string" || id === "" || typeof workspaceRoot !== "string") continue;
-        // An archived or deleted project is no binding (A4 3.4.1 step 5).
+        // An archived or deleted project is no binding.
         if ((archivedAt ?? null) !== null || (deletedAt ?? null) !== null) continue;
         // Pages can shift: an ID seen twice is one project.
         projects.set(id, { id, root: workspaceRoot });
@@ -335,7 +334,7 @@ export class T3Route {
   }
 
   /**
-   * Binds the task's resolved folder to T3 (A4 3.4.1 steps 1 to 4): an exact project root or an
+   * Binds the task's resolved folder to T3: an exact project root or an
    * existing worktree. Any other folder is registered as a project of its own, titled `name`, and
    * bound to it: a thread runs only at a project root, and the person chose this folder for the
    * task. It is never bound to a containing project. The caller has checked `availability`.
@@ -400,7 +399,7 @@ export class T3Route {
   }
 
   // -------------------------------------------------------------------------------------------
-  // The machine's steps (A4 3.9.1)
+  // The machine's steps
 
   /** The launch machine's T3 dispatch: the idle-thread create, once, after Dispatching. */
   dispatch(intent: LaunchIntent): Promise<DispatchOutcome> {
@@ -421,7 +420,7 @@ export class T3Route {
   }
 
   /**
-   * `t3_thread_launch` with no message (A4 3.4.1 primary route step 2), under the intent's grant
+   * `t3_thread_launch` with no message, under the intent's grant
    * only. The pairing is read, compared with the intent's grant and its token taken in one
    * synchronous step, after which only the requests to T3 are awaited: the call T3 receives
    * carries a token of the intent's grant, whatever re-pairing happens meanwhile (T3 then
@@ -479,7 +478,7 @@ export class T3Route {
   }
 
   /**
-   * The folder check (A4 3.4.1 step 3): the thread's `worktreePath ?? project root` must be the
+   * The folder check: the thread's `worktreePath ?? project root` must be the
    * resolved folder, by identity. `confirmed` with `folder_checked` and the thread, `failed` with
    * `folder_mismatch` (the thread stays for the person to inspect), or `pending` when T3 or the
    * folder cannot be read now.
@@ -542,8 +541,8 @@ export class T3Route {
   }
 
   /**
-   * Opens `t3code://threads/<environment>/<thread>?prompt=<brief>` through the OS (A4 3.4.1 step
-   * 4): the brief lands in the thread's composer, unsent. Opening a link to a known thread is not a
+   * Opens `t3code://threads/<environment>/<thread>?prompt=<brief>` through the OS:
+   * the brief lands in the thread's composer, unsent. Opening a link to a known thread is not a
    * new launch, so it may be repeated ("Open in T3"). A brief over T3's limit is left out and the
    * link opens the thread alone. Returns whether the opener accepted it.
    */
@@ -574,7 +573,7 @@ export class T3Route {
   }
 }
 
-/** A URL value: `encodeURIComponent` plus `!'()*`, once (A4 3.6.4). */
+/** A URL value: `encodeURIComponent` plus `!'()*`, once. */
 export const encodeUrlValue = (value: string): string =>
   encodeURIComponent(value).replace(
     /[!'()*]/gu,

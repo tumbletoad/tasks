@@ -144,6 +144,15 @@ export function instanceRefusal(
     : undefined;
 }
 
+/** Why a Continue opened nothing, from the service's refusal; undefined for another. */
+export function continueRefusal(error: unknown): string | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const data = (error as Error & { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return undefined;
+  const { field, reason } = data as Record<string, unknown>;
+  return field === "run" && typeof reason === "string" ? reason : undefined;
+}
+
 /** Why T3 Code cannot open the task now, from the service's refusal; undefined for another. */
 export function t3Refusal(error: unknown): string | undefined {
   if (!(error instanceof Error)) return undefined;

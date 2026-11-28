@@ -1,4 +1,4 @@
-// `ttasks mcp` in the router (A2 3.10.1): the arguments after `mcp` go to the bridge as
+// `ttasks mcp` in the router: the arguments after `mcp` go to the bridge as
 // they are, its exit code is the command's, and the CLI writes nothing around it. bin.ts hands
 // over before it loads the router; this is the same verb for callers of main().
 import { readFileSync } from "node:fs";

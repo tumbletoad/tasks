@@ -1,4 +1,4 @@
-// Who a file or folder of the person's may be written by, besides them (A2 3.2.2 rule 5): their own
+// Who a file or folder of the person's may be written by, besides them: their own
 // private group, the one group whose write the product accepts. A module of its own, beside the
 // file helpers, because the service's rule (packages/service/src/hub/permissions.ts) and launch's
 // reading of T3's files (packages/launch/src/t3-client.ts) hold the same rule, and launch may not

@@ -7,6 +7,9 @@
 import type { Api } from "../api.ts";
 import { forgetTask, unsentTasks } from "../unsent.ts";
 
+/** A page's or a node's ID: the library's words, which are no task's and never asked about. */
+const LIBRARY_KEY = /^(?:pg|sp|a|p)_[0-9a-hjkmnp-tv-z]{26}$/u;
+
 /** The most tasks asked about per opening: the rest wait for the next one. */
 const MAX_ASKED = 20;
 
@@ -22,7 +25,7 @@ export async function forgetGone(
   api: Api,
   known: (task: string) => boolean,
 ): Promise<void> {
-  const unknown = unsentTasks(space).filter((task) => !known(task));
+  const unknown = unsentTasks(space).filter((task) => !known(task) && !LIBRARY_KEY.test(task));
   // A random few each time: tasks that still exist never keep the others from being asked about.
   for (let i = unknown.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));

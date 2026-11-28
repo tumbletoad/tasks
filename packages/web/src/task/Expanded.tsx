@@ -62,9 +62,11 @@ import { useTextWrites, type TextWrites } from "./textWrites.ts";
 import { TEXT_MAX } from "../unsent.ts";
 import { actorOf, Thread } from "./Thread.tsx";
 import { useDetail } from "./useDetail.ts";
+import { Knowledge } from "../library/Knowledge.tsx";
 
 const styles = classes(css, [
   "body",
+  "side",
   "content",
   "outcome",
   "context",
@@ -633,6 +635,8 @@ interface CardWrites {
   readonly text: TextWrites;
   /** Opens a note of the person's again in an agent, as its request. */
   readonly openAgain: (note: DetailNote, instance: Instance) => void;
+  /** Opens a background run's own conversation in its agent app, the run stopped first. */
+  readonly continueRun: (run: Run, instance: Instance) => void;
 }
 
 /**
@@ -703,13 +707,13 @@ function Context({
   }, [text, open, editing]);
   // The person's refused words, kept in sight while the box is open again to put them in.
   const notSaved =
-    write === undefined ? null : <NotSaved space={space} task={task.id} part="context" />;
+    write === undefined ? null : <NotSaved space={space} owner={task.id} part="context" />;
   if (editing && write !== undefined) {
     return (
       <div className={styles.context} data-part="context">
         <TextEditor
           space={space}
-          task={task.id}
+          owner={task.id}
           part="context"
           label={t("task.context")}
           text={text}
@@ -821,6 +825,9 @@ export function Expanded({
           openAgain: (note, instance) => {
             void actions.open(task, instance, { request: note.ref });
           },
+          continueRun: (run, instance) => {
+            void actions.open(task, instance, { run: run.id });
+          },
         }
       : undefined;
   // A row read from search knows no creation time (Completed, A5 3.5): the digest's says it.
@@ -830,7 +837,11 @@ export function Expanded({
   return (
     <div className={styles.body} data-part="expanded" hidden={hidden}>
       {/* First in the document: below 1,024 px the facts come before the content (A5 3.7). */}
-      <Facts task={facts} clock={clock} />
+      <div className={styles.side}>
+        <Facts task={facts} clock={clock} />
+        {/* Under the facts, from the card's first frame: it never moves what is drawn. */}
+        <Knowledge task={task} />
+      </div>
       <div className={styles.content}>
         {/* First in the content, above all that its reads bring in: the composer and its strip
             keep their place from the card's first frame, whatever the thread holds. */}
@@ -950,6 +961,7 @@ export function Expanded({
                     actions.stop(task, run);
                   },
                 })}
+            {...(ended || writes === undefined ? {} : { onContinue: writes.continueRun })}
           />
         )}
         {failed && detail !== undefined ? (

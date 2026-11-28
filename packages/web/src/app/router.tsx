@@ -6,10 +6,13 @@
 //   /                                       the default space's landing view (`?task=` a task)
 //   /s/:space                               the space's landing view (Today)
 //   /s/:space/:view                         today, inbox, open, waiting, review, backlog,
-//                                           completed, agents, activity, trash
-//   /s/:space/area/:area                    an area
-//   /s/:space/area/:area/project/:project   a project of it
-//   /s/:space/project/:project              a project without an area
+//                                           completed, agents, activity, library (the space's),
+//                                           trash
+//   /s/:space/area/:area                    an area; `/library` after it, its Library
+//   /s/:space/area/:area/project/:project   a project of it; `/library` after it, its Library
+//   /s/:space/project/:project              a project without an area; `/library` likewise
+//   /s/:space/page/:ref                     a page of the library; where the person came from is
+//                                           in the history entry (`from`), never the address
 //   /s/:space/search                        search results of the top field (`?task=` too); the
 //                                           query is in the history entry (route.ts)
 //   /s/:space/task/:id                      a task link: resolved to its host view (host.ts)
@@ -32,6 +35,7 @@ import {
 import { useEffect } from "react";
 import { searchQueryOf, SPACE_ID, SEGMENT } from "../route.ts";
 import { Landing } from "./Landing.tsx";
+import { PageScreen } from "../library/PageScreen.tsx";
 import { AreaPage, ProjectPage, SearchPage, TaskPage, ViewPage } from "./pages.tsx";
 import { SettingsPage } from "./Settings.tsx";
 import { SpaceSession } from "./session.tsx";
@@ -120,6 +124,46 @@ const projectRoute = createRoute({
   },
 });
 
+const areaLibraryRoute = createRoute({
+  getParentRoute: () => spaceRoute,
+  path: "area/$area/library",
+  component: function AreaLibraryRoute() {
+    const { area } = areaLibraryRoute.useParams();
+    return <AreaPage area={area} tab="library" />;
+  },
+});
+
+const projectLibraryRoute = createRoute({
+  getParentRoute: () => spaceRoute,
+  path: "area/$area/project/$project/library",
+  component: function ProjectLibraryRoute() {
+    const { space, area, project } = projectLibraryRoute.useParams();
+    return <ProjectPage space={space} area={area} project={project} tab="library" />;
+  },
+});
+
+const looseProjectLibraryRoute = createRoute({
+  getParentRoute: () => spaceRoute,
+  path: "project/$project/library",
+  component: function LooseProjectLibraryRoute() {
+    const { space, project } = looseProjectLibraryRoute.useParams();
+    return <ProjectPage space={space} project={project} tab="library" />;
+  },
+});
+
+const pageRoute = createRoute({
+  getParentRoute: () => spaceRoute,
+  path: "page/$ref",
+  component: function PageRoute() {
+    const { space, ref } = pageRoute.useParams();
+    if (!SEGMENT.test(ref)) {
+      return <Navigate to="/s/$space/$view" params={{ space, view: LANDING }} replace />;
+    }
+    // Keyed by the page: another page starts with nothing open.
+    return <PageScreen key={ref} page={ref} />;
+  },
+});
+
 const looseProjectRoute = createRoute({
   getParentRoute: () => spaceRoute,
   path: "project/$project",
@@ -191,6 +235,10 @@ const routeTree = rootRoute.addChildren([
     areaRoute,
     projectRoute,
     looseProjectRoute,
+    areaLibraryRoute,
+    projectLibraryRoute,
+    looseProjectLibraryRoute,
+    pageRoute,
     searchRoute,
     taskRoute,
     settingsRoute,
@@ -204,8 +252,12 @@ declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router;
   }
-  // The search route's history entry holds its query (route.ts).
+  // The search route's history entry holds its query (route.ts); a page's, where the person came
+  // from: the address to go back to and its name.
   interface HistoryState {
     q?: string;
+    from?: { readonly path: string; readonly label: string };
+    /** A page the person just made: its body's pen is open. */
+    pen?: "body";
   }
 }

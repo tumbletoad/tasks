@@ -1,4 +1,4 @@
-// The CLI's argument parser (A2 3.10.2, A3 3.2.2): generated verbs from cli-spec.json, and usage
+// The CLI's argument parser: generated verbs from cli-spec.json, and usage
 // errors that name the option, never its value. Fixture text only.
 import { describe, expect, test } from "vitest";
 import { parseVerb, splitGlobals, UsageError, verbSpec, type VerbSpec } from "./args.ts";

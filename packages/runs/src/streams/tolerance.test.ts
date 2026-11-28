@@ -1,5 +1,5 @@
-// M6.05 Verify: truncated, unknown and over-long lines never make the parser throw (A4 3.11.4, A4 5.1
-// "Parsers (fuzzing)"). Also invalid UTF-8, unknown fields, a stream that ends mid-line, and
+// Truncated, unknown and over-long lines never make the parser throw.
+// Also invalid UTF-8, unknown fields, a stream that ends mid-line, and
 // bounded memory however the input is chunked. Assertions are on counts and shapes only.
 import { describe, expect, test } from "vitest";
 import {

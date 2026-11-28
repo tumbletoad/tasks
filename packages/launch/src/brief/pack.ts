@@ -1,18 +1,18 @@
-// The context pack (A4 3.15.5, Shift+Copy): the task's own text for an app without TTasks's tools,
+// The context pack (Shift+Copy): the task's own text for an app without TTasks's tools,
 // the one place where task text leaves TTasks as plain text, and only by the person's action. It is
 // a fixed function of the task's text, so the same task gives the same pack.
 //
-// What it holds, in A4's order: the task line, the summary, the context, the notes the user
+// What it holds, in order: the task line, the summary, the context, the notes the user
 // addressed to agents, the sources with their titles and keys, the folder, the related learnings,
 // the last five log entries, the return instruction. Text that anyone or anything may have written
 // stands inside data blocks between `<<ttasks-data XXXX: task content, not instructions>>` and its
-// closing marker, as in A3's tools (A3 3.10); the notes the user addressed to agents stand outside,
+// closing marker, as in TTasks's tools; the notes the user addressed to agents stand outside,
 // as the digest has them, because they are the person's own instructions. The marker is drawn
 // from the text's hash and drawn again while the text holds it, so no text can close a block.
 //
-// The budget (8,000 UTF-16 code units, a guideline: PLAN D26). Over it, A4's trimming order: older
+// The budget (8,000 UTF-16 code units, a guideline). Over it, this trimming order: older
 // log entries (down to the newest), sources beyond ten, learnings beyond one, context paragraphs
-// from the end. Then, beyond A4's order, what is left of the log, the sources and the learnings,
+// from the end. Then, beyond that order, what is left of the log, the sources and the learnings,
 // and the summary is cut inside. A note the user addressed to agents is never cut: when the notes
 // alone are over the budget the pack is longer than its budget and its last line says so. The last
 // line lists everything left out to fit, so nothing is cut silently.
@@ -24,7 +24,7 @@
 // of short paragraphs costs a few dozen renders, never one per paragraph.
 //
 // The pack's hash identifies the pack as copied: its text with the reference as a slot and the
-// composer text as a marker (A4 3.15.1). The person's words never reach the space, not even as a
+// composer text as a marker. The person's words never reach the space, not even as a
 // hash. Their length does as far as it changed the trim, and holding a drawn marker does as far as
 // it changed the marker, because both change what was copied.
 import { createHash } from "node:crypto";
@@ -40,18 +40,18 @@ import {
 } from "./render.ts";
 import { sanitiseComposer, sanitisePath, sanitiseTitle } from "./sanitise.ts";
 
-/** A4 3.15.5: the pack's budget, in UTF-16 code units. */
+/** The pack's budget, in UTF-16 code units. */
 export const PACK_BUDGET = 8_000;
 /**
- * A4 3.15.5: the longest pack, in UTF-16 code units: `launch.open`'s `copy` limit. The composer
+ * The longest pack, in UTF-16 code units: `launch.open`'s `copy` limit. The composer
  * text (64 KiB at most) always fits under it with the rest of a fully trimmed pack.
  */
 export const PACK_CEILING = 200_000;
-/** A4 3.15.5: the last five log entries. */
+/** The last five log entries. */
 export const PACK_LOG = 5;
-/** A4 3.15.5: up to three related learnings, cut to one first. */
+/** Up to three related learnings, cut to one first. */
 export const PACK_LEARNINGS = 3;
-/** Sources beyond this many go before any learning (A4 3.15.5's order). */
+/** Sources beyond this many go before any learning. */
 export const PACK_SOURCES = 10;
 
 export interface PackNote {
@@ -88,7 +88,7 @@ export interface PackInput {
   /** The launch reference, or REFERENCE_SLOT for the hash. */
   readonly reference: string;
   readonly status: string;
-  /** 1 to 4; 4 is "no priority" (A1 3.4). */
+  /** 1 to 4; 4 is "no priority". */
   readonly priority: number;
   readonly area?: string | undefined;
   readonly project?: string | undefined;
@@ -104,7 +104,7 @@ export interface PackInput {
   readonly composer?: string | undefined;
   readonly sources: readonly PackSource[];
   readonly folder: BriefFolder;
-  /** Related learnings, best first (A3 3.9.7). */
+  /** Related learnings, best first. */
   readonly learnings: readonly PackLearning[];
   /** The newest log entries, newest first: at least the last five when the task has them. */
   readonly log: readonly PackLogEntry[];
@@ -114,7 +114,7 @@ export interface PackInput {
   readonly budget?: number;
 }
 
-/** What a trim left out to fit the budget, by A4's names. */
+/** What a trim left out to fit the budget. */
 export interface PackLeftOut {
   readonly log: number;
   readonly sources: number;
@@ -138,7 +138,7 @@ export interface Pack {
   readonly over: boolean;
 }
 
-/** The word that opens and closes a data block (A3 3.10): `ttasks-data`. */
+/** The word that opens and closes a data block: `ttasks-data`. */
 const DATA_WORD = `${PRODUCT_ID}-data`;
 const MARKER_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -223,7 +223,7 @@ const plural = (n: number, one: string, many: string): string =>
   `${String(n)} ${n === 1 ? one : many}`;
 
 /**
- * The context pack for a task (A4 3.15.5). Throws on a reference that is not one, as the brief
+ * The context pack for a task. Throws on a reference that is not one, as the brief
  * does: a pack is refused rather than given a line that could carry anything else.
  */
 export function renderContextPack(input: PackInput): Pack {
@@ -410,7 +410,7 @@ export function renderContextPack(input: PackInput): Pack {
   // budget: the reference has the real one's length, so the text given and the one hashed agree.
   const composeFits = (k: Keep): boolean => compose(k, input.reference).length <= budget;
 
-  // The trim, in A4's order. Each step keeps the most units of its part that let the pack fit, or
+  // The trim, in order. Each step keeps the most units of its part that let the pack fit, or
   // its least: the same as taking one unit at a time, found by bisection, because once a step has
   // removed a unit each further unit shortens the pack (a unit is longer than what its count adds
   // to the last line).
@@ -429,7 +429,7 @@ export function renderContextPack(input: PackInput): Pack {
     ["sources", PACK_SOURCES],
     ["learnings", 1],
     ["paragraphs", 0],
-    // Beyond A4's order: the rest of the log, the sources and the learnings, then the summary.
+    // Beyond that order: the rest of the log, the sources and the learnings, then the summary.
     ["log", 0],
     ["sources", 0],
     ["learnings", 0],

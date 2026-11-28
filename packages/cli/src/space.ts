@@ -1,4 +1,4 @@
-// `ttasks space` (A2 3.10.1, A1 3.18): local commands that the service carries out
+// `ttasks space`: local commands that the service carries out
 // through its `space/*` methods. The CLI opens no space database itself. Paths are resolved here,
 // against the CLI's working folder, and sent absolute.
 //
@@ -20,7 +20,7 @@
 //   ttasks space use <space>                          the machine's default space
 //
 // <space> is an ID, a name or a folder; without one, --space, else the one space the service has.
-// Which copy of a space an ID or a name means is the service's one rule (A2 3.10.5): the writable
+// Which copy of a space an ID or a name means is the service's one rule: the writable
 // copy, and a read-only copy by its folder.
 //
 // The service records what create, open, close, restore and claim do in machine.toml, so it holds
@@ -110,8 +110,8 @@ export interface SpaceRow {
   folder?: string;
   leftovers?: string[];
   /**
-   * Why a read-only space is read-only, in the service's words: A1 3.2's for a synced or network
-   * folder, or a failed migration's (A1 3.17: what happened, and the barrier backup's name).
+   * Why a read-only space is read-only, in the service's words: for a synced or network
+   * folder, or a failed migration's (what happened, and the barrier backup's name).
    */
   message?: string;
   /** The newest migration this machine ran on the space, with the backup from just before it. */
@@ -122,6 +122,8 @@ export interface SpaceRow {
   restored?: { at: string; backup?: string };
   /** Where the space's backups are written. */
   backups_folder?: string;
+  /** Backups made into the space's own folder that stay there, and why. */
+  old_backups?: { message?: string };
 }
 
 /** Options of a space command: `--name value` or `--flag`. Values are never shown in errors. */
@@ -162,7 +164,7 @@ const absolute = (io: Io, path: string): string =>
 const defaultFolder = (io: Io, name: string): string =>
   defaultSpaceFolder(resolveLayout(hostFacts(io.env, io.platform)), name);
 
-/** A1 3.2's two actions for a database that failed its check, as the person runs them. */
+/** The two actions for a database that failed its check, as the person runs them. */
 const CHECK_FAILED_WAY = [
   "Restore the newest backup that verifies into a new local folder, or keep the rows that can still be read:",
   `  ${CLI_NAME} space restore latest <folder> --to <new folder>`,
@@ -171,7 +173,7 @@ const CHECK_FAILED_WAY = [
 ];
 
 /**
- * The ways out of a space that is read-only for its folder (A1 3.2), as the person
+ * The ways out of a space that is read-only for its folder, as the person
  * runs them: confirm a synced folder is excluded from sync, or restore a backup into a new local
  * folder and claim the copy, which leaves the old folder where it is. A database that failed its
  * check gets its two actions instead, and never a new backup of it: restore the newest backup
@@ -179,7 +181,7 @@ const CHECK_FAILED_WAY = [
  */
 export function wayOut(row: Pick<SpaceRow, "state" | "reason"> & Partial<SpaceRow>): string[] {
   if (row.state !== "read_only") return [];
-  // A1 3.2's two actions for a failed check: never a new backup of the damaged database.
+  // The two actions for a failed check: never a new backup of the damaged database.
   if (row.reason === "check_failed") return CHECK_FAILED_WAY;
   if (row.reason !== "synced_folder" && row.reason !== "network_filesystem") return [];
   const backup = [
@@ -229,11 +231,12 @@ function printSpace(io: Io, row: SpaceRow, verb: string, isDefault = false): voi
   if (row.migrated !== undefined) io.stdout(`  ${migratedLine(row.migrated)}\n`);
   if (row.backup?.message !== undefined) io.stdout(`  ${row.backup.message}\n`);
   if (row.backups_folder !== undefined) io.stdout(`  Backups: ${row.backups_folder}\n`);
+  if (row.old_backups?.message !== undefined) io.stdout(`  ${row.old_backups.message}\n`);
   for (const line of wayOut(row)) io.stdout(`  ${line}\n`);
 }
 
 /**
- * What the service could not record in machine.toml (A2 3.10.1): the verb was done for this run,
+ * What the service could not record in machine.toml: the verb was done for this run,
  * and this line says what a restart does instead, and why. On stderr, beside the result.
  */
 function printNotRemembered(io: Io, result: Record<string, unknown>): void {
@@ -460,7 +463,7 @@ export async function spaceCommand(
           } else {
             const verb = { close: "Closed ", claim: "Claimed ", recover: "Recovered " }[sub];
             printSpace(io, result["space"] as SpaceRow, verb);
-            // A6 3.5's warning at a claim, in the service's words.
+            // The warning at a claim, in the service's words.
             if (typeof result["warning"] === "string") io.stdout(`${result["warning"]}\n`);
             printNotRemembered(io, result);
           }
@@ -535,7 +538,7 @@ export async function spaceCommand(
           io.stdout(
             `Exported to ${str(bundle["file"])} (seq ${str(bundle["seq"])}, ${str(bundle["size"])} bytes)\n`,
           );
-          // A6 3.16.6: the export screen says that a bundle is plaintext.
+          // The export screen says that a bundle is plaintext.
           io.stdout(
             "The bundle is a plain, unencrypted copy of the space. Keep it where only you can read it.\n",
           );

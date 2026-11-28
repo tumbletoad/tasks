@@ -3,10 +3,10 @@
 //
 // `ttasks mcp` hands over to the bridge first, with nothing of the CLI loaded and no handler of the
 // CLI's installed: the bridge starts fast, owns stdout (MCP frames only) and its own signals, and
-// exits with its own code (A2 3.7.1). Every other command loads the CLI (run.ts).
+// exits with its own code. Every other command loads the CLI (run.ts).
 //
 // safe-exit comes before every other module: the bridge, the shim and `ttasks serve` end through
-// `process.exit`, which the pinned Node can otherwise hang in (A2 3.12.1).
+// `process.exit`, which the pinned Node can otherwise hang in.
 import "@ttasks/bridge/safe-exit";
 import { fileURLToPath } from "node:url";
 import { isBridge, runBridge } from "./mcp.ts";
@@ -18,7 +18,7 @@ if (isBridge(argv)) {
   process.exit(await runBridge(argv.slice(1)));
 }
 
-// `ttasks shim <ticket>` (A4 3.6.3), a hidden verb: the launch shim, loaded only for it, with
+// `ttasks shim <ticket>`, a hidden verb: the launch shim, loaded only for it, with
 // nothing of the CLI before it, its own signals, and the agent's exit code as its own. The shim
 // loads only its own modules, the protocol client and discovery, three leaves of @ttasks/launch and
 // @ttasks/brand (packages/cli/test/shim-entry.test.ts); `ttasks mcp` loads nothing of it.

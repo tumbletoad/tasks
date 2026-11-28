@@ -1,10 +1,10 @@
-// When the projection runs a batch (A1 3.13 step 2): it waits 500 ms after the last change, at
+// When the projection runs a batch: it waits 500 ms after the last change, at
 // most 5 s while changes keep coming, and runs the next batch at once while a backlog waits. It
 // looks at the outbox every 100 ms through its reader, so one task shows in the folder within 1 s
-// of its commit (A1 3.20). A batch that fails, or leaves a root file or a retired file it could
+// of its commit. A batch that fails, or leaves a root file or a retired file it could
 // not place or remove, is tried again after a pause that doubles up to 30 s, so a file held open
 // on Windows does not spin the worker. A task whose file could not be placed pauses only itself
-// (projector.ts, A1 3.13 rule 7): the next batch runs without it.
+// (projector.ts): the next batch runs without it.
 import type { Projector, StartReport, StepReport } from "./projector.ts";
 
 export const POLL_MS = 100;

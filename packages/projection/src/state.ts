@@ -1,4 +1,4 @@
-// The projection's trusted state (A1 3.13 rule 1): the record of what it placed in the tree, and
+// The projection's trusted state: the record of what it placed in the tree, and
 // the journal of the batch in progress. Both live in the product's machine state for the space, one
 // pair per folder that holds it (`<state>/spaces/<space_id>.<folder key>.projection.json` and
 // `….projection-journal.json`, beside the space's machine-local settings), never in the tree:
@@ -15,7 +15,7 @@
 //   is about to place with its hash, and the tasks it found gone. A kill leaves it; the next start
 //   plays it forward against the disk (projector.ts) and removes the temporary files it names.
 //
-// **Only a file that is not there is no state** (A1 3.13 rule 1). A record or a journal that is
+// **Only a file that is not there is no state**. A record or a journal that is
 // there and does not read back whole (cut short, of another format, failing its own checks, not a
 // file) is `unreadable`, never `none`: nobody knows what it would have said, so the start rebuilds
 // every task (projector.ts). Each is one JSON object, so one cut short does not parse. Every path
@@ -103,7 +103,7 @@ export const newRecord = (identity: SpaceIdentity): TrustedRecord => ({
 });
 
 const SHA256 = /^[0-9a-f]{64}$/;
-/** A task's ID (A1 3.3). */
+/** A task's ID. */
 const TASK_ID = /^t_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
 /** A record larger than this is not read (a design-scale record is about 30 MB). */
 const MAX_BYTES = 256 * 1024 * 1024;

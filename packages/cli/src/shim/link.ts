@@ -1,5 +1,5 @@
-// The shim's connection to the service (A4 3.6.3 steps 2 and 9, "Re-attaching"). Finding the
-// service is the bridge's discovery (A2 3.6.1): `<state>/service.json` and `ipc.key`, read again
+// The shim's connection to the service, re-attaching after a drop. Finding the
+// service is the bridge's discovery: `<state>/service.json` and `ipc.key`, read again
 // for every attempt, so a restarted service, with its new pipe name, is found. The handshake is
 // ttasks-local/1's: the shim sends nothing about its launch before the service's proof verified.
 //
@@ -18,10 +18,10 @@ import {
 } from "@ttasks/bridge/protocol";
 import { REFUSED, SHIM_METHODS, type ReportMethod } from "@ttasks/launch/shim-wire";
 
-/** This build's identity in the bind frame. M1.13's release build stamps its own. */
+/** This build's identity in the bind frame. The release build stamps its own. */
 export const SHIM_BUILD = { version: "0.0.0", build: "source" } as const;
 
-/** Connect and handshake bounds, as the CLI's and the bridge's (A2 3.10.4). */
+/** Connect and handshake bounds, as the CLI's and the bridge's. */
 export const CONNECT_MS = 2_000;
 /** How long one call may wait for its answer. The claim's own steps have deadlines of 15 and 30 s. */
 export const CALL_MS = 60_000;
@@ -34,7 +34,7 @@ export interface Place {
   readonly tty: { readonly stdin: boolean; readonly stdout: boolean };
 }
 
-/** Why a connection attempt failed, as A3's transport reasons and discovery's `starting`. */
+/** Why a connection attempt failed, as the transport reasons and discovery's `starting`. */
 export function reasonOf(error: unknown): string {
   const reason = (error as { reason?: unknown } | null)?.reason;
   return typeof reason === "string" ? reason : "unreachable";
@@ -73,7 +73,7 @@ export async function connectOnce(place: Place): Promise<RpcSession> {
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** A3's error body of a TTasks error, as the service sent it. */
+/** The error body of a TTasks error, as the service sent it. */
 function bodyOf(error: unknown): Record<string, unknown> | undefined {
   if (!(error instanceof RpcError) || error.code !== RPC_ERROR.app) return undefined;
   return isObject(error.data) ? error.data : undefined;

@@ -1,4 +1,4 @@
-// What the projection writes, as pure functions (A1 3.13, A3 3.9.8). Fixture text only.
+// What the projection writes, as pure functions. Fixture text only.
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { describe, expect, test } from "vitest";
 import {
@@ -539,7 +539,7 @@ describe("[A1.5.projection.escape] task text in the view is shown, never run: on
     const line = mdLine(
       "**bold** _it_ ~~gone~~ `code` https://example.org <b> [l](u) ![i](u) &amp; \\* end ##",
     );
-    // Kept, by A1's choice: they run and load nothing, and escaping them would bury the text.
+    // Kept on purpose: they run and load nothing, and escaping them would bury the text.
     expect(line).toContain("**bold** _it_ ~~gone~~ `code` https://example.org ");
     // Everything else that could be markup is escaped.
     expect(unescaped(line)).not.toMatch(/<|\[|&[a-z]+;/);

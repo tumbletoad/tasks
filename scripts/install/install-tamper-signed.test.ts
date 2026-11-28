@@ -1,4 +1,4 @@
-// The install scripts (A7 3.8 M1.14, A2 3.12.4): install.sh on Linux and install.ps1 on Windows,
+// The install scripts: install.sh on Linux and install.ps1 on Windows,
 // run as a person runs them, on the run's release (scripts/install/test/install-file.ts). Every
 // install goes into a root below a temporary folder of this file's own; nothing touches the real
 // install root, PATH, a profile, a start-up entry or the registry. The canary stand-ins prove that

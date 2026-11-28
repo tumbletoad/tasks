@@ -262,10 +262,22 @@ export function useKeptTitles(space: string, task: string): readonly KeptTitle[]
 // Words the service refused are kept apart, not saved, until the person copies or discards them:
 // the editor opens again on the text as it is now, and a new draft never takes their place.
 
-/** What a text editor corrects: the summary, the context, or an entry by reference (n3, l4). */
-export type TextPart = "summary" | "context" | `${"n" | "l"}${number}`;
+/**
+ * What a text editor corrects: a task's summary, its context, or an entry by reference (n3, l4);
+ * a page's title, brief or body, and a node's brief, description or text for agents. Each is kept
+ * under its owner's ID: the task's, the page's or the node's.
+ */
+export type TextPart =
+  | "summary"
+  | "context"
+  | `${"n" | "l"}${number}`
+  | "title"
+  | "brief"
+  | "body"
+  | "description"
+  | "for_agents";
 
-const PART = /^(?:summary|context|[nl][1-9][0-9]{0,5})$/u;
+const PART = /^(?:summary|context|[nl][1-9][0-9]{0,5}|title|brief|body|description|for_agents)$/u;
 
 export const isTextPart = (value: string): value is TextPart => PART.test(value);
 
@@ -289,32 +301,32 @@ function textOf(value: unknown): TextDraft | undefined {
 
 const REFUSED = "refused";
 
-const textName = (space: string, task: string, part: TextPart, tab = TAB, refused = false) =>
-  `${textPrefix(space, task)}${part}.${tab}${refused ? `.${REFUSED}` : ""}`;
+const textName = (space: string, owner: string, part: TextPart, tab = TAB, refused = false) =>
+  `${textPrefix(space, owner)}${part}.${tab}${refused ? `.${REFUSED}` : ""}`;
 
-/** What this tab typed in place of the task's text `part`, if it kept any. */
-export function readTextDraft(space: string, task: string, part: TextPart): TextDraft | undefined {
-  return textOf(browserKept.json(textName(space, task, part)));
+/** What this tab typed in place of the text `part` of `owner`, if it kept any. */
+export function readTextDraft(space: string, owner: string, part: TextPart): TextDraft | undefined {
+  return textOf(browserKept.json(textName(space, owner, part)));
 }
 
 /** Keeps what this tab's editor of `part` holds; undefined when it holds nothing unsent. */
 export function keepTextDraft(
   space: string,
-  task: string,
+  owner: string,
   part: TextPart,
   draft: TextDraft | undefined,
 ): void {
-  keep(textName(space, task, part), draft === undefined ? undefined : JSON.stringify(draft));
+  keep(textName(space, owner, part), draft === undefined ? undefined : JSON.stringify(draft));
 }
 
 /** Keeps words of this tab's that the service refused for `part`: not saved, until let go. */
 export function keepRefusedText(
   space: string,
-  task: string,
+  owner: string,
   part: TextPart,
   draft: TextDraft,
 ): void {
-  keep(textName(space, task, part, TAB, true), JSON.stringify(draft));
+  keep(textName(space, owner, part, TAB, true), JSON.stringify(draft));
 }
 
 interface KeptText {
@@ -325,9 +337,9 @@ interface KeptText {
   readonly refused: boolean;
 }
 
-/** Every text kept for the task, of every tab, with its part. */
-function keptTexts(space: string, task: string): KeptText[] {
-  const prefix = textPrefix(space, task);
+/** Every text kept for `owner`, of every tab, with its part. */
+function keptTexts(space: string, owner: string): KeptText[] {
+  const prefix = textPrefix(space, owner);
   return browserKept
     .names(prefix)
     .sort()
@@ -340,15 +352,15 @@ function keptTexts(space: string, task: string): KeptText[] {
     });
 }
 
-/** The refused words kept for the task's `part`, of every tab, as they come and go. */
+/** The refused words kept for `part` of `owner`, of every tab, as they come and go. */
 export function useRefusedTexts(
   space: string,
-  task: string,
+  owner: string,
   part: TextPart,
 ): readonly { readonly tab: string; readonly typed: string }[] {
   const kept = useSyncExternalStore(onUnsent, () =>
     JSON.stringify(
-      keptTexts(space, task)
+      keptTexts(space, owner)
         .filter((text) => text.refused && text.part === part)
         .map(({ tab, draft }) => ({ tab, typed: draft.typed })),
     ),

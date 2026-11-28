@@ -1,8 +1,8 @@
-// Typed, content-free problems with machine-local configuration (A2 3.2.4), and a strict reader for
+// Typed, content-free problems with machine-local configuration, and a strict reader for
 // one table of it. A problem names the key and a fixed code, never the value: machine.toml holds
 // paths, account labels and commands, which no log, status line or crash file may carry.
 //
-// The reader takes plain values (what a TOML parser returns), so the sections A4 owns are checked
+// The reader takes plain values (what a TOML parser returns), so the launch's sections are checked
 // here and the file itself is read by the service (packages/service/src/config).
 
 /** Every code a configuration problem can have. A closed list: logs and doctor print these. */
@@ -37,11 +37,11 @@ export const PROBLEM_CODES = [
   "not_absolute",
   /** An instance names a target that is neither built in nor a `custom:` ID. */
   "unknown_target",
-  /** A template names a placeholder that does not exist (A4 3.6.4). */
+  /** A template names a placeholder that does not exist. */
   "unknown_placeholder",
   /** A key that this entry's target does not take (`via_login_shell` on Windows). */
   "not_for_target",
-  /** A second instance of a target that has a single instance (A4 3.2). */
+  /** A second instance of a target that has a single instance. */
   "single_instance",
   /**
    * A section or key this build no longer reads (`[roots]`, an instance's `prompt` or T3 keys): its

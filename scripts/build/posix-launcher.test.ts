@@ -1,4 +1,4 @@
-// The POSIX launcher `bin/ttasks` (A2 3.12.3), on Linux and macOS:
+// The POSIX launcher `bin/ttasks`, on Linux and macOS:
 // hostile arguments reach Node unchanged, the caller's NODE_ variables (but NODE_EXTRA_CA_CERTS)
 // and OpenSSL's loader settings never do, TTASKS_HOME comes from the location only, and exit codes
 // pass through, called by its own path in a version folder and through bin/ttasks -> current. The

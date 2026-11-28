@@ -1,11 +1,11 @@
-// A fake Claude Code or Codex CLI (A4 3.4.2, 3.4.3; M2.10): what a launch's shim starts in place
+// A fake Claude Code or Codex CLI: what a launch's shim starts in place
 // of the real agent. It takes any argv, as the real CLIs do, and is steered by its environment,
 // which a test sets through the instance's `env` in machine.toml:
 // - FAKE_CLI_REPORT: a file to write its report to: its whole argv exactly as it got it (as text,
 //   and each argument's UTF-8 and UTF-16 code units in hex, so a test compares them byte for
 //   byte), the folder it started in (as a path and by identity), and its environment's names.
-// - FAKE_CLI_ROLLOUT_HOME: a Codex home: it writes a session file there as A4 3.4.3 describes
-//   Codex's (its session record with the folder `-C` named, then the prompt after `--` as the
+// - FAKE_CLI_ROLLOUT_HOME: a Codex home: it writes a session file there as Codex
+//   does (its session record with the folder `-C` named, then the prompt after `--` as the
 //   user's first message), for the reference match.
 // - FAKE_CLI_TASKS: `{"argv": [...], "home": "..."}`, the product's command and the install's home
 //   (TTASKS_HOME): it reads the task as its brief says when the tools are missing, the brief's

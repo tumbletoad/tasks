@@ -90,6 +90,7 @@ export const RUN_EVIDENCE_FIELDS = {
   native_id: "id",
   home: "id",
   process_group: "id",
+  folder_id: "id",
 } as const satisfies Record<string, "id" | "instant" | "count">;
 
 /** An ID in a run's evidence or result: plain characters only. */

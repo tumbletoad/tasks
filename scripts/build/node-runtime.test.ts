@@ -1,4 +1,4 @@
-// The official Node download (A2 3.12.1), offline: the real SHASUMS256.txt of
+// The official Node download, offline: the real SHASUMS256.txt of
 // Node 26.13.1, its signature and the pinned nodejs/release-keys keyring are public files kept as
 // fixtures (fixtures/node-v26.13.1/), so the signature check runs without the network.
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

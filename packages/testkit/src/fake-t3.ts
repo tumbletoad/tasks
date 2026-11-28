@@ -1,5 +1,5 @@
-// A fake T3 Code server for the T3 route's tests (A4 3.4.1, A4 5.1 "Fake T3 server", A7 3.9
-// M2.11). It listens on a loopback port the OS assigns and plays what an outside MCP client of T3
+// A fake T3 Code server for the T3 route's tests.
+// It listens on a loopback port the OS assigns and plays what an outside MCP client of T3
 // sees: the server's origin in `<home>/userdata/server-runtime.json`, OAuth discovery, dynamic
 // client registration and the authorization code flow with PKCE (S256), and MCP over Streamable
 // HTTP at `<origin>/mcp` with the tools the route calls. Tests only; fixture data only.
@@ -325,7 +325,7 @@ export class FakeT3 {
     this.#origin = `http://127.0.0.1:${String(address.port)}`;
     // User-only, whatever the umask of the run (002 on an Ubuntu desktop): TTasks trusts T3's
     // runtime file only when no one else can change it or its folder (t3-client.ts). What T3 itself
-    // gives them is not observed yet (L05); A4's open item 6.14 records the question.
+    // gives them is not observed yet.
     mkdirSync(join(this.home, "userdata"), { recursive: true, mode: 0o700 });
     writeFileSync(
       this.runtimeFile,

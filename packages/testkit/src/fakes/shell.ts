@@ -1,4 +1,4 @@
-// A fake login shell for the login-shell snapshot (A4 3.8; M2.09): `node <this file> -lic <script>`.
+// A fake login shell for the login-shell snapshot: `node <this file> -lic <script>`.
 // It finds the snapshot's marker in the script the service sends and answers as FAKE_SHELL_MODE
 // says, so every way a real profile can behave is a fixture:
 // - `ok`: profile noise on stdout, then the fenced `env -0` of its own environment with

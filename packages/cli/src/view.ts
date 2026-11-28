@@ -1,4 +1,4 @@
-// `ttasks view` (A1 3.13, M3.10): the space's generated view, `view/`. The service carries it out
+// `ttasks view`: the space's generated view, `view/`. The service carries it out
 // through its `view/rebuild` method (hub/space-verbs.ts); the CLI opens no space database.
 //
 //   ttasks view rebuild [<space>]

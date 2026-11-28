@@ -1,4 +1,4 @@
-// The install scripts (A7 3.8 M1.14, A2 3.12.4): install.sh on Linux and install.ps1 on Windows,
+// The install scripts: install.sh on Linux and install.ps1 on Windows,
 // run as a person runs them, on the run's release (scripts/install/test/install-file.ts). Every
 // install goes into a root below a temporary folder of this file's own; nothing touches the real
 // install root, PATH, a profile, a start-up entry or the registry. The canary stand-ins prove that
@@ -112,7 +112,7 @@ describe("[A2.3.12.4.install.replace] installing again, a newer version, and a f
   test(
     "while an update holds update.lock, the finish stops and the version folder this run put in place stays, for the update that may use it",
     async () => {
-      // An update of the same version may take the folder this run renamed into place (A2 3.12.4)
+      // An update of the same version may take the folder this run renamed into place
       // while it holds update.lock, so the script never removes it from an existing install.
       const copy = join(homes, "update-running");
       cpSync(root, copy, { recursive: true, verbatimSymlinks: true });

@@ -246,7 +246,7 @@ async function shellExecReports(code: string, path: string, linter = eslint): Pr
   return (result?.messages ?? []).filter((m) => m.ruleId === "ttasks/no-shell-exec").length;
 }
 
-// A2 3.2.2 rule 5: the umask is read without setting it (hub/umask.ts). process.umask() without an
+// The umask is read without setting it (hub/umask.ts). process.umask() without an
 // argument sets the mask of every thread to 0 for a moment, so product code never calls it; with
 // an argument it would change what the service's agents inherit.
 describe("[A2.3.2.2.permissions.umask] product code never calls process.umask()", () => {
