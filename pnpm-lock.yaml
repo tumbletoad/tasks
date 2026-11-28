@@ -214,6 +214,9 @@ importers:
       '@ttasks/brand':
         specifier: workspace:*
         version: link:../../packages/brand
+      '@ttasks/client':
+        specifier: workspace:*
+        version: link:../../packages/client
       '@ttasks/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -443,6 +446,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(supports-color@7.2.0)(zod@4.6.7)
+      '@ttasks/client':
+        specifier: workspace:*
+        version: link:../client
       '@ttasks/launcher-win':
         specifier: workspace:*
         version: link:../launcher-win

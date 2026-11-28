@@ -84,6 +84,7 @@ const files: Record<string, string> = {
   "packages/client/src/uses-web.ts": imports("../../web/src/index.ts"),
   "packages/client/src/io.ts": imports("node:fs"),
   "apps/phone/src/uses-web.ts": imports("../../../packages/web/src/index.ts"),
+  "packages/service/test/uses-phone.test.ts": imports("../../../apps/phone/src/index.ts"),
   "packages/service/src/kit.ts": imports(TESTKIT),
   "packages/service/src/db.ts": imports("node:sqlite"),
   "packages/service/src/sqlite3.ts": imports("better-sqlite3"),
@@ -129,6 +130,7 @@ const expected = [
   "only-storage-node-sqlite: packages/service/src/db.ts -> node:sqlite",
   "only-storage-node-sqlite: packages/service/src/sqlite.test.ts -> node:sqlite",
   "phone-only-contracts: apps/phone/src/uses-web.ts -> packages/web/src/index.ts",
+  "phone-stays-in-the-app: packages/service/test/uses-phone.test.ts -> apps/phone/src/index.ts",
   "testkit-only-from-tests: packages/service/src/kit.ts -> packages/testkit/src/index.ts",
   "web-only-contracts: packages/web/src/index-core.ts -> packages/core/src/index.ts",
 ];

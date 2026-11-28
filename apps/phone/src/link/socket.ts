@@ -2,7 +2,7 @@
 // trusts the computer by the pin of its key and presents the phone's own key from the Keystore.
 // Events of a socket that was closed here, or replaced, reach nobody.
 import { requireNativeModule, type NativeModule } from "expo";
-import type { Connect, Failure, LinkSocket } from "./open.ts";
+import type { Connect, Failure, LinkSocket } from "@ttasks/client/link";
 
 type Events = {
   open(event: { id: number }): void;

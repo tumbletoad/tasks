@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { PRODUCT_NAME } from "@ttasks/brand";
-import { openLink, readSaved } from "./link/open.ts";
+import { openLink, readSaved } from "@ttasks/client/link";
 import { connectSocket, native } from "./link/socket.ts";
 
 type State = "unpaired" | "connecting" | "connected" | "offline" | "removed";

@@ -7,6 +7,7 @@
   "main": "index.ts",
   "dependencies": {
     "@ttasks/brand": "workspace:*",
+    "@ttasks/client": "workspace:*",
     "@ttasks/contracts": "workspace:*",
     "expo": "58.0.26",
     "react": "19.3.0",

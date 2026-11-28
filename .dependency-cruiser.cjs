@@ -137,6 +137,16 @@ module.exports = {
       to: { path: REPO, pathNot: "^(apps/phone|packages/(client|contracts|brand))/" },
     },
     {
+      name: "phone-stays-in-the-app",
+      comment:
+        "Nothing outside apps/phone imports from it, tests included: what the phone shares with " +
+        "the computer's side lives in client, and the jobs that never touch the app install " +
+        "without it.",
+      severity: "error",
+      from: { pathNot: "^apps/phone/" },
+      to: { path: "^apps/phone/" },
+    },
+    {
       name: "client-only-contracts",
       comment:
         "client is what the page and the phone app share, so it imports only contracts and " +

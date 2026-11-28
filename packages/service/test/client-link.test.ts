@@ -1,17 +1,11 @@
-// The phone app's pairing and reopening (apps/phone/src/link/open.ts) against the real service,
-// over a Node socket that does what the native link does: TLS 1.3 with the phone's own key, the
-// computer trusted by its pin alone, and nothing written to a computer with another key. The
-// native link itself is tried on an emulator (tests/phone/emulator.ts). Fixture data only.
+// The phone's pairing and reopening (@ttasks/client/link, which the phone app runs) against the
+// real service, over a Node socket that does what the native link does: TLS 1.3 with the phone's
+// own key, the computer trusted by its pin alone, and nothing written to a computer with another
+// key. The native link itself is tried on an emulator (tests/phone/emulator.ts). Fixture data only.
 import { parsePairing, type Pairing } from "@ttasks/contracts/link";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { WebSocket } from "ws";
-import {
-  openLink,
-  pairWith,
-  type Connect,
-  type LinkSocket,
-  type Saved,
-} from "../../../apps/phone/src/link/open.ts";
+import { openLink, pairWith, type Connect, type LinkSocket, type Saved } from "@ttasks/client/link";
 import { post } from "./http-client.ts";
 import { httpWorld, signIn, type HttpWorld } from "./http-world.ts";
 import { phoneKey, tlsTo, type PhoneKey } from "./phone-client.ts";

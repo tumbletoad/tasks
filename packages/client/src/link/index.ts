@@ -1,9 +1,11 @@
-// Opening the link to the computer: with a pairing code the first time, without one after. Each of
-// the computer's addresses in turn, each attempt bounded through the hello. A connection that
-// closes or never comes leaves the pairing as it is: only the computer's explicit `removed` ends it.
+// The phone's link to the computer as plain TypeScript (`@ttasks/client/link`): the `open` frame,
+// pairing with a code the first time and without one after, the hello read for the space, and
+// `removed` told apart from a lost connection. Each of the computer's addresses in turn, each
+// attempt bounded through the hello. A connection that closes or never comes leaves the pairing as
+// it is: only the computer's explicit `removed` ends it.
 //
-// Plain TypeScript over a socket it is handed (`Connect`): the app hands it the native link
-// (socket.ts), the tests a Node one against the real service.
+// It runs over a socket it is handed (`Connect`): the phone app hands it its native link, the tests
+// a Node one against the real service.
 import { LINK_PATH, LINK_PROTOCOL, type Pairing } from "@ttasks/contracts/link";
 
 /** Why a socket ended before it opened: the computer's key is another, TLS failed, or no route. */
