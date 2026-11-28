@@ -3251,11 +3251,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         body === undefined ? { note: asked, removed: true } : { note: asked, ...requestText(body) };
     }
     let answer: Record<string, unknown>;
+    // What is known above the task, and its own pages: with the digest and with every sections
+    // read, since many agents read only sections.
+    const trail = isTree(call.space) ? treeTrail : trailOf;
+    const library = trailOff() ? undefined : await trail(reader, read.space, read.row);
     if (sections.length === 0) {
       const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
-      // What is known above the task, and its own pages, in the digest's one budget.
-      const trail = isTree(call.space) ? treeTrail : trailOf;
-      const library = trailOff() ? undefined : await trail(reader, read.space, read.row);
       const more = digest["more"] as Record<string, unknown>;
       answer = {
         view: "digest",
@@ -3285,6 +3286,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         task: taskRow(read.row, read.space.refPrefix),
         sections: page.sections,
         ...(page.before === undefined ? {} : { before: page.before }),
+        ...(library === undefined
+          ? {}
+          : {
+              pages: library.pages,
+              pages_more: library.count - library.pages.length,
+              trail: library.trail,
+            }),
         ...notes,
       };
     }

@@ -316,7 +316,7 @@ Usage: `ttasks show [<task>] [flags]`
 |---|---|---|---|
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--launch` | `launch` | string | Launch reference from the Brief: load its task |
-| `--section` | `sections` | "instructions" \| "context" \| "notes" \| "log" \| "sources" \| "outcome" \| "history" | Return these in full instead of the digest (repeatable) |
+| `--section` | `sections` | "instructions" \| "context" \| "notes" \| "log" \| "sources" \| "outcome" \| "history" | Return these in full instead of the digest; the pages known above come with both (repeatable) |
 | `--log-limit` | `log_limit` | integer | Log entries per page; default 20 |
 | `--before` | `before` | string | With sections: the before token of the last page |
 | `--note` | `notes` | string | These notes too, whole, whatever their age (repeatable, user only) |

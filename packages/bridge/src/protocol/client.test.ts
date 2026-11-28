@@ -145,6 +145,15 @@ function expectUntrusted(error: unknown, detail?: string): void {
   if (detail !== undefined) expect(local.detail).toBe(detail);
 }
 
+/** A close or a stall before any answer: not reachable now, and worth another try. */
+function expectLost(error: unknown, detail?: string): void {
+  expect(error).toBeInstanceOf(LocalError);
+  const local = error as LocalError;
+  expect(local.reason).toBe("connection_lost");
+  expect(local.retryable).toBe(true);
+  if (detail !== undefined) expect(local.detail).toBe(detail);
+}
+
 describe("[A2.3.6.local.pre-auth-bytes] a client against a fake endpoint", () => {
   test.each(MODES)("an invalid proof (%s mode): the fake receives only the hello", async (mode) => {
     const wrong = { jsonrpc: "2.0", id: 0, result: { proof: randomToken() } };
@@ -183,18 +192,18 @@ describe("[A2.3.6.local.pre-auth-bytes] a client against a fake endpoint", () =>
     expectOnlyHello(bytes);
   });
 
-  test("no proof and a close: the fake receives only the hello", async () => {
+  test("no proof and a close: the connection is lost, and the fake received only the hello", async () => {
     const { error, bytes } = await against(challengeThen({ kind: "close" }));
-    expectUntrusted(error, "closed");
+    expectLost(error, "closed");
     expectOnlyHello(bytes);
   });
 
-  test("no proof and silence: the client gives up at its deadline, after only the hello", async () => {
+  test("no proof and silence: the client gives up at its deadline as a lost connection, after only the hello", async () => {
     const started = performance.now();
     const { error, bytes } = await against(challengeThen({ kind: "silent" }), {
       handshakeTimeoutMs: 300,
     });
-    expectUntrusted(error, "timeout");
+    expectLost(error, "timeout");
     expect(performance.now() - started).toBeGreaterThanOrEqual(250);
     expectOnlyHello(bytes);
   });
@@ -264,9 +273,9 @@ describe("[A2.3.6.local.pre-auth-bytes] a client against a fake endpoint", () =>
     expect(bytes.length).toBe(0);
   });
 
-  test("a silent endpoint gets no byte at all", async () => {
+  test("a silent endpoint gets no byte at all, and is a lost connection, not a forged one", async () => {
     const { error, bytes } = await against(() => undefined, { handshakeTimeoutMs: 300 });
-    expectUntrusted(error, "timeout");
+    expectLost(error, "timeout");
     expect(bytes.length).toBe(0);
   });
 
@@ -315,7 +324,8 @@ describe("[A2.3.6.local.pre-auth-bytes] a client against a fake endpoint", () =>
             mode,
             context: { ...ctx, env: { TTASKS_TICKET: "SENTINEL-TICKET" } },
           });
-          expectUntrusted(error);
+          if (r.kind === "close") expectLost(error);
+          else expectUntrusted(error);
           expectOnlyHello(bytes, mode);
         }),
         { numRuns: 60 },

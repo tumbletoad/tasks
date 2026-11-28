@@ -5,7 +5,7 @@ import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { RpcError, type JsonObject, type RpcSession } from "@ttasks/bridge/protocol";
+import { LocalError, RpcError, type JsonObject, type RpcSession } from "@ttasks/bridge/protocol";
 import { REFUSED, SHIM_PROTOCOL } from "@ttasks/launch/shim-wire";
 import { Link } from "../src/shim/link.ts";
 import { runShim, shellAfterExit, TEXT, type ShimIo } from "../src/shim/run.ts";
@@ -197,6 +197,64 @@ describe("[A4.5.shim.client] the shim's link", () => {
       expect(no.code).toBe(1);
       expect(no.entered).toBe(entered);
     }
+  });
+
+  test("a handshake that ran out of time is tried again and the launch starts; an endpoint that answered wrongly ends it at once", async () => {
+    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-shim-link-")));
+    temps.push(folder);
+    const reply = {
+      protocol: SHIM_PROTOCOL,
+      launch: LAUNCH,
+      argv: [process.execPath],
+      folder,
+      check: CHECK,
+      env: {},
+      title: "Fixture launch",
+      after_exit: "close",
+      credential: `${"c".repeat(21)}A`,
+      exit_file: join(folder, "exit.json"),
+    };
+    const run = async (failure: LocalError) => {
+      const lines: string[] = [];
+      let connects = 0;
+      let started = 0;
+      const claimed = fake((method) => Promise.resolve(method === "launch.claim" ? reply : {}));
+      const code = await runShim(["0".repeat(24)], {
+        io: { ...fakeIo(lines), waitEnter: () => Promise.resolve() },
+        startTime: () => Promise.resolve("windows:1"),
+        connect: () => {
+          connects += 1;
+          return connects === 1 ? Promise.reject(failure) : Promise.resolve(claimed.session);
+        },
+        startAgent: () => {
+          started += 1;
+          return Promise.resolve({
+            pid: 99,
+            exited: Promise.resolve({ code: 0, signal: null }),
+            kill: () => undefined,
+          });
+        },
+        checkFolder: () => Promise.resolve({ status: "ok" }),
+        timing: { retryEveryMs: 1, connectRetryMs: 5_000 },
+      });
+      return { code, lines, connects, started, claims: claimed.calls };
+    };
+
+    // A busy service: the first handshake timed out, the second claims and starts the agent.
+    const slow = await run(new LocalError("connection_lost", "timeout"));
+    expect(slow.connects).toBe(2);
+    expect(slow.claims[0]).toBe("launch.claim");
+    expect(slow.started).toBe(1);
+    expect(slow.code).toBe(0);
+    expect(slow.lines).not.toContain(TEXT.untrusted);
+
+    // A proof that did not verify: no second try, nothing claimed, the launch did not start.
+    const forged = await run(new LocalError("untrusted_endpoint", "bad_proof"));
+    expect(forged.connects).toBe(1);
+    expect(forged.claims).toEqual([]);
+    expect(forged.started).toBe(0);
+    expect(forged.code).toBe(1);
+    expect(forged.lines).toContain(TEXT.untrusted);
   });
 });
 

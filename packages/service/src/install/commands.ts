@@ -674,13 +674,12 @@ function refuseIdentity(
       `${verbFor(verb)} is not run from an agent's shell: it changes whether and how ${PRODUCT_NAME}'s service runs. Run it in your own terminal.`,
     );
   }
-  if (elevated && ctx.platform === "win32" && identity.elevated !== false) {
+  // Only Windows saying "elevated" refuses: a check with no answer goes on, as the service does.
+  if (elevated && ctx.platform === "win32" && identity.elevated === true) {
     throw new ServiceCommandError(
       "forbidden",
-      identity.elevated === undefined ? "elevation_unknown" : "elevated",
-      identity.elevated === undefined
-        ? `${verbFor(verb)} could not check whether it runs elevated, so it changes nothing.`
-        : `${verbFor(verb)} does not run as administrator. Run it in a normal terminal.`,
+      "elevated",
+      `${verbFor(verb)} does not run as administrator. Run it in a normal terminal.`,
     );
   }
   if (elevated && identity.package !== null) {

@@ -1,10 +1,11 @@
 // The trail in get_task's first answer: what is known above the task, inside one budget with the
 // task's digest. Older log entries go before any page row above the task, a far level's rows before
 // a near one's, and every level keeps its count and the way to read it all. The user's texts for
-// agents stand outside the data block under a fixed label and an ID, never a title.
+// agents stand outside the data block under a fixed label and an ID, never a title. A sections
+// read carries the same trail below its sections, in room of its own.
 import { findEntry, resultTokens, type OutputOf } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
-import { DIGEST_TOKENS, renderResult } from "./render.ts";
+import { DIGEST_TOKENS, TRAIL_TOKENS, renderResult } from "./render.ts";
 import { DATA_WORD, closeMarker, openMarker } from "./text.ts";
 
 type Digest = Extract<OutputOf<"task.get">, { view: "digest" }>;
@@ -187,5 +188,59 @@ describe("[A3.pages.trail] the trail in get_task's first answer", () => {
       digest([level("area", AREA, "Client work", [], { brief: "" })]),
     );
     expect(text).toContain("Area Client work: no brief");
+  });
+});
+
+type Sections = Extract<OutputOf<"task.get">, { view: "sections" }>;
+
+/** The sections example of get_task, with `sections` and the trail given. */
+function sectionsRead(sections: Sections["sections"], trail: Level[]): Sections {
+  const base = structuredClone(findEntry("task.get")?.examples[1]?.output) as Sections;
+  delete base.before;
+  return {
+    ...base,
+    sections,
+    pages: [row("M-221", "Offset measurements", "raw times per clinic", "agent:claude-code")],
+    pages_more: 0,
+    trail,
+  };
+}
+
+describe("[A3.pages.trail-sections] the trail in get_task with sections", () => {
+  test("a sections read shows the levels above below its sections, and the user's texts above it outside the data block", () => {
+    const text = renderResult(
+      "task.get",
+      sectionsRead({ context: "Check the offsets. CONTEXT_TAIL" }, [
+        project(),
+        level("area", AREA, "Client work", pagesOf(140, 3)),
+      ]),
+    );
+    const lines = text.split("\n");
+    const at = (start: string) => lines.findIndex((line) => line.startsWith(start));
+    expect(at("Context")).toBeLessThan(at("Known above this task"));
+    expect(at("Project Lumen Health:")).toBeLessThan(at("Area Client work:"));
+    expect(text).toContain("- M-221 Offset measurements: raw times per clinic");
+    expect(text).toContain("- M-140 Page 140: what a reader finds in it");
+    const { outside } = blocks(text);
+    expect(outside).toContain(`For agents, from the user, on ${PROJECT} (2026-11-03):`);
+  });
+
+  test("a full page keeps every line it holds: the trail has room of its own, and gives way first", () => {
+    const context = `${"a line of context that fills the page. ".repeat(100)}CONTEXT_TAIL`;
+    const text = renderResult(
+      "task.get",
+      sectionsRead({ context }, [
+        project(pagesOf(180, 25)),
+        level("area", AREA, "Client work", pagesOf(300, 25), { count: 40 }),
+        level("space", SPACE, "Mira", pagesOf(400, 25), { count: 31 }),
+      ]),
+    );
+    expect(text).toContain("CONTEXT_TAIL");
+    expect(text).not.toMatch(/chars\)/);
+    expect(text).toContain("Space Mira: Mira in one line");
+    expect(text).toMatch(/\+\d+ more: read target "space"/);
+    expect(resultTokens(text)).toBeLessThanOrEqual(
+      (findEntry("task.get")?.budget?.max ?? 0) + TRAIL_TOKENS,
+    );
   });
 });

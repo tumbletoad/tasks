@@ -68,3 +68,10 @@ export {
 export { layoutOf, nodePath, type Layout, type Level, type Place } from "./files/layout.ts";
 export { renderTree } from "./files/render.ts";
 export { readSnapshot, type Snapshot } from "./files/snapshot.ts";
+export {
+  FilesProjector,
+  type FilesOptions,
+  type PassReport,
+  type StartReport as FilesStartReport,
+} from "./files/pass.ts";
+export { runFiles, type FilesLoopOptions } from "./files/loop.ts";

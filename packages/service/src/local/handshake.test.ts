@@ -160,7 +160,8 @@ describe("[A2.3.6.local.handshake] handshake over a socket or pipe", () => {
         reason: "bad_proof",
       });
 
-      // The client library reports the same case as an untrusted endpoint.
+      // The service said nothing the client could check, so the client library reports a lost
+      // connection, which it may try again: the client cannot tell this from a busy service.
       const error = await connect({
         path: hub.path,
         key: testKey(),
@@ -169,7 +170,7 @@ describe("[A2.3.6.local.handshake] handshake over a socket or pipe", () => {
         context: SENTINEL_CONTEXT,
       }).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(LocalError);
-      expect((error as LocalError).reason).toBe("untrusted_endpoint");
+      expect((error as LocalError).reason).toBe("connection_lost");
       expect(hub.bound).toHaveLength(0);
       await until(() => hub.server.connectionCount === 0, 20_000);
     } finally {
