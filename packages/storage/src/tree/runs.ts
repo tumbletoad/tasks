@@ -72,8 +72,11 @@ function folderOn(tx: Tx, id: unknown, machine: string): string | null {
   return id;
 }
 
-/** A launch or a run row as today's decoders read one: the tree names a folder, not a place. */
-const asToday = (row: Row): Row => ({ ...row, place_id: null });
+/**
+ * A launch or a run row as today's decoders read one: the tree names a folder, not a place, and a
+ * run belongs to a task, never to a routine.
+ */
+const asToday = (row: Row): Row => ({ ...row, place_id: null, routine_id: null });
 
 const launchCreate: Run = (tx, input) => {
   const task = liveTask(tx, input["task"]);
@@ -138,7 +141,7 @@ const launchTransition: Run = (tx, input) => {
 };
 
 const runCreate: Run = (tx, input) => {
-  const task = input["task"] === undefined ? null : liveTask(tx, input["task"]);
+  const task = liveTask(tx, input["task"]);
   const machine = machineOf(tx);
   const folder = folderOn(tx, input["folder"], machine);
   const id = tx.newId("ru");
@@ -147,7 +150,6 @@ const runCreate: Run = (tx, input) => {
     {
       id,
       task_id: task,
-      routine_id: str(input, "routine") ?? null,
       session_id: str(input, "session") ?? null,
       instance_id: String(input["instance"]),
       machine_id: machine,
@@ -274,7 +276,14 @@ export const RUNS: Readonly<Record<string, Command>> = {
     },
     run: launchTransition,
   },
-  "run.create": { check: (f) => withFolder(f, runCreateFields), run: runCreate },
+  "run.create": {
+    check: (f) => {
+      // A run on the tree belongs to a task: routines are nodes with tables of their own.
+      if (f.has("routine")) f.fail("VALIDATION_FAILED", "A run belongs to a task", "routine");
+      return withFolder(f, runCreateFields);
+    },
+    run: runCreate,
+  },
   "run.transition": {
     check: (f) => {
       const out = { ...runTransitionFields(f) };

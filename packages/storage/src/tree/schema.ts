@@ -182,9 +182,9 @@ export const TREE_STATEMENTS: readonly string[] = [
   "CREATE INDEX launches_task ON launches(task_id, created_at)",
   "CREATE INDEX launches_open ON launches(machine_id, created_at) " +
     "WHERE state IN ('prepared','dispatching','dispatched')",
-  // What Run records: as today's, a task's run or a routine's, never both.
+  // What Run records: a run of a task. Routines are nodes with tables of their own.
   `CREATE TABLE runs (
-  id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id), routine_id TEXT, session_id TEXT,
+  id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), session_id TEXT,
   instance_id TEXT NOT NULL, machine_id TEXT NOT NULL REFERENCES machines(id),
   adapter TEXT NOT NULL, folder_id TEXT REFERENCES folders(id), request TEXT,
   spec TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(spec)),
@@ -192,8 +192,7 @@ export const TREE_STATEMENTS: readonly string[] = [
   detail TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(detail)),
   result TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(result)),
   queued_at INTEGER NOT NULL, started_at INTEGER, ended_at INTEGER,
-  ${VERSIONS},
-  CHECK (task_id IS NULL OR routine_id IS NULL)
+  ${VERSIONS}
 ) STRICT`,
   "CREATE INDEX runs_task ON runs(task_id, queued_at)",
   // Notes, log entries and learnings in one thread on a node, and a page's comments; numbered per

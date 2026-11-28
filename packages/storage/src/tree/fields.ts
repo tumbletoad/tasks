@@ -104,7 +104,6 @@ export const KEYS: Record<Entity, readonly string[]> = {
   runs: [
     "id",
     "task_id",
-    "routine_id",
     "session_id",
     "instance_id",
     "machine_id",
