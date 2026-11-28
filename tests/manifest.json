@@ -2209,7 +2209,7 @@
     },
     {
       "id": "S2.tree.runs",
-      "title": "A folder's change held to its path and its removal as the caller saw them, and a new folder to a removal since the base, as today's writer; What Open and Run record on the tree writer, by today's rules: a launch opens prepared, a second click gets it, and it moves by the state machine's edges only, by one compare-and-set, with evidence that only grows and a reason where a state takes one; a run is queued for a task with the person's instruction and moves on its version; a node's folder on this machine is set as the machine spells a path, changed and cleared, and a removed folder is refused; a launch of a task in the Trash is refused, and one may name a note of its task as its request",
+      "title": "A folder's change held to its path and its removal as the caller saw them, and a new folder to a removal since the base, as today's writer; What Open and Run record on the tree writer, by today's rules: a launch opens prepared, a second click that continues the same agent conversation or none gets it, and it moves by the state machine's edges only, by one compare-and-set, with evidence that only grows and a reason where a state takes one; a run is queued for a task with the person's instruction and moves on its version; a node's folder on this machine is set as the machine spells a path, changed and cleared, and a removed folder is refused; a launch of a task in the Trash is refused, and one may name a note of its task as its request",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

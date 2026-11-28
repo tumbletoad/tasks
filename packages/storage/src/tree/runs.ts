@@ -14,6 +14,7 @@ import {
   NO_MACHINE,
   NO_REQUEST_NOTE,
   requestOrdinal,
+  resumesOf,
   whereProblem,
 } from "../write/launches.ts";
 import { launchAfter, launchMoveProblem, runAfter, runMoveProblem } from "../write/moves.ts";
@@ -87,9 +88,11 @@ const launchCreate: Run = (tx, input) => {
       problem(NO_REQUEST_NOTE.code, NO_REQUEST_NOTE.message, NO_REQUEST_NOTE.field);
     }
   }
-  // A second click on the same task and instance while a launch of it still opens gets that one.
+  // A second click on the same task and instance while a launch of it still opens gets that one,
+  // when both continue the same agent conversation or neither does.
   const instance = String(input["instance"]);
-  const focus = tx.get(LAUNCH_SQL.focus, { task, instance, machine })?.["id"];
+  const resumes = resumesOf(evidence);
+  const focus = tx.get(LAUNCH_SQL.focus, { task, instance, machine, resumes })?.["id"];
   if (typeof focus === "string") return { launch: { id: focus, existing: true } };
   const id = tx.newId("la");
   const reference = newLaunchRef(tx.conn, new Set(), tx.random);

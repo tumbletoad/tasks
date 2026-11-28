@@ -122,6 +122,7 @@ import {
   readLaunch,
   readOpenLaunches,
   requestOrdinal,
+  resumesOf,
   whereProblem,
   type LaunchRecord,
 } from "./launches.ts";
@@ -2337,8 +2338,7 @@ export class SpaceWriter {
           // A second click on the same task and instance while an intent of it is still opening
           // gets that intent, in this request or before it, when both continue the same agent
           // conversation or neither does.
-          const given = op.evidence?.["resumes"];
-          const resumes = typeof given === "string" ? given : null;
+          const resumes = resumesOf(op.evidence);
           const key = `${parent}|${op.instance}|${String(resumes)}`;
           const found = drafts.has(parent)
             ? undefined

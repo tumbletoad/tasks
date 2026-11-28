@@ -213,6 +213,17 @@ export function readOpenLaunches(conn: Connection, machine: string): LaunchRecor
   return conn.prepare(LAUNCH_SQL.open).all({ machine }).map(decodeLaunch);
 }
 
+/**
+ * The agent conversation a launch continues (`evidence.resumes`), or null: a second click gets the
+ * launch still opening for its task and instance that continues the same one, or neither does.
+ */
+export const resumesOf = (
+  evidence: Readonly<Record<string, unknown>> | undefined,
+): string | null => {
+  const given = evidence?.["resumes"];
+  return typeof given === "string" ? given : null;
+};
+
 /** Why a launch or a run may not start, as both writers say it. */
 export interface StartProblem {
   code: "NOT_FOUND" | "DELETED" | "VALIDATION_FAILED";
