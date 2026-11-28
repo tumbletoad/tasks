@@ -14,6 +14,7 @@
 // A view's name, a Today section's heading and a view's empty line are keys, never words: each app
 // maps them to its own.
 import type { AgentChange, TaskRow } from "../store/rows.ts";
+import { isUnder, trail, type Nodes } from "../store/tree.ts";
 import { flatGroups, groupTasks, personGroups, type GroupTasks } from "./groups.ts";
 import {
   byDue,
@@ -108,17 +109,14 @@ export function viewFilter(view: View): ((task: TaskRow) => boolean) | undefined
 }
 
 /**
- * The open tasks of each area and each project, by ID: what their views list (`areaFilter`). An
- * area's count holds its projects' tasks.
+ * The open tasks under each area and each project, by ID: what their views list (`underFilter`).
+ * An area's count holds its projects' tasks.
  */
-export function groupCounts(tasks: Iterable<TaskRow>): ReadonlyMap<string, number> {
+export function groupCounts(tasks: Iterable<TaskRow>, nodes: Nodes): ReadonlyMap<string, number> {
   const counts = new Map<string, number>();
-  const add = (id: string | undefined) => {
-    if (id !== undefined) counts.set(id, (counts.get(id) ?? 0) + 1);
-  };
   for (const task of tasks) {
-    add(task.area_id);
-    add(task.project_id);
+    for (const node of trail(nodes, task.parent))
+      counts.set(node.id, (counts.get(node.id) ?? 0) + 1);
   }
   return counts;
 }
@@ -180,14 +178,12 @@ export const VIEW_LIST: Readonly<Record<CountedView, ViewList>> = {
   backlog: { grouping: "area", group: groupTasks, empty: "view.empty.backlog" },
 };
 
-/** An area view: every open task of the area, its projects' included. */
-export function areaFilter(area: string): (task: TaskRow) => boolean {
-  return (task) => task.area_id === area;
-}
-
-/** A project's view: the project's open tasks, whatever area its address names. */
-export function projectFilter(project: string): (task: TaskRow) => boolean {
-  return (task) => task.project_id === project;
+/**
+ * An area's or a project's view: every open task under it, its projects' included, whatever area
+ * its address names.
+ */
+export function underFilter(nodes: Nodes, node: string): (task: TaskRow) => boolean {
+  return (task) => isUnder(nodes, task.parent, node);
 }
 
 // ---------------------------------------------------------------------------------------------

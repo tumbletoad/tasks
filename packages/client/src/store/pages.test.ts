@@ -19,8 +19,7 @@ const snapshot = (pages: unknown[]): SnapshotMessage =>
     space: SPACE,
     cursor: CURSOR,
     tasks: [],
-    areas: [],
-    projects: [],
+    nodes: [],
     pages,
   });
 
