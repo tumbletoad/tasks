@@ -64,8 +64,8 @@ export interface MigrateOptions {
   busyTimeoutMs?: number;
   /**
    * The space's backups folder, where the barrier backup goes. When it is not there (a drive away,
-   * or a folder that could not be made), the upgrade does not wait for it: the barrier goes to the
-   * space's own backups folder, and its file says where. Default: the space's own backups folder.
+   * or a folder that could not be made), nothing is migrated. Default: the space's own backups
+   * folder.
    */
   backupDir?: string;
   /** Milliseconds since 1970. Default: Date.now. */
@@ -122,8 +122,9 @@ export type MigrationOutcome =
       backup: BackupRecord | undefined;
     };
 
-/** Where a barrier backup is when the folder set for the space's backups was away: no path. */
-const AWAY = ", in the space's own backups folder, since the one set for it is not there";
+/** What a person does when the space's backups folder is away. No path. */
+const AWAY =
+  ". If it is on a drive that is not connected, connect it: the migration is tried again when the space next opens.";
 
 const causeOf = (error: unknown): string =>
   error instanceof StorageError ? error.code : "an unexpected error";
@@ -219,17 +220,8 @@ export async function migrateOpened(
       { ...seams.backup, steps },
     );
   let backup: BackupRecord;
-  // The space's backups folder is away (a drive not connected): the person keeps working, behind a
-  // barrier in the space's own backups folder (MigrateOptions.backupDir).
-  let setFolderAway = false;
   try {
-    try {
-      backup = await barrier(options.backupDir);
-    } catch (error) {
-      if (!(error instanceof BackupsFolderAway)) throw error;
-      setFolderAway = true;
-      backup = await barrier(undefined);
-    }
+    backup = await barrier(options.backupDir);
   } catch (error) {
     const code =
       error instanceof StorageError && error.code === "BUNDLE_LIMIT_EXCEEDED"
@@ -237,11 +229,14 @@ export async function migrateOpened(
         : "BACKUP_FAILED";
     // A StorageError's message names codes and limits, never a path or a value.
     const detail = error instanceof StorageError ? ` ${error.message}` : "";
+    // A backups folder that is away says nothing about the database: no attempt is reported, so
+    // the next open tries again once the folder is back.
+    const away = error instanceof BackupsFolderAway;
     const failure = new StorageError(
       code,
       `The barrier backup before the migration to ${formatRevision(to)} failed, so nothing ` +
-        `was migrated. ${stays}.${detail}`,
-      { attempt: attempt() },
+        `was migrated. ${stays}.${detail}${away ? AWAY : ""}`,
+      away ? {} : { attempt: attempt() },
     );
     return { state: "failed", stage: "backup", from, to, error: failure, backup: undefined };
   }
@@ -265,7 +260,7 @@ export async function migrateOpened(
         changed
           ? "The space changed after its barrier backup, so the migration did not start"
           : `Migration to ${formatRevision(to)} failed (${causeOf(error)}). Your data is unchanged`
-      }. ${stays}. Backup: ${backup.name}${setFolderAway ? AWAY : ""}`,
+      }. ${stays}. Backup: ${backup.name}`,
       { attempt: attempt(backup) },
     );
     return { state: "failed", stage: "migration", from, to, error: failure, backup };

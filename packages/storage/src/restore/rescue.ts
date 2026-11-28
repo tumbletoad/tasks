@@ -37,7 +37,7 @@ import {
   statSync,
   writeSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { Connection } from "../driver.ts";
 import { StorageError } from "../errors.ts";
 import {
@@ -62,7 +62,7 @@ import { checkSpacePath } from "../space-path.ts";
 import type { CheckedDriver } from "../startup-check.ts";
 import { SCHEMA_STEPS } from "../../migrations/index.ts";
 import { makeDurableFolder } from "../backup/backup.ts";
-import { backupHistories, listBackupsIn, type BackupHistory } from "../backup/list.ts";
+import { backupHistories, listBackups, type BackupHistory } from "../backup/list.ts";
 import { BUNDLE_POLICY, checkFreeSpace, existingFolder, freeBytes } from "../backup/policy.ts";
 import { utcStamp } from "../backup/sidecar.ts";
 import { productTables, type ProductTable } from "../backup/snapshot.ts";
@@ -89,7 +89,7 @@ export interface LatestRestored {
 }
 
 /**
- * Restores the newest complete backup of `spaceId` in `backupDirs` that restores into the new folder
+ * Restores the newest complete backup of `spaceId` in `backupDir` that restores into the new folder
  * `target` (see the header), and names it. Its candidates are one history's (list.ts
  * backupHistories): that of the copy this machine serves (`incarnation`), whenever the folder
  * holds a backup of it, whole or not, never another's in its place; else, a choice the result
@@ -102,7 +102,7 @@ export interface LatestRestored {
  */
 export async function restoreLatest(
   checked: CheckedDriver,
-  backupDirs: readonly [string, ...string[]],
+  backupDir: string,
   spaceId: Id<"sp">,
   target: string,
   options: RestoreOptions & { incarnation?: Id<"ai"> } = {},
@@ -119,7 +119,7 @@ export async function restoreLatest(
     throw new StorageError("SPACE_EXISTS", "A space folder is already there");
   }
   const { incarnation, ...restoreOptions } = options;
-  const all = backupHistories(listBackupsIn(backupDirs, seams.policy), spaceId);
+  const all = backupHistories(listBackups(backupDir, seams.policy), spaceId);
   const histories = all.filter((h) => h.backups.some((b) => b.state === "ok"));
   // Found before the incomplete ones are left out: a served copy whose backups are all cut short
   // has none that restores, which is not the same as having none.
@@ -128,32 +128,20 @@ export async function restoreLatest(
   for (const history of own === undefined ? histories : [own]) {
     for (const backup of history.backups) {
       if (backup.state !== "ok") continue;
-      // The same backup may stand in another of the folders: one on its way between two (backup/
-      // move.ts) is gone from the first when its move ends. Each copy is tried before older work.
-      const copies = [
-        ...new Set(
-          [backup.file, ...backupDirs.map((d) => join(d, basename(backup.file)))].map((f) =>
-            resolve(f),
-          ),
-        ),
-      ];
-      let restored: RestoredSpace | undefined;
-      for (const file of copies) {
-        try {
-          // The backup is read again by the restore, and must still be of this space.
-          restored = await restoreBackupWith(
-            checked,
-            file,
-            folder,
-            { ...restoreOptions, spaceId },
-            seams,
-          );
-          break;
-        } catch (error) {
-          if (backupFault(error, file) !== "damaged") throw error;
-        }
+      let restored: RestoredSpace;
+      try {
+        // The backup is read again by the restore, and must still be of this space.
+        restored = await restoreBackupWith(
+          checked,
+          backup.file,
+          folder,
+          { ...restoreOptions, spaceId },
+          seams,
+        );
+      } catch (error) {
+        if (backupFault(error, backup.file) !== "damaged") throw error;
+        continue;
       }
-      if (restored === undefined) continue;
       return {
         restored,
         backup: backup.name,

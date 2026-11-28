@@ -210,7 +210,6 @@ export {
   backupHistories,
   compareInHistory,
   listBackups,
-  listBackupsIn,
   removeBackupLeftovers,
   verifyBackup,
   type BackupHistory,
@@ -219,13 +218,6 @@ export {
   type ListedState,
 } from "./backup/list.ts";
 export { BUNDLE_POLICY, type BundlePolicy } from "./backup/policy.ts";
-export {
-  moveOldBackups,
-  oldDailies,
-  recordedOldDailies,
-  type MoveResult,
-  type StayReason,
-} from "./backup/move.ts";
 export {
   applyRetention,
   dailyBackupDue,

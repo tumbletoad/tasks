@@ -80,7 +80,6 @@ export interface RecoveredSpace {
   revision: Revision;
   /** The live folder's new name, `<slug>.replaced-<utc>`: the original files, journal included. */
   replaced: string;
-  backupsCarried: boolean;
 }
 
 const isFile = (path: string): boolean =>
@@ -153,7 +152,6 @@ export function recoverSpaceWith(
       space,
       revision,
       replaced: swapped.replaced,
-      backupsCarried: swapped.backupsCarried,
     };
   } catch (error) {
     if (!(existsSync(names.replaced) && !existsSync(names.live))) removeQuietly(names.staging);

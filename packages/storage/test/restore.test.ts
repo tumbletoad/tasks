@@ -13,7 +13,6 @@ import {
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { backupSpace, type BackupRecord } from "../src/backup/backup.ts";
-import { listBackups } from "../src/backup/list.ts";
 import { StorageError } from "../src/errors.ts";
 import { newId, type Id } from "../src/ids.ts";
 import { DATABASE_FILE, MANIFEST_FILE, MANIFEST_MAX_BYTES, readManifest } from "../src/manifest.ts";
@@ -479,15 +478,9 @@ describe("[A1.5.restore.claim] restore in place claims the copy", () => {
       machineId: OTHER_MACHINE,
       now: () => at,
     });
-    // The old folder moved aside, byte for byte, apart from its backups, which moved along.
+    // The old folder moved aside, byte for byte.
     expect(restored.replaced).toBe(join(dirname(folder), "mira.replaced-20261113T120000.005Z"));
-    expect(restored.backupsCarried).toBe(true);
-    const keptTree = treeDigest(restored.replaced);
-    for (const [file, hash] of Object.entries(oldTree)) {
-      if (!file.startsWith("backups/")) expect(keptTree[file], file).toBe(hash);
-    }
-    expect(Object.keys(keptTree).some((f) => f.startsWith("backups/"))).toBe(false);
-    expect(listBackups(join(folder, "backups")).backups.map((b) => b.name)).toEqual([backup.name]);
+    expect(treeDigest(restored.replaced)).toEqual(oldTree);
 
     // The claim: a new incarnation, an epoch above every known one, a lineage entry, a commit.
     const { claim } = restored;
@@ -560,8 +553,8 @@ describe("[A1.5.restore.claim] restore in place claims the copy", () => {
       machineId: TEST_MACHINE,
       now: () => Date.UTC(2026, 10, 13, 12, 0, 0, 1),
     });
-    // The backup sits in the carried backups folder: restore it again in place.
-    const again = join(folder, "backups", basename(backup.file));
+    // The backup stayed in the replaced folder: restore it again in place.
+    const again = join(first.replaced, "backups", basename(backup.file));
     const second = await restoreInPlace(checked, again, folder, {
       machineId: TEST_MACHINE,
       now: () => Date.UTC(2026, 10, 13, 12, 0, 0, 2),
@@ -631,7 +624,6 @@ describe("[A1.5.restore.crash-windows] a crash at each point of a restore in pla
       "claimed",
       "moved-aside",
       "moved-into-place",
-      "backups-carried",
     ];
     expect([...crashes.keys()]).toEqual(points);
     for (const [point, copy] of crashes) {
@@ -655,11 +647,10 @@ describe("[A1.5.restore.crash-windows] a crash at each point of a restore in pla
         // The claimed new space, never the unclaimed backup.
         expect(facts.space.authority.incarnation, point).toBe(restored.claim.incarnation);
         expect(facts.space.lastSeq, point).toBe(3);
-        expect(listBackups(join(copy, "backups")).backups.length, point).toBe(1);
       }
       openSpace(checked, copy, { role: "writer" }).conn.close();
       // Resume is idempotent.
-      expect(finishInterruptedRestore(copy)).toEqual({ completed: undefined, backupsCarried: [] });
+      expect(finishInterruptedRestore(copy)).toEqual({ completed: undefined });
     }
   });
 

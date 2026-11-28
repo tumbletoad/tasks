@@ -156,7 +156,7 @@ export const backupsFolder = (spaceFolder: string): string =>
  */
 export class BackupsFolderAway extends StorageError {
   constructor() {
-    super("BACKUP_FAILED", "The backups folder set for the space is not there");
+    super("BACKUP_FAILED", "The space's backups folder is not there");
   }
 }
 

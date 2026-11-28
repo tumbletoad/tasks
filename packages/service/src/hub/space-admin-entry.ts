@@ -94,7 +94,7 @@ async function run(job: AdminJob): Promise<AdminResult> {
     case "restore-latest": {
       const latest = await restoreLatest(
         checked,
-        job.backupDirs,
+        job.backupDir,
         job.spaceId,
         job.target,
         job.incarnation === undefined ? {} : { incarnation: job.incarnation },

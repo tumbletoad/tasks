@@ -152,15 +152,10 @@ export interface RetentionPlan {
 export function planRetention(
   listing: BackupListing,
   clock: LocalClock,
-  options: {
-    spaceId: Id<"sp">;
-    rules?: RetentionRules;
-    /** Names of backups kept whatever the rules say. */
-    always?: readonly string[];
-  },
+  options: { spaceId: Id<"sp">; rules?: RetentionRules },
 ): RetentionPlan {
   const rules = options.rules ?? RETENTION;
-  const keep = new Set<string>(options.always);
+  const keep = new Set<string>();
   const ahead: string[] = [];
   const all: ListedBackup[] = [];
   for (const history of histories(listing, options.spaceId)) {

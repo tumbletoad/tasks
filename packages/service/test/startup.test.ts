@@ -254,9 +254,7 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
       maintenance: false,
     });
     expect(service.spaces()).toEqual([{ entry: 0, state: "open", id: space.space.spaceId }]);
-    expect(events(home, "space.restore_finished")).toEqual([
-      expect.objectContaining({ entry: 0, swapped: true }),
-    ]);
+    expect(events(home, "space.restore_finished")).toEqual([expect.objectContaining({ entry: 0 })]);
     expect(readdirSync(spaces).sort()).toEqual(["work", `work.replaced-${stamp}`]);
   }, 120_000);
 

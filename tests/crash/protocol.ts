@@ -8,9 +8,13 @@
 // child never writes anything else to stdout. No message carries task text: requests go in on
 // stdin, and results come back reduced to statuses, IDs, sequence numbers and codes.
 import { writeSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { Operation, WriteResult } from "../../packages/storage/src/write/request.ts";
 
 /** Where a fault point is, by the code that calls its seam. */
+/** A round's backups folder: beside its space, as the service keeps a space's backups outside it. */
+export const backupsBeside = (spaceFolder: string): string => join(dirname(spaceFolder), "backups");
+
 export const WHERES = ["write", "backup", "barrier", "migrate", "restore"] as const;
 export type Where = (typeof WHERES)[number];
 
@@ -20,7 +24,7 @@ export const POINTS: { readonly [W in Where]: readonly string[] } = {
   backup: ["copied", "checked", "compressed", "data-published", "sidecar-published"],
   barrier: ["copied", "checked", "compressed", "data-published", "sidecar-published"],
   migrate: ["backed-up", "step-applied", "checked", "committed"],
-  restore: ["unpacked", "claimed", "moved-aside", "moved-into-place", "backups-carried"],
+  restore: ["unpacked", "claimed", "moved-aside", "moved-into-place"],
 };
 
 /** The statuses of a decision the write path stores (A1 3.8). */

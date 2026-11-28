@@ -122,8 +122,6 @@ export interface SpaceRow {
   restored?: { at: string; backup?: string };
   /** Where the space's backups are written. */
   backups_folder?: string;
-  /** Backups made into the space's own folder that stay there, and why. */
-  old_backups?: { message?: string };
 }
 
 /** Options of a space command: `--name value` or `--flag`. Values are never shown in errors. */
@@ -231,7 +229,6 @@ function printSpace(io: Io, row: SpaceRow, verb: string, isDefault = false): voi
   if (row.migrated !== undefined) io.stdout(`  ${migratedLine(row.migrated)}\n`);
   if (row.backup?.message !== undefined) io.stdout(`  ${row.backup.message}\n`);
   if (row.backups_folder !== undefined) io.stdout(`  Backups: ${row.backups_folder}\n`);
-  if (row.old_backups?.message !== undefined) io.stdout(`  ${row.old_backups.message}\n`);
   for (const line of wayOut(row)) io.stdout(`  ${line}\n`);
 }
 
@@ -500,25 +497,21 @@ export async function spaceCommand(
               `${str(b["name"])}  ${str(b["state"])}${b["size"] === undefined ? "" : `  ${str(b["size"])} bytes`}\n`,
             );
           };
-          // Each folder that holds some: the backups folder, then the space's own, where backups
-          // went before. One copy's backups need no heading; several copies' are told apart by
-          // when each was last written to and how far it goes.
-          for (const where of new Set(all.map((b) => b["folder"]))) {
-            const backups = all.filter((b) => b["folder"] === where);
-            if (typeof where === "string") io.stdout(`In ${where}:\n`);
-            if (histories.length > 1) {
-              for (const h of histories) {
-                const of = backups.filter((b) => b["history"] === h.incarnation);
-                if (of.length === 0) continue;
-                io.stdout(`${historyLine(h)}:\n`);
-                for (const b of of) line(b);
-              }
-              const loose = backups.filter((b) => b["history"] === undefined);
-              if (loose.length > 0) io.stdout("Whose sidecar does not read, of no known copy:\n");
-              for (const b of loose) line(b);
-            } else {
-              for (const b of backups) line(b);
+          // One copy's backups need no heading; several copies' are told apart by when each was
+          // last written to and how far it goes.
+          if (all.length > 0 && typeof folder === "string") io.stdout(`In ${folder}:\n`);
+          if (histories.length > 1) {
+            for (const h of histories) {
+              const of = all.filter((b) => b["history"] === h.incarnation);
+              if (of.length === 0) continue;
+              io.stdout(`${historyLine(h)}:\n`);
+              for (const b of of) line(b);
             }
+            const loose = all.filter((b) => b["history"] === undefined);
+            if (loose.length > 0) io.stdout("Whose sidecar does not read, of no known copy:\n");
+            for (const b of loose) line(b);
+          } else {
+            for (const b of all) line(b);
           }
           for (const name of result["leftovers"] as string[]) io.stdout(`leftover ${name}\n`);
         });

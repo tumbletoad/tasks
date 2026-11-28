@@ -557,21 +557,19 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
       next.migration?.backup.name,
     ]);
     await next.close();
-    // [A1.5.backup.folder-away] Told a folder that is not there (a drive away), the upgrade goes
-    // on behind a barrier backup in the space's own backups folder. Nothing is made at the folder's
-    // path.
+    // [A1.5.backup.folder-away] Told a folder that is not there (a drive away), nothing is
+    // migrated, no backup is made anywhere, and the failure names no state to hold back a later
+    // open. Nothing is made at the folder's path.
     const other = await spaceAt01(1);
     const drive = join(folders.make(), "drive");
-    const upgraded = await newer.openSpaceWriter(other, {
-      machine: FIXTURE_MACHINE,
-      backupDir: join(drive, "backups"),
-    });
-    expect(upgraded.migration).toMatchObject({ to: { major: 0, minor: 6 } });
-    expect(listBackups(join(other, "backups")).backups.map((b) => b.name)).toEqual([
-      upgraded.migration?.backup.name,
-    ]);
+    const away = await rejection(
+      newer.openSpaceWriter(other, { machine: FIXTURE_MACHINE, backupDir: join(drive, "backups") }),
+    );
+    expect(away.code).toBe("BACKUP_FAILED");
+    expect(away.attempt).toBeUndefined();
     expect(existsSync(drive)).toBe(false);
-    await upgraded.close();
+    expect(existsSync(join(other, "backups"))).toBe(false);
+    expect((await readFacts(other)).space.format).toEqual({ major: 0, minor: 1 });
     expect((await readFacts(folder)).space.format).toEqual({ major: 0, minor: 6 });
     // A refusal other than an older revision is thrown as open throws it.
     expect(

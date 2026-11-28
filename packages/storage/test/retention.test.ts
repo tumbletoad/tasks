@@ -16,7 +16,6 @@ import { backupSpace, backupSpaceWith } from "../src/backup/backup.ts";
 import { BUNDLE_POLICY } from "../src/backup/policy.ts";
 import {
   listBackups,
-  listBackupsIn,
   verifyBackup,
   type BackupListing,
   type ListedBackup,
@@ -557,7 +556,7 @@ describe("[A1.5.backup.newest-work] the newest backup is the one that holds the 
     expect(listed.backups.map((b) => b.name)).toEqual([later.name, first.name]);
     const { backup } = await restoreLatest(
       checked,
-      [dir],
+      dir,
       space.spaceId,
       join(folders.make(), "copy"),
     );
@@ -573,51 +572,7 @@ describe("[A1.5.backup.newest-work] the newest backup is the one that holds the 
   });
 });
 
-describe("[A1.5.backup.outside-home] a space's backups in two folders are one line of backups", () => {
-  test("listed together, each folder once, and restore latest takes the furthest work in either", async () => {
-    const checked = await checkedDriver();
-    const { folder, space } = await createFixtureSpace(folders.make());
-    const outside = folders.make();
-    const own = join(folder, "backups");
-    const noon = WED + 12 * HOUR;
-    const first = await backupSpace(checked, folder, {
-      kind: "daily",
-      backupDir: outside,
-      now: () => noon,
-    });
-    // The furthest work is in the second folder, with an earlier time on the clock.
-    await writeCommits(folder, 3);
-    const later = await backupSpace(checked, folder, { kind: "daily", now: () => noon - HOUR });
-    const both = listBackupsIn([outside, own, `${own}/`]);
-    expect(both.folder).toBe(outside);
-    expect(both.backups.map((b) => b.name)).toEqual([later.name, first.name]);
-    const { backup } = await restoreLatest(
-      checked,
-      [outside, own],
-      space.spaceId,
-      join(folders.make(), "copy"),
-    );
-    expect(backup).toBe(later.name);
-  });
-
-  test("a file where the first folder goes holds no backups, and the other folder is still read", async () => {
-    const checked = await checkedDriver();
-    const { folder, space } = await createFixtureSpace(folders.make());
-    const made = await backupSpace(checked, folder, { kind: "daily" });
-    const file = join(folders.make(), "sp_fixture");
-    writeFileSync(file, "not a folder");
-    const both = listBackupsIn([file, join(folder, "backups")]);
-    expect(both.present).toBe(false);
-    expect(both.backups.map((b) => b.name)).toEqual([made.name]);
-    const { backup } = await restoreLatest(
-      checked,
-      [file, join(folder, "backups")],
-      space.spaceId,
-      join(folders.make(), "copy"),
-    );
-    expect(backup).toBe(made.name);
-  });
-
+describe("[A1.5.backup.outside-home] a backups folder that cannot be read", () => {
   // Folder permissions are POSIX's; root reads any folder.
   test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "a folder that is there and cannot be read stops the listing: it may hold the newest work",
@@ -628,7 +583,7 @@ describe("[A1.5.backup.outside-home] a space's backups in two folders are one li
       const unreadable = folders.make();
       chmodSync(unreadable, 0o000);
       try {
-        expect(() => listBackupsIn([unreadable, join(folder, "backups")])).toThrow(StorageError);
+        expect(() => listBackups(unreadable)).toThrow(StorageError);
       } finally {
         chmodSync(unreadable, 0o700);
       }
@@ -683,15 +638,15 @@ describe("[A1.5.backup.histories] no history's backups are judged by another's",
   test("restore latest takes the newest backup of the served copy's own history; served nowhere, the history written to last, naming the other", async () => {
     const { checked, space, shared, root, first, desktop, laptop, d2, l2 } = await twoCopies();
     const target = (name: string) => join(root, name);
-    const ofLaptop = await restoreLatest(checked, [shared], space.spaceId, target("a"), {
+    const ofLaptop = await restoreLatest(checked, shared, space.spaceId, target("a"), {
       incarnation: laptop.incarnation,
     });
     expect(ofLaptop).toMatchObject({ backup: l2.name, own: true });
-    const ofDesktop = await restoreLatest(checked, [shared], space.spaceId, target("b"), {
+    const ofDesktop = await restoreLatest(checked, shared, space.spaceId, target("b"), {
       incarnation: desktop.incarnation,
     });
     expect(ofDesktop).toMatchObject({ backup: d2.name, own: true });
-    const unknown = await restoreLatest(checked, [shared], space.spaceId, target("c"));
+    const unknown = await restoreLatest(checked, shared, space.spaceId, target("c"));
     expect(unknown).toMatchObject({ backup: l2.name, own: false });
     expect(unknown.history.incarnation).toBe(laptop.incarnation);
     // The others, written to last first: the desktop's, then the original's first backup.
@@ -708,7 +663,7 @@ describe("[A1.5.backup.histories] no history's backups are judged by another's",
     for (const cut of [l1, l2]) writeFileSync(cut.file, "cut");
     await expectCode(
       () =>
-        restoreLatest(checked, [shared], space.spaceId, join(root, "a"), {
+        restoreLatest(checked, shared, space.spaceId, join(root, "a"), {
           incarnation: laptop.incarnation,
         }),
       "BACKUP_INVALID",
@@ -739,7 +694,7 @@ describe("[A1.5.backup.histories] no history's backups are judged by another's",
     for (const kept of [d2, l2]) {
       expect(existsSync(kept.file) && existsSync(kept.sidecarFile), kept.name).toBe(true);
     }
-    const left = await restoreLatest(checked, [shared], space.spaceId, join(folders.make(), "l"), {
+    const left = await restoreLatest(checked, shared, space.spaceId, join(folders.make(), "l"), {
       incarnation: laptop.incarnation,
     });
     expect(left.backup).toBe(l2.name);
@@ -1017,7 +972,7 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
       "STORAGE_SQL",
     );
     await expectCode(
-      () => restoreLatest(checked, [dir], space.spaceId, join(parent, "c"), {}, { steps }),
+      () => restoreLatest(checked, dir, space.spaceId, join(parent, "c"), {}, { steps }),
       "STORAGE_SQL",
     );
     expect(existsSync(join(parent, "a")) || existsSync(join(parent, "c"))).toBe(false);

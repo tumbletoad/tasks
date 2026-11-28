@@ -16,7 +16,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
-import { backupsFolder, listBackupsIn, StorageWorker, type Id } from "@ttasks/storage";
+import { backupsFolder, listBackups, StorageWorker, type Id } from "@ttasks/storage";
 import { createSpaceAt, STEPS_0_1, STEPS_0_3, STEPS_LATEST } from "@ttasks/storage/revisions";
 import { checkedDriver, digestSpace } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
@@ -196,12 +196,12 @@ async function dbState(
   }
 }
 
-/** The space's barrier backups that are complete, oldest first, wherever an upgrade put them. */
+/** The space's barrier backups that are complete, oldest first. */
 const barrierBackups = (
   home: string,
   space: { readonly folder: string; readonly space: { readonly spaceId: Id<"sp"> } },
 ): string[] =>
-  listBackupsIn([backupsOf(home, space.space.spaceId), backupsFolder(space.folder)])
+  listBackups(backupsOf(home, space.space.spaceId))
     .backups.filter((b) => b.state === "ok" && b.sidecar?.kind === "pre-migrate")
     .map((b) => b.name)
     .sort();
@@ -585,7 +585,12 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       recordMigration(
         stateOf(home),
         id,
-        { from: 1, to: 6, ...(backup === undefined ? {} : { backup }) },
+        {
+          from: 1,
+          to: 6,
+          ...(backup === undefined ? {} : { backup }),
+          backupFolder: backupsOf(home, id),
+        },
         new Date(Date.now() - 31 * 86_400_000),
       );
       const later = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
@@ -595,10 +600,9 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
         backup,
         backup_listed: true,
       });
-      // Where an earlier build already removed it, the list still names it, as no longer there.
-      for (const suffix of [".db.gz", ".json"]) {
-        rmSync(join(backupsOf(home, id), `${backup ?? ""}${suffix}`));
-      }
+      // Where it is no longer whole, the list still names it, as no longer there: its data file
+      // alone does not restore.
+      rmSync(join(backupsOf(home, id), `${backup ?? ""}.json`));
       const gone = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
       expect(gone[0]?.["migrated"]).toMatchObject({ backup, backup_listed: false });
       await stop(service);
@@ -664,13 +668,27 @@ async function spaceAt03(folder: string) {
   return created;
 }
 
+/** The view of a space whose upgrade waits for its backups folder: nothing recorded, no backup. */
+const awayNow = (id: Id<"sp">) => ({
+  entry: 0,
+  state: "read_only",
+  reason: "migration_failed",
+  code: "BACKUP_FAILED",
+  message:
+    "The barrier backup before the migration to 0.6 failed, so nothing was migrated. The space " +
+    "stays at 0.1. The space's backups folder is not there. If it is on a drive that is not " +
+    "connected, connect it: the migration is tried again when the space next opens.",
+  id,
+});
+
 describe("[A1.5.backup.folder-away] an upgrade whose backups folder set for the space is not there", () => {
   test(
-    "goes on behind a backup in the space's own folder, makes no folder at the set path, and the space list and a restore by name find that backup",
+    "leaves the space read-only at its revision with no backup anywhere, and migrates at the next start once the folder is back",
     async () => {
       const { home, spaces } = setUp("away-upgrade");
       const space = await spaceAt01(join(spaces, "work"));
       const id = space.space.spaceId;
+      const fixture = digestSpace(await checkedDriver(), space.folder);
       // The drive the folder is on is not connected; the path's parent can be written.
       const drive = join(spaces, "drive");
       mkdirSync(join(stateOf(home), SPACES_FOLDER), { recursive: true, mode: 0o700 });
@@ -679,26 +697,23 @@ describe("[A1.5.backup.folder-away] an upgrade whose backups folder set for the 
         JSON.stringify({ format: 1, backup: { dir: join(drive, "backups") } }),
         { mode: 0o600 },
       );
-      const service = await start(home, space.folder);
+      let service = await start(home, space.folder);
+      expect(service.spaces()).toEqual([awayNow(id)]);
+      expect(readSpaceSettings(stateOf(home), id).failedMigrations).toBeUndefined();
+      expect(existsSync(drive)).toBe(false);
+      expect(existsSync(backupsFolder(space.folder))).toBe(false);
+      await stop(service);
+      expect(digestSpace(await checkedDriver(), space.folder)).toBe(fixture);
+
+      // Connected again: the next start migrates, behind a backup in that folder.
+      mkdirSync(join(drive, "backups"), { recursive: true });
+      service = await start(home, space.folder);
       expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(existsSync(drive)).toBe(false);
-      const [backup] = barrierBackups(home, space);
-      expect(backup).toBeDefined();
-      const user = await session(home, service, "cli-interactive");
-      const listed = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
-      expect(listed[0]?.["migrated"]).toMatchObject({
-        backup,
-        backup_folder: backupsFolder(space.folder),
-        backup_listed: true,
-      });
-      const restored = await call(user, "space/restore", {
-        backup,
-        of: space.folder,
-        to: join(spaces, "copy"),
-      });
-      expect(restored).toMatchObject({ read_only_copy: true });
-      expect(existsSync(join(spaces, "copy", "space.db"))).toBe(true);
-      expect(existsSync(drive)).toBe(false);
+      const barriers = listBackups(join(drive, "backups")).backups.filter(
+        (b) => b.state === "ok" && b.sidecar?.kind === "pre-migrate",
+      );
+      expect(barriers).toHaveLength(1);
+      expect(existsSync(backupsFolder(space.folder))).toBe(false);
     },
     LONG,
   );
@@ -706,7 +721,7 @@ describe("[A1.5.backup.folder-away] an upgrade whose backups folder set for the 
 
 describe("[A1.5.backup.outside-home] an upgrade whose backups folder beside the home cannot be made", () => {
   test(
-    "goes on behind a backup in the space's own folder, which the record and a restore by name find",
+    "leaves the space read-only at its revision, with no backup in the space's own folder",
     async () => {
       const { home, spaces } = setUp("unmade-upgrade");
       const space = await spaceAt01(join(spaces, "work"));
@@ -714,20 +729,8 @@ describe("[A1.5.backup.outside-home] an upgrade whose backups folder beside the 
       // A file where the folder beside the home goes.
       writeFileSync(`${home}-backups`, "not a folder");
       const service = await start(home, space.folder);
-      expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      const [backup] = barrierBackups(home, space);
-      expect(backup).toBeDefined();
-      expect(readSpaceSettings(stateOf(home), id).lastMigration).toMatchObject({
-        backup,
-        backup_folder: backupsFolder(space.folder),
-      });
-      const user = await session(home, service, "cli-interactive");
-      const restored = await call(user, "space/restore", {
-        backup,
-        of: space.folder,
-        to: join(spaces, "copy"),
-      });
-      expect(restored).toMatchObject({ read_only_copy: true });
+      expect(service.spaces()).toEqual([awayNow(id)]);
+      expect(existsSync(backupsFolder(space.folder))).toBe(false);
     },
     LONG,
   );
