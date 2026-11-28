@@ -42,7 +42,6 @@ Error codes:
 | `conflict` | conflict | 409 | base older than a touched field |
 | `wrong_tool` | usage | 400 | Completing or reopening with the wrong tool |
 | `forbidden` | forbidden | 403 | User-only, policy, grant or limit rule |
-| `not_permitted` | forbidden | 403 | The session does not allow this tool |
 | `request_id_conflict` | conflict | 409 | Same request_id, different intent |
 | `applied_earlier` | conflict | 409 | Another version applied this request_id: nothing written now |
 | `too_large` | usage | 413 | Over a field, item or request limit |

@@ -368,9 +368,7 @@ export async function opCall(
   const entry = findEntry(params.op);
   if (entry === undefined) throw opUnknown();
   const who = decided(host, caller);
-  // A run-only entry is refused to every connection: it names whether the call is a session's,
-  // and reads neither its input nor a space.
-  checkExposure(entry, caller.class, who.binding?.kind === "session" ? "task" : "none");
+  checkExposure(entry, caller.class);
   return callAs(host, who, entry, params);
 }
 
@@ -3725,13 +3723,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       as_of: read.space.asOf,
       prefs: declared.map((p) => prefRow(p, action, read.reads.get(p.key), call.principal, held)),
     };
-  },
-
-  // Refused by the exposure gate before any handler runs (`opCall`). The handler says the same, so
-  // no path reaches a write.
-  "run.report": (call) => {
-    checkExposure(call.entry, call.caller.class, sessionIn(call) === undefined ? "none" : "task");
-    return Promise.reject(new AppError({ code: "internal", message: "No run binding exists." }));
   },
 };
 
