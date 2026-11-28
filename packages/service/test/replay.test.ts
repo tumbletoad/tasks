@@ -542,6 +542,16 @@ const PAGES: Sequence<Step> = [
   },
   { op: "page.history", input: { target: "Home/Papers" }, user: true },
   { op: "page.read", input: { target: "space" } },
+  // A page grown past the library's budget, and back under it.
+  ...[4_000, 4_000, 4_000, 4_000, 1_000].map((chars) => ({
+    op: "page.write",
+    input: { action: "append", target: "{page}", text: "word ".repeat(chars / 5), why: "grow" },
+  })),
+  {
+    op: "page.write",
+    input: { action: "set", target: "{page}", body: BODY, why: "split by subject" },
+    base: true,
+  },
 ];
 
 describe("[S2.replay.pages] today's service requests through both backends: pages", () => {
