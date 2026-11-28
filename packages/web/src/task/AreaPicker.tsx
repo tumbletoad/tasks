@@ -6,7 +6,7 @@
 // and projects come last, marked. Escape closes, and focus returns to the pill. A task leaves its
 // area only for another one: `task.update` moves a task into an area or project, never out of every
 // area.
-import { useContext, useMemo, useState } from "react";
+import { type KeyboardEvent, useContext, useMemo, useState } from "react";
 import {
   Autocomplete,
   Button,
@@ -184,6 +184,25 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
   // A task stays in its area or project when that is archived: the pill says so.
   const shelved = archivedGroup(area, project) !== undefined;
   const current = task.project_id ?? task.area_id;
+  const take = (key: unknown) => {
+    const choice = items.find((c) => c.id === key);
+    const seen = edits.seen(task, ["grouping"]);
+    setOpen(false);
+    setTyped("");
+    if (choice === undefined || choice.id === current) return;
+    if (choice.id === NEW_AREA) addArea(choice.area.title, seen);
+    else edits.edit(task, groupingChange(choice.area, choice.project));
+  };
+  // Enter takes the option drawn as highlighted. React Aria forwards it to an option it tracks
+  // apart from the highlight, which a quick Down after typing leaves behind.
+  const enter = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const dialog = e.currentTarget.closest('[role="dialog"]');
+    const option = dialog?.querySelector('[role="option"][data-focused="true"]');
+    if (option instanceof HTMLElement) take(option.dataset["key"]);
+  };
   return (
     <DialogTrigger
       isOpen={open}
@@ -223,6 +242,7 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
                 className={styles.field}
                 placeholder={t("area.search")}
                 maxLength={AREA_NAME}
+                onKeyDownCapture={enter}
               />
             </SearchField>
             <ListBox
@@ -230,15 +250,7 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
               aria-label={t("area.label")}
               items={items}
               renderEmptyState={() => t("area.empty")}
-              onAction={(key) => {
-                const choice = items.find((c) => c.id === key);
-                const seen = edits.seen(task, ["grouping"]);
-                setOpen(false);
-                setTyped("");
-                if (choice === undefined || choice.id === current) return;
-                if (choice.id === NEW_AREA) addArea(choice.area.title, seen);
-                else edits.edit(task, groupingChange(choice.area, choice.project));
-              }}
+              onAction={take}
             >
               {(choice) => (
                 <ListBoxItem

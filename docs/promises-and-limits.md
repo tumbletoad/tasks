@@ -23,10 +23,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   not what it says.
 - Undo and Redo take back what is a nuisance to put back by hand: checking off and reopening,
   moving to the Trash and restoring, a whole change from the Trash too, removing a note and putting
-  it back, the words of a title, a summary, a context, a note or a log entry, a move out of the
-  Inbox or into it, a task's first area, setting questions aside, a new project or area, and
-  archiving or unarchiving one. Anything else you change back by doing it again, and Undo passes
-  over it, in the page and at the command line alike.
+  it back, the words of a title, a summary, a context, a note or a log entry, the words of a page
+  and moving it to the Trash and back, a description, the space's brief and a text for agents, a
+  move out of the Inbox or into it, a task's first area, setting questions aside, a new project
+  or area, and archiving or unarchiving one. Anything else you change back by doing it again, and
+  Undo passes over it, in the page and at the command line alike.
 - Undo and Redo never write over a change made since: not where what your change wrote was changed
   again, by anyone, you included, not where a wrap-up was written since a finish, and never by
   taking a task or a note out of sight that someone else worked on since. What counts is what a
@@ -36,6 +37,14 @@ the behaviour it describes, and keep each one to a sentence or two.
   queued or stopped and a session you opened are yours; what a run did since, from its start on, is
   the run's work.
 - Your undo history survives a restart and is shared by your windows and the command line.
+- Every version of a page and of a description is kept, also of a page in the Trash; bringing back
+  an earlier one is a new change of its own. A page's reference, such as M-180, is never given to a
+  task or another page.
+- An agent's edit of a page changes only the words it names, and only while they stand once in the
+  page: two agents editing different passages both keep their words, and words that are gone
+  change nothing. A page whose task or project is in the Trash goes with it, unchanged, and comes
+  back with it.
+- Only you write a text for agents on the space, an area or a project: an agent is refused.
 - In the page, a change Undo is not for saves without Undo, and from then on that tab offers no
   Undo or Redo of what came before it, so Undo never takes back something you did not expect. An
   Undo or Redo that got no answer keeps its step to try again. Limit: the page offers only what
@@ -386,8 +395,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   with what was asked and what it would act on. That permission uses Claude Code's own modes with
   your own tools and settings, so a tool you approved there stays approved. TTasks's own tools are
   allowed in every mode: the run reads its task and reports through them.
-- A Codex run answers nothing for you either: a question, or an approval Codex asks for that its
-  `run_permission` does not give, ends the run as needing you, with what was asked.
+- A Codex run answers nothing for you either: a question ends the run as needing you, with what
+  was asked. Codex is never asked for an approval: under a narrower `run_permission` its own
+  sandbox refuses what that mode does not allow, the agent goes on without it, and the run says
+  how many of its requests were refused.
 - A run is done when its work is: work the agent left running in the background holds it until
   the agent reported on it, and a server it left running holds it until you stop it.
 - No time limit ends a run unless you set one (`max_minutes`, `max_quiet_minutes` under `[runs]`
@@ -436,6 +447,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   link and the browser's history list hold the search page but not your words. A reload, Back and
   Forward bring the search back in that tab; the search's link opened in another tab is an empty
   search.
+- A paste into the top field that is more than a title loses no word: its first line becomes the
+  title, and the rest is shown under the field and goes in the new task's context, also after a
+  reload. A search keeps the first 500 characters and says so.
 - The generated folder of readable files is not where tasks are stored. A file you edit or add
   there is kept or moved to a rescue folder, never deleted. A generated file that goes missing,
   removed by hand or by a sync, is written again within seconds while TTasks runs.

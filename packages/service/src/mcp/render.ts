@@ -687,7 +687,7 @@ function searchRendered(result: Search, search: string): Rendered {
 }
 
 // ---------------------------------------------------------------------------------------------
-// task.add (A3 3.4.5), task.reopen (A3 3.4.9), run.report (A3 3.4.12)
+// task.add (A3 3.4.5), task.reopen (A3 3.4.9)
 
 type Added = OutputOf<"task.add">["tasks"][number] | OutputOf<"task.finish">["follow_ups"][number];
 
@@ -1085,14 +1085,6 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
   },
   "group.manage": (result: Groups, { tool }) => groupsRendered(result, tool),
   "prefs.manage": (result: Prefs) => prefsRendered(result),
-  "run.report": (result: OutputOf<"run.report">) => ({
-    parts: [
-      fixed(
-        `reported on run ${result.run} · ${String(result.sources)} source${result.sources === 1 ? "" : "s"} · as_of ${result.as_of}${replayed(result)}`,
-      ),
-    ],
-    more: "",
-  }),
 };
 
 /** Whether `entryName` has a compact rendering. Every MCP tool has one (render.test.ts). */

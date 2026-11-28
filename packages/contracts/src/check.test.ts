@@ -1738,9 +1738,6 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
       expect(check(defineEntry({ ...entryAdd, ops: ["log.add", "proposal.accept"] }))).toEqual([
         'entry.add: an agent-allowed entry cannot emit the user-only "proposal.accept" (A3 3.2.3)',
       ]);
-      expect(check(defineEntry({ ...entryAdd, ops: ["run.report"] }))).toEqual([
-        'entry.add: only a run-only entry emits "run.report" (A3 3.4.12)',
-      ]);
       // The same operations are fine on a user-only entry with the right scope.
       const userEntry = defineEntry({
         ...base,
@@ -1766,13 +1763,6 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           budget: undefined as never,
           examples: [{ ...example, actor: "user", input: { ...example.input, base: AS_OF } }],
         });
-
-      test("run.report comes from a run-only entry, whoever else calls it (A3 3.4.12)", () => {
-        // The review's probe: a user-only entry emitting run.report passed.
-        expect(check(userEntry(["run.report"], "space:write"))).toEqual([
-          'fixture.note: only a run-only entry emits "run.report" (A3 3.4.12)',
-        ]);
-      });
 
       test("editing a routine needs admin, running one launch:run (A6 3.6.3)", () => {
         // The review's probe: routine.patch passed with the execution scope.
@@ -1829,7 +1819,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
       rejects(agentExample, /example "A note on M-14": a user-only entry has user examples only/);
     });
 
-    test("UI-only entries have no CLI face, and run-only entries no UI face", () => {
+    test("UI-only entries have no CLI face", () => {
       const uiOnly = defineEntry({
         ...base,
         actors: "ui",
@@ -1837,8 +1827,6 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
         examples: [{ ...example, actor: "user" }],
       });
       rejects(uiOnly, /a UI-only entry has no CLI face/);
-      const runOnly = defineEntry({ ...base, actors: "run" });
-      rejects(runOnly, /a run-only entry has no UI face/);
     });
 
     test("error codes come from the catalogue, once each", () => {

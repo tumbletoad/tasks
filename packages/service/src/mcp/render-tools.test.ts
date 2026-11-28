@@ -1,4 +1,4 @@
-// The texts of the tools M4.01 lists (A3 3.4.3, 3.4.5, 3.4.9 to 3.4.12, 3.9.4, 3.10): A3's example
+// The texts of the tools M4.01 lists (A3 3.4.3, 3.4.5, 3.4.9 to 3.4.11, 3.9.4, 3.10): A3's example
 // results read as A3 shows them, every name a user or an agent can edit stays inside the data
 // block, and the longest results stay within their budgets and say what was cut.
 import {
@@ -48,7 +48,7 @@ const cjk = (chars: number) =>
     .slice(0, chars)
     .join("");
 
-describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, organize, preferences and run_report", () => {
+describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, organize and preferences", () => {
   test("A3's example results read as A3 shows them", () => {
     const search = split(renderResult("task.search", example("task.search", 0)));
     expect(search.outside).toEqual(["1-2 of 2 · scope all"]);
@@ -106,10 +106,6 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
     const set = split(renderResult("prefs.manage", example("prefs.manage", 1)));
     expect(set.outside).toEqual(["updated · 1 key"]);
     expect(set.inside[0]).toBe('tasks.effort_scale: ["XS","S","M","L","XL"] -> ["S","M","L"]');
-
-    expect(renderResult("run.report", example("run.report", 0))).toBe(
-      `reported on run ru_8kq2m6t0w4z8c2f6j0n4r8v2z6 · 2 sources · as_of ${NEXT}`,
-    );
   });
 
   test("describe says each key's values and who may set it; a policy key is the user's", () => {
@@ -195,14 +191,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       }
       return [];
     };
-    const names = [
-      "task.search",
-      "task.add",
-      "task.reopen",
-      "group.manage",
-      "prefs.manage",
-      "run.report",
-    ];
+    const names = ["task.search", "task.add", "task.reopen", "group.manage", "prefs.manage"];
     let checked = 0;
     for (const name of names) {
       entry(name).examples.forEach((ex, i) => {

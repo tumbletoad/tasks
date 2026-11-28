@@ -26,8 +26,8 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 0.5 | The general inversion engine and `partial` removed from the service, the contract, the command line and the app | doing (#225) |
 | 1b | The Activity log (#224) | done |
 | 1.1 | The contract for pages, the trail, `read` and `write_page` | done (#229, #231) |
-| 1.2 | Storage: the migration step for pages and the new fields, the search tables rebuilt, an older backup's index rebuilt by its own version | todo: 1.1 |
-| 1.3 | The page edit as the first named command of the new write path | todo: 1.2 |
+| 1.2 | Storage: the migration step for pages and the new fields, the search tables rebuilt, an older backup's index rebuilt by its own version | done (#240) |
+| 1.3 | The page edit as the first named command of the new write path | done (#240) |
 | 1.4 | Agent tools: `read`, `write_page`, the trail in `get_task` within one budget, search over pages, `complete_task` asking for pages updated | todo: 1.3 |
 | 1.5 | The skill `keeping-the-library`, and a brief explained as "what this is" | todo: 1.1 |
 | 1.6 | The app: the project screen with its Library, the page screen with History and Restore, page edits under Changes | todo: 1.1 |
@@ -39,7 +39,8 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | 2.4 | Nested projects, subtasks and the finishing dialog, notes on projects and the space, page comments, links, sources on any node | todo: 2.3 |
 | 2.5 | The app: the sidebar tree, the derived status line, the expanded task's Brief, Description, Knowledge and subtasks | todo: 2.3 |
 | 2.6 | Folders on any node, places retired, folders after a restore, Settings > Folders, a project's rename and archive in the app | todo: 2.3 |
-| 2b.1 | The short design for routines | todo: 2.2 |
+| 2b.1 | The short design for routines | review (#235) |
+| 2b.4 | The schedule calculator: the stored form, the next date and due time through daylight saving, the claim after an absence, and a schedule's words | doing |
 | 2b.2 | Tasks that come back on a schedule | todo: 2b.1 |
 | 2b.3 | Agent runs on a schedule (Refresh, tidying), Refresh in the top bar, Continue interactively | todo: 2b.1 |
 | 3.1 | The projector for the tree on disk, built beside step 2 and live with the tree's migration | todo: 2.1 |
@@ -60,7 +61,8 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 |---|---|
 | Scale on Windows and Linux, on the new model | todo: steps 2 and 3 |
 | A quality pass over the app, on the new screens | todo: steps 2 and 3 |
-| `run_report` on a run's connection, and asking the person about an approval in Codex's narrower modes | ready |
+| A run reports through its answer and what it logs, and logs a decision it leaves the person as a question | done |
+| A run that stopped at a permission prompt goes on with Continue, in the agent app, on the run's own conversation | todo: 2b.3 |
 | Retiring old versions after an update | ready |
 
 ## Checks on real machines

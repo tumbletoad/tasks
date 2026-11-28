@@ -7,6 +7,7 @@ import { step0002, TABLES_0_2_NEW } from "../migrations/0002-schema-0.2.ts";
 import { step0003, TABLES_0_3_NEW } from "../migrations/0003-schema-0.3.ts";
 import { step0004, TABLES_0_4_NEW } from "../migrations/0004-schema-0.4.ts";
 import { step0005, TABLES_0_5_NEW } from "../migrations/0005-schema-0.5.ts";
+import { step0006, TABLES_0_6_NEW } from "../migrations/0006-schema-0.6.ts";
 import { SCHEMA_STEPS } from "../migrations/index.ts";
 import type { Connection } from "../src/driver.ts";
 import { StorageError } from "../src/errors.ts";
@@ -151,6 +152,10 @@ const REQUIRED_FOREIGN_KEYS = [
   "runs.place_id -> places",
   // Schema 0.5: a folder is on one machine. Its owner is a project or a task, so no key names it.
   "folders.machine_id -> machines",
+  // Schema 0.6: who made a page and who moved it to the Trash. What holds it is one of four kinds,
+  // and a node's texts are keyed by their node's ID, so no key names them.
+  "pages.created_by -> actors",
+  "pages.deleted_by -> actors",
 ];
 
 /** The foreign keys the lint expects but did not find, and the ones it found but did not expect. */
@@ -169,12 +174,14 @@ const jsonChecked = (sql: string): string[] =>
   [...sql.matchAll(/json_valid\(([a-z_]+)\)/gi)].map((m) => m[1] ?? "").sort();
 
 describe("[A1.5.schema.lint] the schema of a freshly created space follows A1 3.4's rules", () => {
-  test("the tables are schema 0.5's: 0.1's (M1.03's list, M1.05's receipts, M2.05's launches), M3.01's, M6.01's, the search index's and the folders", () => {
-    expect(SCHEMA_STEPS).toEqual([step0001, step0002, step0003, step0004, step0005]);
+  test("the tables are schema 0.6's: 0.1's (M1.03's list, M1.05's receipts, M2.05's launches), M3.01's, M6.01's, the search index's, the folders and the pages", () => {
+    expect(SCHEMA_STEPS).toEqual([step0001, step0002, step0003, step0004, step0005, step0006]);
     // The FTS5 table is a virtual table: its rows and shadow tables are FTS5's.
     expect(tables.map((t) => t.name)).toEqual(
-      [...step0005.tables].filter((t) => t !== "search_fts").sort(),
+      [...step0006.tables].filter((t) => t !== "search_fts").sort(),
     );
+    expect([...step0006.tables].sort()).toEqual([...step0005.tables, ...TABLES_0_6_NEW].sort());
+    expect([...TABLES_0_6_NEW]).toEqual(["pages", "node_texts"]);
     expect([...step0005.tables].sort()).toEqual([...step0004.tables, ...TABLES_0_5_NEW].sort());
     expect([...TABLES_0_5_NEW]).toEqual(["folders"]);
     expect([...step0004.tables].sort()).toEqual([...step0003.tables, ...TABLES_0_4_NEW].sort());
@@ -436,12 +443,12 @@ describe("[A1.5.schema.lint] the schema of a freshly created space follows A1 3.
     refused("UPDATE space SET one = 2");
   });
 
-  test("the database format: application_id, user_version 0.5, incremental auto_vacuum, WAL", () => {
+  test("the database format: application_id, user_version 0.6, incremental auto_vacuum, WAL", () => {
     expect(conn.pragma("application_id")).toBe(APP_ID);
     expect(conn.pragma("user_version")).toBe(encodeRevision(LATEST_REVISION));
     expect(encodeRevision({ major: 0, minor: 1 })).toBe(1);
-    expect(LATEST_REVISION).toEqual({ major: 0, minor: 5 });
-    expect(conn.pragma("user_version")).toBe(5);
+    expect(LATEST_REVISION).toEqual({ major: 0, minor: 6 });
+    expect(conn.pragma("user_version")).toBe(6);
     expect(conn.pragma("auto_vacuum")).toBe(2);
     expect(conn.pragma("journal_mode")).toBe("wal");
   });

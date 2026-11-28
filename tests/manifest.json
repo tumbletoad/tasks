@@ -159,6 +159,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.pages.write",
+      "title": "A page takes the space's next reference; two edits of different passages both stand, and words gone or standing twice write nothing; a set and a Restore meet newer words as a conflict; a page leaves with its task unwritten; only a person writes a node's text for agents",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.restore.every-revision",
+      "title": "A backup of every revision with a search index, 0.4 to this build's, passes this build's trial restore, restores searchable, and upgrades with its references, counter and history kept; a 0.6 space's live pages are search documents",
+      "source": "A1 3.12, 3.17; step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.pages.contract",
       "title": "The page entries pass the registry check beside the registry, and the feed's page rows, a page leaving the live lists and the conflict of a Restore match their shapes",
       "source": "Step 1 design, pull request 228",
@@ -3000,7 +3016,7 @@
     },
     {
       "id": "A3.3.7.binding.cli",
-      "title": "An agent's shell is the session when a live value names its launch, decided at each call with no bridge first: from the claim, its task the default, the same scope as its bridge so a retry through the other tool replays, also a write still held in the writer; run_report is refused to it; its home's revoke refuses its next call and a restore lets it go on; a retry across an exit on disk before the launch is released commits once; accepted as the limits say, a change from tools that got no value repeated through the shell, or repeated after setup changed the agent's entry, is written twice",
+      "title": "An agent's shell is the session when a live value names its launch, decided at each call with no bridge first: from the claim, its task the default, the same scope as its bridge so a retry through the other tool replays, also a write still held in the writer; its home's revoke refuses its next call and a restore lets it go on; a retry across an exit on disk before the launch is released commits once; accepted as the limits say, a change from tools that got no value repeated through the shell, or repeated after setup changed the agent's entry, is written twice",
       "source": "A2 3.10.5, A3 3.7.4, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
@@ -6127,16 +6143,8 @@
     },
     {
       "id": "A3.3.4.tools.eleven",
-      "title": "The texts of search, add_tasks, reopen_task, organize, preferences and run_report: A3's example results read as A3 shows them, editable names, titles, snippets, queries, preference values and close names only inside the data block, and a page of 50 rows and fifty full areas within their budgets with the cut said",
-      "source": "A3 3.3, A3 3.4.3, A3 3.4.5, A3 3.4.9 to 3.4.12, A3 3.5, A3 3.9.4, A3 3.10, A7 3.11 M4.01",
-      "owner": "M4",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A3.3.4.tools.run-report",
-      "title": "run_report on an MCP connection that is no session in both eras, from a person's terminal and an agent's shell, and from a task's session, returns not_permitted with what the connection is, and writes nothing: no commit, no actor, no receipt",
-      "source": "A3 3.2.3, A3 3.3, A3 3.4.12, A3 3.5, A7 3.11 M4.01",
+      "title": "The texts of search, add_tasks, reopen_task, organize and preferences: A3's example results read as A3 shows them, editable names, titles, snippets, queries, preference values and close names only inside the data block, and a page of 50 rows and fifty full areas within their budgets with the cut said",
+      "source": "A3 3.3, A3 3.4.3, A3 3.4.5, A3 3.4.9 to 3.4.11, A3 3.5, A3 3.9.4, A3 3.10, A7 3.11 M4.01",
       "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6623,6 +6631,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.run.brief-asks-in-log",
+      "title": "Every run's brief tells the agent to log a decision it leaves the person as a question before it ends: with the person's words, without them, and with a reply",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.run.logged-question",
+      "title": "A question a run's agent logs on its task while it works waits on the task's row after the run ends done",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.run.reply-brief",
       "title": "A run queued while an earlier run's question waits starts with that question, as the agent asked it with its options, before the person's words, also when built again after it started; a run queued before the question, after a reply that ran or after the person's note replies to nothing; a run without words hears the question and to work on the task",
       "owner": "M6",
@@ -6646,6 +6668,20 @@
     {
       "id": "A5.while-away.service.reads",
       "title": "With an agent's question waiting on an active, a completed and a dropped task, every read that returns task rows answers: the snapshot, Completed's both lists, search in each scope, status with every section, and each task's read",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.top.web.paste",
+      "title": "A paste into the top field that is more than a title loses no word: one line that fits is the field's as it is; its first line becomes the title, cut at a word when it does not fit, with the text around a selection kept; everything after it is kept for the new task's context, and a second paste adds to it",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.top.e2e.paste",
+      "title": "Against the real service in Chromium: a paste into the top field that is more than a title puts its first line in the field and says under it that the rest goes in the task's context; the rest keeps across a reload and becomes the added task's context; it can be left out; a paste that fits is the field's as it is; screenshots at 1,440 and 390 px in Sumi and Washi and axe finds nothing in the top bar",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6675,6 +6711,54 @@
       "id": "A5.while-away.web.thread-older",
       "title": "Earlier shows what the page holds, then Older entries asks once and says it reads; a first read with no entry but more behind it offers Older entries instead of saying nothing was logged; a failed read says so in one line and the button can be pressed again",
       "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.rule",
+      "title": "A schedule's stored form, a subset of RFC 5545 RRULE, reads back as itself for every rule of the subset; the presets write the rules the design names; a text outside the subset (an unknown, repeated or out-of-bounds part, a combination it does not have) is no rule, and a start that is no date of the calendar (30 February) makes no schedule",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.dates",
+      "title": "The next and the previous date a schedule falls on are those of a day-by-day walk, for every pattern and interval and never before its start; a day past a month's end falls on its last day; every Saturday, the first and last working day, the 31st and the last Friday give the dates named",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.daylight-saving",
+      "title": "A local time in every zone tried, with and without daylight saving and with half-hour changes, is its first instant; a time in the spring gap is the first valid minute after it; every weekday at 07:00 stays at 07:00 through both changes of a year",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.due",
+      "title": "An agent's routine with no time is due at 07:00; after any absence, also two weeks, a claim takes the latest due time that passed, once, and moves on to the first due time after now",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.routines.schedule.following",
+      "title": "The next occurrence of a task a person does falls on the schedule's first time after both now and its own date: finished early, on the day or late, one period gets one task, and a time of day gives a due time",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.routines.web.schedule-words",
+      "title": "A schedule reads in the catalogue's words: every Saturday, every Monday and Thursday, every weekday at 07:00, the first working day of every month, every 3 months on the 15th, the last Friday of every month, every year on 14 December, every year on the last day of February for the 29th to the 31st; every rule of the stored form has words with nothing of the message left in them",
+      "source": "Routines design, pull request 235",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     }
