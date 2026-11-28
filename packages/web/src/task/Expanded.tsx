@@ -243,7 +243,7 @@ function CapturesTo({
 }
 
 /**
- * The task's sources, each with Remove once the card is read, then one collapsed line for the
+ * The task's sources, each with Remove, then one collapsed line for the
  * links detached from it and the notes taken back from it, each with Put back: a wrong source or
  * note is corrected here, and a correction that was itself a mistake is undone here, also after
  * a reload or when an agent made it.
@@ -299,11 +299,7 @@ function Sources({
           source={source}
           task={task}
           onAsk={onAsk}
-          {...(all === undefined
-            ? {}
-            : {
-                acts: act(writes?.detach, source, "source.notRemoved", true, "source.remove"),
-              })}
+          acts={act(writes?.detach, source, "source.notRemoved", true, "source.remove")}
         />
       ))}
       {count === 0 ? null : (

@@ -160,13 +160,13 @@ export async function drawnNow(scope: Locator): Promise<() => Promise<string[]>>
   }, key);
   return () =>
     scope.evaluate((_, key) => {
-      const seen = (window as unknown as Record<string, Map<Element, string>>)[key];
+      const seen = (window as unknown as Record<string, Map<Element, string> | undefined>)[key];
       const moved: string[] = [];
       for (const [e, was] of seen ?? []) {
         const r = e.getBoundingClientRect();
         const now = e.isConnected ? `${String(r.x)},${String(r.y)}` : "gone";
         const name = e.getAttribute("data-part") ?? e.getAttribute("aria-label") ?? e.textContent;
-        if (now !== was) moved.push(`${name ?? e.tagName}: ${was} -> ${now}`);
+        if (now !== was) moved.push(`${name}: ${was} -> ${now}`);
       }
       return moved;
     }, key);
