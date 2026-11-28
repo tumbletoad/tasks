@@ -262,10 +262,22 @@ export function useKeptTitles(space: string, task: string): readonly KeptTitle[]
 // Words the service refused are kept apart, not saved, until the person copies or discards them:
 // the editor opens again on the text as it is now, and a new draft never takes their place.
 
-/** What a text editor corrects: the summary, the context, or an entry by reference (n3, l4). */
-export type TextPart = "summary" | "context" | `${"n" | "l"}${number}`;
+/**
+ * What a text editor corrects: a task's summary, its context, or an entry by reference (n3, l4);
+ * a page's title, brief or body, and a node's brief, description or text for agents, kept under
+ * the page's or the node's ID in place of a task's.
+ */
+export type TextPart =
+  | "summary"
+  | "context"
+  | `${"n" | "l"}${number}`
+  | "title"
+  | "brief"
+  | "body"
+  | "description"
+  | "for_agents";
 
-const PART = /^(?:summary|context|[nl][1-9][0-9]{0,5})$/u;
+const PART = /^(?:summary|context|[nl][1-9][0-9]{0,5}|title|brief|body|description|for_agents)$/u;
 
 export const isTextPart = (value: string): value is TextPart => PART.test(value);
 

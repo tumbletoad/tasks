@@ -1,8 +1,9 @@
-// The person's correction of a task's text in place: its summary, its context, and the words of
-// any note or log entry, whoever wrote them. A pen opens the whole text as an editable box where it
+// The person's correction of a text in place: a task's summary, its context, the words of any
+// note or log entry, whoever wrote them, and the library's pages and texts. A pen opens the whole text as an editable box where it
 // stands; a text the card holds only in part has no box to save from. Enter saves the words as
 // typed (Shift+Enter is a new line), Escape lets go, and leaving the box saves, as the title's
-// editor does; a box whose words the person did not change writes nothing. What is typed is kept
+// editor does; in a page's body, which is written in paragraphs, Enter is a new line and
+// Ctrl+Enter saves. A box whose words the person did not change writes nothing. What is typed is kept
 // in this browser (unsent.ts) until the service holds it: after a reload the box opens again with
 // it. The save is made from where the page was when the box opened, so a change someone made
 // meanwhile is a refusal, never overwritten: the box closes on the text as it is now, and the
@@ -169,6 +170,10 @@ export interface TextEditorProps {
   readonly text: string;
   /** One line, as the summary is: Enter saves and no new line is typed. */
   readonly line?: boolean;
+  /** Written in paragraphs, as a page's body: Enter is a new line, Ctrl+Enter saves. */
+  readonly paragraphs?: boolean;
+  /** An emptied box is sent: it takes the text away (the text for agents, a description). */
+  readonly clears?: boolean;
   readonly max: number;
   /** Where the page is now: the base of a save made from here. */
   readonly base: string | undefined;
@@ -185,6 +190,8 @@ export function TextEditor({
   label,
   text,
   line: single = false,
+  paragraphs = false,
+  clears = false,
   max,
   base,
   save,
@@ -235,7 +242,7 @@ export function TextEditor({
     const typed = field.current?.value ?? "";
     // Nothing the person changed, or nothing at all, is never sent: an emptied text is taken back
     // with its own control, and a box opened over words that changed since writes nothing.
-    if (!send || typed === opened.before || typed.trim() === "") {
+    if (!send || typed === opened.before || (typed.trim() === "" && !clears)) {
       release();
       onDone(undefined);
       return;
@@ -272,7 +279,8 @@ export function TextEditor({
     },
     onKeyDown: (event: KeyboardEvent) => {
       if (event.nativeEvent.isComposing) return;
-      if (event.key === "Enter" && !event.shiftKey) {
+      const saves = paragraphs ? event.ctrlKey || event.metaKey : !event.shiftKey;
+      if (event.key === "Enter" && saves) {
         event.preventDefault();
         finish(true);
       } else if (event.key === "Escape") {
