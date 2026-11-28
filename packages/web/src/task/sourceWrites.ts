@@ -1,6 +1,6 @@
 // The card's source corrections: detach a source from the task, and put a detached one back. Each
 // goes through task.update as the person, in turn with the page's other edits, from the base the
-// card was read at, and its toast's Undo or Ctrl+Z takes it back.
+// card was read at. Put back is the way back from a detach, so neither is a step of Undo.
 import { useContext, useMemo } from "react";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { Session } from "../context.ts";
@@ -33,7 +33,7 @@ export function sourceWrites(client: Client, edits: Pick<Edits, "write">): Sourc
           request_id: request,
         }),
       (result: UpdateResult | WriteReceipt) => (result.result === "no_change" ? undefined : msg),
-      { base, undo: true },
+      { base },
     );
   return {
     detach: (task, source, base) =>

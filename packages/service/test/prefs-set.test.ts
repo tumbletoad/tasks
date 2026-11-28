@@ -145,8 +145,6 @@ describe("[A3.3.4.prefs.set] the person changes a space's settings, and everythi
       request_id: rid(),
     });
     expect(await effortOf(large)).toBe("Two weeks");
-    await call(person, "history.undo", { request_id: rid() });
-    expect(await effortOf(large)).toBe("L");
   });
 
   test("the whole value goes in with its base: a change made in between is refused, not overwritten", async () => {
@@ -326,19 +324,6 @@ describe("[A3.3.4.prefs.moves] a change of the effort levels moves its tasks, an
       "Medium",
       "Medium",
     ]);
-    // The change is a step: Undo puts the levels and its tasks back, and says so; Redo again.
-    expect(await call(person, "history.undo", { request_id: rid() })).toMatchObject({
-      result: "undone",
-      levels: { list: true, tasks: 2 },
-      task_count: 2,
-    });
-    expect(await get("tasks.effort_scale")).toEqual(EFFORT_LEVELS);
-    expect(await effortOf(first ?? "")).toBe("M");
-    expect(await call(person, "history.redo", { request_id: rid() })).toMatchObject({
-      result: "redone",
-      levels: { list: true, tasks: 2 },
-    });
-    expect(await effortOf(first ?? "")).toBe("Medium");
     const merged = PrefsManageResult.parse(
       await levels(await asOf(), "XS,S,L,XL", [{ from: "Medium", to: "L" }]),
     );
@@ -351,40 +336,8 @@ describe("[A3.3.4.prefs.moves] a change of the effort levels moves its tasks, an
     ]);
   });
 
-  test("a refused undo of a change of levels says it is one, so the rest can be undone from anywhere", async () => {
-    const [moved] = await add([{ title: "Fixture medium", effort: "M" }]);
-    await levels(await asOf(), "XS,S,Medium,L,XL", [{ from: "M", to: "Medium" }]);
-    await call(script, "task.update", {
-      task: moved ?? "",
-      set: { effort: "L" },
-      base: await asOf(),
-      request_id: rid(),
-    });
-    expect(await refusal(call(person, "history.undo", { request_id: rid() }))).toMatchObject({
-      code: "conflict",
-      data: { levels: true },
-    });
-  });
-
   test("moves go with the effort levels alone", async () => {
     const before = await asOf();
-    expect(
-      await refusal(
-        call(person, "prefs.manage", {
-          action: "set",
-          set: [
-            { key: "tasks.effort_scale", value: "XS,S,M,L,XL,XXL" },
-            { key: "tasks.dedupe_window_days", value: "14" },
-          ],
-          base: before,
-          request_id: rid(),
-        }),
-      ),
-    ).toMatchObject({
-      code: "invalid_input",
-      message: "Set the effort levels in a call of their own.",
-      hint: "Send tasks.effort_scale alone, then the other keys in a second call: only the levels go on your undo stack.",
-    });
     expect(
       await refusal(
         call(person, "prefs.manage", {
@@ -399,7 +352,7 @@ describe("[A3.3.4.prefs.moves] a change of the effort levels moves its tasks, an
   });
 });
 
-describe("[A3.3.4.prefs.moves-said] what a change of levels and its undo say is what they wrote", () => {
+describe("[A3.3.4.prefs.moves-said] what a change of levels says is what it wrote", () => {
   test("a dry run answers as the write and writes nothing; the write's receipt keeps its moves; an undo names only the tasks it checked off or reopened", async () => {
     const [medium] = await add([{ title: "Fixture medium", effort: "M" }]);
     const set = (dry: boolean, request_id: string) =>
@@ -427,9 +380,6 @@ describe("[A3.3.4.prefs.moves-said] what a change of levels and its undo say is 
     await set(false, id);
     const receipt = await call(person, "receipt.get", { request: id });
     expect((receipt["results"] as Json[])[0]?.["moved"]).toEqual(dry.moved);
-    const undone = await call(person, "history.undo", { request_id: rid() });
-    expect(undone).toMatchObject({ levels: { list: true, tasks: 1 } });
-    expect(undone["lifecycles"]).toBeUndefined();
     await call(person, "task.finish", {
       task: medium ?? "",
       outcome: "Fixture outcome",

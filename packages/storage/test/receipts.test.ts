@@ -646,12 +646,11 @@ describe("[A1.5.write.receipts] the intent, the writer scope and receipt.get", (
     expect(none).toEqual({ found: false });
   });
 
-  test("an undo conflict's receipt names the commit it met, so a caller whose reply was lost can name it next", () => {
+  test("a kept undo's receipt says so and names who, so a caller whose reply was lost gets the same answer", () => {
     const task = create();
     const mine = fx.writer.submit(
       fx.request(fx.human, [{ kind: "task.patch", task, set: { title: "Review" } }], {
         base: fx.base(),
-        undoable: true,
       }),
     );
     expectStatus(mine, "applied");
@@ -664,14 +663,15 @@ describe("[A1.5.write.receipts] the intent, the writer scope and receipt.get", (
       "applied",
     );
     const undo = fx.request(fx.human, [{ kind: "undo" }]);
-    const refused = fx.writer.submit(undo);
-    expectStatus(refused, "conflict");
-    expect(refused.target).toBe(mine.commit);
+    const kept = fx.writer.submit(undo);
+    expectStatus(kept, "unchanged");
+    expect(kept.kept).toBe(true);
     const output = receiptResult(
       fx.writer.receipt({ scope_id: undo.actor.scope_id, request_id: undo.request_id }),
     );
     expect(ReceiptGetResult.safeParse(output).error).toBeUndefined();
-    expect(output).toMatchObject({ found: true, status: "conflict", target: mine.commit });
+    expect(output).toMatchObject({ found: true, status: "unchanged", kept: true });
+    expect(output).toHaveProperty("newer_work");
     // A receipt another build stored with fields this one does not name still reads.
     const stored = fx.writer.receipt({
       scope_id: undo.actor.scope_id,
@@ -683,12 +683,12 @@ describe("[A1.5.write.receipts] the intent, the writer scope and receipt.get", (
       result: {
         ...stored.result,
         setAside: [mine.commit],
-        conflicts: stored.result.conflicts.map((c) => ({ ...c, more: 2 })),
+        target: mine.commit,
       },
     };
     const read = receiptResult(older);
     expect(ReceiptGetResult.safeParse(read).error).toBeUndefined();
-    expect(read).toMatchObject({ found: true, status: "conflict", target: mine.commit });
+    expect(read).toMatchObject({ found: true, status: "unchanged", kept: true });
   });
 
   test("receipt.get through the writer worker returns the stored result, or nothing", async () => {

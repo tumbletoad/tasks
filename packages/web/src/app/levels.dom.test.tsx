@@ -210,7 +210,7 @@ describe("[A5.3.7.web.levels-grid] the effort levels' grid in Settings", () => {
     });
     expect(names()).toEqual(["XS", "S", "Medium", "L", "XL"]);
     await answer({ moved: [{ from: "M", to: "Medium", active: 10, finished: 2, trash: 0 }] });
-    expect(toasts.at(-1)?.kind).toBe("undo");
+    expect(toasts.at(-1)?.kind).toBe("info");
     expect(toasts.at(-1)?.text).toMatchObject({
       id: "levels.saved",
       values: { kind: "rename", from: "M", name: "Medium", moved: 12, how: "with" },

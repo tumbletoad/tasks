@@ -598,39 +598,24 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       const count = typeof result["task_count"] === "number" ? result["task_count"] : tasks.length;
       const more = count > tasks.length ? ` and ${String(count - tasks.length)} more` : "";
       const which = tasks.length === 0 ? "" : ` to ${tasks.join(", ")}${more}`;
-      const done =
-        result["result"] === "redone"
-          ? "Redid your change"
-          : result["result"] !== "partial"
-            ? "Undid your change"
-            : tasks.length > 0 || result["tasks"] === undefined
-              ? "Undid part of your change"
-              : "Nothing of your change was left to undo";
-      // A change of the levels: what the step wrote says what was undone or redone, nothing else.
-      const levels = result["levels"] as { list: boolean; tasks: number } | undefined;
-      const again = result["result"] === "redone" ? "redo" : "undo";
-      const sizes = `the size${levels?.tasks === 1 ? "" : "s"} of ${tasksText(levels?.tasks ?? 0)}`;
-      const said =
-        levels === undefined
-          ? `${done}${which}`
-          : levels.list
-            ? `${again === "redo" ? "Redid" : "Undid"} your change to the effort levels${levels.tasks > 0 ? ` and ${tasksText(levels.tasks)}` : ""}`
-            : levels.tasks > 0
-              ? again === "redo"
-                ? `Changed ${sizes} again`
-                : `Put back ${sizes}`
-              : `Nothing of your change to the effort levels was left to ${again}`;
-      lines.push(`${said} in ${space}${replay(result)}`, ...levelsReport(result));
-      const kept = (result["unresolved"] as Result[] | undefined) ?? [];
-      // What a partial undo left, or the older changes a redo passed over: who changed what since.
-      const newer = newerOf(result);
-      if (newer !== undefined) {
-        lines.push(`${result["result"] === "redone" ? "Not redone" : "Not undone"}: ${newer}.`);
+      const redo = entry === "history.redo";
+      if (result["result"] === "kept") {
+        // A change since kept it, or it cannot be applied now: nothing changed, and the next one
+        // reaches the change before.
+        const why = typeof result["why"] === "string" ? result["why"] : undefined;
+        const reason =
+          why === undefined
+            ? (newerOf(result) ?? "it is as it was already")
+            : why.charAt(0).toLowerCase() + why.slice(1);
+        lines.push(
+          `Not ${redo ? "redone" : "undone"}${which}: ${reason}, so it stays as it is. Run the command again for your change before it${replay(result)}`,
+        );
+        break;
       }
-      // A3 3.7.4: a newer change by a script of the same person, which no undo reaches. A partial
-      // undo that kept a script's field has said so above.
+      lines.push(`${redo ? "Redid" : "Undid"} your change${which} in ${space}${replay(result)}`);
+      // A3 3.7.4: a newer change by a script of the same person, which no undo reaches.
       const scripted = result["script_change"] as Result | undefined;
-      if (scripted !== undefined && !kept.some((field) => field["by"] === "script")) {
+      if (scripted !== undefined) {
         lines.push(
           `Not undone: a script ${SCRIPT_VERBS[str(scripted["change"])] ?? "changed"} ${str(scripted["task"])} after that, and a script's changes are not on your undo stack.`,
         );

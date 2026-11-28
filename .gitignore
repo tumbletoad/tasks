@@ -1,7 +1,5 @@
-# Local only, never committed: this checkout's private setup and workflow notes,
-# and planning reference material.
+# Local only, never committed: this checkout's private setup and workflow notes.
 /local/
-/planning/references/
 
 # Dependencies and build output.
 node_modules/

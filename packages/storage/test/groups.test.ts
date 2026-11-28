@@ -1,9 +1,8 @@
 // Areas and projects through the write path: create, change, move a project, archive and
-// unarchive, delete and restore, each with its history and one undo step per request. Fixture
-// text only, in a temporary space.
+// unarchive, delete and restore, each with its history. A new group and an unarchive are steps on
+// the person's Undo: its Undo archives the group. Fixture text only, in a temporary space.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { SqlValue } from "../src/driver.ts";
-import { newId } from "../src/ids.ts";
 import { openSpace } from "../src/space.ts";
 import type { Operation, WriteRequest, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
@@ -30,7 +29,6 @@ function submit(ops: Operation[], who: Who = "human", extra: Partial<WriteReques
   return fx.writer.submit(
     fx.request(actor, ops, {
       base: fx.base(),
-      ...(who === "human" ? { undoable: true } : {}),
       ...extra,
     }),
   );
@@ -97,11 +95,10 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     ).toEqual({ project_id: "p_0n0rth00000000000000000000" });
   });
 
-  test("rename and other fields need a base, keep the ID, the slug and the tasks, and undo puts them back", () => {
+  test("rename and other fields need a base, and keep the ID, the slug and the tasks", () => {
     const task = created(
       submit([{ kind: "task.create", title: "Fix the header", project: fx.project }]),
     );
-    const before = row("projects", fx.project);
     const unbased = fx.writer.submit(
       fx.request(fx.human, [{ kind: "project.patch", project: fx.project, set: { title: "Web" } }]),
     );
@@ -124,14 +121,6 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     expect(
       fx.reader.prepare("SELECT project_id FROM tasks WHERE id = $id").get({ id: task }),
     ).toEqual({ project_id: fx.project });
-    expectStatus(undo(), "applied");
-    expect(row("projects", fx.project)).toMatchObject({
-      title: before["title"],
-      brief: before["brief"],
-      color: before["color"],
-    });
-    expectStatus(redo(), "applied");
-    expect(row("projects", fx.project)["title"]).toBe("Web portal");
     // A stale base is a conflict on the field another changed since.
     const stale = fx.base();
     expectStatus(
@@ -154,10 +143,10 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     );
   });
 
-  test("a project moves to another area with all its tasks, at the end of that area; undo moves them back", () => {
+  test("a project moves to another area with all its tasks, at the end of that area", () => {
     const done = created(submit([{ kind: "task.create", title: "Ship v1", project: fx.project }]));
     expectStatus(submit([{ kind: "task.complete", task: done }]), "applied");
-    const open = created(submit([{ kind: "task.create", title: "Ship v2", project: fx.project }]));
+    created(submit([{ kind: "task.create", title: "Ship v2", project: fx.project }]));
     const moved = submit([{ kind: "project.move", project: fx.project, area: "home" }]);
     expectStatus(moved, "applied");
     expect(row("projects", fx.project)["area_id"]).toBe(fx.areas.home);
@@ -170,15 +159,6 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
       id: moved.commit ?? "",
     });
     expect(commit?.["affected"]).toBe(2);
-    expectStatus(undo(), "applied");
-    expect(row("projects", fx.project)["area_id"]).toBe(fx.areas.lumen);
-    for (const task of [done, open]) {
-      expect(
-        fx.reader.prepare("SELECT area_id FROM tasks WHERE id = $id").get({ id: task }),
-      ).toEqual({
-        area_id: fx.areas.lumen,
-      });
-    }
     // Out of every area, then a task filed into it later in the same request takes no area.
     const result = submit([
       { kind: "project.move", project: fx.project, area: null },
@@ -191,25 +171,6 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     ).toEqual({
       area_id: null,
     });
-  });
-
-  test("undo of a project's move is a conflict when a task was filed into it since; its partial form leaves the project and its tasks together", () => {
-    const first = created(submit([{ kind: "task.create", title: "Before", project: fx.project }]));
-    expectStatus(submit([{ kind: "project.move", project: fx.project, area: "home" }]), "applied");
-    const filed = created(
-      submit([{ kind: "task.create", title: "Filed since", project: fx.project }], "codex"),
-    );
-    const blocked = undo();
-    expectStatus(blocked, "conflict");
-    expect(blocked.conflicts).toEqual([
-      expect.objectContaining({ entity: "tasks", id: filed, field: "grouping" }),
-    ]);
-    const partial = fx.writer.submit(fx.request(fx.human, [{ kind: "undo", partial: true }]));
-    expectStatus(partial, "applied");
-    const areaOf = (id: string) =>
-      fx.reader.prepare("SELECT area_id FROM tasks WHERE id = $id").get({ id })?.["area_id"];
-    expect(row("projects", fx.project)["area_id"]).toBe(fx.areas.home);
-    expect([areaOf(first), areaOf(filed)]).toEqual([fx.areas.home, fx.areas.home]);
   });
 
   test("archive keeps the group's tasks as they are; archive twice and unarchive an active one change nothing", () => {
@@ -231,11 +192,13 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     expectStatus(submit([{ kind: "area.unarchive", area: "home" }]), "unchanged");
     expectStatus(submit([{ kind: "area.archive", area: "home" }]), "applied");
     expect(row("areas", fx.areas.home)["lifecycle"]).toBe("archived");
+    // An unarchive is a step: its Undo archives the area again.
+    expectStatus(submit([{ kind: "area.unarchive", area: "home" }]), "applied");
     expectStatus(undo(), "applied");
-    expect(row("areas", fx.areas.home)["lifecycle"]).toBe("active");
+    expect(row("areas", fx.areas.home)["lifecycle"]).toBe("archived");
   });
 
-  test("delete refuses a project that holds tasks; delete and restore, and undo of each, of an empty one", () => {
+  test("delete refuses a project that holds tasks; delete and restore of an empty one", () => {
     created(submit([{ kind: "task.create", title: "Keep me", project: fx.project }]));
     const refused = submit([{ kind: "project.delete", project: fx.project }]);
     expectStatus(refused, "rejected");
@@ -246,87 +209,15 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     expect(row("projects", empty)["deleted_at"]).not.toBeNull();
     // A deleted project takes no task, and its slug is free for a new project.
     expectStatus(submit([{ kind: "task.create", title: "No", project: empty }]), "rejected");
-    expectStatus(undo(), "applied");
-    expect(row("projects", empty)["deleted_at"]).toBeNull();
-    expectStatus(redo(), "applied");
     expectStatus(submit([{ kind: "project.restore", project: empty }]), "applied");
     expect(row("projects", empty)["deleted_at"]).toBeNull();
     expect(submit([{ kind: "project.restore", project: empty }]).error?.code).toBe(
       "INVALID_TRANSITION",
     );
-    expectStatus(undo(), "applied");
-    expect(row("projects", empty)["deleted_at"]).not.toBeNull();
+    expectStatus(submit([{ kind: "project.delete", project: empty }]), "applied");
     // A restore whose slug a new project took meanwhile is refused, and changes nothing.
     created(submit([{ kind: "project.create", title: "Spare" }]));
     expectStatus(submit([{ kind: "project.restore", project: empty }]), "rejected");
-  });
-
-  test("a step that makes a group and files what was there into it is undone whole: the undo moves it out", () => {
-    const task = created(submit([{ kind: "task.create", title: "Dig" }], "codex"));
-    const area = newId("a");
-    const project = newId("p");
-    expectStatus(
-      submit([
-        { kind: "area.create", id: area, title: "Garden" },
-        { kind: "project.move", project: fx.project, area },
-        { kind: "project.create", id: project, title: "Beds", area },
-        { kind: "task.move", task, project },
-      ]),
-      "applied",
-    );
-    expectStatus(undo(), "applied");
-    expect([
-      row("areas", area)["deleted_at"],
-      row("projects", project)["deleted_at"],
-    ]).not.toContain(null);
-    expect(row("projects", fx.project)["area_id"]).toBe(fx.areas.lumen);
-    expect(
-      fx.reader.prepare("SELECT project_id FROM tasks WHERE id = $id").get({ id: task }),
-    ).toEqual({ project_id: null });
-  });
-
-  test("a project restored after its area is gone comes back without an area, with its tasks", () => {
-    const area = created(submit([{ kind: "area.create", title: "Garden" }]));
-    const project = created(submit([{ kind: "project.create", title: "Beds", area }], "codex"));
-    const task = created(submit([{ kind: "task.create", title: "Dig", project }], "codex"));
-    expectStatus(submit([{ kind: "task.delete", task }], "codex"), "applied");
-    expectStatus(submit([{ kind: "project.delete", project }], "codex"), "applied");
-    // Nothing live is in the area: its creation is undone.
-    expectStatus(undo(), "applied");
-    expect(row("areas", area)["deleted_at"]).not.toBeNull();
-    expectStatus(submit([{ kind: "project.restore", project }]), "applied");
-    expect(row("projects", project)).toMatchObject({ deleted_at: null, area_id: null });
-    expect(
-      fx.reader.prepare("SELECT area_id, project_id FROM tasks WHERE id = $id").get({ id: task }),
-    ).toEqual({ area_id: null, project_id: project });
-  });
-
-  test("Undo and Redo of a project's move take along its tasks out of sight, as the move does", () => {
-    const areaOf = (id: string): unknown =>
-      fx.reader.prepare("SELECT area_id FROM tasks WHERE id = $id").get({ id })?.["area_id"];
-    // A task made in the project after the move, whose creation is undone first.
-    expectStatus(
-      submit([{ kind: "project.move", project: fx.project, area: fx.areas.home }]),
-      "applied",
-    );
-    const later = created(submit([{ kind: "task.create", title: "Dig", project: fx.project }]));
-    expectStatus(undo(), "applied");
-    expectStatus(undo(), "applied");
-    expect(areaOf(later)).toBe(fx.areas.lumen);
-    expectStatus(redo(), "applied");
-    expectStatus(redo(), "applied");
-    expect(areaOf(later)).toBe(fx.areas.home);
-    // A task made in the project by the request that moves it.
-    const id = newId("t");
-    expectStatus(
-      submit([
-        { kind: "task.create", id, title: "Rake", project: fx.project },
-        { kind: "project.move", project: fx.project, area: fx.areas.lumen },
-      ]),
-      "applied",
-    );
-    expectStatus(undo(), "applied");
-    expect(areaOf(id)).toBe(fx.areas.home);
   });
 
   test("one request that restores a project and makes another of the same name gives the new one a slug of its own", () => {
@@ -350,39 +241,19 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     expect(asked.error).toMatchObject({ code: "VALIDATION_FAILED", field: "slug" });
   });
 
-  test("Redo of a project's delete after someone renamed it is a conflict naming the rename, and the project stays", () => {
-    const spare = created(submit([{ kind: "project.create", title: "Spare" }]));
-    expectStatus(submit([{ kind: "project.delete", project: spare }]), "applied");
-    expectStatus(undo(), "applied");
-    expectStatus(
-      submit(
-        [{ kind: "project.patch", project: spare, set: { title: "Spare, renamed" } }],
-        "codex",
-      ),
-      "applied",
-    );
-    const late = redo();
-    expectStatus(late, "conflict");
-    expect(late.conflicts).toEqual([
-      expect.objectContaining({ entity: "projects", id: spare, field: "title" }),
-    ]);
-    expect(row("projects", spare)["deleted_at"]).toBeNull();
-  });
-
-  test("undo of a create tombstones the group; a task another commit filed into it keeps it", () => {
+  test("undo of a create archives the group with what is in it, and redo brings it back", () => {
     const area = created(submit([{ kind: "area.create", title: "Errands" }]));
+    expectStatus(submit([{ kind: "task.create", title: "Milk", area }], "codex"), "applied");
     expectStatus(undo(), "applied");
-    expect(row("areas", area)["deleted_at"]).not.toBeNull();
+    expect(row("areas", area)).toMatchObject({ lifecycle: "archived", deleted_at: null });
     expectStatus(redo(), "applied");
-    expect(row("areas", area)["deleted_at"]).toBeNull();
+    expect(row("areas", area)["lifecycle"]).toBe("active");
     const project = created(submit([{ kind: "project.create", title: "Shopping", area }]));
-    expectStatus(submit([{ kind: "task.create", title: "Milk", project }], "codex"), "applied");
-    const blocked = undo();
-    expectStatus(blocked, "conflict");
-    expect(blocked.conflicts.map((c) => c.entity)).toContain("tasks");
+    expectStatus(undo(), "applied");
+    expect(row("projects", project)["lifecycle"]).toBe("archived");
   });
 
-  test("in a space whose project left its tasks in another area, ordinary moves, a new task beside them and undo of each work, and a move of the project brings them along", async () => {
+  test("in a space whose project left its tasks in another area, ordinary moves and a new task beside them work, and a move of the project brings them along", async () => {
     const [first, second] = [newTask("First"), newTask("Second")];
     const loose = created(submit([{ kind: "task.create", title: "Loose", area: "lumen" }]));
     // The project moved without its tasks, as an earlier version let it.
@@ -399,14 +270,10 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
       "applied",
     );
 
-    // A reorder takes the project's area with it, and its undo puts the task back as it was.
+    // A reorder takes the project's area with it.
     expectStatus(submit([{ kind: "task.move", task: second, before: first }]), "applied");
     expect(order()).toEqual([second, first]);
     expect(taskRow(second)["area_id"]).toBe(fx.areas.home);
-    expectStatus(undo(), "applied");
-    expect(order()).toEqual([first, second]);
-    expect(taskRow(second)["area_id"]).toBe(fx.areas.lumen);
-    expectStatus(redo(), "applied");
 
     // A task put beside one of them, or created there, joins the project in its area.
     expectStatus(submit([{ kind: "task.move", task: loose, after: first }]), "applied");
@@ -415,28 +282,20 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     expect(taskRow(beside)).toMatchObject({ project_id: fx.project, area_id: fx.areas.home });
     const named = created(submit([{ kind: "task.create", title: "Named", project: fx.project }]));
     expect(taskRow(named)["area_id"]).toBe(fx.areas.home);
-    for (let n = 0; n < 3; n += 1) expectStatus(undo(), "applied");
 
-    // The project's move brings every task into its new area; its undo puts each back.
+    // The project's move brings every task into its new area.
     const third = created(submit([{ kind: "area.create", title: "Third" }]));
     expectStatus(submit([{ kind: "project.move", project: fx.project, area: third }]), "applied");
     expect([taskRow(first)["area_id"], taskRow(second)["area_id"]]).toEqual([third, third]);
-    expectStatus(undo(), "applied");
-    expect(row("projects", fx.project)["area_id"]).toBe(fx.areas.home);
-    expect(taskRow(first)["area_id"]).toBe(fx.areas.lumen);
-    expectStatus(redo(), "applied");
-    expect(taskRow(first)["area_id"]).toBe(third);
   });
 
-  test("in a space whose deleted project still holds live tasks, a reorder and its undo work, a move out and its undo too, and no task joins the project", async () => {
+  test("in a space whose deleted project still holds live tasks, a reorder and a move out work, an undo of a removal too, and no task joins the project", async () => {
     const [first, second] = [newTask("First"), newTask("Second")];
     // The project was deleted with its tasks still in it, as an earlier build's undo of an import
     // could leave it.
     await olderSpace("UPDATE projects SET deleted_at = 1 WHERE id = $id", { id: fx.project });
     expectStatus(submit([{ kind: "task.move", task: second, before: first }]), "applied");
     expect(order()).toEqual([second, first]);
-    expectStatus(undo(), "applied");
-    expect(order()).toEqual([first, second]);
 
     const joining = submit([{ kind: "task.create", title: "Joining", after: first }]);
     expectStatus(joining, "rejected");
@@ -444,8 +303,6 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
 
     expectStatus(submit([{ kind: "task.move", task: first, project: null }]), "applied");
     expect(taskRow(first)["project_id"]).toBeNull();
-    expectStatus(undo(), "applied");
-    expect(taskRow(first)["project_id"]).toBe(fx.project);
     expectStatus(submit([{ kind: "task.complete", task: second }]), "applied");
     expectStatus(submit([{ kind: "task.delete", task: second }]), "applied");
     expectStatus(undo(), "applied");

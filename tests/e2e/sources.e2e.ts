@@ -1,6 +1,6 @@
 // A wrong source removed from a task in the page, and put back (A5 3.7), against the real service
-// process with fixture data: Remove on the source's line, the toast's Undo, the Removed line after
-// a reload, Put back refused while another task holds the key, naming it, and Put back once that
+// process with fixture data: Remove on the source's line, with no Undo, the Removed line after a
+// reload, Put back refused while another task holds the key, naming it, and Put back once that
 // task lets the key go; with more holders than it names, how many more. Screenshots at 1,440 and
 // 390 px for review.
 import { expect, type Page } from "@playwright/test";
@@ -28,7 +28,7 @@ const toast = (page: Page) => page.locator('[data-part="toast-text"]');
 const toastAction = (page: Page) => page.locator('[data-part="toast-action"]');
 
 test.describe("[A5.source.detach] A wrong source is removed from a task and put back", () => {
-  test("Remove, the toast's Undo, the Removed line after a reload, and Put back refused while another task holds the key", async ({
+  test("Remove with no Undo, the Removed line after a reload, and Put back refused while another task holds the key", async ({
     page,
     world,
   }) => {
@@ -53,20 +53,14 @@ test.describe("[A5.source.detach] A wrong source is removed from a task and put 
     const wrong = live.and(body.locator('[data-kind="ticket"]'));
     await expect(live).toHaveCount(2, { timeout: SLOW_MS });
 
-    // Remove takes the ticket off this task; the toast's Undo brings it back.
+    // Remove takes the ticket off this task, with no Undo: Put back is the way back. Removed, the
+    // ticket no longer catches its captures: an agent's capture is new work.
     await wrong.hover();
     await wrong.getByRole("button", { name: "Remove" }).click();
     await expect(toast(page)).toHaveText(`Source removed from ${ref}`);
+    await expect(toastAction(page)).toHaveCount(0);
     await expect(live).toHaveCount(1);
     await expect(body.locator('[data-part="removed"]')).toContainText("1 source removed");
-    await toastAction(page).click();
-    await expect(live).toHaveCount(2, { timeout: SLOW_MS });
-    await expect(body.locator('[data-part="removed"]')).toHaveCount(0);
-
-    // Removed again, the ticket no longer catches its captures: an agent's capture is new work.
-    await wrong.hover();
-    await wrong.getByRole("button", { name: "Remove" }).click();
-    await expect(live).toHaveCount(1);
     const other = await addTask(
       world,
       { title: `Fix the printer on floor 2 (${tag})`, area: "lumen", sources: [ticket] },

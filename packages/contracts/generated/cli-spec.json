@@ -851,7 +851,7 @@
       "inputOnly": [],
       "kind": "write",
       "positionals": [],
-      "summary": "Redo the change you undid last, as long as nobody changed its fields since.",
+      "summary": "Redo the change you undid last, unless someone changed it since.",
       "verb": "redo"
     },
     {
@@ -1269,20 +1269,12 @@
           "repeat": false,
           "required": false,
           "type": "string"
-        },
-        {
-          "field": "partial",
-          "flag": "--partial",
-          "help": "Undo the fields nobody changed since, and keep the others' changes",
-          "repeat": false,
-          "required": false,
-          "type": "boolean"
         }
       ],
       "inputOnly": [],
       "kind": "write",
       "positionals": [],
-      "summary": "Undo your newest change in the space, field by field as long as nobody changed it.",
+      "summary": "Undo your newest check-off, Trash, removed note, text edit or filing, unless someone changed it since.",
       "verb": "undo"
     }
   ],

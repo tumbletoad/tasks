@@ -1,6 +1,6 @@
 // Retracting a note and putting it back (`note.delete`, `note.restore`): the row stays with its
-// ordinal, author and audience, the task and its other notes are untouched, undo and redo take
-// either step back, and a note whose writing was undone is Redo's. Fixture text only.
+// ordinal, author and audience, the task and its other notes are untouched, and undo and redo take
+// either step back. Fixture text only.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
 import {
@@ -45,9 +45,7 @@ describe("[A1.note.retract] a note retracted from a task, and put back", () => {
 
   type Who = "human" | "codex";
   const send = (who: Who, ops: Operation[], extra: Partial<WriteRequest> = {}): WriteResult =>
-    fx.writer.submit(
-      fx.request(fx[who], ops, { ...(who === "human" ? { undoable: true } : {}), ...extra }),
-    );
+    fx.writer.submit(fx.request(fx[who], ops, extra));
   const applied = (result: WriteResult): WriteResult => {
     expectStatus(result, "applied");
     return result;
@@ -136,35 +134,18 @@ describe("[A1.note.retract] a note retracted from a task, and put back", () => {
     expect(taskRow(task)).toEqual(before);
   });
 
-  test("undo puts a retracted note back and redo retracts it again, as the same change", () => {
+  test("undo puts a retracted note back and redo retracts it again; put back works after", () => {
     const task = noted();
-    const done = applied(retract(task, 1));
-    const provenance = () =>
-      fx.reader
-        .prepare(
-          "SELECT json_extract(fp, '$.deleted') AS p FROM notes WHERE task_id = $task AND ordinal = 1",
-        )
-        .get({ task })?.["p"];
-    expect(provenance()).toBe(done.seq);
+    applied(retract(task, 1));
     applied(undo());
     expect(note(task, 1)["deleted_at"]).toBeNull();
     applied(redo());
     expect(note(task, 1)["deleted_at"]).not.toBeNull();
-    expect(provenance()).toBe(done.seq);
-    // Put back after the redo works: the removal is a retraction, not an undone writing.
     applied(putBack(task, 1));
-  });
-
-  test("a note whose writing was undone is not put back: Redo brings it back", () => {
-    const task = noted();
-    applied(send("human", [{ kind: "note.add", task, body: "Typed by mistake" }]));
+    // A put back is a step too: undo takes the note away again.
     applied(undo());
-    expect(note(task, 4)["deleted_at"]).not.toBeNull();
-    const refused = putBack(task, 4);
-    expectStatus(refused, "rejected");
-    expect(refused.error).toMatchObject({ code: "INVALID_TRANSITION", field: "ordinal" });
-    applied(redo());
-    expect(note(task, 4)["deleted_at"]).toBeNull();
+    expect(note(task, 1)["deleted_at"]).not.toBeNull();
+    applied(putBack(task, 1));
   });
 
   test("a task in the Trash takes no retract", () => {

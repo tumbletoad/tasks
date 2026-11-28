@@ -953,11 +953,6 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
       "VALIDATION_FAILED",
       "actor.author_id",
     ]);
-    expect(error({ undoable: true }, fx.codex)).toEqual([
-      "rejected",
-      "VALIDATION_FAILED",
-      "undoable",
-    ]);
     expect(
       error({
         ops: [
@@ -971,9 +966,9 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
       }),
     ).toEqual(["rejected", "TOO_LARGE", undefined]);
     expect(lastSeq()).toBe(seq);
-    // A human's undoable action joins the undo stack; the same request ID cannot apply twice: the
-    // same intent replays (receipts.test.ts), another one is refused.
-    const request = fx.request(fx.human, [patch], { base, undoable: true });
+    // A human's step joins the undo stack; the same request ID cannot apply twice: the same intent
+    // replays (receipts.test.ts), another one is refused.
+    const request = fx.request(fx.human, [patch], { base });
     const applied = fx.writer.submit(request);
     expectStatus(applied, "applied");
     expect(one("SELECT undo_status FROM commits WHERE seq = $s", { s: applied.seq })).toBe("done");
@@ -990,7 +985,6 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
       fx.writer.submit({
         ...request,
         actor: fx.codex,
-        undoable: false,
         base: fx.base(),
         ops: [{ ...patch, set: { summary: "y" } }],
       }),
@@ -998,18 +992,16 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
     );
   });
 
-  test("a human's new undoable action ends the redo of what that human undid", async () => {
+  test("a human's new step ends the redo of what that human undid", async () => {
     const id = create();
-    const undoable = (summary: string): WriteResult =>
+    const step = (summary: string): WriteResult =>
       fx.writer.submit(
         fx.request(fx.human, [{ kind: "task.patch", task: id, set: { summary } }], {
           base: fx.base(),
-          undoable: true,
         }),
       );
-    const first = undoable("First");
+    const first = step("First");
     expectStatus(first, "applied");
-    // Undo arrives with M3, so the test marks the commit undone as it will.
     const raw = openWriter(await checkedDriver(), join(fx.folder, "space.db"));
     raw.prepare("UPDATE commits SET undo_status = 'undone' WHERE seq = $s").run({ s: first.seq });
     raw.close();
@@ -1019,7 +1011,7 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
       "applied",
     );
     expect(one("SELECT undo_status FROM commits WHERE seq = $s", { s: first.seq })).toBe("undone");
-    expectStatus(undoable("Second"), "applied");
+    expectStatus(step("Second"), "applied");
     expect(one("SELECT undo_status FROM commits WHERE seq = $s", { s: first.seq })).toBe("dead");
   });
 

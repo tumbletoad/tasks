@@ -8,7 +8,7 @@ Website: [tumbletoad.com/tasks](https://tumbletoad.com/tasks)
 
 ## Status
 
-In development. There is no release yet: you build and run it from source. What you can use today: the page with its views (Today, Inbox, Open, Waiting, Review, Backlog, Completed, Agents), areas and projects, search, the expanded task with its thread, and undo and redo; opening a task in Claude Code, Codex or T3 Code, in its folder, and background runs of an agent on a task; the `ttasks` command line, and the MCP endpoint that agents use, which `ttasks setup agents` connects for Claude Code and Codex; storage with its migrations and verified backups, and `ttasks update --from <archive>`. Knowledge pages, nested projects, routines and the phone app are planned: [`planning/PLAN.md`](planning/PLAN.md) has the steps and [`planning/STATUS.md`](planning/STATUS.md) their state.
+In development. There is no release yet: you build and run it from source. What you can use today: the page with its views (Today, Inbox, Open, Waiting, Review, Backlog, Completed, Agents), areas and projects, search, the expanded task with its thread, and undo and redo; opening a task in Claude Code, Codex or T3 Code, in its folder, and background runs of an agent on a task; the `ttasks` command line, and the MCP endpoint that agents use, which `ttasks setup agents` connects for Claude Code and Codex; storage with its migrations and verified backups, and `ttasks update --from <archive>`. Knowledge pages, nested projects, routines and the phone app are planned: [`docs/planning/PLAN.md`](docs/planning/PLAN.md) has the steps and [`docs/planning/STATUS.md`](docs/planning/STATUS.md) their state.
 
 TTasks is developed and checked on Windows 11 and on Ubuntu 24.04 without sudo rights. CI runs on Ubuntu and Windows. macOS is build-only until someone verifies it on a Mac.
 
@@ -41,8 +41,8 @@ pnpm verify
 ## Where things live
 
 - [`VISION.md`](VISION.md): the intended experience, mood and character.
-- [`planning/PLAN.md`](planning/PLAN.md): what the product becomes and the steps there.
-- [`planning/STATUS.md`](planning/STATUS.md): the state of each step.
+- [`docs/planning/PLAN.md`](docs/planning/PLAN.md): what the product becomes and the steps there.
+- [`docs/planning/STATUS.md`](docs/planning/STATUS.md): the state of each step.
 - [`docs/promises-and-limits.md`](docs/promises-and-limits.md): what a person can count on, and where the protection stops.
 - [`docs/agents/`](docs/agents/): the agent tools and the command line's verbs, generated from `packages/contracts`.
 - [`docs/protocol/ttasks-local-1.md`](docs/protocol/ttasks-local-1.md): the local protocol between the service and its clients.

@@ -137,7 +137,6 @@ import {
   type Move,
 } from "./folders.ts";
 import {
-  byOf,
   invalid,
   readOnly,
   appliedEarlier,
@@ -968,8 +967,6 @@ async function submit(
     readonly base?: string;
     readonly warnings?: readonly string[];
     readonly answer?: Readonly<Record<string, unknown>>;
-    /** False for an undo or redo: the stack's own move never joins the stack (A1 3.10.1). */
-    readonly undoable?: false;
     /** Decided as it would be written, then rolled back: a preview (WriteRequest.dry_run). */
     readonly dryRun?: true;
     /** Hints of the refusals whose remedy differs for this entry (resultFailure). */
@@ -1022,7 +1019,6 @@ async function submit(
           ? {}
           : { base: options.base }),
       ...(typeof input["reason"] === "string" ? { reason: input["reason"] } : {}),
-      ...(principal.actorKind === "human" && options.undoable !== false ? { undoable: true } : {}),
       ...(options.active === true ? { active: true } : {}),
       ...(options.dryRun === true ? { dry_run: true } : {}),
       ...(options.warnings === undefined || options.warnings.length === 0
@@ -1083,8 +1079,8 @@ function refusedTask(ops: readonly Operation[], result: WriteResult): string | u
 }
 
 /**
- * A write refused because its task is in the Trash, or a restore because its creation was undone:
- * says who moved it there and when, or that Redo brings it back, and what to do. An agent is told
+ * A write refused because its task is in the Trash, or a restore because an earlier version undid
+ * its creation: says who moved it there and when, or that it is not in the Trash, and what to do. An agent is told
  * to tell the person and never to add it again or restore it itself: a task recreated after the
  * person removed it is the mistake the Trash undoes.
  */
@@ -1103,14 +1099,9 @@ async function inTrash(
   if (found === undefined) return undefined;
   const { ref, removal } = found;
   if (undone) {
-    // Not in the Trash: Redo brings it back with its notes and links, which a restore would not.
     return new AppError({
       ...failure.toBody(),
       message: `${ref}'s creation was undone: it is not in the Trash, and nothing was restored.`,
-      hint:
-        call.principal.origin === "cli"
-          ? `Redo brings it back with its notes and links: ${CLI_NAME} redo.`
-          : "Redo brings it back with its notes and links.",
       data: { ...failure.data, reason: "creation_undone", task: ref },
     });
   }
@@ -2536,49 +2527,35 @@ const deleteAnswer: Answer = (_view, stored) => {
 };
 
 /**
- * An undo's or a redo's answer: the change it moved, the tasks its commit changed (the writer's
- * result), and what a partial undo left as others set it.
+ * An undo's or a redo's answer: the change it moved and the tasks its commit changed (the
+ * writer's result), or, when someone's newer work kept the change, who that was.
  */
 const historyAnswer: Answer = async (view, stored) => {
   const undo = view.entry.name === "history.undo";
-  const word = !undo ? "redone" : stored.conflicts.length > 0 ? "partial" : "undone";
+  const kept = stored.kept === true;
   const done = opAt(stored, 0);
   // A3 3.7.4: a script of the same person (`cli-script` on this machine) writes as `script`, whose
   // changes are on no undo stack. When one changed the space after the change undone, the answer
   // names it, so the person knows this undo did not take it back. That is history between the two
   // changes: it is read here, never stored, and does not date the answer.
-  const scripted = !undo
-    ? undefined
-    : await now(view, (reader) =>
-        readScriptChange(reader, {
-          scope: principalOf("cli-script", view.host.machine.id).scope,
-          undone: done.id,
-          seq: stored.seq,
-        }),
-      );
+  const scripted =
+    !undo || kept
+      ? undefined
+      : await now(view, (reader) =>
+          readScriptChange(reader, {
+            scope: principalOf("cli-script", view.host.machine.id).scope,
+            undone: done.id,
+            seq: stored.seq,
+          }),
+        );
   return {
-    result: word,
+    result: kept ? "kept" : undo ? "undone" : "redone",
     commit: done.id,
     tasks: done.tasks,
     task_count: done.task_count,
-    ...(done.levels === undefined ? {} : { levels: done.levels }),
     ...(done.lifecycles === undefined ? {} : { lifecycles: done.lifecycles }),
-    ...levelsOf(done),
-    ...(stored.passed === undefined ? {} : { passed_over: stored.passed }),
+    ...(stored.why === undefined ? {} : { why: stored.why }),
     ...(stored.newer === undefined ? {} : newerWorkJson(stored.newer)),
-    ...(word === "partial"
-      ? {
-          unresolved: stored.conflicts.map((c) => ({
-            entity: c.entity,
-            // A row other than the task is named by its ID too, as in a conflict (errors.ts).
-            ...(c.entity === "tasks" ? {} : { id: c.id }),
-            ...(c.ref === undefined ? {} : { task: c.ref }),
-            field: c.field,
-            by: byOf(c.by),
-            at: new Date(c.at).toISOString(),
-          })),
-        }
-      : {}),
     as_of: stored.as_of,
     ...replayed(stored),
     ...(scripted === undefined ? {} : { script_change: scripted }),
@@ -2759,7 +2736,7 @@ const prefsAnswer: Answer = async (view, stored) => {
   };
 };
 
-/** What a change of the effort levels, or its undo or redo, says the writer did: from its receipt. */
+/** What a change of the effort levels says the writer did: from its receipt. */
 const levelsOf = (done: OpResult | undefined) => ({
   ...(done?.moved === undefined ? {} : { moved: done.moved }),
   ...(done?.off_list === undefined ? {} : { off_list: done.off_list }),
@@ -3546,8 +3523,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...(pack === undefined ? {} : { pack }),
         ...(input["mark_folder"] === true ? { markFolder: true } : {}),
         ...(input["another"] === true ? { another: true } : {}),
-        // The person's words as a note of theirs: the note entry's own request path, an undoable
-        // step of theirs, under a request ID the click's derives. Its writer scope is the click's
+        // The person's words as a note of theirs: the note entry's own request path, under a
+        // request ID the click's derives. Its writer scope is the click's
         // as the launch's replay is, not the sign-in's: a click repeated from any page or shell
         // finds the note instead of adding a second one.
         // It goes into the copy the click was checked against, or nowhere.
@@ -3586,29 +3563,18 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     };
   },
 
-  // A1 3.10.1: the user's one stack, shared by every tab and the user's CLI. Guarded by
-  // provenance in the writer, so no base; a conflict comes back as `conflict` with A1's cause.
+  // A1 3.10.1: the user's one stack, shared by every tab and the user's CLI. Guarded in the
+  // writer by others' newer work, so no base; newer work keeps the step, as `kept`.
   "history.undo": async (call) => {
     const { input } = call;
     if (input["check_script"] === true && input["commit"] === undefined) {
       await refuseBehindScript(call);
     }
-    const op: Operation = {
-      kind: "undo",
-      ...namedCommit(input),
-      ...(input["partial"] === true ? { partial: true } : {}),
-    };
-    return answerOf(call, await submit(call, [op], { undoable: false }));
+    return answerOf(call, await submit(call, [{ kind: "undo", ...namedCommit(input) }]));
   },
 
-  "history.redo": async (call) => {
-    const result = await submit(call, [{ kind: "redo", ...namedCommit(call.input) }], {
-      undoable: false,
-      // A redo is all or nothing (A1 3.10.1): the remedy is a new edit, never a partial form.
-      hints: { UNDO_CONFLICT: "Keep their change, or set the value again yourself." },
-    });
-    return answerOf(call, result);
-  },
+  "history.redo": async (call) =>
+    answerOf(call, await submit(call, [{ kind: "redo", ...namedCommit(call.input) }])),
 
   "receipt.get": async (call) => {
     // A read: through the reader, so a read-only space answers too (its receipts came with it).
@@ -4602,9 +4568,9 @@ interface PrefChange {
 }
 
 /**
- * `set` (A3 3.4.11): the keys' new values through A1's `pref.set`, in one request. A change of the
- * effort levels, which moves tasks with it, is a step on the person's undo stack; a change of any
- * other key is not: setting the earlier value again changes it back. The answer says what changed.
+ * `set` (A3 3.4.11): the keys' new values through A1's `pref.set`, in one request. None is a step
+ * on the person's undo stack: setting the earlier value again changes it back. The answer says
+ * what changed.
  */
 async function prefsSet(call: Call): Promise<unknown> {
   const items = (call.input["set"] ?? []) as {
@@ -4678,14 +4644,6 @@ async function prefsSet(call: Call): Promise<unknown> {
     }
     return { p, value, path, ...moves };
   });
-  const levels = changes.some(({ p }) => p.key === EFFORT_SCALE_KEY);
-  if (levels && changes.length > 1) {
-    throw invalid(
-      "set",
-      "Set the effort levels in a call of their own",
-      "Send tasks.effort_scale alone, then the other keys in a second call: only the levels go on your undo stack.",
-    );
-  }
   for (const { p, path } of changes) {
     if (before.reads.get(p.key)?.state === "newer") {
       throw invalid(
@@ -4713,7 +4671,6 @@ async function prefsSet(call: Call): Promise<unknown> {
         ...(moves === undefined ? {} : { moves }),
       })),
       {
-        ...(levels ? {} : { undoable: false }),
         ...(call.input["dry_run"] === true ? { dryRun: true } : {}),
         answer: { changed: sets },
         hints: {

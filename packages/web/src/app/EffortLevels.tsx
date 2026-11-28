@@ -1,6 +1,6 @@
 // The space's effort levels in Settings. Each change saves at once through `prefs.manage` with the
-// moves that carry its tasks along, shows at once as an overlay, and its toast offers Undo. The one
-// question is where the tasks of a removed level go.
+// moves that carry its tasks along and shows at once as an overlay; it is changed back by changing
+// the levels again. The one question is where the tasks of a removed level go.
 import {
   useCallback,
   useContext,
@@ -234,7 +234,7 @@ export function EffortLevels({ headingClass }: { readonly headingClass: string }
             mode: "apply",
           }),
         (result) => savedMsg(edit, result),
-        { overlay: overlayOf(write, live.getState().tasks), undo: true },
+        { overlay: overlayOf(write, live.getState().tasks) },
       )
       .then(
         (): Outcome => {

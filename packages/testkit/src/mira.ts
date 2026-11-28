@@ -382,6 +382,9 @@ function positions(n: number): string[] {
   return list;
 }
 
+/** A commit an earlier build put on the person's undo stack, as every request of theirs was. */
+const RELEASED_STEP = "UPDATE commits SET undo_status = 'done' WHERE seq = $seq";
+
 /**
  * Builds the Mira sample space at `<spacesRoot>/mira`. The folder must not exist yet. Returns the
  * folder and the rows per table.
@@ -445,11 +448,18 @@ export async function seedMira(
       now: clock,
       random,
     });
-    generate(conn, writer, rng, clock, created.space, created.actors, start, taskCount);
+    // An older chain's sample is the one its builds made, and they put every request of the
+    // person's on the undo stack: this build puts only the steps Undo is for there.
+    const released = (result: WriteResult): void => {
+      if (opened.revision.major > 0 || opened.revision.minor >= 5) return;
+      if (result.status !== "applied") return;
+      conn.prepare(RELEASED_STEP).run({ seq: result.seq });
+    };
+    generate(conn, writer, rng, clock, created.space, created.actors, start, taskCount, released);
     // Schema 0.2's learnings (A1 3.11.2): a 0.1 build had no wrap-up operation, so the sample at
     // that revision has none, and every row before them is the one the 0.1 builds made.
     if (opened.revision.major > 0 || opened.revision.minor >= 2) {
-      wrapUp(conn, writer, rng, created.space, created.actors.human);
+      released(wrapUp(conn, writer, rng, created.space, created.actors.human));
     }
     // Schema 0.5's folders: an older chain's sample has none, and every row before them is the one
     // that chain made.
@@ -487,7 +497,7 @@ function wrapUp(
   rng: Rng,
   space: { spaceId: Id<"sp">; authority: { machineId: Id<"m"> } },
   human: Id<"ac">,
-): void {
+): WriteResult {
   const first = conn.prepare("SELECT id, wrap_state FROM tasks ORDER BY ref LIMIT 1").get();
   const task = first?.["id"];
   if (typeof task !== "string") throw new Error("no task");
@@ -504,7 +514,6 @@ function wrapUp(
       origin: "cli",
     },
     base: formatAsOf(writer.asOf()),
-    undoable: true,
     ops: [
       {
         kind: "task.wrap_up",
@@ -517,6 +526,7 @@ function wrapUp(
   if (result.status !== "applied") {
     throw new Error(`the sample's wrap-up was ${result.status}: ${result.error?.code ?? ""}`);
   }
+  return result;
 }
 
 /**
@@ -548,7 +558,6 @@ function bindFolders(
       origin: "cli",
     },
     base: formatAsOf(writer.asOf()),
-    undoable: true,
     ops: [
       {
         kind: "project.folder_set",
@@ -579,6 +588,7 @@ function generate(
   actors: { human: Id<"ac">; system: Id<"ac"> },
   start: number,
   taskCount: number,
+  released: (result: WriteResult) => void,
 ): void {
   const id = <P extends IdPrefix>(prefix: P): Id<P> =>
     newId(prefix, (bytes) => {
@@ -625,8 +635,8 @@ function generate(
       actor,
       ops,
       ...(base === true ? { base: formatAsOf(writer.asOf()) } : {}),
-      ...(actor.actor_kind === "human" ? { undoable: true } : {}),
     });
+    if (actor.actor_kind === "human") released(result);
     // A random patch can set the values a task already has: then nothing changes.
     if (result.status !== "applied" && result.status !== "unchanged") {
       throw new Error(`a sample request was ${result.status}: ${result.error?.code ?? ""}`);
