@@ -1,6 +1,6 @@
 # ttasks-local/1
 
-The local protocol between the TTasks service and its clients on the same machine: the CLI, the launch shim, the MCP bridge and any native forwarder. A2 3.6 specifies it. This page is the reference an implementer needs. The Node implementation is `@ttasks/bridge/protocol` (wire code and client) and `@ttasks/service/local` (server).
+The local protocol between the TTasks service and its clients on the same machine: the CLI, the launch shim, the MCP bridge and any native forwarder. This page is the reference an implementer needs. The Node implementation is `@ttasks/bridge/protocol` (wire code and client) and `@ttasks/service/local` (server).
 
 ## Endpoint
 
@@ -67,7 +67,7 @@ Canonical JSON follows RFC 8785 with I-JSON input. A string or key with a lone s
 
 `context` is an object:
 
-- rpc mode: `{env: {NAME: value}}` with only the agent markers (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, names starting with `CODEX_SANDBOX`, `T3CODE_THREAD_ID`, `TTASKS_TICKET`, `TTASKS_TASK`) and `TTASKS_SPACE`. A3 keeps the marker list.
+- rpc mode: `{env: {NAME: value}}` with only the agent markers (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, names starting with `CODEX_SANDBOX`, `T3CODE_THREAD_ID`, `TTASKS_TICKET`, `TTASKS_TASK`) and `TTASKS_SPACE`.
 - mcp mode: `{space, instance, app, cwd, env, parent: {pid}}`, with `null` for a missing argument, plus `mcp_init` (the client's latest `initialize` or `server/discover`, once answered, at most 64 KiB), `held_space` (what the first bind answer of this bridge process named of its space, a space ID or null for none, kept for its life) and `resume: {handle}` (the handle of an older service's last bind: the service does not resume from it, and a connection that is not a session and sends it with no `held_space` and no named space gets no space). `env` holds only `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, `T3CODE_THREAD_ID`, `TTASKS_TICKET`, `TTASKS_TASK` and `TTASKS_SPACE` (`MCP_CONTEXT_ENV`), each at most 256 characters and well-formed. A `cwd` over 4,096 characters or with a lone surrogate is sent as null.
 
 The result is `{protocol, service: {version, build, instance}, capabilities, spaces, binding, mac}`:
@@ -88,15 +88,15 @@ The service accepts the protocols it lists in the challenge (`[current - 1, curr
 | `op/call`, `op/list`, `feed/subscribe`, `service/status`, `space/list`, `roots/list` | `cli-interactive`, `cli-script`, `cli-agent` |
 | `service/shutdown`, `ui/mint_code` | `cli-interactive`, `cli-script` |
 | `service/port`, `space/create`, `space/open`, `space/close`, `space/backup`, `space/backups`, `space/restore`, `space/claim`, `space/recover`, `view/rebuild`, `roots/add` | `cli-interactive` only: the person's |
-| `launch.claim`, `launch.attach`, `launch.started`, `launch.settled`, `launch.exited`, `launch.failed`, `run.attach`, `run.event`, `run.exited` | `shim` only. Each checks its own credential (A4) |
+| `launch.claim`, `launch.attach`, `launch.started`, `launch.settled`, `launch.exited`, `launch.failed`, `run.attach`, `run.event`, `run.exited` | `shim` only. Each checks its own credential |
 
-- `op/call {space?, op, input, request_id?}` calls one registry entry and answers its result or A3's error body. `space` is a space ID or name. `op/list {}` answers `{entries: [{name, kind, actors, summary}]}`, sorted by name.
+- `op/call {space?, op, input, request_id?}` calls one registry entry and answers its result or the registry's error body. `space` is a space ID or name. `op/list {}` answers `{entries: [{name, kind, actors, summary}]}`, sorted by name.
 - `service/shutdown {restart?, reason?}` answers `{state: "draining", restart}`, then the service drains. `reason` is a lower-case word and is not logged.
 - `$/cancel {"id": …}` cancels a request. Other notifications are ignored.
-- A3's errors travel as code `-32000` with A3's error body in `data`. Other codes: `-32700` parse error (also a line that is not UTF-8), `-32600` invalid request, `-32601` method not found (also a method this service has no handler for), `-32602` invalid params, `-32603` internal error, `-32800` cancelled. An internal error carries nothing from the failure.
+- Registry errors travel as code `-32000` with the error body in `data`. Other codes: `-32700` parse error (also a line that is not UTF-8), `-32600` invalid request, `-32601` method not found (also a method this service has no handler for), `-32602` invalid params, `-32603` internal error, `-32800` cancelled. An internal error carries nothing from the failure.
 - A method the connection's class may not call gets `-32000` with `forbidden` (`data: {reason: "connection_class", class}`).
 - A request's `id` is a safe integer or a string of at most 128 characters. `null` is refused as an invalid request: the service answers unidentifiable messages with `id: null`, so a request with that ID could not be told apart. A second request with the ID of one in flight is an invalid request. `method` is a string and `params`, when present, an object. A message without `method` is a response only with exactly one of `result` and `error`, and is then not answered. Anything else is an invalid request. `jsonrpc` must be `"2.0"`.
-- A connection has at most 64 requests in flight. The service answers one more at once with `-32000` and A3's `too_large` (`data: {reason: "in_flight", max}`) and keeps reading, so `$/cancel` always arrives. A cancelled request counts until the service answers it. The Node client never sends more and queues the rest.
+- A connection has at most 64 requests in flight. The service answers one more at once with `-32000` and `too_large` (`data: {reason: "in_flight", max}`) and keeps reading, so `$/cancel` always arrives. A cancelled request counts until the service answers it. The Node client never sends more and queues the rest.
 - The service sends rpc notifications (`feed/event`, the shim's `cancel`) only for a request in flight.
 - While the service drains, an rpc connection still reads `$/cancel`, answers every new request with `service_unavailable` (`not_running`, retryable), and ends once no request is in flight. So the reply to `service/shutdown` reaches its caller.
 
@@ -104,23 +104,23 @@ The service accepts the protocols it lists in the challenge (`[current - 1, curr
 
 ## The forwarder (`ttasks mcp`)
 
-The Node bridge is `@ttasks/bridge/mcp` (A2 3.7). A native forwarder implements the same contract and passes the conformance suite: `TTASKS_BRIDGE_BIN=<binary> pnpm exec vitest run --project product tests/forwarder`. In short:
+The Node bridge is `@ttasks/bridge/mcp`. A native forwarder implements the same contract and passes the conformance suite: `TTASKS_BRIDGE_BIN=<binary> pnpm exec vitest run --project product tests/forwarder`. In short:
 
 - Arguments `--space`, `--instance`, `--app`, each optional, as `--name value` or `--name=value`. Anything else exits 2. stdout carries MCP messages only. Diagnostics go to stderr without content.
-- Discovery per attempt: `endpoint.path` from `<state>/service.json`, and `<state>/ipc.key`. `<state>` and `<cache>` are `$TTASKS_HOME/state` and `$TTASKS_HOME/cache` when `TTASKS_HOME` is set (it must be absolute), else `~/.ttasks/state` and `~/.ttasks/cache` (A2 3.2.1). The home folder comes from the account (`USERPROFILE` on Windows), never from `XDG_*` variables. Connect timeout 2 s.
+- Discovery per attempt: `endpoint.path` from `<state>/service.json`, and `<state>/ipc.key`. `<state>` and `<cache>` are `$TTASKS_HOME/state` and `$TTASKS_HOME/cache` when `TTASKS_HOME` is set (it must be absolute), else `~/.ttasks/state` and `~/.ttasks/cache`. The home folder comes from the account (`USERPROFILE` on Windows), never from `XDG_*` variables. Connect timeout 2 s.
 - Reconnect after 0.5, 1, 2, 5, then every 10 s. After a loss, requests in flight are answered at once (a tool call with the `connection_lost` text), and new requests wait up to 10 s for the new connection before the offline answer. That covers a service restart: a drain of up to 5 s and a new start. Lines waiting for a connection hold at most 8 MiB, past which stdin waits.
-- Offline answers come from `<cache>/mcp-offline.json` when it parses and names the forwarder's build, else from the build's `lib/mcp-offline.json`. Either file is at most 1 MiB. Format 1: `build`, `initialize` and `discover` (each a `result` and its `supported_versions`), `tools_list` (`result` and `modern_result`), `modern_result_fields`, and seven `texts`: `service_down`, `starting`, `unreachable`, `untrusted_endpoint`, `restart_session`, `service_too_old`, `connection_lost`. A3 owns every result in it. A 2026-07-28 request's version is checked first: none is `-32602`, an unsupported one `-32022`. After a `server/discover`, every later request is 2026-07-28, also one without 2026-07-28 fields, until an `initialize` (a client falling back to the legacy era).
+- Offline answers come from `<cache>/mcp-offline.json` when it parses and names the forwarder's build, else from the build's `lib/mcp-offline.json`. Either file is at most 1 MiB. Format 1: `build`, `initialize` and `discover` (each a `result` and its `supported_versions`), `tools_list` (`result` and `modern_result`), `modern_result_fields`, and seven `texts`: `service_down`, `starting`, `unreachable`, `untrusted_endpoint`, `restart_session`, `service_too_old`, `connection_lost`. A 2026-07-28 request's version is checked first: none is `-32602`, an unsupported one `-32022`. After a `server/discover`, every later request is 2026-07-28, also one without 2026-07-28 fields, until an `initialize` (a client falling back to the legacy era).
 - Backpressure both ways: stdin is read only while the socket takes lines, service lines only while stdout takes them, and the forwarder's own replies (offline, at a loss, past the cap) only while stdout takes them. A stdin line over 8 MiB is dropped and reading goes on. A service line over 8 MiB ends that connection. At most 1,024 requests holding at most 8 MiB (IDs and methods) are in flight. One more gets `-32000` with `data: {retryable: true}` at once and is not sent, and stdin keeps being read, so cancellations and the end of the session still arrive.
 - `mcp_init` is the client's latest `initialize` or `server/discover`, so a client that fell back from a refused `server/discover` to `initialize` resumes from its `initialize`.
 - The process lives until stdin ends, stdout fails or closes, or a signal arrives (exit 0). At the end stdout gets 2 s to take what is queued. A usage problem exits 2 and an internal error 1. Diagnostics are best effort and bounded: a failed stderr write is ignored, and they are dropped while stderr holds 64 KiB unwritten.
 
 ## Connection classes
 
-The service decides the class from the bind: `bridge` for mcp mode, `shim` for a shim, and for the CLI `cli-agent` when `context.env` holds any agent marker, else `cli-interactive` when stdin and stdout are TTYs, else `cli-script`. The client never names a class. The class guards well-behaved agents. It is not a security boundary against code of the same user (A6), since such code can fake a TTY or drop the markers.
+The service decides the class from the bind: `bridge` for mcp mode, `shim` for a shim, and for the CLI `cli-agent` when `context.env` holds any agent marker, else `cli-interactive` when stdin and stdout are TTYs, else `cli-script`. The client never names a class. The class guards well-behaved agents. It is not a security boundary against code of the same user, since such code can fake a TTY or drop the markers.
 
 ## Client failures
 
-Reported as `service_unavailable` with A3 3.5's reasons and a fixed `detail` word, never peer text:
+Reported as `service_unavailable` with one of these reasons and a fixed `detail` word, never peer text:
 
 | Reason | When | Retryable |
 |---|---|---|

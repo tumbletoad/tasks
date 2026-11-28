@@ -1,8 +1,8 @@
 # Stream fixtures
 
-Recorded output streams of `claude -p` (A4 3.11.3, 3.11.4), turned into fixture text. They are the only part of the M0 lab that survives M0 (A7 3.7 lab rules). The print-mode stream parser is built on them and its fake agents replay them. The `codex exec --json` recordings this lab also made went with their parser: Codex runs speak its app server, recorded in `fixtures/codex-app-server/`.
+Recorded output streams of `claude -p`, turned into fixture text. The print-mode stream parser is built on them and its fake agents replay them. Codex runs speak its app server, recorded in `fixtures/codex-app-server/`.
 
-Recorded on 2026-11-12 in lab run N (step M0.11, rows N01, N02, N03, N05) with Claude Code 2.1.322 and codex-cli 0.167.2:
+Recorded on 2026-11-12 by the lab in `spikes/m0/runs/` with Claude Code 2.1.322 and codex-cli 0.167.2:
 
 - `windows-*`: Windows 11. `claude -p` and `codex exec --json` with full access, both CLIs.
 - `linux-*`: Ubuntu 24.04 without sudo rights. `codex exec --json` only, in the default sandbox with the probe's tools on `default_tools_approval_mode = "approve"` (no full access and no Claude Code sessions there in this step).
@@ -36,11 +36,11 @@ Cases (each CLI has the ones its row covers):
 
 The Linux `success-tool-call` and `resume` fixtures are **not a recorded pair**: the success fixture comes from an ephemeral run (`--ephemeral`), and the resume fixture continues a later persisted run of the same case (`n02l-persisted`), which is not committed. Their equal fixture thread ID only means that each is the first ID of its stream; the index says so in a `note`. On Windows both CLIs' `resume` fixtures continue the session or thread of their `success-tool-call` fixture.
 
-No run in lab run N ended inside a line: both CLIs wrote whole lines, also when killed. The truncated fixtures are therefore cut by the sanitiser, to give parsers a kill in mid-write (`final_line: "cut-by-sanitiser"` in the index). A real partial line would be kept as `partial-from-run`.
+No recorded run ended inside a line: both CLIs wrote whole lines, also when killed. The truncated fixtures are therefore cut by the sanitiser, to give parsers a kill in mid-write (`final_line: "cut-by-sanitiser"` in the index). A real partial line would be kept as `partial-from-run`.
 
 ## How the sanitiser made them
 
-`spikes/m0/runs/sanitise.ts` (lab code with tests) writes every value by the fixture schema `tests/stream-schema.ts`, which survives M0 with the content check. The schema is an explicit allow-list of fields per CLI and event type, and each allowed field has exactly one treatment with a fixed output: a known field never lets an observed value through.
+`spikes/m0/runs/sanitise.ts` (lab code with tests) writes every value by the fixture schema `tests/stream-schema.ts`. The schema is an explicit allow-list of fields per CLI and event type, and each allowed field has exactly one treatment with a fixed output: a known field never lets an observed value through.
 
 | Treatment | Fields (examples) | Input it takes | Output |
 |---|---|---|---|
@@ -64,7 +64,7 @@ The inventory (`fields-<os>.json`) records, per event key and field path, the JS
 
 The event order, the number of lines, the field names, their order and JSON types are the run's own. The session or thread ID is the first ID of each stream, so every fixture's session or thread ID is `…000000000001`.
 
-On 2026-11-12 the committed fixtures were run through this sanitiser again (`lab.ts resanitise`, from their committed form: the raw streams were already removed with their scratch folder). That replaced what the first sanitiser had kept: the observed built-in tool and capability lists, setting values, exact model strings, inference metadata, exact usage and cost numbers and the rate-limit window name. The CLI version strings stay, so M6.05 knows which version a shape came from. Line structure, field names and JSON types were compared before and after and are unchanged; the inventories list the same event keys, paths, types and counts. The rebuilt `tools` list names only invented entries and the probe's tools, so it no longer lists `ToolSearch`, which the Claude streams still call.
+The CLI version strings stay, so a parser knows which version a shape came from.
 
 ## Content check
 
