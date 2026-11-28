@@ -3,6 +3,7 @@
 // returns what it did, which the receipt stores. Input is checked here as well as by the service:
 // storage never trusts a caller with the space.
 import type { Row, SqlValue } from "../driver.ts";
+import { isId } from "../ids.ts";
 import { formatTaskRef, parseTaskRef } from "../refs.ts";
 import { positionBetween } from "../write/positions.ts";
 import { freeSlug } from "../write/slugs.ts";
@@ -68,6 +69,13 @@ const title = (input: Input): string => {
     problem("VALIDATION_FAILED", "A title is needed", "title");
   return value as string;
 };
+
+/** An ID the caller chose for a new row: one of its kind that the space does not hold yet. */
+function givenId(value: unknown, prefix: "t" | "p", field: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (!isId(value, prefix)) return problem("VALIDATION_FAILED", "Not an ID of that kind", field);
+  return value;
+}
 
 /** A node by ID, or a task by its reference (`M-14`). Undefined when the space has none. */
 function findNode(tx: Tx, key: unknown): Row | undefined {
@@ -160,7 +168,7 @@ const tasksAdd: Command = (tx, input) => {
       const at = (field: string) => `tasks.${String(i)}.${field}`;
       const log = text(draft, "log", 4000, false);
       const parent = parentFor(tx, draft["under"], at("under"));
-      const id = typeof draft["id"] === "string" ? draft["id"] : tx.newId("t");
+      const id = givenId(draft["id"], "t", at("id")) ?? tx.newId("t");
       const ref = tx.ref();
       const priority = draft["priority"] ?? 4;
       if (typeof priority !== "number" || ![1, 2, 3, 4].includes(priority)) {
@@ -404,7 +412,7 @@ const projectCreate: Command = (tx, input) => {
     "project",
     (s) => tx.get(SQL.slugTaken, { parent: under, slug: s }) !== undefined,
   );
-  const id = typeof input["id"] === "string" ? input["id"] : tx.newId("p");
+  const id = givenId(input["id"], "p", "id") ?? tx.newId("p");
   tx.create(
     "nodes",
     {
