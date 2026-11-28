@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 import { PRODUCT_NAME, CLI_NAME } from "@ttasks/brand";
 import { Refused, type Instance, type Run } from "../api.ts";
 import en from "../i18n/en.json" with { type: "json" };
+import { continueRefusal } from "../row/launch.ts";
 import { mergeRuns, agentMarker, runRefusal, runners, runView, withStops } from "./runs.ts";
 
 const run = (patch: Partial<Run> = {}): Run => ({
@@ -194,6 +195,36 @@ describe("[M6.page.run-continue] a run that holds its agent's conversation offer
         .continues,
     ).toBe("after_stop");
     expect(runView(run({ state: "succeeded" }), "Codex").continues).toBeUndefined();
+  });
+});
+
+describe("[M6.page.run-continue] a Continue that opened nothing says why", () => {
+  test("each of the service's reasons has its words, and another refusal is not one", () => {
+    const intl = createIntl({
+      locale: "en",
+      messages: en,
+      onError: (error) => {
+        throw error;
+      },
+    });
+    const refused = (data: unknown) => Object.assign(new Error("refused"), { data });
+    for (const why of [
+      "conversation",
+      "machine",
+      "folder",
+      "instance",
+      "home",
+      "folder_moved",
+      "not_stopped",
+    ]) {
+      const reason = continueRefusal(refused({ field: "run", reason: why }));
+      expect(reason).toBe(why);
+      const words = intl.formatMessage({ id: "run.continueRefused" }, { why: reason });
+      expect(words, why).not.toBe(
+        intl.formatMessage({ id: "run.continueRefused" }, { why: "other" }),
+      );
+    }
+    expect(continueRefusal(refused({ field: "instance", reason: "no_terminal" }))).toBeUndefined();
   });
 });
 

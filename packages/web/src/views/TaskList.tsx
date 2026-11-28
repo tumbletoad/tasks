@@ -39,6 +39,7 @@ import {
   busyByTask,
   folderRefusal,
   homeRefusal,
+  continueRefusal,
   instanceRefusal,
   MARKER_REASONS,
   markerWords,
@@ -1025,6 +1026,13 @@ export function TaskList({
                   t("row.openT3", { why: t3Why, label: instance.label }),
                   t3Next(t3Why, instance.key),
                 );
+                return undefined;
+              }
+              // A Continue that could not open says why: nothing was stopped unless it says so.
+              const notContinued = continueRefusal(error);
+              if (notContinued !== undefined) {
+                refuse(task.id, undefined);
+                say(t("run.continueRefused", { why: notContinued }));
                 return undefined;
               }
               const cannot = instanceRefusal(error);
