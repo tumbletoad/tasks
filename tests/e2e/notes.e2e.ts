@@ -1,4 +1,4 @@
-// A note taken back in the page and put back (A5 3.7), against the real service process with
+// A note taken back in the page and put back, against the real service process with
 // fixture data: Remove on the note's line in the thread and the toast's Undo, then the card's
 // removed line after a reload with who took it back, Show and Put back by keyboard, the note back in
 // its place. Screenshots at 1,440 and 390 px in both themes, axe clean.

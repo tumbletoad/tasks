@@ -1,4 +1,4 @@
-// Schema 0.3 (A7 3.13 M6.01) on a real 0.2 space with data in every table: the Mira sample built by
+// Schema 0.3 on a real 0.2 space with data in every table: the Mira sample built by
 // the 0.2 chain through the write path (testkit's seedMira with STEPS_0_2), plus one row in each
 // 0.2 table that no operation writes yet, not a checked-in database. The migration test from it, a
 // fault at every statement boundary of the migration, and a 0.2 build that refuses the migrated
@@ -208,7 +208,7 @@ describe("[A1.5.migration.from-0.2] the 0.2 fixture migrates to 0.3 behind its v
     // The 0.3 builds' chain: this test is the 0.3 step's (schema-0.4.test.ts migrates to 0.4).
     const worker = await workerWithSteps("0.3");
     try {
-      // The storage worker's writer migrates on open, under the space's claim (A1 3.17).
+      // The storage worker's writer migrates on open, under the space's claim.
       const writer = await worker.openSpaceWriter(folder, {
         backupDir: backupsBeside(folder),
         machine: fixture.machine,
@@ -293,7 +293,7 @@ describe("[A1.5.migration.from-0.2] the 0.2 fixture migrates to 0.3 behind its v
       min_writer: "0.0.0",
     });
 
-    // The downgrade is a restore of the pre-migration backup (A1 3.17): the fixture's counts,
+    // The downgrade is a restore of the pre-migration backup: the fixture's counts,
     // last_seq and rows.
     const barrier = listBackups(backupsBeside(folder)).backups.find(
       (b) => b.sidecar?.kind === "pre-migrate",
@@ -481,9 +481,9 @@ describe("[A1.5.migration.run-parents-0003] a run outlives the redaction of its 
       writer.close();
     }
 
-    // Entity redaction (A1 3.11.4, M3.14) keeps the task's runs and sessions with no task, and a
+    // Entity redaction keeps the task's runs and sessions with no task, and a
     // run without the task's place, whose row it deletes, and scrubs the run's task text. This is
-    // the part of it these tables must allow (fixture rows without history: M3.14 writes it with
+    // the part of it these tables must allow (fixture rows without history: the real one is written with
     // its history and scrubs the change rows too).
     const session = "se_0000000000000000000000000s";
     {

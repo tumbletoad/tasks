@@ -1,5 +1,5 @@
 // A driver that fails one chosen statement of a migration, for the fault sweep of schema 0.2
-// (A7 M3.01: "a fault injected at every statement boundary of the migration, not at one point").
+// (a fault injected at every statement boundary of the migration, not at one point).
 // It wraps a real driver. Once armed, the next BEGIN IMMEDIATE on a writable connection is the
 // migration's transaction: every statement run inside it (exec, a prepared statement's run, get,
 // all or iterate, a pragma) counts as one boundary, and so does the moment after the last one,

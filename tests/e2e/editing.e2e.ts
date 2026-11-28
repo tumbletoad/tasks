@@ -1,5 +1,4 @@
-// Field editing, check-off, the toast, undo and redo end to end (A7 3.12 M5.08; A5 3.11, 3.12,
-// 3.15 item 9), in Chromium and Firefox against the real service process with fixture data.
+// Field editing, check-off, the toast, undo and redo end to end, in Chromium and Firefox against the real service process with fixture data.
 //
 // Verify line: by keyboard alone, edit due, priority and effort, check off, undo, redo; an
 // agent-only field starts a composer request. Also: an undo refused because an agent changed the
@@ -165,7 +164,7 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
       "aria-checked",
       "true",
     );
-    // Collapsed again: an expanded card stays where it is until it is collapsed (A5 3.15).
+    // Collapsed again: an expanded card stays where it is until it is collapsed.
     await title.focus();
     await page.keyboard.press("Escape");
     await expect(title).toHaveAttribute("aria-expanded", "false");

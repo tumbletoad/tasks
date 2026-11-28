@@ -1,4 +1,4 @@
-// The skeleton page end to end (A7 3.9 M2.13), in Chromium and Firefox, against the real service
+// The skeleton page end to end, in Chromium and Firefox, against the real service
 // process with fixture data and the fake terminal behind the launch tile.
 //
 // Verify line: Open sends the shim to the fake terminal, the session runs, a log entry appears.
@@ -38,13 +38,13 @@ test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
     await signIn(page, world, `/s/${world.mira.id}`);
     await showsSpace(page, world.mira.name);
     await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/today`);
-    // The task's area lists it (Today lists only what it selects, A5 3.4).
+    // The task's area lists it (Today lists only what it selects).
     await page.goto(`${world.origin}/s/${world.mira.id}/area/${world.task.area}`);
     await showsSpace(page, world.mira.name);
 
     const row = page.locator(`li[data-task="${world.task.ref}"]`);
     await expect(row.locator('[data-part="title"]')).toHaveText(world.task.title);
-    // The row's one tile is the effective instance's (A5 3.6).
+    // The row's one tile is the effective instance's.
     const tile = row.locator('[data-part="tile"]');
     await expect(tile).toHaveAccessibleName(`Open in ${FAKE_INSTANCE.label}`);
     // Expanding the row shows its thread and a button per instance; Open on the fake agent's,
@@ -62,7 +62,7 @@ test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
     const call = world.terminal().at(-1);
     expect(call?.argv.slice(0, 2)).toEqual([CLI_NAME, "shim"]);
     expect(call?.argv).toHaveLength(3);
-    // A4 3.1's ticket: 24 symbols of A1's alphabet in upper case.
+    // The launch ticket: 24 symbols of the ID alphabet in upper case.
     expect(call?.argv[2]).toMatch(/^[0-9A-HJKMNP-TV-Z]{24}$/);
     expect(JSON.stringify(call)).not.toContain(world.task.title);
 
@@ -339,7 +339,7 @@ test.describe("[A7.3.9.m2-10.e2e.copy] Copy puts the pointer brief on the clipbo
       };
     });
     const row = page.locator(`li[data-task="${world.spare.ref}"]`);
-    // Copy sits in the expanded task's strip (A5 3.7): expand the row, then copy.
+    // Copy sits in the expanded task's strip: expand the row, then copy.
     await row.locator('[data-part="title"]').click();
     await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");
     const copy = row

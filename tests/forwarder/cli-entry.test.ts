@@ -1,7 +1,7 @@
 // `ttasks mcp` through the CLI's own entry (packages/cli/src/bin.ts, the build's lib/ttasks.mjs): the
 // entry hands over to the bridge before it loads anything of the CLI, so the bridge starts as fast
-// as on its own, nothing the CLI prints can reach stdout, and the bridge's arguments are its own
-// (A2 3.7.1, 3.12.2). A load recorder preloaded into the real process lists every
+// as on its own, nothing the CLI prints can reach stdout, and the bridge's arguments are its own.
+// A load recorder preloaded into the real process lists every
 // module it resolves, dynamic imports included.
 import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,8 +26,8 @@ const CLI_BIN = join(REPO, "packages", "cli", "src", "bin.ts");
 const RECORDER = new URL("./load-recorder.ts", import.meta.url).href;
 
 /**
- * A2 3.7.1 names net, fs, crypto and process; path, os and url are small parts of Node's core, and
- * v8 sets the flag of the bridge's safe-exit.ts (A2 3.12.1).
+ * The bridge needs net, fs, crypto and process; path, os and url are small parts of Node's core, and
+ * v8 sets the flag of the bridge's safe-exit.ts.
  */
 const ALLOWED = ["crypto", "fs", "net", "os", "path", "process", "url", "v8"].map(
   (n) => `node:${n}`,

@@ -1,4 +1,4 @@
-// The upgrade a person makes with the install script while the service runs (A2 3.12.4), with
+// The upgrade a person makes with the install script while the service runs, with
 // real builds, a real install and real processes (installed.ts): the older version installed and
 // its service running, the newer one installed over it by its own install script. The script's
 // last lines name the pending restart, `ttasks service status` says it, and `ttasks service restart`

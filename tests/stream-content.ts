@@ -1,4 +1,4 @@
-// The content check for the recorded stream fixtures (A7 3.7, M0.11 and N05). Two layers:
+// The content check for the recorded stream fixtures. Two layers:
 //
 // 1. A scan for things that never belong in a fixture: a user name, a host name, a home path, an
 //    e-mail address, something shaped like a token or key, an IPv4 or IPv6 address, or any string

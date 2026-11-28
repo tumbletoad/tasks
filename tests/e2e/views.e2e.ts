@@ -1,5 +1,5 @@
-// The status views, the area view, Completed and the sidebar end to end (A7 3.12 M5.05; A5 3.3,
-// 3.5, 3.15, 3.16), in Chromium and Firefox against the real service process with fixture data.
+// The status views, the area view, Completed and the sidebar end to end,
+// in Chromium and Firefox against the real service process with fixture data.
 //
 // Verify line: counts add up across disjoint views (also a property test,
 // `A5.3.5.web.counts-add-up`), no view has a heading element that names it, and a task that starts

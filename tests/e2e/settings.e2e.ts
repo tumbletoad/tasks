@@ -1,4 +1,4 @@
-// Settings and the keyboard end to end (A7 3.12 M5.11), in Chromium and Firefox, against the real
+// Settings and the keyboard end to end, in Chromium and Firefox, against the real
 // service process: the theme is this machine's, so a second tab and a fresh browser profile
 // follow it; Open's terminal is chosen among those found and goes back to the default; the keys
 // work where they should and never where a person types; the sheet lists what works; the

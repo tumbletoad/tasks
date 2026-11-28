@@ -1,6 +1,6 @@
-// Forwarder conformance (A2 3.7.5, 3.7.6): a service restart in the middle of calls. 10 bridges
+// Forwarder conformance: a service restart in the middle of calls. 10 bridges
 // through a service restart see at most one connection_lost each and go on in the space they
-// opened (A7 M2.01's Verify line; A2 5's integration test). The service here is the scripted peer,
+// opened. The service here is the scripted peer,
 // killed hard and started again on a new endpoint with a new default space.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -137,7 +137,7 @@ describe("[A2.3.7.bridge.restart] bridges through a service restart", () => {
       home.removeServiceFile();
       // The peer's exit can reach this test before the bridge has handled its end of the
       // connection. A call sent then is in flight when the connection ends, and gets
-      // connection_lost at once (A2 3.7.5). So the calls wait until the bridge has noticed the loss.
+      // connection_lost at once. So the calls wait until the bridge has noticed the loss.
       await waitFor(
         () => (bridge.proc.stderr().includes("lost the connection") ? true : undefined),
         30_000,
