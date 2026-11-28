@@ -17,6 +17,8 @@ export interface OpenWith {
   readonly request?: string;
   /** A second session, although the app runs the task here. */
   readonly another?: boolean;
+  /** Continue: this background run's own conversation opens again, its run stopped first. */
+  readonly run?: string;
 }
 
 /** What a row's controls do. The list keeps one object for every row, so it never changes. */

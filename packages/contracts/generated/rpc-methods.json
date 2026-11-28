@@ -1721,6 +1721,12 @@
             "pattern": "^[A-Za-z0-9_-]{16,64}$",
             "type": "string"
           },
+          "run": {
+            "description": "Continue this background run's own conversation; a working run is stopped first",
+            "maxLength": 32,
+            "pattern": "^ru_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
           "task": {
             "description": "Task ref (M-14) or ID",
             "maxLength": 40,

@@ -406,6 +406,14 @@
           "repeat": false,
           "required": false,
           "type": "boolean"
+        },
+        {
+          "field": "run",
+          "flag": "--run",
+          "help": "Continue this background run's own conversation; a working run is stopped first",
+          "repeat": false,
+          "required": false,
+          "type": "string"
         }
       ],
       "inputOnly": [],

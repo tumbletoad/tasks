@@ -44,11 +44,12 @@ export const LAUNCH_SQL = {
   /**
    * The intent still opening for a task and instance on a machine, newest first: Prepared,
    * Dispatching, or a terminal launch its shim has not settled yet. A link or T3 launch that
-   * was Dispatched only asked its app, and nothing settles it, so it holds no click.
+   * was Dispatched only asked its app, and nothing settles it, so it holds no click. It continues
+   * the same agent conversation as the click (`resumes`), or neither continues one.
    */
   focus:
     "SELECT id FROM launches WHERE task_id = $task AND instance_id = $instance " +
-    "AND machine_id = $machine " +
+    "AND machine_id = $machine AND json_extract(detail, '$.evidence.resumes') IS $resumes " +
     "AND (state IN ('prepared','dispatching') OR (state = 'dispatched' AND route = 'terminal')) " +
     "ORDER BY created_at DESC, id DESC LIMIT 1",
   referenceTaken: "SELECT 1 AS taken FROM launches WHERE reference = $reference LIMIT 1",

@@ -378,6 +378,8 @@ export const RUN_EVIDENCE_FIELDS = {
    * a group the operating system counts, or `tree`, none.
    */
   process_group: "id",
+  /** The identity of the folder the run started in (`identityKey`): never its path. */
+  folder_id: "id",
 } as const satisfies Record<string, RunEvidenceKind>;
 
 export type RunEvidenceKey = keyof typeof RUN_EVIDENCE_FIELDS;
