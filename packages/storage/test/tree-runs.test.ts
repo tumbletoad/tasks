@@ -135,6 +135,22 @@ describe("[S2.tree.runs] what Open and Run record, and a node's folder, on the t
     expect(gone.error?.code).toBe("DELETED");
   });
 
+  test("a folder's change is held to its path and its removal as the caller saw them", () => {
+    const id = task();
+    const first = "C:\\Work\\export";
+    const other = "C:\\Work\\other";
+    ok(fx.send("folder.set", { node: id, path: first }, { base: null }));
+    expect(fx.send("folder.set", { node: id, path: first }, { base: null }).error?.code).toBe(
+      "BASE_REQUIRED",
+    );
+    const seen = fx.asOf();
+    ok(fx.send("folder.clear", { node: id }));
+    // Cleared since the caller's read: setting one again is a change it has not seen.
+    const late = fx.send("folder.set", { node: id, path: other }, { base: seen });
+    expect(late.status).toBe("conflict");
+    ok(fx.send("folder.set", { node: id, path: other }));
+  });
+
   test("a launch of a task in the Trash is refused, and one may name a note of its task as its request", () => {
     const id = task();
     expect(launch(id, { evidence: { request: "n1" } }).error?.field).toBe("evidence.request");

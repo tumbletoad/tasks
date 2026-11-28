@@ -82,6 +82,7 @@ import {
 import {
   carriedTo,
   decodeFolder,
+  FOLDER_HELD,
   FOLDER_SQL,
   folderProblem,
   machineOs,
@@ -116,8 +117,12 @@ import {
   detailText,
   LAUNCH_SQL,
   newLaunchRef,
+  NO_MACHINE,
+  NO_REQUEST_NOTE,
   readLaunch,
   readOpenLaunches,
+  requestOrdinal,
+  whereProblem,
   type LaunchRecord,
 } from "./launches.ts";
 import { canonicalJson } from "./canonical.ts";
@@ -1560,7 +1565,11 @@ export class SpaceWriter {
         return fields.map((field): Touch => ({ entity, id, field, task: null }));
       };
       /** An existing folder row the operation writes, whose start state the base covers. */
-      const folderTouches = (row: Row, fields: string[], task: Id<"t"> | null): Touch[] => {
+      const folderTouches = (
+        row: Row,
+        fields: readonly string[],
+        task: Id<"t"> | null,
+      ): Touch[] => {
         const id = new RowReader("folders", row).id("id", "fo");
         const key = rowKey("folders", id);
         if (!starts.has(key)) starts.set(key, rowState("folders", row, CHILD_FIELDS.folders));
@@ -1571,12 +1580,7 @@ export class SpaceWriter {
         const machine = request.actor.machine_id;
         const os = machineOs(conn, machine);
         if (os === undefined) {
-          return problem(
-            "VALIDATION_FAILED",
-            "The request's machine has no record in this space",
-            i,
-            "actor.machine_id",
-          );
+          return problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
         }
         if (path !== undefined) {
           const wrong = folderProblem(path, os);
@@ -1668,12 +1672,7 @@ export class SpaceWriter {
       const placeMachine = (): string => {
         const machine = request.actor.machine_id;
         if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
-          problem(
-            "VALIDATION_FAILED",
-            "The request's machine has no record in this space",
-            i,
-            "actor.machine_id",
-          );
+          problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
         }
         return machine;
       };
@@ -2313,36 +2312,22 @@ export class SpaceWriter {
           const parent = task(op.task, "task");
           const machine = request.actor.machine_id;
           if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
-            problem(
-              "VALIDATION_FAILED",
-              "The request's machine has no record in this space",
-              i,
-              "actor.machine_id",
-            );
+            problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
           }
           if (op.place !== null) {
             const place = conn.prepare(LAUNCH_SQL.place).get({ id: op.place });
-            if (place === undefined) problem("NOT_FOUND", "No place has this ID", i, "place");
-            if (place["deleted_at"] !== null)
-              problem("DELETED", "The place is removed", i, "place");
-            if (place["machine_id"] !== machine) {
-              problem("VALIDATION_FAILED", "The place is on another machine", i, "place");
-            }
+            const wrong = whereProblem(place, machine, "place");
+            if (wrong !== undefined) problem(wrong.code, wrong.message, i, wrong.field);
           }
           const asked = op.evidence?.["request"];
           if (asked !== undefined) {
-            const ordinal = /^n([1-9][0-9]{0,5})$/u.exec(String(asked))?.[1];
+            const ordinal = requestOrdinal(String(asked));
             const found =
               ordinal === undefined
                 ? undefined
-                : conn.prepare(LAUNCH_SQL.request).get({ task: parent, ordinal: Number(ordinal) });
+                : conn.prepare(LAUNCH_SQL.request).get({ task: parent, ordinal });
             if (found === undefined) {
-              problem(
-                "NOT_FOUND",
-                "The task has no note with this reference",
-                i,
-                "evidence.request",
-              );
+              problem(NO_REQUEST_NOTE.code, NO_REQUEST_NOTE.message, i, NO_REQUEST_NOTE.field);
             }
           }
           const record = { task: parent, ...inputOf(op, "task") };
@@ -2420,22 +2405,12 @@ export class SpaceWriter {
           const parent = op.task === undefined ? null : task(op.task, "task");
           const machine = request.actor.machine_id;
           if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
-            problem(
-              "VALIDATION_FAILED",
-              "The request's machine has no record in this space",
-              i,
-              "actor.machine_id",
-            );
+            problem(NO_MACHINE.code, NO_MACHINE.message, i, NO_MACHINE.field);
           }
           if (op.place !== null) {
             const place = conn.prepare(RUN_SQL.place).get({ id: op.place });
-            if (place === undefined) problem("NOT_FOUND", "No place has this ID", i, "place");
-            if (place["deleted_at"] !== null) {
-              problem("DELETED", "The place is removed", i, "place");
-            }
-            if (place["machine_id"] !== machine) {
-              problem("VALIDATION_FAILED", "The place is on another machine", i, "place");
-            }
+            const wrong = whereProblem(place, machine, "place");
+            if (wrong !== undefined) problem(wrong.code, wrong.message, i, wrong.field);
           }
           const id = newId("ru", random);
           draftRuns.add(id);
@@ -2823,7 +2798,7 @@ export class SpaceWriter {
             // says whether the caller saw it.
             const found = decodeFolder(row);
             target = found.id;
-            touches.push(...folderTouches(row, ["path", "deleted"], parent));
+            touches.push(...folderTouches(row, FOLDER_HELD, parent));
             if (op.carry !== undefined && op.carry.length > 0) {
               const carried = new Set(op.carry);
               for (const inside of conn
@@ -2833,7 +2808,7 @@ export class SpaceWriter {
                 if (moved.id === found.id || !carried.has(moved.ownerId)) continue;
                 if (carriedTo(moved.path, found.path, op.path, folder.os) === undefined) continue;
                 const owned = moved.ownerKind === "task" ? task(moved.ownerId, "task", true) : null;
-                touches.push(...folderTouches(inside, ["path", "deleted"], owned));
+                touches.push(...folderTouches(inside, FOLDER_HELD, owned));
               }
             }
           } else {
@@ -2888,7 +2863,7 @@ export class SpaceWriter {
             op,
             target: decodeFolder(row).id,
             task: parent,
-            touches: folderTouches(row, ["path", "deleted"], parent),
+            touches: folderTouches(row, FOLDER_HELD, parent),
             record,
             owner: { ...owner, bound: true },
             folder,
