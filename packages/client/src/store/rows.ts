@@ -563,6 +563,68 @@ export function pageRow(value: unknown): PageRow | undefined {
   return v as unknown as PageRow;
 }
 
+/**
+ * A routine as the feed sends it on a tree space: one task that comes back on a schedule, with its
+ * open time (the next, or the one still to do), whether it is paused, who does it (`you`, or an
+ * agent instance) and its newest entry.
+ */
+export interface RoutineRow {
+  readonly id: string;
+  readonly ref: string;
+  readonly kind: "routine";
+  readonly title: string;
+  readonly summary?: string;
+  readonly parent: string;
+  readonly position: string;
+  readonly priority: number;
+  readonly lifecycle: string;
+  /** Its schedule as stored: RRULE text (contracts' schedule.ts). */
+  readonly rule: string;
+  readonly start: string;
+  readonly tz: string;
+  /** Its open time's date, on its own calendar. */
+  readonly due_date: string;
+  /** Its open time, when it has a time of day: milliseconds since the epoch. */
+  readonly due_at?: number;
+  readonly paused: boolean;
+  readonly by: string;
+  readonly entries: number;
+  readonly version: number;
+  readonly deleted_at?: number;
+  readonly last_state?: "done" | "skipped";
+  readonly last_at?: number;
+  readonly last_due?: string;
+}
+
+export function routineRow(value: unknown): RoutineRow | undefined {
+  if (!isRecord(value)) return undefined;
+  const v = value;
+  if (
+    v["kind"] !== "routine" ||
+    !isString(v["id"]) ||
+    !isString(v["ref"]) ||
+    !isString(v["title"]) ||
+    !isString(v["parent"]) ||
+    !isString(v["position"]) ||
+    !isNumber(v["priority"]) ||
+    !isString(v["lifecycle"]) ||
+    !isString(v["rule"]) ||
+    !isString(v["start"]) ||
+    !isString(v["tz"]) ||
+    !isString(v["due_date"]) ||
+    typeof v["paused"] !== "boolean" ||
+    !isString(v["by"]) ||
+    !isNumber(v["entries"]) ||
+    !isNumber(v["version"]) ||
+    !optional(v["due_at"], isNumber) ||
+    !optional(v["deleted_at"], isNumber) ||
+    !optional(v["last_at"], isNumber)
+  ) {
+    return undefined;
+  }
+  return v as unknown as RoutineRow;
+}
+
 /** The checker for each kind of row the working set holds. */
 export const ROW_OF: Readonly<Record<RowType, (value: unknown) => AnyRow | undefined>> = {
   task: taskRow,
