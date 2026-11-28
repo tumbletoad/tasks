@@ -238,7 +238,7 @@ test.describe("[A5.while-away.e2e.waiting-draft] who a task waits on, still bein
         }
       ).task.waiting_on;
     const row = await openTask(page, world, ref);
-    const field = row.getByRole("textbox", { name: "Waiting on" });
+    const field = row.getByRole("combobox", { name: "Waiting on" });
     await field.click();
     await page.keyboard.press("End");
     await page.keyboard.type(" Reyes");
