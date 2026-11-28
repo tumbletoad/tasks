@@ -363,7 +363,7 @@ test.describe("[A7.3.9.m2-10.e2e.copy] Copy puts the pointer brief on the clipbo
     expect(lines).toHaveLength(6);
     // Its launch shows in the expanded row as copied.
     await expect(row.locator('[data-entry][data-state="dispatched"]')).toContainText(
-      "Brief copied",
+      "Prompt copied",
       {
         timeout: SLOW_MS,
       },
