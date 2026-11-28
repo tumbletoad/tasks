@@ -1452,7 +1452,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // recovery; open the writer, which migrates an older revision under the space's writer.lock
     // and claim, with the machine-local backup folder; a refusal that leaves the space readable is
     // read_only with its reason; then, for a space open as this machine's, remove backup leftovers
-    // in its own backups folder, take the daily backup when due and apply retention, in a
+    // in its backups folder, take the daily backup when due and apply retention, in a
     // maintenance worker. A restore in place or a claim closes the space through the manager first
     // and goes above the epochs this machine has seen (SpaceManager.restoreInPlace, claim).
     // The registered spaces are machine.toml's [[spaces]], in the file's order, which the space

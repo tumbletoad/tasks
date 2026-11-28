@@ -182,7 +182,9 @@ export async function spaceCheck(options: CandidateOptions): Promise<CandidateCh
       } finally {
         await writer.close();
       }
-      const backup = await runAdmin({ kind: "backup", folder });
+      const backupDir = join(dir, "backups");
+      makeDir(backupDir, 0o700);
+      const backup = await runAdmin({ kind: "backup", folder, backupDir });
       if (backup.kind !== "backup" || backup.backup.seq !== seq) {
         return {
           id,

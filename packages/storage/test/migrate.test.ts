@@ -18,7 +18,7 @@ import { openWriter } from "../src/open.ts";
 import { restoreBackup } from "../src/restore/restore.ts";
 import { openSpace, openSpaceWith } from "../src/space.ts";
 import { StorageWorker } from "../src/worker/client.ts";
-import { readFacts, writeCommits } from "./backup-helpers.ts";
+import { backupsBeside, readFacts, writeCommits } from "./backup-helpers.ts";
 import { createRequest, FIXTURE_MACHINE, ownerCredential } from "./fixture-requests.ts";
 import { openSpaceAt, STEPS_0_1 } from "./revisions.ts";
 import { checkedDriver, createFixtureSpace, tempFolders } from "./space-helpers.ts";
@@ -105,7 +105,7 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
         await migrateSpaceWith(
           checked,
           folder,
-          {},
+          { backupDir: backupsBeside(folder) },
           {
             backup: {
               at: (p) => {
@@ -117,12 +117,14 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
       );
       expect(outcome.stage, point).toBe("backup");
       expect(outcome.error.code, point).toBe("BACKUP_FAILED");
+      // The state it was tried on, so this build does not try it again by itself (A1 3.17).
+      expect(outcome.error.attempt, point).toMatchObject({ from: 1, to: 6 });
       expect(outcome.backup, point).toBeUndefined();
       expect(await state(folder), point).toEqual(before);
       // A failure after the sidecar was published leaves the pair to the reader's checks (A1
       // 3.18): a backup of the state before, though no migration stands behind it.
       expect(
-        listBackups(join(folder, "backups")).backups.map((b) => [b.state, b.sidecar?.kind]),
+        listBackups(backupsBeside(folder)).backups.map((b) => [b.state, b.sidecar?.kind]),
         point,
       ).toEqual(point === "sidecar-published" ? [["ok", "pre-migrate"]] : []);
     }
@@ -136,31 +138,27 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
     reader.conn.close();
   });
 
-  test("a backup that cannot be written: the writer's open fails, and a reader reads with the reason", async () => {
+  test("a backups folder that is a file: the writer's open fails, names no state, and a reader reads with the reason", async () => {
     const folder = await spaceAt01();
     const before = await state(folder);
-    writeFileSync(join(folder, "backups"), "a file where the backups folder should be");
+    const blocked = `${folder}.backups`;
+    writeFileSync(blocked, "a file where the backups folder should be");
     const w = await worker();
-    const error = await rejection(w.openSpaceWriter(folder, { machine: FIXTURE_MACHINE }));
+    const error = await rejection(
+      w.openSpaceWriter(folder, { backupDir: blocked, machine: FIXTURE_MACHINE }),
+    );
     expect(error.code).toBe("BACKUP_FAILED");
     expect(error.message).toMatch(
-      /^The barrier backup before the migration to 0.6 failed, so nothing was migrated\. The space stays at 0\.1\. The backup failed \([A-Z_]+\)$/,
+      /^The barrier backup before the migration to 0.6 failed, so nothing was migrated\. The space stays at 0\.1\. The space's backups folder is not there\. /,
     );
     expect(error.message).not.toContain(folder);
     expect(await state(folder)).toEqual(before);
-    // The failed open ended its claim: the space opens read-only, with the reason.
+    // A folder that is away says nothing about the database: the next open tries again.
+    expect(error.attempt).toBeUndefined();
     const { conn, info } = await w.openSpaceReader(folder);
     expect(info.readOnlyReasons).toEqual(["older_revision"]);
     expect(info.revision).toEqual({ major: 0, minor: 1 });
     await conn.close();
-    // No barrier backup was taken, so the state it was tried on names none (A1 3.17).
-    expect(error.attempt).toEqual({
-      from: 1,
-      to: 6,
-      epoch: info.authority.epoch,
-      incarnation: info.authority.incarnation,
-      lastSeq: before.lastSeq,
-    });
   });
 
   test("a write between the backup and the migration stops it before any step", async () => {
@@ -170,7 +168,7 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
       await migrateSpaceWith(
         checked,
         folder,
-        {},
+        { backupDir: backupsBeside(folder) },
         {
           backup: {
             at: (p) => {
@@ -200,16 +198,29 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
     const current = await worker("0.1");
     const newer = await worker();
     // The 0.1 build's writer has the space: this build, which would migrate it, cannot open it.
-    const writer = await current.openSpaceWriter(folder, { machine: FIXTURE_MACHINE });
+    const writer = await current.openSpaceWriter(folder, {
+      backupDir: backupsBeside(folder),
+      machine: FIXTURE_MACHINE,
+    });
     expect(
-      (await rejection(newer.openSpaceWriter(folder, { machine: FIXTURE_MACHINE }))).code,
+      (
+        await rejection(
+          newer.openSpaceWriter(folder, {
+            backupDir: backupsBeside(folder),
+            machine: FIXTURE_MACHINE,
+          }),
+        )
+      ).code,
     ).toBe("SPACE_WRITER_TAKEN");
     expect(await state(folder)).toMatchObject({ userVersion: 1, lastSeq: 2 });
-    expect(listBackups(join(folder, "backups")).backups).toEqual([]);
+    expect(listBackups(backupsBeside(folder)).backups).toEqual([]);
     await writer.close();
 
     // Now the newer build's writer opens it: migrated first, then the write path attaches.
-    const migratedWriter = await newer.openSpaceWriter(folder, { machine: FIXTURE_MACHINE });
+    const migratedWriter = await newer.openSpaceWriter(folder, {
+      backupDir: backupsBeside(folder),
+      machine: FIXTURE_MACHINE,
+    });
     expect(migratedWriter.revision).toEqual({ major: 0, minor: 6 });
     expect(migratedWriter.readOnlyReasons).toEqual([]);
     expect(migratedWriter.migration).toMatchObject({
@@ -225,7 +236,14 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
     });
     // While it is open, no other writer of the process opens the space.
     expect(
-      (await rejection(current.openSpaceWriter(folder, { machine: FIXTURE_MACHINE }))).code,
+      (
+        await rejection(
+          current.openSpaceWriter(folder, {
+            backupDir: backupsBeside(folder),
+            machine: FIXTURE_MACHINE,
+          }),
+        )
+      ).code,
     ).toBe("SPACE_WRITER_TAKEN");
     // The write path works on the migrated schema.
     const facts = await readFacts(folder);
@@ -250,17 +268,23 @@ describe("[A1.5.migration.barrier] only the authority migrates", () => {
     );
     const before = await state(folder);
     const w = await worker();
-    const error = await rejection(w.openSpaceWriter(folder, { machine: FIXTURE_MACHINE }));
+    const error = await rejection(
+      w.openSpaceWriter(folder, { backupDir: backupsBeside(folder), machine: FIXTURE_MACHINE }),
+    );
     expect(error.code).toBe("SPACE_NEEDS_MIGRATION");
     expect(await state(folder)).toEqual(before);
-    expect(listBackups(join(folder, "backups")).backups).toEqual([]);
+    expect(listBackups(backupsBeside(folder)).backups).toEqual([]);
     // It reads, with the reason; and the claim ended, so it can be opened again.
     const { conn, info } = await w.openSpaceReader(folder);
     expect(info.readOnlyReasons).toEqual(["older_revision"]);
     await conn.close();
-    expect((await rejection(w.openSpaceWriter(folder, { machine: FIXTURE_MACHINE }))).code).toBe(
-      "SPACE_NEEDS_MIGRATION",
-    );
+    expect(
+      (
+        await rejection(
+          w.openSpaceWriter(folder, { backupDir: backupsBeside(folder), machine: FIXTURE_MACHINE }),
+        )
+      ).code,
+    ).toBe("SPACE_NEEDS_MIGRATION");
   });
 });
 
@@ -282,7 +306,12 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
     const folder = await spaceAt01(3);
     const at = Date.UTC(2026, 10, 13, 9, 0, 0);
     const outcome = migrated(
-      await migrateSpaceWith(checked, folder, { now: () => at }, { steps: STEPS_0_7 }),
+      await migrateSpaceWith(
+        checked,
+        folder,
+        { backupDir: backupsBeside(folder), now: () => at },
+        { steps: STEPS_0_7 },
+      ),
     );
     expect(outcome.from).toEqual({ major: 0, minor: 1 });
     expect(outcome.to).toEqual({ major: 0, minor: 7 });
@@ -418,17 +447,34 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
   test("one migration at a time: 0.1 to this build's 0.6, then 0.6 to 0.7; a current space is left alone", async () => {
     const checked = await checkedDriver();
     const folder = await spaceAt01(1);
-    expect(migrated(await migrateSpaceWith(checked, folder, {}, {})).seqs).toEqual([2, 3, 4, 5, 6]);
     expect(
-      migrated(await migrateSpaceWith(checked, folder, {}, { steps: STEPS_0_7 })).seqs,
+      migrated(await migrateSpaceWith(checked, folder, { backupDir: backupsBeside(folder) }, {}))
+        .seqs,
+    ).toEqual([2, 3, 4, 5, 6]);
+    expect(
+      migrated(
+        await migrateSpaceWith(
+          checked,
+          folder,
+          { backupDir: backupsBeside(folder) },
+          { steps: STEPS_0_7 },
+        ),
+      ).seqs,
     ).toEqual([7]);
-    expect(await migrateSpaceWith(checked, folder, {}, { steps: STEPS_0_7 })).toEqual({
+    expect(
+      await migrateSpaceWith(
+        checked,
+        folder,
+        { backupDir: backupsBeside(folder) },
+        { steps: STEPS_0_7 },
+      ),
+    ).toEqual({
       state: "current",
       revision: { major: 0, minor: 7 },
     });
-    expect(
-      listBackups(join(folder, "backups")).backups.map((b) => b.sidecar?.user_version),
-    ).toEqual([6, 1]);
+    expect(listBackups(backupsBeside(folder)).backups.map((b) => b.sidecar?.user_version)).toEqual([
+      6, 1,
+    ]);
   });
 
   const FAILING = [
@@ -444,9 +490,11 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
       const folder = await spaceAt01(3);
       const before = await state(folder);
       const w = await worker(set);
-      const error = await rejection(w.openSpaceWriter(folder, { machine: FIXTURE_MACHINE }));
+      const error = await rejection(
+        w.openSpaceWriter(folder, { backupDir: backupsBeside(folder), machine: FIXTURE_MACHINE }),
+      );
       expect(error.code).toBe("MIGRATION_FAILED");
-      const backup = listBackups(join(folder, "backups")).backups[0];
+      const backup = listBackups(backupsBeside(folder)).backups[0];
       expect(backup?.state).toBe("ok");
       expect(backup?.sidecar).toMatchObject({ kind: "pre-migrate", user_version: 1, seq: 3 });
       // A1 3.17's message: the revision, the cause, the data unchanged and the barrier backup.
@@ -501,7 +549,7 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
       await migrateSpaceWith(
         checked,
         folder,
-        {},
+        { backupDir: backupsBeside(folder) },
         {
           steps: STEPS_0_7,
           at: (point, step) => {
@@ -542,7 +590,10 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
   test("openSpaceWriter opens a current space without a migration, and an older one after it", async () => {
     const folder = await spaceAt01(1);
     const current = await worker("0.1");
-    const writer = await current.openSpaceWriter(folder, { machine: FIXTURE_MACHINE });
+    const writer = await current.openSpaceWriter(folder, {
+      backupDir: backupsBeside(folder),
+      machine: FIXTURE_MACHINE,
+    });
     expect(writer.migration).toBeUndefined();
     expect(writer.revision).toEqual({ major: 0, minor: 1 });
     await writer.close();
@@ -557,21 +608,19 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
       next.migration?.backup.name,
     ]);
     await next.close();
-    // [A1.5.backup.folder-away] Told a folder that is not there (a drive away), the upgrade goes
-    // on behind a barrier backup in the space's own backups folder. Nothing is made at the folder's
-    // path.
+    // [A1.5.backup.folder-away] Told a folder that is not there (a drive away), nothing is
+    // migrated, no backup is made anywhere, and the failure names no state to hold back a later
+    // open. Nothing is made at the folder's path.
     const other = await spaceAt01(1);
     const drive = join(folders.make(), "drive");
-    const upgraded = await newer.openSpaceWriter(other, {
-      machine: FIXTURE_MACHINE,
-      backupDir: join(drive, "backups"),
-    });
-    expect(upgraded.migration).toMatchObject({ to: { major: 0, minor: 6 } });
-    expect(listBackups(join(other, "backups")).backups.map((b) => b.name)).toEqual([
-      upgraded.migration?.backup.name,
-    ]);
+    const away = await rejection(
+      newer.openSpaceWriter(other, { machine: FIXTURE_MACHINE, backupDir: join(drive, "backups") }),
+    );
+    expect(away.code).toBe("BACKUP_FAILED");
+    expect(away.attempt).toBeUndefined();
     expect(existsSync(drive)).toBe(false);
-    await upgraded.close();
+    expect(existsSync(join(other, "backups"))).toBe(false);
+    expect((await readFacts(other)).space.format).toEqual({ major: 0, minor: 1 });
     expect((await readFacts(folder)).space.format).toEqual({ major: 0, minor: 6 });
     // A refusal other than an older revision is thrown as open throws it.
     expect(
