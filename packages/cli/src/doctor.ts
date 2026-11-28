@@ -357,6 +357,8 @@ interface Status {
     migrated?: Migrated;
     /** An open space whose backups are not working: what happened and what to do. */
     backup?: { why?: string; message?: string };
+    /** Backups made into the space's own folder that stay there, and why. */
+    old_backups?: { message?: string };
   }[];
 }
 
@@ -371,7 +373,8 @@ export function spacesCheck(spaces: NonNullable<Status["spaces"]>, startedMs: nu
     (s) =>
       (s.state !== "open" && s.state !== "read_only" && s.state !== "closed") ||
       (s.state === "read_only" && s.reason === "migration_failed") ||
-      s.backup !== undefined,
+      s.backup !== undefined ||
+      s.old_backups !== undefined,
   );
   // A space's way out names `<folder>`, which ttasks space list shows: this row holds no path.
   const folders = spaces.some(
@@ -396,7 +399,8 @@ export function spacesCheck(spaces: NonNullable<Status["spaces"]>, startedMs: nu
                   ? `. ${migratedLine(s.migrated)}`
                   : "";
               const backup = s.backup?.message === undefined ? "" : `. ${s.backup.message}`;
-              return `${name}: ${s.state}${reason}${message}${migrated}${backup}`;
+              const old = s.old_backups?.message === undefined ? "" : `. ${s.old_backups.message}`;
+              return `${name}: ${s.state}${reason}${message}${migrated}${backup}${old}`;
             })
             .join("; ") + folders,
   };

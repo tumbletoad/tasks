@@ -125,7 +125,8 @@ export interface LastMigration {
  * Where a space's backups are written on this machine: `backup.dir` when this machine set one
  * (`set`: a person's choice, maybe on a drive that is away, so never made here and never cleaned),
  * else `<backups>/<space ID>` beside the TTasks home (paths.ts), which this service alone writes.
- * The space's own `backups/` (storage's backupsFolder), where backups went before, is only read.
+ * The space's own `backups/` (storage's backupsFolder), where backups went before, is read with
+ * it, and its backups move from there (storage's moveOldBackups).
  */
 export function backupsFolderOf(
   settings: SpaceSettings,

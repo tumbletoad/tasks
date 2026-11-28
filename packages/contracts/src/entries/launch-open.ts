@@ -5,7 +5,8 @@
 // saves it on the task as a note of the person's that the launch names as its request, before the
 // launch is recorded, and the agent reads it with `get_task` and the launch reference. Copy puts it
 // after the pointer on the clipboard, or over Copy's budget saves it as a note addressed to agents
-// that the brief points at (A4 3.15.3).
+// that the brief points at (A4 3.15.3). With `run`, it is Continue: the run's app opens the run's
+// own conversation again in a terminal, once nothing of the run runs, and takes no words or brief.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeText } from "../safe-text.ts";
@@ -48,6 +49,12 @@ export const LaunchOpenInput = z.strictObject({
   another: z
     .boolean()
     .describe("Start a second session although this app already runs the task here")
+    .optional(),
+  run: z
+    .string()
+    .max(32)
+    .regex(idPattern("ru"))
+    .describe("Continue this background run's own conversation; a working run is stopped first")
     .optional(),
   request_id: RequestId,
 });

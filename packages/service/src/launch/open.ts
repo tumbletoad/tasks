@@ -200,7 +200,21 @@ export interface OpenTaskRequest {
    * here. Without it, an Open of an app that runs the task here is that session.
    */
   readonly another?: boolean;
+  /**
+   * Continue: this background run's own conversation opens again in its instance's terminal, in
+   * the folder it worked in, in place of a new one with a brief. A run that may still work is
+   * stopped first, once every check passed.
+   */
+  readonly continues?: string;
 }
+
+/** Whether Continue can open a run's conversation here, and why not (RunService.continuable). */
+export type Continuable =
+  | { readonly ok: true; readonly conversation: string; readonly folder: string }
+  | {
+      readonly ok: false;
+      readonly why: "conversation" | "machine" | "folder" | "instance" | "home";
+    };
 
 /** What the context pack takes of the task (A4 3.15.5); the launch adds its reference and folder. */
 export type PackContent = Omit<

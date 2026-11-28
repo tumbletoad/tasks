@@ -41,6 +41,11 @@ export interface RunView {
   readonly error?: string;
   /** Stop is offered: it is queued, works, or may still hold processes. */
   readonly stoppable: boolean;
+  /**
+   * Continue is offered: the run holds its agent's conversation, which opens again `now`, or once
+   * the run is stopped (`after_stop`), so two agents never write one conversation.
+   */
+  readonly continues?: "now" | "after_stop";
 }
 
 const msg = (id: MessageId, values?: Msg["values"]): Msg =>
@@ -72,6 +77,12 @@ const QUIET_SHOWN_MS = 60_000;
 
 /** A run as its thread entry shows it, at `now`. */
 export function runView(run: Run, label: string, now = Date.now()): RunView {
+  const view = stateView(run, label, now);
+  if (run.resumable !== true) return view;
+  return { ...view, continues: view.stoppable ? "after_stop" : "now" };
+}
+
+function stateView(run: Run, label: string, now: number): RunView {
   // How its processes ended is said after a stop or a time limit, where the person asked for an
   // end; after an end of its own only when something it left had to be ended.
   const ended =

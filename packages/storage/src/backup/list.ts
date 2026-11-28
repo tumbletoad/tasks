@@ -21,6 +21,7 @@
 // for a restore, so it must be for the listing too.
 import { lstatSync, readdirSync, rmSync, type Dirent, type Stats } from "node:fs";
 import { join, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { errnoCode, fsCall, fsError } from "../files.ts";
 import type { Id } from "../ids.ts";
 import type { CheckedDriver } from "../startup-check.ts";
@@ -173,9 +174,10 @@ export function listBackups(
 }
 
 /**
- * The backups of several folders as one listing, each folder read once: a space's backups folder
- * first, then a folder its backups were in before. `folder`, `present` and `leftovers` are the
- * first folder's, the one backups are written to; each backup's `file` says where it is.
+ * The backups of several folders as one listing, each folder read once and each backup listed once
+ * (oneEach): a space's backups folder first, then a folder its backups were in before. `folder`,
+ * `present` and `leftovers` are the first folder's, the one backups are written to; each backup's
+ * `file` says where it is.
  */
 export function listBackupsIn(
   folders: readonly [string, ...string[]],
@@ -186,10 +188,10 @@ export function listBackupsIn(
     ...string[],
   ];
   const own = readBackups(first, policy);
-  const backups = [
-    ...own.backups,
+  const backups = oneEach([
     ...rest.flatMap((folder) => readBackups(folder, policy).backups),
-  ];
+    ...own.backups,
+  ]);
   return {
     folder: first,
     present: own.present,
@@ -199,6 +201,25 @@ export function listBackupsIn(
     ],
     leftovers: own.leftovers,
   };
+}
+
+/**
+ * One entry per backup, from `backups` read from several folders. While a backup moves between
+ * folders (move.ts) it stands in both: copies whose sidecars read the same are one backup, and the
+ * first is listed, so the original in the folder backups were in before is the one restored while
+ * it is there. Only a complete copy counts: a part of a backup a complete copy of the same name has
+ * elsewhere is not listed.
+ */
+function oneEach(backups: readonly ListedBackup[]): ListedBackup[] {
+  const complete = backups.filter((b) => b.state === "ok");
+  return backups.filter((b, at) =>
+    b.state === "ok"
+      ? !complete.some(
+          (c) =>
+            c.name === b.name && isDeepStrictEqual(c.sidecar, b.sidecar) && backups.indexOf(c) < at,
+        )
+      : !complete.some((c) => c.name === b.name),
+  );
 }
 
 /** One folder's backups, unordered, and its leftovers. */

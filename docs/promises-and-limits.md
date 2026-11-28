@@ -99,8 +99,13 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A backup stays consistent while people and agents change tasks.
 - A space's backups go to its own folder beside the TTasks home (`~/.ttasks-backups`), so removing
   the home folder leaves them. `ttasks space list` and `ttasks doctor` say where they are.
-- Backups made before they went there stay in the space's `backups` folder: listed with their
-  folder, restorable by name and as latest, and never moved or cleaned up.
+- Backups made before they went there, in the space's `backups` folder, are listed and restore
+  with the others, each once, wherever it stands, and are never cleaned up. They move there over
+  two starts of TTasks: a copy first, and the original goes only at a later start, once the copy
+  reads back whole. Nothing there is overwritten. One that is not whole, whose copy does not read
+  back, or whose name another file has there, stays, and `ttasks space list` and `ttasks doctor`
+  say so. Where the backups folder set for a space is its own `backups` folder, nothing moves, and
+  clean-up treats the daily backups there as ordinary ones, old ones too.
 - A backup that is called verified has passed a trial restore. So has every backup you make with
   `ttasks space backup`.
 - While a space is open for changes, TTasks backs it up once a day. It keeps the backups of seven
@@ -392,6 +397,15 @@ the behaviour it describes, and keep each one to a sentence or two.
   and is given the questions that waited when you started it, each quoted as the agent asked it,
   then your words; one dismissed or answered after that stays in it. Nothing else of the earlier
   run's conversation comes along.
+- Continue opens a run's own conversation in its agent app's terminal, in the folder the run worked
+  in and in the agent home it used, as Open opens a task, and the agent there works as that
+  session. Every check comes first: a Continue that cannot open stops nothing. A run that may
+  still work is then stopped, and the app opens only once nothing of the run runs; a conversation
+  already open in a terminal is that one, so two agents never write one conversation. Continue is
+  offered for Claude Code and Codex once the agent named its conversation, on the computer the run
+  worked on, while its instance uses the same home. A task whose folder is another one now than
+  the run's does not continue, and a conversation the agent app's own history has removed does
+  not open.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
   ends what TTasks could find of it: the run is called ended once the agent itself is gone, and a

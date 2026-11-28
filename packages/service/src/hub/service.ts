@@ -1065,6 +1065,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       commandFolder: layout.bin,
       markers,
       t3: t3.route,
+      runs,
       ...(accountHome === undefined ? {} : { home: accountHome }),
       // The grant gate's rule for the session the click starts: its home's live row names its
       // space (binding/decide.ts standing).
@@ -1237,6 +1238,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           list: (space, task) => runs.list(space, task),
           stop: (space, run) => runs.stop(space, run),
           live: (run, space) => runs.live(run, space),
+          continuable: (run) => runs.continuable(run),
           onChange: (listener) => runs.onChange(listener),
           runnable: (key) => {
             const instance = instances.find((i) => i.id === key);
