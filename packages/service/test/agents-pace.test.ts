@@ -321,7 +321,7 @@ describe("[A5.agents.pace] the service asks the monitor at the pace of the most 
       feed.send({ type: "watch", ...LOOKED });
       expect(await view(feed)).toMatchObject({ trouble: { kind: "not_installed" } });
       // A pass already on its way for the threads answers first; the look follows right after it.
-      await expect.poll(() => p.looked()).toBe(2);
+      await expect.poll(() => p.looked(), SLOW).toBe(2);
     },
   );
 });
