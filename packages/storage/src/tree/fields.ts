@@ -39,6 +39,11 @@ export const FIELDS = {
   links: { removed: ["removed_at"] },
   // A machine is registered once, by a system commit, and no command changes it after.
   machines: {},
+  // A folder's path and its removal; a launch's and a run's state, written as a unit with its
+  // reason, evidence and times.
+  folders: { path: ["path"], deleted: ["deleted_at"] },
+  launches: { state: ["state", "reason", "detail", "updated_at"] },
+  runs: { state: ["state", "reason", "detail", "result", "started_at", "ended_at"] },
   // A preference's value with the version of its shape, which `pref.set` writes as a unit.
   preferences: { value: ["value", "schema_ver"] },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
@@ -82,6 +87,34 @@ export const KEYS: Record<Entity, readonly string[]> = {
   links: ["id", "owner_id", "target_id", "position", "added_by"],
   preferences: ["key", "policy"],
   machines: ["id", "name", "os", "first_seen"],
+  folders: ["id", "owner_id", "machine_id", "is_default", "label", "created_at"],
+  launches: [
+    "id",
+    "reference",
+    "task_id",
+    "session_id",
+    "instance_id",
+    "machine_id",
+    "route",
+    "folder_id",
+    "task_version",
+    "brief_hash",
+    "created_at",
+  ],
+  runs: [
+    "id",
+    "task_id",
+    "routine_id",
+    "session_id",
+    "instance_id",
+    "machine_id",
+    "adapter",
+    "folder_id",
+    "request",
+    "spec",
+    "attempt",
+    "queued_at",
+  ],
 };
 
 /** The column that names a row: its `id`, or a preference's `key`. */

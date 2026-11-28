@@ -130,6 +130,20 @@ function requests(n: number): TreePlanned[] {
         tasks: [{ title: "Captured", source: { kind: "ticket", title: "T-1", key: "crash:T-1" } }],
       },
     },
+    {
+      request_id: id(11),
+      agent: false,
+      base: "none",
+      command: "launch.create",
+      input: {
+        task: parent,
+        instance: "codex-work",
+        route: "terminal",
+        folder: null,
+        task_version: 1,
+        brief_hash: "a1b2c3d4".repeat(8),
+      },
+    },
   ];
 }
 

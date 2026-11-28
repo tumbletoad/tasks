@@ -97,7 +97,6 @@ import {
 import {
   decodeLaunch,
   detailText,
-  LAUNCH_EDGES,
   LAUNCH_SQL,
   newLaunchRef,
   readLaunch,
@@ -105,6 +104,7 @@ import {
   type LaunchRecord,
 } from "./launches.ts";
 import { canonicalJson } from "./canonical.ts";
+import { launchAfter, launchMoveProblem, runAfter, runMoveProblem } from "./moves.ts";
 import { markProjected, queueProjection, type ProjectedBatch } from "./outbox.ts";
 import { isPosition, positionBetween } from "./positions.ts";
 import { freeSlug } from "./slugs.ts";
@@ -113,8 +113,6 @@ import {
   FINAL_RUN_STATES,
   readOpenRuns,
   readRun,
-  RUN_EDGES,
-  RUN_REASONS,
   RUN_SQL,
   runDetailText,
   sortedJson,
@@ -137,8 +135,6 @@ import {
   FOLDER_OPERATIONS,
   formatAsOf,
   isHistoryOperation,
-  LAUNCH_FAIL_REASONS,
-  LAUNCH_UNKNOWN_REASONS,
   normaliseStored,
   REQUEST_ID,
   RequestProblem,
@@ -2405,26 +2401,8 @@ export class SpaceWriter {
               rowState("launches", row, CHILD_FIELDS.launches),
             );
           }
-          if (!LAUNCH_EDGES[op.expect].includes(op.next)) {
-            problem("VALIDATION_FAILED", "Not a transition of the launch state machine", i, "next");
-          }
-          const entering = op.next !== op.expect;
-          const needsReason = entering && (op.next === "failed" || op.next === "unknown");
-          if (needsReason !== (op.reason !== undefined)) {
-            problem(
-              "VALIDATION_FAILED",
-              needsReason
-                ? "Entering Failed or Unknown takes a reason code"
-                : "Only entering Failed or Unknown takes a reason code",
-              i,
-              "reason",
-            );
-          }
-          const reasons: readonly string[] =
-            op.next === "failed" ? LAUNCH_FAIL_REASONS : LAUNCH_UNKNOWN_REASONS;
-          if (needsReason && !reasons.includes(op.reason ?? "")) {
-            problem("VALIDATION_FAILED", "Not a reason code of that state", i, "reason");
-          }
+          const refused = launchMoveProblem(op);
+          if (refused !== undefined) problem(refused.code, refused.message, i, refused.field);
           return { i, op, target: op.launch, task: null, touches: [], record: inputOf(op) };
         }
         case "run.create": {
@@ -2477,29 +2455,8 @@ export class SpaceWriter {
             }
             starts.set(rowKey("runs", op.run), rowState("runs", row, CHILD_FIELDS.runs));
           }
-          if (!RUN_EDGES[op.expect].includes(op.next)) {
-            problem("VALIDATION_FAILED", "Not a transition of the run state machine", i, "next");
-          }
-          const entering = op.next !== op.expect;
-          const reasons = RUN_REASONS[op.next];
-          const needsReason = entering && reasons !== undefined;
-          if (needsReason !== (op.reason !== undefined)) {
-            problem(
-              "VALIDATION_FAILED",
-              needsReason
-                ? "Entering this state takes a reason code"
-                : "Only entering failed, timed_out or unknown takes a reason code",
-              i,
-              "reason",
-            );
-          }
-          if (needsReason && !reasons.includes(op.reason ?? "")) {
-            problem("VALIDATION_FAILED", "Not a reason code of that state", i, "reason");
-          }
-          const final = (FINAL_RUN_STATES as readonly RunState[]).includes(op.next);
-          if (op.result !== undefined && !(entering && final)) {
-            problem("VALIDATION_FAILED", "A result goes in entering a final state", i, "result");
-          }
+          const refused = runMoveProblem(op);
+          if (refused !== undefined) problem(refused.code, refused.message, i, refused.field);
           return { i, op, target: op.run, task: null, touches: [], record: inputOf(op) };
         }
         case "pref.set": {
@@ -4686,35 +4643,12 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "launch.transition": {
       // One compare-and-set (A4 3.16.1): the launch moves only from the state the caller saw.
       const current = decodeLaunch(readRow(conn, "launches", staged.target));
-      if (current.state !== op.expect) {
-        problem("INVALID_TRANSITION", "The launch moved on: read it again", i, "expect");
+      const after = launchAfter(current, op, run.plan.wall);
+      if (after === undefined) return;
+      if ("problem" in after) {
+        return problem(after.problem.code, after.problem.message, i, after.problem.field);
       }
-      // The record the caller decided on: any change since, a self edge's evidence included,
-      // makes the decision stale (a sweep that read the launch before its claim).
-      if (op.expect_version !== undefined && current.version !== op.expect_version) {
-        problem("INVALID_TRANSITION", "The launch changed: read it again", i, "expect_version");
-      }
-      // Evidence only grows: a key the record holds keeps its value, so a claim is recorded once.
-      const held = current.evidence;
-      const incoming = op.evidence ?? {};
-      for (const [key, value] of Object.entries(incoming)) {
-        if (Object.hasOwn(held, key) && held[key] !== value) {
-          problem("INVALID_TRANSITION", "The launch holds other evidence", i, `evidence.${key}`);
-        }
-      }
-      const entering = op.next !== current.state;
-      const grows = Object.keys(incoming).some((key) => !Object.hasOwn(held, key));
-      if (!entering && !grows) return;
-      conn.prepare(LAUNCH_SQL.update).run({
-        id: staged.target,
-        state: op.next,
-        reason: entering ? (op.reason ?? null) : current.reason,
-        detail: detailText({
-          evidence: { ...held, ...incoming },
-          at: entering ? { ...current.at, [op.next]: run.plan.wall } : current.at,
-        }),
-        at: run.at,
-      });
+      conn.prepare(LAUNCH_SQL.update).run({ id: staged.target, ...after.write, at: run.at });
       wrote(run, i, "launches", staged.target, null, ["state"]);
       return;
     }
@@ -4755,47 +4689,12 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "run.transition": {
       // One compare-and-set (A4 3.11.2, 3.16.1): the run moves only from the record the caller saw.
       const current = decodeRun(readRow(conn, "runs", staged.target));
-      if (current.state !== op.expect) {
-        problem("INVALID_TRANSITION", "The run moved on: read it again", i, "expect");
+      const after = runAfter(current, op, run.plan.wall);
+      if (after === undefined) return;
+      if ("problem" in after) {
+        return problem(after.problem.code, after.problem.message, i, after.problem.field);
       }
-      if (current.version !== op.expect_version) {
-        problem("INVALID_TRANSITION", "The run changed: read it again", i, "expect_version");
-      }
-      // Evidence only grows: a key the record holds keeps its value, so a claim is recorded once.
-      const held = current.evidence;
-      const incoming = op.evidence ?? {};
-      for (const [key, value] of Object.entries(incoming)) {
-        if (Object.hasOwn(held, key) && held[key] !== value) {
-          problem("INVALID_TRANSITION", "The run holds other evidence", i, `evidence.${key}`);
-        }
-      }
-      // A result goes in once: a run settled from unknown keeps the result it already has.
-      if (op.result !== undefined && current.result !== null) {
-        problem("INVALID_TRANSITION", "The run holds its result", i, "result");
-      }
-      const entering = op.next !== current.state;
-      const grows = Object.keys(incoming).some((key) => !Object.hasOwn(held, key));
-      if (!entering && !grows) return;
-      const wall = run.plan.wall;
-      const final = (FINAL_RUN_STATES as readonly RunState[]).includes(op.next);
-      conn.prepare(RUN_SQL.update).run({
-        id: staged.target,
-        state: op.next,
-        reason: entering ? (op.reason ?? null) : current.reason,
-        detail: runDetailText({
-          evidence: { ...held, ...incoming },
-          at: entering ? { ...current.at, [op.next]: wall } : current.at,
-        }),
-        result:
-          op.result === undefined
-            ? current.result === null
-              ? "{}"
-              : sortedJson(current.result)
-            : sortedJson(op.result),
-        started_at:
-          entering && op.next === "running" ? (current.started_at ?? wall) : current.started_at,
-        ended_at: entering && final ? wall : current.ended_at,
-      });
+      conn.prepare(RUN_SQL.update).run({ id: staged.target, ...after.write });
       wrote(run, i, "runs", staged.target, null, ["state"]);
       return;
     }

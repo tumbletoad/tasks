@@ -151,6 +151,46 @@ export const TREE_STATEMENTS: readonly string[] = [
   policy INTEGER NOT NULL DEFAULT 0 CHECK (policy IN (0,1)),
   ${VERSIONS}
 ) STRICT`,
+  // A folder of a node on one machine, as that machine spells it: the default one per node and
+  // machine, where an agent starts.
+  `CREATE TABLE folders (
+  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES nodes(id),
+  machine_id TEXT NOT NULL REFERENCES machines(id),
+  path TEXT NOT NULL CHECK (length(path) BETWEEN 1 AND 4096), is_default INTEGER NOT NULL DEFAULT 1
+    CHECK (is_default IN (0,1)), label TEXT, created_at INTEGER NOT NULL, deleted_at INTEGER,
+  ${VERSIONS}
+) STRICT`,
+  "CREATE UNIQUE INDEX folders_default ON folders(owner_id, machine_id) " +
+    "WHERE is_default = 1 AND deleted_at IS NULL",
+  // What Open records: as today's, with the folder it opened in in place of a place. Launches and
+  // runs point at tasks.
+  `CREATE TABLE launches (
+  id TEXT PRIMARY KEY, reference TEXT NOT NULL CHECK (length(reference) = 6 AND reference GLOB 'L*'),
+  task_id TEXT REFERENCES tasks(id), session_id TEXT, instance_id TEXT NOT NULL,
+  machine_id TEXT NOT NULL REFERENCES machines(id), route TEXT NOT NULL,
+  folder_id TEXT REFERENCES folders(id), task_version INTEGER, brief_hash TEXT,
+  state TEXT NOT NULL CHECK (state IN ('prepared','dispatching','dispatched','confirmed','failed','unknown')),
+  reason TEXT, detail TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(detail)),
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  ${VERSIONS}
+) STRICT`,
+  "CREATE INDEX launches_task ON launches(task_id, created_at)",
+  "CREATE INDEX launches_open ON launches(machine_id, created_at) " +
+    "WHERE state IN ('prepared','dispatching','dispatched')",
+  // What Run records: as today's, a task's run or a routine's, never both.
+  `CREATE TABLE runs (
+  id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id), routine_id TEXT, session_id TEXT,
+  instance_id TEXT NOT NULL, machine_id TEXT NOT NULL REFERENCES machines(id),
+  adapter TEXT NOT NULL, folder_id TEXT REFERENCES folders(id), request TEXT,
+  spec TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(spec)),
+  state TEXT NOT NULL, reason TEXT, attempt INTEGER NOT NULL DEFAULT 1,
+  detail TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(detail)),
+  result TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(result)),
+  queued_at INTEGER NOT NULL, started_at INTEGER, ended_at INTEGER,
+  ${VERSIONS},
+  CHECK (task_id IS NULL OR routine_id IS NULL)
+) STRICT`,
+  "CREATE INDEX runs_task ON runs(task_id, queued_at)",
   // The prototype import's task IDs, which text written before may hold: a task is found by them.
   `CREATE TABLE aliases (
   namespace TEXT NOT NULL CHECK (namespace IN ('planning')), alias TEXT NOT NULL,
