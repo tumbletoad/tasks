@@ -1,7 +1,6 @@
 // Folders through the write path (schema 0.5): a project's and a task's folder on the request's
 // machine, any number of projects on one folder, the move of a project's task folders with its
-// own, a project's delete and restore with its folders, undo and redo of each, the form a path
-// must have on its machine, and the folder a launch would use. Fixture text and fixture paths
+// own, a project's delete and restore with its folders, the form a path must have on its machine, and the folder a launch would use. Fixture text and fixture paths
 // only, in a temporary space: no folder named here is looked at.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
@@ -39,7 +38,6 @@ function submit(
   return fx.writer.submit(
     fx.request(actor, ops, {
       base: fx.base(),
-      ...(actor.actor_kind === "human" ? { undoable: true } : {}),
       ...extra,
     }),
   );
@@ -92,7 +90,7 @@ function newTask(title: string, project?: string, path?: string): Id<"t"> {
 }
 
 describe("[A1.5.write.folders] a project's and a task's folder through the write path", () => {
-  test("a project created with its folder is one commit and one undo step; the path is stored exactly as sent", () => {
+  test("a project created with its folder is one commit, whose Undo archives the project and keeps its folder; the path is stored exactly as sent", () => {
     // A decomposed é (e and U+0301): the writer's text normalisation would make it another folder.
     const decomposed = "~/work/cafe\u0301";
     const id = newProject("Café", decomposed);
@@ -103,15 +101,17 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     const ops = JSON.parse(commit?.ops ?? "[]") as { input: { path?: string } }[];
     expect(ops[1]?.input.path).toBe(decomposed);
     expectStatus(undo(), "applied");
-    expect(live()).toEqual({});
-    expect(
-      fx.reader.prepare("SELECT deleted_at FROM projects WHERE id = $id").get({ id }),
-    ).not.toEqual({ deleted_at: null });
-    expectStatus(redo(), "applied");
     expect(live()).toEqual({ [`project:${id}`]: decomposed });
+    expect(fx.reader.prepare("SELECT lifecycle FROM projects WHERE id = $id").get({ id })).toEqual({
+      lifecycle: "archived",
+    });
+    expectStatus(redo(), "applied");
+    expect(fx.reader.prepare("SELECT lifecycle FROM projects WHERE id = $id").get({ id })).toEqual({
+      lifecycle: "active",
+    });
   });
 
-  test("a moved folder needs a base and carries the folders inside it that it names, other projects' and their tasks' too, as one undo step", () => {
+  test("a moved folder needs a base and carries the folders inside it that it names, other projects' and their tasks' too, in one change", () => {
     const project = newProject("Portal two", "~/work/portal");
     const inside = newTask("Header", project, "~/work/portal/web/header");
     const same = newTask("Root", project, "~/work/portal");
@@ -119,7 +119,6 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     const loose = newTask("Not in the project", undefined, "~/work/portal/other");
     const nested = newProject("Portal api", "~/work/portal/api");
     const nestedTask = newTask("Api task", nested, "~/work/portal/api/v2");
-    const before = live();
     // The loose task's folder did not move with it: it is not named, and stays.
     const carry = [inside, same, outside, nested, nestedTask];
     const unbased = fx.writer.submit(
@@ -137,10 +136,6 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
       [`project:${nested}`]: "~/Code/portal/api",
       [`task:${nestedTask}`]: "~/Code/portal/api/v2",
     });
-    expectStatus(undo(), "applied");
-    expect(live()).toEqual(before);
-    expectStatus(redo(), "applied");
-    expect(live()[`task:${inside}`]).toBe("~/Code/portal/web/header");
     // A task's folder moved on disk carries what is inside it as well, a project's included.
     expectStatus(
       submit([
@@ -240,72 +235,14 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expect(restored.conflicts).toEqual([]);
     expect(projectFolders(project)).toEqual(["/srv/gone", "~/work/gone"]);
     expect(live()[`project:${taker}`]).toBe("~/work/gone");
-    expectStatus(undo(), "applied");
-    expect(live()).toEqual({ [`project:${taker}`]: "~/work/gone" });
   });
 
-  test("undo of a delete brings the project's folder back beside another project's that took it", () => {
-    const project = newProject("Undone", "~/work/undone");
-    expectStatus(submit([{ kind: "project.delete", project }]), "applied");
-    // An agent's project takes the folder: agents' commits are on no undo stack.
-    const taker = newId("p");
-    expectStatus(
-      submit(
-        [
-          { kind: "project.create", id: taker, title: "Taker" },
-          { kind: "project.folder_set", project: taker, path: "~/work/undone" },
-        ],
-        fx.codex,
-      ),
-      "applied",
-    );
-    expectStatus(undo(), "applied");
-    expect(live()).toEqual({
-      [`project:${taker}`]: "~/work/undone",
-      [`project:${project}`]: "~/work/undone",
-    });
-  });
-
-  test("undo and redo of a folder change or a clear stand beside another project's folder that took the same folder", () => {
-    const project = newProject("Mover", "~/work/a");
-    expectStatus(submit([{ kind: "project.folder_set", project, path: "~/work/b" }]), "applied");
-    const taker = newId("p");
-    expectStatus(
-      submit(
-        [
-          { kind: "project.create", id: taker, title: "Taker" },
-          { kind: "project.folder_set", project: taker, path: "~/work/a" },
-        ],
-        fx.codex,
-      ),
-      "applied",
-    );
-    expectStatus(undo(), "applied");
-    expect(live()[`project:${project}`]).toBe("~/work/a");
-    expectStatus(redo(), "applied");
-    expect(live()[`project:${project}`]).toBe("~/work/b");
-    // A clear undone after another project took the folder.
-    expectStatus(submit([{ kind: "project.folder_clear", project }]), "applied");
-    expectStatus(
-      submit([{ kind: "project.folder_set", project: taker, path: "~/work/b" }], fx.codex),
-      "applied",
-    );
-    expectStatus(undo(), "applied");
-    expect(live()).toEqual({
-      [`project:${taker}`]: "~/work/b",
-      [`project:${project}`]: "~/work/b",
-    });
-    expectStatus(redo(), "applied");
-    expect(live()).toEqual({ [`project:${taker}`]: "~/work/b" });
-  });
-
-  test("a task's folder: set, changed and cleared on this machine, with a draft in one request and one undo", () => {
+  test("a task's folder: set, changed and cleared on this machine, with a draft in one request", () => {
     const task = newTask("Own folder", fx.project, "~/work/own");
     expectStatus(submit([{ kind: "task.folder_set", task, path: "~/work/own2" }]), "applied");
     expectStatus(submit([{ kind: "task.folder_clear", task }]), "applied");
     expect(live()).toEqual({});
-    expectStatus(undo(), "applied");
-    expect(live()).toEqual({ [`task:${task}`]: "~/work/own2" });
+    expectStatus(submit([{ kind: "task.folder_set", task, path: "~/work/own2" }]), "applied");
     // One request changes an owner's folder once: set and cleared, or set twice, is refused.
     for (const second of [
       { kind: "task.folder_clear" as const, task },
@@ -380,8 +317,6 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
       [`project:${inner}`]: "~/Code/app",
       [`project:${holder}`]: "~/Code/app",
     });
-    expectStatus(undo(), "applied");
-    expect(live()[`project:${sharer}`]).toBe("~/work/outer");
   });
 
   test("setting a folder from a base before another's clear is a conflict; without a base it sets", () => {
@@ -416,23 +351,7 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expectStatus(unbased, "applied");
   });
 
-  test("setting a folder from a base before Undo brought the cleared one back is a conflict, and the restored folder stays", () => {
-    const task = newTask("Restored", undefined, "~/work/a");
-    expectStatus(submit([{ kind: "task.folder_clear", task }]), "applied");
-    const empty = fx.base();
-    expectStatus(undo(), "applied");
-    expect(live()).toEqual({ [`task:${task}`]: "~/work/a" });
-    const stale = submit([{ kind: "task.folder_set", task, path: "~/work/b" }], fx.codex, {
-      base: empty,
-    });
-    expectStatus(stale, "conflict");
-    expect(stale.conflicts).toEqual([
-      expect.objectContaining({ entity: "folders", field: "deleted", task }),
-    ]);
-    expect(live()).toEqual({ [`task:${task}`]: "~/work/a" });
-  });
-
-  test("Redo of a removal names the newest change to a folder set and cleared since: who cleared it, when, and that it is cleared", () => {
+  test("Redo of a removal after agents set and cleared the task's folder keeps it, naming each", () => {
     const task = newTask("Set and cleared since");
     expectStatus(submit([{ kind: "task.delete", task }]), "applied");
     expectStatus(undo(), "applied");
@@ -440,129 +359,12 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
       submit([{ kind: "task.folder_set", task, path: "~/work/a" }], fx.codex),
       "applied",
     );
-    const cleared = submit([{ kind: "task.folder_clear", task }], fx.claude);
-    expectStatus(cleared, "applied");
+    expectStatus(submit([{ kind: "task.folder_clear", task }], fx.claude), "applied");
     const late = redo();
-    expectStatus(late, "conflict");
-    expect(late.conflicts).toEqual([
-      expect.objectContaining({
-        entity: "folders",
-        field: "deleted",
-        task,
-        version: cleared.seq,
-        by: expect.objectContaining({ actor: fx.claude.principal_id }) as unknown,
-        value: expect.any(Number) as unknown,
-      }),
-    ]);
-  });
-
-  test("a folder one agent set and another repointed since is named once, by the second, with its path now: by Redo of a removal and by Undo of the task's creation", () => {
-    const repointed = (task: Id<"t">): WriteResult => {
-      expectStatus(
-        submit([{ kind: "task.folder_set", task, path: "~/work/a" }], fx.codex),
-        "applied",
-      );
-      const moved = submit([{ kind: "task.folder_set", task, path: "~/work/b" }], fx.claude);
-      expectStatus(moved, "applied");
-      return moved;
-    };
-    const once = (result: WriteResult, task: Id<"t">, moved: WriteResult): void => {
-      expectStatus(result, "conflict");
-      expect(result.conflicts).toEqual([
-        expect.objectContaining({
-          entity: "folders",
-          field: "path",
-          task,
-          value: "~/work/b",
-          version: moved.seq,
-          by: expect.objectContaining({ actor: fx.claude.principal_id }) as unknown,
-        }),
-      ]);
-    };
-    const removed = newTask("Removed, then set and repointed");
-    expectStatus(submit([{ kind: "task.delete", task: removed }]), "applied");
-    expectStatus(undo(), "applied");
-    const first = repointed(removed);
-    once(redo(), removed, first);
-    const made = newTask("Created, then set and repointed");
-    const second = repointed(made);
-    once(undo(), made, second);
-  });
-
-  test("Redo of a clear after someone changed the folder is a conflict, and their folder stays", () => {
-    const task = newTask("Moved since", undefined, "~/work/a");
-    expectStatus(submit([{ kind: "task.folder_clear", task }]), "applied");
-    expectStatus(undo(), "applied");
-    expectStatus(
-      submit([{ kind: "task.folder_set", task, path: "~/work/b" }], fx.codex),
-      "applied",
+    expectStatus(late, "unchanged");
+    expect(late.newer?.work.map((w) => w.by.actor).sort()).toEqual(
+      [fx.codex.principal_id, fx.claude.principal_id].sort(),
     );
-    const late = redo();
-    expectStatus(late, "conflict");
-    expect(late.conflicts).toEqual([
-      expect.objectContaining({ entity: "folders", field: "path", task }),
-    ]);
-    expect(live()).toEqual({ [`task:${task}`]: "~/work/b" });
-  });
-
-  test("a deleted project never holds a live folder: undo of a clear while it is deleted is a conflict, so its restore cannot share a folder", () => {
-    const project = newProject("Away", "~/work/away");
-    expectStatus(submit([{ kind: "project.folder_clear", project }]), "applied");
-    expectStatus(submit([{ kind: "project.delete", project }], fx.codex), "applied");
-    const blocked = undo();
-    expectStatus(blocked, "conflict");
-    expect(blocked.conflicts).toEqual([
-      expect.objectContaining({ entity: "projects", id: project, field: "deleted" }),
-    ]);
-    const taker = newId("p");
-    expectStatus(
-      submit(
-        [
-          { kind: "project.create", id: taker, title: "Taker" },
-          { kind: "project.folder_set", project: taker, path: "~/work/away" },
-        ],
-        fx.codex,
-      ),
-      "applied",
-    );
-    expectStatus(submit([{ kind: "project.restore", project }], fx.codex), "applied");
-    expect(live()).toEqual({ [`project:${taker}`]: "~/work/away" });
-  });
-
-  test("undo of a restore is a conflict when a folder was set on the project since, and redo of a delete when a task was filed into it", () => {
-    const project = newProject("Twice");
-    expectStatus(submit([{ kind: "project.delete", project }]), "applied");
-    expectStatus(submit([{ kind: "project.restore", project }]), "applied");
-    expectStatus(
-      submit([{ kind: "project.folder_set", project, path: "~/work/twice" }], fx.codex),
-      "applied",
-    );
-    const restoreUndo = undo();
-    expectStatus(restoreUndo, "conflict");
-    expect(restoreUndo.conflicts).toEqual([
-      expect.objectContaining({ entity: "folders", field: "deleted" }),
-    ]);
-    expectStatus(undo(true), "applied");
-    expect(live()[`project:${project}`]).toBe("~/work/twice");
-
-    // A delete undone, then a task an agent files into the project: the redo would hide it.
-    const other = newProject("Once");
-    expectStatus(submit([{ kind: "project.delete", project: other }]), "applied");
-    expectStatus(undo(), "applied");
-    const filed = newId("t");
-    expectStatus(
-      submit([{ kind: "task.create", id: filed, title: "Filed since", project: other }], fx.codex),
-      "applied",
-    );
-    const deleteRedo = redo();
-    expectStatus(deleteRedo, "conflict");
-    // Named by who put it into the project.
-    expect(deleteRedo.conflicts).toEqual([
-      expect.objectContaining({ entity: "tasks", id: filed, field: "grouping" }),
-    ]);
-    expect(
-      fx.reader.prepare("SELECT deleted_at FROM projects WHERE id = $id").get({ id: other }),
-    ).toEqual({ deleted_at: null });
   });
 
   test("a request whose operations together would leave a live folder or task in a deleted project is refused", () => {

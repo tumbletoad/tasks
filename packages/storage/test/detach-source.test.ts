@@ -1,7 +1,7 @@
 // Detaching a source from a task and putting it back (`source.unlink`, `source.relink`): the link
 // is removed and brought back as the same pair, the source and every other link stay, put back is
-// refused while another active task holds the key, and undo and redo take either step back. Fixture
-// text only.
+// refused while another active task holds the key, and neither is a step on the person's Undo:
+// put back is the way back. Fixture text only.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
 import {
@@ -54,7 +54,6 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
   const send = (who: Who, ops: Operation[], extra: Partial<WriteRequest> = {}): WriteResult =>
     fx.writer.submit(
       fx.request(fx[who], ops, {
-        ...(who === "human" ? { undoable: true } : {}),
         ...extra,
       }),
     );
@@ -68,12 +67,6 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
     fx.reader
       .prepare("SELECT * FROM task_sources WHERE task_id = $task AND source_id = $source")
       .get({ task, source }) ?? {};
-  /** The commit whose write the link's removal holds: its provenance. */
-  const removedBy = (task: string, source: string): unknown =>
-    one(
-      "SELECT json_extract(fp, '$.removed') FROM task_sources WHERE task_id = $task AND source_id = $source",
-      { task, source },
-    );
   const sourceOf = (key: string): Id<"s"> =>
     String(one("SELECT id FROM sources WHERE source_key = $key", { key })) as Id<"s">;
   /** The tasks a live link joins to the source with `key`. */
@@ -101,7 +94,6 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
   const relink = (task: string, source: Id<"s">, who: Who = "human", extra = {}) =>
     send(who, [{ kind: "source.relink", task, source }], { base: fx.base(), ...extra });
   const undo = () => fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }]));
-  const redo = () => fx.writer.submit(fx.request(fx.human, [{ kind: "redo" }]));
 
   test("a keyed link detached no longer catches a capture; the task's other links and another task's link to the same source stay", () => {
     const a = capture([ticket("jira:FIX-1"), ticket("jira:FIX-2")]);
@@ -248,7 +240,7 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
     expect(found.results[0]).toMatchObject({ status: "existing", task: a });
   });
 
-  test("a finished task takes its link back while an active task holds the key, by put back or by undo, and captures stay with the active one", () => {
+  test("a finished task takes its link back while an active task holds the key, and captures stay with the active one", () => {
     const a = capture([ticket("jira:FIX-1")]);
     const fix1 = sourceOf("jira:FIX-1");
     applied(send("codex", [{ kind: "task.complete", task: a }], { base: fx.base() }));
@@ -263,13 +255,6 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
       { kind: "source.add", task: next, source: ticket("jira:FIX-1") },
     ]);
     expect(found.results[0]).toMatchObject({ status: "existing", task: c });
-    // Undo of the detach agrees with put back.
-    const d = capture([ticket("jira:FIX-2")]);
-    applied(send("codex", [{ kind: "task.complete", task: d }], { base: fx.base() }));
-    applied(unlink(d, sourceOf("jira:FIX-2")));
-    const e = capture([ticket("jira:FIX-2")]);
-    applied(undo());
-    expect(holders("jira:FIX-2")).toEqual([d, e].sort());
   });
 
   // Each order of an add, a detach and a put back of one link in one request ends as the last of
@@ -429,48 +414,13 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
     expect(holders("jira:FIX-1")).toEqual([a]);
   });
 
-  test("undo and redo take a detach and a put back back and forth; an undo that would make a second holder is refused", () => {
+  test("a detach and a put back are no step: Undo passes over them", () => {
     const a = capture([ticket("jira:FIX-1")]);
     const fix1 = sourceOf("jira:FIX-1");
-    const detach = applied(unlink(a, fix1));
-    applied(undo());
-    expect(holders("jira:FIX-1")).toEqual([a]);
-    applied(redo());
-    expect(holders("jira:FIX-1")).toEqual([]);
-    // The redo holds the detach's own provenance: put back still lists it as a removal.
-    expect(removedBy(a, fix1)).toBe(detach.seq);
-    applied(relink(a, fix1));
-    applied(undo());
-    expect(holders("jira:FIX-1")).toEqual([]);
-    expect(removedBy(a, fix1)).toBe(detach.seq);
-    applied(redo());
-    expect(holders("jira:FIX-1")).toEqual([a]);
-    // Detached again, then captured elsewhere: the undo of the detach would make two holders.
     applied(unlink(a, fix1));
-    const c = capture([ticket("jira:FIX-1")]);
-    expectStatus(undo(), "conflict");
-    expect(holders("jira:FIX-1")).toEqual([c]);
-  });
-
-  test("a link whose creation was undone is not put back: Redo brings it back", () => {
-    // A link to a source another task has too: the undo removes the link and keeps the source.
-    const b = capture([ticket("jira:FIX-7")]);
-    applied(send("codex", [{ kind: "task.complete", task: b }], { base: fx.base() }));
-    const a = capture([{ kind: "email", title: "Re: times" }]);
-    applied(send("human", [{ kind: "source.add", task: a, source: ticket("jira:FIX-7") }]));
-    const fix7 = sourceOf("jira:FIX-7");
-    applied(undo());
-    expect(link(a, fix7)["removed_at"]).not.toBeNull();
-    const refused = relink(a, fix7);
-    expectStatus(refused, "rejected");
-    expect(refused.error).toMatchObject({ code: "INVALID_TRANSITION", field: "source" });
-    // A new source whose creation was undone is gone with its link.
-    applied(send("human", [{ kind: "source.add", task: a, source: ticket("jira:FIX-8") }]));
-    const fix8 = sourceOf("jira:FIX-8");
-    applied(undo());
-    expectStatus(relink(a, fix8), "rejected");
-    applied(redo());
-    expect(holders("jira:FIX-8")).toEqual([a]);
+    applied(relink(a, fix1));
+    expect(undo().error?.code).toBe("NOTHING_TO_UNDO");
+    expect(holders("jira:FIX-1")).toEqual([a]);
   });
 
   test("a link the task never had is not found", () => {

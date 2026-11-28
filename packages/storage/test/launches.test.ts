@@ -371,16 +371,11 @@ describe("[A1.5.write.launches] launch records through the write path", () => {
     expect(fx.writer.launch(id)?.state).toBe("prepared");
   });
 
-  test("R7: an agent cannot write a launch, and a launch is never undoable", () => {
+  test("R7: an agent cannot write a launch", () => {
     const taskId = task();
-    for (const [actor, extra, field] of [
-      [fx.codex, {}, "actor.actor_kind"],
-      [ui, { undoable: true }, "undoable"],
-    ] as const) {
-      const result = submit([createOp(taskId)], actor, extra);
-      expectStatus(result, "rejected");
-      expect(result.error).toMatchObject({ code: "VALIDATION_FAILED", field });
-    }
+    const result = submit([createOp(taskId)], fx.codex, {});
+    expectStatus(result, "rejected");
+    expect(result.error).toMatchObject({ code: "VALIDATION_FAILED", field: "actor.actor_kind" });
     expect(Number(one("SELECT count(*) FROM launches"))).toBe(0);
   });
 
@@ -435,7 +430,7 @@ describe("[A1.5.write.launches] launch records through the write path", () => {
       ["create", creating],
       ["transition", moving],
     ] as const) {
-      for (const key of ["request_id", "space_id", "reason", "base", "undoable", "note"]) {
+      for (const key of ["request_id", "space_id", "reason", "base", "note"]) {
         variants.push([`${name}: ${key}`, (text) => ({ ...make(), [key]: text })]);
       }
       variants.push(

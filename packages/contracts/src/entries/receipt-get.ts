@@ -10,7 +10,7 @@ import { AsOf, idPattern, Lifecycle, patterns, TaskId, TaskRef, Warnings } from 
 import { AS_OF, M14, requestId } from "./fixture.ts";
 import { NewerWorkFields } from "./history-undo.ts";
 import { newerBy } from "../newer-work.ts";
-import { LevelsWritten, Moved, OffList } from "./prefs-manage.ts";
+import { Moved, OffList } from "./prefs-manage.ts";
 
 const Seq = z.int().min(0).max(999_999_999_999_999);
 const Instant = z.string().regex(patterns.instant);
@@ -58,7 +58,6 @@ const ReceiptOpResult = z.strictObject({
     .array(TaskRef)
     .describe("Several active tasks matched, the named one first")
     .optional(),
-  levels: LevelsWritten.optional(),
   lifecycles: z
     .array(TaskRef)
     .max(50)
@@ -154,14 +153,14 @@ export const ReceiptGetResult = z.union([
       .regex(idPattern("ai"))
       .describe("The authority incarnation it was decided under"),
     commit: z.string().regex(idPattern("op")).describe("The commit it wrote").optional(),
-    target: z
-      .string()
-      .regex(idPattern("op"))
-      .describe("An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo")
+    kept: z
+      .literal(true)
+      .describe("An undo or redo that newer work kept: nothing changed, and it left the stack")
       .optional(),
-    passed_over: z
-      .array(z.string().regex(idPattern("op")))
-      .describe("A redo's: the undone changes it could not redo, which stay for the next redo")
+    why: z
+      .string()
+      .max(200)
+      .describe("A kept undo or redo: why it cannot be applied now")
       .optional(),
     ...NewerWorkFields,
     results: z
@@ -200,8 +199,8 @@ export interface StoredReceiptLike {
     status: string;
     as_of: string;
     commit?: string;
-    target?: string;
-    passed?: readonly string[];
+    kept?: true;
+    why?: string;
     newer?: {
       readonly work: readonly {
         readonly ref?: string;
@@ -257,7 +256,6 @@ function receiptOp(stored: object): z.input<typeof ReceiptOpResult> {
     ...(has("matched_by") ? { matched_by: r["matched_by"] } : {}),
     ...(has("matched_by") && has("lifecycle") ? { lifecycle: r["lifecycle"] } : {}),
     ...(has("ambiguous") ? { ambiguous: r["ambiguous"] } : {}),
-    ...(has("levels") ? { levels: r["levels"] } : {}),
     ...(has("off_list") ? { off_list: r["off_list"] } : {}),
     ...(has("lifecycles") ? { lifecycles: r["lifecycles"] } : {}),
     ...(has("moved") ? { moved: r["moved"] } : {}),
@@ -297,8 +295,8 @@ export function receiptResult(
     as_of: result.as_of,
     incarnation: stored.incarnation,
     ...(result.commit === undefined ? {} : { commit: result.commit }),
-    ...(result.target === undefined ? {} : { target: result.target }),
-    ...(result.passed === undefined ? {} : { passed_over: [...result.passed] }),
+    ...(result.kept === undefined ? {} : { kept: true }),
+    ...(result.why === undefined ? {} : { why: result.why }),
     ...(result.newer === undefined ? {} : newerWorkJson(result.newer)),
     // A request or an import holds more operations than a reply shows: the first 50.
     results: result.results.slice(0, 50).map(receiptOp),

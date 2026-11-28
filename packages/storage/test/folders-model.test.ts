@@ -13,8 +13,7 @@
 //   changed no other folder; one that names none changed the owner's folder alone (worked out here
 //   apart from the writer's code);
 // - a task moved next to another stands right there in its list;
-// - an undo that applied whole, of a commit nobody else's change followed, gives back the space as
-//   it was before that commit, and its redo the space as that commit left it.
+// - an undo or a redo in between keeps every rule.
 // Each run ends with A1's history invariants (write-helpers.ts: checkHistory). Fixture paths only:
 // nothing here looks at a folder.
 import fc from "fast-check";
@@ -76,7 +75,7 @@ type Step =
   | { kind: "steal"; m: number; p: number; pick: number }
   /** Several forward steps in one request, of one actor on one machine. */
   | { kind: "batch"; who: Who; m: number; steps: readonly Forward[] }
-  | { kind: "undo"; partial: boolean }
+  | { kind: "undo" }
   | { kind: "redo" };
 
 const m = fc.nat({ max: 1 });
@@ -140,7 +139,7 @@ const forward = (by: fc.Arbitrary<Who>, weights: Partial<Record<Forward["kind"],
 
 const history = (undo: number, redo: number) => [
   {
-    arbitrary: fc.record({ kind: fc.constant("undo" as const), partial: fc.boolean() }),
+    arbitrary: fc.record({ kind: fc.constant("undo" as const) }),
     weight: undo,
   },
   { arbitrary: fc.record({ kind: fc.constant("redo" as const) }), weight: redo },
@@ -212,41 +211,37 @@ const GROUP_CASES: readonly (readonly Step[])[] = [
   [
     { kind: "move", who: "human", t: 0, p: 1 },
     { kind: "regroup", who: "agent", p: 0, a: 1 },
-    { kind: "undo", partial: true },
+    { kind: "undo" },
     { kind: "redo" },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
     { kind: "move", who: "human", t: 0, p: 0 },
     { kind: "regroup", who: "human", p: 0, a: 0 },
     { kind: "move", who: "human", t: 0, p: 0 },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
   ],
   // seed -1539344306, path "0:6:7:12:12:7:8:8:7:7"
   [
     { kind: "regroup", who: "human", p: 3, a: 0 },
     { kind: "move", who: "agent", t: 0, p: 3 },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
     { kind: "regroup", who: "human", p: 0, a: 0 },
-    { kind: "undo", partial: true },
+    { kind: "undo" },
     { kind: "redo" },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
   ],
   // seed 2125393020, path "77:3:3:11:7:7:7:9:2:1:7:8:8:8"
   [
     { kind: "move", who: "human", t: 0, p: 1 },
     { kind: "regroup", who: "agent", p: 0, a: 1 },
-    { kind: "undo", partial: true },
+    { kind: "undo" },
     { kind: "task_delete", who: "human", t: 0, restore: true },
     { kind: "redo" },
     { kind: "regroup", who: "human", p: 0, a: 1 },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
   ],
   // A partial undo of an area, a project and a task filed together, after an agent's note on the
   // task: the task and its project stay, and so does their area.
-  [
-    { kind: "file", who: "human" },
-    { kind: "note", who: "agent", t: TASKS },
-    { kind: "undo", partial: true },
-  ],
+  [{ kind: "file", who: "human" }, { kind: "note", who: "agent", t: TASKS }, { kind: "undo" }],
   // An undo of a project's restore that a task restored since keeps: the restore is named.
   [
     { kind: "move", who: "agent", t: 0, p: 2 },
@@ -254,13 +249,13 @@ const GROUP_CASES: readonly (readonly Step[])[] = [
     { kind: "delete", who: "human", p: 2 },
     { kind: "restore", who: "human", p: 2 },
     { kind: "task_delete", who: "agent", t: 0, restore: true },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
   ],
   // A project restored after its area's creation was undone comes back without an area
   // (seed 163886335, path "23:3:3:6:6:6:2:2:2:2:2:2:2:2").
   [
     { kind: "file", who: "human" },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
     { kind: "restore", who: "human", p: 0 },
     { kind: "move", who: "human", t: 0, p: 0 },
   ],
@@ -277,17 +272,17 @@ const GROUP_CASES: readonly (readonly Step[])[] = [
         { kind: "regroup", who: "human", p: 0, a: 2 },
       ],
     },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
     { kind: "redo" },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
   ],
   // A redo after a later step's create was undone gives back its own commit; the later rows stay
   // out of sight (seed -147665983, path "2153:2:0:1:3:3:3:5:7:10:11:10:10:10:10:10:10:10:10").
   [
     { kind: "project_set", who: "human", m: 0, p: 0, path: 0, carry: [] },
     { kind: "file", who: "human" },
-    { kind: "undo", partial: false },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
+    { kind: "undo" },
     { kind: "redo" },
   ],
   // One request that restores the empty project P2 and files a new project titled P2: the new one
@@ -304,7 +299,7 @@ const GROUP_CASES: readonly (readonly Step[])[] = [
         { kind: "file", who: "human" },
       ],
     },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
     { kind: "redo" },
   ],
   // One request that deletes an empty project and sets its folder: refused, the project named.
@@ -334,10 +329,10 @@ const GROUP_CASES: readonly (readonly Step[])[] = [
         { kind: "task_delete", who: "human", t: 4, restore: false },
       ],
     },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
     { kind: "restore", who: "human", p: 0 },
     { kind: "task_delete", who: "agent", t: 4, restore: true },
-    { kind: "undo", partial: false },
+    { kind: "undo" },
   ],
 ];
 
@@ -474,62 +469,6 @@ function expectedMove(path: string, from: string, to: string, os: FolderOs): str
   return to + path.slice(from.length);
 }
 
-/**
- * The space as an undo or a redo gives `was` back: rows created since are out of sight (an undone
- * create keeps its row), and the others are as they were.
- */
-function backTo(now: Snapshot, was: Snapshot): Snapshot {
-  const old = (id: string): boolean => Object.hasOwn(was.tasks, id);
-  const made = Object.keys(now.tasks).filter((id) => !old(id));
-  expect(
-    made.filter((id) => !now.deletedTasks.includes(id)),
-    "an undone create is gone",
-  ).toEqual([]);
-  const kept = <T>(map: Record<string, T>, rows: Record<string, unknown>) =>
-    Object.fromEntries(Object.entries(map).filter(([id]) => Object.hasOwn(rows, id)));
-  return {
-    folders: now.folders,
-    projects: now.projects,
-    areas: kept(now.areas, was.areas),
-    tasks: kept(now.tasks, was.tasks),
-    taskAreas: kept(now.taskAreas, was.tasks),
-    deletedTasks: now.deletedTasks.filter(old),
-    lists: Object.fromEntries(
-      Object.entries(now.lists)
-        .map(([list, ids]): [string, string[]] => [
-          list,
-          ids.filter((id) => old(id) || Object.hasOwn(was.areas, id)),
-        ])
-        .filter(([, ids]) => ids.length > 0),
-    ),
-  };
-}
-
-/**
- * What a refused or partial undo names is someone's change after the step it undoes: who moved,
- * filed, restored or deleted something since, never what was there before the step.
- */
-function expectNewer(w: World, result: WriteResult): void {
-  const step = result.status === "conflict" ? result.target : result.results[0]?.id;
-  if (step === undefined || result.conflicts.length === 0) return;
-  const seq = Number(
-    w.fx.reader.prepare("SELECT seq FROM commits WHERE id = $id").get({ id: step })?.["seq"],
-  );
-  for (const c of result.conflicts) {
-    expect(c.version, `${c.entity} ${c.field} is named by a change after the step`).toBeGreaterThan(
-      seq,
-    );
-  }
-}
-
-/** A commit on the person's stack, with the space before and after it. */
-interface Entry {
-  before: Snapshot;
-  after: Snapshot;
-  /** Nobody else's change came after it, so its undo must give back `before` exactly. */
-  clean: boolean;
-}
-
 /** Which row an index names: modulo the rows there are. */
 const nth = <T>(rows: readonly T[], k: number): T => {
   const row = rows[k % rows.length];
@@ -636,11 +575,6 @@ async function run(steps: readonly Step[]): Promise<void> {
   const w = await world();
   const carried = (owners: Carry): string[] =>
     owners.map((k) => (k < PROJECTS ? w.projects[k] : w.tasks[k - PROJECTS]) ?? "");
-  const done: Entry[] = [];
-  const undone: Entry[] = [];
-  const dirty = (): void => {
-    for (const e of [...done, ...undone]) e.clean = false;
-  };
   try {
     let space = checkSpace(w.fx.reader);
     for (const s of steps) {
@@ -668,57 +602,15 @@ async function run(steps: readonly Step[]): Promise<void> {
       }
       let result: WriteResult;
       if (ops !== undefined) {
-        const person = actor.actor_kind === "human";
-        result = w.fx.writer.submit(
-          w.fx.request(actor, ops, {
-            base: w.fx.base(),
-            ...(person ? { undoable: true } : {}),
-          }),
-        );
-        if (result.status === "applied") {
-          if (person) {
-            done.push({ before, after: snapshot(w), clean: true });
-            undone.length = 0;
-          } else dirty();
-        } else {
+        result = w.fx.writer.submit(w.fx.request(actor, ops, { base: w.fx.base() }));
+        if (result.status !== "applied") {
           w.areas.length = counts[0];
           w.projects.length = counts[1];
           w.tasks.length = counts[2];
         }
       } else {
-        result = w.fx.writer.submit(
-          w.fx.request(w.fx.human, [
-            s.kind === "undo"
-              ? { kind: "undo", ...(s.partial ? { partial: true } : {}) }
-              : { kind: "redo" },
-          ]),
-        );
-        if (s.kind === "undo") expectNewer(w, result);
-        if (result.status === "applied") {
-          const whole = result.conflicts.length === 0;
-          if (s.kind === "undo") {
-            const entry = done.pop();
-            if (entry !== undefined) {
-              if (whole && entry.clean) {
-                expect(backTo(snapshot(w), entry.before), "an undo gives back the space").toEqual(
-                  entry.before,
-                );
-              }
-              if (!whole) entry.clean = false;
-              undone.unshift(entry);
-            }
-          } else {
-            const entry = undone.shift();
-            if (entry !== undefined) {
-              if (entry.clean)
-                expect(backTo(snapshot(w), entry.after), "a redo gives back the commit").toEqual(
-                  entry.after,
-                );
-              done.push(entry);
-            }
-          }
-          if (!whole) dirty();
-        }
+        const kind = s.kind === "undo" ? "undo" : "redo";
+        result = w.fx.writer.submit(w.fx.request(w.fx.human, [{ kind }]));
       }
       expect(["applied", "unchanged", "conflict", "rejected"]).toContain(result.status);
       space = checkSpace(w.fx.reader, space);
@@ -755,7 +647,7 @@ async function run(steps: readonly Step[]): Promise<void> {
 }
 
 describe("[A1.5.write.folders-model] random folder operations, deletes, restores, undos and redos on two machines", () => {
-  test("one folder per owner and machine, any number of projects on one folder, a moved folder carries exactly every folder inside it, and undo gives back what was", async () => {
+  test("one folder per owner and machine, any number of projects on one folder, and a moved folder carries exactly every folder inside it", async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(step, { minLength: 5, maxLength: 40 }), async (steps) => {
         await run(steps);

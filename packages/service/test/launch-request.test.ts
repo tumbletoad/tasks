@@ -789,7 +789,7 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
   );
 
   test(
-    "one undo takes back the request and nothing else; Open again with the note writes no second one",
+    "taking the note back takes back the request and nothing else; Open again with the note writes no second one",
     { timeout: 600_000 },
     async () => {
       opened.length = 0;
@@ -810,7 +810,13 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
         [result.launch.reference, again.launch.reference],
       ]);
 
-      await call(r, "history.undo", {});
+      const base = (await r.user.call("op/call", {
+        space: r.lab.spaceId,
+        op: "space.status",
+        input: {},
+      })) as { as_of: string };
+      const number = (result.note ?? "").slice(1);
+      await call(r, "note.remove", { task: task.ref, remove: number, base: base.as_of });
       expect(await notesOf(r, task.ref)).toEqual([]);
       // The launches stay as they were, with no request to give.
       const state = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
@@ -818,7 +824,7 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
       const agent = await mcpAgent(r, folder);
       expect(await agent.getTask({ launch: result.launch.reference })).not.toContain(REQUEST);
       await agent.close();
-      // The folder is still the task's: the undo took the note only.
+      // The folder is still the task's: only the note went.
       const digest = (await r.user.call(
         "op/call",
         { space: r.lab.spaceId, op: "task.get", input: { task: task.ref } },

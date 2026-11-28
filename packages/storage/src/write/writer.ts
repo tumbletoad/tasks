@@ -81,21 +81,18 @@ import {
   machineOs,
   type FolderOs,
 } from "./folders.ts";
+import { brokenIn, groupBreaks, type GroupTouch } from "./groups.ts";
 import {
-  applyInversions,
-  appliedRows,
-  brokenIn,
-  groupBreaks,
-  newerWorkOf,
-  type Held,
-  levelsStep,
-  planInversions,
+  newerOn,
+  oppositeOf,
   readChanges,
-  redoSteps,
+  redoTarget,
+  workOnTasks,
+  stepSql,
   undoTarget,
-  type GroupTouch,
-  type Inversion,
-} from "./history.ts";
+  type StackCommit,
+  type StoredChange,
+} from "./steps.ts";
 import {
   decodeLaunch,
   detailText,
@@ -154,6 +151,7 @@ import {
   type EffortCount,
   type EffortMove,
   type FieldConflict,
+  type NewerWork,
   type InsideFolder,
   type OffList,
   type HistoryOperation,
@@ -555,7 +553,7 @@ const SQL = {
   insertCommit:
     `INSERT INTO commits (${COMMIT_COLUMNS}) VALUES ($seq, $id, $epoch, $incarnation, $at, ` +
     "$actor_kind, $principal, $author, $scope, $machine, $session, $run, $origin, $request, " +
-    "'ops', $ops, $affected, $reason, NULL, $undo_status, NULL, NULL, NULL, NULL, NULL, 0)",
+    "'ops', $ops, $affected, $reason, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0)",
   deadUndone:
     "UPDATE commits SET undo_status = 'dead' " +
     "WHERE principal_id = $principal AND undo_status = 'undone'",
@@ -564,7 +562,11 @@ const SQL = {
     `INSERT INTO commits (${COMMIT_COLUMNS}) VALUES ($seq, $id, $epoch, $incarnation, $at, ` +
     "$actor_kind, $principal, $author, $scope, $machine, $session, $run, $origin, $request, " +
     "$kind, $ops, $affected, $reason, NULL, NULL, NULL, $undo_of, $redo_of, NULL, NULL, 0)",
+  /** A person's commit joins their undo stack when it is a step (steps.ts). */
+  markStep: `UPDATE commits SET undo_status = 'done' WHERE seq = $seq AND ${stepSql("$seq")}`,
   markUndone: "UPDATE commits SET undo_status = 'undone', undone_by = $seq WHERE seq = $target",
+  /** A step that newer work stood in the way of leaves the stack. */
+  markDead: "UPDATE commits SET undo_status = 'dead' WHERE seq = $target",
   markRedone: "UPDATE commits SET undo_status = 'done', undone_by = NULL WHERE seq = $target",
   insertChange:
     "INSERT INTO changes (seq, n, op, entity, entity_id, task_id, action, field, before, after, " +
@@ -648,7 +650,6 @@ const SQL = {
     "UPDATE task_sources SET removed_at = NULL WHERE task_id = $task AND source_id = $source",
   removeLink:
     "UPDATE task_sources SET removed_at = $at WHERE task_id = $task AND source_id = $source",
-  undoOf: "SELECT undo_of FROM commits WHERE seq = $seq",
   commitSeq: "SELECT seq FROM commits WHERE id = $id",
   inTrash: `SELECT ${inTrashSql("t")} AS yes FROM tasks t WHERE t.id = $id`,
   /** A task's links to live keyed sources, removed ones too, with each source's key. */
@@ -1417,10 +1418,10 @@ export class SpaceWriter {
   ): WriteResult {
     try {
       if (request.base !== undefined) checkBase(request.base, asOf);
-      // An undo or redo is a request of its own (request.ts), guarded by provenance.
+      // An undo or redo is a request of its own (request.ts), guarded by newer work (steps.ts).
       const [first] = request.ops;
       if (first !== undefined && isHistoryOperation(first)) {
-        return this.#history(conn, request, first, space, asOf, at);
+        return this.#history(conn, request, first, space, asOf, at, wall);
       }
       const plan = this.#stage(conn, request, space, at, wall);
       const conflicts = preconditions(conn, request, plan, space);
@@ -1911,15 +1912,15 @@ export class SpaceWriter {
             from = new RowReader("commits", commit).int("seq", "seq");
           }
           const deleted = tombstones.get(target) ?? start?.deleted ?? false;
-          // Only a task removed on purpose is in the Trash (trash.ts): an undone creation is Redo's,
-          // which brings its notes and links with it. Neither a restore nor a removal takes it, and
-          // neither calls it there already: the whole request is refused, naming it.
+          // Only a task removed on purpose is in the Trash (trash.ts): one whose creation an earlier
+          // version undid is not. Neither a restore nor a removal takes it, and neither calls it
+          // there already: the whole request is refused, naming it.
           if (deleted && !tombstones.has(target)) {
             const found = conn.prepare(SQL.inTrash).get({ id: target });
             if (found?.["yes"] !== 1) {
               throw new RequestProblem({
                 code: "NOT_FOUND",
-                message: "The task's creation was undone: Redo brings it back",
+                message: "The task's creation was undone",
                 op: i,
                 field: "task",
                 reason: "creation_undone",
@@ -2088,19 +2089,6 @@ export class SpaceWriter {
             return { i, op, target: id, task: parent, touches: [], record, skip: true };
           }
           const start = rowState("notes", row, CHILD_FIELDS.notes);
-          if (op.kind === "note.restore" && !notes.has(id)) {
-            // An undo that took back the note's writing removed it: Redo brings it back with the
-            // rest of that change, which putting it back here would take away from Redo.
-            const removal = conn.prepare(SQL.undoOf).get({ seq: provenanceOf(start, "deleted") });
-            if (removal === undefined || removal["undo_of"] !== null) {
-              return problem(
-                "INVALID_TRANSITION",
-                "The note was removed by undoing its writing: Redo brings it back",
-                i,
-                "ordinal",
-              );
-            }
-          }
           notes.set(id, op.kind === "note.restore");
           const startKey = rowKey("notes", id);
           if (!starts.has(startKey)) starts.set(startKey, start);
@@ -2155,19 +2143,6 @@ export class SpaceWriter {
           const start = linkState(link);
           const r = new RowReader("sources", source);
           const key = r.optText("source_key");
-          if (op.kind === "source.relink" && !links.has(id)) {
-            // An undo that took back the link's creation removed it: Redo brings it back with the
-            // rest of that change, which a revival here would take away from Redo.
-            const removal = conn.prepare(SQL.undoOf).get({ seq: provenanceOf(start, "removed") });
-            if (removal === undefined || removal["undo_of"] !== null) {
-              return problem(
-                "INVALID_TRANSITION",
-                "The link was removed by undoing its creation: Redo brings it back",
-                i,
-                "source",
-              );
-            }
-          }
           const active =
             (lifecycles.get(parent) ?? tasks.get(parent)?.lifecycle ?? "active") === "active";
           if (op.kind === "source.relink" && key !== null && active) {
@@ -2594,14 +2569,7 @@ export class SpaceWriter {
             target: op.key,
             task: null,
             touches,
-            // A change of the levels records the write of the list it found, which its Undo and
-            // Redo are guarded by when the change leaves the list's value as it was (history.ts).
-            record: levels
-              ? {
-                  ...inputOf(op),
-                  list_from: start === undefined ? 0 : provenanceOf(start, "value"),
-                }
-              : inputOf(op),
+            record: inputOf(op),
             ...(movers === undefined ? {} : { movers }),
           };
         }
@@ -2864,6 +2832,7 @@ export class SpaceWriter {
     plan: Plan,
     asOf: AsOf,
     at: number,
+    history?: { kind: "undo" | "redo"; target: StackCommit },
   ): WriteResult {
     const seq = nextSeq(space);
     const run: Execution = {
@@ -2881,7 +2850,7 @@ export class SpaceWriter {
     let changes: ChangeRow[];
     conn.exec("SAVEPOINT exec");
     try {
-      conn.prepare(SQL.insertCommit).run({
+      conn.prepare(history === undefined ? SQL.insertCommit : SQL.insertHistoryCommit).run({
         seq,
         id: commitId,
         epoch: space.authority.epoch,
@@ -2901,7 +2870,13 @@ export class SpaceWriter {
         ),
         affected: plan.affected,
         reason: request.reason ?? null,
-        undo_status: request.undoable === true ? "done" : null,
+        ...(history === undefined
+          ? {}
+          : {
+              kind: history.kind,
+              undo_of: history.kind === "undo" ? history.target.seq : null,
+              redo_of: history.kind === "redo" ? history.target.seq : null,
+            }),
       });
       for (const staged of plan.ops) apply(conn, run, staged);
       groupsKept(conn, run);
@@ -2917,7 +2892,15 @@ export class SpaceWriter {
         if (changes.some((c) => c.entity !== "launches" && c.entity !== "runs")) {
           conn.prepare(SQL.outbox).run({ key: "*", seq });
         }
-        if (request.undoable === true) {
+        if (history !== undefined) {
+          const target = history.target.seq;
+          if (history.kind === "undo") conn.prepare(SQL.markUndone).run({ target, seq });
+          else conn.prepare(SQL.markRedone).run({ target });
+        } else if (
+          actor.actor_kind === "human" &&
+          conn.prepare(SQL.markStep).run({ seq }).changes > 0
+        ) {
+          // A new step ends what could be redone.
           conn.prepare(SQL.deadUndone).run({ principal: actor.principal_id });
         }
         conn.prepare(SQL.lastSeq).run({ seq });
@@ -2932,6 +2915,24 @@ export class SpaceWriter {
       if (error instanceof RequestProblem) rollBack(conn);
       throw error;
     }
+    if (history !== undefined) {
+      // Already as it was before: the step leaves the stack, as one that newer work kept.
+      if (changes.length === 0) return kept(conn, space, history.target, [], [], asOf);
+      return {
+        ...accepted("applied", { ...asOf, seq }),
+        commit: commitId,
+        results: [
+          {
+            i: 0,
+            status: "updated",
+            id: history.target.id,
+            version: seq,
+            ...stepTasks(conn, space, changes),
+          },
+        ],
+        conflicts: run.conflicts,
+      };
+    }
     if (changes.length === 0) {
       return { ...accepted("unchanged", asOf), results: opResults(conn, run, []) };
     }
@@ -2944,19 +2945,16 @@ export class SpaceWriter {
   }
 
   // ------------------------------------------------------------------------------------------
-  // Undo and redo (A1 3.10.1, 3.10.4)
+  // Undo and redo (A1 3.10.1)
 
   /**
-   * An undo or a redo. The principal's stack decides what it inverts: an undo the change rows of
-   * the `done` commit applied last, a redo the rows of an `undone` commit's undo. History
-   * (history.ts) plans the inversion under each field's provenance, applies it and checks the rules
-   * across rows on what it made, and one commit of kind `undo` or `redo` records it and moves the
-   * stack: the undone commit becomes `undone` with `undone_by`, a redone one `done` again. An undo
-   * is all or nothing unless it is partial, and a partial undo leaves the stack even when it
-   * inverts nothing, so the next undo reaches the commit below. A redo is all or nothing: it tries
-   * the undone commits oldest first and redoes the first that the checks let through. Those before
-   * it are passed over and stay undone, for the next redo to try again. The commit itself never
-   * joins the stack.
+   * An undo or a redo: the principal's newest step, or the one it undid last, taken back with the
+   * ordinary operations that write back what the step's last application, or its undo, changed
+   * (steps.ts). They are staged and applied as any request's, without a base: what guards them is
+   * that every field they write still holds what the step wrote (steps.ts newerOn). When a change
+   * since stands in the way, or the opposite cannot be applied, nothing changes, the step leaves
+   * the stack so the next undo or redo reaches the one before it, and the answer, accepted so a
+   * resend replays it, names who or why.
    */
   #history(
     conn: Connection,
@@ -2965,9 +2963,9 @@ export class SpaceWriter {
     space: SpaceRow,
     asOf: AsOf,
     at: number,
+    wall: number,
   ): WriteResult {
-    const { actor } = request;
-    const principal = actor.principal_id;
+    const principal = request.actor.principal_id;
     const undo = op.kind === "undo";
     // A named change the space does not have (a typo, or one from before a backup was restored
     // over the space): it is said as such, never as a change that is no longer the newest.
@@ -2977,182 +2975,41 @@ export class SpaceWriter {
     ) {
       problem("NOT_FOUND", "The space has no change with this ID", 0, "commit");
     }
-    const newest = undo ? undoTarget(conn, principal) : undefined;
-    const stack = undo ? (newest === undefined ? [] : [newest]) : redoSteps(conn, principal);
-    if (stack.length === 0) {
+    const target = undo ? undoTarget(conn, principal) : redoTarget(conn, principal);
+    if (target === undefined) {
       return undo
         ? problem("NOTHING_TO_UNDO", "Nothing of yours is left to undo here", 0)
         : problem("NOTHING_TO_REDO", "Nothing of yours is left to redo here", 0);
     }
     // A caller that names the commit it means (a toast's own undo) never moves another.
-    const steps = op.commit === undefined ? stack : stack.filter((s) => s.id === op.commit);
-    if (steps.length === 0) {
+    if (op.commit !== undefined && op.commit !== target.id) {
       problem(
         "INVALID_TRANSITION",
         undo
           ? "That change is not your newest one: read again"
-          : "That change is not one you undid: read again",
+          : "That change is not the one you undid last: read again",
         0,
         "commit",
       );
     }
-    const partial = op.kind === "undo" && op.partial === true;
-    const seq = nextSeq(space);
-    /** The steps a redo passed over, and why: each row and field once. */
-    const passed: Id<"op">[] = [];
-    const why = new Map<string, FieldConflict>();
-    const held: Held[] = [];
-    for (const target of steps) {
-      // The rows an undo inverts are the commit's own; a redo inverts its undo's.
-      const inverted = undo ? target.seq : must(target.undoneBy, "An undone commit names its undo");
-      if (inverted < space.undoFloorSeq) {
-        problem("UNDO_BEFORE_FLOOR", "The change is older than the space's last format change", 0);
-      }
-      const inverting = readChanges(conn, inverted);
-      const levels = levelsStep(conn, target.seq);
-      const plan = planInversions(conn, inverting, {
-        creating: new Set([target.seq]),
-        refPrefix: space.refPrefix,
-        partial,
-        op: 0,
-        principal,
-        // A redo applies the step's undo again; an undo takes back each row as the step, or a redo
-        // of it, last wrote it.
-        applied: undo ? appliedRows(conn, target.seq) : () => inverted,
-        ...(levels === undefined ? {} : { levels }),
-      });
-      const pass = (): void => {
-        passed.push(target.id);
-        if (plan.conflicts.length > 0) held.push(plan);
-        for (const c of plan.conflicts) {
-          const key = `${c.entity}|${c.id}|${c.field}`;
-          if (!why.has(key)) why.set(key, c);
-        }
-      };
-      if (plan.conflicts.length > 0 && !partial) {
-        pass();
-        continue;
-      }
-      const commitId = newId("op", this.#random);
-      let tasks: { tasks?: string[]; task_count?: number; lifecycles?: string[] } = {};
-      const wrote = { list: false, tasks: 0 };
-      conn.exec("SAVEPOINT exec");
-      try {
-        // The inversions first: the rules across rows are decided on the state they make (A1 3.10).
-        const applied = applyInversions(conn, plan, {
-          seq,
-          at,
-          principal,
-          op: 0,
-          refPrefix: space.refPrefix,
-          partial,
-          owners: !undo,
-        });
-        if (applied === undefined) {
-          rollBack(conn);
-          pass();
-          continue;
-        }
-        conn.prepare(SQL.insertHistoryCommit).run({
-          seq,
-          id: commitId,
-          epoch: space.authority.epoch,
-          incarnation: space.authority.incarnation,
-          at,
-          actor_kind: actor.actor_kind,
-          principal,
-          author: actor.author_id ?? principal,
-          scope: actor.scope_id,
-          machine: actor.machine_id,
-          session: actor.session_id ?? null,
-          run: actor.run_id ?? null,
-          origin: actor.origin,
-          request: request.request_id,
-          kind: op.kind,
-          ops: opsText([
-            {
-              v: 1,
-              op: op.kind,
-              target: target.id,
-              input: { commit: target.id, ...(partial ? { partial: true } : {}) },
-            },
-          ]),
-          affected: affectedBy(plan.inversions),
-          reason: request.reason ?? null,
-          undo_of: undo ? target.seq : null,
-          redo_of: undo ? null : target.seq,
-        });
-        const changes = applied.changes.map((c) => ({ ...c, action: "set" as const }));
-        insertChanges(conn, seq, changes);
-        if (request.intent !== undefined) {
-          tasks = changedTasks(conn, space.refPrefix, changes);
-          // The tasks it checked off or reopened: only those are a checkbox's to undo again.
-          const turned = changes.filter((c) => c.entity === "tasks" && c.field === "lifecycle");
-          if (turned.length > 0)
-            tasks.lifecycles = changedTasks(conn, space.refPrefix, turned).tasks;
-        }
-        wrote.list = changes.some((c) => c.entity === "preferences");
-        wrote.tasks = changes.filter((c) => c.entity === "tasks" && c.field === "effort").length;
-        // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
-        // its children's, a restore brings them back, a field set back rewrites its document.
-        if (this.#search) indexChanges(conn, seq, changes);
-        for (const task of new Set([...applied.tasks, ...projectionTasks(conn, changes)])) {
-          conn.prepare(SQL.outbox).run({ key: task, seq });
-        }
-        if (applied.changes.length > 0) conn.prepare(SQL.outbox).run({ key: "*", seq });
-        if (undo) conn.prepare(SQL.markUndone).run({ target: target.seq, seq });
-        else conn.prepare(SQL.markRedone).run({ target: target.seq });
-        conn.prepare(SQL.lastSeq).run({ seq });
-        conn.exec("RELEASE exec");
-      } catch (error) {
-        if (error instanceof RequestProblem) rollBack(conn);
-        throw error;
-      }
-      const conflicts = undo ? plan.conflicts : [...why.values()];
-      if (undo && conflicts.length > 0) held.push(plan);
-      return {
-        ...accepted("applied", { ...asOf, seq }),
-        commit: commitId,
-        results: [
-          {
-            i: 0,
-            status: "updated",
-            id: target.id,
-            version: seq,
-            ...tasks,
-            // A change of the effort levels, undone or redone: the tasks it leaves on a size the
-            // levels lack are said, never a reason to refuse.
-            ...(levels === undefined ? {} : { levels: wrote, ...offList(conn, space.refPrefix) }),
-          },
-        ],
-        // What a partial undo left as others set it, or why a redo passed over the steps before
-        // the one it redid (WriteResult.conflicts).
-        conflicts,
-        ...(passed.length === 0 ? {} : { passed }),
-        ...(held.length === 0 ? {} : { newer: newerWorkOf(conn, held, principal) }),
-      };
+    if (target.applied < space.undoFloorSeq) {
+      problem("UNDO_BEFORE_FLOOR", "The change is older than the space's last format change", 0);
     }
-    // Nothing could be applied. The refusal names the oldest step it tried, which a caller that
-    // named none (Ctrl+Z) passes to Undo the rest.
-    const first = must(steps[0], "An undo or redo tries a step");
-    const conflicts = [...why.values()];
-    return {
-      ...refused(
-        "conflict",
-        asOf,
-        {
-          code: "UNDO_CONFLICT",
-          message: undo
-            ? "Someone changed it since: undo the rest, or keep theirs"
-            : "Someone changed what it would change since: nothing was redone",
-        },
-        conflicts,
-      ),
-      target: first.id,
-      ...(levelsStep(conn, first.seq) === undefined ? {} : { levels: true }),
-      ...(undo ? {} : { passed }),
-      newer: newerWorkOf(conn, held, principal),
-    };
+    const answered = readChanges(conn, target.applied);
+    const newer = newerOn(conn, answered, target.applied, principal, space.refPrefix);
+    if (newer !== undefined) return kept(conn, space, target, answered, newer, asOf);
+    // A request of its own, with no base (request.ts): the guard above is newer work.
+    const checked: CheckedRequest = { ...request, ops: oppositeOf(conn, answered) };
+    try {
+      const plan = this.#stage(conn, checked, space, at, wall);
+      return this.#execute(conn, checked, space, plan, asOf, at, { kind: op.kind, target });
+    } catch (error) {
+      // An opposite that cannot be applied now, such as on a task in the Trash or a group an
+      // earlier build removed, never holds the stack: the step is kept and leaves it.
+      if (!(error instanceof RequestProblem)) throw error;
+      const work = workOnTasks(conn, answered, target.applied, principal, space.refPrefix);
+      return kept(conn, space, target, answered, work, asOf, error.problem.message);
+    }
   }
 
   /** Closes the connection. Safe to call twice. */
@@ -3570,6 +3427,57 @@ function changedTasks(
   return { tasks: refs, task_count: ids.length };
 }
 
+/** The tasks an undo or redo changed, and those whose lifecycle it changed: a checkbox's own. */
+function stepTasks(
+  conn: Connection,
+  space: SpaceRow,
+  changes: readonly {
+    readonly taskId: string | null;
+    readonly entity: string;
+    readonly field: string | null;
+  }[],
+): Pick<OpResult, "tasks" | "task_count" | "lifecycles"> {
+  const turned = changes.filter((c) => c.entity === "tasks" && c.field === "lifecycle");
+  return {
+    ...changedTasks(conn, space.refPrefix, changes),
+    ...(turned.length === 0
+      ? {}
+      : { lifecycles: changedTasks(conn, space.refPrefix, turned).tasks }),
+  };
+}
+
+/**
+ * An undo or redo that changed nothing: a change since stood in the way of the step (`newer` says
+ * whose), it could not be applied (`why`), or it was already as it was before. The step leaves the stack in the same transaction as the
+ * answer's receipt, so a resend replays this answer and never reaches the step below.
+ */
+function kept(
+  conn: Connection,
+  space: SpaceRow,
+  target: StackCommit,
+  answered: readonly StoredChange[],
+  newer: NewerWork["work"],
+  asOf: AsOf,
+  why?: string,
+): WriteResult {
+  conn.prepare(SQL.markDead).run({ target: target.seq });
+  return {
+    ...accepted("unchanged", asOf),
+    results: [
+      {
+        i: 0,
+        status: "unchanged",
+        id: target.id,
+        version: asOf.seq,
+        ...stepTasks(conn, space, answered),
+      },
+    ],
+    kept: true,
+    ...(why === undefined ? {} : { why }),
+    ...(newer.length === 0 ? {} : { newer: { work: newer } }),
+  };
+}
+
 /**
  * The logical fields of task `id` that operation `i` changed (OpResult.fields), a change of its
  * grouping as `area` and `project`, the columns that moved: a new position alone moves neither.
@@ -3596,17 +3504,6 @@ function taskFields(changes: readonly ChangeRow[], i: number, id: string): strin
 
 // ---------------------------------------------------------------------------------------------
 // Checks and staging helpers
-
-/**
- * The tasks an inversion moves, completes, reopens, archives or tombstones: `commits.affected`
- * for A6's burst brake, which counts tasks rather than fields.
- */
-function affectedBy(inversions: readonly Inversion[]): number {
-  const counted = new Set(["grouping", "lifecycle", "deleted"]);
-  return new Set(
-    inversions.filter((i) => i.entity === "tasks" && counted.has(i.field)).map((i) => i.id),
-  ).size;
-}
 
 function nextSeq(space: SpaceRow): number {
   const seq = space.lastSeq + 1;
@@ -3935,7 +3832,7 @@ function readTask(conn: Connection, id: Id<"t">): TaskRow {
 }
 
 /**
- * The group rules (history.ts groupBreaks) on the state the request's operations made together:
+ * The group rules (groups.ts groupBreaks) on the state the request's operations made together:
  * a deleted project holds no live task and no live folder, and a task is in its project's area.
  * One operation keeps them; a request that breaks one through several is refused at the operation
  * that wrote the row in question. A pair the space held broken before the request stays its own:
@@ -4856,7 +4753,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
           conn.prepare(SQL.folderPath).run({ id: found.id, path: op.path });
           wrote(run, i, "folders", found.id, staged.task, ["path"]);
           // A moved folder takes the folders inside it that moved with it along, the rest of each
-          // path as it is: one change, one undo. The others inside it stay, and the answer says
+          // path as it is, in one change. The others inside it stay, and the answer says
           // which did which as this transaction found them, whatever the caller expected.
           const carried = new Set(op.carry ?? []);
           const along: InsideFolder[] = [];
@@ -4908,8 +4805,8 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
 /**
  * A change of the effort levels (A1 3.16): the list, then each task on a moved size, through the
  * field path. Where no list was stored, the list as it read goes in first, as a row from before any
- * commit: the list its Undo stores, or the one its Undo finds unchanged, which a space's opening
- * keeps, never a missing row the opening fills with a write of its own.
+ * commit, which a space's opening keeps, never a missing row the opening fills with a write of its
+ * own.
  */
 function changeLevels(
   conn: Connection,

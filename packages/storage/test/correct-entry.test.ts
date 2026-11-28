@@ -39,9 +39,7 @@ describe("[A1.entry.correct] the person corrects a note's or a log entry's words
 
   type Who = "human" | "codex";
   const send = (who: Who, ops: Operation[], extra: Partial<WriteRequest> = {}): WriteResult =>
-    fx.writer.submit(
-      fx.request(fx[who], ops, { ...(who === "human" ? { undoable: true } : {}), ...extra }),
-    );
+    fx.writer.submit(fx.request(fx[who], ops, extra));
   const applied = (result: WriteResult): WriteResult => {
     expectStatus(result, "applied");
     return result;
@@ -118,21 +116,13 @@ describe("[A1.entry.correct] the person corrects a note's or a log entry's words
     expect(missing.error).toMatchObject({ code: "NOT_FOUND", field: "ordinal" });
   });
 
-  test("undo puts the words before back with their provenance, and redo the person's", () => {
+  test("undo puts the words before back, and redo the person's", () => {
     const task = written();
-    const created = entry("notes", task, 1)["created_seq"];
-    const done = applied(correct("note.patch", task, "Drafted the reply"));
-    const provenance = () =>
-      fx.reader
-        .prepare("SELECT json_extract(fp, '$.body') AS p FROM notes WHERE task_id = $task")
-        .get({ task })?.["p"];
-    expect(provenance()).toBe(done.seq);
+    applied(correct("note.patch", task, "Drafted the reply"));
     applied(undo());
     expect(entry("notes", task, 1)["body"]).toBe("Drafted teh reply");
-    expect(provenance()).toBe(created);
     applied(redo());
     expect(entry("notes", task, 1)["body"]).toBe("Drafted the reply");
-    expect(provenance()).toBe(done.seq);
   });
 
   test("a task in the Trash takes no correction", () => {

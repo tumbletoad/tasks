@@ -21,26 +21,28 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Activity lists every change an agent or a routine made, newest first, and one they make while it
   is open without a reload. A line names a task by its title now, and says that a text changed,
   not what it says.
-- Undo and redo never replace someone else's work that came in between, also when that work set a
-  value and set it back. Redo passes over a change of yours it cannot bring back and redoes the
-  next one. The change it passed over stays, and a later Redo tries it again.
-- Working alone, you can undo everything you did, one step at a time, and redo it all, and the
-  order of your lists comes back with it. Your own changes never hold back your Undo or Redo, a run
-  you queued or stopped and a session you opened included; what a run did since, from its start
-  on, is the run's work.
+- Undo and Redo take back what is a nuisance to put back by hand: checking off and reopening,
+  moving to the Trash and restoring, a whole change from the Trash too, removing a note and putting
+  it back, the words of a title, a summary, a context, a note or a log entry, a move out of the
+  Inbox or into it, a task's first area, setting questions aside, a new project or area, and
+  archiving or unarchiving one. Anything else you change back by doing it again, and Undo passes
+  over it, in the page and at the command line alike.
+- Undo and Redo never write over a change made since: not where what your change wrote was changed
+  again, by anyone, you included, not where a wrap-up was written since a finish, and never by
+  taking a task or a note out of sight that someone else worked on since. What counts is what a
+  person sees, never when it was written. Then nothing changes, you are told who changed what, and
+  that change of yours leaves your Undo and Redo, so the next one reaches the change before it. So
+  does one that can no longer be applied, such as to a task in the Trash, which says why. A run you
+  queued or stopped and a session you opened are yours; what a run did since, from its start on, is
+  the run's work.
 - Your undo history survives a restart and is shared by your windows and the command line.
-- In the page, Undo and Redo are for what is a nuisance to put back by hand: checking off and
-  reopening, moving to the Trash and restoring, removing a note or a source and putting it back, a
-  title, the words of a summary, a context, a note or a log entry, setting questions aside,
-  restoring a whole change from the Trash, a change of the effort levels, and what the page has no
-  other way to take back: a new project, area or unarchive, a move out of the Inbox, and a task's
-  first area. Any other change saves without Undo, and from then on that tab offers no Undo or Redo
-  of what came before it, so Undo never takes back something you did not expect. A change made
-  elsewhere since is never overwritten: Undo then says who changed what. An Undo or Redo that got no
-  answer keeps its step to try again. Limit: the page offers only what that tab did since it opened;
-  `ttasks undo` reaches the rest.
-- Checking off a task completes it at once and can be undone. Neither Undo nor Redo checks a task
-  off or archives it again when someone else added to it or changed it since.
+- In the page, a change Undo is not for saves without Undo, and from then on that tab offers no
+  Undo or Redo of what came before it, so Undo never takes back something you did not expect. An
+  Undo or Redo that got no answer keeps its step to try again. Limit: the page offers only what
+  that tab did since it opened; `ttasks undo` reaches the rest.
+- Checking off a task completes it at once and can be undone. Undoing a reopen finishes the task
+  again at the time it was finished, with its outcome. Neither Undo nor Redo checks a task off or
+  archives it again when someone else added to it or changed it since.
 - Wrapping up a task keeps its context, notes, activity and sources. Reopening keeps the earlier
   outcome and what was learned.
 - Moving a task to the Trash deletes nothing: its notes, log, sources and history stay, nothing
@@ -50,7 +52,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   since.
 - A task in the Trash changes only by Restore, and by a change of the effort levels that moves its
   size: its card is for reading, and what you typed for it stays as you typed it. A task whose
-  creation you undid is not in the Trash: Redo brings it back whole.
+  creation an earlier version undid is not in the Trash.
 - A restored task never takes a source back from a task that took it meanwhile: captures go on
   there, and the restored task lists the source as removed, saying where captures go.
 - A run working on a task you move to the Trash goes on, and stays on the Agents page with its Stop
@@ -151,8 +153,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   levels stored when it opens, so each such version offers the same levels for it.
 - Agents read your effort levels, with their times and descriptions, and never change them.
 - Renaming, merging or removing an effort level moves the tasks on it in the same change, finished
-  ones and those in the Trash too, and one Undo takes the whole change back. A level that tasks
-  hold is never dropped without saying where they go. Your other settings are not on Undo.
+  ones and those in the Trash too. A level that tasks hold is never dropped without saying where
+  they go. Settings are not on Undo: you change them back by changing them again.
 - Settings changes a space's effort levels only when this version can keep them: a list a newer
   version wrote, or one it cannot read, shows there read-only and is never written over.
 
@@ -186,7 +188,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   told.
 - When you move a folder on disk and then give its project or task the new folder, every folder
   TTasks knows inside the old one that is there in the new one moves along, other projects' and
-  tasks' included, as one undo step on that machine. TTasks takes it as a move only when the old
+  tasks' included, as one change on that machine. TTasks takes it as a move only when the old
   folder is gone and the new one is it: the same folder, or a copy whose marker names the owner and
   that was not already there as the owner's earlier folder. Otherwise nothing else moves, and you
   are told which folders stayed and why. TTasks itself never moves files.
@@ -200,9 +202,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 - TTasks leaves a small `.ttasks-marker` folder in each project's and task's folder, holding only
   which space and projects or tasks it belongs to, and ignored by Git. Clearing the folder in
   TTasks removes it. Limit: it can keep naming a project that left the folder another way, such as
-  by a delete or an undo; TTasks's own record says who has the folder now.
+  by a delete; TTasks's own record says who has the folder now.
 - TTasks never makes a folder for an agent. At the command line, `--create` makes it when you ask,
-  and in the page's folder chooser "Make the folder" does; an undo leaves it on disk.
+  and in the page's folder chooser "Make the folder" does; Undo of the new project leaves it on
+  disk.
 - The page's folder chooser lists the names of folders on this machine to you alone, never to an
   agent's tools. It reads no file, apart from a Git checkout's settings for its repository's name. A
   folder that answers slowly is listed as far as it read in two seconds, and a very large one up to
@@ -337,7 +340,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   space, so an old brief never names a newer launch.
 - What you type before Open never goes on a command line or into a link. It is saved on the task
   at the click, as your request to that agent, before anything starts: a launch that fails or a
-  TTasks that stops does not lose it, and one undo takes it back. The agent reads it with the task.
+  TTasks that stops does not lose it, and you take it back as any note. The agent reads it with the
+  task.
   When Open gets no answer, pressing it again, also after a reload or in another tab of the
   browser, saves the words once and opens the agent once. The browser keeps that for a day.
 - TTasks never changes another app's trust or approval settings.
@@ -499,15 +503,12 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Undo and Restore do not unsend a mail, reverse a commit or undo anything done outside TTasks.
 - Undo steps back through your own changes. A change by an agent or a script is not on it, and
   nothing from before the last upgrade that changed the data format can be undone.
-- Undo keeps a task you queued a run on: the run holds your request. Undo and Redo do not link a
-  ticket to a task again while another open task holds it, also when you linked both yourself.
-- After an Undo or Redo of a change of the effort levels, a task someone gave a size in between
-  can be on a size that is no level any more. TTasks says which tasks, and they keep that size
-  until you give them a level. While someone else's later change holds the levels, Undo leaves
-  that change of yours as it is.
-- After an Undo, a task can share its place in a list with one that arrived meanwhile. The two keep
-  a fixed order, and a task then placed before or after one of them through the tools can land
-  beside the pair instead of between them.
+- A new project or area whose creation you undid is archived, not gone: it is under Archived, and
+  a new one of the same name in the same place finds it.
+- Undo of a task's first area puts it back without an area at the end of that list, not at its
+  earlier place.
+- Undoing a reopen finishes the task again as yours; its wrap-up dates from its finish when it has
+  outcome words, else from the Undo, as a dropped task's drop does.
 - One copy of a space at a time holds for one TTasks service. Two services with homes of their own
   on one machine each keep their own list of spaces, and each can open a copy of the same space.
 - Two copies of one space that both take changes, such as a restored copy and its original used
@@ -580,7 +581,7 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A field edit that could not be saved is kept in this browser. Another browser does not have it,
   clearing the browser's data for the page loses it, and a browser whose storage is blocked or full
   keeps it only until the page is reloaded or closed.
-- Undo, redo and restore compare folders by the text they were given in, not by what is on disk.
+- Restore compares folders by the text they were given in, not by what is on disk.
   One folder reached by two spellings, such as through a link, can end up on two projects that
   way.
 - A folder on a drive or share that does not answer is refused after a few seconds, but the look

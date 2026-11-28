@@ -84,7 +84,7 @@ describe("[A3.3.7.actors.script-undo-note] ttasks undo after a script's change",
     async () => {
       expect((await tasks(["add", "Fixture second task"])).stdout).toBe("Added M-2 to Mira\n");
       expect((await tasks(["add", "Fixture third task"])).stdout).toBe("Added M-3 to Mira\n");
-      expect((await tasks(["set", "M-2", "priority=1"])).code).toBe(0);
+      expect((await tasks(["set", "M-2", "title=Fixture second task, renamed"])).code).toBe(0);
       // A script (no terminal) completes M-3: the actor `script`, on no undo stack.
       const scripted = await tasks(["done", "M-3", "--outcome", "Fixture script outcome"], false);
       expect(scripted.code).toBe(0);
@@ -167,7 +167,7 @@ describe("[A3.3.7.actors.script-undo-note] ttasks undo after a script's change",
       expect(JSON.parse(retried.stdout)).toMatchObject({ replayed: true, commit: named });
 
       // --yes undoes without asking.
-      expect((await tasks(["set", "M-2", "priority=1"])).code).toBe(0);
+      expect((await tasks(["set", "M-2", "title=Fixture second task, again"])).code).toBe(0);
       expect((await tasks(["add", "Fixture script task"], false)).code).toBe(0);
       const yes = await tasks(["undo", "--yes"]);
       expect(yes.code, yes.stderr).toBe(0);
@@ -177,7 +177,7 @@ describe("[A3.3.7.actors.script-undo-note] ttasks undo after a script's change",
       );
 
       // A change of the person's after the script's: its undo has nothing more to say.
-      expect((await tasks(["set", "M-2", "priority=2"])).code).toBe(0);
+      expect((await tasks(["set", "M-2", "title=Fixture second task, last"])).code).toBe(0);
       const last = await tasks(["undo", "--json"]);
       expect(last.code).toBe(0);
       const result = JSON.parse(last.stdout) as Record<string, unknown>;

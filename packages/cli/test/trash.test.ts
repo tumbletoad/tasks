@@ -2,7 +2,6 @@
 // shell. The CLI in this process against a service in this process; fixture text and temporary
 // folders only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { EXIT_CODES } from "@ttasks/contracts";
 import { contractWorld, type ContractWorld } from "@ttasks/service/test/contract";
 import { runMain, type Ran } from "./cli-harness.ts";
 
@@ -93,27 +92,6 @@ describe("[A3.trash.cli] ttasks delete, restore and trash", () => {
         /\nIn the Trash: the user moved it there at \S+\. Tell the user; do not add it again or restore it\.\n/u,
       );
       expect(shown.stdout).not.toContain("ttasks restore");
-    },
-    LONG,
-  );
-
-  test(
-    "a task whose creation was undone is named as that by restore and delete, alone or beside another, and nothing moves",
-    async () => {
-      const live = await add("Fixture beside an undone one");
-      const undone = await add("Fixture undone at the terminal");
-      expect((await person(["undo", "--yes"])).code).toBe(0);
-      for (const args of [
-        ["restore", undone],
-        ["delete", undone],
-        ["delete", live, undone],
-      ]) {
-        const refused = await person(args);
-        expect(refused.code, args.join(" ")).toBe(EXIT_CODES.not_found);
-        expect(refused.stderr, args.join(" ")).toContain(`${undone}'s creation was undone`);
-        expect(refused.stderr, args.join(" ")).toContain("ttasks redo");
-      }
-      expect((await person(["show", live])).stdout).not.toContain("In the Trash");
     },
     LONG,
   );

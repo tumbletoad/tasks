@@ -8,7 +8,6 @@ import { EFFORT_LEVELS, EFFORT_NAME_MAX, EFFORT_SCALE_MAX, EXIT_CODES } from "@t
 import { contractWorld, type ContractWorld } from "@ttasks/service/test/contract";
 import { openSpaceConnection } from "@ttasks/storage";
 import { checkedDriver } from "@ttasks/testkit";
-import { render } from "../src/output.ts";
 import { runMain, type Ran } from "./cli-harness.ts";
 
 let w: ContractWorld & { root: string };
@@ -269,10 +268,6 @@ describe("[A3.3.4.prefs.move] ttasks prefs set --move", () => {
     expect(moved.code).toBe(0);
     expect(moved.stdout).toContain("1 task moved from Later to Soon.\n");
     expect((await tasks(["find", "effort:Soon"])).stdout).toContain(ref);
-    const undone = await tasks(["undo"]);
-    expect(undone.stdout).toMatch(/^Undid your change to the effort levels and 1 task in /u);
-    expect(await levels()).toEqual(before);
-    expect((await tasks(["redo"])).code).toBe(0);
     const dropped = before.filter((name) => name !== "Later").join(",");
     const off = await tasks(["prefs", "set", "tasks.effort_scale", dropped, "--move", "Soon="]);
     expect(off.code).toBe(0);
@@ -370,49 +365,5 @@ describe("[A3.3.4.prefs.move-preview] ttasks prefs set --dry-run is the write's 
       expect(ran.stdout.startsWith("Would set"), flag.join(" ")).toBe(!wrote);
       if (wrote) expect((await tasks(["prefs", "set", "tasks.effort_scale", before])).code).toBe(0);
     }
-  });
-});
-
-describe("[A3.3.4.prefs.undo-said] ttasks undo says what an undo of a change of levels wrote", () => {
-  test("a rename whose task a script sized since: the levels go back, and the line says so", async () => {
-    const read = await tasks(["prefs", "get", "tasks.effort_scale", "--json"]);
-    const names =
-      (JSON.parse(read.stdout) as { prefs: { value: { key: string }[] }[] }).prefs[0]?.value.map(
-        (level) => level.key,
-      ) ?? [];
-    const [first = "", second = ""] = names;
-    const added = await tasks(["add", "Fixture renamed size", "--effort", first, "--json"]);
-    const ref = (JSON.parse(added.stdout) as { tasks: { ref: string }[] }).tasks[0]?.ref ?? "";
-    const renamed = names.map((name) => (name === first ? "Renamed" : name)).join(",");
-    const set = ["prefs", "set", "tasks.effort_scale", renamed, "--move", `${first}=Renamed`];
-    expect((await tasks(set)).code).toBe(0);
-    expect((await tasks(["set", ref, `effort=${second}`], false)).code).toBe(0);
-    const partial = await tasks(["undo", "--partial", "--yes"]);
-    expect(partial.stdout).toMatch(/^Undid your change to the effort levels in /u);
-  });
-
-  test("a swap of two sizes that keeps the list: undo and redo say the sizes", async () => {
-    const read = await tasks(["prefs", "get", "tasks.effort_scale", "--json"]);
-    const names =
-      (JSON.parse(read.stdout) as { prefs: { value: { key: string }[] }[] }).prefs[0]?.value.map(
-        (level) => level.key,
-      ) ?? [];
-    const [first = "", second = ""] = names;
-    expect((await tasks(["add", "Fixture swapped size", "--effort", first])).code).toBe(0);
-    const swap = ["--move", `${first}=${second}`, "--move", `${second}=${first}`];
-    expect(
-      (await tasks(["prefs", "set", "tasks.effort_scale", names.join(","), ...swap])).code,
-    ).toBe(0);
-    expect((await tasks(["undo", "--yes"])).stdout).toMatch(
-      /^Put back the sizes? of \d+ tasks? in /u,
-    );
-    expect((await tasks(["redo"])).stdout).toMatch(/^Changed the sizes? of \d+ tasks? again in /u);
-  });
-
-  test("a redo of an undo that wrote nothing says nothing was redone", () => {
-    const redo = { result: "redone", commit: "op_l", tasks: [], task_count: 0, as_of: "1.2.x" };
-    expect(render("history.redo", { ...redo, levels: { list: false, tasks: 0 } }, "Mira")).toBe(
-      "Nothing of your change to the effort levels was left to redo in Mira\n",
-    );
   });
 });

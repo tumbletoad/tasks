@@ -680,7 +680,7 @@
     },
     {
       "id": "A1.5.write.groups",
-      "title": "Areas and projects through the write path: create with a slug from the title, numbered when taken, in one request with a task filed into the new project; rename and other fields with a base, keeping the ID, slug and tasks; a project moved to another area with all its tasks, its undo a conflict when a task was filed into it since; archive and unarchive, idempotent, keeping the group's tasks as they are; delete refused while a project holds tasks, delete and restore of an empty one; undo and redo of each, and an undo of a create kept by another's task",
+      "title": "Areas and projects through the write path: create with a slug from the title, numbered when taken, in one request with a task filed into the new project; rename and other fields with a base, keeping the ID, slug and tasks; a project moved to another area with all its tasks; archive and unarchive, idempotent, keeping the group's tasks as they are; delete refused while a project holds tasks, delete and restore of an empty one; an undo of a create archives the group with what is in it, and its redo and an unarchive's undo",
       "source": "A1 3.6, A1 3.10",
       "owner": "M4",
       "kind": "ci",
@@ -688,7 +688,7 @@
     },
     {
       "id": "A1.5.write.folders",
-      "title": "Folders through the write path: a project created with its folder in one commit and one undo step, the path stored exactly as sent; a moved folder, with a base, carrying every folder inside it, other projects' and their tasks' too, in one undo step, a task's moved folder carrying a project's inside it, and a change without carry changing the owner's folder alone; any number of live projects on one folder, a move landing a project on another's folder and one sharing the moved folder moving with it; a project's delete removing its folders on every machine and its restore from the Trash bringing them back beside a project that took one meanwhile; an undo of a delete, and the undo and redo of a folder change or a clear, standing beside another project's folder on the same folder; a folder changed to one inside or around the old one moves no task folder, a deleted task's moves with a real move; a stale base meets a folder the move would carry or a folder cleared since as a conflict; a deleted project never holds a live folder or task, through undo, redo, a task's restore or several operations of one request; one request changes an owner's folder once; a task's folder set, changed and cleared; paths the request's machine cannot name refused",
+      "title": "Folders through the write path: a project created with its folder in one commit whose undo archives it and keeps its folder, the path stored exactly as sent; a moved folder, with a base, carrying every folder inside it, other projects' and their tasks' too, in one change, a task's moved folder carrying a project's inside it, and a change without carry changing the owner's folder alone; any number of live projects on one folder, a move landing a project on another's folder and one sharing the moved folder moving with it; a project's delete removing its folders on every machine and its restore from the Trash bringing them back beside a project that took one meanwhile; a folder changed to one inside or around the old one moves no task folder, a deleted task's moves with a real move; a stale base meets a folder the move would carry or a folder cleared since as a conflict; a deleted project never holds a live folder or task, through a task's restore or several operations of one request; one request changes an owner's folder once; a task's folder set, changed and cleared; paths the request's machine cannot name refused",
       "source": "A1 3.6, A1 3.10, A1 3.15",
       "owner": "M4",
       "kind": "ci",
@@ -696,7 +696,7 @@
     },
     {
       "id": "A1.5.write.folders-model",
-      "title": "Property tests over random folder sets and clears, task moves, deletes and restores, project moves, deletes and restores, undos and redos on a Linux and a Windows machine, with an agent's changes between: one live folder per owner and machine, any number of projects on one folder, a deleted project holds no live folder or task and a task is in its project's area, a project's or a task's moved folder carries exactly every other folder inside the old one on that machine, and a change without carry the owner's folder alone, by an oracle of the test's own, an undo applied whole gives back the space as it was and its redo the space the commit left, and the history invariants hold",
+      "title": "Property tests over random folder sets and clears, task moves, deletes and restores, project moves, deletes and restores, undos and redos between them on a Linux and a Windows machine, with an agent's changes between: one live folder per owner and machine, any number of projects on one folder, a deleted project holds no live folder or task and a task is in its project's area, a project's or a task's moved folder carries exactly every other folder inside the old one on that machine, and a change without carry the owner's folder alone, by an oracle of the test's own, and the history invariants hold",
       "source": "A1 3.10, A1 3.15",
       "owner": "M4",
       "kind": "ci",
@@ -768,7 +768,7 @@
     },
     {
       "id": "A1.3.15.folders.request-path",
-      "title": "Folders through the request path of a running service: a project made for a folder in one change, named after its folder when no name is given; the folder moved on disk with a task's folder and another project's inside it moving along, undone and redone in one step each; a folder given another while it is still there leaving the folders inside it, named in the answer; the repository's name in the project list without its address; a folder added again for a project of that name and area answered as that project, a project's folder cleared; a folder inside the TTasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; a retry that replays after the project was renamed; a new project named by several drafts or by calls at once made once; an agent's task filed into an area and project it names first, created with it; a project's folder that does not answer refused in time, holding up no other call of the space, and its late answer writing nothing",
+      "title": "Folders through the request path of a running service: a project made for a folder in one change, named after its folder when no name is given; the folder moved on disk with a task's folder and another project's inside it moving along in one change; a folder given another while it is still there leaving the folders inside it, named in the answer; the repository's name in the project list without its address; a folder added again for a project of that name and area answered as that project, a project's folder cleared; a folder inside the TTasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; a retry that replays after the project was renamed; a new project named by several drafts or by calls at once made once; an agent's task filed into an area and project it names first, created with it; a project's folder that does not answer refused in time, holding up no other call of the space, and its late answer writing nothing",
       "source": "A1 3.15, A3 3.4.5",
       "owner": "M4",
       "kind": "ci",
@@ -824,7 +824,7 @@
     },
     {
       "id": "A1.5.search.index",
-      "title": "The search tables are written in the commit: each document holds A1 3.12's fields, a commit that changes no indexed text leaves its documents and seqs alone, a tombstone removes a task's documents and its children's and a restore brings them back, an undo and a redo write the documents their inversions reach, a space without the tables writes as before, and under random writes, tombstones, restores, entity and text redactions, learnings and area renames the index equals a fresh rebuild with no stray text and passes the FTS integrity check",
+      "title": "The search tables are written in the commit: each document holds A1 3.12's fields, a commit that changes no indexed text leaves its documents and seqs alone, a tombstone removes a task's documents and its children's and a restore brings them back, an undo and a redo write the documents they reach, a space without the tables writes as before, and under random writes, tombstones, restores, entity and text redactions, learnings and area renames the index equals a fresh rebuild with no stray text and passes the FTS integrity check",
       "source": "A1 3.12, A1 5, A7 3.10 M3.05",
       "owner": "M3",
       "kind": "ci",
@@ -2082,31 +2082,15 @@
     },
     {
       "id": "A1.5.history.undo-redo",
-      "title": "Undo and redo through the write path, fixed scenarios: two edits of one field, then two undos and two redos, match each step; overlapping field sets (C1 summary and due, C2 due and status) undo C2, then C1, then redo both; repeated cycles keep passing while fv only grows and a stale base still conflicts; a foreign edit gives UNDO_CONFLICT with the value written, the value now and who changed it when, and a partial undo leaves it and lists it; a create is undone by a tombstone that the creating commit's own rows pass and another actor's child row blocks, and redone by a restore that a taken place refuses; a wrap-up's learnings are undone and redone, and an undo never leaves a task more than 20 live learnings; one stack per human, a new undoable action ends the redo, the named commit, nothing to undo or redo, the undo floor, and retries replay",
+      "title": "Undo and redo through the write path: a check-off and a reopen (its undo keeps the completion time and the outcome, a dropped task's too, and a wrap-up with a learning alone), the Trash and a restore of a whole change (its undo trashes only what it restored), a removed note, a title, a note's and a log entry's words, out of the Inbox with its status, a first filing, a filing into an area the person's change right before made, a dismissal of questions, a new area and an unarchive are each undone and redone by the ordinary operation that writes back what the commit changed; a priority, an ordinary move, a wrap-up of a finished task, a mixed request and an agent's change are no step, and a step an earlier version stored of such a kind is passed over; a field changed again since, by the person too (a filing moved on, a title changed with a priority), keeps the step, as does someone else's newer work, and a step whose task an agent moved to the Trash is kept with why and who; a kept step leaves the stack, names who, replays on a resend, and the next undo reaches the step below; an outcome an agent wrote since a drop or a check-off keeps the finish; for every kept action, the action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly, a new project to archived; a check-off is not redone over an agent's log entry, nor a note's removal over words edited since; a named commit that is not the newest leaves the stack alone",
       "source": "A1 3.5, A1 3.10, A1 3.10.1, A1 3.10.4, A1 5, A7 3.10 M3.02",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
-      "id": "A1.5.history.property",
-      "title": "ABA property test against a reference model: two humans and two agents edit, complete, reopen, remove, restore, note, link to sources and create areas and projects, undo and redo, and the human runs some tasks (a run's commits never join a stack or end a redo, and a run keeps its task's create); undo takes the step applied last, redo redoes the oldest undone step its guards and the rules across rows let through and passes over and keeps the others (newer work on a task it would hide, a key or slug taken, a row or owner out of sight), undo and redo never change a field whose provenance moved, undo then redo restores the values the commit wrote, physical versions only grow, every field holds its provenance commit's after-value, and fv and fp name the latest change row. With source keys: drafts of overlapping keys in every dedupe mode, check-offs, reopens, explicit links of one or two tasks, creates of several tasks with one key, archives, wrap-ups that add and remove learnings, deletes and restores, retries, jumps past the window, and two humans' undo and redo interleaved with agents' reopens; an inversion changes only fields that held the write it inverts and sets back their before-values, a key gains a second active holder only by a lifecycle or an explicit link or restore, a draft matches as A1 3.6 says with a finish taken from the lifecycle's provenance, a refusal writes nothing, no request ends in a storage error, and the search index equals a fresh rebuild",
-      "source": "A1 3.5, A1 3.6, A1 3.10, A1 3.10.1, A1 5, A7 3.10 M3.02",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.5.history.alone",
-      "title": "Property test of one person working alone: they create, file, move and reorder tasks, edit them and add to their context and log, check them off, reopen, archive, move them to the Trash and back, add notes and take them back and put them back, set folders, link tickets and unlink and relink them, make, rename, move, archive and remove areas and projects, often several in one request, and queue runs, stop them while queued and open sessions in between and between their undos and redos; then they undo until nothing is left and redo until nothing is left. Every Undo and Redo applies whole, each Undo gives back the space before the step it took back and each Redo the space after it, every position and the order of every list included, the rules every write keeps hold after every write, and every way this once failed runs first as a fixed case",
-      "source": "A1 3.10, A1 3.10.1",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A5.source.detach",
-      "title": "In the page, a source's Remove takes it off the task and the toast's Undo brings it back; after a reload the Removed line lists it with who removed it and Put back; put back while another task holds its key brings it back as context with a link to where its captures go",
+      "title": "In the page, a source's Remove takes it off the task, with no Undo; after a reload the Removed line lists it with who removed it and Put back; put back while another task holds its key brings it back as context with a link to where its captures go",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2120,14 +2104,14 @@
     },
     {
       "id": "A1.source.detach",
-      "title": "A source detached from a task, by the writer: the link is removed and the source and every other link stay, so a capture of its key makes new work; put back brings back the same pair with its role and position; an unkeyed, a duplicate-URL and a title-only source by their ID; a stale link version or base is a conflict and a repeat is unchanged; a finished task takes a detach or put back alone and a mixed request is refused whole; put back while another active task holds the key links the source as plain context and leaves the capture there; an agent detaches; undo and redo of both, an undo that would make a second holder refused; a link whose creation was undone is not put back",
+      "title": "A source detached from a task, by the writer: the link is removed and the source and every other link stay, so a capture of its key makes new work; put back brings back the same pair with its role and position; an unkeyed, a duplicate-URL and a title-only source by their ID; a stale link version or base is a conflict and a repeat is unchanged; a finished task takes a detach or put back alone and a mixed request is refused whole; put back while another active task holds the key links the source as plain context and leaves the capture there; an agent detaches; neither is a step of Undo",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A3.note.retract",
-      "title": "A note taken back through real requests: by its number, as 3 or n3; the digest, a sections read, a read by reference and search skip it from then on, and the person's read lists it with who took it back; put back, it is read and found again with its number and author; a note to agents taken back is no instruction and an agent's read lists nothing taken back; a repeat is no change, a stale base a conflict, a missing number not found and the task untouched; an agent's shell and a script are refused in words; a note whose writing was undone is Redo's",
+      "title": "A note taken back through real requests: by its number, as 3 or n3; the digest, a sections read, a read by reference and search skip it from then on, and the person's read lists it with who took it back; put back, it is read and found again with its number and author; a note to agents taken back is no instruction and an agent's read lists nothing taken back; a repeat is no change, a stale base a conflict, a missing number not found and the task untouched; an agent's shell and a script are refused in words",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2211,35 +2195,35 @@
     },
     {
       "id": "A3.entry.correct",
-      "title": "The person corrects an agent's note and log entry through real requests: every read, the agent's too, gives the corrected words marked as corrected by the person, with the agent still the author; Undo puts the words before back without the mark and Redo the correction; the same words are no change, a stale base is a conflict and a removed note is not found; an agent's shell is refused in words",
+      "title": "The person corrects an agent's note and log entry through real requests: every read, the agent's too, gives the corrected words marked as corrected by the person, with the agent still the author; Undo puts the words before back without the mark; the same words are no change, a stale base is a conflict and a removed note is not found; an agent's shell is refused in words",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A1.entry.correct",
-      "title": "The person corrects a note's or a log entry's words, by the writer: an agent's note and log entry take them and keep their number, author and time, and the words before stay in history; the same words are unchanged; a correction needs a base and is a conflict after a change of that entry, not of another; a removed note and a number with no entry are not found; undo and redo move between the two texts with their provenance; a task in the Trash takes none; the search index follows",
+      "title": "The person corrects a note's or a log entry's words, by the writer: an agent's note and log entry take them and keep their number, author and time, and the words before stay in history; the same words are unchanged; a correction needs a base and is a conflict after a change of that entry, not of another; a removed note and a number with no entry are not found; undo and redo move between the two texts; a task in the Trash takes none; the search index follows",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A1.note.retract",
-      "title": "A note retracted from a task, by the writer: the row stays with its number, author and audience and put back brings back the same note; the task and its other notes are untouched; an agent's note too; a repeat is unchanged; a base is needed and a stale one is a conflict; a number the task has no note under is not found and leaves the task as it was; undo and redo take a retraction back and forth as the same change; a note whose writing was undone is Redo's, not put back; a task in the Trash takes none; the search index drops and regains the note",
+      "title": "A note retracted from a task, by the writer: the row stays with its number, author and audience and put back brings back the same note; the task and its other notes are untouched; an agent's note too; a repeat is unchanged; a base is needed and a stale one is a conflict; a number the task has no note under is not found and leaves the task as it was; undo and redo take a retraction and a put back back and forth; a task in the Trash takes none; the search index drops and regains the note",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A1.trash.write",
-      "title": "A task moved to the Trash and restored, by the writer: a second delete and a restore of a live task are no change and name the task; a delete with a base from before a restore is a conflict and nothing moves; a restore of one change brings back only the tasks whose tombstone it still holds, and a change the space does not have restores nothing; a delete undone and redone is still its first change; a key another active task took meanwhile stays with it and the restored task's link stays removed, also for two restores in one request and in two, while a finished task keeps its link; a task whose project or area is gone comes back in the area or the Inbox",
+      "title": "A task moved to the Trash and restored, by the writer: a second delete and a restore of a live task are no change and name the task; a delete with a base from before a restore is a conflict and nothing moves; a restore of one change brings back only the tasks whose tombstone it still holds, and a change the space does not have restores nothing; a delete undone and redone is in the Trash as the Redo's change; a task whose creation an earlier version undid is neither restored nor removed; a key another active task took meanwhile stays with it and the restored task's link stays removed, also for two restores in one request and in two, while a finished task keeps its link; a task whose project or area is gone comes back in the area or the Inbox",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A3.trash",
-      "title": "The Trash through real requests: delete moves tasks as one change and the Trash groups them by it with who, when, why and how many; a reference or title words find a task on any page and pages go on without a gap; an undone creation is not in the Trash and Redo brings it back whole; restoring a change brings back what is still there from it and names the rest; a restore says where each task is back and a key another task took stays there; a retry replays and a stale base changes nothing; an agent's shell is refused with words that say removal is the user's and an agent writing to a removed task is told who removed it; a removed task with a terminal agent is among those still worked on",
+      "title": "The Trash through real requests: delete moves tasks as one change and the Trash groups them by it with who, when, why and how many; a reference or title words find a task on any page and pages go on without a gap; a delete undone and redone is in the Trash as the Redo's change; restoring a change brings back what is still there from it and names the rest; a restore says where each task is back and a key another task took stays there; a retry replays and a stale base changes nothing; an agent's shell is refused with words that say removal is the user's and an agent writing to a removed task is told who removed it; a removed task with a terminal agent is among those still worked on",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2350,16 +2334,8 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A1.5.history.dedupe",
-      "title": "Undo and redo meet dedupe by source key: an undo of a request whose draft matched takes back its entries and linked sources on the match and never the match; an undone create holds no key; a redo that would take a key's source row is a conflict naming that row; a redo that would make a second active holder of a key, decided on the state it makes, is a conflict that names the standing holder's link (a shared source in either order of two humans' redos, and a source the redo brings back), or each holder's lifecycle when the redo brings back every holder itself, and writes nothing; a key that was double before is not the restore's doing; a partial inversion leaves out a broken key's restores and applies the rest; a finished holder never blocks; an undo or redo never shares a request with a create, and dedupe's start state sees what they left; an undone check-off is no finish and a finish set back keeps its own instant, an archived task's by its provenance; a retry after an undo replays; a link an undo removed comes back only with its link version",
-      "source": "A1 3.5, A1 3.6, A1 3.8, A1 3.10, A1 3.10.1, A7 3.10 M3.02",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A1.5.history.runs",
-      "title": "Undo and redo beside run records: a run's commits are never on an undo stack, an undo or redo that names one is INVALID_TRANSITION with its receipt, a run commit between an undo and its redo keeps the redo, no request holds a run operation beside a task operation or an undo, and the history engine refuses a run's change rows whole; a run of the task in any state keeps its create from being undone, named by its table and state with who created it, and a partial undo keeps the task with its run; a task its create's undo tombstoned takes no run; an undo and a redo never write a run, so a run redaction detached stays detached; the person's own queue and Stop of a run (queued straight to cancelled, or a working run to cancelling) are theirs and keep no Undo or Redo from closing the task, while every other move of the run (its start, progress, answer, end and the settlement after a Stop) does, named as the run, by what the change is and so in history written before this build too, also through the run machine and the request path; another person's Stop does too, named as that person; a session bound to the task keeps no create; a space at 0.2 without the runs table undoes and redoes as before",
+      "title": "Undo and redo beside runs, through the request path: the person's own queue and Stop of a run are theirs and keep no Undo from checking the task off again, while a run that started does, named as the run; a Redo of a removal after a run on the task started and answered keeps the task, named as the run",
       "source": "A1 3.6, A1 3.10, A1 3.10.1, A1 3.11.4, A4 3.11, A7 3.13 M6.01",
       "owner": "M6",
       "kind": "ci",
@@ -2367,7 +2343,7 @@
     },
     {
       "id": "A3.3.2.3.history",
-      "title": "history.undo and history.redo through the request path: user-only (an agent gets forbidden, rule user_only), the tasks a change changed back, UNDO_CONFLICT as conflict with the value written, the value now and the value undo restores, a partial undo's unresolved fields, NOTHING_TO_UNDO and NOTHING_TO_REDO as not_found, and ttasks undo and ttasks redo on the CLI",
+      "title": "history.undo and history.redo through the request path: user-only (an agent gets forbidden, rule user_only), the tasks a change changed back, a change someone changed since kept with who changed it, in an answer a retry replays, and the next undo reaching the change before it, a priority that neither ends a redo nor is undone, NOTHING_TO_UNDO and NOTHING_TO_REDO as not_found, and ttasks undo and ttasks redo on the CLI",
       "source": "A1 3.10.1, A3 3.2.3, A3 3.5, A5 3.12, A7 3.10 M3.02",
       "owner": "M3",
       "kind": "ci",
@@ -2614,7 +2590,7 @@
     },
     {
       "id": "A3.answers.replay",
-      "title": "A retry with the same request ID gets what the write did: a create of a group that exists, sent again after Undo removed the group, still changes nothing and names the group by its ID; a project made for a folder another project has, sent again, makes no second one and names the other again; a folder change of a project or of a task names the folders that moved along again, a project's name as data",
+      "title": "A retry with the same request ID gets what the write did: a create of a group that exists, sent again after Undo archived the group, still changes nothing and names the group; a project made for a folder another project has, sent again, makes no second one and names the other again; a folder change of a project or of a task names the folders that moved along again, a project's name as data",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2929,7 +2905,7 @@
     },
     {
       "id": "A4.5.routes.request-task",
-      "title": "A launch's request is task data from the click: it is on the task after a service stopped right after the click; a get_task the agent never got marks nothing and a launch past its day loses nothing; a second click that got an earlier launch keeps its words as a plain note, also on a retry; every agent that reads the pointer gets the request, and one that loads the task sees it as history with its launch; one undo takes back the request and nothing else, and Open again with the note writes no second one; a refused click (no route, no folder, no marker) writes nothing; a read by the pointer that fails before its whole answer is ready marks nothing, and the next one marks it Connected",
+      "title": "A launch's request is task data from the click: it is on the task after a service stopped right after the click; a get_task the agent never got marks nothing and a launch past its day loses nothing; a second click that got an earlier launch keeps its words as a plain note, also on a retry; every agent that reads the pointer gets the request, and one that loads the task sees it as history with its launch; taking the note back takes back the request and nothing else, and Open again with the note writes no second one; a refused click (no route, no folder, no marker) writes nothing; a read by the pointer that fails before its whole answer is ready marks nothing, and the next one marks it Connected",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3869,7 +3845,7 @@
     },
     {
       "id": "A5.3.5.service.waiting-undo",
-      "title": "A wait an undo brings back keeps the day it began: a task waiting since Monday, taken out of waiting on Wednesday and the change undone on Thursday still shows Monday, and a task made waiting still shows its creation",
+      "title": "A wait an undo brings back keeps the day it began: a waiting task in the Inbox since Monday, moved to Open on Wednesday and the move undone on Thursday still shows Monday, and a task made waiting still shows its creation",
       "source": "A5 3.5, A5 3.6, A1 3.10",
       "owner": "M5",
       "kind": "ci",
@@ -4188,7 +4164,7 @@
     },
     {
       "id": "A1.3.16.prefs.effort-moves-refused",
-      "title": "A change of the effort levels that drops a size tasks hold without a move is refused with the holders' counts, as are a move from an unknown size, to a size off the new list or twice, moves on another preference, another preference on the undo stack, and a stale base before its moves are checked",
+      "title": "A change of the effort levels that drops a size tasks hold without a move is refused with the holders' counts, as are a move from an unknown size, to a size off the new list or twice, moves on another preference, and a stale base before its moves are checked",
       "source": "A1 3.16",
       "owner": "M3",
       "kind": "ci",
@@ -4196,41 +4172,9 @@
     },
     {
       "id": "A5.3.12.web.undo-levels",
-      "title": "The page's Undo of a change of the effort levels says the levels were put back and names tasks left off them, leaves a checked row checked, and a refused one offers Undo the rest",
+      "title": "Beside a change of the effort levels, which is no step of Undo: a checked row's box undoes the check-off that checked it, and a size kept unsent or by an earlier build is chosen again",
       "source": "A5 3.12",
       "owner": "M5",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.3.10.history.effort-levels",
-      "title": "Undo and Redo of a change of the effort levels invert the rows its commit recorded: the list and every moved task go back, a task that reached a size the old levels lack keeps it and is named, a moved task changed since keeps its size under Undo the rest, and while someone else's change holds the list none of the step comes back",
-      "source": "A1 3.10.1, A1 3.16",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.3.10.history.effort-stored-rows",
-      "title": "A change of levels with a move over a list of names an earlier build stored, or over a reset it left, undone, leaves the stored row exactly as it was, its version included, and the moved task back on its size",
-      "source": "A1 3.10.1, A1 3.16",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.3.10.history.effort-first",
-      "title": "The first change of levels on a space that never stored them needs a base, records the levels it read, and its Undo stores those, which reopening the space keeps, so Redo applies after a reopen; of two people who read no stored levels the second conflicts",
-      "source": "A1 3.10.1, A1 3.16",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.3.16.prefs.undo-other",
-      "title": "A change of a preference other than the effort levels is no step on the undo stack: Undo after it takes back the step before it",
-      "source": "A1 3.10.1, A1 3.16",
-      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -4268,7 +4212,7 @@
     },
     {
       "id": "A1.3.16.prefs.effort-stored",
-      "title": "A space with no levels, or a reset left by an earlier build, stores the five default levels when it opens for writing, once, by the space's system actor and on no undo stack, so Undo leaves them; a reset stores them again; a list of names stays as it is at an open, and its untouched export saved back changes nothing and stays the default; the system stores only the default and only where nothing is stored",
+      "title": "A space with no levels, or a reset left by an earlier build, stores the five default levels when it opens for writing, once, by the space's system actor and on no undo stack, so Undo of the person's change before it leaves them; a reset stores them again; a list of names stays as it is at an open, and its untouched export saved back changes nothing and stays the default; the system stores only the default and only where nothing is stored",
       "source": "A1 3.16",
       "owner": "M3",
       "kind": "ci",
@@ -4576,7 +4520,7 @@
     },
     {
       "id": "A5.3.5.service.finished",
-      "title": "The read of finished tasks against a real space: 2,500 tasks finished in one month all reachable once, newest first by finish time then ID, the checked-off list and the rest apart and together, the feed's compact row with the area's ID, version and creation time, a dropped task at the time it was dropped, a deleted one left out, a task finished or reopened between pages neither repeating nor skipping a row, a foreign cursor refused, the feed's row of a finished task carrying its finish time, and each row's ending: the outcome's first line without its Markdown mark and cut to 300 characters, why a task was dropped, and none for an outcome a reopen left behind",
+      "title": "The read of finished tasks against a real space: 2,500 tasks finished in one month all reachable once, newest first by finish time then ID, the checked-off list and the rest apart and together, the feed's compact row with the area's ID, version and creation time, a finished task an undone reopen puts back at the time it was finished, a deleted one left out, a task finished or reopened between pages neither repeating nor skipping a row, a foreign cursor refused, the feed's row of a finished task carrying its finish time, and each row's ending: the outcome's first line without its Markdown mark and cut to 300 characters, why a task was dropped, and none for an outcome a reopen left behind",
       "source": "A5 3.5, A5 3.15, A7 3.12 M5.05",
       "owner": "M5",
       "kind": "ci",
@@ -5012,22 +4956,6 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A5.3.12.e2e.undo-levels",
-      "title": "In Chromium and Firefox against the real service: a change of the effort levels made in Settings is undone from the task's card with Ctrl+Z, which puts back the levels and the task's size and says so, and redone with Ctrl+Shift+Z; a size the service did not take is not sent again once the levels change, and its line asks to choose again",
-      "source": "A5 3.11, A5 3.12",
-      "owner": "M5",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A5.3.12.e2e.undo-levels-rest",
-      "title": "In Chromium and Firefox against the real service: an Undo of a change of the effort levels an agent built on is refused and offers the rest, which puts the levels back and says that the agent's task kept its newer size, at 1,440 and 390 px",
-      "source": "A5 3.12",
-      "owner": "M5",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A5.3.7.e2e.effort-scales",
       "title": "In Chromium and Firefox against the real service: a space with one level and one with ten (four of the longest name a person sets) offer each level whole in the expanded task's control, also a longer name an earlier build let be set, on one line where the names fit and wrapping where they do not; resting on a level by mouse or keyboard focus shows its time and line, as its description says them; the largest chosen there holds after a reload at 1,440 and 390 px with nothing scrolling sideways, and the collapsed row marks it with the whole name, its time and line in its tip, hidden at 390 px",
       "source": "A5 3.6, A5 3.7",
@@ -5061,7 +4989,7 @@
     },
     {
       "id": "A5.3.7.e2e.levels-grid",
-      "title": "In Chromium and Firefox against the real service, at 1,440 and 390 px, by keyboard and by mouse: add a level, rename one that tasks hold (the tasks follow), change a time, reorder, remove one with a move, Undo from the toast, each still so after a reload; axe finds nothing and nothing scrolls sideways",
+      "title": "In Chromium and Firefox against the real service, at 1,440 and 390 px, by keyboard and by mouse: add a level, rename one that tasks hold (the tasks follow), change a time, reorder, remove one with a move, with no Undo on its toast, each still so after a reload; axe finds nothing and nothing scrolls sideways",
       "source": "A5 3.7",
       "owner": "M5",
       "kind": "ci",
@@ -5768,7 +5696,7 @@
     },
     {
       "id": "A5.3.12.web.undo",
-      "title": "A check-off shows its row checked for a moment, then it leaves and never shows open again while its write is on its way, and a click on its box during the hold undoes it by its commit, the row unchecked at once and kept until the feed brings it back; an undo or redo refused because someone changed it since says who changed which tasks and offers no action, except Undo the rest for the tab's own step where only some fields conflict (never on a page that does not know the step), and nothing to undo, a newer change first and an unknown commit each change nothing; Reopen sends its base and its toast's Undo names its commit, and a refused Reopen says so with no action",
+      "title": "A check-off shows its row checked for a moment, then it leaves and never shows open again while its write is on its way, and a click on its box during the hold undoes it by its commit, the row unchecked at once and kept until the feed brings it back; an undo or redo kept because someone changed it since says who changed which tasks and offers no action, and nothing to undo, a newer change first and an unknown commit each change nothing; Reopen sends its base and its toast's Undo names its commit, and a refused Reopen says so with no action",
       "source": "A5 3.12, A1 3.10.1, A7 3.12 M5.08",
       "owner": "M5",
       "kind": "ci",
@@ -5784,7 +5712,7 @@
     },
     {
       "id": "A7.3.12.m5-08.e2e.conflict",
-      "title": "In Chromium and Firefox against the real service: an undo of a title an agent changed since is refused, says who changed the task, offers no action and leaves the agent's title; an agent's change while the date popover is open shows there, and the person's pick then keeps their value under the field until Apply mine saves it",
+      "title": "In Chromium and Firefox against the real service: an undo of a title an agent changed since is kept, says who changed the task, offers no action and leaves the agent's title; an agent's change while the date popover is open shows there, and the person's pick then keeps their value under the field until Apply mine saves it",
       "source": "A5 3.11, A5 3.12, A5 3.15, A7 3.12 M5.08",
       "owner": "M5",
       "kind": "ci",
@@ -5808,7 +5736,7 @@
     },
     {
       "id": "A5.3.12.e2e.redo-passed-over",
-      "title": "In Chromium and Firefox against the real service: after a move to the Trash and a title are undone in the page, a Redo that would move the task to the Trash again after an agent added a note to it is refused, says who changed which task, offers no action and keeps the task; the next Redo brings back the title",
+      "title": "In Chromium and Firefox against the real service: after a move to the Trash and a title are undone in the page, a Redo that would move the task to the Trash again after an agent added a note to it is kept, says who changed which task, offers no action and keeps the task; the next Redo brings back the title",
       "source": "A1 3.10.1, A5 3.12",
       "owner": "M5",
       "kind": "ci",
@@ -6239,16 +6167,8 @@
     },
     {
       "id": "A3.3.4.prefs.moves-said",
-      "title": "What a change of levels and its undo say is what they wrote: a dry run answers as the write and writes nothing, the write's receipt by lookup keeps its moves, an undo says whether it wrote the list and how many sizes, and names only the tasks it checked off or reopened",
+      "title": "What a change of levels says is what it wrote: a dry run answers as the write and writes nothing, the write's receipt by lookup keeps its moves, and an undo after it names only the tasks it checked off or reopened",
       "source": "A1 3.10.1, A3 3.4.11",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A3.3.4.prefs.undo-said",
-      "title": "ttasks undo says what an undo of a change of levels wrote: after a script sized the renamed level's task, a partial undo says the levels went back",
-      "source": "A3 3.4.11",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6416,7 +6336,7 @@
     },
     {
       "id": "A7.3.12.e2e.folder-shared",
-      "title": "In Chromium: New project on a folder another project has says \"Also the folder of\" that project, adds the new project on the same folder, and its own folder dialog names the other project and not itself; added before the chooser could look, the toast says whose folder it also is; at 1,440 and 390 px with no sideways scroll, axe clean, saved for review; Ctrl+Z takes the new project back and the other keeps its folder",
+      "title": "In Chromium: New project on a folder another project has says \"Also the folder of\" that project, adds the new project on the same folder, and its own folder dialog names the other project and not itself; added before the chooser could look, the toast says whose folder it also is; at 1,440 and 390 px with no sideways scroll, axe clean, saved for review; Ctrl+Z takes the new project back to Archived, where it keeps its folder, and the other keeps its folder",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -6592,7 +6512,7 @@
     },
     {
       "id": "A5.archived.e2e.address",
-      "title": "In Chromium and Firefox against the real service: a project without an area, moved into an area and the move undone while its page is open, and old links to either address, each show the project's open task, take the project's present address without a step for Back, and the top field says where a plain capture goes (the Inbox without an area, the area and project with one) and files it there",
+      "title": "In Chromium and Firefox against the real service: a project without an area, moved into an area while its page is open, and an old link to its former address, each show the project's open task, take the project's present address without a step for Back, and the top field says where a plain capture goes (the Inbox without an area, the area and project with one) and files it there",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

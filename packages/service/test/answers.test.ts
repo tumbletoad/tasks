@@ -107,10 +107,6 @@ async function decidedBefore(
     request_id: id,
     actor,
     ...(history ? {} : { base: await asOf() }),
-    // A person's change joins the undo stack as the service sends it, but a preference set.
-    ...(actor.actor_kind === "human" && !history && request.entry !== "prefs.manage"
-      ? { undoable: true }
-      : {}),
     intent: { entry: request.entry, input: { ...request.input, request_id: id } },
     ...(request.record === undefined ? {} : { answer: request.record }),
     ops: request.ops,
@@ -120,7 +116,7 @@ async function decidedBefore(
 }
 
 describe("[A3.answers.replay] a retry gets what the write did", () => {
-  test("a create of a group that exists, sent again after Undo removed the group, still changes nothing", async () => {
+  test("a create of a group that exists, sent again after Undo archived the group, still changes nothing", async () => {
     const made = await call(
       "group.manage",
       { action: "create", path: "Shed", request_id: rid() },
@@ -132,16 +128,15 @@ describe("[A3.answers.replay] a retry gets what the write did", () => {
     expect(first).toMatchObject({ result: "no_change", group: { name: "Shed" } });
     await call("history.undo", { request_id: rid() }, USER);
     expect(await groupNames()).not.toContain("Shed");
-    // The answer was lost on the way, so the agent sends the same request again. The group it
-    // named is gone, so the answer names it by its ID alone.
+    // The answer was lost on the way, so the agent sends the same request again: it replays, and
+    // names the group, archived now, as it is.
     const retry = await call("group.manage", again);
     const group = first["group"] as Json;
     expect(retry).toMatchObject({
       result: "no_change",
       replayed: true,
-      group: { kind: group["kind"], id: group["id"] },
+      group: { kind: group["kind"], id: group["id"], name: "Shed" },
     });
-    expect((retry["group"] as Json)["name"]).toBeUndefined();
     expect(await groupNames()).not.toContain("Shed");
   });
 

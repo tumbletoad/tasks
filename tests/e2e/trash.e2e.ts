@@ -148,14 +148,20 @@ test.describe("[A5.trash.e2e] A task taken away and brought back in the page", (
   }) => {
     const tag = test.info().project.name;
     const space = world.mira.id;
-    const ref = await addTask(world, { title: `Write to the landlord (${tag})`, area: "home" });
     await watchViolations(page);
-    await openTask(page, world, ref);
+    await signIn(page, world, `/s/${space}/trash`);
+    await showsSpace(page, world.mira.name);
     const words = `Ask whether the deposit came back (${tag})`;
-    await rowOf(page, ref).locator('[data-part="composer"]').fill(words);
-    // The task's creation is undone: the space does not have it now.
-    await world.op(space, "history.undo", {});
-    await page.goto(`${world.origin}/s/${space}/trash`);
+    // Words typed for a task of a newer copy of the space than the one open, such as before an
+    // older backup was claimed: this copy does not have the task.
+    const gone = `t_${"0".repeat(25)}${tag === "firefox" ? "1" : "2"}`;
+    await page.evaluate(
+      ([name, value]) => {
+        localStorage.setItem(name, value);
+      },
+      [`${PRODUCT_ID}.draft.${space}.${gone}`, words] as const,
+    );
+    await page.reload();
     await showsSpace(page, world.mira.name);
     const unsent = page.locator('[data-part="unsent-words"]');
     await expect(unsent).toContainText(words, { timeout: SLOW_MS });

@@ -8,12 +8,7 @@
 import { cpSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import {
-  FolderManageResult,
-  HistoryUndoResult,
-  TaskAddResult,
-  TaskUpdateResult,
-} from "@ttasks/contracts";
+import { FolderManageResult, TaskAddResult, TaskUpdateResult } from "@ttasks/contracts";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { readFolders, readLaunchFolder } from "../src/ops/read.ts";
@@ -121,7 +116,7 @@ afterAll(async () => {
 }, 60_000);
 
 describe("[A1.3.15.folders.request-path] folders through the request path of a running service", () => {
-  test("a project made for a folder, the folder moved with a task's and another project's inside it, then undone and redone", async () => {
+  test("a project made for a folder, and the folder moved with a task's and another project's inside it", async () => {
     const user = await session("cli-interactive");
     const portal = folder("portal");
     const web = folder("portal", "web");
@@ -139,7 +134,7 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
     expect(added).toMatchObject({ result: "created", owner: { kind: "project", name: "Portal" } });
     expect(added.folder?.endsWith(`${sep}portal`)).toBe(true);
     const project = added.owner.id;
-    // The project and its folder are one change: one undo would take both.
+    // The project and its folder are one change.
     const [task] = TaskAddResult.parse(
       await call(user, "task.add", {
         tasks: [{ title: "Fix the header", area: "Client work", project: "Portal" }],
@@ -193,19 +188,6 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
     expect((await readFolders(reader(), "project", inner.owner.id)).map((f) => f.path)).toEqual([
       `${changed.folder ?? ""}${s}api`,
     ]);
-    expect((await readFolders(reader(), "project", project)).map((f) => f.path)).toEqual([
-      changed.folder,
-    ]);
-
-    // One undo puts both back; the redo moves both again.
-    HistoryUndoResult.parse(await call(user, "history.undo", { request_id: rid() }));
-    expect((await readFolders(reader(), "project", project)).map((f) => f.path)).toEqual([
-      added.folder,
-    ]);
-    expect(await readLaunchFolder(reader(), taskId, machine)).toMatchObject({
-      folder: { path: own.folder },
-    });
-    await call(user, "history.redo", { request_id: rid() });
     expect((await readFolders(reader(), "project", project)).map((f) => f.path)).toEqual([
       changed.folder,
     ]);
