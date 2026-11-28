@@ -5314,7 +5314,7 @@
     },
     {
       "id": "A7.3.12.m5-11.e2e.theme",
-      "title": "In Chromium and Firefox against the real service: a theme chosen in Settings shows at once, a second tab follows live, a fresh browser profile is served in it from the first paint with nothing in its storage, and a theme an older build kept in a browser is handed to this machine once",
+      "title": "In Chromium and Firefox against the real service: a theme chosen in Settings shows at once, a second tab follows live, a fresh browser profile is served in it from the first paint",
       "source": "A7 3.12 M5.11",
       "owner": "M5",
       "kind": "ci",
