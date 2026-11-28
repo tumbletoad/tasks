@@ -4,8 +4,8 @@
 //
 // | Task state                             | Host view                                    |
 // | Active, in Inbox                       | Inbox                                        |
-// | Active, under an area                  | The area view                                |
-// | Active, no area, not in Inbox          | Its status view (Open for another status)    |
+// | Active, under a project                | That project's screen                        |
+// | Active, in no project, not in Inbox    | Its status view (Open for another status)    |
 // | Completed, or archived (dropped)       | Completed                                    |
 // | In the Trash                           | The Trash, with Restore                      |
 // | Purged or unknown                      | The landing view, with "no longer exists"    |
@@ -16,15 +16,15 @@ export interface HostFacts {
   readonly lifecycle: string;
   readonly inbox: boolean;
   readonly status: string;
-  /** The area it lies under: the project at the top of its trail. */
-  readonly area?: string | undefined;
+  /** The project it sits in. */
+  readonly project?: string | undefined;
   /** In the Trash: moved there on purpose, so Restore brings it back. */
   readonly deleted?: boolean;
 }
 
 export type Host =
   | { readonly kind: "view"; readonly view: View }
-  | { readonly kind: "area"; readonly area: string }
+  | { readonly kind: "project"; readonly project: string }
   | { readonly kind: "trash" }
   | { readonly kind: "gone" };
 
@@ -37,7 +37,7 @@ export function hostOf(task: HostFacts | undefined): Host {
     return { kind: "view", view: "completed" };
   }
   if (task.inbox) return { kind: "view", view: "inbox" };
-  if (task.area !== undefined) return { kind: "area", area: task.area };
+  if (task.project !== undefined) return { kind: "project", project: task.project };
   const view = STATUS_VIEWS.find((v) => v === task.status);
   return { kind: "view", view: view ?? "open" };
 }

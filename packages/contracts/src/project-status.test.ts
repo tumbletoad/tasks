@@ -68,7 +68,8 @@ describe("[S2.status.line] a project's status line from its open tasks", () => {
   test("a due time counts on the viewer's calendar", () => {
     // 23:30 on 31 December in UTC is already 1 January in Amsterdam.
     const timed = [task({ due_at: Date.parse("2026-12-31T23:30:00Z") })];
-    expect(projectStatus(timed, EFFORT_LEVELS, clock("2026-12-20", "Europe/Amsterdam")).at(-1))
-      .toEqual({ kind: "due", date: "2027-01-01", late: false });
+    expect(
+      projectStatus(timed, EFFORT_LEVELS, clock("2026-12-20", "Europe/Amsterdam")).at(-1),
+    ).toEqual({ kind: "due", date: "2027-01-01", late: false });
   });
 });

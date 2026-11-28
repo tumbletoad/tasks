@@ -93,6 +93,63 @@
   white-space: nowrap;
 }
 
+/* A project's heading: its fold button where an area has its dot, its name to its screen, and its
+   status, quiet, after the name. */
+.fold {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-inline-start: -8px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--k-muted);
+  cursor: pointer;
+}
+
+.fold:hover {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+.fold svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.2;
+  transition: transform var(--k-fast) var(--k-ease);
+}
+
+[data-folded="true"] .fold svg {
+  transform: rotate(-90deg);
+}
+
+[dir="rtl"] [data-folded="true"] .fold svg {
+  transform: rotate(90deg);
+}
+
+a.name {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.name:hover {
+  text-decoration: underline;
+}
+
+.line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--k-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
 .label::after {
   content: "";
   flex: 1;

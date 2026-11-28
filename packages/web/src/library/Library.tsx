@@ -3,8 +3,8 @@
 // first, each with its pen; then its pages by title, the pages of its tasks, and, folded, what
 // comes from the levels above. The lists are the live store's, so an agent's page arrives without
 // a reload and one moved to the Trash leaves; the texts are read from the service, and read again
-// when the feed says they changed. A project's and an area's Library is a tab beside their tasks,
-// the space's an entry of the side menu.
+// when the feed says they changed. A project's Library is a tab beside its tasks, the space's an
+// entry of the side menu.
 import { Link } from "@tanstack/react-router";
 import {
   useContext,
@@ -20,7 +20,6 @@ import { useIntl } from "react-intl";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
-import { trail } from "@ttasks/client/store";
 import { useLive } from "../store/hooks.ts";
 import { Markdown } from "../task/markdown.tsx";
 import { TEXT_MAX } from "../unsent.ts";
@@ -49,15 +48,10 @@ const styles = classes(css, [
   "fold",
   "level",
   "levelName",
-  "tabs",
-  "tab",
   "headed",
   "empty",
   "notice",
   "act",
-  "place",
-  "path",
-  "count",
   "md",
 ]);
 
@@ -78,7 +72,7 @@ function idsOf(
     : { key: node.id, target: node.id };
 }
 
-/** The Library's address of a node: the space's view, or an area's or a project's tab. */
+/** The Library's address of a node: the space's view, or a project's tab. */
 export function LibraryLink({
   node,
   className,
@@ -88,7 +82,7 @@ export function LibraryLink({
   readonly className?: string | undefined;
   readonly children: ReactNode;
 }) {
-  const { space, nodes } = useLive();
+  const { space } = useLive();
   const id = space?.id ?? "";
   // The router marks the link of the page on screen as current: this one only when it is exactly.
   const props = { className, activeOptions: EXACT };
@@ -99,99 +93,14 @@ export function LibraryLink({
       </Link>
     );
   }
-  if (node.kind === "area") {
-    return (
-      <Link to="/s/$space/area/$area/library" params={{ space: id, area: node.id }} {...props}>
-        {children}
-      </Link>
-    );
-  }
-  const area = trail(nodes, node.id)[0]?.id ?? "";
   return (
     <Link
-      to="/s/$space/area/$area/project/$project/library"
-      params={{ space: id, area, project: node.id }}
+      to="/s/$space/project/$project/library"
+      params={{ space: id, project: node.id }}
       {...props}
     >
       {children}
     </Link>
-  );
-}
-
-/** Tasks and Library, the two tabs of an area or a project, each with its count. */
-export function NodeTabs({
-  node,
-  tab,
-  tasks,
-}: {
-  readonly node: Exclude<LibraryNode, { kind: "space" }>;
-  /** The tab on screen: the area in the path above leads to the same tab of the area. */
-  readonly tab: "tasks" | "library";
-  /** Its open tasks, as the side menu counts them. */
-  readonly tasks: number | undefined;
-}) {
-  const t = useT();
-  const intl = useIntl();
-  const state = useLive();
-  const pages = useMemo(() => {
-    const lists = listsOf(node, state.pages.values(), "", state.nodes);
-    return lists.own.length + lists.tasks.length;
-  }, [node, state.pages, state.nodes]);
-  const space = state.space?.id ?? "";
-  const [areaRow, projectRow] = trail(state.nodes, node.id);
-  const area = areaRow?.id ?? "";
-  const count = (n: number | undefined) =>
-    n === undefined || n === 0 ? null : (
-      <span className={styles.count} aria-hidden="true">
-        {intl.formatNumber(n)}
-      </span>
-    );
-  const tasksTab =
-    node.kind === "area" ? (
-      <Link
-        to="/s/$space/area/$area"
-        params={{ space, area: node.id }}
-        className={styles.tab}
-        activeOptions={EXACT}
-      >
-        {t("library.tasksTab")}
-        {count(tasks)}
-      </Link>
-    ) : (
-      <Link
-        to="/s/$space/area/$area/project/$project"
-        params={{ space, area, project: node.id }}
-        className={styles.tab}
-        activeOptions={EXACT}
-      >
-        {t("library.tasksTab")}
-        {count(tasks)}
-      </Link>
-    );
-  // Where the person is, above the tabs: the side menu is not in sight at a narrow width.
-  const name = (node.kind === "area" ? areaRow : projectRow)?.title ?? "";
-  return (
-    <div className={styles.place}>
-      <p className={styles.path} data-part="node-path">
-        {node.kind === "project" && areaRow !== undefined ? (
-          tab === "library" ? (
-            <LibraryLink node={{ kind: "area", id: areaRow.id }}>{areaRow.title}</LibraryLink>
-          ) : (
-            <Link to="/s/$space/area/$area" params={{ space, area: areaRow.id }}>
-              {areaRow.title}
-            </Link>
-          )
-        ) : null}
-        <span dir="auto">{name}</span>
-      </p>
-      <nav className={styles.tabs} aria-label={t("library.tabs")} data-part="node-tabs">
-        {tasksTab}
-        <LibraryLink node={node} className={styles.tab}>
-          {t("library.libraryTab")}
-          {count(pages)}
-        </LibraryLink>
-      </nav>
-    </div>
   );
 }
 

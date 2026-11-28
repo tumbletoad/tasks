@@ -122,10 +122,7 @@ export function AddProject({
   const open = (project: string, areaOf: string | undefined) => {
     onClose();
     if (areaOf === undefined) return;
-    void navigate({
-      to: "/s/$space/area/$area/project/$project",
-      params: { space, area: areaOf, project },
-    });
+    void navigate({ to: "/s/$space/project/$project", params: { space, project } });
   };
 
   const add = (withFolder: boolean) => {

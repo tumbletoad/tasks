@@ -199,7 +199,10 @@ describe("[S2.nav.tree] the side menu's tree and a project's groups, at any dept
       ["Internal", 1, 2],
     ]);
     expect(archived.map((e) => [e.above.map((n) => n.title), ...shape([e])])).toEqual([
-      [["Client work", "Lumen"], ["Reports", 3, 1, ["Monthly", 4, 1]]],
+      [
+        ["Client work", "Lumen"],
+        ["Reports", 3, 1, ["Monthly", 4, 1]],
+      ],
     ]);
   });
 
@@ -228,7 +231,14 @@ describe("[S2.nav.tree] the side menu's tree and a project's groups, at any dept
     ];
     expect(titles(subtreeGroups("n_lumen")(tasks, nodes))).toEqual([
       ["flat", undefined, [[undefined, ["Fix time zones", "Store the zone"]]]],
-      ["project", "Portal", [[undefined, ["Portal plan"]], ["Login", ["Login copy"]]]],
+      [
+        "project",
+        "Portal",
+        [
+          [undefined, ["Portal plan"]],
+          ["Login", ["Login copy"]],
+        ],
+      ],
       ["project", "Reports", [["Monthly", ["Monthly report"]]]],
     ]);
     expect(subtreeGroups("n_lumen")(tasks, nodes).map((g) => g.node)).toEqual([

@@ -8,9 +8,8 @@
 //   /s/:space/:view                         today, inbox, open, waiting, review, backlog,
 //                                           completed, agents, activity, library (the space's),
 //                                           trash
-//   /s/:space/area/:area                    an area; `/library` after it, its Library
-//   /s/:space/area/:area/project/:project   a project of it; `/library` after it, its Library
-//   /s/:space/project/:project              a project without an area; `/library` likewise
+//   /s/:space/project/:project              a project at any depth; `/library` after it, its
+//                                           Library
 //   /s/:space/page/:ref                     a page of the library; where the person came from is
 //                                           in the history entry (`from`), never the address
 //   /s/:space/search                        search results of the top field (`?task=` too); the
@@ -18,7 +17,7 @@
 //   /s/:space/task/:id                      a task link: resolved to its host view (host.ts)
 //   /s/:space/settings                    Settings (an older `settings/:section` link lands there)
 //
-// A view, an area or a project with `?task=<ref>` holds that task expanded: expanding a
+// A view or a project with `?task=<ref>` holds that task expanded: expanding a
 // row writes it there, so a reload, Back and Forward keep the expansion, and the link stays a
 // link to the task.
 //
@@ -36,7 +35,8 @@ import { useEffect } from "react";
 import { searchQueryOf, SPACE_ID, SEGMENT } from "../route.ts";
 import { Landing } from "./Landing.tsx";
 import { PageScreen } from "../library/PageScreen.tsx";
-import { AreaPage, ProjectPage, SearchPage, TaskPage, ViewPage } from "./pages.tsx";
+import { SearchPage, TaskPage, ViewPage } from "./pages.tsx";
+import { ProjectScreen } from "./ProjectScreen.tsx";
 import { SettingsPage } from "./Settings.tsx";
 import { SpaceSession } from "./session.tsx";
 import { Shell } from "./Shell.tsx";
@@ -102,52 +102,23 @@ const viewRoute = createRoute({
   },
 });
 
-const areaRoute = createRoute({
-  getParentRoute: () => spaceRoute,
-  path: "area/$area",
-  validateSearch: taskSearch,
-  component: function AreaRoute() {
-    const { area } = areaRoute.useParams();
-    const { task } = areaRoute.useSearch();
-    return <AreaPage area={area} task={task} />;
-  },
-});
-
 const projectRoute = createRoute({
   getParentRoute: () => spaceRoute,
-  path: "area/$area/project/$project",
+  path: "project/$project",
   validateSearch: taskSearch,
   component: function ProjectRoute() {
-    const { space, area, project } = projectRoute.useParams();
+    const { project } = projectRoute.useParams();
     const { task } = projectRoute.useSearch();
-    return <ProjectPage space={space} area={area} project={project} task={task} />;
-  },
-});
-
-const areaLibraryRoute = createRoute({
-  getParentRoute: () => spaceRoute,
-  path: "area/$area/library",
-  component: function AreaLibraryRoute() {
-    const { area } = areaLibraryRoute.useParams();
-    return <AreaPage area={area} tab="library" />;
+    return <ProjectScreen key={project} project={project} task={task} />;
   },
 });
 
 const projectLibraryRoute = createRoute({
   getParentRoute: () => spaceRoute,
-  path: "area/$area/project/$project/library",
-  component: function ProjectLibraryRoute() {
-    const { space, area, project } = projectLibraryRoute.useParams();
-    return <ProjectPage space={space} area={area} project={project} tab="library" />;
-  },
-});
-
-const looseProjectLibraryRoute = createRoute({
-  getParentRoute: () => spaceRoute,
   path: "project/$project/library",
-  component: function LooseProjectLibraryRoute() {
-    const { space, project } = looseProjectLibraryRoute.useParams();
-    return <ProjectPage space={space} project={project} tab="library" />;
+  component: function ProjectLibraryRoute() {
+    const { project } = projectLibraryRoute.useParams();
+    return <ProjectScreen key={project} project={project} tab="library" />;
   },
 });
 
@@ -161,17 +132,6 @@ const pageRoute = createRoute({
     }
     // Keyed by the page: another page starts with nothing open.
     return <PageScreen key={ref} page={ref} />;
-  },
-});
-
-const looseProjectRoute = createRoute({
-  getParentRoute: () => spaceRoute,
-  path: "project/$project",
-  validateSearch: taskSearch,
-  component: function LooseProjectRoute() {
-    const { space, project } = looseProjectRoute.useParams();
-    const { task } = looseProjectRoute.useSearch();
-    return <ProjectPage space={space} project={project} task={task} />;
   },
 });
 
@@ -232,12 +192,8 @@ const routeTree = rootRoute.addChildren([
   spaceRoute.addChildren([
     spaceIndexRoute,
     viewRoute,
-    areaRoute,
     projectRoute,
-    looseProjectRoute,
-    areaLibraryRoute,
     projectLibraryRoute,
-    looseProjectLibraryRoute,
     pageRoute,
     searchRoute,
     taskRoute,

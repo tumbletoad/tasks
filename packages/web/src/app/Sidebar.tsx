@@ -1,35 +1,36 @@
-// The sidebar, top to bottom and without headings: the space switcher, the views, the areas after
-// a gap, Archived when the space has archived groups, and Settings at the foot. Every view is always
-// there, each in its fixed place, while the page loads, after an error, in an empty space and in the
-// narrow drawer: people find these by position, so an entry that came and went with its content
-// would break that. Counts sit at the inline end of Inbox, Open, Waiting, Review and Backlog, and
-// nowhere else; a count is part of its link's name ("Waiting, 2 tasks"). A counted view that holds
-// nothing shows no count and a quieter label, and its name says so ("Inbox, no tasks"). An area lists
-// its projects beneath it unless the person folded it: projects that opened and closed with their
-// area's view would move every entry below them, so only the person's own click on an area's fold
-// button does. Areas and projects count the open tasks their view lists, quietly, and a folded area
-// keeps its count. A name the sidebar cuts shows whole in a tip. New project sits in the foot beside
-// Settings, and on each area while the pointer or focus is on it, in place of the area's count so
-// nothing beside it moves; on a touch screen always, after the count. A project made without an
-// area is an area of its own, after the others, and holds no project. An archived area or project
-// leaves the areas for Archived, folded until
-// the person opens it, where it keeps its count, so open work in it is never out of sight, and its
-// page has the way back.
+// The sidebar, top to bottom and without headings: the space switcher, the views, the projects
+// after a gap, Archived when the space has archived projects, and Settings at the foot. Every view
+// is always there, each in its fixed place, while the page loads, after an error, in an empty space
+// and in the narrow drawer: people find these by position, so an entry that came and went with its
+// content would break that. Counts sit at the inline end of Inbox, Open, Waiting, Review and
+// Backlog; a count is part of its link's name ("Waiting, 2 tasks"). A counted view that holds
+// nothing shows no count and a quieter label, and its name says so ("Inbox, no tasks").
+//
+// The projects are the space's tree, at whatever depth it has. Each lists the projects beneath it
+// unless it is folded: projects that opened and closed with a page would move every entry below
+// them, so only the person's own click on a fold button does. Three levels are laid out; below
+// that a project starts folded. Each project counts the open tasks of everything under it, quietly,
+// and a folded one keeps its count. A name the sidebar cuts shows whole in a tip. New project sits
+// in the foot beside Settings, and on each project at the top while the pointer or focus is on it,
+// in place of its count so nothing beside it moves; on a touch screen always, after the count. An
+// archived project leaves the tree for Archived, folded until the person opens it, named with the
+// projects above it and with all it holds, where it keeps its count, so open work in it is never
+// out of sight, and its page has the way back.
 import { Link, useParams } from "@tanstack/react-router";
 import { useId, useMemo, useState, type FocusEvent, type PointerEvent } from "react";
 import { Button } from "react-aria-components";
 import { useIntl } from "react-intl";
 import { AddProject } from "../folder/AddProject.tsx";
 import {
-  sidebarAreas,
-  type ListedArea,
-  type ListedProject,
   groupCounts,
   sidebarEntries,
+  sidebarTree,
   VIEW_LABEL,
   viewCounts,
+  type ShelvedEntry,
+  type TreeEntry,
 } from "@ttasks/client/today";
-import { projectWithoutArea } from "@ttasks/client/store";
+import { isUnder, projectWithoutArea, trail } from "@ttasks/client/store";
 import { useT } from "../i18n/intl.tsx";
 import { ChevronIcon, PlusIcon, SettingsIcon, ViewIcon } from "./Icons.tsx";
 import { useLive } from "../store/hooks.ts";
@@ -42,6 +43,7 @@ import { classes } from "./css.ts";
 const styles = classes(css, [
   "add",
   "area",
+  "children",
   "count",
   "dot",
   "fold",
@@ -50,14 +52,12 @@ const styles = classes(css, [
   "item",
   "label",
   "list",
-  "projects",
   "shelf",
   "sidebar",
 ]);
 
 /** A view stays the current item while it holds an expanded task (`?task=`). */
 const IGNORE_TASK = { includeSearch: false } as const;
-const EXACT_IGNORE_TASK = { exact: true, includeSearch: false } as const;
 
 /**
  * The item's whole name as its tip, only while the sidebar cuts it. Set before the page's tip
@@ -71,7 +71,7 @@ function tipIfCut(event: PointerEvent<HTMLElement> | FocusEvent<HTMLElement>): v
   } else delete item.dataset["tip"];
 }
 
-/** A count beside an area or project: none while the rows are unknown or it holds nothing. */
+/** A count beside a project: none while the rows are unknown or it holds nothing. */
 function Count({ n }: { readonly n: number | undefined }) {
   const intl = useIntl();
   if (n === undefined || n === 0) return null;
@@ -84,29 +84,30 @@ function Count({ n }: { readonly n: number | undefined }) {
 
 function ProjectLink({
   space,
-  area,
   project,
   label,
-  counts,
+  n,
+  within = false,
 }: {
   readonly space: string;
-  readonly area: string;
   readonly project: { readonly id: string; readonly title: string };
   /** The name shown, when it is not the project's alone. */
-  readonly label?: string;
-  readonly counts: ReadonlyMap<string, number> | undefined;
+  readonly label?: string | undefined;
+  readonly n: number | undefined;
+  /** Folded away, it holds the page on screen: the way back to it. */
+  readonly within?: boolean;
 }) {
   const t = useT();
-  const n = counts === undefined ? undefined : (counts.get(project.id) ?? 0);
   const name = label ?? project.title;
   return (
     <Link
-      to="/s/$space/area/$area/project/$project"
-      params={{ space, area, project: project.id }}
+      to="/s/$space/project/$project"
+      params={{ space, project: project.id }}
       className={styles.item}
       activeProps={{ "aria-current": "page" }}
       activeOptions={IGNORE_TASK}
       data-empty={n === 0 || undefined}
+      data-within={within || undefined}
       onPointerOver={tipIfCut}
       onFocus={tipIfCut}
       {...(n === undefined ? {} : { "aria-label": t("nav.counted", { view: name, count: n }) })}
@@ -119,121 +120,120 @@ function ProjectLink({
   );
 }
 
-function Projects({
-  id,
-  space,
-  area,
-  projects,
-  counts,
-}: {
-  readonly id: string;
+/** What every line of the tree reads. */
+interface TreeProps {
   readonly space: string;
-  readonly area: string;
-  readonly projects: readonly { readonly id: string; readonly title: string }[];
+  /** Names the lists of this menu: the side menu and the drawer can both be in the page. */
+  readonly menu: string;
   readonly counts: ReadonlyMap<string, number> | undefined;
-}) {
-  if (projects.length === 0) return null;
-  return (
-    <ul className={styles.projects} id={id}>
-      {projects.map((project) => (
-        <li key={project.id}>
-          <ProjectLink space={space} area={area} project={project} counts={counts} />
-        </li>
-      ))}
-    </ul>
-  );
+  readonly folded: (node: string, depth: number) => boolean;
+  readonly onToggle: (node: string) => void;
+  /** The project on screen. */
+  readonly shown: string | undefined;
+  /** New project in a project at the top; none under Archived. */
+  readonly onAdd?: ((area: string) => void) | undefined;
 }
 
-function AreaLink({
-  space,
-  area,
-  n,
-  within = false,
+/**
+ * A project's line and, unless folded, the projects under it. `level` is its place in this list
+ * (1 for a line of its own, as under Archived); its depth in the tree decides how it starts.
+ */
+function Branch({
+  entry,
+  level,
+  label,
+  tree,
 }: {
-  readonly space: string;
-  readonly area: { readonly id: string; readonly title: string };
-  readonly n: number | undefined;
-  /** Folded away, it holds the page on screen: the way back to it. */
-  readonly within?: boolean;
+  readonly entry: TreeEntry;
+  readonly level: number;
+  readonly label?: string;
+  readonly tree: TreeProps;
 }) {
   const t = useT();
+  const { nodes } = useLive();
+  const { node, children } = entry;
+  const isFolded = children.length > 0 && tree.folded(node.id, entry.depth);
+  const n = tree.counts === undefined ? undefined : (tree.counts.get(node.id) ?? 0);
+  const list = `${tree.menu}-${node.id}`;
+  const name = label ?? node.title;
+  const within =
+    isFolded &&
+    tree.shown !== undefined &&
+    tree.shown !== node.id &&
+    isUnder(nodes, tree.shown, node.id);
+  const add =
+    level === 1 && entry.depth === 1 && !projectWithoutArea(node.id) ? tree.onAdd : undefined;
   return (
-    <Link
-      to="/s/$space/area/$area"
-      params={{ space, area: area.id }}
-      className={styles.item}
-      activeProps={{ "aria-current": "page" }}
-      activeOptions={EXACT_IGNORE_TASK}
-      data-empty={n === 0 || undefined}
-      data-within={within || undefined}
-      onPointerOver={tipIfCut}
-      onFocus={tipIfCut}
-      {...(n === undefined
-        ? {}
-        : { "aria-label": t("nav.counted", { view: area.title, count: n }) })}
-    >
-      <span className={styles.label} data-label="" dir="auto">
-        {area.title}
-      </span>
-      <Count n={n} />
-    </Link>
-  );
-}
-
-/** Under Archived, an archived project of a live area on its own: named with its area, in its colour. */
-function ShelvedProject({
-  space,
-  area,
-  slot,
-  project,
-  counts,
-}: {
-  readonly space: string;
-  readonly area: { readonly id: string; readonly title: string };
-  readonly slot: number;
-  readonly project: { readonly id: string; readonly title: string };
-  readonly counts: ReadonlyMap<string, number> | undefined;
-}) {
-  const t = useT();
-  return (
-    <div className={`${styles.area} slot-${String(slot)}`}>
-      <span className={styles.fold} aria-hidden="true">
-        <span className={styles.dot} />
-      </span>
-      <ProjectLink
-        space={space}
-        area={area.id}
-        project={project}
-        label={t("fact.areaProject", { area: area.title, project: project.title })}
-        counts={counts}
-      />
-    </div>
+    <li data-node={node.id} data-depth={level} data-folded={isFolded || undefined}>
+      {/* A line of its own takes its project's colour: on its fold button, or its dot. */}
+      <div className={level === 1 ? `${styles.area} slot-${String(entry.slot)}` : styles.area}>
+        {children.length > 0 ? (
+          <button
+            type="button"
+            className={styles.fold}
+            data-part="fold"
+            aria-expanded={!isFolded}
+            aria-controls={isFolded ? undefined : list}
+            aria-label={t(isFolded ? "nav.unfold" : "nav.fold", { area: name })}
+            data-tip={t(isFolded ? "nav.unfold" : "nav.fold", { area: name })}
+            onClick={() => {
+              tree.onToggle(node.id);
+            }}
+          >
+            <ChevronIcon />
+          </button>
+        ) : (
+          <span className={styles.fold} aria-hidden="true">
+            {level === 1 ? <span className={styles.dot} /> : null}
+          </span>
+        )}
+        <ProjectLink space={tree.space} project={node} label={label} n={n} within={within} />
+        {add === undefined ? null : (
+          <Button
+            className={styles.add}
+            aria-label={t("project.newIn", { area: node.title })}
+            data-tip={t("project.newIn", { area: node.title })}
+            onPress={() => {
+              add(node.id);
+            }}
+          >
+            <PlusIcon />
+          </Button>
+        )}
+      </div>
+      {isFolded || children.length === 0 ? null : (
+        <ul className={styles.children} id={list}>
+          {children.map((child) => (
+            <Branch key={child.node.id} entry={child} level={level + 1} tree={tree} />
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 
 /**
- * Archived: the archived areas with their projects and the archived projects of live areas, each
- * with its count and a link to its page. Nothing here takes new work.
+ * Archived: each archived project, named with the projects above it, with everything under it,
+ * each with its count and a link to its page. Nothing here takes new work.
  */
 function Shelf({
   id,
-  space,
-  groups,
-  counts,
+  entries,
+  tree,
   open,
   onToggle,
-  within,
 }: {
   readonly id: string;
-  readonly space: string;
-  readonly groups: readonly (ListedArea | ListedProject)[];
-  readonly counts: ReadonlyMap<string, number> | undefined;
+  readonly entries: readonly ShelvedEntry[];
+  readonly tree: TreeProps;
   readonly open: boolean;
   readonly onToggle: () => void;
-  /** The page on screen is an archived group's. */
-  readonly within: boolean;
 }) {
   const t = useT();
+  const { nodes } = useLive();
+  const shown = tree.shown;
+  const within =
+    shown !== undefined && entries.some((entry) => isUnder(nodes, shown, entry.node.id));
   return (
     <div className={styles.shelf} data-folded={!open || undefined}>
       <button
@@ -250,39 +250,19 @@ function Shelf({
       </button>
       {open ? (
         <ul className={styles.list} id={id}>
-          {groups.map((group) =>
-            group.kind === "area" ? (
-              <li key={group.area.id} data-area={group.area.id}>
-                <div className={`${styles.area} slot-${String(group.slot)}`}>
-                  <span className={styles.fold} aria-hidden="true">
-                    <span className={styles.dot} />
-                  </span>
-                  <AreaLink
-                    space={space}
-                    area={group.area}
-                    n={counts === undefined ? undefined : (counts.get(group.area.id) ?? 0)}
-                  />
-                </div>
-                <Projects
-                  id={`${id}-${group.area.id}`}
-                  space={space}
-                  area={group.area.id}
-                  projects={group.projects}
-                  counts={counts}
-                />
-              </li>
-            ) : (
-              <li key={group.project.id}>
-                <ShelvedProject
-                  space={space}
-                  area={group.area}
-                  slot={group.slot}
-                  project={group.project}
-                  counts={counts}
-                />
-              </li>
-            ),
-          )}
+          {entries.map((entry) => (
+            <Branch
+              key={entry.node.id}
+              entry={entry}
+              level={1}
+              label={[...entry.above, entry.node].reduce(
+                (named, n) =>
+                  named === "" ? n.title : t("fact.areaProject", { area: named, project: n.title }),
+                "",
+              )}
+              tree={tree}
+            />
+          ))}
         </ul>
       ) : null}
     </div>
@@ -315,17 +295,26 @@ export function Sidebar({
     () => (known ? groupCounts(state.tasks.values(), state.nodes) : undefined),
     [known, state.tasks, state.nodes],
   );
-  const groups = useMemo(() => sidebarAreas(state.nodes), [state.nodes]);
+  const groups = useMemo(() => sidebarTree(state.nodes), [state.nodes]);
   const { folded, toggle } = useFolds(space);
   // The side menu and the drawer can both be in the page: each names its own lists.
   const menu = useId();
   // New project: open, and the area it goes in unless the person chooses another.
   const [adding, setAdding] = useState<{ area: string | undefined }>();
   const here = useParams({ strict: false });
-  // A folded area holding the project on screen is marked as the way to it.
-  const shownProject = "project" in here ? here.project : undefined;
-  const shownArea = "area" in here ? here.area : undefined;
+  const shown = "project" in here ? here.project : undefined;
   const moved = useMovedByOthers("view" in here && here.view === "trash");
+  const tree: TreeProps = {
+    space,
+    menu,
+    counts,
+    folded,
+    onToggle: toggle,
+    shown,
+    onAdd: (area) => {
+      setAdding({ area });
+    },
+  };
 
   return (
     <div className={styles.sidebar}>
@@ -369,77 +358,21 @@ export function Sidebar({
         })}
       </ul>
       {groups.live.length === 0 ? null : (
-        <ul className={styles.list} data-group="areas">
-          {groups.live.map(({ area, slot, projects: own }) => {
-            const isFolded = folded.has(area.id);
-            const n = counts === undefined ? undefined : (counts.get(area.id) ?? 0);
-            const list = `${menu}-projects-${area.id}`;
-            return (
-              <li key={area.id} data-area={area.id} data-folded={isFolded || undefined}>
-                {/* The area's colour is its fold button's, or its dot's when it has no projects. */}
-                <div className={`${styles.area} slot-${String(slot)}`}>
-                  {own.length === 0 ? (
-                    <span className={styles.fold} aria-hidden="true">
-                      <span className={styles.dot} />
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className={styles.fold}
-                      data-part="fold"
-                      aria-expanded={!isFolded}
-                      aria-controls={isFolded ? undefined : list}
-                      aria-label={t(isFolded ? "nav.unfold" : "nav.fold", { area: area.title })}
-                      data-tip={t(isFolded ? "nav.unfold" : "nav.fold", { area: area.title })}
-                      onClick={() => {
-                        toggle(area.id);
-                      }}
-                    >
-                      <ChevronIcon />
-                    </button>
-                  )}
-                  <AreaLink
-                    space={space}
-                    area={area}
-                    n={n}
-                    within={isFolded && shownArea === area.id && shownProject !== undefined}
-                  />
-                  {projectWithoutArea(area.id) ? null : (
-                    <Button
-                      className={styles.add}
-                      aria-label={t("project.newIn", { area: area.title })}
-                      data-tip={t("project.newIn", { area: area.title })}
-                      onPress={() => {
-                        setAdding({ area: area.id });
-                      }}
-                    >
-                      <PlusIcon />
-                    </Button>
-                  )}
-                </div>
-                {isFolded ? null : (
-                  <Projects id={list} space={space} area={area.id} projects={own} counts={counts} />
-                )}
-              </li>
-            );
-          })}
+        <ul className={styles.list} data-group="projects">
+          {groups.live.map((entry) => (
+            <Branch key={entry.node.id} entry={entry} level={1} tree={tree} />
+          ))}
         </ul>
       )}
       {groups.archived.length === 0 ? null : (
         <Shelf
           id={`${menu}-archived`}
-          space={space}
-          groups={groups.archived}
-          counts={counts}
+          entries={groups.archived}
+          tree={{ ...tree, onAdd: undefined }}
           open={shelfOpen}
           onToggle={() => {
             onShelf(!shelfOpen);
           }}
-          within={groups.archived.some((g) =>
-            g.kind === "area"
-              ? g.area.id === shownArea
-              : g.project.id === shownProject && g.area.id === shownArea,
-          )}
         />
       )}
       <div className={styles.foot}>
@@ -458,7 +391,7 @@ export function Sidebar({
           aria-label={t("project.new")}
           data-tip={t("project.new")}
           onPress={() => {
-            setAdding({ area: here.area });
+            setAdding({ area: shown === undefined ? undefined : trail(state.nodes, shown)[0]?.id });
           }}
         >
           <PlusIcon />

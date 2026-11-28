@@ -27,7 +27,8 @@ export interface Group<Label extends string = GroupLabel> {
   /**
    * `section`: one of Today's sections, a small muted heading and no dot. `label`: the
    * same small heading with its own text (a person in Waiting, a month in Completed). `flat`: no
-   * heading at all (Inbox, Review, the area view, whose sidebar item names it).
+   * heading at all (Inbox, Review, the area view, whose sidebar item names it). `project`: a
+   * project under the one on screen, its heading opening it.
    */
   readonly kind: "inbox" | "area" | "loose" | "section" | "label" | "flat" | "project";
   /** The area's title (inbox and loose groups take theirs from the messages). */
@@ -44,6 +45,10 @@ export interface Group<Label extends string = GroupLabel> {
   readonly finished?: boolean;
   /** The heading's one action, such as the Trash's `"Restore these`" for its change. */
   readonly action?: { readonly label: string; readonly run: () => void };
+  /** A short line after the heading's name, such as how a project stands. */
+  readonly line?: string;
+  /** The heading folds its rows away: whether they show, and the person's fold or unfold. */
+  readonly fold?: { readonly open: boolean; readonly toggle: () => void };
   readonly sections: readonly Section[];
 }
 

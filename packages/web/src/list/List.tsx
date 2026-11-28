@@ -25,7 +25,9 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { Link } from "@tanstack/react-router";
 import { classes } from "../app/css.ts";
+import { ChevronIcon } from "../app/Icons.tsx";
 import { useMachine } from "../app/machine.ts";
 import { useT } from "../i18n/intl.tsx";
 import { actionOf, is, type ActionId } from "../keys/keymap.ts";
@@ -49,6 +51,8 @@ const styles = classes(css, [
   "name",
   "rows",
   "act",
+  "fold",
+  "line",
 ]);
 
 /** The list's moves, by the keymap's action. */
@@ -398,6 +402,7 @@ export function List({
             role={isSection || group.item === undefined ? undefined : "group"}
             aria-label={group.item === undefined ? undefined : title}
             data-section={isSection ? group.key : undefined}
+            data-folded={group.item?.group.fold?.open === false || undefined}
           >
             {group.head === undefined ? null : (
               <h2
@@ -409,7 +414,21 @@ export function List({
                 data-kind={group.item?.group.kind}
                 style={position(group.head)}
               >
-                {isSection || kind === "label" ? null : (
+                {group.item?.group.fold === undefined ? null : (
+                  <button
+                    type="button"
+                    className={styles.fold}
+                    data-part="group-fold"
+                    aria-expanded={group.item.group.fold.open}
+                    aria-label={t(group.item.group.fold.open ? "nav.fold" : "nav.unfold", {
+                      area: title,
+                    })}
+                    onClick={group.item.group.fold.toggle}
+                  >
+                    <ChevronIcon />
+                  </button>
+                )}
+                {isSection || kind === "label" || group.item?.group.fold !== undefined ? null : (
                   <span
                     className={
                       group.item?.group.slot === undefined
@@ -419,9 +438,28 @@ export function List({
                     aria-hidden="true"
                   />
                 )}
-                <span className={styles.name} dir="auto">
-                  {title}
-                </span>
+                {group.item?.group.node === undefined ? (
+                  <span className={styles.name} dir="auto">
+                    {title}
+                  </span>
+                ) : (
+                  <Link
+                    to="/s/$space/project/$project"
+                    params={(prev: { space?: string }) => ({
+                      space: prev.space ?? "",
+                      project: group.item?.group.node ?? "",
+                    })}
+                    className={styles.name}
+                    dir="auto"
+                  >
+                    {title}
+                  </Link>
+                )}
+                {group.item?.group.line === undefined || group.item.group.line === "" ? null : (
+                  <span className={styles.line} data-part="group-status">
+                    {group.item.group.line}
+                  </span>
+                )}
                 {group.item?.group.action === undefined ? null : (
                   <button
                     type="button"
