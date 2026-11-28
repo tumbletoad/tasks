@@ -1396,14 +1396,12 @@ The pages in the Trash, newest change first, a page at a time.
 | `rows[].ref` | string, max 20 | yes | Page reference, such as M-180 |
 | `rows[].title` | string | yes | Title |
 | `rows[].brief` | string | yes | One line: what a reader finds in it; empty: none given |
-| `rows[].owner_kind` | "space" \| "area" \| "project" \| "task" | yes | What holds it |
-| `rows[].owner_id` | string, max 40 | yes | The space's, area's, project's or task's ID |
+| `rows[].owner_id` | string, max 40 | yes | The space's, a project's or a task's ID |
 | `rows[].task` | object | no | The task it is on, as it is now |
 | `rows[].task.ref` | string | yes | Task reference |
 | `rows[].task.title` | string | yes | Its title |
 | `rows[].task.lifecycle` | string | yes | Its lifecycle |
-| `rows[].area_id` | string | no | Its area, also through its task |
-| `rows[].project_id` | string | no | Its project, also through its task |
+| `rows[].under` | string, max 40 | yes | The node it lies under, also through its task |
 | `rows[].version` | integer, 1 to 9007199254740991 | yes | Row version: the commit that changed it last |
 | `rows[].by` | string | yes | Who changed it last |
 | `rows[].at` | integer, 0 to 9007199254740991 | yes | When, in milliseconds since 1970 |
@@ -1438,10 +1436,8 @@ Result:
       "ref": "M-180",
       "title": "Time zone rules",
       "brief": "Store UTC plus the clinic's zone ID; convert once",
-      "owner_kind": "project",
       "owner_id": "p_6e0j4n8s2w6a0e4j8n2s6w0b4f",
-      "area_id": "a_4c8g2k6n0r4v8z2d6h0m4q8t2x",
-      "project_id": "p_6e0j4n8s2w6a0e4j8n2s6w0b4f",
+      "under": "p_6e0j4n8s2w6a0e4j8n2s6w0b4f",
       "version": 1050,
       "by": "agent:codex-work",
       "at": 1778590000000,
@@ -2992,9 +2988,6 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].focus_on` | string | no | Day starred for |
 | `rows[].owner` | string | no | Owner |
 | `rows[].waiting_on` | string | no | Who or what it waits on |
-| `rows[].area_id` | string | no | Area ID |
-| `rows[].project_id` | string | no | Project ID |
-| `rows[].parent_id` | string | no | Parent task ID |
 | `rows[].parent` | string | yes | The node it sits under: a task, a project or the space |
 | `rows[].position` | string | yes | Order key within its group |
 | `rows[].wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
@@ -3059,7 +3052,6 @@ Result:
       "status": "open",
       "inbox": false,
       "priority": 2,
-      "area_id": "ar_1b5d9f3h7k0m4p8r2t6w0y4a8c",
       "parent": "ar_1b5d9f3h7k0m4p8r2t6w0y4a8c",
       "position": "a0",
       "wrap_state": "wrapped",
@@ -3992,9 +3984,6 @@ What is in the Trash, newest change first, a page at a time.
 | `rows[].focus_on` | string | no | Day starred for |
 | `rows[].owner` | string | no | Owner |
 | `rows[].waiting_on` | string | no | Who or what it waits on |
-| `rows[].area_id` | string | no | Area ID |
-| `rows[].project_id` | string | no | Project ID |
-| `rows[].parent_id` | string | no | Parent task ID |
 | `rows[].parent` | string | yes | The node it sits under: a task, a project or the space |
 | `rows[].position` | string | yes | Order key within its group |
 | `rows[].wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |

@@ -437,12 +437,14 @@ test.describe("[A5.archived.e2e.address] a project's page is the project's, what
       });
     };
 
+    // Made without an area, it is an area of its own: its old address opens it as one, and a
+    // capture goes to it.
     await signIn(page, world, loose);
     await showsSpace(page, world.mira.name);
+    await at(`/s/${world.mira.id}/area/${hutId}`);
     await expect(listedTask).toBeVisible({ timeout: SLOW_MS });
-    // Without an area, a plain capture goes to the Inbox, and the field says so as it is typed.
     await adding(page).fill(`Sweep the hut (${tag})`);
-    await expect(chips).toHaveText(["Inbox"]);
+    await expect(chips).toHaveText([hut]);
     await shots(page, world, "loose-capture", "page");
     await adding(page).fill("");
 
