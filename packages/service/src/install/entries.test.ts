@@ -161,13 +161,20 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
       identity: { ...NOT_ELEVATED, package: "Claude_1.0.0.0_x64__pzs8sxrjxfjjc" },
     });
     expect(await run("start", {}, captureIO(), viaShell)).toBe(0);
+    // Windows gave no answer about the token in time, as on a busy machine at login: start goes on.
+    const unknown = fakeContext({
+      platform: "win32",
+      dir: join(dir, "e"),
+      tools: { explorer: false },
+      identity: { ...NOT_ELEVATED, elevated: undefined },
+    });
+    expect(await run("start", {}, captureIO(), unknown)).toBe(0);
   });
 
-  test("install and uninstall refuse root, an elevated or unknown token and package identity before reading anything", async () => {
+  test("install and uninstall refuse root, an elevated token and package identity before reading anything", async () => {
     for (const identity of [
       { ...NOT_ELEVATED, root: true },
       { ...NOT_ELEVATED, elevated: true },
-      { ...NOT_ELEVATED, elevated: undefined },
       { ...NOT_ELEVATED, package: "OpenAI.Codex_1.0.0.0_x64__abc" },
     ]) {
       const refused = fakeContext({ platform: "win32", dir: join(dir, "r"), registry, identity });
