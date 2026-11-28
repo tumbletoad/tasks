@@ -53,7 +53,7 @@ import {
 } from "@ttasks/runs";
 import { DEFAULT_RUN_SETTINGS, type RunSettings } from "../config/machine-toml.ts";
 import { errorCode, errorType } from "../hub/crash.ts";
-import { NOT_FOR_SPACE } from "../launch/open.ts";
+import { NOT_FOR_SPACE, type Continuable } from "../launch/open.ts";
 import type { Logger } from "../hub/log.ts";
 import type { OpeningSpace } from "../hub/spaces.ts";
 import type { ServedSpace } from "../ops/index.ts";
@@ -79,14 +79,6 @@ import { runAdapter, runsWith } from "./drivers.ts";
 
 /** How long Continue waits for a run it stopped to end before it gives up and opens nothing. */
 export const CONTINUE_STOP_MS = 120_000;
-
-/** Whether Continue can open a run's conversation here, and why not (RunService.continuable). */
-export type Continuable =
-  | { readonly ok: true; readonly conversation: string; readonly folder: string }
-  | {
-      readonly ok: false;
-      readonly why: "conversation" | "machine" | "folder" | "instance" | "home";
-    };
 
 /** What a start of the service may set for runs. Tests pass their process groups or times. */
 export interface RunOptions {

@@ -120,7 +120,6 @@ import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
 import { readRestoredLaunches, type TaskFolder } from "../ops/read.ts";
 import { runsWith } from "../runs/drivers.ts";
-import type { Continuable } from "../runs/service.ts";
 import { agentHomeOf, homeDigest, physicalHome } from "../setup/agents.ts";
 import {
   briefNames,
@@ -136,6 +135,7 @@ import {
   LaunchUnavailable,
   LaunchWriterGone,
   type Choice,
+  type Continuable,
   type RegisteredElsewhere,
   type OpenTaskRequest,
   type OpenTaskResult,
@@ -2470,8 +2470,7 @@ const CONTINUE_REFUSED = {
   home: "This agent app uses another account now than the run did, and the run's conversation is kept in the other. Nothing was stopped or opened.",
   folder_moved:
     "This task's folder is not the one the run worked in, so its conversation is not opened there. Nothing was stopped or opened.",
-  not_stopped:
-    "The run did not end, so its conversation was not opened. Stop it, then continue.",
+  not_stopped: "The run did not end, so its conversation was not opened. Stop it, then continue.",
 } as const;
 
 function continueRefused(why: keyof typeof CONTINUE_REFUSED): AppError {

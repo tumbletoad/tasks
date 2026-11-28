@@ -208,6 +208,14 @@ export interface OpenTaskRequest {
   readonly continues?: string;
 }
 
+/** Whether Continue can open a run's conversation here, and why not (RunService.continuable). */
+export type Continuable =
+  | { readonly ok: true; readonly conversation: string; readonly folder: string }
+  | {
+      readonly ok: false;
+      readonly why: "conversation" | "machine" | "folder" | "instance" | "home";
+    };
+
 /** What the context pack takes of the task (A4 3.15.5); the launch adds its reference and folder. */
 export type PackContent = Omit<
   PackInput,
