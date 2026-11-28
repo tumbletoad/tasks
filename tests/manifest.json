@@ -167,6 +167,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.pages.service",
+      "title": "write_page puts an agent's page on its task's project and asks for a brief; read gives a page by heading and a node with what is above it; the digest lists the pages above; search scope library finds pages, applies its filters before the limit and puts the bound task's trail first; complete_task keeps the pages it names with the outcome; a page in the Trash is not read as live; the feed carries the pages",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.pages.trail",
+      "title": "get_task's first answer lists what is known above the task, nearest first, within its budget: the request and the user's texts for agents count first, older log entries go before page rows above, every level keeps its count and read target, and the user's texts for agents stand outside the data block under an ID",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.pages.render",
+      "title": "read is sized before its cursor, so following the cursor gives a whole body in any script and every row of a node once, in order; a section read on names no stored heading; write_page's acknowledgement names the page by its reference only",
+      "source": "Step 1 design, pull request 228; review of pull request 251",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.restore.every-revision",
       "title": "A backup of every revision with a search index, 0.4 to this build's, passes this build's trial restore, restores searchable, and upgrades with its references, counter and history kept; a 0.6 space's live pages are search documents",
       "source": "A1 3.12, 3.17; step 1 design, pull request 228",
@@ -2120,7 +2144,7 @@
     },
     {
       "id": "S2.tree.boundary",
-      "title": "The tree writer keeps today's guarantees at the request boundary: a write to what exists needs a base from no later than the space; fields written together stay together when one conflicts, so a stale reopen after an agent's outcome changes nothing; a task goes to the Trash only as the person saw it, the tasks below included, and is counted; Undo never hides a task someone else added below what it hides; the principal is an actor of the kind it claims and the author one of the space; only a person corrects or removes a note; all finishes every open task below, also after the task was finished alone; a second Trash and a restore of a live task are no change, and a task in the Trash takes no other change; a writer that is not the authority, or a request for another space, decides and stores nothing; a new step ends what could be redone, and a named Undo of another step leaves the stack; a commit's time never goes back; a request that fails its checks stores nothing, so the corrected request goes through under the same ID; text is normalised before the fingerprint and the write; the request ID, the writer's own scope, the size and a key no command knows are refused as today, without the key's text; a conflict names the task, the value now, and who changed it when, and its receipt keeps all but the value; a move under a task made just before is no step; retries are kept apart by scope, a reused ID says when it was first used, and warnings and the caller's answer replay; only a person undoes, never on a base; a request marked active changes active tasks only; a task is found by its legacy alias; a base from another copy of the space is refused, and a kept Undo's answer replays on a resend; the history check sees a row that went missing",
+      "title": "The tree writer keeps today's guarantees at the request boundary: a write to what exists needs a base from no later than the space; fields written together stay together when one conflicts, so a stale reopen after an agent's outcome changes nothing; a task goes to the Trash only as the person saw it, the tasks below included, and is counted; Undo never hides a task someone else added below what it hides; the principal is an actor of the kind it claims and the author one of the space; only a person corrects or removes a note; all finishes every open task below, also after the task was finished alone; a second Trash and a restore of a live task are no change, and a task in the Trash takes no other change; a writer that is not the authority, or a request for another space, decides and stores nothing; a new step ends what could be redone, and a named Undo of another step leaves the stack; a commit's time never goes back; a request that fails its checks stores nothing, so the corrected request goes through under the same ID; text is normalised before the fingerprint and the write; the request ID, the writer's own scope, the size and a key no command knows are refused as today, without the key's text; a conflict names the task, the value now, and who changed it when, and its receipt keeps all but the value; a move under a task made just before is no step; retries are kept apart by scope, a reused ID says when it was first used, and warnings and the caller's answer replay; only a person undoes, never on a base; a request marked active changes active tasks only; a base from another copy of the space is refused, and a kept Undo's answer replays on a resend; the history check sees a row that went missing",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2128,6 +2152,13 @@
     {
       "id": "S2.undo.walk",
       "title": "One walk of Undo's kinds against today's writer and the tree's: for a check-off, a drop, a reopen, the Trash, a restore, a removed note, a note put back, a title and a note's words edited twice, out of the Inbox and a dismissal, the action, its opposite by hand, two Undos and two Redos walk the state back and forth exactly; a first filing, and a filing into a project made just before, walk back and forth; a page's body, its title and brief, the Trash and out of it, and the space's description, brief and text for agents walk back and forth exactly",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.pages.both",
+      "title": "A page's and a node's texts by the same rules on today's writer and the tree's, the same sequences compared: a move, the Trash, a restore and a first text need no base, and a restore of a live page changes nothing; a save on a stale read is a conflict, also for the field whose words match; a restore gives the body or the version it comes from, not both; someone else's newer note keeps the Undo that would put it out of sight again, and on the tree a page's newer comment keeps it too",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2141,14 +2172,14 @@
     },
     {
       "id": "S2.tree.sources",
-      "title": "Sources, links and the capture by source on the tree writer: a repeat capture finds its task through the source it came from, wherever the source moved and also after the window for finished tasks; a source key is read as today's writer reads it; a source on a node, the same key elsewhere linked there, links that come and go, and a held key that keeps a removed source out; a source under a task in the Trash is not found and comes back with it",
+      "title": "A source's move takes no base, and a removal or a putting back already there changes nothing, as today's link; Sources, links and the capture by source on the tree writer: a repeat capture finds its task through the source it came from, wherever the source moved and also after the window for finished tasks; a source key is read as today's writer reads it; a source on a node, the same key elsewhere linked there, links that come and go, and a held key that keeps a removed source out; a source under a task in the Trash is not found and comes back with it",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "S2.tree.prefs",
-      "title": "A space's preferences on the tree writer: a person sets and resets a preference and an agent may not set a person's; a value a newer build wrote stays as it is; a preview is decided whole and rolled back, with no commit and no receipt; a task takes a status and a size of the space's lists only, and a status active tasks hold stays; a change of the effort levels moves the tasks on a level it drops, as the person says; a capture counts a finished task as its own within the space's window only",
+      "title": "A stored value held to its base, the same value included, a first setting of the effort levels that needs one, and a change of the levels that moves the tasks on a dropped one also when one changed since the read, as today's writer; A space's preferences on the tree writer: a person sets and resets a preference and an agent may not set a person's; a preview is decided whole and rolled back, with no commit and no receipt; a task takes a status and a size of the space's lists only, and a status active tasks hold stays; a change of the effort levels moves the tasks on a level it drops, as the person says; a capture counts a finished task as its own within the space's window only",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2162,7 +2193,7 @@
     },
     {
       "id": "S2.tree.runs",
-      "title": "What Open and Run record on the tree writer, by today's rules: a launch opens prepared, a second click gets it, and it moves by the state machine's edges only, by one compare-and-set, with evidence that only grows and a reason where a state takes one; a run is queued for a task with the person's instruction and moves on its version; a node's folder on this machine is set as the machine spells a path, changed and cleared, and a removed folder is refused; a launch of a task in the Trash is refused, and one may name a note of its task as its request",
+      "title": "A folder's change held to its path and its removal as the caller saw them, and a new folder to a removal since the base, as today's writer; What Open and Run record on the tree writer, by today's rules: a launch opens prepared, a second click gets it, and it moves by the state machine's edges only, by one compare-and-set, with evidence that only grows and a reason where a state takes one; a run is queued for a task with the person's instruction and moves on its version; a node's folder on this machine is set as the machine spells a path, changed and cleared, and a removed folder is refused; a launch of a task in the Trash is refused, and one may name a note of its task as its request",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3451,6 +3482,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.2.readiness",
+      "title": "An instance reads as not installed with the vendor's install page, or with its version as a login found, no confirmed login with a login line that changes its home for that one command, or unknown, from the exit code of the app's own status command alone, run in the environment a launch builds; a Claude Code older than the status command is not asked",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.2.instance.names",
       "title": "An instance is named the same way everywhere: its app's name alone when it is the only one of its app, else the app and its own name (its label without the app's name or a folder's name, else its account)",
       "owner": "M2",
@@ -3753,6 +3791,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.13.setup.ready-env",
+      "title": "Each home's login check runs in the environment a launch builds, of its kind: the person's own reaches the app whole, the service's only through the launch's allow-list",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.13.setup.apps",
       "title": "ttasks setup agents on scratch homes for the remaining apps: Claude Desktop's entry is spliced in and taken out leaving the file byte-identical (CRLF, byte order mark, mode, other servers), never in a file the app has not made, and several of its files ask for --home; the Codex app is a host of the default Codex home, whose engine doctor asks when no CLI is there; T3's provider instances' homes are offered and marked as read by T3 while T3's settings are only read; a managed home is left alone, also a Claude Desktop file a repository tracks through linked git metadata, by apply and by remove",
       "source": "A3 3.13.3, A3 3.13.5, A3 3.13.6, A3 3.12, A7 3.11 M4.05",
@@ -3772,6 +3817,20 @@
       "id": "A3.3.13.setup.print-quoting",
       "title": "A command line of TTasks's own printed for a person to paste gives the command exactly its words: fed to the real shell (PowerShell 7 and Windows PowerShell 5.1 through an npm-style .ps1 and .cmd shim on Windows, /bin/sh elsewhere) with a stub that reports its argv, no word is expanded, split, joined or dropped, also with the command given by its path, and a word no quoting keeps literal (a control character other than a newline in a POSIX line; on Windows any control character and % ! ^ & | < > \") gets no line, nor does a line past 4,095 bytes of UTF-8, while one at that bound reaches the command through every shell and shim",
       "source": "A3 3.13.7, A3 3.13.1, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.page-ready",
+      "title": "Settings > Agent apps: each Claude Code and Codex row says what its app reported: installed and its version, whether its own status command found a login, with the login line or the vendor's install page; the status command's output never reaches the page",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.14.doctor.readiness",
+      "title": "ttasks doctor and ttasks setup agents say per Claude Code or Codex instance what its app reported: installed, its version, and whether its own status command found a login, with the login line for its own home or the vendor's install page, and never show that command's output",
       "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5500,6 +5559,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.12.6.update.retire",
+      "title": "an update, a rollback, an install and the service once ready remove the old version folders install.json names, keeping current, the way back, newer and pinned versions; a folder that is a link, holds anything its manifest does not name or belongs to another install stays whole; a removal cut off on either side of its rename is finished by the next pass, and a folder with the prefix that install.json does not name is never touched",
+      "source": "A2 3.12.6, A2 3.2.3",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.retire-probe",
+      "title": "a version whose runtime or native helper a process runs keeps every file, and goes once nothing runs it (Windows and Linux)",
+      "source": "A2 3.12.6",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.12.6.update.installed",
       "title": "ttasks update --from, --rollback and --repair through an installed stable command: a second update waits for the lock, the same archive again is current already, the data folders are byte-identical after an update and a rollback, doctor's update row passes, and without a terminal or --yes, or in an agent's shell, nothing is changed",
       "source": "A2 3.12.6, A2 3.13, A7 3.13 M6.12",
@@ -6843,6 +6918,104 @@
       "id": "A5.routines.web.schedule-words",
       "title": "A schedule reads in the catalogue's words: every Saturday, every Monday and Thursday, every weekday at 07:00, the first working day of every month, every 3 months on the 15th, the last Friday of every month, every year on 14 December, every year on the last day of February for the 29th to the 31st; every rule of the stored form has words with nothing of the message left in them",
       "source": "Routines design, pull request 235",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.cert",
+      "title": "The link's own certificate reads in Node, verifies with its key, names only `link`, uses P-256 and serves TLS 1.3; the computer's key file is made once, private, and made again when it does not read",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.rows",
+      "title": "A phone's feed row of a task keeps the task's own fields and loses where it opens on this machine, the agents it was last opened in and the run's instance; a question's author and a batch's actor read as the agent app's name, never its instance key or session; private, link-local and loopback peers are let in and public ones are not",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.pairing",
+      "title": "Against the real service: a code from Settings > Phones pairs one phone once and Settings lists it with Run off; the code spent, ended by its dialog or older than five minutes pairs nothing; the paired phone comes back without a code",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.pin",
+      "title": "A phone that holds the scanned pin connects; one that finds another key at the address closes before it writes a byte, so the code it carries still pairs the right phone",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.unpaired",
+      "title": "A peer that is not paired sees the open port and the certificate (a stable public key, the neutral name link, its dates) and nothing of a space: plain HTTP without TLS, a connection without a client certificate, another path and HTTP inside TLS that is no upgrade are closed with no answer; an unknown key or a wrong code gets no reply, and the right code still pairs",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.rights",
+      "title": "A paired phone calls only the entries its screens use, whatever their remote class, and the list is exactly those; it watches a task's runs, gets Run and Stop only once switched on for it, reaches no machine, space or sign-in route, and can neither open nor subscribe to another space",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.snapshot",
+      "title": "A phone's snapshot and batches carry the space's tasks, areas, projects and preferences, and no folder, restore record, agent apps, place or last-used agent",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.capture-once",
+      "title": "A capture whose reply was dropped, sent again with its request ID on a new connection and again after the same phone key was removed and paired anew, replays its first reply and leaves one task; a real app restart and its offline queue are not tested here",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.remove",
+      "title": "Remove closes the phone's open connection at once and Settings no longer lists it; the listener closes with the last phone, and once a pairing opens it again the removed phone is told it was removed",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.saved",
+      "title": "Remove and the Run switch answer once saved: a Remove that was not saved says so, holds at once, stays listed to remove again and is saved by Remove again; Run on that was not saved stays off, Run off that was not saved holds at once, and Run on counts for the phone only once its save is done",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.run-saved",
+      "title": "A phone's Run switch, on and then off, reads back as switched after the service's store is closed and opened again",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.told",
+      "title": "Against the real service, with an agent's evidence and question written under its instance key and session, a task folder and Run on: every listed call's answer and error and the feed's snapshot and batch hold no instance key, session, folder path or machine name; an error a handler raised reaches a phone as its code and fixed words, with none of its message, hint or data",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.answers",
+      "title": "A phone's answers keep what its screens use and leave out a task's folder, a launch's request, a note's launches, the person's skills, a run's agent instance, its cleanup and its error; an author reads as the person, an import or the agent app's name, never its instance key or session; a capture may send a task's own fields only, and a page read takes a page's reference only",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.fields",
+      "title": "Against the real service: a task whose folder the page shows reads on a phone without its folder or skills; a folder on a capture and a launch reference on a read are refused by name, and a task update, a folder change and the space's status are refused",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

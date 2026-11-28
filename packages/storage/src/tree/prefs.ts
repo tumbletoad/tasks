@@ -1,6 +1,5 @@
 // A space's preferences on the tree, by today's writer's rules (write/writer.ts `pref.set`): who may
-// change a key, a value a newer build wrote kept as it is, a status that active tasks hold never
-// dropped, and a change of the effort levels that names where the tasks on a dropped level go
+// change a key, a status that active tasks hold never dropped, and a change of the effort levels that names where the tasks on a dropped level go
 // (contracts' `checkEffortMoves`, the writer's and a preview's alike). Its input is read by today's
 // check (write/request.ts `prefSet`). A request may ask for a preview: decided whole and rolled
 // back, with no receipt (core.ts).
@@ -8,11 +7,10 @@ import {
   checkEffortMoves,
   EFFORT_NAME_MAX,
   effortNamesFit,
-  mayWrite,
   preferenceSpec,
   samePrefValue,
 } from "@ttasks/contracts/preferences";
-import { isScaleKey, listPreference, scaleKeys } from "../preferences.ts";
+import { isScaleKey, listPreference, prefSetRule, scaleKeys } from "../preferences.ts";
 import { prefSet, type PrefSet } from "../write/request.ts";
 import { problem, type Check } from "./commands.ts";
 import type { Command } from "./tx.ts";
@@ -43,24 +41,20 @@ const run: Command["run"] = (tx, input) => {
   if (spec === undefined)
     return problem("VALIDATION_FAILED", "Not a preference of this build", "key");
   const row = tx.get(SQL.row, { key });
-  const kind = tx.request.actor.actor_kind;
-  // The space's own act (its defaults): a value every space holds, where it holds none.
-  const fills =
-    kind === "system" &&
-    spec.stored === true &&
-    (row === undefined || row["value"] === "null") &&
-    samePrefValue(value, spec.default) &&
-    moves === undefined;
-  if (!fills && !mayWrite(spec, kind)) {
-    problem("PREFERENCE_FORBIDDEN", "Only the user changes this preference", "key");
+  const rule = prefSetRule(
+    spec,
+    row,
+    { key, value, ...(moves === undefined ? {} : { moves }) },
+    tx.request.actor.actor_kind,
+    tx.request.base !== undefined,
+    false,
+  );
+  if (rule.refused !== undefined) {
+    problem(rule.refused.code, rule.refused.message, rule.refused.field);
   }
-  if (row !== undefined && Number(row["schema_ver"]) > spec.schemaVer) {
-    problem(
-      "VALIDATION_FAILED",
-      "A newer build wrote this preference: it is read-only here",
-      "key",
-    );
-  }
+  // A stored value is held to the base whatever the change writes; a stale request is a conflict,
+  // whatever it says of a list its person never saw.
+  if (rule.held && tx.held("preferences", key, null, ["value"])) return { key };
   let moved: { from: string; to: string | null; tasks: number }[] = [];
   if (isScaleKey(key)) {
     const next = scaleKeys(value ?? spec.default);
@@ -94,7 +88,8 @@ const run: Command["run"] = (tx, input) => {
         .filter((m) => m.to !== m.from)
         .map((m) => {
           const ids = tx.all(SQL.movers, { from: m.from }).map((r) => String(r["id"]));
-          for (const id of ids) tx.set("tasks", id, id, { effort: m.to });
+          // The tasks on a dropped level go where the person says, whatever else changed on them.
+          for (const id of ids) tx.set("tasks", id, id, { effort: m.to }, false);
           return { from: m.from, to: m.to, tasks: ids.length };
         });
     }
@@ -105,7 +100,13 @@ const run: Command["run"] = (tx, input) => {
       tx.create("preferences", { key, value: stored, schema_ver: spec.schemaVer }, null);
     }
   } else if (!samePrefValue(JSON.parse(String(row["value"])), value)) {
-    tx.set("preferences", key, null, { value: { value: stored, schema_ver: spec.schemaVer } });
+    tx.set(
+      "preferences",
+      key,
+      null,
+      { value: { value: stored, schema_ver: spec.schemaVer } },
+      false,
+    );
   }
   return { key, ...(moved.length === 0 ? {} : { moved }) };
 };

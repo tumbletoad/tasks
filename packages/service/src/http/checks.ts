@@ -61,8 +61,8 @@ export const LAUNCH_ACTIONS: readonly string[] = [
 export const SPACE_PREFIX = "/api/v1/space/";
 export const SPACE_ACTIONS: readonly string[] = ["list", "default", "propose", "create", "open"];
 /**
- * This machine: the preferences the page sets, Open's terminal, the agent apps, and the folder
- * chooser (the folders in a folder, a new folder, a project's folders).
+ * This machine: the preferences the page sets, Open's terminal, the agent apps, the folder
+ * chooser (the folders in a folder, a new folder, a project's folders), and the paired phones.
  */
 export const MACHINE_PREFIX = "/api/v1/machine/";
 export const MACHINE_ACTIONS: readonly string[] = [
@@ -73,6 +73,10 @@ export const MACHINE_ACTIONS: readonly string[] = [
   "folders",
   "folder_make",
   "project_folder",
+  "phones",
+  "phone_pair",
+  "phone_rights",
+  "phone_remove",
 ];
 export const HEALTHZ_PATH = "/healthz";
 export const WELL_KNOWN_PATH = "/.well-known/ttasks";

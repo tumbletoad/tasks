@@ -322,7 +322,7 @@ test.describe("[A7.3.12.e2e.sidebar-fixed] every entry of the side menu keeps it
     await sidebar(page).locator('a[data-view="backlog"]').click();
     await expect(page).toHaveURL(/\/backlog$/);
     expect(await sidebarPlaces(page)).toEqual(empty);
-    // The space's views are left empty as they were found: the tests of a worker share it.
+    // The space's views are left empty as they were found: the tests of a file share it.
     if (first !== undefined) {
       await world.op(world.quiet.id, "task.finish", {
         task: first.ref,
@@ -421,7 +421,7 @@ test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and
         await context.close();
       }
     }
-    // The tests of a worker share its service: the theme goes back to its default.
+    // The tests of a file share its service: the theme goes back to its default.
     await world.machine("ui.theme", null);
   });
 });

@@ -37,9 +37,23 @@ export function createClient(transport: ClientTransport) {
       /** Open a task in an agent app on this machine, or Copy its pointer brief. */
       open: (input: InputOf<"launch.open">): Promise<OutputOf<"launch.open">> => call("launch.open", input),
     },
+    node: {
+      /** Set the user's text for agents on the space, an area or a project. */
+      instruct: (input: InputOf<"node.instruct">): Promise<OutputOf<"node.instruct">> => call("node.instruct", input),
+    },
     note: {
       /** Take back a note on a task, or put a removed one back. Nothing is deleted for good. */
       remove: (input: InputOf<"note.remove">): Promise<OutputOf<"note.remove">> => call("note.remove", input),
+    },
+    page: {
+      /** List the earlier versions of a page or a description, or read one of them. */
+      history: (input: InputOf<"page.history">): Promise<OutputOf<"page.history">> => call("page.history", input),
+      /** Read a page, or a node's texts with what is known above it and its pages. */
+      read: (input: InputOf<"page.read">): Promise<OutputOf<"page.read">> => call("page.read", input),
+      /** The pages in the Trash, newest change first, a page at a time. */
+      trashed: (input: InputOf<"page.trashed">): Promise<OutputOf<"page.trashed">> => call("page.trashed", input),
+      /** Create, edit, append to, set, move, trash or restore a page, or set a node's texts. */
+      write: (input: InputOf<"page.write">): Promise<OutputOf<"page.write">> => call("page.write", input),
     },
     prefs: {
       /** Read and change the space's preferences that are not policy. */
@@ -58,7 +72,7 @@ export function createClient(transport: ClientTransport) {
       add: (input: InputOf<"task.add">): Promise<OutputOf<"task.add">> => call("task.add", input),
       /** Move tasks to the Trash, or restore them. Nothing is deleted for good. */
       delete: (input: InputOf<"task.delete">): Promise<OutputOf<"task.delete">> => call("task.delete", input),
-      /** Finish or abandon a task with an outcome and learnings, and create its follow-ups. */
+      /** Finish or abandon a task with an outcome and the pages it updated, and its follow-ups. */
       finish: (input: InputOf<"task.finish">): Promise<OutputOf<"task.finish">> => call("task.finish", input),
       /** Finished tasks, newest first, a page at a time: the page's Completed view. */
       finished: (input: InputOf<"task.finished">): Promise<OutputOf<"task.finished">> => call("task.finished", input),

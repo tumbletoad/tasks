@@ -5,9 +5,11 @@
 // and never read (an older build never drops a newer build's settings). Call these inside a read
 // or write transaction.
 import {
+  mayWrite,
   PREFERENCES,
   preferenceSpec,
   preferenceValue,
+  samePrefValue,
   type PreferenceRead,
   type StoredPreference,
 } from "@ttasks/contracts/preferences";
@@ -62,4 +64,63 @@ export function scaleKeys(value: unknown): string[] {
 /** The keys of `tasks.statuses` or `tasks.effort_scale` as the registry reads them (A1 3.16). */
 export function listPreference(conn: Connection, key: ScaleKey): string[] {
   return scaleKeys(readSpacePreference(conn, key).value);
+}
+
+type PrefSpec = NonNullable<ReturnType<typeof preferenceSpec>>;
+
+/** A refusal of a preference's change, as both writers say it. */
+export interface PrefRefusal {
+  code: "PREFERENCE_FORBIDDEN" | "VALIDATION_FAILED" | "BASE_REQUIRED";
+  message: string;
+  field: "key" | "base";
+}
+
+/**
+ * What decides a preference's change before anything it changes is read, for today's writer and
+ * the tree's: whether it is the space's own filling of a default (a value every space holds,
+ * where it holds none), and why it is refused. Who may write the key comes first; then a newer
+ * build's value, read-only here, said before any other reason so nobody changes tasks for a change
+ * this build cannot make; then a first setting of the effort levels without a base, which would
+ * race the person who read the levels it replaces. A stored value is held to the base whatever the
+ * change writes (`held`).
+ */
+export function prefSetRule(
+  spec: PrefSpec,
+  row: Row | undefined,
+  op: { key: string; value: unknown; moves?: readonly unknown[] },
+  actorKind: string,
+  based: boolean,
+  /** Today's writer keeps a newer build's value as it is; the tree reads no other build's rows. */
+  newerBuilds: boolean,
+): { fills: boolean; held: boolean; refused?: PrefRefusal } {
+  const fills =
+    actorKind === "system" &&
+    spec.stored === true &&
+    (row === undefined || row["value"] === "null") &&
+    samePrefValue(op.value, spec.default) &&
+    op.moves === undefined;
+  const held = row !== undefined;
+  const refuse = (refused: PrefRefusal) => ({ fills, held, refused });
+  if (!fills && !mayWrite(spec, actorKind)) {
+    return refuse({
+      code: "PREFERENCE_FORBIDDEN",
+      message: "Only the user changes this preference",
+      field: "key",
+    });
+  }
+  if (newerBuilds && row !== undefined && Number(row["schema_ver"]) > spec.schemaVer) {
+    return refuse({
+      code: "VALIDATION_FAILED",
+      message: "A newer build wrote this preference: it is read-only here",
+      field: "key",
+    });
+  }
+  if (op.key === "tasks.effort_scale" && !fills && row === undefined && !based) {
+    return refuse({
+      code: "BASE_REQUIRED",
+      message: "This change needs the as_of of a read as its base",
+      field: "base",
+    });
+  }
+  return { fills, held };
 }

@@ -196,12 +196,6 @@ export const TREE_STATEMENTS: readonly string[] = [
   CHECK (task_id IS NULL OR routine_id IS NULL)
 ) STRICT`,
   "CREATE INDEX runs_task ON runs(task_id, queued_at)",
-  // The prototype import's task IDs, which text written before may hold: a task is found by them.
-  `CREATE TABLE aliases (
-  namespace TEXT NOT NULL CHECK (namespace IN ('planning')), alias TEXT NOT NULL,
-  entity_id TEXT NOT NULL REFERENCES nodes(id), created_at INTEGER NOT NULL,
-  PRIMARY KEY (namespace, alias)
-) STRICT, WITHOUT ROWID`,
   // Notes, log entries and learnings in one thread on a node, and a page's comments; numbered per
   // owner.
   `CREATE TABLE notes (

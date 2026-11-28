@@ -5,8 +5,17 @@
 // moves take no base: the compare-and-set guards them. A folder is a node's default one on the
 // request's machine, as that machine spells it.
 import type { Row } from "../driver.ts";
-import { folderProblem, machineOs } from "../write/folders.ts";
-import { decodeLaunch, detailText, LAUNCH_SQL, newLaunchRef } from "../write/launches.ts";
+import { FOLDER_HELD, folderProblem, machineOs } from "../write/folders.ts";
+import {
+  decodeLaunch,
+  detailText,
+  LAUNCH_SQL,
+  newLaunchRef,
+  NO_MACHINE,
+  NO_REQUEST_NOTE,
+  requestOrdinal,
+  whereProblem,
+} from "../write/launches.ts";
 import { launchAfter, launchMoveProblem, runAfter, runMoveProblem } from "../write/moves.ts";
 import {
   launchCreateFields,
@@ -28,6 +37,9 @@ const SQL = {
   defaultFolder:
     "SELECT * FROM folders WHERE owner_id = $owner AND machine_id = $machine AND is_default = 1 " +
     "AND deleted_at IS NULL",
+  removedFolders:
+    "SELECT id FROM folders WHERE owner_id = $owner AND machine_id = $machine AND is_default = 1 " +
+    "AND deleted_at IS NOT NULL",
   /** The note a launch names as its request: one of its task's, not removed. */
   request:
     "SELECT 1 FROM notes WHERE owner_id = $task AND ordinal = $ordinal AND deleted_at IS NULL",
@@ -39,11 +51,7 @@ const SQL = {
 function machineOf(tx: Tx): string {
   const machine = tx.request.actor.machine_id;
   if (tx.get(SQL.machine, { id: machine }) === undefined) {
-    problem(
-      "VALIDATION_FAILED",
-      "The request's machine has no record in this space",
-      "actor.machine_id",
-    );
+    problem(NO_MACHINE.code, NO_MACHINE.message, NO_MACHINE.field);
   }
   return machine;
 }
@@ -58,12 +66,8 @@ function liveTask(tx: Tx, id: unknown): string {
 /** A folder a launch or a run names: there, not removed, and on the request's machine. */
 function folderOn(tx: Tx, id: unknown, machine: string): string | null {
   if (typeof id !== "string") return null;
-  const folder = tx.get(SQL.folder, { id });
-  if (folder === undefined) return problem("NOT_FOUND", "No folder has this ID", "folder");
-  if (folder["deleted_at"] !== null) problem("DELETED", "The folder is removed", "folder");
-  if (folder["machine_id"] !== machine) {
-    problem("VALIDATION_FAILED", "The folder is on another machine", "folder");
-  }
+  const wrong = whereProblem(tx.get(SQL.folder, { id }), machine, "folder");
+  if (wrong !== undefined) problem(wrong.code, wrong.message, wrong.field);
   return id;
 }
 
@@ -77,12 +81,11 @@ const launchCreate: Run = (tx, input) => {
   const evidence = (input["evidence"] ?? {}) as Record<string, unknown>;
   const asked = evidence["request"];
   if (asked !== undefined) {
-    const ordinal =
-      typeof asked === "string" ? /^n([1-9][0-9]{0,5})$/u.exec(asked)?.[1] : undefined;
-    const found =
-      ordinal === undefined ? undefined : tx.get(SQL.request, { task, ordinal: Number(ordinal) });
-    if (found === undefined)
-      problem("NOT_FOUND", "The task has no note with this reference", "evidence.request");
+    const ordinal = requestOrdinal(asked);
+    const found = ordinal === undefined ? undefined : tx.get(SQL.request, { task, ordinal });
+    if (found === undefined) {
+      problem(NO_REQUEST_NOTE.code, NO_REQUEST_NOTE.message, NO_REQUEST_NOTE.field);
+    }
   }
   // A second click on the same task and instance while a launch of it still opens gets that one.
   const instance = String(input["instance"]);
@@ -196,6 +199,12 @@ const folderSet: Run = (tx, input) => {
   const owner = String(node["id"]);
   const held = tx.get(SQL.defaultFolder, { owner, machine });
   if (held === undefined) {
+    // A folder cleared since the caller's base is a change it has not seen.
+    if (tx.request.base !== undefined) {
+      for (const gone of tx.all(SQL.removedFolders, { owner, machine })) {
+        if (tx.held("folders", String(gone["id"]), owner, ["deleted"])) return { folder: null };
+      }
+    }
     const id = tx.newId("fo");
     tx.create(
       "folders",
@@ -204,8 +213,10 @@ const folderSet: Run = (tx, input) => {
     );
     return { folder: { id } };
   }
-  if (held["path"] !== path) tx.set("folders", String(held["id"]), owner, { path });
-  return { folder: { id: held["id"] } };
+  const id = String(held["id"]);
+  if (tx.held("folders", id, owner, FOLDER_HELD)) return { folder: { id } };
+  if (held["path"] !== path) tx.set("folders", id, owner, { path }, false);
+  return { folder: { id } };
 };
 
 const folderClear: Run = (tx, input) => {
@@ -213,8 +224,12 @@ const folderClear: Run = (tx, input) => {
   if (node === undefined) return problem("NOT_FOUND", "The space has nothing of that name", "node");
   const owner = String(node["id"]);
   const held = tx.get(SQL.defaultFolder, { owner, machine: tx.request.actor.machine_id });
-  if (held !== undefined) tx.set("folders", String(held["id"]), owner, { deleted: tx.at });
-  return { folder: held === undefined ? null : { id: held["id"] } };
+  if (held === undefined) return { folder: null };
+  const id = String(held["id"]);
+  if (!tx.held("folders", id, owner, FOLDER_HELD)) {
+    tx.set("folders", id, owner, { deleted: tx.at }, false);
+  }
+  return { folder: { id } };
 };
 
 // The checks: today's readers for a launch and a run (write/request.ts), with the folder they name

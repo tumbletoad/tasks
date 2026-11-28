@@ -170,6 +170,10 @@ const USER_ONLY_WORDS: Readonly<Record<string, { message: string; hint: string }
     message: "Only the user corrects the words of a note or a log entry.",
     hint: "Log a new entry, or tell the user what you would correct and why.",
   },
+  "node.instruct": {
+    message: "Only the user writes the text for agents on the space, an area or a project.",
+    hint: "Tell the user what standing instruction you would suggest, and why.",
+  },
 };
 
 /**

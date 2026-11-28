@@ -13,9 +13,9 @@
       "tokens": 1648
     },
     {
-      "bytes": 4090,
+      "bytes": 4389,
       "name": "complete_task",
-      "tokens": 2045
+      "tokens": 2195
     },
     {
       "bytes": 1263,
@@ -23,9 +23,9 @@
       "tokens": 632
     },
     {
-      "bytes": 1302,
+      "bytes": 1298,
       "name": "get_task",
-      "tokens": 651
+      "tokens": 649
     },
     {
       "bytes": 1707,
@@ -38,14 +38,19 @@
       "tokens": 384
     },
     {
+      "bytes": 827,
+      "name": "read",
+      "tokens": 414
+    },
+    {
       "bytes": 1042,
       "name": "reopen_task",
       "tokens": 521
     },
     {
-      "bytes": 1079,
+      "bytes": 1120,
       "name": "search",
-      "tokens": 540
+      "tokens": 560
     },
     {
       "bytes": 1238,
@@ -56,11 +61,16 @@
       "bytes": 3851,
       "name": "update_task",
       "tokens": 1926
+    },
+    {
+      "bytes": 2226,
+      "name": "write_page",
+      "tokens": 1113
     }
   ],
   "total": {
-    "bytes": 21051,
-    "tokens": 10528,
-    "tools": 11
+    "bytes": 24440,
+    "tokens": 12223,
+    "tools": 13
   }
 }
