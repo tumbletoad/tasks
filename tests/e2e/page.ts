@@ -113,16 +113,63 @@ export async function openTask(page: Page, world: World, ref: string): Promise<L
   return row;
 }
 
-/**
- * Waits for an open card's thread: its notes, sessions and runs are drawn. Until then what sits
- * under the thread moves down as the card's reads arrive, and a click aimed there can miss.
- */
+/** Waits for an open card's thread: its notes, sessions and runs are drawn. */
 export async function threadDrawn(row: Locator): Promise<void> {
   await expect(
     row
       .getByRole("list", { name: "Notes, log, sessions and runs" })
       .or(row.getByText("Nothing logged yet.")),
   ).toBeVisible({ timeout: SLOW_MS });
+}
+
+/**
+ * Holds every call of a service operation until `release`, so a test sees the page as a slow
+ * connection shows it, with no time assumed.
+ */
+export async function hold(page: Page, op: string): Promise<() => Promise<void>> {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const url = `**/api/v1/op/${op}`;
+  const held: Promise<void>[] = [];
+  await page.route(url, (route) => {
+    held.push(gate.then(() => route.continue()));
+  });
+  return async () => {
+    release();
+    await Promise.all(held);
+    await page.unroute(url);
+  };
+}
+
+/**
+ * Notes where each link and button drawn in `scope` stands in the window. The check it returns
+ * names each one that has moved since, or was drawn then and is gone: what a click aimed at it
+ * would miss.
+ */
+export async function drawnNow(scope: Locator): Promise<() => Promise<string[]>> {
+  const key = `drawn${String(Math.random()).slice(2)}`;
+  await scope.evaluate((root, key) => {
+    const seen = new Map<Element, string>();
+    for (const e of root.querySelectorAll("a, button")) {
+      const r = e.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) seen.set(e, `${String(r.x)},${String(r.y)}`);
+    }
+    (window as unknown as Record<string, unknown>)[key] = seen;
+  }, key);
+  return () =>
+    scope.evaluate((_, key) => {
+      const seen = (window as unknown as Record<string, Map<Element, string> | undefined>)[key];
+      const moved: string[] = [];
+      for (const [e, was] of seen ?? []) {
+        const r = e.getBoundingClientRect();
+        const now = e.isConnected ? `${String(r.x)},${String(r.y)}` : "gone";
+        const name = e.getAttribute("data-part") ?? e.getAttribute("aria-label") ?? e.textContent;
+        if (now !== was) moved.push(`${name}: ${was} -> ${now}`);
+      }
+      return moved;
+    }, key);
 }
 
 /** Records every CSP violation the page reports, from before its first script runs. */

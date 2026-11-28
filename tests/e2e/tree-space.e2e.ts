@@ -7,7 +7,7 @@
 // Its effort levels are its own to change. Then the screens at 1,440 and 390 px. Made-up text only.
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { axeFound, picture, signIn, themes } from "./page.ts";
+import { axeFound, drawnNow, hold, picture, signIn, themes } from "./page.ts";
 import type { TreeProject, TreeSpace } from "./tree.ts";
 import { SLOW_MS, type SpaceInfo, type World } from "./world.ts";
 
@@ -203,10 +203,15 @@ test.describe("[S2.tree.e2e] a space on the new storage, four levels deep, as a 
     await expect(row(page, tree.measure.title)).toBeVisible({ timeout: SLOW_MS });
 
     // The Library of the third level, and its page.
+    // Its texts held as a slow connection holds them: nothing drawn meanwhile moves when they
+    // arrive, so a click on a page lands whenever it comes.
+    const release = await hold(page, "page.read");
     await page.goto(`${world.origin}${at(tree, tree.kitchen)}/library`);
-    // Its texts are read after its lists are drawn and move them down: a person clicks once the
-    // screen has settled.
+    await expect(crumbs(page)).toContainText(tree.kitchen.title, { timeout: SLOW_MS });
+    const moved = await drawnNow(main(page));
+    await release();
     await expect(page.locator('[data-part="description"]')).toBeVisible({ timeout: SLOW_MS });
+    expect(await moved()).toEqual([]);
     await page.getByRole("link", { name: new RegExp(tree.page) }).click();
     await expect(page.getByRole("heading", { name: tree.page })).toBeVisible();
     await expect(page.locator('[data-part="page-brief"]')).toContainText(
