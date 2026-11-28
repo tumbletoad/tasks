@@ -1,9 +1,10 @@
 // The tree's schema: a space is one tree of nodes (the space, projects, tasks), with what only a
 // task has in `tasks`, so launches and runs keep a task to point at. It stays outside the migration
-// chain until the switch: nothing in the product opens a tree space yet. Each family of commands
-// adds the tables it writes.
+// chain until the switch: only test and trial spaces are trees. The `space` row keeps today's
+// shape, so whatever reads a space's identity, authority and lineage reads a tree space's too.
 import type { Connection } from "../driver.ts";
 import { newId, osRandom, type Id, type RandomSource } from "../ids.ts";
+import { encodeRevision, type SchemaStep } from "../schema.ts";
 
 /** The tree's format: a build before the tree meets it as a newer revision and refuses to write. */
 export const TREE_FORMAT = { major: 1, minor: 0 } as const;
@@ -33,7 +34,11 @@ export const TREE_STATEMENTS: readonly string[] = [
   format_major INTEGER NOT NULL, format_minor INTEGER NOT NULL,
   last_seq INTEGER NOT NULL DEFAULT 0, next_ref INTEGER NOT NULL DEFAULT 1,
   authority_machine TEXT NOT NULL, authority_epoch INTEGER NOT NULL DEFAULT 1,
-  authority_incarnation TEXT NOT NULL, created_at INTEGER NOT NULL
+  authority_incarnation TEXT NOT NULL, authority_since INTEGER NOT NULL DEFAULT 0,
+  lineage TEXT NOT NULL CHECK (json_valid(lineage)),
+  transfer TEXT CHECK (transfer IS NULL OR json_valid(transfer)),
+  undo_floor_seq INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL,
+  hold TEXT CHECK (hold IS NULL OR json_valid(hold))
 ) STRICT`,
   `CREATE TABLE actors (
   id TEXT PRIMARY KEY,
@@ -220,6 +225,73 @@ export const TREE_STATEMENTS: readonly string[] = [
     "tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3')",
 ];
 
+/** The tree as a schema step: what a tree space's database is built with, at revision 1.0. */
+export const TREE_STEP: SchemaStep = {
+  id: 1000,
+  from: 0,
+  revision: TREE_FORMAT,
+  kind: "breaking",
+  format: TREE_FORMAT,
+  minReader: "0.0.0",
+  minWriter: "0.0.0",
+  undoFloor: false,
+  tables: TREE_STATEMENTS.flatMap((s) => /^CREATE (?:VIRTUAL )?TABLE (\w+)/u.exec(s)?.[1] ?? []),
+  up(conn) {
+    for (const statement of TREE_STATEMENTS) conn.exec(statement);
+  },
+  verify() {
+    // The statements are the schema: nothing is carried that could differ.
+  },
+};
+
+/** The user_version of a tree space's database. */
+export const TREE_USER_VERSION = encodeRevision(TREE_FORMAT);
+
+/** What the space's first commit needs: the space row and its system actor are already there. */
+export interface TreeRoot {
+  spaceId: string;
+  name: string;
+  system: string;
+  incarnation: string;
+  machineId: string;
+  at: number;
+}
+
+/**
+ * Makes the root node by the space's first commit, a system commit with its create row, so the
+ * space's brief and description have a history like every node's. Inside the caller's transaction.
+ */
+export function seedTreeRoot(conn: Connection, root: TreeRoot, random: RandomSource): void {
+  conn
+    .prepare(
+      "INSERT INTO nodes (id, kind, parent_id, position, title, created_at, created_by, " +
+        "touched, created_seq, version) VALUES ($id, 'space', NULL, 'a0', $title, $at, $by, 1, 1, 1)",
+    )
+    .run({ id: root.spaceId, title: root.name, at: root.at, by: root.system });
+  conn
+    .prepare(
+      "INSERT INTO commits (seq, id, epoch, incarnation, at, actor_kind, principal_id, author_id, " +
+        "scope_id, machine_id, origin, request_id, kind, ops) VALUES (1, $id, 1, $incarnation, " +
+        "$at, 'system', $by, $by, 'system', $machine, 'system', 'space.create', 'space.create', '[]')",
+    )
+    .run({
+      id: newId("op", random),
+      incarnation: root.incarnation,
+      at: root.at,
+      by: root.system,
+      machine: root.machineId,
+    });
+  const row = conn.prepare("SELECT * FROM nodes WHERE id = $id").get({ id: root.spaceId }) ?? {};
+  const after = Object.fromEntries(Object.entries(row).filter(([c]) => !DERIVED.has(c)));
+  conn
+    .prepare(
+      "INSERT INTO changes (seq, n, entity, entity_id, node_id, action, after, after_prov) " +
+        "VALUES (1, 1, 'nodes', $id, $id, 'create', $after, 1)",
+    )
+    .run({ id: root.spaceId, after: JSON.stringify(after) });
+  conn.exec("UPDATE space SET last_seq = 1 WHERE one = 1");
+}
+
 export interface NewTreeSpace {
   name: string;
   refPrefix: string;
@@ -237,9 +309,9 @@ export interface CreatedTreeSpace {
 }
 
 /**
- * Makes an empty tree space on an empty database: the tables, the space row, its person and its
- * system actor, and the root node. The root is made by the space's first commit, a system commit
- * with its create row, so the space's brief and description have a history like every node's.
+ * Makes an empty tree space on an empty database, without a space folder: the tables, the space
+ * row, its person and its system actor, and the root node. A space folder is made by storage's
+ * `createSpace` with the tree's step.
  */
 export function createTreeSpace(
   conn: Connection,
@@ -253,12 +325,26 @@ export function createTreeSpace(
     incarnation: newId("ai", random),
   };
   conn.transaction("immediate", () => {
-    for (const statement of TREE_STATEMENTS) conn.exec(statement);
+    TREE_STEP.up(conn);
+    conn.pragma("user_version", TREE_USER_VERSION);
+    const lineage = {
+      forked_from: null,
+      incarnations: [
+        {
+          incarnation: made.incarnation,
+          epoch: 1,
+          kind: "create",
+          parent: null,
+          machine_id: space.machineId,
+          at: space.at,
+        },
+      ],
+    };
     conn
       .prepare(
         "INSERT INTO space (one, space_id, name, ref_prefix, format_major, format_minor, " +
-          "authority_machine, authority_incarnation, created_at) VALUES (1, $id, $name, $prefix, " +
-          "$major, $minor, $machine, $incarnation, $at)",
+          "authority_machine, authority_incarnation, lineage, created_at) VALUES (1, $id, $name, " +
+          "$prefix, $major, $minor, $machine, $incarnation, $lineage, $at)",
       )
       .run({
         id: made.spaceId,
@@ -268,6 +354,7 @@ export function createTreeSpace(
         minor: TREE_FORMAT.minor,
         machine: space.machineId,
         incarnation: made.incarnation,
+        lineage: JSON.stringify(lineage),
         at: space.at,
       });
     const actor = conn.prepare(
@@ -275,34 +362,18 @@ export function createTreeSpace(
     );
     actor.run({ id: made.human, kind: "human", label: space.human, at: space.at });
     actor.run({ id: made.system, kind: "system", label: "system", at: space.at });
-    conn
-      .prepare(
-        "INSERT INTO nodes (id, kind, parent_id, position, title, created_at, created_by, " +
-          "touched, created_seq, version) VALUES ($id, 'space', NULL, 'a0', $title, $at, $by, 1, 1, 1)",
-      )
-      .run({ id: made.spaceId, title: space.name, at: space.at, by: made.system });
-    conn
-      .prepare(
-        "INSERT INTO commits (seq, id, epoch, incarnation, at, actor_kind, principal_id, author_id, " +
-          "scope_id, machine_id, origin, request_id, kind, ops) VALUES (1, $id, 1, $incarnation, " +
-          "$at, 'system', $by, $by, 'system', $machine, 'system', 'space.create', 'space.create', '[]')",
-      )
-      .run({
-        id: newId("op", random),
+    seedTreeRoot(
+      conn,
+      {
+        spaceId: made.spaceId,
+        name: space.name,
+        system: made.system,
         incarnation: made.incarnation,
+        machineId: space.machineId,
         at: space.at,
-        by: made.system,
-        machine: space.machineId,
-      });
-    const root = conn.prepare("SELECT * FROM nodes WHERE id = $id").get({ id: made.spaceId }) ?? {};
-    const after = Object.fromEntries(Object.entries(root).filter(([c]) => !DERIVED.has(c)));
-    conn
-      .prepare(
-        "INSERT INTO changes (seq, n, entity, entity_id, node_id, action, after, after_prov) " +
-          "VALUES (1, 1, 'nodes', $id, $id, 'create', $after, 1)",
-      )
-      .run({ id: made.spaceId, after: JSON.stringify(after) });
-    conn.exec("UPDATE space SET last_seq = 1 WHERE one = 1");
+      },
+      random,
+    );
   });
   return made;
 }
