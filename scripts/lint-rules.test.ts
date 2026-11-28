@@ -19,7 +19,7 @@ async function messages(code: string, path: string): Promise<string[]> {
 const SOURCE = "packages/sample/src/probe.js";
 const TEST = "packages/sample/src/probe.test.js";
 
-describe("[A7.3.3.lint.custom-rules] the custom lint rules of A7 3.3", () => {
+describe("[A7.3.3.lint.custom-rules] the custom lint rules", () => {
   test("os.tmpdir() is refused in source and allowed in tests", async () => {
     const code = 'import os from "node:os";\nexport const t = os.tmpdir();\n';
     expect(await messages(code, SOURCE)).toEqual([expect.stringMatching(/^no-restricted-syntax/)]);

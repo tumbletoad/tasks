@@ -1858,7 +1858,7 @@
                 "type": "string"
               },
               "state": {
-                "description": "A4 3.9's state",
+                "description": "Where the launch is: prepared, on its way, confirmed, failed or unknown",
                 "enum": [
                   "prepared",
                   "dispatching",
@@ -3969,7 +3969,7 @@
                 },
                 "policy": {
                   "const": true,
-                  "description": "Policy: the user's own (A3 3.8)",
+                  "description": "Policy: the user's own",
                   "type": "boolean"
                 },
                 "shape": {

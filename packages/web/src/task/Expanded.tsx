@@ -1,4 +1,4 @@
-// The expanded task's body (A5 3.7). The row (Row.tsx) owns the header (check, title, summary,
+// The expanded task's body. The row (Row.tsx) owns the header (check, title, summary,
 // star, collapse), its expansion and the region; this is what the region holds, in two columns:
 //
 // - Content, with no section labels: first the composer (Composer.tsx), its field and the strip of
@@ -6,7 +6,7 @@
 //   context (Markdown, clamped at ten lines with More), one line per source with its own text and
 //   Remove, one collapsed line for the sources and notes removed from it with Put back, the place
 //   on this machine, a hairline, then the thread (Thread.tsx).
-// - Facts (Facts.tsx): short muted labels and their controls, edited in place (A5 3.11). Each fact
+// - Facts (Facts.tsx): short muted labels and their controls, edited in place. Each fact
 //   shows here and nowhere else in the card; the row's columns for them are hidden while it is
 //   expanded.
 //
@@ -14,7 +14,7 @@
 // agent there, and so does a click on the context or the summary in the header, which the person
 // also corrects behind their pens (TextEditor.tsx). Everything a task holds is untrusted text: it
 // is rendered as text or as Markdown that is never HTML, and links open only through allowed
-// schemes (A5 3.26).
+// schemes.
 import {
   useContext,
   useLayoutEffect,
@@ -127,7 +127,7 @@ function sameText(a: string, b: string | undefined): boolean {
 /**
  * A source's line: its kind's icon, then its own text (a link when its URL may open). A source
  * whose own text is the task's title or summary (a task named after its email) shows its key, or
- * else its kind's name, instead: the card shows each fact string once (A5 3.7).
+ * else its kind's name, instead: the card shows each fact string once.
  */
 function SourceLine({
   source,
@@ -605,7 +605,7 @@ function PlaceLine({
       </li>
     );
   }
-  // No folder for this task here: Open and Run use the space's work folder (A5 3.7, U25).
+  // No folder for this task here: Open and Run use the space's work folder.
   if (detail === undefined || task.place !== undefined) return null;
   return (
     <li className={styles.link} data-part="place" data-state="work_folder">
@@ -641,7 +641,7 @@ interface CardWrites {
 }
 
 /**
- * Click-to-ask (A5 3.11): a click on an agent-only field starts a request for an agent in the
+ * Click-to-ask: a click on an agent-only field starts a request for an agent in the
  * composer, unless it was on a link or a button inside it, or ended a selection of its text.
  */
 function askOn(
@@ -831,13 +831,13 @@ export function Expanded({
           },
         }
       : undefined;
-  // A row read from search knows no creation time (Completed, A5 3.5): the digest's says it.
+  // A row read from search knows no creation time (Completed): the digest's says it.
   const created = detail?.task.created === undefined ? Number.NaN : Date.parse(detail.task.created);
   const facts =
     task.created_at <= 0 && Number.isFinite(created) ? { ...task, created_at: created } : task;
   return (
     <div className={styles.body} data-part="expanded" hidden={hidden}>
-      {/* First in the document: below 1,024 px the facts come before the content (A5 3.7). */}
+      {/* First in the document: below 1,024 px the facts come before the content. */}
       <div className={styles.side}>
         <Facts task={facts} clock={clock} />
         {/* Under the facts, from the card's first frame: it never moves what is drawn. */}

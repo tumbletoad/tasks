@@ -1,4 +1,4 @@
-// Which scripts load safe-exit.ts, and that they load it first (A2 3.12.1). A script that runs the
+// Which scripts load safe-exit.ts, and that they load it first. A script that runs the
 // product's code and ends through `process.exit` must evaluate @ttasks/bridge/safe-exit before any
 // other module of its own, or it can hang in that exit. The check finds such scripts itself, so a
 // new one cannot be forgotten. It reads every source module under packages/, tests/ and scripts/

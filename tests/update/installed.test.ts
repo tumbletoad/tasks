@@ -1,8 +1,8 @@
-// The updater with real builds, a real install and real processes (A7 3.13 M6.12's Verify line):
+// The updater with real builds, a real install and real processes:
 // the run's two versions (installed.ts), the older one installed into a temporary TTASKS_HOME of
 // this file's own and its service run through the install's stable command. On Windows the two
-// versions' launchers differ, so every update here also swaps both stable launchers (A7 3.13
-// M6.13). The kills at every journal step are in installed-kill-*.test.ts, the repair's in
+// versions' launchers differ, so every update here also swaps both stable launchers.
+// The kills at every journal step are in installed-kill-*.test.ts, the repair's in
 // installed-repair.test.ts.
 //
 //   bridge    A bridge (an agent's session) started before an update keeps running through it and

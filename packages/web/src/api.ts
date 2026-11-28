@@ -1,4 +1,4 @@
-// The page's requests to its service (A2 3.8.3, 3.8.4): JSON POSTs on the page's own origin, with
+// The page's requests to its service: JSON POSTs on the page's own origin, with
 // the bearer token, the build the page was served with, and the tab's space in every call, with
 // the copy of it the tab loaded once its feed named one: the service refuses a call for a copy it
 // no longer serves (`space_unavailable`, `replaced`), so a tab never writes into another. No
@@ -245,7 +245,7 @@ export interface ProjectFolderView {
   readonly elsewhere: readonly string[];
 }
 
-/** A fresh request ID (A1 3.8): 128 random bits, new per intended change. */
+/** A fresh request ID: 128 random bits, new per intended change. */
 export const requestId = (): string => crypto.randomUUID();
 
 /**
@@ -487,7 +487,7 @@ export class Api {
     const result = await this.client.launch.open({
       task,
       ...(instance === undefined ? {} : { instance }),
-      // Shift+Copy (A4 3.15.5): the context pack in place of the pointer brief.
+      // Shift+Copy: the context pack in place of the pointer brief.
       ...(pack ? { pack: true } : {}),
       ...(text === undefined || text.trim() === "" ? {} : { text }),
       ...(request === undefined ? {} : { request }),

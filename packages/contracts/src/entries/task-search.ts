@@ -1,6 +1,5 @@
-// task.search: find active tasks, finished tasks and learnings, rows only (A3 3.4.3, 3.9). The
-// query language is A3 3.9.2's, the ranking 3.9.3's, the rows 3.9.4's and the cursors 3.9.5's.
-// Its MCP tool is search; the page's search box arrives in M5.10 on this entry.
+// task.search: find active tasks, finished tasks and learnings, rows only.
+// Its MCP tool is search; the page's search box uses this entry too.
 import { z } from "zod";
 import { TIME_ZONE } from "../day.ts";
 import { defineEntry } from "../define.ts";
@@ -9,7 +8,7 @@ import { AsOf, Cwd, idPattern, patterns, TaskRef, TaskRow } from "../schemas.ts"
 import { SearchPageRow } from "../pages.ts";
 import { AS_OF, M14, M3 } from "./fixture.ts";
 
-/** What a search looks in (A3 3.4.3): `finished` is completed or archived. */
+/** What a search looks in: `finished` is completed or archived. */
 export const SEARCH_SCOPES = ["active", "finished", "all", "learnings", "library"] as const;
 
 /**
@@ -18,7 +17,7 @@ export const SEARCH_SCOPES = ["active", "finished", "all", "learnings", "library
  */
 export const SEARCH_IDS = 10_000;
 
-/** A search cursor (A3 3.9.5): `c_` and 16 base32 characters. */
+/** A search cursor: `c_` and 16 base32 characters. */
 export const CURSOR_PATTERN = /^c_[0-9a-hjkmnp-tv-z]{16}$/u;
 
 export const TaskSearchInput = z.strictObject({
@@ -43,7 +42,7 @@ export const TaskSearchInput = z.strictObject({
 const Changed = z.literal(true).describe("Changed since the search ran").optional();
 const IsoDate = z.string().regex(patterns.isoDate);
 
-/** A task that matched (A3 3.9.4): its row, a title cut at 90 characters, a snippet at 100. */
+/** A task that matched: its row, a title cut at 90 characters, a snippet at 100. */
 export const SearchTaskRow = TaskRow.extend({
   kind: z.literal("task").describe("A task"),
   completed: IsoDate.describe("When it was completed or dropped").optional(),
@@ -62,7 +61,7 @@ export const SearchTaskRow = TaskRow.extend({
   changed: Changed,
 });
 
-/** A learning, in scope `learnings` (A3 3.9.4): one row each, with the task it was learned on. */
+/** A learning, in scope `learnings`: one row each, with the task it was learned on. */
 export const SearchLearningRow = z.strictObject({
   kind: z.literal("learning").describe("A learning"),
   id: z.string().regex(idPattern("lr")).describe("Learning ID"),
@@ -136,7 +135,7 @@ export const taskSearch = defineEntry({
   // The page names its own zone, so its search counts the days its views count; the command line
   // and agents count on the service's machine.
   agent: { hidden: ["time_zone"] },
-  // A3 3.2.5: 60 tokens a row, 1,000 for the default page of 15, 3,000 at most.
+  // 60 tokens a row, 1,000 for the default page of 15, 3,000 at most.
   budget: { typical: 1000, max: 3000 },
   errors: ["invalid_input", "cursor_expired", "space_unavailable", "forbidden"],
   examples: [

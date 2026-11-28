@@ -1,4 +1,4 @@
-// The generated files: fresh, and byte-stable on every OS (A3 3.2.2, A7 3.8 M1.01). `pnpm verify`
+// The generated files: fresh, and byte-stable on every OS. `pnpm verify`
 // also compares both generated folders with a fresh render, with the brand's names.
 import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";

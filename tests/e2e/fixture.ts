@@ -14,7 +14,7 @@ export interface T3World {
   readonly fake: FakeT3;
 }
 
-/** The design scale's open tasks (A5 3.25, A1): the bulk world's Mira holds this many more. */
+/** The design scale's open tasks: the bulk world's Mira holds this many more. */
 export const BULK_TASKS = 5_000;
 
 /** The finished world's Mira: thousands finished in one month, some checked off, some dropped. */

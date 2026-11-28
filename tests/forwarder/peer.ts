@@ -1,6 +1,6 @@
-// A test service for the forwarder conformance suite (A2 3.7.6), run as a real child process:
+// A test service for the forwarder conformance suite, run as a real child process:
 // `node tests/forwarder/peer.ts <config JSON>`. It is ttasks-local/1's own `serve` with an mcp hook
-// that plays a scripted MCP server, standing in for the service's MCP endpoint until M2.02. Like
+// that plays a scripted MCP server, standing in for the service's MCP endpoint. Like
 // the hub, it writes `<state>/service.json` with its endpoint and reads `<state>/ipc.key`. As the
 // service does, it decides every connection from its bind alone: the space the bridge holds
 // (`held_space`) wins, else the entry's, else this process's default, a new one at every start. It
@@ -11,7 +11,7 @@
 // `slow` (echo after `ms`), `big` (a text of `bytes` characters), `flood` (`count` notifications
 // of `bytes` each before its result). Mode `echo` sends every line back unchanged instead.
 // stdin: `stop` closes the server, removes service.json and exits 0. Tests only.
-// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+// First, as in the product's entries: this script ends through process.exit.
 import "../../packages/bridge/src/safe-exit.ts";
 import { appendFileSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";

@@ -1,4 +1,4 @@
-// The message catalogue (A5 3.23): every message is ICU that FormatJS formats, every message is
+// The message catalogue: every message is ICU that FormatJS formats, every message is
 // used, and no message spells out a product name, so the rename touches packages/brand only.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";

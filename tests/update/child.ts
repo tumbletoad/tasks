@@ -1,15 +1,14 @@
-// The process the update crash tests kill (A7 3.13 M6.12 and M6.13, the crash harness's pattern of
-// A1 5): it runs the updater (or `ttasks update --repair`) from source against a real test install,
+// The process the update crash tests kill (the crash harness's pattern): it runs the updater (or `ttasks update --repair`) from source against a real test install,
 // with seams armed at one named step. It reads its task from stdin as one JSON line, then reports
 // each step it reaches as a JSON line on stdout with a synchronous write. At the armed step it
 // says so and blocks its thread until the parent kills it, or, when the parent killed the service
 // instead, until the parent writes the `go` file. Only this entry arms seams: the product passes
 // none.
 //
-// The service is reached through the service install's context (M1.12) with stand-in tools: no
+// The service is reached through the service install's context with stand-in tools: no
 // user manager, no Explorer, and a start that runs the install's stable command `serve` detached,
 // as a manual start does. So no test restarts a real service or touches a real autostart place.
-// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+// First, as in the product's entries: this script ends through process.exit.
 import "../../packages/bridge/src/safe-exit.ts";
 import { spawn } from "node:child_process";
 import { existsSync, writeSync } from "node:fs";

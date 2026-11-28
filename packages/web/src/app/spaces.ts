@@ -1,4 +1,4 @@
-// The machine's spaces and its default space (A2 3.1, A5 3.3), through the service's
+// The machine's spaces and its default space, through the service's
 // `/api/v1/space/list` and `/api/v1/space/default`. The default decides only what a new tab opens:
 // a tab that shows a space keeps it, whatever the default becomes. Every answer is checked by its
 // shape before the page uses it.
@@ -8,7 +8,7 @@ import { SPACE_ID } from "../route.ts";
 export interface SpaceItem {
   readonly id: string;
   readonly name: string;
-  /** `open`, `read_only`, `opening`, `unavailable`, … (A2 3.1). */
+  /** `open`, `read_only`, `opening`, `unavailable`, …. */
   readonly state: string;
   /** Why it is read-only or unavailable: a fixed word, such as `needs_recovery`. */
   readonly reason?: string;
@@ -151,7 +151,7 @@ export async function makeDefault(api: Api, space: string): Promise<string> {
 }
 
 /**
- * The space a new tab opens (A2 3.1): the machine's default when it is served; when the machine
+ * The space a new tab opens: the machine's default when it is served; when the machine
  * has no default, its one served space. A default that is not served is never replaced by another
  * space, and several spaces without a default leave the choice to the person.
  */

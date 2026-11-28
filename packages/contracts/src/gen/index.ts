@@ -1,5 +1,5 @@
 // The contracts generators that scripts/generated.ts registers for `pnpm gen` and the freshness
-// step of `pnpm verify` (A7 3.3). Both refuse to render a registry that fails the registry check.
+// step of `pnpm verify`. Both refuse to render a registry that fails the registry check.
 import { checkRegistry } from "../check.ts";
 import type { AnyEntry } from "../define.ts";
 import { registry } from "../registry.ts";

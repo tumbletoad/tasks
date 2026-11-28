@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// The expanded task's state in a view (A5 3.3, 3.7, 3.15), with the real live store, rendered by
+// The expanded task's state in a view, with the real live store, rendered by
 // React into a DOM (happy-dom): the URL's task and the person's own choice, the injected row of a
 // task the view does not hold, the title editor's base, focus when the card closes, the detail
 // read again after a fresh snapshot, and a thread entry that keeps focus while entries arrive.

@@ -1,4 +1,4 @@
-// What the due date's text field reads (A5 3.11 "The date popover"): an ISO date, `tod` and
+// What the due date's text field reads: an ISO date, `tod` and
 // `today`, `tom` and `tomorrow`, a weekday (today when it is that day, as the service reads it),
 // `+3d` and `+2w`, and `-` to clear. The page turns every one into a calendar date before it
 // sends, so what the preview shows is exactly what is saved. Pure: the day it counts from is given.
@@ -66,7 +66,7 @@ export function readDue(text: string, today: string): DueReading {
   return { kind: "invalid" };
 }
 
-/** The quick picks (A5 3.11): Today, Tomorrow, Next Monday, In a week. None clears. */
+/** The quick picks: Today, Tomorrow, Next Monday, In a week. None clears. */
 export function quickPicks(today: string): {
   readonly today: string;
   readonly tomorrow: string;

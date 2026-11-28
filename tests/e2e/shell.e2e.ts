@@ -1,4 +1,4 @@
-// The app shell end to end (A7 3.12 M5.01), in Chromium and Firefox, against the real service
+// The app shell end to end, in Chromium and Firefox, against the real service
 // process with fixture data.
 //
 // Verify line: No style is blocked under the strict CSP. Switching space in one tab leaves another
@@ -109,7 +109,7 @@ test.describe("[A7.3.12.m5-01.e2e.space-per-tab] Each tab keeps its space; a new
     await expect(c).toHaveURL(`${origin}/s/${studio.id}/today`, { timeout: SLOW_MS });
     await showsSpace(c, studio.name);
     // A task link without a space opens in the default space too, on the task's host view: S-1
-    // is in the Inbox (A5 3.3).
+    // is in the Inbox.
     await c.goto(`${origin}/?task=S-1`);
     await expect(c).toHaveURL(`${origin}/s/${studio.id}/inbox?task=S-1`);
 
@@ -395,7 +395,7 @@ test.describe("[A7.3.12.m5-01.e2e.add-once] An add on its way is sent once, and 
   });
 });
 
-/** A fixture task's host view with the task expanded: the area view of its area (A5 3.3). */
+/** A fixture task's host view with the task expanded: the area view of its area. */
 const hostOf = (world: World, ref: string) =>
   new RegExp(`^${world.origin}/s/${world.mira.id}/area/[a-z0-9_]+\\?task=${ref}$`);
 
@@ -416,7 +416,7 @@ test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens th
     // The link `ttasks open <task>` makes without a space.
     await signIn(page, world, `/task/${world.task.ref}`);
     await page.getByRole("link", { name: world.mira.name }).click();
-    // The task route lands on the task's host view, the task in its URL (A5 3.3).
+    // The task route lands on the task's host view, the task in its URL.
     await expect(page).toHaveURL(hostOf(world, world.task.ref));
     await expect(page.locator(`li[data-task="${world.task.ref}"]`)).toHaveAttribute(
       "data-expanded",

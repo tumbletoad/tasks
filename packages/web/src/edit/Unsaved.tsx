@@ -1,4 +1,4 @@
-// The line under a control whose edit the service did not take (A5 3.11 "Writes"): the control
+// The line under a control whose edit the service did not take: the control
 // shows the current value, and this line shows the person's own value with what they can do. After
 // a conflict: "<value> Changed by Codex just now · Apply mine · Copy · Keep theirs". After a failed
 // call: "<value> Not saved · Try again · Copy · Discard". On a finished task, which takes no edit

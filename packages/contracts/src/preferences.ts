@@ -1,4 +1,4 @@
-// The preferences registry (A1 3.16): every preference and feature flag, declared once with its
+// The preferences registry: every preference and feature flag, declared once with its
 // value shape, its default, its scope (the space or this machine), its writers and whether it is a
 // policy key. The writer checks `pref.set` against it, machine.toml's `[preferences]` is read with
 // it, and every reader takes a stored value through `preferenceValue`, so no reader keeps a rule of
@@ -11,8 +11,8 @@
 // - A value shape is one of the closed set below, never an unrestricted value. Every shape is
 //   bounded: lists, maps and text have a maximum.
 // - `null` is never a value: it resets a key to its default. A default may be null, meaning "none".
-// - A policy key has the human as its only writer (A3 3.8.2, R7).
-// - A feature flag lives under `features.` and is a boolean or an enum (A1 3.16).
+// - A policy key has the human as its only writer (R7).
+// - A feature flag lives under `features.` and is a boolean or an enum.
 // - A key's name is never reused once removed: it moves to RETIRED_PREFERENCES.
 
 /** Plain JSON data, as a preference's value is stored. */
@@ -61,9 +61,9 @@ export interface PreferenceSpec {
   /** The value of a key that is not set. Null: none. */
   readonly default: PrefValue | null;
   readonly writers: readonly PrefWriter[];
-  /** Autonomy, targets and the like: the human with `admin` only (A3 3.8.2, A6 3.6.3). */
+  /** Autonomy, targets and the like: the human with `admin` only. */
   readonly policy: boolean;
-  /** The value shape's version. A stored value with a newer one is read-only here (A1 3.16). */
+  /** The value shape's version. A stored value with a newer one is read-only here. */
   readonly schemaVer: number;
   /**
    * What a reader still takes from a stored value the shape refuses or a newer build wrote, in the
@@ -77,9 +77,9 @@ export interface PreferenceSpec {
    * none, and a reset stores the default again. So a build whose default differs reads the same.
    */
   readonly stored?: true;
-  /** One line for `describe` (A3 3.4.11). */
+  /** One line for `describe`. */
   readonly summary: string;
-  /** A feature flag (A1 3.16). A graduated flag stays readable and is ignored. */
+  /** A feature flag. A graduated flag stays readable and is ignored. */
   readonly flag?: { readonly stability: "preview" | "graduated" };
 }
 
@@ -89,7 +89,7 @@ export const PREFERENCE_KEY_MAX = 64;
 /** The largest stored value, as JSON. Every shape stays far below it. */
 export const PREFERENCE_VALUE_BYTES = 16 * 1024;
 
-/** A status key, as the writer checks `tasks.status` (A1 3.6). */
+/** A status key, as the writer checks `tasks.status`. */
 const STATUS_KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
 /**
  * The longest level name a space holds, and so the longest a task's effort takes. An earlier build
@@ -161,11 +161,11 @@ const EFFORT_TIME: ValueShape = {
   },
 };
 const EFFORT_ABOUT: ValueShape = { type: "text", max: EFFORT_ABOUT_MAX };
-/** An instance's key in machine.toml (A4 3.2). */
+/** An instance's key in machine.toml. */
 const INSTANCE_KEY = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
-/** An area's or project's slug (A1 3.3). */
+/** An area's or project's slug. */
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
-/** An autonomy action key: an operation kind, with the field for `task.patch` (A3 3.8.1). */
+/** An autonomy action key: an operation kind, with the field for `task.patch`. */
 const ACTION_KEY = /^[a-z][a-z_]*(?:\.[a-z][a-z_]*){1,2}$/;
 
 const LEVELS = ["full", "review", "suggest"] as const;
@@ -193,7 +193,7 @@ function flag(
 
 /**
  * Every preference and feature flag. Writers are the human unless a declaration lists the agent
- * too (A1 3.16: "An agent writes only keys whose declaration lists it").
+ * too: an agent writes only keys whose declaration lists it.
  */
 export const PREFERENCES: readonly PreferenceSpec[] = [
   // The page's look and keys are the person's on this machine, the same in every space and tab.
@@ -323,7 +323,7 @@ export const PREFERENCES: readonly PreferenceSpec[] = [
   }),
 ];
 
-/** Names of removed preferences. A name here is never declared again (A1 3.16). */
+/** Names of removed preferences. A name here is never declared again. */
 export const RETIRED_PREFERENCES: readonly string[] = [];
 
 const BY_KEY = new Map(PREFERENCES.map((spec) => [spec.key, spec]));
@@ -333,7 +333,7 @@ export function preferenceSpec(key: string): PreferenceSpec | undefined {
   return BY_KEY.get(key);
 }
 
-/** The feature flags (A1 3.16). */
+/** The feature flags. */
 export const FEATURE_FLAGS: readonly PreferenceSpec[] = PREFERENCES.filter((p) => p.flag);
 
 // ---------------------------------------------------------------------------------------------
@@ -427,7 +427,7 @@ export interface MovesProblem {
 }
 
 /**
- * The rules of a change of the effort levels from `now` to `next` (A1 3.16), the writer's and a
+ * The rules of a change of the effort levels from `now` to `next`, the writer's and a
  * preview's alike: each size moves once, from a level now or a size tasks hold (`held`), to a level
  * of `next` or to none; a level `next` drops that tasks hold needs a move.
  */
@@ -578,7 +578,7 @@ export function isKeyList(shape: ValueShape): boolean {
   );
 }
 
-/** A shape in words, for `describe` (A3 3.4.11): product words only, never a pattern. */
+/** A shape in words, for `describe`: product words only, never a pattern. */
 export function shapeText(shape: ValueShape): string {
   switch (shape.type) {
     case "enum":
@@ -607,14 +607,14 @@ export function shapeText(shape: ValueShape): string {
   }
 }
 
-/** Who a writer is, by the commit's actor kind: routines are agents (A3 3.8.1). */
+/** Who a writer is, by the commit's actor kind: routines are agents. */
 export function writerOf(actorKind: string): PrefWriter | undefined {
   if (actorKind === "human") return "human";
   if (actorKind === "agent" || actorKind === "routine") return "agent";
   return undefined;
 }
 
-/** Whether an actor of `actorKind` may write `spec` (A1 3.16). Admin is the caller's check. */
+/** Whether an actor of `actorKind` may write `spec`. Admin is the caller's check. */
 export function mayWrite(spec: PreferenceSpec, actorKind: string): boolean {
   const writer = writerOf(actorKind);
   return writer !== undefined && spec.writers.includes(writer);
@@ -627,7 +627,7 @@ export interface StoredPreference {
 }
 
 /**
- * What a reader sees of a preference (A1 3.16):
+ * What a reader sees of a preference:
  * - `set`: the stored value fits the shape.
  * - `default`: nothing stored, or a value reset with null.
  * - `invalid`: a stored value that does not fit; the default is used.
@@ -711,7 +711,7 @@ export function checkPreferences(
       problems.push(`${key}: a policy key has the human as its only writer`);
     }
     if (spec.scope === "machine" && spec.writers.includes("agent")) {
-      problems.push(`${key}: a machine preference is the user's (A2 3.2.4)`);
+      problems.push(`${key}: a machine preference is the user's`);
     }
     if (!Number.isSafeInteger(spec.schemaVer) || spec.schemaVer < 1) {
       problems.push(`${key}: the schema version is a whole number from 1`);

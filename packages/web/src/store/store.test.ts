@@ -1,4 +1,4 @@
-// The live store above its core (A5 3.15 items 3 and 4): per-frame batching with a fake frame
+// The live store above its core: per-frame batching with a fake frame
 // clock, and own writes that only the feed confirms.
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";

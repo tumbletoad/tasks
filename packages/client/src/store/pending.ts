@@ -1,4 +1,4 @@
-// Own writes (A5 3.15 item 4): an operation this tab sends may show its effect at once, as an
+// Own writes: an operation this tab sends may show its effect at once, as an
 // overlay on the confirmed rows. The overlay is the only optimistic state, and it is never mixed
 // into the confirmed rows: those change only through the feed.
 //
@@ -10,7 +10,7 @@
 //   later epoch. A snapshot that covers the write confirms it this way, and so does the feed for a
 //   write that made no commit and so sends no event.
 // - replaced: the write landed in an authority the feed has left for another of the same epoch (two
-//   claims of one backup, A1 3.5). The new authority's rows are the truth and its seqs say nothing
+//   claims of one backup). The new authority's rows are the truth and its seqs say nothing
 //   about the write, so the overlay goes. An authority counts as left when the tab held it before
 //   the current one, or when the cursor moved on from the one it held at the answer; an answer from
 //   an authority the feed has not reached yet waits for it.
@@ -37,7 +37,7 @@ export interface Overlay {
   readonly efforts?: readonly EffortLevel[];
 }
 
-/** Where the service said a write landed: `as_of`'s epoch, seq and incarnation tag (A1 3.5). */
+/** Where the service said a write landed: `as_of`'s epoch, seq and incarnation tag. */
 export interface Landed {
   readonly epoch: number;
   readonly seq: number;

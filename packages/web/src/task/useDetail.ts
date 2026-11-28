@@ -1,4 +1,4 @@
-// The expanded task's detail, live (A5 3.15 item 8): read when the task expands, and again
+// The expanded task's detail, live: read when the task expands, and again
 // whenever a frame of the feed touched the task (its row, a note, a log entry, a source) or a
 // fresh snapshot replaced the working set. A card that shows a source whose key another task may
 // hold reads again on a frame that touched any task, since where captures go is decided there.

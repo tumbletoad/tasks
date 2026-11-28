@@ -166,7 +166,7 @@ export class Ledger {
 
   /**
    * A write point's decision. After COMMIT it is durable although no reply went back: it must stay
-   * true exactly like an acknowledged result, and a retry must replay it (A1 3.8: every
+   * true exactly like an acknowledged result, and a retry must replay it (every
    * decided outcome's receipt is in its own transaction). Before COMMIT the kill rolls it back: a
    * new decision must leave no trace, and the next round retries it. A replay decided nothing new.
    */

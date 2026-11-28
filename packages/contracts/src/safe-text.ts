@@ -1,6 +1,6 @@
-// SafeText (A3 3.10 item 4): the normalisation every text input gets at the registry boundary, for
+// SafeText: the normalisation every text input gets at the registry boundary, for
 // every face and for imports. It removes characters that hide text from people but not from models.
-// It never rejects input, so it is the one kind of transform a schema may use (A3 3.2.1).
+// It never rejects input, so it is the one kind of transform a schema may use.
 import { z } from "zod";
 import { normaliser } from "./define.ts";
 
@@ -8,7 +8,7 @@ import { normaliser } from "./define.ts";
 // - bidirectional controls U+202A to U+202E, U+2066 to U+2069, U+200E, U+200F and U+061C
 // - C0 controls except tab and newline, DEL and the C1 controls (CR is turned into LF first)
 // - zero-width space U+200B, word joiner U+2060 and byte-order marks U+FEFF inside text
-// ZWJ U+200D and ZWNJ U+200C stay, because emoji and some scripts need them (A6 3.16.2).
+// ZWJ U+200D and ZWNJ U+200C stay, because emoji and some scripts need them.
 const HIDDEN_RANGES: readonly (readonly [number, number])[] = [
   [0xe0000, 0xe007f], // tag block
   [0x202a, 0x202e], // bidirectional embeddings and overrides
@@ -31,7 +31,7 @@ function visible(char: string): boolean {
 /**
  * SafeText: a lone surrogate becomes U+FFFD, then LF line endings, hidden characters removed and
  * NFC. Idempotent. The writer stores text as UTF-8, which has no lone surrogates, and turns them
- * into U+FFFD the same way (A1 3.7), so a face and the store agree on the text.
+ * into U+FFFD the same way, so a face and the store agree on the text.
  */
 export const normaliseText = normaliser((text: string): string =>
   Array.from(text.toWellFormed().replace(/\r\n?/g, "\n")).filter(visible).join("").normalize("NFC"),

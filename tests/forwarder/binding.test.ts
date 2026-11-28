@@ -68,7 +68,7 @@ describe("[A3.3.7.binding.bridge-process] a launched agent's bridge is its sessi
       expect(logged).toContain("M-1");
 
       // The service restarts; the shim and the agent keep running, and the bridge reconnects (its
-      // calls wait for the new service, A2 3.7.5): the same session.
+      // calls wait for the new service): the same session.
       await lab.stopService();
       await lab.start();
       const after = await reply(bridge, "status");

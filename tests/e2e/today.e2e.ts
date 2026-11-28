@@ -1,4 +1,4 @@
-// Today end to end (A7 3.12 M5.04; A5 3.3, 3.4, 3.15, 3.22), in Chromium and Firefox against the
+// Today end to end, in Chromium and Firefox against the
 // real service process with fixture data.
 //
 // Verify line: no task in two sections (also a property test, `A5.3.4.web.today-disjoint`), and
@@ -67,7 +67,7 @@ async function seed(world: World, tag: string): Promise<TodayTasks> {
   ) {
     throw new Error("the tasks were not added");
   }
-  // Starred today: the star is the person's (A5 3.4).
+  // Starred today: the star is the person's.
   await world.op(world.mira.id, "task.update", {
     task: star.ref,
     set: { focus: true },

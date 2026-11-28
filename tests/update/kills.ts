@@ -1,4 +1,4 @@
-// The updater's kill rounds with real builds (A7 3.13 M6.12's Verify line), one file per mode and
+// The updater's kill rounds with real builds, one file per mode and
 // side of the switch so the rounds run side by side: installed-kill-*.test.ts. An updater child
 // (child.ts, the updater from source with one step armed) is stopped at a journal step; then either
 // it is killed, or the service is killed and the updater goes on. Then the service starts again
@@ -7,8 +7,8 @@
 // left, the Windows launchers are that version's, and the service names that version. Then the
 // update is run again, as a person runs it after a cut: it ends on the new version, and the
 // version the round started from is still the one --rollback goes back to. On Windows
-// the two versions' launchers differ, so every update here also swaps both stable launchers (A7
-// 3.13 M6.13). Each file has its own install (installed.ts); every round reads the version it
+// the two versions' launchers differ, so every update here also swaps both stable launchers.
+// Each file has its own install (installed.ts); every round reads the version it
 // starts from.
 import { describe as suite, expect, test } from "vitest";
 import { readInstallRecord } from "../../packages/service/src/version/switch.ts";
@@ -95,7 +95,7 @@ export function killRounds(mode: "updater" | "service", points: readonly Point[]
               ended = await w.expectComplete(`service killed at ${point}`);
               // The updater lived and finished, bringing back the service it found running;
               // except when the service it had just restarted on the new version died before its
-              // handshake: then it rolled back (A2 3.12.6 step 13). A supervisor would have
+              // handshake: then it rolled back. A supervisor would have
               // restarted it.
               expect(ended, `${point}: ${JSON.stringify(run.lines.at(-1))}`).toBe(
                 point === "restarted" ? from : w.other(from),

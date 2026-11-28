@@ -1,4 +1,4 @@
-// The top field's two modes end to end (A7 3.12 M5.10; A5 3.13), in Chromium and Firefox against
+// The top field's two modes end to end, in Chromium and Firefox against
 // the real service process with fixture data: a capture's shortcuts shown before it is saved and
 // applied after, text that only looks like a shortcut kept as text, search results as one list
 // with check-off and undo, a result that changes while the list is open, the keyboard through

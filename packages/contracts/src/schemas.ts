@@ -1,9 +1,9 @@
-// Shared field schemas for the entries (A3 3.4.1, A1 3.3, 3.5 and 3.7).
+// Shared field schemas for the entries.
 //
 // Inputs carry the limits and SafeText, and leave the formats of references, `base`, paths and
 // source keys to the handler, which resolves them anyway and answers `invalid_input` or
-// `not_found` with a hint. Every pattern costs definition tokens in every tool that uses the field
-// (A3 3.2.5). Descriptions are short for the same reason. Outputs keep their patterns.
+// `not_found` with a hint. Every pattern costs definition tokens in every tool that uses the field.
+// Descriptions are short for the same reason. Outputs keep their patterns.
 //
 // Every pattern carries the `u` flag, so Zod reads it by code point, as Ajv and JSON Schema do.
 import { z } from "zod";
@@ -13,10 +13,10 @@ import { ROW_RUN_STATES } from "./runs.ts";
 import { safeLine, safeText } from "./safe-text.ts";
 
 /**
- * A1 3.7's limits: what the user may send through the UI, the CLI and the RPC methods. Schemas
- * count characters (code points). Where A1 gives a size in KiB, the schema allows that many
- * characters (64 KiB is 65,536), and the writer checks A1's size of the stored text (A1 3.7).
- * Fields A1 does not limit take A3 3.4's limit for both audiences.
+ * The user's limits: what the user may send through the UI, the CLI and the RPC methods. Schemas
+ * count characters (code points). Where the store gives a size in KiB, the schema allows that many
+ * characters (64 KiB is 65,536), and the writer checks the size of the stored text.
+ * Fields the store does not limit take the agent's limit for both audiences.
  */
 export const USER_LIMITS = {
   title: 300,
@@ -32,14 +32,14 @@ export const USER_LIMITS = {
 } as const;
 
 /**
- * A3 3.4's agent limits, tighter than A1's on purpose to keep results inside the token budgets
- * (A3 3.1). Entries list them in `agent.max`, so `mcp-tools.json` carries them.
+ * The agent limits, tighter than the user's on purpose to keep results inside the token budgets.
+ * Entries list them in `agent.max`, so `mcp-tools.json` carries them.
  */
 export const AGENT_LIMITS = {
   title: 200,
   summary: 240,
   context: 8_000,
-  /** A log entry or note through `add_entry`, and a draft's log entry (A3 3.4.5, 3.4.7). */
+  /** A log entry or note through `add_entry`, and a draft's log entry. */
   entry: 2_000,
   outcome: 600,
   learning: 300,
@@ -47,19 +47,19 @@ export const AGENT_LIMITS = {
   sourceTitle: 200,
 } as const;
 
-/** Crockford base32 in lower case, the alphabet of every ID (A1 3.3). */
+/** Crockford base32 in lower case, the alphabet of every ID. */
 const B32 = "[0-9a-hjkmnp-tv-z]";
 
 export const patterns = {
   taskRef: /^[A-Z]{1,6}-[1-9][0-9]{0,9}$/u,
-  /** `<epoch>.<seq>.<tag>`, such as `1.1046.5n0w8k3q` (A1 3.5). */
+  /** `<epoch>.<seq>.<tag>`, such as `1.1046.5n0w8k3q`. */
   asOf: /^[0-9]{1,10}\.[0-9]{1,15}\.[0-9a-hjkmnp-tv-z]{8}$/u,
-  /** 16 to 64 characters from `[A-Za-z0-9_-]` (A3 3.4.1). */
+  /** 16 to 64 characters from `[A-Za-z0-9_-]`. */
   requestId: /^[A-Za-z0-9_-]{16,64}$/u,
   isoDate: /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/u,
   /** An instant in UTC, as `Date.toISOString()` writes it, with or without milliseconds. */
   instant: /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{3})?Z$/u,
-  /** A note or log entry ordinal within its task: `n2`, `l3` (A1 3.3). */
+  /** A note or log entry ordinal within its task: `n2`, `l3`. */
   entryRef: /^[nl][1-9][0-9]{0,5}$/u,
 } as const;
 
@@ -68,7 +68,7 @@ export const idPattern = (prefix: string) => new RegExp(`^${prefix}_${B32}{26}$`
 // ---------------------------------------------------------------------------------------------
 // Inputs
 
-/** A task reference (`M-14`) or ID (`t_...`), resolved as A1 3.3 defines. */
+/** A task reference (`M-14`) or ID (`t_...`). */
 export const TaskRefInput = z.string().max(40);
 
 /**
@@ -81,7 +81,7 @@ export const SessionTask = TaskRefInput.describe(
 
 /**
  * The one `request_id` schema. Every write entry uses this object, and the registry check
- * refuses any other (A3 3.4.1). Every input string states a maximum, even where its pattern
+ * refuses any other. Every input string states a maximum, even where its pattern
  * bounds it.
  */
 export const RequestId = z
@@ -126,7 +126,7 @@ export const ContextInput = safeText(USER_LIMITS.context);
 export const LogInput = safeText(USER_LIMITS.log);
 
 /**
- * The source kinds a caller may write (A3 3.4.5). Outputs take every kind A1 stores
+ * The source kinds a caller may write. Outputs take every kind A1 stores
  * (`SOURCE_KINDS`).
  */
 export const SOURCE_KINDS_IN = [
@@ -141,7 +141,7 @@ export const SOURCE_KINDS_IN = [
   "web",
 ] as const;
 
-/** A link to where a task came from (A3 3.4.5). Stored lean: no message bodies (A3 3.10). */
+/** A link to where a task came from. Stored lean: no message bodies. */
 export const SourceInput = z.strictObject({
   key: z.string().max(512).describe("<namespace>:<id>, such as jira:LUM-212").optional(),
   kind: z.enum(SOURCE_KINDS_IN).describe("Source kind"),
@@ -167,7 +167,7 @@ export const FolderInput = z.string().min(1).max(4096);
  */
 export const PastInput = z.string().max(40);
 
-/** One task to create (A3 3.4.5). */
+/** One task to create. */
 export const TaskDraft = z.strictObject({
   title: TitleInput.describe("Title"),
   summary: SummaryInput.describe("One line: the next step").optional(),
@@ -211,7 +211,7 @@ export const DRAFT_AGENT_MAX: Pairs<number> = [
 ];
 
 /**
- * What `entry.add` writes (A3 3.4.7): A1's log kinds except `handoff`, which A3 does not offer,
+ * What `entry.add` writes: A1's log kinds except `handoff`, which A3 does not offer,
  * and `note`. Outputs take every log kind A1 stores (`LOG_KINDS`).
  */
 export const ENTRY_KINDS_IN = [
@@ -227,7 +227,7 @@ export const ENTRY_KINDS_IN = [
 // Outputs. Results are plain values: no transforms and no defaults. A field that carries a stored value
 // accepts every value A1 can store, not only what a caller may write.
 
-/** The log kinds A1 stores (A1 3.4, `log_entries.kind`). */
+/** The log kinds A1 stores (`log_entries.kind`). */
 export const LOG_KINDS = [
   "progress",
   "evidence",
@@ -238,8 +238,8 @@ export const LOG_KINDS = [
 ] as const;
 
 /**
- * The source kinds A1 stores (A1 3.4, `sources.kind`). A1 lists them without a CHECK
- * constraint, so the writer refuses any other kind (A3 3.2.1).
+ * The source kinds A1 stores (`sources.kind`). A1 lists them without a CHECK
+ * constraint, so the writer refuses any other kind.
  */
 export const SOURCE_KINDS = [
   "email",
@@ -361,7 +361,7 @@ export const HeldSources = z
   .describe("Sources linked without their key, which another task holds");
 
 /**
- * A task's due commitment as A1 3.4 stores it: a date-only `due_date`, never shifted to UTC, or a
+ * A task's due commitment as the store keeps it: a date-only `due_date`, never shifted to UTC, or a
  * timed `due_at` with its IANA zone `due_tz`. A task without one leaves the field out.
  */
 export const DueOutput = z.union([
@@ -372,7 +372,7 @@ export const DueOutput = z.union([
   }),
 ]);
 
-/** One task in a list (A3 3.4.2). */
+/** One task in a list. */
 export const TaskRow = z.strictObject({
   id: TaskId,
   ref: TaskRef,

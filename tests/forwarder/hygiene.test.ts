@@ -1,4 +1,4 @@
-// Forwarder conformance (A2 3.7.1, 3.7.2, A3 3.7.2): stdout carries MCP frames only, stderr is
+// Forwarder conformance: stdout carries MCP frames only, stderr is
 // content-free, the context is the allow-list and nothing else, bad arguments fail loudly, a
 // closed stdin ends the forwarder with nothing left behind, and against the real hub a forwarder
 // newer than the service and a stopped service give their offline answers.

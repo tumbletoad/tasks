@@ -121,7 +121,7 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     expect(live.getState().phase).toBe("live");
 
     receive(batch(5, 6, [taskEvent(task("a", "One"), 6)]));
-    // The same batch again is a repeat (A1 3.7): nothing applies and nothing is asked for.
+    // The same batch again is a repeat: nothing applies and nothing is asked for.
     const sent = socket().sent.length;
     receive(batch(5, 6, [taskEvent(task("b", "Two"), 6)]));
     expect([...live.getState().tasks.keys()]).toEqual(["a"]);

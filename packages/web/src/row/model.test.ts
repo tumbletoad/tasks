@@ -1,5 +1,5 @@
-// `renderRow` as data (A5 3.6, A7 3.12 M5.03 Verify: "renderRow cases per view"): one case per view
-// with the context A5 3.5 gives it, then each column's rules. The model holds message IDs; the
+// `renderRow` as data: one case per view
+// with the context its view gives it, then each column's rules. The model holds message IDs; the
 // tests format them with the page's own catalogue, so they read the words a person sees.
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
@@ -179,7 +179,7 @@ describe("[A5.3.6.web.render-row] renderRow, one case per view", () => {
     const r = read(renderRow(row(fix, LUMEN), ctx("open", "area")));
     expect(r).toMatchObject({ prefix: undefined, chip: undefined, starred: true, priority: "P2" });
     expect(r.description).toEqual(["priority 2", "created Wednesday 11 November", "starred"]);
-    // A star for a later day is not on yet (A5 3.4: the star shows from its day).
+    // A star for a later day is not on yet: the star shows from its day.
     const later = renderRow(
       row(task({ title: "Later", focus_on: "2026-11-13" })),
       ctx("open", "area"),

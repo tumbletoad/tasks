@@ -1,4 +1,4 @@
-// The built page carries no path of the machine that built it (A5 3.24), whatever NODE_ENV the
+// The built page carries no path of the machine that built it, whatever NODE_ENV the
 // build runs with. A development build's JSX names every component's source file by its absolute
 // path, so a build under Vitest (`test`) or with `development` would ship the build machine's
 // folders, its user name included. Each build goes to a temporary folder of this file's own.

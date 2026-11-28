@@ -1,4 +1,4 @@
-// The task's Markdown (A5 3.26): untrusted text becomes React elements of a small allow-list, raw
+// The task's Markdown: untrusted text becomes React elements of a small allow-list, raw
 // HTML shows as text, and a link opens only through an allowed scheme, with no opener and no
 // referrer. Rendered to markup by React itself, so what is checked is what the page would draw.
 import { renderToStaticMarkup } from "react-dom/server";
@@ -25,7 +25,7 @@ const ALLOWED = new Set([
   "a",
 ]);
 
-/** Payloads from A5 3.26's XSS suite, as they might arrive in an email, a ticket or a note. */
+/** Payloads of a common XSS suite, as they might arrive in an email, a ticket or a note. */
 const PAYLOADS = [
   "<script>alert(1)</script>",
   '<img src=x onerror="alert(1)">',

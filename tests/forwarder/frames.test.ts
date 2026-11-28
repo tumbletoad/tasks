@@ -1,4 +1,4 @@
-// Forwarder conformance (A2 3.6.2, 3.7.2, 3.7.6): lines pass unchanged and in order both ways
+// Forwarder conformance: lines pass unchanged and in order both ways
 // under any chunking, up to the 8 MiB line limit; an oversized line from the agent app is dropped
 // and the session goes on; an oversized line from the service ends that connection like a loss.
 import { randomInt } from "node:crypto";

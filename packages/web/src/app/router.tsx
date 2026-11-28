@@ -1,4 +1,4 @@
-// The page's routes (A5 3.3, U17): every screen has a URL, so reload, Back and Forward work and
+// The page's routes: every screen has a URL, so reload, Back and Forward work and
 // agents can print links. Each tab holds its space in its route (`/s/:space/…`, U24): the space
 // layout keys its live session by the route's space, so switching space in one tab never touches
 // another tab, and `/` opens the machine's default space (Landing).
@@ -18,7 +18,7 @@
 //   /s/:space/task/:id                      a task link: resolved to its host view (host.ts)
 //   /s/:space/settings                    Settings (an older `settings/:section` link lands there)
 //
-// A view, an area or a project with `?task=<ref>` holds that task expanded (A5 3.3): expanding a
+// A view, an area or a project with `?task=<ref>` holds that task expanded: expanding a
 // row writes it there, so a reload, Back and Forward keep the expansion, and the link stays a
 // link to the task.
 //

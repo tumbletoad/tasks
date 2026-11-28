@@ -1,5 +1,5 @@
 /*
- * The expanded task's body (A5 3.7, 3.20): content 1fr, the composer first in it, and facts
+ * The expanded task's body: content 1fr, the composer first in it, and facts
  * 304 px with a 36 px gap. The facts come first in the document, so below 1,024 px the one column
  * reads header, facts, content in document order; at full width the grid places them, and
  * `order` is never used. Tokens only.
@@ -50,7 +50,7 @@
   line-height: 1.3125rem;
 }
 
-/* Markdown from a task: calm, small blocks; never larger than the body text (A5 3.1 item 6). */
+/* Markdown from a task: calm, small blocks; never larger than the body text. */
 .body [data-md] > :first-child {
   margin-top: 0;
 }
@@ -550,7 +550,7 @@ a + .muted,
   overflow: hidden;
 }
 
-/* An entry's quiet actions show on hover and on focus (A5 3.7, 3.22: what hover shows, focus
+/* An entry's quiet actions show on hover and on focus (what hover shows, focus
    shows); without hover they are in sight, so a tap never lands on one it cannot see. */
 .entry .acts {
   transform: none;
@@ -610,7 +610,7 @@ a + .muted,
   background: var(--k-slot);
 }
 
-/* A segmented control (A5 3.7): its options on one line in cells of one width while their names
+/* A segmented control: its options on one line in cells of one width while their names
    fit there, wrapping only when they do not; the chosen one on hover's surface with a control line.
    A cell is never narrower than its name, nor wider than the control. */
 .seg {
@@ -703,7 +703,7 @@ a + .muted,
   color: var(--k-muted);
 }
 
-/* Someone else changed a value while it is being edited (A5 3.15 item 9). */
+/* Someone else changed a value while it is being edited. */
 .plain {
   display: block;
   margin-top: 4px;
@@ -740,7 +740,7 @@ a + .muted,
   color: var(--k-muted);
 }
 
-/* An agent-only field asks an agent on a click (A5 3.11). */
+/* An agent-only field asks an agent on a click. */
 .body [data-ask] {
   cursor: pointer;
 }

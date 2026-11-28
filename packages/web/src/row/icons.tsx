@@ -1,4 +1,4 @@
-// The row's icons (A5 3.20 "Row" and "Source kinds"): one set on a 24-unit grid with a 1.6 stroke,
+// The row's icons and the source kinds' icons: one set on a 24-unit grid with a 1.6 stroke,
 // round caps and no fill except the filled star, inheriting the text colour. Every icon is
 // decorative: the control or element that holds it has its name from the catalogue.
 import type { ReactNode } from "react";
@@ -54,14 +54,14 @@ export const CopyIcon = () => (
   </Icon>
 );
 
-/** A learning (A5 3.20 "Actions": learning, a bulb). */
+/** A learning: a bulb. */
 export const BulbIcon = () => (
   <Icon>
     <path d="M9 17.5h6M10 20.5h4M12 3.5a5.5 5.5 0 0 0-3.3 9.9c.5.4.8 1 .8 1.6v.5h5v-.5c0-.6.3-1.2.8-1.6A5.5 5.5 0 0 0 12 3.5Z" />
   </Icon>
 );
 
-/** A finished task's outcome (A5 3.20 "Actions": outcome, a check in a circle). */
+/** A finished task's outcome: a check in a circle. */
 export const OutcomeIcon = () => (
   <Icon>
     <circle cx="12" cy="12" r="8" />
@@ -69,7 +69,7 @@ export const OutcomeIcon = () => (
   </Icon>
 );
 
-/** Collapse the expanded task (A5 3.20 "Actions": chevrons). */
+/** Collapse the expanded task: chevrons. */
 export const ChevronUpIcon = () => (
   <Icon>
     <path d="m6.5 14.5 5.5-5.5 5.5 5.5" />
@@ -83,7 +83,7 @@ export const RunIcon = () => (
   </Icon>
 );
 
-/** The late due's clock glyph: late and due-soon differ by text and by this shape (A5 3.19). */
+/** The late due's clock glyph: late and due-soon differ by text and by this shape. */
 export const ClockIcon = () => (
   <Icon>
     <circle cx="12" cy="12" r="8" />

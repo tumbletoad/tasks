@@ -8,7 +8,7 @@ const active = (more: Partial<HostFacts> = {}): HostFacts => ({
   ...more,
 });
 
-describe("[A5.3.3.web.task-host] a task link's host view, for every row of A5 3.3's table", () => {
+describe("[A5.3.3.web.task-host] a task link's host view, for every kind of task", () => {
   test.each([
     ["active, in Inbox", active({ inbox: true, area: "ar_1" }), { kind: "view", view: "inbox" }],
     ["active, with an area", active({ area: "ar_1" }), { kind: "area", area: "ar_1" }],

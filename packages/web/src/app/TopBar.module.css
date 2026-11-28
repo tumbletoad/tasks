@@ -6,7 +6,7 @@
   min-width: 0;
 }
 
-/* The field: at most 440 px, a pill, with its `/` hint (A5 3.3). */
+/* The field: at most 440 px, a pill, with its `/` hint. */
 .field {
   position: relative;
   display: flex;

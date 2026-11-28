@@ -1,4 +1,4 @@
-// Where the small controls of a row and its card sit (A5 3.6, 3.7), against the real service with
+// Where the small controls of a row and its card sit, against the real service with
 // fixture data, at 1,440 and 390 px: a click anywhere in a row's title column expands it, while its
 // star and a selection of its text do not; in the card, a note's Remove is a bin in sight without
 // hover, the folder line's icon opens the folder chooser by mouse and by keyboard, the default

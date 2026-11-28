@@ -1,4 +1,4 @@
-// The agent input (A3 3.2.1, 3.2.3), built from the entry's rules by path, and the MCP tool list
+// The agent input, built from the entry's rules by path, and the MCP tool list
 // it feeds.
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, expectTypeOf, test } from "vitest";
@@ -239,7 +239,7 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
     expect(Object.keys(addEntry?.inputSchema["properties"] as object)).not.toContain("for_agents");
   });
 
-  describe("agent limits are tighter than the user's (A3 3.1, A1 3.7)", () => {
+  describe("agent limits are tighter than the user's", () => {
     const x = (n: number) => "x".repeat(n);
     const base = "1.1046.5n0w8k3q";
     const cases: [

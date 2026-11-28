@@ -61,7 +61,7 @@ export interface FixtureTask {
   readonly id: string;
   readonly ref: string;
   readonly title: string;
-  /** Its area's ID: the area view lists it (Today lists only what A5 3.4 selects). */
+  /** Its area's ID: the area view lists it (Today lists only what its sections select). */
   readonly area: string;
 }
 
@@ -295,7 +295,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       }),
       { mode: 0o600 },
     );
-    // The fake agent is this machine's first instance: the page draws its tile (A5 3.6). It is a
+    // The fake agent is this machine's first instance: the page draws its tile. It is a
     // Claude Code instance, which can run tasks too, so a world with runs has the fake Codex
     // first: the page's first runner is its default Run.
     const holds = join(temp.root, "holds");

@@ -1,7 +1,7 @@
-// Error codes (A3 3.5) and the classes and exit codes they belong to (A2 3.10.3). This module has
+// Error codes and the classes and exit codes they belong to. This module has
 // no dependencies, so the browser client can use AppError without loading Zod.
 
-/** A2 3.10.3: the CLI's exit code for each class. */
+/** The CLI's exit code for each class. */
 export const EXIT_CODES = {
   success: 0,
   internal: 1,
@@ -23,15 +23,15 @@ export type ErrorClass = Exclude<ExitClass, "success" | "partial" | "interrupted
 export interface ErrorSpec {
   /** The A2 class, which sets the CLI's exit code. */
   readonly class: ErrorClass;
-  /** The HTTP status of the UI's API (A3 3.2.2). */
+  /** The HTTP status of the UI's API. */
   readonly http: number;
   /** When the code is returned, in a few words. */
   readonly when: string;
 }
 
 /**
- * Every error code an entry may return (A3 3.5), with its class (A2 3.10.3) and HTTP status
- * (A3 3.2.2). A3 names the status of the common codes. The others take their class's status.
+ * Every error code an entry may return, with its class and HTTP status.
+ * A3 names the status of the common codes. The others take their class's status.
  */
 export const ERROR_CODES = {
   invalid_input: { class: "usage", http: 400, when: "Schema or rule violation" },
@@ -59,14 +59,14 @@ export const ERROR_CODES = {
 
 export type ErrorCode = keyof typeof ERROR_CODES;
 
-/** `service_unavailable` reasons that the CLI reports with class `version`, exit 7 (A3 3.5). */
+/** `service_unavailable` reasons that the CLI reports with class `version`, exit 7. */
 export const VERSION_REASONS = ["restart_session", "service_too_old"] as const;
 
 export function isErrorCode(value: unknown): value is ErrorCode {
   return typeof value === "string" && Object.hasOwn(ERROR_CODES, value);
 }
 
-/** The class of an error, taking the reason into account (A3 3.5). */
+/** The class of an error, taking the reason into account. */
 export function errorClass(code: ErrorCode, reason?: string): ErrorClass {
   if (
     code === "service_unavailable" &&
@@ -77,7 +77,7 @@ export function errorClass(code: ErrorCode, reason?: string): ErrorClass {
   return ERROR_CODES[code].class;
 }
 
-/** The error body of every face: `{"error": {code, message, hint, data}}` (A3 3.5). */
+/** The error body of every face: `{"error": {code, message, hint, data}}`. */
 export interface ErrorBody {
   readonly code: ErrorCode;
   readonly message: string;
@@ -123,7 +123,7 @@ const endsWith = (text: string, tail: string): boolean =>
   (text.length === tail.length || /[^a-z0-9_-]/.test(text.charAt(text.length - tail.length - 1)));
 
 /**
- * A3 3.5's text form of a message and its hint, `<message>. <hint>`, for every face that prints
+ * The text form of a message and its hint, `<message>. <hint>`, for every face that prints
  * one (the CLI, the MCP tools). The message ends with a full stop, added when it has none. A hint
  * that is a bare command (`<cli> …`) follows `Run: `. A hint the message already ends with (whole
  * words, compared plainly) is left out, so a message and its hint never say the same thing twice;

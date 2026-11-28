@@ -1,4 +1,4 @@
-// Where the write path's fault seams sit (WriteSeams, M1.07): `before-commit` inside the request's
+// Where the write path's fault seams sit (WriteSeams): `before-commit` inside the request's
 // transaction, with every row and the receipt written and nothing committed, and `after-commit`
 // once COMMIT returned, before the result goes back. A second connection shows which side of
 // COMMIT each point is on. Fixture data only, in a temporary folder.

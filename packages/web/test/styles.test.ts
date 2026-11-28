@@ -1,4 +1,4 @@
-// The page's stylesheets keep A5's rules (3.19, 3.20): colours come only from the theme's tokens,
+// The page's stylesheets keep the theme's rules: colours come only from the theme's tokens,
 // no text is set in capitals or spaced out, and the decorative hairline tokens never colour text.
 // Read straight from the source files, so a rule that breaks them fails `pnpm verify`.
 import { readdirSync, readFileSync } from "node:fs";

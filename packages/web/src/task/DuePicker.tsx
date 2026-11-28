@@ -1,4 +1,4 @@
-// The due date's control (A5 3.7, 3.11): a pill button with the date that opens the date popover.
+// The due date's control: a pill button with the date that opens the date popover.
 // The popover holds a text field with a live preview ("Friday 20 November"), five quick picks
 // (Today, Tomorrow, Next Monday, In a week, None) and a month grid. Unparseable text shows "Not a
 // date" and Enter does nothing; a past date says so in the preview. Enter applies and Escape
@@ -6,7 +6,7 @@
 //
 // The popover is an editor that stays open while the person reads and types: its base is taken
 // when it opens, so a due date someone else changed meanwhile is a conflict, never overwritten, and
-// the popover says so while it is open (A5 3.15 item 9).
+// the popover says so while it is open.
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
 import { classes } from "../app/css.ts";
@@ -172,7 +172,7 @@ function DueBody({
         aria-describedby={`due-preview-${task.id}`}
         aria-invalid={reading.kind === "invalid"}
         placeholder={t("due.placeholder")}
-        // The popover's first stop: the person types at once (A5 3.11).
+        // The popover's first stop: the person types at once.
         autoFocus
         value={text}
         dir="auto"
