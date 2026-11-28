@@ -25,6 +25,16 @@ import {
   type TaskRow,
 } from "../store/index.ts";
 import type { Connect, Saved } from "./open.ts";
+import {
+  CARD_READ,
+  cardOf,
+  PAGE_READ,
+  pageOf,
+  Reads,
+  type CardDetail,
+  type PageText,
+  type Read,
+} from "./card.ts";
 import { answerOf, Outbox, type Entry, type Keep, type Refused } from "./outbox.ts";
 import { linkOwner, type LinkState } from "./owner.ts";
 
@@ -60,6 +70,13 @@ export interface SpaceSession {
   undo(request: string): void;
   /** Adds a task from a capture. Its request ID. */
   add(draft: CaptureDraft, text: string): string;
+  /**
+   * A task's card beyond its row: from the computer when the link is up, else the phone's last
+   * read with its age.
+   */
+  card(task: string): Promise<Read<CardDetail>>;
+  /** A page, opened from a card, as `card` reads it. */
+  page(ref: string): Promise<Read<PageText>>;
   /** The person read a refusal. */
   dismiss(request: string): void;
 }
@@ -132,6 +149,28 @@ export function spaceSession(options: SessionOptions): SpaceSession {
   const key = `${pairing.pin} ${space}`;
 
   const outbox = new Outbox(keep, pairing.pin, space);
+  const reads = new Reads(keep, pairing.pin, space);
+
+  /** One read: the computer's answer when it gives one, else the phone's last, else none. */
+  const read = async <T>(
+    path: string,
+    body: Record<string, unknown>,
+    parse: (body: unknown) => T | undefined,
+    last: () => { readonly at: number; readonly value: T } | undefined,
+    keepIt: (value: T, at: number) => void,
+  ): Promise<Read<T>> => {
+    if (link.kind === "connected") {
+      const reply = await call(path, body);
+      const value = reply?.status === 200 ? parse(reply.body) : undefined;
+      if (value !== undefined) {
+        const at = now();
+        keepIt(value, at);
+        return { kind: "read", value, at, live: true };
+      }
+    }
+    const kept = last();
+    return kept === undefined ? { kind: "none" } : { kind: "read", ...kept, live: false };
+  };
   let core = new LiveCore(space);
   let held: Held | undefined;
   const rowsFile = (): Record<string, unknown> => {
@@ -251,7 +290,10 @@ export function spaceSession(options: SessionOptions): SpaceSession {
   };
 
   /** One send on the link: its answer, or undefined when none came in time or the link went. */
-  const call = (entry: Entry): Promise<{ status: number; body: unknown } | undefined> =>
+  const call = (
+    path: string,
+    body: Record<string, unknown>,
+  ): Promise<{ status: number; body: unknown } | undefined> =>
     new Promise((resolve) => {
       callCount += 1;
       const id = `w${String(callCount)}`;
@@ -264,7 +306,6 @@ export function spaceSession(options: SessionOptions): SpaceSession {
         resolve(reply);
       }
       calls.set(id, done);
-      const { path, body } = outbox.bodyOf(entry);
       const copy = held?.space.copy ?? kept?.copy;
       const sent = owner.send(
         JSON.stringify({ type: "call", id, path, body, ...(copy === undefined ? {} : { copy }) }),
@@ -286,7 +327,8 @@ export function spaceSession(options: SessionOptions): SpaceSession {
         const entry = outbox.next();
         if (entry === undefined) break;
         outbox.tried(entry.request);
-        const reply = await call(entry);
+        const { path, body } = outbox.bodyOf(entry);
+        const reply = await call(path, body);
         const answer =
           reply === undefined ? { kind: "again" as const } : answerOf(reply.status, reply.body);
         if (answer.kind === "again") {
@@ -322,6 +364,7 @@ export function spaceSession(options: SessionOptions): SpaceSession {
         held = undefined;
         const all = rowsFile();
         Reflect.deleteProperty(all, key);
+        reads.forget();
         keep.write(ROWS, JSON.stringify(all));
       }
       if (state.kind === "connected") {
@@ -377,6 +420,26 @@ export function spaceSession(options: SessionOptions): SpaceSession {
       outbox.add({ kind: "add", draft, text }, request, now());
       return act(request);
     },
+    card: (task) =>
+      read(
+        CARD_READ.path,
+        CARD_READ.body(task),
+        cardOf,
+        () => reads.card(task),
+        (value, at) => {
+          reads.keepCard(task, value, at);
+        },
+      ),
+    page: (ref) =>
+      read(
+        PAGE_READ.path,
+        PAGE_READ.body(ref),
+        pageOf,
+        () => reads.page(ref),
+        (value, at) => {
+          reads.keepPage(ref, value, at);
+        },
+      ),
     dismiss: (request) => {
       outbox.dismiss(request);
       tell();
