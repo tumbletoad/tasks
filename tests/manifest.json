@@ -2234,24 +2234,8 @@
     },
     {
       "id": "A1.5.history.undo-redo",
-      "title": "Undo and redo through the write path, fixed scenarios: two edits of one field, then two undos and two redos, match each step; overlapping field sets (C1 summary and due, C2 due and status) undo C2, then C1, then redo both; repeated cycles keep passing while fv only grows and a stale base still conflicts; a foreign edit gives UNDO_CONFLICT with the value written, the value now and who changed it when, and a partial undo leaves it and lists it; a create is undone by a tombstone that the creating commit's own rows pass and another actor's child row blocks, and redone by a restore that a taken place refuses; a wrap-up's learnings are undone and redone, and an undo never leaves a task more than 20 live learnings; one stack per human, a new undoable action ends the redo, the named commit, nothing to undo or redo, the undo floor, and retries replay",
+      "title": "Undo and redo through the write path: a check-off and a reopen (its undo keeps the completion time and the outcome), the Trash and a restore of a whole change (its undo trashes only what it restored), a removed note, a title, a note's and a log entry's words, out of the Inbox with its status, a first filing, a new area and an unarchive are each undone and redone by the ordinary operation that writes back what the commit changed; a priority, an ordinary move, a wrap-up of a finished task, a mixed request and an agent's change are no step, and a step an earlier version stored of such a kind is passed over; someone else's newer work keeps the step, takes it off the stack, names who and replays on a resend; a check-off is not redone over an agent's log entry, nor a note's removal over words edited since; a named commit that is not the newest leaves the stack alone",
       "source": "A1 3.5, A1 3.10, A1 3.10.1, A1 3.10.4, A1 5, A7 3.10 M3.02",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.5.history.property",
-      "title": "ABA property test against a reference model: two humans and two agents edit, complete, reopen, remove, restore, note, link to sources and create areas and projects, undo and redo, and the human runs some tasks (a run's commits never join a stack or end a redo, and a run keeps its task's create); undo takes the step applied last, redo redoes the oldest undone step its guards and the rules across rows let through and passes over and keeps the others (newer work on a task it would hide, a key or slug taken, a row or owner out of sight), undo and redo never change a field whose provenance moved, undo then redo restores the values the commit wrote, physical versions only grow, every field holds its provenance commit's after-value, and fv and fp name the latest change row. With source keys: drafts of overlapping keys in every dedupe mode, check-offs, reopens, explicit links of one or two tasks, creates of several tasks with one key, archives, wrap-ups that add and remove learnings, deletes and restores, retries, jumps past the window, and two humans' undo and redo interleaved with agents' reopens; an inversion changes only fields that held the write it inverts and sets back their before-values, a key gains a second active holder only by a lifecycle or an explicit link or restore, a draft matches as A1 3.6 says with a finish taken from the lifecycle's provenance, a refusal writes nothing, no request ends in a storage error, and the search index equals a fresh rebuild",
-      "source": "A1 3.5, A1 3.6, A1 3.10, A1 3.10.1, A1 5, A7 3.10 M3.02",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.5.history.alone",
-      "title": "Property test of one person working alone: they create, file, move and reorder tasks, edit them and add to their context and log, check them off, reopen, archive, move them to the Trash and back, add notes and take them back and put them back, set folders, link tickets and unlink and relink them, make, rename, move, archive and remove areas and projects, often several in one request, and queue runs, stop them while queued and open sessions in between and between their undos and redos; then they undo until nothing is left and redo until nothing is left. Every Undo and Redo applies whole, each Undo gives back the space before the step it took back and each Redo the space after it, every position and the order of every list included, the rules every write keeps hold after every write, and every way this once failed runs first as a fixed case",
-      "source": "A1 3.10, A1 3.10.1",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2498,14 +2482,6 @@
       "id": "A5.trash.e2e.runs",
       "title": "A run working on a task moved to the Trash goes on: the toast says so, and after a cold reload the Agents page lists the task marked as in the Trash, with Stop in its card",
       "owner": "M5",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.5.history.dedupe",
-      "title": "Undo and redo meet dedupe by source key: an undo of a request whose draft matched takes back its entries and linked sources on the match and never the match; an undone create holds no key; a redo that would take a key's source row is a conflict naming that row; a redo that would make a second active holder of a key, decided on the state it makes, is a conflict that names the standing holder's link (a shared source in either order of two humans' redos, and a source the redo brings back), or each holder's lifecycle when the redo brings back every holder itself, and writes nothing; a key that was double before is not the restore's doing; a partial inversion leaves out a broken key's restores and applies the rest; a finished holder never blocks; an undo or redo never shares a request with a create, and dedupe's start state sees what they left; an undone check-off is no finish and a finish set back keeps its own instant, an archived task's by its provenance; a retry after an undo replays; a link an undo removed comes back only with its link version",
-      "source": "A1 3.5, A1 3.6, A1 3.8, A1 3.10, A1 3.10.1, A7 3.10 M3.02",
-      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -4355,32 +4331,8 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A1.3.10.history.effort-levels",
-      "title": "Undo and Redo of a change of the effort levels invert the rows its commit recorded: the list and every moved task go back, a task that reached a size the old levels lack keeps it and is named, a moved task changed since keeps its size under Undo the rest, and while someone else's change holds the list none of the step comes back",
-      "source": "A1 3.10.1, A1 3.16",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A1.3.10.history.effort-stored-rows",
       "title": "A change of levels with a move over a list of names an earlier build stored, or over a reset it left, undone, leaves the stored row exactly as it was, its version included, and the moved task back on its size",
-      "source": "A1 3.10.1, A1 3.16",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.3.10.history.effort-first",
-      "title": "The first change of levels on a space that never stored them needs a base, records the levels it read, and its Undo stores those, which reopening the space keeps, so Redo applies after a reopen; of two people who read no stored levels the second conflicts",
-      "source": "A1 3.10.1, A1 3.16",
-      "owner": "M3",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A1.3.16.prefs.undo-other",
-      "title": "A change of a preference other than the effort levels is no step on the undo stack: Undo after it takes back the step before it",
       "source": "A1 3.10.1, A1 3.16",
       "owner": "M3",
       "kind": "ci",

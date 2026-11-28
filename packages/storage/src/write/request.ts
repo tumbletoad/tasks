@@ -278,15 +278,10 @@ export interface OpResult {
   /** A change of the effort levels: how many tasks each move moved, by state. */
   moved?: (EffortMove & EffortCount)[];
   /**
-   * A change of the effort levels, or an undo or redo of one: the live tasks on a size the levels
-   * lack after it. Reported, never refused: such a task keeps its size and every reader takes it.
+   * A change of the effort levels: the live tasks on a size the levels lack after it. Reported, never refused: such a task keeps its size and every reader takes it.
    */
   off_list?: OffList[];
   /**
-   * An undo or redo of a change of the effort levels: whether it wrote the list, and how many sizes.
-   * What it says it did is this, never more.
-   */
-  levels?: { list: boolean; tasks: number };
   /** An undo or redo: the tasks whose lifecycle it changed, by reference, the first 50. */
   lifecycles?: string[];
   /**
@@ -368,26 +363,15 @@ export interface WriteResult {
   /** The commit's `op_` ID, for `applied`. */
   commit?: Id<"op">;
   /**
-   * For an undo or redo refused with UNDO_CONFLICT: the commit it met, so a caller that named none
-   * (Ctrl+Z) can name it in what it does next (A1 3.10.1).
+   * An undo or redo that someone else's newer work stood in the way of: it changed nothing, its
+   * step left the stack, and `newer` says whose work it was. Accepted, so a resend replays it.
    */
-  target?: Id<"op">;
-  /** With `target`: that commit is a change of the effort levels. */
-  levels?: true;
-  /**
-   * A redo's: the undone steps it tried and could not redo, oldest first. They stay undone, and
-   * the next redo tries them again; `conflicts` says why.
-   */
-  passed?: Id<"op">[];
-  /** An undo's or a redo's conflicts, as who changed which task since. */
+  kept?: true;
+  /** A kept undo's or redo's newer work: who changed which task since. */
   newer?: NewerWork;
   /** One per operation, for `applied` and `unchanged`. */
   results: OpResult[];
-  /**
-   * Every conflict of the request together, for `conflict`. For an `applied` partial undo, the
-   * fields it left as others set them, and for an `applied` redo why it passed over the steps in
-   * `passed` (A1 3.10.1).
-   */
+  /** Every conflict of the request together, for `conflict`. */
   conflicts: FieldConflict[];
   /** Why, for `rejected` and `conflict`. */
   error?: WriteProblem;
@@ -911,8 +895,7 @@ export interface RunTransition {
  * `pref.set` (A1 3.16): sets a space preference the registry declares, or resets it with null.
  * The value is checked against the key's declared shape before the transaction; whether the actor
  * may write the key is decided in it, so a refusal has its receipt (A3 3.8.3). A reset keeps the
- * row with the value null, so history and the base work as for any other value. Of the
- * preferences only the effort levels are undoable, because their change moves tasks with it.
+ * row with the value null, so history and the base work as for any other value.
  */
 export interface PrefSet {
   kind: "pref.set";
@@ -946,21 +929,18 @@ export interface OffList {
 }
 
 /**
- * `undo` (A1 3.10.1): inverts the principal's newest commit on its undo stack. It is guarded by
- * each field's provenance, never by a base, and is all or nothing unless `partial` asks for the
- * fields nobody changed since: then the rest stays as others set it, and the commit leaves the
- * stack even when nothing could be undone. A request holds it alone.
+ * `undo` (A1 3.10.1): takes the principal's newest step back with the ordinary operations that
+ * write what it changed back (steps.ts). A request holds it alone.
  */
 export interface Undo {
   kind: "undo";
   /** The commit the caller means: refused unless it is the stack's newest (a toast's own undo). */
   commit?: Id<"op">;
-  partial?: boolean;
 }
 
 /**
- * `redo` (A1 3.10.1): inverts the undo of the principal's oldest undone commit it can, so the
- * commit's values return with its own provenance. All or nothing. A request holds it alone.
+ * `redo` (A1 3.10.1): takes the undo of the step the principal undid last back, as `undo` takes a
+ * step back. A request holds it alone.
  */
 export interface Redo {
   kind: "redo";
@@ -1181,8 +1161,6 @@ export interface WriteRequest {
   /** Required when the request changes fields of rows that existed before it (A1 3.5). */
   base?: Base | string;
   reason?: string;
-  /** A human's undoable action: the commit joins the principal's undo stack (A1 3.10.1). */
-  undoable?: boolean;
   /**
    * Every task the request changes must be active: A3 3.4.6's `update_task` changes an active
    * task. A completed or archived one refuses the request with TASK_NOT_ACTIVE, decided in the
@@ -1951,7 +1929,6 @@ function checkOperation(value: unknown, i: number): Operation {
     case "undo": {
       const undo: Undo = { kind };
       if (f.has("commit")) undo.commit = f.id("commit", "op");
-      if (f.has("partial")) undo.partial = f.boolean("partial");
       op = undo;
       break;
     }
@@ -2476,12 +2453,6 @@ export function checkRequest(value: unknown): CheckedRequest {
   if (f.has("intent")) request.intent = checkIntent(f.raw("intent"));
   const reason = f.optText("reason", { chars: WRITE_LIMITS.reason });
   if (reason !== undefined) request.reason = reason;
-  if (f.has("undoable")) {
-    request.undoable = f.boolean("undoable");
-    if (request.undoable && actor.actor_kind !== "human") {
-      f.fail("VALIDATION_FAILED", "Only a human's actions join an undo stack", "undoable");
-    }
-  }
   if (f.has("active")) request.active = f.boolean("active");
   if (f.has("dry_run") && f.boolean("dry_run")) request.dry_run = true;
   if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
@@ -2508,20 +2479,6 @@ export function checkRequest(value: unknown): CheckedRequest {
   // Its answer gives each row's version as it is (writer.ts), which a preference's key names.
   if (request.dry_run === true && prefs === 0) {
     f.fail("VALIDATION_FAILED", "A dry run decides preferences only", "dry_run");
-  }
-  // Of the preferences, Undo inverts only the effort levels, whose change moves tasks with it: a
-  // change of another never joins the undo stack. Setting the earlier value again changes it back.
-  const [first] = request.ops;
-  const levels = prefs === 1 && first?.kind === "pref.set" && first.key === EFFORT_SCALE;
-  if (prefs > 0 && request.undoable === true && !levels) {
-    const mixed = request.ops.some((op) => op.kind === "pref.set" && op.key === EFFORT_SCALE);
-    f.fail(
-      "VALIDATION_FAILED",
-      mixed
-        ? "Set the effort levels in a request of their own: only they join the undo stack"
-        : "A preference change is not undoable: set it again",
-      "undoable",
-    );
   }
   checkMatchableDrafts(request.ops);
   f.done();
@@ -2597,9 +2554,6 @@ function checkHistoryRequest(f: Fields, request: CheckedRequest): void {
   if (request.actor.actor_kind !== "human") {
     f.fail("VALIDATION_FAILED", "Only a human undoes and redoes", "actor.actor_kind");
   }
-  if (request.undoable === true) {
-    f.fail("VALIDATION_FAILED", "An undo or redo does not join the undo stack", "undoable");
-  }
   if (request.base !== undefined) {
     f.fail("VALIDATION_FAILED", "An undo or redo is guarded by provenance, not a base", "base");
   }
@@ -2652,10 +2606,6 @@ function checkExecutionRequest(f: Fields, request: CheckedRequest): void {
   // space's system for what it observes. No agent, routine or import writes one (A3 3.2.3).
   if (actor.actor_kind !== "human" && actor.actor_kind !== "system") {
     f.fail("VALIDATION_FAILED", "Launching is a user action", "actor.actor_kind");
-  }
-  // A launch record changes no history the undo stack could invert (A1 3.6: not undoable).
-  if (request.undoable === true) {
-    f.fail("VALIDATION_FAILED", "A launch is not undoable", "undoable");
   }
   if (request.reason !== undefined) {
     f.fail(

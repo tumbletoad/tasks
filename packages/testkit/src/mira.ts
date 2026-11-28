@@ -504,7 +504,6 @@ function wrapUp(
       origin: "cli",
     },
     base: formatAsOf(writer.asOf()),
-    undoable: true,
     ops: [
       {
         kind: "task.wrap_up",
@@ -548,7 +547,6 @@ function bindFolders(
       origin: "cli",
     },
     base: formatAsOf(writer.asOf()),
-    undoable: true,
     ops: [
       {
         kind: "project.folder_set",
@@ -625,7 +623,6 @@ function generate(
       actor,
       ops,
       ...(base === true ? { base: formatAsOf(writer.asOf()) } : {}),
-      ...(actor.actor_kind === "human" ? { undoable: true } : {}),
     });
     // A random patch can set the values a task already has: then nothing changes.
     if (result.status !== "applied" && result.status !== "unchanged") {
