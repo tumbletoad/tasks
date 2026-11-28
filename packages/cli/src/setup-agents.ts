@@ -69,6 +69,7 @@ import {
   HOSTS,
   homeAnswer,
   homeGroups,
+  homesReadiness,
   isPrintApp,
   LockBusy,
   toolsOf,
@@ -104,6 +105,7 @@ import {
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import { personAtTerminal, type Io } from "./io.ts";
+import { readinessText } from "./readiness.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
 import { asAppError } from "./verbs.ts";
 
@@ -868,11 +870,20 @@ async function status(
   const answers = homes.map((views) =>
     views.map((view) => ({ view, answer: toolsOf(input, view, "", refusal(view)) })),
   );
+  // Each home's app: installed, its version and its sign-in, by the home's first file.
+  const firsts = answers.flatMap((files) => (files[0] === undefined ? [] : [files[0].view]));
+  const readiness = await homesReadiness(
+    input,
+    firsts.map((view) => view.home),
+  );
+  const readyOf = (view: HomeView | undefined) =>
+    view === undefined ? undefined : readiness[firsts.indexOf(view)];
   if (globals.json) {
     io.stdout(
       `${JSON.stringify({
         homes: answers.map((files) => {
           const [first] = files;
+          const ready = readyOf(first?.view);
           const home = homeAnswer(
             files.map(({ view, answer }) => ({ file: view.home.file, answer })),
           );
@@ -886,6 +897,7 @@ async function status(
                   files: files.map(({ view, answer }) => ({ ...viewJson(view), tools: answer })),
                 }),
             row: first === undefined ? null : (rowOf(first.view)?.grant ?? null),
+            ...(ready === undefined ? {} : { ready }),
           };
         }),
         service: rows !== undefined,
@@ -908,6 +920,8 @@ async function status(
           : `, grant row ${row.grant ?? "(no ID)"}`;
     const live = rows === undefined ? undefined : row !== undefined;
     io.stdout(`${title(first.view)}\n`);
+    const said = readyOf(first.view);
+    if (said !== undefined) io.stdout(`  ${readinessText(said)}\n`);
     if (files.length === 1) {
       io.stdout(`  ${toolsLine(first.view, first.answer, live)}${space}${grant}\n`);
       continue;
@@ -1024,6 +1038,13 @@ async function preview(
     return 0;
   }
   if (parsed.parts.includes("mcp") && items.length === 0) io.stdout("No agent home was found.\n");
+  const groups = homeGroups(input.platform, items, (item) => item.view.home);
+  const firsts = groups.flatMap((files) => (files[0] === undefined ? [] : [files[0].view]));
+  const readiness = await homesReadiness(
+    input,
+    firsts.map((view) => view.home),
+  );
+  const ready = new Map(firsts.map((view, i) => [view, readiness[i]]));
   let n = 0;
   let changes = 0;
   let shown: HomeView["home"] | undefined;
@@ -1036,6 +1057,8 @@ async function preview(
     if (!again) {
       n += 1;
       io.stdout(`${String(n)}. ${title(view)}\n`);
+      const said = ready.get(view);
+      if (said !== undefined) io.stdout(`   ${readinessText(said)}\n`);
     }
     const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
     io.stdout(`   ${view.home.file} (${hash})\n`);

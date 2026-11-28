@@ -9,6 +9,8 @@
 //   instances             machine.toml names no instance Open can start (run `ttasks setup
 //                         instances`), or a Claude Code or Codex instance's home has no entry of
 //                         setup's (run `ttasks setup agents`); reads machine.toml and the record only
+//   ready.<instance>      a Claude Code or Codex instance's program, version and sign-in, from the
+//                         app's own status command's exit code, with the next action
 //   mcp.<instance>        the entry setup wrote: still there by the file and by the app's own
 //                         `mcp get`, running this install's command, its --space and --instance
 //                         the same as its grant row
@@ -46,9 +48,11 @@ import {
   helperOutput,
   INSTANCE_ID,
   instanceHome,
+  instanceReadiness,
   MANUAL_INSTANCE,
   startHelper,
   type Env,
+  type Instance,
 } from "@ttasks/launch";
 import { loadMachineConfig } from "@ttasks/service/config";
 import { homeFolder, hostFacts, resolveLayout } from "@ttasks/service/paths";
@@ -78,6 +82,7 @@ import {
   type SetupInput,
 } from "@ttasks/service/setup";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
+import { readinessText } from "./readiness.ts";
 import type { Io } from "./io.ts";
 import { setupInputOf, type AgentsSetupOptions } from "./setup-agents.ts";
 
@@ -260,6 +265,7 @@ export async function agentChecks(
     return [
       ...checks,
       instancesCheck(io, undefined, options),
+      ...(await readinessChecks(io, options)),
       {
         id: "agents",
         status: "fail",
@@ -270,7 +276,7 @@ export async function agentChecks(
     ];
   }
   const records = read.all;
-  checks.push(instancesCheck(io, records, options));
+  checks.push(instancesCheck(io, records, options), ...(await readinessChecks(io, options)));
   let session: Session | undefined;
   try {
     session = await connectService(io, options);
@@ -413,23 +419,13 @@ function instancesCheck(
   records: readonly HomeRecord[] | undefined,
   options: AgentDoctorOptions,
 ): Check {
-  const facts = hostFacts(io.env, io.platform);
-  const instances = loadMachineConfig(
-    resolveLayout(facts).config,
-    io.platform,
-  ).config.instances.filter((i) => i.enabled);
+  const { instances, userHome } = enabledInstances(io, options);
   if (instances.length === 0) {
     return {
       id: "instances",
       status: "warn",
       detail: `No agent app is set up for Open on this machine, so a task offers only Copy. Run: ${CLI_NAME} setup instances`,
     };
-  }
-  let userHome: string | undefined;
-  try {
-    userHome = options.agents?.home ?? homeFolder(facts);
-  } catch {
-    userHome = undefined;
   }
   const without = instances.filter((instance) => {
     const app = HOME_APP[instance.target];
@@ -449,6 +445,51 @@ function instancesCheck(
     };
   }
   return { id: "instances", status: "ok", detail: `Open can start a task in ${ids}.` };
+}
+
+/** machine.toml's enabled instances, and the account's home folder they are read against. */
+function enabledInstances(
+  io: Io,
+  options: AgentDoctorOptions,
+): { readonly instances: readonly Instance[]; readonly userHome: string | undefined } {
+  const facts = hostFacts(io.env, io.platform);
+  const instances = loadMachineConfig(
+    resolveLayout(facts).config,
+    io.platform,
+  ).config.instances.filter((i) => i.enabled);
+  let userHome: string | undefined;
+  try {
+    userHome = options.agents?.home ?? homeFolder(facts);
+  } catch {
+    userHome = undefined;
+  }
+  return { instances, userHome };
+}
+
+/**
+ * `ready.<instance>`: each Claude Code or Codex instance's program, version and sign-in, with the
+ * next action (readinessText). The apps' own status commands run side by side.
+ */
+async function readinessChecks(io: Io, options: AgentDoctorOptions): Promise<Check[]> {
+  const { instances, userHome } = enabledInstances(io, options);
+  const base = options.agents?.env ?? io.env;
+  const found = await Promise.all(
+    instances.map(async (instance) => ({
+      instance,
+      ready: await instanceReadiness(instance, { platform: io.platform, base, home: userHome }),
+    })),
+  );
+  return found.flatMap(({ instance, ready }): Check[] =>
+    ready === undefined
+      ? []
+      : [
+          {
+            id: `ready.${instance.id}`,
+            status: ready.state === "signed_in" ? "ok" : "warn",
+            detail: `${instance.id}: ${readinessText(ready)}`,
+          },
+        ],
+  );
 }
 
 function liveSkipped(live: boolean, why: string): Check {
