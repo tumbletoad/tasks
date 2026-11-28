@@ -417,11 +417,6 @@ const LATER: Readonly<Record<string, Later>> = {
     why: "the world's groups are the ones its own examples create, with other counts",
     now: { result: "schema" },
   },
-  "run.report 0": {
-    owner: "M6.06 (run and routine bindings)",
-    why: "no connection is bound to a run before M6",
-    now: { error: "not_permitted" },
-  },
   "task.search 0": {
     owner: "the query design for word forms, and a world that holds Mira's areas and projects",
     why:
@@ -435,6 +430,7 @@ const LATER: Readonly<Record<string, Later>> = {
     why: "the next page after a task was deleted, under the example's cursor",
     now: { error: "cursor_expired" },
   },
+  ...pagesLater(),
 };
 
 const VERIFIED = new Set([
@@ -467,6 +463,9 @@ const VERIFIED = new Set([
   "task.delete 0",
   "task.delete 1",
   "task.trash 0",
+  "page.read 1",
+  "page.write 0",
+  "page.write 1",
 ]);
 
 type Value = Record<string, unknown>;
@@ -477,6 +476,11 @@ const refs = (list: unknown, key = "ref"): unknown[] =>
 /** What a result means, per entry: the parts an example documents that a world can reproduce. */
 function meaning(entry: string, value: Value): unknown {
   switch (entry) {
+    case "page.read":
+      // The world's project has its own pages and texts: the node by what it is and its name.
+      return { view: value["view"], kind: value["kind"], title: value["title"] };
+    case "page.write":
+      return { result: value["result"] };
     case "activity.list":
       // The world's agents made other changes than the example's: a line by its form.
       return {
@@ -1002,15 +1006,22 @@ export interface GrantTransport {
 /** A base the gate refuses before it is ever compared: the call reads nothing. */
 const ANY_BASE = "1.1.00000000";
 
-/**
- * Every agent tool's entry, with an input its agent audience accepts. `run_report` is refused as
- * `not_permitted` before any space is chosen, on every connection that is not a run's (A3 3.4.12),
- * so it tells a home of another space nothing either.
- */
+/** Every agent tool's entry, with an input its agent audience accepts. */
 const GRANT_CALLS: readonly [string, (n: number) => Record<string, unknown>][] = [
   ["space.status", () => ({})],
   ["task.search", () => ({ q: "status:open" })],
   ["task.get", () => ({ task: "M-1" })],
+  ["page.read", () => ({ target: "space" })],
+  [
+    "page.write",
+    (n) => ({
+      action: "append",
+      target: "M-1",
+      text: "More.",
+      why: "a grant check",
+      request_id: `contract-grant-${String(n).padStart(8, "0")}`,
+    }),
+  ],
   [
     "task.add",
     (n) => ({
@@ -1077,7 +1088,6 @@ export function grantSuite(name: string, open: () => Promise<GrantTransport>): v
       "[A3.3.7.grant.faces] every agent tool's call from a home that is not granted the space: forbidden, rule grant, A3's body",
       { timeout: 180_000 },
       async () => {
-        // Every agent tool is called, but run_report, refused before any space is chosen.
         const tools = registry
           .filter((e) => e.actors === "agent" && e.faces.mcp !== undefined)
           .map((e) => e.name)
@@ -1404,4 +1414,25 @@ async function buildWorld(t: ContractTransport): Promise<{ asOf(): Promise<strin
       },
     );
   return { asOf };
+}
+
+/**
+ * The page examples the world cannot reproduce yet: they read and write Mira's pages (M-180 in
+ * Lumen Health), which no example of the world makes, and its Lumen Health holds no page Trash.
+ */
+function pagesLater(): Record<string, Later> {
+  const owner = "a world that holds Mira's pages, M-180 in Lumen Health";
+  const missing = (why: string): Later => ({ owner, why, now: { error: "not_found" } });
+  return {
+    "page.read 0": missing("the world has no page M-180"),
+    "page.history 0": missing("the world has no page M-180"),
+    "page.history 1": missing("the world has no page M-180"),
+    "page.trashed 0": { owner, why: "the world's Trash holds no page", now: { result: "schema" } },
+    "page.write 2": missing("the world has no page M-180"),
+    "page.write 3": missing("the world's projects have other IDs than Mira's Lumen Health"),
+    "page.write 4": missing("the world has no page M-180"),
+    "page.write 5": missing("the world has no page M-180"),
+    "page.write 6": missing("the world has no page M-180"),
+    "node.instruct 0": missing("the world's projects have other IDs than Mira's Lumen Health"),
+  };
 }

@@ -28,7 +28,8 @@
 //   space no longer has.
 import type { PreferenceRead } from "@ttasks/contracts";
 import { RUN_WAITS, WAITS, type Row, type WorkerConnection } from "@ttasks/storage";
-import { hasFolderTable } from "../ops/read.ts";
+import { hasFolderTable, hasPageTable } from "../ops/read.ts";
+import { COMPACT_PAGE, compactPage, LIVE_PAGES } from "../ops/library.ts";
 import {
   compact,
   taskColumns,
@@ -103,6 +104,13 @@ export interface SnapshotMessage {
   readonly asking: readonly CompactRow[];
   readonly areas: readonly CompactRow[];
   readonly projects: readonly CompactRow[];
+  /**
+   * Every page the space shows, without its body (contracts' CompactPage). A batch carries a
+   * page's row as an entity of type `page`; one whose row has `deleted_at` leaves the lists, also
+   * when its task or project went to the Trash. A change to a node's texts is an entity of type
+   * `node_text` without a row. Absent on a space before pages.
+   */
+  readonly pages?: readonly Record<string, unknown>[];
   /**
    * Every space preference and flag the registry declares, with its value as readers take it and
    * its state (A1 3.16, A5 3.15 step 1). A batch names a changed preference as an entity of type
@@ -241,6 +249,14 @@ const LAUNCH_TASKS =
   "(SELECT entity_id FROM changes WHERE seq > $after AND entity = 'launches')";
 const AREA_ROWS = `SELECT ${AREA_COLUMNS} FROM areas a WHERE a.id IN (${touched("areas")})`;
 const PROJECT_ROWS = `SELECT ${PROJECT_COLUMNS} FROM projects p WHERE p.id IN (${touched("projects")})`;
+/**
+ * The pages a batch's commits changed, and those whose task, project or area they moved to the
+ * Trash or brought back: their rows say whether they are shown.
+ */
+const PAGE_ROWS =
+  `${COMPACT_PAGE} WHERE p.id IN (SELECT entity_id FROM changes WHERE seq > $after AND seq <= $upto ` +
+  "AND entity = 'pages') OR p.owner_id IN (SELECT entity_id FROM changes WHERE seq > $after " +
+  "AND seq <= $upto AND entity IN ('tasks', 'projects', 'areas') AND field = 'deleted')";
 
 /** The words entities are named by in the feed. Another table is `other`. */
 export const ENTITY_TYPES: Readonly<Record<string, string>> = {
@@ -258,6 +274,8 @@ export const ENTITY_TYPES: Readonly<Record<string, string>> = {
   machines: "machine",
   learnings: "learning",
   preferences: "preference",
+  pages: "page",
+  node_texts: "node_text",
 };
 
 function headOf(row: unknown): SpaceHead {
@@ -290,7 +308,8 @@ export async function readSnapshot(
 ): Promise<SnapshotMessage> {
   const folders = await hasFolderTable(reader);
   const since = { since: now - AGENT_CHANGE_DAYS * 86_400_000 };
-  const [space, tasks, areas, projects, preferences, changed, finished, asking] =
+  const withPages = await hasPageTable(reader);
+  const [space, tasks, areas, projects, preferences, changed, finished, asking, livePages] =
     await reader.transaction("deferred", [
       { sql: SPACE_SQL, mode: "get" },
       { sql: openTasks(folders), mode: "all" },
@@ -300,11 +319,15 @@ export async function readSnapshot(
       { sql: AGENT_CHANGES, mode: "all", params: since },
       { sql: agentChangedRows(folders), mode: "all", params: since },
       { sql: askingRows(folders), mode: "all" },
+      ...(withPages ? [{ sql: LIVE_PAGES, mode: "all" as const }] : []),
     ]);
   const head = headOf(space);
   const rows = new Map(
     (await taskRows(finished as Row[], head.ref_prefix, here)).map((row) => [row["id"], row]),
   );
+  const pages = withPages
+    ? ((livePages ?? []) as Row[]).map((row) => compactPage(head.ref_prefix, row))
+    : undefined;
   return {
     type: "snapshot",
     space: { id: head.id, name: head.name, ref_prefix: head.ref_prefix },
@@ -323,6 +346,7 @@ export async function readSnapshot(
     asking: await taskRows(asking as Row[], head.ref_prefix, here),
     areas: (areas as Row[]).map((row) => compact(row)),
     projects: (projects as Row[]).map((row) => compact(row)),
+    ...(pages === undefined ? {} : { pages }),
     preferences: spacePreferencesOf(preferences as Row[]),
   };
 }
@@ -347,6 +371,7 @@ export async function readBatch(
   const limit = options.limit ?? BATCH_COMMITS;
   const visible = options.visible ?? ALL_VISIBLE;
   const params = { after, upto: after + limit };
+  const withPages = await hasPageTable(reader);
   const folders = await hasFolderTable(reader);
   const [
     space,
@@ -360,6 +385,7 @@ export async function readBatch(
     later,
     projectFolders,
     runs,
+    pageRows,
   ] = await reader.transaction("deferred", [
     { sql: SPACE_SQL, mode: "get" },
     { sql: COMMITS, mode: "all", params },
@@ -376,6 +402,7 @@ export async function readBatch(
           { sql: RUN_TASKS, mode: "all" as const, params: { after } },
         ]
       : []),
+    ...(withPages ? [{ sql: PAGE_ROWS, mode: "all" as const, params }] : []),
   ]);
   const head = headOf(space);
   const through = Math.max(after, Math.min(head.cursor.seq, after + limit));
@@ -393,6 +420,14 @@ export async function readBatch(
   }
   for (const row of areas as Row[]) rows.set(`areas:${String(row["id"])}`, compact(row));
   for (const row of projects as Row[]) rows.set(`projects:${String(row["id"])}`, compact(row));
+  /** The pages of each task, project or area a batch moved to the Trash or back. */
+  const pagesOn = new Map<string, string[]>();
+  for (const row of (pageRows ?? []) as Row[]) {
+    const key = `pages:${String(row["id"])}`;
+    rows.set(key, compactPage(head.ref_prefix, row) as CompactRow);
+    const owner = String(row["owner_id"]);
+    pagesOn.set(owner, [...(pagesOn.get(owner) ?? []), key]);
+  }
 
   // Which commits this subscriber sees. A hidden commit is accounted for by the interval only.
   const shown = new Map<number, Row>();
@@ -507,6 +542,21 @@ export async function readBatch(
           changed: fields,
         },
       });
+    }
+    // A task, project or area moved to the Trash or back takes its pages with it: their rows say so.
+    if (field === "deleted" && (table === "tasks" || table === "projects" || table === "areas")) {
+      for (const key of pagesOn.get(id) ?? []) {
+        if (entities.has(key)) continue;
+        entities.set(key, {
+          changed: [],
+          entity: {
+            type: "page",
+            id: key.slice("pages:".length),
+            row: withheld.has(key) ? null : (rows.get(key) ?? null),
+            changed: [],
+          },
+        });
+      }
     }
   }
 

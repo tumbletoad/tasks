@@ -10,7 +10,15 @@
 import type { Connection } from "../driver.ts";
 
 /** The document kinds of `search_docs.kind`. */
-export const SEARCH_DOC_KINDS = ["task", "note", "log", "learning", "project", "area"] as const;
+export const SEARCH_DOC_KINDS = [
+  "task",
+  "note",
+  "log",
+  "learning",
+  "project",
+  "area",
+  "page",
+] as const;
 export type SearchDocKind = (typeof SEARCH_DOC_KINDS)[number];
 
 /** The FTS5 table. FTS5 names its shadow tables after it. */

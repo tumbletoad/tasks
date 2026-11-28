@@ -6,11 +6,17 @@
 //                                                          project and area titles, its reference
 //   note, log entry   owning task's title | body | author label
 //   learning          owning task's title | body | project title
-//   project, area     title | brief | slug
+//   project, area     title | brief, description (from 0.6) | slug
+//   page (from 0.6)   title | brief, body | what holds it, by name, and its reference
 //
 // A document exists for every live row: a tombstoned task has none, and neither have its notes,
-// log entries and learnings, nor any deleted row. `lifecycle` is the owning task's (null for areas
-// and projects) and `audience` the note's (`all` for everything else).
+// log entries, learnings and pages, nor any deleted row; a page lives while what holds it lives.
+// `lifecycle` is the owning task's (null for areas, projects and a page not on a task) and
+// `audience` the note's (`all` for everything else).
+//
+// A database before schema 0.6 has no pages and no texts: its documents are read as that schema
+// holds them (`withPages`), so a restore of an older backup by this build, the trial restore before
+// a migration included, makes the index its own tables can fill.
 //
 // One function builds a document from the current state, and both paths use it: the write path
 // re-derives the documents a commit touched and writes only those whose content differs (a
@@ -75,6 +81,20 @@ const LEARNING_DOC =
   "WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL";
 const GROUP_DOC = (table: string): string =>
   `SELECT id, title, brief, slug FROM ${table} WHERE deleted_at IS NULL`;
+/** From 0.6, a group's document holds its description too. */
+const GROUP_TEXT_DOC = (table: string): string =>
+  `SELECT g.id, g.title, g.brief, g.slug, x.description FROM ${table} g ` +
+  "LEFT JOIN node_texts x ON x.owner_id = g.id WHERE g.deleted_at IS NULL";
+/** A live page whose holder lives, with the holder's name and, on a task, the task's facts. */
+const PAGE_DOC =
+  "SELECT p.id, p.ref, p.title, p.brief, p.body, t.id AS task_id, t.lifecycle, " +
+  "COALESCE(t.title, r.title, a.title, s.name) AS owner_title FROM pages p " +
+  "LEFT JOIN tasks t ON p.owner_kind = 'task' AND t.id = p.owner_id " +
+  "LEFT JOIN projects r ON p.owner_kind = 'project' AND r.id = p.owner_id " +
+  "LEFT JOIN areas a ON p.owner_kind = 'area' AND a.id = p.owner_id " +
+  "LEFT JOIN space s ON p.owner_kind = 'space' AND s.one = 1 " +
+  "WHERE p.deleted_at IS NULL AND t.deleted_at IS NULL AND r.deleted_at IS NULL " +
+  "AND a.deleted_at IS NULL";
 
 const SQL = {
   space: "SELECT * FROM space WHERE one = 1",
@@ -97,12 +117,21 @@ const SQL = {
   oneArea: `${GROUP_DOC("areas")} AND id = $id`,
   allProjects: `${GROUP_DOC("projects")} ORDER BY id`,
   oneProject: `${GROUP_DOC("projects")} AND id = $id`,
+  allTextAreas: `${GROUP_TEXT_DOC("areas")} ORDER BY g.id`,
+  oneTextArea: `${GROUP_TEXT_DOC("areas")} AND g.id = $id`,
+  allTextProjects: `${GROUP_TEXT_DOC("projects")} ORDER BY g.id`,
+  oneTextProject: `${GROUP_TEXT_DOC("projects")} AND g.id = $id`,
+  allPages: `${PAGE_DOC} ORDER BY p.id`,
+  onePage: `${PAGE_DOC} AND p.id = $id`,
+  taskPages: `${PAGE_DOC} AND p.owner_kind = 'task' AND p.owner_id = $id`,
+  pagesOf: "SELECT id FROM pages WHERE owner_id = $id",
   // The index side.
   stored:
     "SELECT d.doc, d.kind, d.entity_id, d.task_id, d.lifecycle, d.audience, f.title, f.body, " +
     "f.extra FROM search_docs d LEFT JOIN search_fts f ON f.rowid = d.doc WHERE d.entity_id = $id",
   storedChildren:
-    "SELECT entity_id FROM search_docs WHERE task_id = $id AND kind IN ('note', 'log', 'learning')",
+    "SELECT entity_id FROM search_docs WHERE task_id = $id " +
+    "AND kind IN ('note', 'log', 'learning', 'page')",
   allStored:
     "SELECT d.doc, d.kind, d.entity_id, d.task_id, d.lifecycle, d.audience, f.title, f.body, " +
     "f.extra FROM search_docs d LEFT JOIN search_fts f ON f.rowid = d.doc ORDER BY d.entity_id",
@@ -226,10 +255,29 @@ function groupDocument(kind: "area" | "project", row: Row): SearchDocument {
     lifecycle: null,
     audience: "all",
     title: str(row["title"]),
-    body: str(row["brief"]),
+    body: lines([row["brief"], row["description"]]),
     extra: str(row["slug"]),
   };
 }
+
+function pageDocument(row: Row, prefix: string): SearchDocument {
+  return {
+    kind: "page",
+    entityId: str(row["id"]),
+    taskId: opt(row["task_id"]),
+    lifecycle: opt(row["lifecycle"]),
+    audience: "all",
+    title: str(row["title"]),
+    body: lines([row["brief"], row["body"]]),
+    extra: lines([row["owner_title"], formatTaskRef(prefix, Number(row["ref"]))]),
+  };
+}
+
+/** The schema revision whose tables first hold pages and a node's texts. */
+const PAGES_SINCE = 6;
+
+/** Whether the database's schema holds pages: an older backup's does not. */
+const withPages = (conn: Connection): boolean => Number(conn.pragma("user_version")) >= PAGES_SINCE;
 
 function refPrefix(conn: Connection): string {
   return decodeSpaceRow(conn.prepare(SQL.space).get()).refPrefix;
@@ -252,6 +300,7 @@ export function expectedDocuments(conn: Connection): Map<string, SearchDocument>
   const prefix = refPrefix(conn);
   const sources = byTask(conn.prepare(SQL.allSources).all());
   const labels = byTask(conn.prepare(SQL.allLabels).all());
+  const pages = withPages(conn);
   const docs: SearchDocument[] = [
     ...conn
       .prepare(SQL.allTasks)
@@ -270,13 +319,19 @@ export function expectedDocuments(conn: Connection): Map<string, SearchDocument>
       .map((row) => entryDocument("log", row)),
     ...conn.prepare(SQL.allLearnings).all().map(learningDocument),
     ...conn
-      .prepare(SQL.allAreas)
+      .prepare(pages ? SQL.allTextAreas : SQL.allAreas)
       .all()
       .map((row) => groupDocument("area", row)),
     ...conn
-      .prepare(SQL.allProjects)
+      .prepare(pages ? SQL.allTextProjects : SQL.allProjects)
       .all()
       .map((row) => groupDocument("project", row)),
+    ...(pages
+      ? conn
+          .prepare(SQL.allPages)
+          .all()
+          .map((row) => pageDocument(row, prefix))
+      : []),
   ];
   return new Map(docs.map((doc) => [doc.entityId, doc]));
 }
@@ -293,9 +348,18 @@ function oneTaskDocument(conn: Connection, prefix: string, id: string): SearchDo
   );
 }
 
-/** The documents of a task's notes, log entries and learnings, by entity ID. */
+/**
+ * The documents of a task's notes, log entries, learnings and pages, by entity ID.
+ */
 function childDocuments(conn: Connection, id: string): Map<string, SearchDocument> {
+  const prefix = refPrefix(conn);
   const docs = [
+    ...(withPages(conn)
+      ? conn
+          .prepare(SQL.taskPages)
+          .all({ id })
+          .map((row) => pageDocument(row, prefix))
+      : []),
     ...conn
       .prepare(SQL.taskNotes)
       .all({ id })
@@ -309,12 +373,12 @@ function childDocuments(conn: Connection, id: string): Map<string, SearchDocumen
   return new Map(docs.map((doc) => [doc.entityId, doc]));
 }
 
-/** The document of one entity that is not a task, or undefined when it has none. */
-function oneDocument(
-  conn: Connection,
-  kind: "note" | "log" | "learning" | "area" | "project",
-  id: string,
-): SearchDocument | undefined {
+type OtherKind = "note" | "log" | "learning" | "area" | "project" | "page";
+
+/**
+ * The document of one entity that is not a task, or undefined when it has none.
+ */
+function oneDocument(conn: Connection, kind: OtherKind, id: string): SearchDocument | undefined {
   switch (kind) {
     case "note": {
       const row = conn.prepare(SQL.oneNote).get({ id });
@@ -330,8 +394,21 @@ function oneDocument(
     }
     case "area":
     case "project": {
-      const row = conn.prepare(kind === "area" ? SQL.oneArea : SQL.oneProject).get({ id });
+      const texts = withPages(conn);
+      const sql =
+        kind === "area"
+          ? texts
+            ? SQL.oneTextArea
+            : SQL.oneArea
+          : texts
+            ? SQL.oneTextProject
+            : SQL.oneProject;
+      const row = conn.prepare(sql).get({ id });
       return row === undefined ? undefined : groupDocument(kind, row);
+    }
+    case "page": {
+      const row = conn.prepare(SQL.onePage).get({ id });
+      return row === undefined ? undefined : pageDocument(row, refPrefix(conn));
     }
   }
 }
@@ -440,8 +517,9 @@ const ENTRY_KINDS: Readonly<Record<string, "note" | "log" | "learning" | undefin
 /**
  * Brings the documents a commit's changes reach up to date, inside the commit's transaction
  * (A1 3.12: "the write handlers delete and re-insert each affected document in the write
- * transaction"). A task's title, lifecycle or tombstone reaches its notes, log entries and
- * learnings too; a source, label, area or project reaches the tasks that show it.
+ * transaction"). A task's title, lifecycle or tombstone reaches its notes, log entries, learnings
+ * and pages too; a source, label, area or project reaches the tasks that show it, and a group
+ * reaches its pages.
  */
 export function indexChanges(conn: Connection, seq: number, changes: readonly IndexedChange[]) {
   if (!conn.inTransaction) throw misuse("The search index changes inside a write transaction");
@@ -454,7 +532,11 @@ export function indexChanges(conn: Connection, seq: number, changes: readonly In
   const markAll = (sql: string, id: string, wide: boolean): void => {
     for (const row of conn.prepare(sql).all({ id })) mark(str(row["task_id"]), wide);
   };
-  const others = new Map<string, "note" | "log" | "learning" | "area" | "project">();
+  const others = new Map<string, OtherKind>();
+  // A group's title and tombstone reach the pages it holds.
+  const pagesOf = (id: string): void => {
+    for (const row of conn.prepare(SQL.pagesOf).all({ id })) others.set(str(row["id"]), "page");
+  };
   for (const change of changes) {
     const entry = ENTRY_KINDS[change.entity];
     if (entry !== undefined) {
@@ -483,11 +565,21 @@ export function indexChanges(conn: Connection, seq: number, changes: readonly In
       case "areas":
         others.set(change.entityId, "area");
         if (change.action !== "create") markAll(SQL.tasksOfArea, change.entityId, false);
+        if (change.action !== "create") pagesOf(change.entityId);
         break;
       case "projects":
         // A learning shows its task's project title.
         others.set(change.entityId, "project");
         if (change.action !== "create") markAll(SQL.tasksOfProject, change.entityId, true);
+        if (change.action !== "create") pagesOf(change.entityId);
+        break;
+      case "pages":
+        others.set(change.entityId, "page");
+        break;
+      // A node's texts are keyed by its ID: a description shows in its area's or project's document.
+      case "node_texts":
+        if (change.entityId.startsWith("a_")) others.set(change.entityId, "area");
+        else if (change.entityId.startsWith("p_")) others.set(change.entityId, "project");
         break;
       default:
         // Places, launches, machines, preferences, proposals and exchanges hold no search text.

@@ -41,6 +41,12 @@ const EMPTY_0_2 = [
  */
 const EMPTY_0_3 = ["sessions"] as const;
 
+/**
+ * The tables of schema 0.6 that no operation writes yet: pages and the texts of a node, whose
+ * writes come with step 1's writer. That step moves their rows into the sample.
+ */
+const EMPTY_0_6 = ["pages", "node_texts"] as const;
+
 const made: string[] = [];
 const temp = (): string => {
   const dir = mkdtempSync(join(tmpdir(), "mira-"));
@@ -220,6 +226,41 @@ function fillEmpty03(conn: Connection): void {
   });
 }
 
+/**
+ * One valid row in each table of EMPTY_0_6, as fillEmpty02 does: no operation, no history. A page
+ * on the sample's first task, and the texts of the space.
+ */
+function fillEmpty06(conn: Connection): void {
+  const one = (sql: string): unknown => Object.values(conn.prepare(sql).get() ?? {})[0];
+  const seq = Number(one("SELECT last_seq FROM space"));
+  const page = {
+    task: String(one("SELECT id FROM tasks ORDER BY ref LIMIT 1")),
+    owner: String(one("SELECT id FROM actors WHERE kind = 'human'")),
+    ref: Number(one("SELECT next_ref FROM space")),
+    seq,
+    at: Number(one("SELECT max(at) FROM commits")),
+  };
+  const texts = { space: String(one("SELECT space_id FROM space")), seq };
+  conn.transaction("immediate", () => {
+    const run = (sql: string, params: Record<string, string | number>): void => {
+      conn.prepare(sql).run(params);
+    };
+    run(
+      `INSERT INTO pages (id, ref, owner_kind, owner_id, title, brief, body, created_at, created_by,
+         created_seq, version)
+       VALUES ('pg_fixture', $ref, 'task', $task, 'Fixture page', 'What it holds', 'Body',
+         $at, $owner, $seq, $seq)`,
+      page,
+    );
+    run(
+      `INSERT INTO node_texts (owner_id, owner_kind, brief, description, for_agents, created_seq,
+         version)
+       VALUES ($space, 'space', 'The fixture space', 'Its description', '', $seq, $seq)`,
+      texts,
+    );
+  });
+}
+
 describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () => {
   test("the same seed and size give the same space twice, with the fixed digest", async () => {
     const checked = await checkedDriver();
@@ -260,7 +301,7 @@ describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () =
     ];
     expect(b.counts).toEqual({
       ...a.counts,
-      ...Object.fromEntries([...EMPTY_0_2, ...EMPTY_0_3].map((t) => [t, 0])),
+      ...Object.fromEntries([...EMPTY_0_2, ...EMPTY_0_3, ...EMPTY_0_6].map((t) => [t, 0])),
       ...Object.fromEntries([more("commits", 9), more("receipts", 9), more("changes", 12)]),
       learnings: 2,
       runs: 2,
@@ -341,8 +382,10 @@ describe("[A1.5.schema.lint] on the sample space, the CHECKs refuse what the sch
     // real row. Fixture rows without history, in this throwaway copy only.
     expect(EMPTY_0_2.map((t) => space.counts[t])).toEqual(EMPTY_0_2.map(() => 0));
     expect(EMPTY_0_3.map((t) => space.counts[t])).toEqual(EMPTY_0_3.map(() => 0));
+    expect(EMPTY_0_6.map((t) => space.counts[t])).toEqual(EMPTY_0_6.map(() => 0));
     fillEmpty02(conn);
     fillEmpty03(conn);
+    fillEmpty06(conn);
     counts = Object.fromEntries(
       Object.keys(space.counts).map((t) => [
         t,
@@ -373,7 +416,9 @@ describe("[A1.5.schema.lint] on the sample space, the CHECKs refuse what the sch
 
   test("every table of this build's schema has rows: the sample's, and one each where no operation writes yet", () => {
     for (const [table, n] of Object.entries(counts)) expect(n, table).toBeGreaterThan(0);
-    expect(Object.keys(counts)).toEqual(expect.arrayContaining([...EMPTY_0_2, ...EMPTY_0_3]));
+    expect(Object.keys(counts)).toEqual(
+      expect.arrayContaining([...EMPTY_0_2, ...EMPTY_0_3, ...EMPTY_0_6]),
+    );
   });
 
   test("a value outside a closed enumeration is refused in every enum column", () => {

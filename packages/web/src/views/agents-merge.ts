@@ -4,8 +4,10 @@
 // waits for the person asks as much as an agent that waits. TTasks' record decides what an agent is: a
 // background run's state is TTasks' own, an agent in a terminal's is the monitor's, and a
 // terminal agent TTasks holds as running that the monitor has not seen is shown as such, never
-// as idle: also one of a task in the Trash, from its launch's record, with no monitor at all.
-import type { AgentsPicture, AgentsSession } from "@ttasks/contracts/monitor";
+// as idle: also one of a task in the Trash, from its launch's record, with no monitor at all. A
+// task's T3 Code thread is an agent of the task in the state T3 Code tells, with or without the
+// monitor, and that state is TTasks' own: nothing the monitor says mutes or moves it.
+import type { AgentsPicture, AgentsSession, AgentsThread } from "@ttasks/contracts/monitor";
 import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 
 /** What an agent of a task does, in the page's order: what asks most of the person first. */
@@ -27,7 +29,7 @@ export interface TaskAgent {
   readonly state: AgentState;
   /** The monitor's session, with the agents inside it; null for one the monitor does not show. */
   readonly session: AgentsSession | null;
-  readonly started: "run" | "terminal";
+  readonly started: "run" | "terminal" | "t3";
   /** The agent of the task's current background run, in TTasks' own state. */
   readonly current: boolean;
 }
@@ -36,7 +38,7 @@ export interface TaskAgent {
 export interface Placed {
   /** The state of the agent that asks most of the person. */
   readonly state: AgentState;
-  /** That state is TTasks' own, from a background run's record, and not the monitor's. */
+  /** That state is TTasks' own, from a background run's record or T3 Code, not the monitor's. */
   readonly own: boolean;
   /** How long before the picture its oldest agent the monitor sees started; null: none known. */
   readonly ageMs: number | null;
@@ -87,15 +89,16 @@ const byStart = (a: TaskAgent, b: TaskAgent): number =>
  */
 export function linkedOutside(
   picture: AgentsPicture | null,
+  threads: readonly AgentsThread[],
   space: string | undefined,
   rows: ReadonlyMap<string, TaskRow>,
 ): string[] {
-  if (picture === null || space === undefined) return [];
+  if (space === undefined) return [];
   const ids = new Set<string>();
-  for (const session of picture.sessions) {
+  for (const session of picture?.sessions ?? []) {
     if (session.task?.space === space && !rows.has(session.task.id)) ids.add(session.task.id);
   }
-  for (const task of picture.unseen) {
+  for (const task of [...(picture?.unseen ?? []), ...threads.map((thread) => thread.task)]) {
     if (task.space === space && !rows.has(task.id)) ids.add(task.id);
   }
   return [...ids].sort();
@@ -109,6 +112,7 @@ export function linkedOutside(
  */
 export function mergeAgents(
   picture: AgentsPicture | null,
+  threads: readonly AgentsThread[],
   space: string | undefined,
   rows: ReadonlyMap<string, TaskRow>,
 ): Merged {
@@ -146,6 +150,18 @@ export function mergeAgents(
       });
     }
   }
+  const told = new Map<string, AgentState[]>();
+  for (const { task, activity } of threads) {
+    if (task.space !== space || !rows.has(task.id)) continue;
+    add(task.id, {
+      key: `t3:${task.of}`,
+      state: activity,
+      session: null,
+      started: "t3",
+      current: false,
+    });
+    told.set(task.id, [...(told.get(task.id) ?? []), activity]);
+  }
   // A removed task's terminal agents the monitor does not show: its row is the only place left.
   for (const row of rows.values()) {
     const seen = found.get(row.id)?.some((agent) => agent.started === "terminal") ?? false;
@@ -161,7 +177,7 @@ export function mergeAgents(
   const tasks = new Map<string, Placed>();
   for (const row of rows.values()) {
     const run = runState(row);
-    const own = ownStates(row);
+    const own = [...ownStates(row), ...(told.get(row.id) ?? [])];
     const agents = (found.get(row.id) ?? []).sort(byStart);
     if (own.length === 0 && agents.length === 0) continue;
     const others = agents.filter((a) => !a.current);

@@ -123,6 +123,8 @@ export interface Receipt {
    * page never shows as running.
    */
   readonly session?: "running" | "ended" | "restored";
+  /** The task's T3 Code thread: what its agent does, as T3 Code tells. */
+  readonly activity?: "working" | "waiting" | "idle";
   /** How long its agent ran, when its end was reported with it. */
   readonly ran_ms?: number;
 }
@@ -315,6 +317,9 @@ export async function redeem(code: string): Promise<string | null> {
 /** The entries that only read: a tab that saves nothing more may still send these. */
 export const READ_ENTRIES: ReadonlySet<string> = new Set([
   "activity.list",
+  "page.history",
+  "page.read",
+  "page.trashed",
   "receipt.get",
   "space.status",
   "task.finished",

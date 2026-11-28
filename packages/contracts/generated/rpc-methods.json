@@ -232,7 +232,8 @@
                         "enum": [
                           "task",
                           "project",
-                          "area"
+                          "area",
+                          "page"
                         ],
                         "type": "string"
                       },
@@ -242,7 +243,7 @@
                         "type": "string"
                       },
                       "ref": {
-                        "description": "A task's reference, such as M-14",
+                        "description": "A task's or a page's reference, such as M-14",
                         "maxLength": 20,
                         "type": "string"
                       },
@@ -1914,6 +1915,96 @@
         "not_found",
         "conflict",
         "forbidden",
+        "too_large",
+        "request_id_conflict",
+        "applied_earlier"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "target": {
+            "description": "A project or area by path or ID, or \"space\"",
+            "maxLength": 250,
+            "type": "string"
+          },
+          "text": {
+            "description": "The instruction, whole; empty takes it away",
+            "maxLength": 65536,
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "text",
+          "base",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "node.instruct",
+      "ops": [
+        "node.instruct"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "This write's position: your next base. Names and lists here may be newer",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True on a retry: what the write did, with names and lists as of now",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "set, or the text was this already",
+            "enum": [
+              "set",
+              "no_change"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "description": "The node's ID",
+            "maxLength": 40,
+            "type": "string"
+          }
+        },
+        "required": [
+          "result",
+          "target",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Set the user's text for agents on the space, an area or a project."
+    },
+    {
+      "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "none",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "conflict",
+        "forbidden",
         "request_id_conflict",
         "applied_earlier"
       ],
@@ -2005,6 +2096,1201 @@
       "remote": "write",
       "scope": "space:write",
       "summary": "Take back a note on a task, or put a removed one back. Nothing is deleted for good."
+    },
+    {
+      "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "space_unavailable",
+        "forbidden"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Next page: the last page's cursor",
+            "maxLength": 20,
+            "type": "string"
+          },
+          "limit": {
+            "default": 25,
+            "description": "Versions per page; default 25",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "seq": {
+            "description": "This version's words, for Show",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "target": {
+            "description": "The page (M-180), or a project, area or the space",
+            "maxLength": 250,
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "kind": "read",
+      "name": "page.history",
+      "ops": [],
+      "output": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "as_of": {
+                "description": "The space's position when this answer was made",
+                "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+                "type": "string"
+              },
+              "cursor": {
+                "description": "Pass it for older versions",
+                "pattern": "^[1-9][0-9]{0,15}$",
+                "type": "string"
+              },
+              "versions": {
+                "description": "Who, when and why, newest first",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "description": "When, ISO date and time",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                      "type": "string"
+                    },
+                    "by": {
+                      "description": "Who: user, import or the agent's label",
+                      "type": "string"
+                    },
+                    "chars": {
+                      "description": "Characters in this version",
+                      "maximum": 1000000,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "restored_from": {
+                      "description": "A Restore: the version it brought back",
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "seq": {
+                      "description": "The change that made this version",
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "why": {
+                      "description": "Its one line",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "at",
+                    "by",
+                    "chars"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "view": {
+                "const": "versions",
+                "description": "Newest first",
+                "type": "string"
+              }
+            },
+            "required": [
+              "view",
+              "as_of",
+              "versions"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "as_of": {
+                "description": "The space's position when this answer was made",
+                "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+                "type": "string"
+              },
+              "text": {
+                "description": "The body, or the description, as this version left it",
+                "type": "string"
+              },
+              "version": {
+                "additionalProperties": false,
+                "description": "The version",
+                "properties": {
+                  "at": {
+                    "description": "When, ISO date and time",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                    "type": "string"
+                  },
+                  "by": {
+                    "description": "Who: user, import or the agent's label",
+                    "type": "string"
+                  },
+                  "chars": {
+                    "description": "Characters in this version",
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "restored_from": {
+                    "description": "A Restore: the version it brought back",
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "seq": {
+                    "description": "The change that made this version",
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "why": {
+                    "description": "Its one line",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "seq",
+                  "at",
+                  "by",
+                  "chars"
+                ],
+                "type": "object"
+              },
+              "view": {
+                "const": "version",
+                "description": "One version's words",
+                "type": "string"
+              }
+            },
+            "required": [
+              "view",
+              "as_of",
+              "version",
+              "text"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "remote": "read",
+      "scope": "space:read",
+      "summary": "List the earlier versions of a page or a description, or read one of them."
+    },
+    {
+      "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "ambiguous",
+        "space_unavailable",
+        "forbidden"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Pass it to read to read on",
+            "maxLength": 80,
+            "type": "string"
+          },
+          "section": {
+            "description": "Only the part under this heading",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "target": {
+            "description": "A page (M-180), a project or area by path or ID, or \"space\"",
+            "maxLength": 250,
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "kind": "read",
+      "name": "page.read",
+      "ops": [],
+      "output": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "as_of": {
+                "description": "The space's position when this answer was made",
+                "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+                "type": "string"
+              },
+              "body": {
+                "description": "Markdown, or the part of it this answer holds",
+                "type": "string"
+              },
+              "brief": {
+                "description": "One line: what a reader finds in it",
+                "type": "string"
+              },
+              "cursor": {
+                "description": "Pass it to read to read on",
+                "maxLength": 80,
+                "type": "string"
+              },
+              "headings": {
+                "description": "No heading matched: the page's headings",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              "id": {
+                "description": "Page ID",
+                "pattern": "^pg_[0-9a-hjkmnp-tv-z]{26}$",
+                "type": "string"
+              },
+              "last": {
+                "additionalProperties": false,
+                "description": "Its last change",
+                "properties": {
+                  "at": {
+                    "description": "When, ISO date and time",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                    "type": "string"
+                  },
+                  "by": {
+                    "description": "Who: user, import or the agent's label",
+                    "type": "string"
+                  },
+                  "why": {
+                    "description": "Its one line of what changed and why",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "by",
+                  "at"
+                ],
+                "type": "object"
+              },
+              "owner": {
+                "additionalProperties": false,
+                "description": "What holds it",
+                "properties": {
+                  "id": {
+                    "description": "Its ID",
+                    "maxLength": 40,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "description": "What holds it",
+                    "enum": [
+                      "space",
+                      "area",
+                      "project",
+                      "task"
+                    ],
+                    "type": "string"
+                  },
+                  "read": {
+                    "description": "Pass it to read for it; a task: get_task",
+                    "maxLength": 40,
+                    "type": "string"
+                  },
+                  "title": {
+                    "description": "Its name, or the task's title",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id",
+                  "title",
+                  "read"
+                ],
+                "type": "object"
+              },
+              "ref": {
+                "description": "Page reference, such as M-180",
+                "maxLength": 20,
+                "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                "type": "string"
+              },
+              "section": {
+                "description": "The heading whose part body holds",
+                "type": "string"
+              },
+              "slice": {
+                "additionalProperties": false,
+                "description": "Only this part of the text is on this page",
+                "properties": {
+                  "from": {
+                    "description": "First character here, counted from 0",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "of": {
+                    "description": "Characters in all",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "to": {
+                    "description": "The character after the last one here",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to",
+                  "of"
+                ],
+                "type": "object"
+              },
+              "title": {
+                "description": "Title",
+                "type": "string"
+              },
+              "version": {
+                "description": "Row version",
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "view": {
+                "const": "page",
+                "description": "A page",
+                "type": "string"
+              }
+            },
+            "required": [
+              "view",
+              "as_of",
+              "id",
+              "ref",
+              "title",
+              "brief",
+              "owner",
+              "last",
+              "version"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "above": {
+                "description": "The levels above it, nearest first",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "brief": {
+                      "description": "One line: what it is; empty: none given",
+                      "type": "string"
+                    },
+                    "count": {
+                      "description": "Its pages in all",
+                      "maximum": 1000000,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "for_agents": {
+                      "additionalProperties": false,
+                      "description": "The user's instruction for every task below it",
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                          "type": "string"
+                        },
+                        "text": {
+                          "description": "The user's instruction for every task below",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "has_description": {
+                      "description": "It has a description: read it",
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "description": "The space's, an area's or a project's ID",
+                      "pattern": "^(?:sp|a|p)_[0-9a-hjkmnp-tv-z]{26}$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "description": "What the level is",
+                      "enum": [
+                        "space",
+                        "area",
+                        "project"
+                      ],
+                      "type": "string"
+                    },
+                    "pages": {
+                      "description": "Its pages, by title",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": {
+                            "description": "When it was changed last",
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                            "type": "string"
+                          },
+                          "brief": {
+                            "description": "One line: what a reader finds in it; empty: none given",
+                            "type": "string"
+                          },
+                          "by": {
+                            "description": "Who changed it last",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "description": "Page reference, such as M-180",
+                            "maxLength": 20,
+                            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                            "type": "string"
+                          },
+                          "title": {
+                            "description": "Title",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "ref",
+                          "title",
+                          "brief",
+                          "by",
+                          "at"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 25,
+                      "type": "array"
+                    },
+                    "read": {
+                      "description": "Pass it to read for its description and all its pages",
+                      "maxLength": 40,
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Its name",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "title",
+                    "brief",
+                    "read",
+                    "has_description",
+                    "pages",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 2,
+                "type": "array"
+              },
+              "as_of": {
+                "description": "The space's position when this answer was made",
+                "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+                "type": "string"
+              },
+              "brief": {
+                "description": "One line: what it is",
+                "type": "string"
+              },
+              "cursor": {
+                "description": "Pass it to read to read on",
+                "maxLength": 80,
+                "type": "string"
+              },
+              "description": {
+                "description": "Markdown, or the part of it this answer holds",
+                "type": "string"
+              },
+              "for_agents": {
+                "additionalProperties": false,
+                "description": "The user's instruction for every task below it",
+                "properties": {
+                  "at": {
+                    "description": "When, ISO date and time",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "The user's instruction for every task below",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text",
+                  "at"
+                ],
+                "type": "object"
+              },
+              "id": {
+                "description": "Its ID",
+                "maxLength": 40,
+                "type": "string"
+              },
+              "kind": {
+                "description": "What it is",
+                "enum": [
+                  "space",
+                  "area",
+                  "project"
+                ],
+                "type": "string"
+              },
+              "last": {
+                "additionalProperties": false,
+                "description": "The last change of its description",
+                "properties": {
+                  "at": {
+                    "description": "When, ISO date and time",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                    "type": "string"
+                  },
+                  "by": {
+                    "description": "Who: user, import or the agent's label",
+                    "type": "string"
+                  },
+                  "why": {
+                    "description": "Its one line of what changed and why",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "by",
+                  "at"
+                ],
+                "type": "object"
+              },
+              "more": {
+                "additionalProperties": false,
+                "description": "What this answer left out: the cursor reads on",
+                "properties": {
+                  "pages": {
+                    "description": "Own pages not here",
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "task_pages": {
+                    "description": "Task pages not here",
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "pages",
+                  "task_pages"
+                ],
+                "type": "object"
+              },
+              "pages": {
+                "description": "Its own pages, by title",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "description": "When it was changed last",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                      "type": "string"
+                    },
+                    "brief": {
+                      "description": "One line: what a reader finds in it; empty: none given",
+                      "type": "string"
+                    },
+                    "by": {
+                      "description": "Who changed it last",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "description": "Page reference, such as M-180",
+                      "maxLength": 20,
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Title",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "title",
+                    "brief",
+                    "by",
+                    "at"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 25,
+                "type": "array"
+              },
+              "slice": {
+                "additionalProperties": false,
+                "description": "Only this part of the text is on this page",
+                "properties": {
+                  "from": {
+                    "description": "First character here, counted from 0",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "of": {
+                    "description": "Characters in all",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "to": {
+                    "description": "The character after the last one here",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to",
+                  "of"
+                ],
+                "type": "object"
+              },
+              "task_pages": {
+                "description": "Pages on its tasks, open and finished",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "description": "When it was changed last",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                      "type": "string"
+                    },
+                    "brief": {
+                      "description": "One line: what a reader finds in it; empty: none given",
+                      "type": "string"
+                    },
+                    "by": {
+                      "description": "Who changed it last",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "description": "Page reference, such as M-180",
+                      "maxLength": 20,
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    },
+                    "task": {
+                      "description": "The task it is on",
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Title",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "title",
+                    "brief",
+                    "by",
+                    "at",
+                    "task"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 25,
+                "type": "array"
+              },
+              "title": {
+                "description": "Its name",
+                "type": "string"
+              },
+              "version": {
+                "description": "Its texts' version: the base to set them",
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "view": {
+                "const": "node",
+                "description": "The space, an area or a project",
+                "type": "string"
+              }
+            },
+            "required": [
+              "view",
+              "as_of",
+              "kind",
+              "id",
+              "title",
+              "brief",
+              "description",
+              "above",
+              "pages",
+              "task_pages",
+              "more"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "remote": "read",
+      "scope": "space:read",
+      "summary": "Read a page, or a node's texts with what is known above it and its pages."
+    },
+    {
+      "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "space_unavailable",
+        "forbidden"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Next page: the last page's cursor",
+            "maxLength": 60,
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Rows per page; default 50",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "q": {
+            "description": "Words of a title, or a reference such as M-180",
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "read",
+      "name": "page.trashed",
+      "ops": [],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Pass it for the next page",
+            "pattern": "^[0-9]{1,16}\\.[0-9]{1,10}$",
+            "type": "string"
+          },
+          "rows": {
+            "description": "Newest change first",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "area_id": {
+                  "description": "Its area, also through its task",
+                  "pattern": "^a_[0-9a-hjkmnp-tv-z]{26}$",
+                  "type": "string"
+                },
+                "at": {
+                  "description": "When, in milliseconds since 1970",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "brief": {
+                  "description": "One line: what a reader finds in it; empty: none given",
+                  "type": "string"
+                },
+                "by": {
+                  "description": "Who changed it last",
+                  "type": "string"
+                },
+                "deleted_at": {
+                  "description": "Not shown: it or what holds it is in the Trash",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "id": {
+                  "description": "Page ID",
+                  "pattern": "^pg_[0-9a-hjkmnp-tv-z]{26}$",
+                  "type": "string"
+                },
+                "on": {
+                  "description": "What held it, by name, a deleted one too",
+                  "type": "string"
+                },
+                "owner_id": {
+                  "description": "The space's, area's, project's or task's ID",
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "owner_kind": {
+                  "description": "What holds it",
+                  "enum": [
+                    "space",
+                    "area",
+                    "project",
+                    "task"
+                  ],
+                  "type": "string"
+                },
+                "project_id": {
+                  "description": "Its project, also through its task",
+                  "pattern": "^p_[0-9a-hjkmnp-tv-z]{26}$",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Page reference, such as M-180",
+                  "maxLength": 20,
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                },
+                "removed": {
+                  "additionalProperties": false,
+                  "description": "The change that moved it to the Trash",
+                  "properties": {
+                    "at": {
+                      "description": "When",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                      "type": "string"
+                    },
+                    "by": {
+                      "description": "Who: user, import or the actor's label",
+                      "type": "string"
+                    },
+                    "count": {
+                      "description": "How many of its tasks are in the Trash now",
+                      "maximum": 1000000,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "id": {
+                      "description": "A change's commit ID",
+                      "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+                      "type": "string"
+                    },
+                    "reason": {
+                      "description": "Why, when it was given",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "at",
+                    "by",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "task": {
+                  "additionalProperties": false,
+                  "description": "The task it is on, as it is now",
+                  "properties": {
+                    "lifecycle": {
+                      "description": "Its lifecycle",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "description": "Task reference",
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Its title",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "title",
+                    "lifecycle"
+                  ],
+                  "type": "object"
+                },
+                "title": {
+                  "description": "Title",
+                  "type": "string"
+                },
+                "version": {
+                  "description": "Row version: the commit that changed it last",
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "why": {
+                  "description": "The last change's one line",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "ref",
+                "title",
+                "brief",
+                "owner_kind",
+                "owner_id",
+                "version",
+                "by",
+                "at",
+                "on",
+                "removed"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "type": "object"
+      },
+      "remote": "read",
+      "scope": "space:read",
+      "summary": "The pages in the Trash, newest change first, a page at a time."
+    },
+    {
+      "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "ambiguous",
+        "unbound",
+        "conflict",
+        "forbidden",
+        "too_large",
+        "request_id_conflict",
+        "applied_earlier"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "restore: back from the Trash; set from_seq: a version",
+            "enum": [
+              "create",
+              "edit",
+              "append",
+              "set",
+              "move",
+              "trash",
+              "restore"
+            ],
+            "type": "string"
+          },
+          "base": {
+            "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "body": {
+            "description": "create, set: Markdown",
+            "maxLength": 65536,
+            "type": "string"
+          },
+          "brief": {
+            "description": "create, set: what a reader finds in it; agents must give one on create",
+            "maxLength": 400,
+            "type": "string"
+          },
+          "description": {
+            "description": "set on a node: its description, whole",
+            "maxLength": 65536,
+            "type": "string"
+          },
+          "from_seq": {
+            "description": "set: write back the version this change made",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "new": {
+            "description": "edit: what they become",
+            "maxLength": 4000,
+            "type": "string"
+          },
+          "old": {
+            "description": "edit: the exact words in the page now, standing once",
+            "maxLength": 4000,
+            "type": "string"
+          },
+          "on": {
+            "description": "create: \"task\", a task, a project, an area or \"space\"; default: its project",
+            "maxLength": 250,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "target": {
+            "description": "The page (M-180); set: or a project, area or \"space\" for its texts",
+            "maxLength": 250,
+            "type": "string"
+          },
+          "task": {
+            "description": "Task ref (M-14) or ID; default: this session's task",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "text": {
+            "description": "append: Markdown added at the end",
+            "maxLength": 4000,
+            "type": "string"
+          },
+          "title": {
+            "description": "create, set: one line",
+            "maxLength": 300,
+            "type": "string"
+          },
+          "to": {
+            "description": "move: a task, a project, an area or \"space\"",
+            "maxLength": 250,
+            "type": "string"
+          },
+          "why": {
+            "description": "One line: what changed and why",
+            "maxLength": 1000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "page.write",
+      "ops": [
+        "page.create",
+        "page.edit",
+        "page.append",
+        "page.set",
+        "page.move",
+        "page.trash",
+        "page.restore",
+        "node.set",
+        "area.patch",
+        "project.patch"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "This write's position: your next base. Names and lists here may be newer",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "stale, ambiguous: pass it to read for the whole page",
+            "maxLength": 80,
+            "type": "string"
+          },
+          "excerpt": {
+            "description": "stale, ambiguous: the page's start as it is now",
+            "maxLength": 1240,
+            "type": "string"
+          },
+          "found": {
+            "description": "stale: 0, ambiguous: how often the old words stand",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "on": {
+            "description": "What holds the page now, by name",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True on a retry: what the write did, with names and lists as of now",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "stale, ambiguous: nothing written",
+            "enum": [
+              "created",
+              "edited",
+              "appended",
+              "set",
+              "moved",
+              "trashed",
+              "restored",
+              "no_change",
+              "stale",
+              "ambiguous"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "description": "The page's reference, or the node's ID",
+            "maxLength": 40,
+            "type": "string"
+          }
+        },
+        "required": [
+          "result",
+          "target",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Create, edit, append to, set, move, trash or restore a page, or set a node's texts."
     },
     {
       "actorKinds": [
@@ -2938,7 +4224,9 @@
                         "runs",
                         "areas",
                         "projects",
-                        "folders"
+                        "folders",
+                        "pages",
+                        "node_texts"
                       ],
                       "type": "string"
                     },
@@ -3334,125 +4622,6 @@
       "remote": "never",
       "scope": "space:read",
       "summary": "The stored result of a write, by its request_id, in the caller's own writer scope."
-    },
-    {
-      "actorKinds": [
-        "agent",
-        "routine"
-      ],
-      "actors": "run",
-      "audience": "none",
-      "errors": [
-        "not_permitted",
-        "invalid_input",
-        "request_id_conflict"
-      ],
-      "input": {
-        "additionalProperties": false,
-        "properties": {
-          "request_id": {
-            "description": "New per intended change; reuse it only to retry that call",
-            "maxLength": 64,
-            "pattern": "^[A-Za-z0-9_-]{16,64}$",
-            "type": "string"
-          },
-          "sources": {
-            "description": "One row per source the routine names",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "items_seen": {
-                  "description": "Items you read there",
-                  "maximum": 1000000,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "name": {
-                  "description": "The source, as the routine names it",
-                  "maxLength": 120,
-                  "type": "string"
-                },
-                "note": {
-                  "description": "What went wrong, in one line",
-                  "maxLength": 200,
-                  "type": "string"
-                },
-                "state": {
-                  "description": "How far you could read it",
-                  "enum": [
-                    "ok",
-                    "partial",
-                    "unreachable"
-                  ],
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name",
-                "state",
-                "items_seen"
-              ],
-              "type": "object"
-            },
-            "maxItems": 20,
-            "type": "array"
-          },
-          "summary": {
-            "description": "Counts created, updated, unchanged; what was unsure",
-            "maxLength": 1000,
-            "type": "string"
-          }
-        },
-        "required": [
-          "request_id"
-        ],
-        "type": "object"
-      },
-      "kind": "write",
-      "name": "run.report",
-      "ops": [
-        "run.report"
-      ],
-      "output": {
-        "additionalProperties": false,
-        "properties": {
-          "as_of": {
-            "description": "The space's position when this answer was made",
-            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
-            "type": "string"
-          },
-          "replayed": {
-            "description": "True on a retry: what the write did, with names and lists as of now",
-            "type": "boolean"
-          },
-          "result": {
-            "const": "reported",
-            "description": "The run record holds the report",
-            "type": "string"
-          },
-          "run": {
-            "description": "The run",
-            "pattern": "^ru_[0-9a-hjkmnp-tv-z]{26}$",
-            "type": "string"
-          },
-          "sources": {
-            "description": "Source rows recorded",
-            "maximum": 20,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "result",
-          "run",
-          "sources",
-          "as_of"
-        ],
-        "type": "object"
-      },
-      "remote": "never",
-      "scope": "space:write",
-      "summary": "Report a run's coverage, one row per source: works only in a run or routine."
     },
     {
       "actorKinds": [
@@ -4821,13 +5990,33 @@
             "type": "array"
           },
           "learnings": {
-            "description": "Lessons reusable beyond this task; a task keeps 20 in all",
+            "description": "Before library: lessons beyond this task; give library instead",
             "items": {
               "maxLength": 1024,
               "type": "string"
             },
             "maxItems": 20,
             "type": "array"
+          },
+          "library": {
+            "anyOf": [
+              {
+                "items": {
+                  "description": "Page reference, such as M-180",
+                  "maxLength": 20,
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "const": "nothing reusable",
+                "type": "string"
+              }
+            ],
+            "description": "The pages you updated, or \"nothing reusable\""
           },
           "mode": {
             "default": "apply",
@@ -5054,7 +6243,7 @@
       },
       "remote": "write",
       "scope": "space:write",
-      "summary": "Finish or abandon a task with an outcome and learnings, and create its follow-ups."
+      "summary": "Finish or abandon a task with an outcome and the pages it updated, and its follow-ups."
     },
     {
       "actorKinds": [
@@ -6288,6 +7477,12 @@
                         "minimum": 0,
                         "type": "integer"
                       },
+                      "pages": {
+                        "description": "Pages on this task not here",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
                       "sources": {
                         "description": "Sources not here",
                         "maximum": 9007199254740991,
@@ -6426,6 +7621,47 @@
                   "outcome": {
                     "description": "Outcome of the last completion",
                     "type": "string"
+                  },
+                  "pages": {
+                    "description": "Pages on this task, by title",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When it was changed last",
+                          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                          "type": "string"
+                        },
+                        "brief": {
+                          "description": "One line: what a reader finds in it; empty: none given",
+                          "type": "string"
+                        },
+                        "by": {
+                          "description": "Who changed it last",
+                          "type": "string"
+                        },
+                        "ref": {
+                          "description": "Page reference, such as M-180",
+                          "maxLength": 20,
+                          "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                          "type": "string"
+                        },
+                        "title": {
+                          "description": "Title",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "title",
+                        "brief",
+                        "by",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 25,
+                    "type": "array"
                   },
                   "priority": {
                     "description": "1 highest, 4 none",
@@ -6597,6 +7833,125 @@
                   "version"
                 ],
                 "type": "object"
+              },
+              "trail": {
+                "description": "The levels above the task, nearest first: their pages",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "brief": {
+                      "description": "One line: what it is; empty: none given",
+                      "type": "string"
+                    },
+                    "count": {
+                      "description": "Its pages in all",
+                      "maximum": 1000000,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "for_agents": {
+                      "additionalProperties": false,
+                      "description": "The user's instruction for every task below it",
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                          "type": "string"
+                        },
+                        "text": {
+                          "description": "The user's instruction for every task below",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "has_description": {
+                      "description": "It has a description: read it",
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "description": "The space's, an area's or a project's ID",
+                      "pattern": "^(?:sp|a|p)_[0-9a-hjkmnp-tv-z]{26}$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "description": "What the level is",
+                      "enum": [
+                        "space",
+                        "area",
+                        "project"
+                      ],
+                      "type": "string"
+                    },
+                    "pages": {
+                      "description": "Its pages, by title",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": {
+                            "description": "When it was changed last",
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                            "type": "string"
+                          },
+                          "brief": {
+                            "description": "One line: what a reader finds in it; empty: none given",
+                            "type": "string"
+                          },
+                          "by": {
+                            "description": "Who changed it last",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "description": "Page reference, such as M-180",
+                            "maxLength": 20,
+                            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                            "type": "string"
+                          },
+                          "title": {
+                            "description": "Title",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "ref",
+                          "title",
+                          "brief",
+                          "by",
+                          "at"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 25,
+                      "type": "array"
+                    },
+                    "read": {
+                      "description": "Pass it to read for its description and all its pages",
+                      "maxLength": 40,
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Its name",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "title",
+                    "brief",
+                    "read",
+                    "has_description",
+                    "pages",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 3,
+                "type": "array"
               },
               "view": {
                 "const": "digest",
@@ -7695,12 +9050,13 @@
             "type": "string"
           },
           "scope": {
-            "description": "active by default; finished is completed or archived",
+            "description": "active by default; finished: completed or archived; library: pages and lessons",
             "enum": [
               "active",
               "finished",
               "all",
-              "learnings"
+              "learnings",
+              "library"
             ],
             "type": "string"
           },
@@ -7952,6 +9308,62 @@
                 {
                   "additionalProperties": false,
                   "properties": {
+                    "at": {
+                      "description": "When it was changed last",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                      "type": "string"
+                    },
+                    "brief": {
+                      "description": "One line: what a reader finds in it; empty: none given",
+                      "type": "string"
+                    },
+                    "by": {
+                      "description": "Who changed it last",
+                      "type": "string"
+                    },
+                    "changed": {
+                      "const": true,
+                      "description": "Changed since the search ran",
+                      "type": "boolean"
+                    },
+                    "kind": {
+                      "const": "page",
+                      "description": "A page",
+                      "type": "string"
+                    },
+                    "on": {
+                      "description": "What holds it, by name",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "description": "Page reference, such as M-180",
+                      "maxLength": 20,
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    },
+                    "snippet": {
+                      "description": "Where it matched",
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Title",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "ref",
+                    "title",
+                    "brief",
+                    "on",
+                    "by",
+                    "at"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
                     "id": {
                       "description": "Task or learning ID",
                       "type": "string"
@@ -7988,7 +9400,8 @@
               "active",
               "finished",
               "all",
-              "learnings"
+              "learnings",
+              "library"
             ],
             "type": "string"
           },

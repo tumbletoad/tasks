@@ -26,7 +26,11 @@ export const PAGE_LIST = 25;
 export const EXCERPT_CHARS = 1_200;
 
 export const PageId = z.string().regex(idPattern("pg")).describe("Page ID");
-export const PageRef = z.string().regex(patterns.taskRef).describe("Page reference, such as M-180");
+export const PageRef = z
+  .string()
+  .max(20)
+  .regex(patterns.taskRef)
+  .describe("Page reference, such as M-180");
 const NodeId = z
   .string()
   .regex(/^(?:sp|a|p)_[0-9a-hjkmnp-tv-z]{26}$/u)
@@ -119,14 +123,6 @@ export const CompactPage = z.strictObject({
     .max(Number.MAX_SAFE_INTEGER)
     .describe("Not shown: it or what holds it is in the Trash")
     .optional(),
-});
-
-/** A page an agent or a routine changed, for Today's Changes beside the tasks. */
-export const PageAgentChange = z.strictObject({
-  page: PageId,
-  actor: z.string().describe("The actor's label"),
-  at: z.int().min(0).max(Number.MAX_SAFE_INTEGER).describe("When, in milliseconds since 1970"),
-  why: z.string().describe("Its one line").optional(),
 });
 
 /** What `complete_task` takes in place of learnings: the pages updated, or that there were none. */

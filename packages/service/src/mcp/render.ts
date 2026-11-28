@@ -28,8 +28,11 @@ import {
 
 /** A3 3.2.5: an error, with up to three candidate rows. */
 export const ERROR_TOKENS = 300;
-/** A3 3.9.6: the digest of `get_task` without sections. */
-export const DIGEST_TOKENS = 1_200;
+/**
+ * The first answer of `get_task` without sections: the task's digest and the trail above it
+ * together. A target: the request and the user's texts for agents get room of their own above it.
+ */
+export const DIGEST_TOKENS = 2_500;
 
 type Status = OutputOf<"space.status">;
 type TaskGet = OutputOf<"task.get">;
@@ -435,10 +438,84 @@ const requestTokens = (request: Request | undefined, getTask: string, ref: strin
           .join("\n"),
       ) + 1;
 
-function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: string): Rendered {
+type Digest = Extract<TaskGet, { view: "digest" }>;
+type Level = NonNullable<Digest["trail"]>[number];
+type PageLine = Level["pages"][number];
+
+const readTool = toolOf("page.read");
+
+const LEVEL_WORD: Readonly<Record<Level["kind"], string>> = {
+  project: "Project",
+  area: "Area",
+  space: "Space",
+};
+
+const pageLine = (page: PageLine): string =>
+  `- ${page.ref} ${page.title}${page.brief === "" ? "" : `: ${page.brief}`} · ${page.by} ${day(page.at)}`;
+
+/**
+ * The user's texts for agents on the levels above the task, outside the data block: a fixed label
+ * and the level's ID only, never its title, which an agent can edit, so no stored name reads as
+ * the user's instruction.
+ */
+function levelInstructions(trail: readonly Level[]): string[] {
+  return trail.flatMap((level) =>
+    level.for_agents === undefined
+      ? []
+      : [
+          `For agents, from the user, on ${level.kind === "space" ? "the space" : level.id} (${day(level.for_agents.at)}):`,
+          ...entryLines("- ", level.for_agents.text),
+        ],
+  );
+}
+
+/**
+ * One level of the trail: its head line, its pages, and when some are cut, how many it holds and
+ * how to read them all, so the level is never lost from sight.
+ */
+function levelPart(level: Level): Part {
+  const brief = level.brief === "" ? "no brief" : level.brief;
+  const described = level.has_description ? " · description: read it" : "";
+  return {
+    data: true,
+    total: level.count,
+    title: () => `${LEVEL_WORD[level.kind]} ${level.title}: ${brief}${described}`,
+    units: level.pages.map((page) => [pageLine(page)]),
+    overflow: (kept, total) => [
+      `+${String(total - kept)} more: ${readTool} target "${level.read}"`,
+    ],
+  };
+}
+
+/**
+ * The task's pages and the levels above it, nearest first. `fit` cuts lower parts first, so the
+ * far level's pages go before the near ones, and the task's log, sources and learnings, which come
+ * below, go before any of them.
+ */
+function trailParts(result: Digest): Part[] {
+  const trail = result.trail ?? [];
+  const pages = result.task.pages ?? [];
+  const total = pages.length + (result.task.more.pages ?? 0);
+  return [
+    {
+      data: true,
+      total,
+      title: (kept, all) =>
+        all === 0 ? undefined : `Pages on this task (${String(kept)} of ${String(all)})`,
+      units: pages.map((page) => [pageLine(page)]),
+    },
+    ...(trail.length === 0
+      ? []
+      : [{ data: true, fixed: true, units: [["Known above this task, nearest first:"]] }]),
+    ...trail.map(levelPart),
+  ];
+}
+
+function digestRendered(result: Digest, getTask: string): Rendered {
   const task = result.task;
   const { more } = task;
   const cut = task.cut ?? {};
+  const forAgents = levelInstructions(result.trail ?? []);
   const parts: Part[] = [
     fixed(
       headerLine(task, result.as_of),
@@ -452,6 +529,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
       getTask,
       task.ref,
     ),
+    ...(forAgents.length === 0 ? [] : [{ fixed: true, whole: true, units: [forAgents] }]),
     {
       data: true,
       fixed: true,
@@ -484,6 +562,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
       title: (_kept, total) => (total === 0 ? undefined : "Context"),
       units: task.context === "" ? [] : [textLines(withCut(task.context, cut.context), "  ")],
     },
+    ...trailParts(result),
     {
       data: true,
       total: task.log.length + more.log,
@@ -630,6 +709,8 @@ function searchLine(row: SearchRow): string {
       return `${row.ref} · ${row.kind} since this search`;
     case "learning":
       return `${join(row.task, row.date, group(row), `"${clip(row.text, SEARCH_CUTS.learning)}"`)}${changed}`;
+    case "page":
+      return `${join(`${row.ref} ${row.title}`, row.brief === "" ? undefined : row.brief, `on ${row.on}`, `${row.by} ${day(row.at)}`, row.snippet === undefined ? undefined : `"${row.snippet}"`)}${changed}`;
     default: {
       const state =
         row.lifecycle === "active"
@@ -687,7 +768,7 @@ function searchRendered(result: Search, search: string): Rendered {
 }
 
 // ---------------------------------------------------------------------------------------------
-// task.add (A3 3.4.5), task.reopen (A3 3.4.9), run.report (A3 3.4.12)
+// task.add (A3 3.4.5), task.reopen (A3 3.4.9)
 
 type Added = OutputOf<"task.add">["tasks"][number] | OutputOf<"task.finish">["follow_ups"][number];
 
@@ -955,11 +1036,150 @@ type Renderer = (
 };
 
 const RENDERERS: Readonly<Record<string, Renderer>> = {
+  "page.read": (result: OutputOf<"page.read">) => {
+    const tail = (cursor: string | undefined, target: string): Part[] =>
+      cursor === undefined
+        ? []
+        : [fixed(`More: ${readTool} target "${target}" cursor "${cursor}"`)];
+    if (result.view === "page") {
+      const changed = `Changed by ${result.last.by} ${day(result.last.at)}`;
+      return {
+        parts: [
+          fixed(
+            `${result.ref} · page on ${result.owner.kind} ${result.owner.read} · as_of ${result.as_of}`,
+          ),
+          {
+            data: true,
+            fixed: true,
+            units: [
+              [`Title: ${result.title}`],
+              [`Brief: ${result.brief === "" ? "none" : result.brief}`],
+              [`On: ${result.owner.title}`],
+              [result.last.why === undefined ? changed : `${changed}: ${result.last.why}`],
+            ],
+          },
+          ...(result.headings === undefined
+            ? []
+            : [
+                fixed("No heading matched. Its headings:"),
+                { data: true, units: result.headings.map((h) => [`- ${h}`]) },
+              ]),
+          ...(result.body === undefined
+            ? []
+            : [
+                {
+                  data: true,
+                  clip: true,
+                  title: () =>
+                    `${result.section === undefined ? "Body" : `Section ${result.section}`} ${rangeOf(result.slice)}`.trimEnd(),
+                  units: [textLines(result.body, "  ")],
+                },
+              ]),
+          ...tail(result.cursor, result.ref),
+        ],
+        more: `Read it in parts with ${readTool} section or cursor.`,
+      };
+    }
+    const target = result.kind === "space" ? "space" : result.id;
+    return {
+      parts: [
+        fixed(`${LEVEL_WORD[result.kind]} ${target} · as_of ${result.as_of}`),
+        ...(result.for_agents === undefined
+          ? []
+          : [
+              {
+                fixed: true,
+                whole: true,
+                units: [
+                  [
+                    `For agents, from the user, on ${result.kind === "space" ? "the space" : result.id} (${day(result.for_agents.at)}):`,
+                    ...entryLines("- ", result.for_agents.text),
+                  ],
+                ],
+              } satisfies Part,
+            ]),
+        {
+          data: true,
+          fixed: true,
+          units: [
+            [`Title: ${result.title}`],
+            [`Brief: ${result.brief === "" ? "none" : result.brief}`],
+          ],
+        },
+        {
+          data: true,
+          clip: true,
+          title: (_kept, total) =>
+            total === 0 ? undefined : `Description ${rangeOf(result.slice)}`.trimEnd(),
+          units: result.description === "" ? [] : [textLines(result.description, "  ")],
+        },
+        {
+          data: true,
+          total: result.pages.length + result.more.pages,
+          title: (kept, all) =>
+            all === 0 ? "Pages: none" : `Pages (${String(kept)} of ${String(all)})`,
+          units: result.pages.map((page) => [pageLine(page)]),
+        },
+        {
+          data: true,
+          total: result.task_pages.length + result.more.task_pages,
+          title: (kept, all) =>
+            all === 0 ? undefined : `Pages of its tasks (${String(kept)} of ${String(all)})`,
+          units: result.task_pages.map((page) => [`${pageLine(page)} · on ${page.task}`]),
+        },
+        ...(result.above.length === 0
+          ? []
+          : [
+              {
+                data: true,
+                fixed: true,
+                units: [["Known above it, nearest first:"]],
+              } satisfies Part,
+            ]),
+        ...result.above.map(levelPart),
+        ...tail(result.cursor, target),
+      ],
+      more: `Read the rest with ${readTool} target "${target}" and the cursor.`,
+    };
+  },
+  "page.write": (result: OutputOf<"page.write">) => {
+    const on = result.on === undefined ? "" : ` · on ${result.on}`;
+    if (result.result === "stale" || result.result === "ambiguous") {
+      return {
+        parts: [
+          fixed(
+            result.result === "stale"
+              ? `nothing written: the old words are not in ${result.target} now`
+              : `nothing written: the old words stand ${String(result.found ?? 0)} times in ${result.target}: give more of them`,
+            `The page as it is now${result.cursor === undefined ? "" : `, its start (read the rest: ${readTool} target "${result.target}")`}:`,
+          ),
+          { data: true, clip: true, units: [textLines(result.excerpt ?? "", "  ")] },
+        ],
+        more: `Read the page with ${readTool} target "${result.target}".`,
+      };
+    }
+    const word = result.result === "no_change" ? "no change" : result.result;
+    return {
+      parts: [fixed(`${word} ${result.target}${on} · as_of ${result.as_of}${replayed(result)}`)],
+      more: "",
+    };
+  },
+  "node.instruct": (result: OutputOf<"node.instruct">) => ({
+    parts: [
+      fixed(
+        `${result.result === "set" ? "set the text for agents on" : "no change"} ${result.target} · as_of ${result.as_of}${replayed(result)}`,
+      ),
+    ],
+    more: "",
+  }),
   "space.status": (result: Status) => ({ parts: statusParts(result), more: STATUS_MORE }),
   "task.get": (result: TaskGet, { getTask }) => {
     const extra = requestTokens(result.request, getTask, result.task.ref);
     if (result.view === "digest") {
-      return { ...digestRendered(result, getTask), max: DIGEST_TOKENS, extra };
+      // The user's texts for agents above the task, like their request, never take its room.
+      const above = levelInstructions(result.trail ?? []);
+      const instructed = above.length === 0 ? 0 : resultTokens(above.join("\n")) + 1;
+      return { ...digestRendered(result, getTask), max: DIGEST_TOKENS, extra: extra + instructed };
     }
     return { ...sectionsRendered(result, getTask), extra };
   },
@@ -1005,7 +1225,9 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
             `completed ${result.task}`,
             result.lifecycle !== "completed" && result.lifecycle,
             result.wrap_state,
-            `${String(result.learnings)} learning${result.learnings === 1 ? "" : "s"}`,
+            // Lessons now come only from a session that began before the library.
+            result.learnings > 0 &&
+              `${String(result.learnings)} learning${result.learnings === 1 ? "" : "s"}`,
           )
         : result.result === "no_change"
           ? `no change ${result.task} (already ${result.lifecycle})`
@@ -1085,14 +1307,6 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
   },
   "group.manage": (result: Groups, { tool }) => groupsRendered(result, tool),
   "prefs.manage": (result: Prefs) => prefsRendered(result),
-  "run.report": (result: OutputOf<"run.report">) => ({
-    parts: [
-      fixed(
-        `reported on run ${result.run} · ${String(result.sources)} source${result.sources === 1 ? "" : "s"} · as_of ${result.as_of}${replayed(result)}`,
-      ),
-    ],
-    more: "",
-  }),
 };
 
 /** Whether `entryName` has a compact rendering. Every MCP tool has one (render.test.ts). */

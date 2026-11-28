@@ -64,6 +64,7 @@ describe("[A1.5.ids.property] IDs: 26 Crockford base32 characters, 128 random bi
         "lb",
         "pl",
         "fo",
+        "pg",
         "dv",
         "rc",
         "ai",

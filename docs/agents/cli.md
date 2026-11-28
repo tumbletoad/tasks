@@ -16,12 +16,14 @@ and `cwd`.
 | `ttasks area` | `group.manage` | List the areas and projects, or create, rename, move, archive or unarchive one. |
 | `ttasks brief` | `launch.open` | Open a task in an agent app on this machine, or Copy its pointer brief. |
 | `ttasks delete` | `task.delete` | Move tasks to the Trash, or restore them. Nothing is deleted for good. |
-| `ttasks done` | `task.finish` | Finish or abandon a task with an outcome and learnings, and create its follow-ups. |
+| `ttasks done` | `task.finish` | Finish or abandon a task with an outcome and the pages it updated, and its follow-ups. |
 | `ttasks find` | `task.search` | Find active tasks, finished tasks and learnings: rows only, a page at a time. |
 | `ttasks log` | `entry.add` | Append to a task's log, or record a note for the user. |
 | `ttasks note` | `entry.add` | Append to a task's log, or record a note for the user. |
 | `ttasks note` | `note.remove` | Take back a note on a task, or put a removed one back. Nothing is deleted for good. |
+| `ttasks page` | `page.write` | Create, edit, append to, set, move, trash or restore a page, or set a node's texts. |
 | `ttasks prefs` | `prefs.manage` | Read and change the space's preferences that are not policy. |
+| `ttasks read` | `page.read` | Read a page, or a node's texts with what is known above it and its pages. |
 | `ttasks receipt` | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. |
 | `ttasks redo` | `history.redo` | Redo the change you undid last, unless someone changed it since. |
 | `ttasks reopen` | `task.reopen` | Reopen a completed or archived task. Its earlier outcome and learnings stay. |
@@ -105,7 +107,7 @@ Usage: `ttasks delete [<tasks>...] [flags]`
 
 ## `ttasks done`
 
-Finish or abandon a task with an outcome and learnings, and create its follow-ups.
+Finish or abandon a task with an outcome and the pages it updated, and its follow-ups.
 
 Usage: `ttasks done [<task>] [flags]`
 
@@ -114,7 +116,6 @@ Usage: `ttasks done [<task>] [flags]`
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--status` | `status` | "done" \| "dropped" | dropped: abandoned |
 | `--outcome` | `outcome` | string | What changed and the evidence; agents must give it, in at most 600 characters |
-| `--learning` | `learnings` | string | Lessons reusable beyond this task; a task keeps 20 in all (repeatable) |
 | `--finished` | `finished` | string | When it was done, only for work done before it was recorded: ISO date or instant |
 | `--mode` | `mode` | "apply" | Always apply in this build |
 
@@ -129,7 +130,7 @@ Usage: `ttasks find [<q>] [flags]`
 | Argument | Field | Type | Description |
 |---|---|---|---|
 | `<q>` | `q` | string | Words, "phrases", filters such as status:open p<=2, and sort:effort |
-| `--scope` | `scope` | "active" \| "finished" \| "all" \| "learnings" | active by default; finished is completed or archived |
+| `--scope` | `scope` | "active" \| "finished" \| "all" \| "learnings" \| "library" | active by default; finished: completed or archived; library: pages and lessons |
 | `--limit` | `limit` | integer | Rows per page; default 15 |
 | `--cursor` | `cursor` | string | Next page: the last page's cursor, alone |
 
@@ -176,6 +177,28 @@ Usage: `ttasks note <task> [flags]`
 | `--remove` | `remove` | string | Take back this note: its number, such as 3 or n3 |
 | `--put-back` | `put_back` | string | Put back this removed note |
 
+## `ttasks page`
+
+Create, edit, append to, set, move, trash or restore a page, or set a node's texts.
+
+Usage: `ttasks page <action> [<target>] [flags]`
+
+| Argument | Field | Type | Description |
+|---|---|---|---|
+| `<action>` | `action` | string | restore: back from the Trash; set from_seq: a version |
+| `<target>` | `target` | string | The page (M-180); set: or a project, area or "space" for its texts |
+| `--on` | `on` | string | create: "task", a task, a project, an area or "space"; default: its project |
+| `--to` | `to` | string | move: a task, a project, an area or "space" |
+| `--title` | `title` | string | create, set: one line |
+| `--brief` | `brief` | string | create, set: what a reader finds in it; agents must give one on create |
+| `--body` | `body` | string | create, set: Markdown |
+| `--description` | `description` | string | set on a node: its description, whole |
+| `--old` | `old` | string | edit: the exact words in the page now, standing once |
+| `--new` | `new` | string | edit: what they become |
+| `--text` | `text` | string | append: Markdown added at the end |
+| `--from-seq` | `from_seq` | integer | set: write back the version this change made (user only) |
+| `--why` | `why` | string | One line: what changed and why |
+
 ## `ttasks prefs`
 
 Read and change the space's preferences that are not policy.
@@ -193,6 +216,18 @@ Usage: `ttasks prefs <action> [<key>] [<value>] [flags]`
 | `--reset` | `set[].reset` | boolean | Put the key back to its default, instead of a value |
 
 Only through `--input`: `set[].moves`.
+
+## `ttasks read`
+
+Read a page, or a node's texts with what is known above it and its pages.
+
+Usage: `ttasks read <target> [flags]`
+
+| Argument | Field | Type | Description |
+|---|---|---|---|
+| `<target>` | `target` | string | A page (M-180), a project or area by path or ID, or "space" |
+| `--section` | `section` | string | Only the part under this heading |
+| `--cursor` | `cursor` | string | Pass it to read to read on |
 
 ## `ttasks receipt`
 
