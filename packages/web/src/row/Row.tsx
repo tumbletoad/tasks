@@ -22,6 +22,7 @@ import type { Receipt, Run } from "../api.ts";
 import { Session } from "../context.ts";
 import { titleChange } from "../edit/change.ts";
 import { whoOf, type Leaving } from "../edit/edits.ts";
+import { KeptActions } from "../edit/KeptActions.tsx";
 import { Unsaved } from "../edit/Unsaved.tsx";
 import { useEdits } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
@@ -850,6 +851,8 @@ function RowView({
           {expanded ? (
             <Unsaved task={task.id} field="title" finished={!active} trashed={trashed} />
           ) : null}
+          {/* A check-off, an undo or the like that a page did not get to send before it went. */}
+          {expanded ? <KeptActions task={task} /> : null}
           {/* What another tab is typing, or what was typed before the task was finished. */}
           {expanded ? (
             <KeptTitles

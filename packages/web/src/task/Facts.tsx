@@ -234,7 +234,7 @@ function Segmented({
  * against what the person saw, so the change is a conflict they choose on. A field that goes away
  * while the person edits it (the card collapses, the task leaves the view) saves what was typed,
  * as leaving it does. What is typed is kept in this tab until it is sent or put back with Escape,
- * so a reload brings it back into the field.
+ * so a reload brings it back into the field, sent only once the person types in it or leaves it.
  */
 function WaitingOn({
   task,
@@ -262,8 +262,11 @@ function WaitingOn({
       ? undefined
       : { base: brought.base, mark: edits.mark(), value: brought.before },
   );
-  /** What the person typed, for a save when the field goes away under them. */
-  const typed = useRef<string | undefined>(brought?.typed);
+  /**
+   * What the person typed, for a save when the field goes away under them. Words a reload brought
+   * back are not in it: they wait in the field, unsent, until the person types or leaves the field.
+   */
+  const typed = useRef<string | undefined>(undefined);
   const latest = useRef(task);
   latest.current = task;
   useEffect(() => {
@@ -299,7 +302,10 @@ function WaitingOn({
     if (was === undefined || value === undefined || unchanged) {
       // Nothing to send: the field shows what is saved, also a change made while it was open.
       if (field.current !== null) field.current.value = latest.current.waiting_on ?? "";
-      if (was !== undefined) keepTextDraft(space, task.id, "waiting_on", undefined);
+      // Left as it was begun: nothing waits. Gone without a word typed: what was kept stays.
+      if (was !== undefined && value !== undefined) {
+        keepTextDraft(space, task.id, "waiting_on", undefined);
+      }
       return;
     }
     edits.edit(latest.current, waitingChange(text === "" ? undefined : text), {

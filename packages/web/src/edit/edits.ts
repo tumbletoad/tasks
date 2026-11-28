@@ -35,8 +35,10 @@
 // The queue waits for outcomes, never for ever: a request that gets no answer is asked about by
 // its own ID, and what waits behind a request whose outcome cannot be learned stays with the
 // person as not saved, never sent out of order (calls.ts). What still waits when the page goes is
-// kept in the browser: a field edit as not saved, a check-off, a move to or from the Trash, an undo
-// or a redo as an action that the page's next load sends with the request ID it had (`KeptAction`).
+// kept in the browser and shown on its task when the page next opens: a field edit as not saved; a
+// check-off, a reopen, a move to or from the Trash, an undo or a redo as "Not done yet", whose Try
+// again is the person's own action with the request ID it had (`KeptAction`). Nothing kept is sent
+// without the person asking.
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { newerSaid, type NewerWorkEntry, type ShortList } from "@ttasks/contracts/newer-work";
 import type { Msg } from "../row/model.ts";
@@ -189,30 +191,38 @@ export interface EditDeps {
   readonly leaving?: () => Promise<unknown>;
 }
 
+/** The task a kept action is shown on, and the request ID its Try again sends. */
+interface KeptOn {
+  readonly request: string;
+  readonly task: string;
+  readonly ref: string;
+}
+
 /**
  * A check-off, a reopen, a move to or from the Trash, an undo or a redo that still waited behind
- * another request when the page went. The page's next load sends it with the request ID it got
- * when the person acted, so the service applies it once, also when the request reached it before.
+ * another request when the page went. It is shown on its task until the person tries it again or
+ * discards it; Try again sends it with the request ID it got when the person acted, so the service
+ * applies it once, also when the request reached it before.
  */
-export type KeptAction =
-  | {
-      readonly kind: "finish" | "reopen" | "trash" | "restore";
-      readonly request: string;
-      readonly task: string;
-      readonly ref: string;
-      readonly base?: string;
-    }
-  | { readonly kind: "undo" | "redo"; readonly request: string; readonly commit: string }
-  /** An undo of a write whose commit the page did not know yet: its receipt names it. */
-  | { readonly kind: "undo"; readonly request: string; readonly of: string };
+export type KeptAction = KeptOn &
+  (
+    | { readonly kind: "finish" | "reopen" | "trash" | "restore"; readonly base?: string }
+    | { readonly kind: "undo" | "redo"; readonly commit: string }
+    /** An undo of a write whose commit the page did not know yet: its receipt names it. */
+    | { readonly kind: "undo"; readonly of: string }
+  );
 
-/** Where those actions are kept until they are decided (unsent.ts). */
+/** Where those actions are kept until they are decided or discarded (unsent.ts). */
 export interface ActionKeeper {
-  /** The space's kept actions, in the order the person took them. */
-  load(): KeptAction[];
   keep(action: KeptAction): void;
-  /** The action is decided, or has nothing left to do: it goes. */
+  /** The action is decided: it goes. */
   done(request: string): void;
+}
+
+/** A kept action tried again: its own request ID, and for a lifecycle write the base it had. */
+interface Again {
+  readonly request: string;
+  readonly base?: string | undefined;
 }
 
 /** An undo's commit: named, or the commit of the tab's own write, resolved in the undo's turn. */
@@ -597,6 +607,8 @@ export class Edits {
   #toasts = 0;
   /** Kept edits let go elsewhere while they are sent again from here: a refusal keeps none. */
   readonly #letGo = new Set<Unsaved>();
+  /** The task of each step that has one: a kept undo or redo of it is shown there. */
+  readonly #stepTask = new Map<Named, { readonly task: string; readonly ref: string }>();
   /** This tab's undoable steps since the person's last other change, oldest first. */
   #undoable: Named[] = [];
   /** The steps undone from here since then, oldest first: Redo brings back the last. */
@@ -625,7 +637,6 @@ export class Edits {
     deps.onChanges(({ changes }) => {
       this.#heard(changes);
     });
-    for (const action of deps.actions?.load() ?? []) this.#resend(action);
   }
 
   readonly subscribe = (listener: () => void): (() => void) => {
@@ -731,7 +742,7 @@ export class Edits {
     const step = options.undo === true || isStep(task, change, this.#deps.space());
     if (!step) this.#moved();
     const saved: Omit<Toast, "key"> | undefined = step
-      ? { kind: "undo", text: change.said, action: this.#stepped(sent) }
+      ? { kind: "undo", text: change.said, action: this.#stepped(sent, task) }
       : undefined;
     const toast = saved === undefined ? undefined : this.#toast(saved);
     // The parts kept for want of an answer, each with its line: a later decision settles only the
@@ -852,7 +863,7 @@ export class Edits {
    * Check-off: final at once, no model. The row stays checked and struck through
    * for the hold, then collapses; the toast's Undo names the commit.
    */
-  checkOff(task: TaskRow): void {
+  checkOff(task: TaskRow, again?: Again): void {
     const entry = this.#state.leaving.get(task.id);
     if (entry?.done === true) return;
     // Checked again after its undo: the row that waited to come back holds again.
@@ -860,14 +871,14 @@ export class Edits {
     this.#leave(task, {});
     // The store's row goes with the write, so the row never shows open again while it is on its
     // way, however late the feed confirms it.
-    const sent = this.#lifecycle("finish", task, this.seen(task, ["lifecycle"]));
+    const sent = this.#lifecycle("finish", task, again ?? { base: this.seen(task, ["lifecycle"]) });
     this.#checks.set(task.id, sent);
     this.#checkedOff.add(sent.request);
     this.#finishing(sent, { ...task, lifecycle: "completed", completed_at: Date.now() });
     const done: Omit<Toast, "key"> = {
       kind: "undo",
       text: { id: "toast.done" },
-      action: this.#stepped(sent),
+      action: this.#stepped(sent, task),
     };
     const toast = this.#toast(done);
     void this.#outcome(
@@ -900,12 +911,12 @@ export class Edits {
    * Reopen a finished task (the facts' Reopen): one action, with a base, and an Undo that
    * finishes it again by its own commit. Its earlier outcome and learnings stay with it.
    */
-  reopen(task: TaskRow): void {
-    const sent = this.#lifecycle("reopen", task, this.seen(task, ["lifecycle"]));
+  reopen(task: TaskRow, again?: Again): void {
+    const sent = this.#lifecycle("reopen", task, again ?? { base: this.seen(task, ["lifecycle"]) });
     const reopened: Omit<Toast, "key"> = {
       kind: "undo",
       text: { id: "toast.reopened" },
-      action: this.#stepped(sent),
+      action: this.#stepped(sent, task),
     };
     const toast = this.#toast(reopened);
     void this.#outcome(
@@ -937,8 +948,8 @@ export class Edits {
    * way lands first, with a base, and an Undo that takes back this change and no other. A run that
    * works on the task goes on: the toast says so.
    */
-  trash(task: TaskRow): void {
-    const sent = this.#trashing("trash", task, this.seen(task, ["deleted"]));
+  trash(task: TaskRow, again?: Again): void {
+    const sent = this.#trashing("trash", task, again ?? { base: this.seen(task, ["deleted"]) });
     this.#finishing(sent, { ...task, deleted_at: Date.now() });
     const moved: Omit<Toast, "key"> = {
       kind: "undo",
@@ -946,7 +957,7 @@ export class Edits {
         id: task.run?.state === "working" ? "toast.trashedWorking" : "toast.trashed",
         values: { ref: task.ref },
       },
-      action: this.#stepped(sent),
+      action: this.#stepped(sent, task),
     };
     const toast = this.#toast(moved);
     void this.#outcome(
@@ -979,9 +990,9 @@ export class Edits {
    * Restore from the Trash: one action, with a base, and an Undo that moves it back by its own
    * commit. The toast names where it is back, once the service said.
    */
-  restore(task: Pick<TaskRow, "id" | "ref" | "version">): void {
-    const sent = this.#trashing("restore", task, this.seen(task, ["deleted"]));
-    const undo = this.#stepped(sent);
+  restore(task: Pick<TaskRow, "id" | "ref" | "version">, again?: Again): void {
+    const sent = this.#trashing("restore", task, again ?? { base: this.seen(task, ["deleted"]) });
+    const undo = this.#stepped(sent, task);
     const toast = this.#toast({
       kind: "undo",
       text: { id: "toast.restoredTask", values: { ref: task.ref } },
@@ -1060,7 +1071,7 @@ export class Edits {
     const dismissed: Omit<Toast, "key"> = {
       kind: "undo",
       text: { id: "toast.questionDismissed", values: { count } },
-      action: this.#stepped(sent),
+      action: this.#stepped(sent, task),
     };
     const toast = this.#toast(dismissed);
     void this.#outcome(
@@ -1122,7 +1133,7 @@ export class Edits {
    * commit. It takes its place in the queue at once, when the person acts, and a toast's write's
    * commit is resolved there. A commit the page cannot learn (the write was refused) is not guessed.
    */
-  undo(commit?: Named): Promise<void> {
+  undo(commit?: Named, again?: Pick<Again, "request">): Promise<void> {
     if (commit === undefined && this.#undoable.length === 0 && this.#gate === undefined) {
       this.#toast({ kind: "info", text: { id: "toast.nothingToUndo" } });
       return Promise.resolve();
@@ -1138,7 +1149,8 @@ export class Edits {
       this.#undoable = this.#undoable.filter((other) => other !== step);
       return step;
     };
-    const asked: { commit?: string } = {};
+    const asked: { commit?: string; request?: string } =
+      again === undefined ? {} : { request: again.request };
     const { answer, call } = this.#history("undo", this.#when(take), asked);
     return this.#outcome(answer, call, (decision, say) => {
       if (!decision.ok) {
@@ -1166,6 +1178,7 @@ export class Edits {
       this.#undone(result.lifecycles ?? [], true);
       // A change the person made since the Undo was asked ends its Redo.
       const fresh = era === this.#era;
+      this.#sameTask(named, result.commit);
       if (fresh) this.#redoable.push(result.commit);
       const offer = fresh ? this.#pair() : {};
       say({ kind: fresh ? "undo" : "info", text: { id: "toast.undone" }, ...offer });
@@ -1173,7 +1186,7 @@ export class Edits {
   }
 
   /** Redo: the step a toast names, or the last one this tab undid since the person's last change. */
-  redo(commit?: string): Promise<void> {
+  redo(commit?: string, again?: Pick<Again, "request">): Promise<void> {
     if (commit === undefined && this.#redoable.length === 0 && this.#gate === undefined) {
       this.#toast({ kind: "info", text: { id: "toast.nothingToRedo" } });
       return Promise.resolve();
@@ -1189,7 +1202,11 @@ export class Edits {
       this.#redoable = this.#redoable.filter((other) => other !== step);
       return step;
     };
-    const { answer, call } = this.#history("redo", this.#when(take));
+    const { answer, call } = this.#history(
+      "redo",
+      this.#when(take),
+      again === undefined ? {} : { request: again.request },
+    );
     return this.#outcome(answer, call, (decision, say) => {
       if (!decision.ok) {
         if (decision.error instanceof AlreadyDone) return;
@@ -1212,6 +1229,7 @@ export class Edits {
       this.#undone(result.lifecycles ?? [], false);
       this.#redoable = this.#redoable.filter((step) => step !== named);
       const fresh = era === this.#era;
+      this.#sameTask(named, result.commit);
       if (fresh) this.#undoable.push(result.commit);
       const offer = fresh ? this.#pair() : {};
       say({ kind: fresh ? "undo" : "info", text: { id: "toast.redone" }, ...offer });
@@ -1311,10 +1329,10 @@ export class Edits {
       try {
         const known = await this.#turnOf(ahead, (): KeptAction | undefined => {
           const step = take();
-          if (typeof step === "string") return { kind, request, commit: step };
-          return step === undefined || kind === "redo"
-            ? undefined
-            : { kind, request, of: step.request };
+          const on = step === undefined ? undefined : this.#stepTask.get(step);
+          if (step === undefined || on === undefined) return undefined;
+          if (typeof step === "string") return { kind, request, ...on, commit: step };
+          return kind === "undo" ? { kind, request, ...on, of: step.request } : undefined;
         });
         if (!known) throw new NotSent();
         const step = take();
@@ -1338,6 +1356,7 @@ export class Edits {
           },
         );
         made(call);
+        if (asked.request !== undefined) this.#decidedKept(request, call);
         return await call.answer;
       } catch (error) {
         made(undefined);
@@ -1371,52 +1390,38 @@ export class Edits {
   }
 
   /**
-   * An action kept when the page last went, sent again with its own request ID, in its turn. It
-   * goes once decided; a refusal says so. One whose outcome stays unknown is kept for the next load.
+   * Try again on an action a page kept when it went: the person's own action again, with the
+   * request ID it got then (and a lifecycle write's base), so it is applied once. An undo or redo
+   * names its commit, so it never takes back another step. It goes once decided.
    */
-  #resend(action: KeptAction): void {
-    const settle = (decision: Decision<unknown>, refused: (error: unknown) => void) => {
-      const unknown = decision.ok
-        ? false
-        : decision.error instanceof Unanswered || decision.error instanceof NotSent;
-      if (unknown) return;
-      this.#deps.actions?.done(action.request);
-      if (!decision.ok) refused(decision.error);
-    };
-    if ("task" in action) {
-      const { kind } = action;
-      const row = { id: action.task, ref: action.ref };
-      const sent =
-        kind === "finish" || kind === "reopen"
-          ? this.#lifecycle(kind, row, action.base, action.request)
-          : this.#trashing(kind, row, action.base, action.request);
-      const failed = {
-        finish: "toast.checkFailedRef",
-        reopen: "toast.reopenFailedRef",
-        trash: "toast.trashFailed",
-        restore: "toast.restoreFailed",
-      } as const;
-      void this.#outcome<unknown>(sent.answer, sent.call, (decision, say) => {
-        settle(decision, (error) => {
-          if (this.#deps.failed(error)) return;
-          say({
-            kind: "error",
-            text: readOnlyText(error) ?? { id: failed[kind], values: { ref: action.ref } },
-          });
-        });
-      });
+  retryKept(action: KeptAction, row: TaskRow): void {
+    const again = { request: action.request };
+    if ("of" in action || "commit" in action) {
+      const step: Named =
+        "of" in action ? { commit: Promise.resolve(undefined), request: action.of } : action.commit;
+      this.#stepTask.set(step, { task: action.task, ref: action.ref });
+      if (action.kind === "redo" && typeof step === "string") void this.redo(step, again);
+      else void this.undo(step, again);
       return;
     }
-    const step: Named =
-      "of" in action ? { commit: Promise.resolve(undefined), request: action.of } : action.commit;
-    const { answer, call } = this.#history(action.kind, () => step, { request: action.request });
-    void this.#outcome(answer, call, (decision, say) => {
-      settle(decision, (error) => {
-        // The write it named never landed, or the step is undone already: nothing to take back.
-        if (error instanceof UnknownCommit || error instanceof AlreadyDone) return;
-        this.#historyFailed(error, say);
-      });
+    const kept = { ...again, base: action.base };
+    if (action.kind === "finish") this.checkOff(row, kept);
+    else if (action.kind === "reopen") this.reopen(row, kept);
+    else if (action.kind === "trash") this.trash(row, kept);
+    else this.restore(row, kept);
+  }
+
+  /** A kept action's request sent again: the browser lets it go once the service decided it. */
+  #decidedKept(request: string, call: Pick<Call<unknown>, "decided">): void {
+    void call.decided.then(() => {
+      this.#deps.actions?.done(request);
     });
+  }
+
+  /** The commit an undo or redo of `step` made is a step of the same task. */
+  #sameTask(step: Named | undefined, commit: string): void {
+    const on = step === undefined ? undefined : this.#stepTask.get(step);
+    if (on !== undefined) this.#stepTask.set(commit, on);
   }
 
   /** What an undo or redo waits for: every task's newest write, and the undo or redo before it. */
@@ -1647,40 +1652,30 @@ export class Edits {
 
   /**
    * A check-off or a reopen: one write of the task's lifecycle, kept as an action when the page
-   * goes before its turn. `request` is a kept action's own.
+   * goes before its turn. `again` is its base, and a kept action's own request ID.
    */
-  #lifecycle(
-    kind: "finish" | "reopen",
-    task: Pick<TaskRow, "id" | "ref">,
-    seen: string | undefined,
-    request?: string,
-  ) {
+  #lifecycle(kind: "finish" | "reopen", task: Pick<TaskRow, "id" | "ref">, again: Partial<Again>) {
     const { client } = this.#deps;
     type Result =
       Awaited<ReturnType<Client["task"]["finish"]>> | Awaited<ReturnType<Client["task"]["reopen"]>>;
     return this.#sendWith<Result>(
       task.id,
       ["lifecycle"],
-      seen,
+      again.base,
       (base, id) => {
         const input = { task: task.id, base: base ?? "", request_id: id };
         return kind === "finish" ? client.task.finish(input) : client.task.reopen(input);
       },
-      this.#keptAs(kind, task, seen, request),
+      this.#keptAs(kind, task, again),
     );
   }
 
   /** A move to the Trash or out of it, as `#lifecycle`. */
-  #trashing(
-    kind: "trash" | "restore",
-    task: Pick<TaskRow, "id" | "ref">,
-    seen: string | undefined,
-    request?: string,
-  ) {
+  #trashing(kind: "trash" | "restore", task: Pick<TaskRow, "id" | "ref">, again: Partial<Again>) {
     return this.#sendWith(
       task.id,
       ["deleted"],
-      seen,
+      again.base,
       (base, id) =>
         this.#deps.client.task.delete({
           tasks: [task.id],
@@ -1688,7 +1683,7 @@ export class Edits {
           base: base ?? "",
           request_id: id,
         }),
-      this.#keptAs(kind, task, seen, request),
+      this.#keptAs(kind, task, again),
     );
   }
 
@@ -1696,8 +1691,7 @@ export class Edits {
   #keptAs(
     kind: "finish" | "reopen" | "trash" | "restore",
     task: Pick<TaskRow, "id" | "ref">,
-    seen: string | undefined,
-    request: string | undefined,
+    { base: seen, request }: Partial<Again>,
   ): SendOptions {
     return {
       ...(kind === "finish" || kind === "trash"
@@ -1752,6 +1746,7 @@ export class Edits {
             note,
           );
           made(one);
+          if (options.request !== undefined) this.#decidedKept(request, one);
           return await one.answer;
         } catch (error) {
           made(undefined);
@@ -1991,10 +1986,14 @@ export class Edits {
    * The one place a change becomes an undoable step: the newest on this tab's Undo, and the end of
    * its Redo. One that wrote nothing, or was refused, leaves Undo again. Returns its toast's Undo.
    */
-  #stepped(sent: Pick<Sent<unknown>, "commit" | "request" | "answer">): ToastAction {
+  #stepped(
+    sent: Pick<Sent<unknown>, "commit" | "request" | "answer">,
+    task?: Pick<TaskRow, "id" | "ref">,
+  ): ToastAction {
     this.#era += 1;
     this.#undoable.push(sent);
     this.#redoable = [];
+    if (task !== undefined) this.#stepTask.set(sent, { task: task.id, ref: task.ref });
     const leave = () => {
       this.#undoable = this.#undoable.filter((step) => step !== sent);
     };

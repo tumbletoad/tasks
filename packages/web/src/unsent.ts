@@ -33,7 +33,7 @@ const editPrefix = (space: string) => `edit.${space}.`;
 const editName = (space: string, task: string, field: string, id: string) =>
   `${editPrefix(space)}${task}.${field}.${id}`;
 const editNames = (space: string): string[] => browserKept.names(editPrefix(space));
-const KINDS = ["draft.", "note.", "title.", "text.", "edit."] as const;
+const KINDS = ["draft.", "note.", "title.", "text.", "edit.", "action."] as const;
 
 const listeners = new Set<() => void>();
 let hearing: (() => void) | undefined;
@@ -541,75 +541,82 @@ export function unsavedKeeper(space: string): UnsavedKeeper {
 }
 
 // A check-off, a reopen, a move to or from the Trash, an undo or a redo that waited behind another
-// request when a page went (edit/edits.ts): kept for the browser per space, under its request ID,
-// until the next page that opens the space has sent it and it is decided. Two pages that send one
-// are applied once: it carries the same request ID.
+// request when a page went (edit/edits.ts): kept for the browser under its task and request ID, and
+// shown on the task with Try again and Discard until the service decided it or the person let it
+// go. Nothing here is sent by itself; two tabs that try one again are applied once, by its ID.
 
-const actionPrefix = (space: string) => `action.${space}.`;
+const actionPrefix = (space: string, task = "") =>
+  `action.${space}.${task === "" ? "" : `${task}.`}`;
 const COMMIT = /^op_[0-9a-z]{26}$/u;
 const LIFECYCLE: ReadonlySet<string> = new Set(["finish", "reopen", "trash", "restore"]);
-/** Orders the actions one page keeps within one millisecond. */
-let kept = 0;
 
-/** A kept action, read by its shape, with when it was kept. */
-function actionOf(
-  value: unknown,
-): { readonly action: KeptAction; readonly at: number } | undefined {
+/** A kept action, read by its shape. */
+function actionOf(value: unknown): KeptAction | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const { kind, request, task, ref, base, commit, of, at } = value as Record<string, unknown>;
+  const { kind, request, task, ref, base, commit, of } = value as Record<string, unknown>;
   if (typeof request !== "string" || !NOTE_ID.test(request)) return undefined;
-  if (typeof at !== "number" || !Number.isFinite(at)) return undefined;
+  if (typeof task !== "string" || !TASK_ID.test(task)) return undefined;
+  if (typeof ref !== "string" || !REF.test(ref)) return undefined;
+  const on = { request, task, ref };
   if (typeof kind === "string" && LIFECYCLE.has(kind)) {
-    if (typeof task !== "string" || !TASK_ID.test(task)) return undefined;
-    if (typeof ref !== "string" || !REF.test(ref)) return undefined;
     if (base !== undefined && (typeof base !== "string" || !AS_OF.test(base))) return undefined;
-    const action = {
-      kind: kind as "finish" | "reopen" | "trash" | "restore",
-      request,
-      task,
-      ref,
-      ...(base === undefined ? {} : { base }),
-    };
-    return { action, at };
+    const lifecycle = kind as "finish" | "reopen" | "trash" | "restore";
+    return { kind: lifecycle, ...on, ...(base === undefined ? {} : { base }) };
   }
   if (kind !== "undo" && kind !== "redo") return undefined;
   if (typeof commit === "string" && COMMIT.test(commit) && of === undefined) {
-    return { action: { kind, request, commit }, at };
+    return { kind, ...on, commit };
   }
   if (kind === "undo" && typeof of === "string" && NOTE_ID.test(of) && commit === undefined) {
-    return { action: { kind, request, of }, at };
+    return { kind, ...on, of };
   }
   return undefined;
 }
 
-/** The space's kept actions, for the edits of every page that opens it. */
+/** The actions kept for `task`, or for the whole space, each with its name. */
+function actionsAt(
+  space: string,
+  task = "",
+): { readonly name: string; readonly action: KeptAction }[] {
+  return browserKept
+    .names(actionPrefix(space, task))
+    .sort()
+    .flatMap((name) => {
+      const action = actionOf(browserKept.json(name));
+      return action !== undefined && name === actionPrefix(space, action.task) + action.request
+        ? [{ name, action }]
+        : [];
+    });
+}
+
+/** Lets go of the kept action with this request ID, wherever it is kept in the space. */
+export function letGoAction(space: string, request: string): void {
+  for (const name of browserKept.names(actionPrefix(space))) {
+    if (name.endsWith(`.${request}`)) keep(name, undefined);
+  }
+}
+
+/** Where the edits of `space` keep an action whose page goes before it is sent. */
 export function actionKeeper(space: string): ActionKeeper {
-  const prefix = actionPrefix(space);
   return {
-    load() {
-      return browserKept
-        .names(prefix)
-        .flatMap((name) => {
-          const found = actionOf(browserKept.json(name));
-          if (found !== undefined && name === prefix + found.action.request) return [found];
-          // Not one of ours: it is removed, so it is never read again as anything.
-          browserKept.keep(name, undefined);
-          return [];
-        })
-        .sort((a, b) => a.at - b.at)
-        .map(({ action }) => action);
-    },
     keep(action) {
-      kept += 1;
-      browserKept.keep(
-        prefix + action.request,
-        JSON.stringify({ ...action, at: Date.now() + kept / 1000 }),
-      );
+      keep(actionPrefix(space, action.task) + action.request, JSON.stringify(action));
     },
     done(request) {
-      browserKept.keep(prefix + request, undefined);
+      letGoAction(space, request);
     },
   };
+}
+
+/** The actions kept for a task, of every tab. */
+export function keptActions(space: string, task: string): KeptAction[] {
+  return actionsAt(space, task).map(({ action }) => action);
+}
+
+/** The actions kept for a task, of every tab, as they come and go. */
+export function useKeptActions(space: string, task: string): readonly KeptAction[] {
+  const kept = useSyncExternalStore(onUnsent, () => JSON.stringify(keptActions(space, task)));
+  return useMemo(() => JSON.parse(kept) as KeptAction[], [kept]);
 }
 
 // Every kind together: what the foot of the Trash lists, and the one way to let a value go.
@@ -805,6 +812,7 @@ export function unsentTasks(space: string): string[] {
     ...after(`title.${space}.`).map(taskOf),
     ...after(`text.${space}.`).map(editTask),
     ...after(editPrefix(space)).map(editTask),
+    ...after(actionPrefix(space)).map(editTask),
   ];
   return [...new Set(tasks.filter((task) => task !== ""))];
 }
@@ -821,7 +829,10 @@ export function forgetTask(space: string, task: string): void {
   ]) {
     browserKept.keep(name, undefined);
   }
-  for (const name of browserKept.names(`${editPrefix(space)}${task}.`)) {
+  for (const name of [
+    ...browserKept.names(`${editPrefix(space)}${task}.`),
+    ...browserKept.names(actionPrefix(space, task)),
+  ]) {
     browserKept.keep(name, undefined);
   }
   tell();
