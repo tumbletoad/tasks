@@ -243,6 +243,9 @@ export const EVENTS = {
     },
   },
   "update.repair_failed": { lvl: "error", c: "hub", fields: { code: "error_code" } },
+  /** Old version folders removed (retire.ts); one that cannot go yet waits for a later pass. */
+  "update.retired": { lvl: "info", c: "hub", fields: { count: "int" } },
+  "update.retire_failed": { lvl: "warn", c: "hub", fields: { code: "error_code" } },
   /**
    * After a repair the service restarts: current names another version than it runs (`version`),
    * or the update changed the Windows supervisor it runs under, which then hands over

@@ -63,7 +63,7 @@ the Agents page; the readable files on disk; skills; the Windows launchers, sign
 | A quality pass over the app, on the new screens | todo: steps 2 and 3 |
 | A run reports through its answer and what it logs, and logs a decision it leaves the person as a question | done |
 | A run that stopped at a permission prompt goes on with Continue, in the agent app, on the run's own conversation | todo: 2b.3 |
-| Retiring old versions after an update | ready |
+| Retiring old versions after an update | done |
 
 ## Checks on real machines
 
