@@ -12,11 +12,10 @@ export type EntryKind = (typeof ENTRY_KINDS)[number];
 /**
  * Who may call an entry: the exposure classes of A3 3.2.3.
  * - `agent`: agents and the user. Listed as an MCP tool when the entry has an MCP face.
- * - `run`: agent-allowed, but only on a connection bound to a run or routine.
  * - `user`: the user only, through the `ui` and `cli-interactive` connection classes.
  * - `ui`: the browser UI only.
  */
-export const ACTOR_CLASSES = ["agent", "run", "user", "ui"] as const;
+export const ACTOR_CLASSES = ["agent", "user", "ui"] as const;
 export type ActorClass = (typeof ACTOR_CLASSES)[number];
 
 /** A1's actor kinds, recorded on every operation and taken from the credential (A6 3.3). */
@@ -29,7 +28,6 @@ export type ActorKind = (typeof ACTOR_KINDS)[number];
  */
 export const ACTOR_KINDS_BY_CLASS = {
   agent: ["human", "agent", "routine"],
-  run: ["agent", "routine"],
   user: ["human"],
   ui: ["human"],
 } as const satisfies Record<ActorClass, readonly ActorKind[]>;
@@ -244,7 +242,7 @@ export type Filled<T, D extends Defaults> = [D] extends [never]
   : T & { [K in D[number][0] & keyof T]-?: Exclude<T[K], undefined> };
 
 export function isAgentAllowed(entry: Pick<AnyEntry, "actors">): boolean {
-  return entry.actors === "agent" || entry.actors === "run";
+  return entry.actors === "agent";
 }
 
 /**

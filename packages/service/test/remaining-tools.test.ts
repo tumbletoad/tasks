@@ -1,4 +1,4 @@
-// The tools M4.01 lists, through the request path (A3 3.2.3, 3.4.3, 3.4.5, 3.4.10 to 3.4.12; A7
+// The tools M4.01 lists, through the request path (A3 3.2.3, 3.4.3, 3.4.5, 3.4.10, 3.4.11; A7
 // 3.11 M4.01): add_tasks with areas and projects by name, the Inbox and possible duplicates;
 // organize's list and the rule for mixed read and write actions; preferences over the declared
 // keys; search's text on an indexed and an unindexed space; and the user-only class refused to
@@ -1073,7 +1073,7 @@ describe("[A3.3.2.3.exposure.user-only] the user-only class and R7 refusals for 
       );
       expect(body, label).toMatchObject({ code: "forbidden", data: { rule: "user_only" } });
     }
-    for (const entry of registry.filter((e) => e.actors === "agent" || e.actors === "run")) {
+    for (const entry of registry.filter((e) => e.actors === "agent")) {
       for (const kind of entry.ops) {
         const spec = opSpec(kind);
         expect(spec?.class === "user" || spec?.r7 === true, `${entry.name} emits ${kind}`).toBe(

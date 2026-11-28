@@ -12,7 +12,6 @@ import { launchOpen } from "./entries/launch-open.ts";
 import { noteRemove } from "./entries/note-remove.ts";
 import { prefsManage } from "./entries/prefs-manage.ts";
 import { receiptGet } from "./entries/receipt-get.ts";
-import { runReport } from "./entries/run-report.ts";
 import { spaceStatus } from "./entries/space-status.ts";
 import { taskAdd } from "./entries/task-add.ts";
 import { taskDelete } from "./entries/task-delete.ts";
@@ -48,7 +47,6 @@ export const registry = [
   launchOpen,
   taskSearch,
   prefsManage,
-  runReport,
   historyUndo,
   historyRedo,
   // After the undo's and redo's examples: its user's change would be the one they take back.

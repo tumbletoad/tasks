@@ -36,6 +36,10 @@ function sources(dir: string): string[] {
 const SAMPLE = {
   ...BRAND_VALUES,
   view: "Today",
+  interval: 2,
+  ordinal: "first",
+  position: "first",
+  schedule: "Every Saturday",
   space: "Mira",
   name: "Mira",
   count: 2,
