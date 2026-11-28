@@ -44,11 +44,6 @@ export const PROBLEM_CODES = [
   /** A second instance of a target that has a single instance. */
   "single_instance",
   /**
-   * A section or key this build no longer reads (`[roots]`, an instance's `prompt` or T3 keys): its
-   * lines do nothing. A warning.
-   */
-  "retired",
-  /**
    * A preference this build declares and does not read yet (`LATER_PREFERENCES`): its value changes
    * nothing. A warning.
    */
@@ -61,7 +56,7 @@ export type Severity = "error" | "warning";
 
 export interface ConfigProblem {
   /**
-   * The key, as a path into the file: `instance[2].exec`, `roots.work.path`, `spaces[1]`. Array
+   * The key, as a path into the file: `instance[2].exec`, `spaces[1].path`. Array
    * entries count from 1, as a person counts `[[instance]]` blocks. Empty for the whole file.
    */
   readonly key: string;
@@ -181,17 +176,6 @@ export class TableReader {
   raw(name: string): unknown {
     this.#seen.add(name);
     return this.#table[name];
-  }
-
-  has(name: string): boolean {
-    return Object.hasOwn(this.#table, name);
-  }
-
-  /** A key this build no longer reads: present, it is a `retired` warning and changes nothing. */
-  retired(name: string): void {
-    if (!this.has(name)) return;
-    this.#seen.add(name);
-    this.#problems.warn(this.key(name), "retired");
   }
 
   string(name: string, rule: StringRule = {}): string | undefined {

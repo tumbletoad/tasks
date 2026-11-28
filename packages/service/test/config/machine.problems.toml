@@ -29,12 +29,6 @@ colour = "SENTINEL-unknown-key"
 id = "sp_3z8sm956jp8dajmtsar5kx026c"
 path = "/home/mira/Tasks/b"
 
-[roots."Bad Root"]
-path = "/home/mira/x"
-
-[roots.nopath]
-label = "SENTINEL-label"
-
 [terminal]
 app = "SENTINEL-term"
 custom = ["{terminal}", "{SENTINEL}", "{shim}"]
@@ -62,10 +56,10 @@ run_permission = "SENTINEL-yolo"
 exec = "SENTINEL-relative-exec"
 
 [[instance]]
-id = "t3-key"
+id = "unknown-key"
 target = "codex-cli"
 label = "x"
-t3_provider_instance = "SENTINEL-provider"
+not_a_key = "SENTINEL-unknown"
 
 [[instance]]
 id = "app-one"

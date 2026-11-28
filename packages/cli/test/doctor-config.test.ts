@@ -36,7 +36,7 @@ describe("[A2.3.2.2.permissions.rule] ttasks doctor's config row", () => {
     expect(configCheck(io)).toMatchObject({ status: "ok", detail: "machine.toml is valid." });
     writeFileSync(file, 'not_a_key = 1\n[log]\nlevel = "warn"\n');
     expect(configCheck(io)).toMatchObject({ status: "warn" });
-    expect(configCheck(io).detail).toContain("not_a_key (unknown_key)");
+    expect(configCheck(io).detail).toContain("not_a_key");
     writeFileSync(file, "[spaces\n");
     expect(configCheck(io)).toMatchObject({ status: "fail" });
     expect(configCheck(io).detail).toContain("syntax at line 1");
@@ -58,35 +58,18 @@ describe("[A2.3.2.2.permissions.rule] ttasks doctor's config row", () => {
     expect(configCheck(io)).toMatchObject({ status: "ok", detail: "machine.toml is valid." });
   });
 
-  test("[A1.3.15.roots.retired] a [roots] section is named once, as lines that do nothing, and the file is left as it is", () => {
+  test("a key this build does not read is named as one that changes nothing, and the file is left as it is", () => {
     const { io, file } = home();
     const text =
-      '[roots.work]\nlabel = "Work"\npath = "/home/mira/work"\n\n[roots.oss]\npath = "/home/mira/oss"\n';
+      '[[instance]]\nid = "codex"\ntarget = "codex-cli"\nlabel = "Codex"\nnot_a_key = "x"\n\n' +
+      '[not_a_section.work]\npath = "/home/mira/work"\n';
     writeFileSync(file, text, { mode: 0o600 });
     const check = configCheck(io);
     expect(check.status).toBe("warn");
-    expect(check.detail.match(/\[roots\]/gu)).toHaveLength(1);
-    expect(check.detail).toContain("do nothing now");
+    expect(check.detail).toContain("not_a_section");
+    expect(check.detail).toContain("instance[1].not_a_key");
+    expect(check.detail).toContain("change nothing");
     expect(check.detail).not.toContain("drop only their entry");
-    expect(readFileSync(file, "utf8")).toBe(text);
-    // With another problem beside it, both are named.
-    writeFileSync(file, `not_a_key = 1\n${text}`);
-    expect(configCheck(io).detail).toContain("not_a_key (unknown_key)");
-    expect(configCheck(io).detail).toContain("[roots] lines do nothing now");
-  });
-
-  test("an instance's T3 profile keys and prompt mode are named as lines that do nothing, not as a dropped entry", () => {
-    const { io, file } = home();
-    const text =
-      '[[instance]]\nid = "t3-codex"\ntarget = "t3"\nlabel = "T3 Code"\n' +
-      't3_provider_instance = "codex"\nt3_model = "fixture-model"\nprompt = "prefill"\n';
-    writeFileSync(file, text, { mode: 0o600 });
-    const check = configCheck(io);
-    expect(check.status).toBe("warn");
-    expect(check.detail).toContain("instance[1].t3_provider_instance");
-    expect(check.detail).toContain("do nothing now");
-    expect(check.detail).not.toContain("drop only their entry");
-    expect(check.detail).not.toContain("[roots]");
     expect(readFileSync(file, "utf8")).toBe(text);
   });
 

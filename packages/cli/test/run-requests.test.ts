@@ -215,7 +215,7 @@ describe("[A4.3.11.run.requests] ttasks run sends the person's words from --inpu
   });
 
   test("a command that reads no --input refuses it before it does anything", async () => {
-    for (const argv of [["space", "list"], ["view", "today"], ["doctor"], ["roots"]]) {
+    for (const argv of [["space", "list"], ["view", "today"], ["doctor"]]) {
       const ran = await user([...argv, "--input", "-", "--json"], { stdin: "{}" });
       expect(ran.code, argv.join(" ")).toBe(2);
       expect(JSON.parse(ran.stdout), argv.join(" ")).toMatchObject({

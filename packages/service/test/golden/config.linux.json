@@ -132,11 +132,5 @@
       "idleMs": 900000
     }
   },
-  "problems": [
-    {
-      "key": "roots",
-      "code": "retired",
-      "severity": "warning"
-    }
-  ]
+  "problems": []
 }

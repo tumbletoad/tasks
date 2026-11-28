@@ -118,31 +118,6 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
     expect(other.problems).toEqual([]);
   });
 
-  test("a file from before one T3 Code entry: the first T3 instance opens, its profile keys and an open's prompt mode do nothing", () => {
-    const t3 = (id: string, provider: string) =>
-      `[[instance]]\nid = "${id}"\ntarget = "t3"\nlabel = "T3 Code · ${provider}"\n` +
-      `t3_environment = "local"\nt3_provider_instance = "${provider}"\nt3_model = "fixture-model"\n`;
-    const text =
-      `[[instance]]\nid = "claude"\ntarget = "claude-cli"\nlabel = "Claude Code"\nprompt = "sent"\n` +
-      t3("t3-codex", "codex") +
-      t3("t3-claude", "claudeAgent");
-    const read = parseMachineConfig(text, "linux");
-    expect(read.config.instances.map((i) => [i.id, i.target])).toEqual([
-      ["claude", "claude-cli"],
-      ["t3-codex", "t3"],
-    ]);
-    expect(read.problems).toEqual([
-      { key: "instance[1].prompt", code: "retired", severity: "warning" },
-      { key: "instance[2].t3_environment", code: "retired", severity: "warning" },
-      { key: "instance[2].t3_provider_instance", code: "retired", severity: "warning" },
-      { key: "instance[2].t3_model", code: "retired", severity: "warning" },
-      { key: "instance[3].t3_environment", code: "retired", severity: "warning" },
-      { key: "instance[3].t3_provider_instance", code: "retired", severity: "warning" },
-      { key: "instance[3].t3_model", code: "retired", severity: "warning" },
-      { key: "instance[3].target", code: "single_instance", severity: "error" },
-    ]);
-  });
-
   test("paths are judged by the machine's own OS: a Windows path is not absolute on Linux, and the reverse", () => {
     const windows = parseMachineConfig(fixture("machine.win32.toml"), "linux");
     expect(windows.config.spaces).toEqual([]);
@@ -193,9 +168,9 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
     await expect(json(result)).toMatchFileSnapshot("../../test/golden/config.problems.json");
     const problems = JSON.stringify(result.problems);
     expect(problems).not.toContain("SENTINEL");
-    // Only the entries without an error remain: a retired key is a warning, its entry stays.
+    // Only the entries without an error remain: an unknown key is a warning, its entry stays.
     expect(result.config.spaces.map((s) => s.path)).toEqual(["/home/mira/Tasks/b"]);
-    expect(result.config.instances.map((i) => i.id)).toEqual(["good", "t3-key", "app-one"]);
+    expect(result.config.instances.map((i) => i.id)).toEqual(["good", "unknown-key", "app-one"]);
     expect(result.config.approvals.size).toBe(0);
     expect(result.config.log.level).toBe("info");
     expect(result.config.terminal).toEqual(DEFAULT_CONFIG.terminal);

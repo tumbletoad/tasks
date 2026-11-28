@@ -3,14 +3,6 @@
 id = "sp_3d2mcy0g1b3q1zamnjbesf54hx"
 path = 'C:\Users\mira\Tasks\life'
 
-[roots.projects]
-label = "Projects"
-path = 'C:\Users\mira\Projects'
-runs = true
-
-[roots.share]
-path = '\\nas\share\mira'
-
 [terminal]
 app = "wt"
 window = "tabs"
