@@ -123,6 +123,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   connected, or one TTasks cannot make, is said as not there, with its path. No backup goes to
   another folder in its place, and nothing is cleaned up. An upgrade waits for it: the space stays
   readable at its old version, says why, and upgrades when it next opens with the folder there.
+- Keep a backups folder you set outside the space's folder: one inside it goes aside with the
+  space on a restore in place, and the space's backups are then not there.
 - Making a backup or an export never overwrites an existing file.
 - A restore checks the backup first. A backup that is broken or too new leaves nothing half
   restored.
