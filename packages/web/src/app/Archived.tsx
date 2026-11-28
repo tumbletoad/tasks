@@ -1,14 +1,13 @@
-// The line at the top of an archived area's or project's page: it says the group is archived and
-// brings it back. A project in an archived area is archived with it, so the line there brings back
-// the area, and says so.
+// The line at the top of an archived project's screen: it says the project is archived and brings
+// it back. A project under an archived one is archived with it, so the line there brings back that
+// project, and says so.
 import { useContext } from "react";
 import { Button } from "react-aria-components";
 import { Session } from "../context.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
-import { archivedGroup } from "@ttasks/client/today";
 import { useT } from "../i18n/intl.tsx";
-import type { NodeRow } from "@ttasks/client/store";
+import { trail, type NodeRow } from "@ttasks/client/store";
 import type { Msg } from "../row/model.ts";
 import { useLive } from "../store/hooks.ts";
 import css from "./Archived.module.css";
@@ -71,23 +70,18 @@ export function useUnarchive(): (
   };
 }
 
-export function ArchivedLine({
-  area,
-  project,
-}: {
-  readonly area?: string | undefined;
-  readonly project?: string | undefined;
-}) {
+export function ArchivedLine({ project }: { readonly project: string }) {
   const t = useT();
   const unarchive = useUnarchive();
   const state = useLive();
-  const areaRow = area === undefined ? undefined : state.nodes.get(area);
-  const projectRow = project === undefined ? undefined : state.nodes.get(project);
-  const shelved = archivedGroup(areaRow, projectRow);
+  const path = trail(state.nodes, project);
+  // The nearest archived one: unarchiving it is what brings this project back.
+  const at = path.findLastIndex((node) => node.state === "archived");
+  const shelved = path[at];
   if (shelved === undefined) return null;
-  const name = shelved.row.title;
-  // On a live project's page, the area is what keeps it archived: the button names it.
-  const byArea = shelved.kind === "area" && project !== undefined;
+  const name = shelved.title;
+  // A live project under an archived one: that one keeps it archived, and the button names it.
+  const byArea = shelved.id !== project;
 
   return (
     <div className={styles.line} data-part="archived-line">
@@ -97,7 +91,7 @@ export function ArchivedLine({
       <Button
         className={styles.act}
         onPress={() => {
-          void unarchive(shelved.row, shelved.kind === "project" ? areaRow : undefined);
+          void unarchive(shelved, path[at - 1]);
         }}
       >
         {byArea ? t("archived.unarchiveArea", { area: name }) : t("archived.unarchive")}

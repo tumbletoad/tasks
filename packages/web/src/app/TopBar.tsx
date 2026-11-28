@@ -215,7 +215,7 @@ export function TopBar({
   const navigate = useNavigate();
   const router = useRouter();
   const location = useRouterState({ select: (s) => s.location });
-  const params: { area?: string; project?: string } = useParams({ strict: false });
+  const params: { project?: string } = useParams({ strict: false });
   const { singleKeys } = useMachine();
   const mac = useMemo(isMac, []);
   const keyLabel = useKeyLabel();
@@ -366,10 +366,11 @@ export function TopBar({
   // New work goes to live groups only: an archived one is neither suggested nor taken, and its name
   // is said to be archived rather than read as another group's.
   const { areas, projects, archived } = useMemo(() => captureGroups(state.nodes), [state.nodes]);
-  // Only an area's and a project's routes have these. On a project's page a capture goes where the
-  // project is now, whatever area its address names.
-  const hereProject = params.project;
-  const hereArea = hereProject === undefined ? params.area : trail(state.nodes, hereProject)[0]?.id;
+  // Only a project's routes have one. A capture there goes into the project as today's operations
+  // file it: its top and the project under that, where it sits deeper.
+  const [hereTop, hereBelow] = trail(state.nodes, params.project);
+  const hereArea = hereTop?.id;
+  const hereProject = hereBelow?.id;
   const capture = useMemo(() => {
     const here =
       hereArea === undefined
@@ -380,7 +381,7 @@ export function TopBar({
   // On a group's page a capture usually lands in that group: one that goes to the Inbox instead (an
   // archived group, the page's chip taken off) says so.
   const toInbox =
-    (params.area !== undefined || params.project !== undefined) &&
+    params.project !== undefined &&
     capture.archived === undefined &&
     !capture.chips.some((chip) => chip.kind === "area" || chip.kind === "waiting");
   // What the text's shortcuts became, an archived group a `#name` named instead, or the Inbox.

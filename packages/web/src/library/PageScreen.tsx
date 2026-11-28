@@ -137,7 +137,7 @@ function Back({ page, row }: { readonly page: PageView; readonly row: PageRow | 
   }
   return (
     <LibraryLink
-      node={owner.kind === "space" ? { kind: "space" } : { kind: owner.kind, id: owner.id }}
+      node={owner.kind === "space" ? { kind: "space" } : { kind: "project", id: owner.id }}
       className={styles.back}
     >
       {t("page.back", { label: t("library.of", { name: owner.title }) })}
@@ -145,18 +145,19 @@ function Back({ page, row }: { readonly page: PageView; readonly row: PageRow | 
   );
 }
 
-/** Where the page stands: its area and project, each to its Library. */
+/** Where the page stands: the projects above it, each to its Library. */
 function Crumb({ row }: { readonly row: PageRow | undefined }) {
   const { nodes } = useLive();
   if (row === undefined) return null;
-  const [area, project] = trail(nodes, row.under);
-  if (area === undefined) return null;
+  const path = trail(nodes, row.under);
+  if (path.length === 0) return null;
   return (
     <span className={styles.crumb} data-part="page-crumb">
-      <LibraryLink node={{ kind: "area", id: area.id }}>{area.title}</LibraryLink>
-      {project === undefined ? null : (
-        <LibraryLink node={{ kind: "project", id: project.id }}>{project.title}</LibraryLink>
-      )}
+      {path.map((node) => (
+        <LibraryLink key={node.id} node={{ kind: "project", id: node.id }}>
+          {node.title}
+        </LibraryLink>
+      ))}
     </span>
   );
 }

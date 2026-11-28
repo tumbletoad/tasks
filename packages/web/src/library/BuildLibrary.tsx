@@ -31,7 +31,7 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
   const [made, setMade] = useState<string | undefined>(undefined);
   const [area, project] = trail(nodes, node.id);
   const filed = area === undefined ? {} : filedAs(area, project);
-  const kind = node.kind;
+  const kind = filed.area !== undefined && filed.project === undefined ? "area" : "project";
   const add = async (): Promise<string | undefined> => {
     const title = t("library.buildTitle", { kind });
     const added = await edits.write(
@@ -73,19 +73,11 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
     setMade(undefined);
     const space = live.spaceId ?? "";
     const search = { task: ref };
-    if (node.kind === "area") {
-      await router?.navigate({
-        to: "/s/$space/area/$area",
-        params: { space, area: node.id },
-        search,
-      });
-    } else {
-      await router?.navigate({
-        to: "/s/$space/area/$area/project/$project",
-        params: { space, area: area?.id ?? "", project: node.id },
-        search,
-      });
-    }
+    await router?.navigate({
+      to: "/s/$space/project/$project",
+      params: { space, project: node.id },
+      search,
+    });
   };
   return (
     <button

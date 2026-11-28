@@ -150,6 +150,14 @@ export interface WriteProblem {
   holders?: (EffortCount & { effort: string })[];
 }
 
+/** Both writers' refusal of a lifecycle move a task's lifecycle does not allow. */
+export const NOT_NOW = {
+  complete: "Only an active task can be completed",
+  archive: "Only an active task can be archived",
+  reopen: "Only a completed or archived task can be reopened",
+  wrapUp: "Only a completed or archived task is wrapped up",
+} as const;
+
 /** Both writers' refusal of a task reference the space does not hold, and of another space's. */
 export const NO_SUCH_TASK = "No task has this reference";
 export const OTHER_SPACE_TASK = "The reference has another space's prefix";

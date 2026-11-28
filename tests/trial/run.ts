@@ -1,11 +1,11 @@
-// pnpm trial: step 1's trial of the library (README.md). For each agent and each condition (the
-// trail in get_task on, and off) it makes a fresh world, runs the twenty scripted tasks in order as
-// background runs, task 15 as two runs at once, checks what each left, and writes one JSON line
-// per run and a summary table. Rule (a) runs task 1 again in fresh worlds until it has ten runs.
+// pnpm trial: step 1's trial of the library (README.md). For each agent it makes a fresh world,
+// runs the twenty scripted tasks in order as background runs, task 15 as two runs at once, checks
+// what each left, and writes one JSON line per run and a summary table. Rule (a) runs task 1 again
+// in fresh worlds until it has ten runs.
 //
 //   pnpm trial --stand-in                                the run tests' stand-in agents
 //   pnpm trial --instances <file.toml> --agents <id,…>   agent instances the person gives
-//     [--trail on|off|both] [--tasks N] [--repeats N] [--only 1,2,9] [--out DIR] [--keep]
+//     [--tasks N] [--repeats N] [--only 1,2,9] [--out DIR] [--keep]
 //
 // It writes only in its own temporary folders and in --out. It never writes into an agent's home:
 // the instances' programs keep their own, and the service looks for agent apps in an empty folder.
@@ -25,8 +25,10 @@ import { parseArgs } from "node:util";
 import { runMain } from "../../packages/cli/test/cli-harness.ts";
 import { parseToml } from "../../packages/service/src/config/toml.ts";
 import { instanceToml } from "../../packages/service/test/harness.ts";
-import { DATE_TASKS, TASKS, type CallLine, type TrialTask } from "./tasks.ts";
+import { DATE_TASKS, TASKS, type TrialTask } from "./tasks.ts";
 import {
+  callLine,
+  callsOf,
   historyBytes,
   livePages,
   makeWorld,
@@ -39,7 +41,7 @@ import {
 
 const USAGE =
   "usage: pnpm trial --stand-in | --instances <file.toml> --agents <id,...> " +
-  "[--trail on|off|both] [--tasks N] [--repeats N] [--only 1,2,9] [--out DIR] [--keep]";
+  "[--tasks N] [--repeats N] [--only 1,2,9] [--out DIR] [--keep]";
 
 const STAND_IN = fileURLToPath(new URL("./stand-in.ts", import.meta.url));
 
@@ -47,7 +49,6 @@ interface Options {
   readonly agents: readonly string[];
   readonly instances: string;
   readonly standIn: boolean;
-  readonly conditions: readonly ("on" | "off")[];
   readonly seedTasks: number;
   readonly repeats: number;
   readonly only: ReadonlySet<string> | undefined;
@@ -61,7 +62,6 @@ function parse(): Options {
       "stand-in": { type: "boolean", default: false },
       instances: { type: "string" },
       agents: { type: "string" },
-      trail: { type: "string", default: "both" },
       tasks: { type: "string", default: "400" },
       repeats: { type: "string", default: "3" },
       only: { type: "string" },
@@ -74,20 +74,17 @@ function parse(): Options {
   if (standIn === (values.instances !== undefined)) throw new Error(USAGE);
   const agents = standIn ? ["stand-in"] : (values.agents ?? "").split(",").filter((a) => a !== "");
   if (agents.length === 0) throw new Error(USAGE);
-  const trail = values.trail;
-  if (trail !== "on" && trail !== "off" && trail !== "both") throw new Error(USAGE);
   const seedTasks = Number(values.tasks);
   const repeats = Number(values.repeats);
   if (!Number.isInteger(seedTasks) || seedTasks < 1 || !Number.isInteger(repeats) || repeats < 0) {
     throw new Error(USAGE);
   }
   const instances = standIn ? "" : readFileSync(values.instances ?? "", "utf8");
-  if (!standIn) readOnly(instances);
+  if (!standIn) contained(instances);
   return {
     agents,
     instances,
     standIn,
-    conditions: trail === "both" ? ["on", "off"] : [trail],
     seedTasks,
     repeats,
     only: values.only === undefined ? undefined : new Set(values.only.split(",")),
@@ -97,19 +94,29 @@ function parse(): Options {
 }
 
 /**
- * Refuses instances that may write files. A real agent runs in the person's own profile, with
- * their own instructions and memory, and with write access it has edited a repository of theirs
- * outside the world. The tasks need only the TTasks tools, which every permission allows.
+ * Refuses an instance that can reach past the world. A real agent runs in the person's own
+ * profile, with their own instructions and memory: with write access it has edited a repository
+ * of theirs, and Codex's app connectors have searched the account's connected services. The tasks
+ * need only the TTasks tools, which a read-only run without apps still has.
  */
-function readOnly(text: string): void {
+function contained(text: string): void {
   const parsed = parseToml(text);
   if (!parsed.ok) throw new Error(`trial: the instances file is not TOML (${parsed.problem.code})`);
   const tables = parsed.doc["instance"];
   for (const table of Array.isArray(tables) ? (tables as Record<string, unknown>[]) : []) {
+    const id = String(table["id"]);
     if (table["run_permission"] !== "read-only") {
       throw new Error(
-        `trial: instance ${String(table["id"])} needs run_permission = "read-only": with more, ` +
+        `trial: instance ${id} needs run_permission = "read-only": with more, ` +
           "an agent can change the person's own files outside the world",
+      );
+    }
+    const prefix = Array.isArray(table["args_prefix"]) ? (table["args_prefix"] as unknown[]) : [];
+    const appsOff = prefix.some((arg, i) => arg === "--disable" && prefix[i + 1] === "apps");
+    if (table["target"] === "codex-cli" && !appsOff) {
+      throw new Error(
+        `trial: instance ${id} needs "--disable", "apps" in args_prefix: Codex's app ` +
+          "connectors reach the account's connected services",
       );
     }
   }
@@ -132,7 +139,6 @@ const standInToml = (plan: string): string =>
 
 interface RunLine {
   readonly agent: string;
-  readonly trail: "on" | "off";
   readonly world: string;
   readonly task: string;
   readonly counts: readonly string[];
@@ -154,15 +160,8 @@ interface RunLine {
 interface Trial {
   readonly options: Options;
   readonly lines: RunLine[];
-  readonly worlds: { agent: string; trail: "on" | "off"; world: string; library: Json }[];
+  readonly worlds: { agent: string; world: string; library: Json }[];
 }
-
-const callsOf = (file: string, from: number, to: number): CallLine[] =>
-  readFileSync(file, "utf8")
-    .split("\n")
-    .filter((line) => line !== "")
-    .map((line) => JSON.parse(line) as CallLine)
-    .filter((c) => c.at >= from && c.at <= to);
 
 const num = (value: unknown): number | null => (typeof value === "number" ? value : null);
 
@@ -188,9 +187,9 @@ async function backgroundRun(world: World, task: TrialTask, instance: string): P
 async function runTasks(
   trial: Trial,
   world: World,
-  label: { agent: string; trail: "on" | "off"; world: string },
+  label: { agent: string; world: string },
   tasks: readonly TrialTask[],
-  files: { calls: string; plan: string },
+  planFile: string,
 ): Promise<void> {
   const groups = new Map<string, TrialTask[]>();
   for (const task of tasks) {
@@ -201,15 +200,14 @@ async function runTasks(
     const base = await world.asOf();
     const next = world.nextRef();
     const plan: Record<string, unknown> = {};
-    group.forEach((task, i) => {
+    const scripted = group.map((task, i) => {
       const own = world.tasks.get(task.n);
       if (own === undefined) throw new Error(`no task ${task.n} in the world`);
-      plan[i === 0 ? "a" : "b"] = {
-        calls: task.standIn({ world, task: own, base, next }),
-        home: world.home,
-      };
+      const calls = task.standIn({ world, task: own, base, next });
+      plan[i === 0 ? "a" : "b"] = { calls, home: world.home };
+      return calls.map((c) => callLine(c.name, c.arguments));
     });
-    writeFileSync(files.plan, JSON.stringify(plan));
+    writeFileSync(planFile, JSON.stringify(plan));
     const started = Date.now();
     const instances = group.map((_, i) =>
       trial.options.standIn ? (i === 0 ? "stand-in" : "stand-in-b") : label.agent,
@@ -221,11 +219,11 @@ async function runTasks(
     group.forEach((task, i) => {
       const own = world.tasks.get(task.n);
       const result = results[i] ?? {};
-      const calls = callsOf(files.calls, started, ended).filter(
-        (c) => group.length === 1 || c.instance === instances[i],
-      );
-      const checks = own === undefined ? {} : task.check({ world, task: own, calls });
       const run = typeof result["id"] === "string" ? result["id"] : "";
+      // The stand-in makes its calls itself, past the exchange it replays: its script is what it
+      // called. A real agent's calls are in its own output.
+      const calls = trial.options.standIn ? (scripted[i] ?? []) : callsOf(world, run);
+      const checks = own === undefined ? {} : task.check({ world, task: own, calls });
       const usage = run === "" ? {} : usageOf(world, run);
       const tally: Record<string, number> = {};
       for (const c of calls) tally[c.tool] = (tally[c.tool] ?? 0) + 1;
@@ -250,34 +248,30 @@ async function runTasks(
       trial.lines.push(line);
       appendFileSync(join(trial.options.out, "runs.jsonl"), `${JSON.stringify(line)}\n`);
       process.stdout.write(
-        `trial: ${label.agent} trail ${label.trail} task ${task.n}: ${line.state}, ${line.pass ? "pass" : "FAIL"} ` +
+        `trial: ${label.agent} task ${task.n}: ${line.state}, ${line.pass ? "pass" : "FAIL"} ` +
           `${JSON.stringify(checks)}\n`,
       );
     });
   }
 }
 
-/** A world for `agent` in `trail`, with the trail switch and the call log set while it lives. */
+/** A world for `agent`, with `tasks` run in it. */
 async function inWorld(
   trial: Trial,
   agent: string,
-  trail: "on" | "off",
   name: string,
   tasks: readonly TrialTask[],
 ): Promise<World> {
   const root = mkdtempSync(join(tmpdir(), "ttasks-trial-"));
-  const files = { calls: join(root, "calls.jsonl"), plan: join(root, "stand-in-plan.json") };
-  writeFileSync(files.calls, "");
-  writeFileSync(files.plan, "{}");
-  process.env["TTASKS_TRIAL_TRAIL"] = trail;
-  process.env["TTASKS_TRIAL_CALLS"] = files.calls;
+  const planFile = join(root, "stand-in-plan.json");
+  writeFileSync(planFile, "{}");
   const world = await makeWorld(root, {
     seedTasks: trial.options.seedTasks,
-    instances: trial.options.standIn ? standInToml(files.plan) : trial.options.instances,
+    instances: trial.options.standIn ? standInToml(planFile) : trial.options.instances,
     titles: new Map(TASKS.map((t) => [t.n, t.title])),
   });
   try {
-    await runTasks(trial, world, { agent, trail, world: name }, tasks, files);
+    await runTasks(trial, world, { agent, world: name }, tasks, planFile);
   } catch (error) {
     await world.stop();
     throw error;
@@ -287,7 +281,6 @@ async function inWorld(
 
 const close = async (trial: Trial, world: World): Promise<void> => {
   await world.stop();
-  delete process.env["TTASKS_TRIAL_CALLS"];
   if (!trial.options.keep)
     rmSync(world.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 };
@@ -329,52 +322,49 @@ const median = (values: number[]): number | undefined => {
   return sorted.length === 0 ? undefined : sorted[Math.floor((sorted.length - 1) / 2)];
 };
 
-/** The summary table, one row per agent and condition. */
+/** The summary table, one row per agent. */
 function summary(trial: Trial): string {
   const rows = [
-    "| agent | trail | runs | succeeded | checks passed | (a) applied | (a) read the area page | (b) task 9 | (c) made / edits / same titles | (c) history bytes per edit | (d) median input tokens | (d) total input tokens | (e) both stand | (f) found, searched, on a page |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| agent | runs | succeeded | checks passed | (a) applied | (a) read the area page | (b) task 9 | (c) made / edits / same titles | (c) history bytes per edit | (d) median input tokens | (d) total input tokens | (e) both stand | (f) found, searched, on a page |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   ];
   for (const agent of trial.options.agents) {
-    for (const trail of trial.options.conditions) {
-      const lines = trial.lines.filter((l) => l.agent === agent && l.trail === trail);
-      if (lines.length === 0) continue;
-      const dates = lines.filter((l) => DATE_TASKS.includes(l.task));
-      const nine = lines.find((l) => l.task === "9");
-      const eleven = lines.find((l) => l.task === "11");
-      const pair = lines.filter((l) => l.task.startsWith("15"));
-      const library = trial.worlds.find((w) => w.agent === agent && w.trail === trail)?.library;
-      const inputs = lines.map((l) => l.tokens.input).filter((t): t is number => t !== null);
-      rows.push(
-        [
-          agent,
-          trail,
-          String(lines.length),
-          pct(lines.filter((l) => l.state === "succeeded").length, lines.length),
-          pct(lines.filter((l) => l.pass).length, lines.length),
-          pct(dates.filter((l) => l.checks["applied"] === true).length, dates.length),
-          pct(dates.filter((l) => l.checks["read_area_page"] === true).length, dates.length),
-          nine === undefined ? "-" : nine.pass ? "yes" : "no",
-          library === undefined
-            ? "-"
-            : `${String(library["pages_made"])} / ${String(library["page_edits"])} / ${String(library["same_titles"])}`,
-          library === undefined || Number(library["page_edits"]) === 0
-            ? "-"
-            : String(Math.round(Number(library["history_bytes"]) / Number(library["page_edits"]))),
-          String(median(inputs) ?? "-"),
-          String(inputs.reduce((s, t) => s + t, 0)),
-          pair.length === 0 ? "-" : pair.every((l) => l.checks["stands"] === true) ? "yes" : "no",
-          eleven === undefined
-            ? "-"
-            : ["found_the_rule", "searched", "put_on_a_page"]
-                .map((k) => (eleven.checks[k] === true ? "yes" : "no"))
-                .join(", "),
-        ]
-          .join(" | ")
-          .replace(/^/u, "| ")
-          .replace(/$/u, " |"),
-      );
-    }
+    const lines = trial.lines.filter((l) => l.agent === agent);
+    if (lines.length === 0) continue;
+    const dates = lines.filter((l) => DATE_TASKS.includes(l.task));
+    const nine = lines.find((l) => l.task === "9");
+    const eleven = lines.find((l) => l.task === "11");
+    const pair = lines.filter((l) => l.task.startsWith("15"));
+    const library = trial.worlds.find((w) => w.agent === agent)?.library;
+    const inputs = lines.map((l) => l.tokens.input).filter((t): t is number => t !== null);
+    rows.push(
+      [
+        agent,
+        String(lines.length),
+        pct(lines.filter((l) => l.state === "succeeded").length, lines.length),
+        pct(lines.filter((l) => l.pass).length, lines.length),
+        pct(dates.filter((l) => l.checks["applied"] === true).length, dates.length),
+        pct(dates.filter((l) => l.checks["read_area_page"] === true).length, dates.length),
+        nine === undefined ? "-" : nine.pass ? "yes" : "no",
+        library === undefined
+          ? "-"
+          : `${String(library["pages_made"])} / ${String(library["page_edits"])} / ${String(library["same_titles"])}`,
+        library === undefined || Number(library["page_edits"]) === 0
+          ? "-"
+          : String(Math.round(Number(library["history_bytes"]) / Number(library["page_edits"]))),
+        String(median(inputs) ?? "-"),
+        String(inputs.reduce((s, t) => s + t, 0)),
+        pair.length === 0 ? "-" : pair.every((l) => l.checks["stands"] === true) ? "yes" : "no",
+        eleven === undefined
+          ? "-"
+          : ["found_the_rule", "searched", "put_on_a_page"]
+              .map((k) => (eleven.checks[k] === true ? "yes" : "no"))
+              .join(", "),
+      ]
+        .join(" | ")
+        .replace(/^/u, "| ")
+        .replace(/$/u, " |"),
+    );
   }
   return rows.join("\n");
 }
@@ -388,21 +378,13 @@ async function main(): Promise<number> {
   );
   const repeat = TASKS.filter((t) => t.n === "1");
   for (const agent of options.agents) {
-    for (const trail of options.conditions) {
-      const name = `${agent}-${trail}`;
-      const world = await inWorld(trial, agent, trail, name, tasks);
-      trial.worlds.push({
-        agent,
-        trail,
-        world: name,
-        library: libraryAfter(world, name, options.out),
-      });
-      await close(trial, world);
-      // Rule (a) needs ten runs: the sequence's date lines, then task 1 alone in fresh worlds.
-      if (trail === "on" && options.only === undefined) {
-        for (let r = 1; r <= options.repeats; r += 1) {
-          await close(trial, await inWorld(trial, agent, trail, `${name}-a${String(r)}`, repeat));
-        }
+    const world = await inWorld(trial, agent, agent, tasks);
+    trial.worlds.push({ agent, world: agent, library: libraryAfter(world, agent, options.out) });
+    await close(trial, world);
+    // Rule (a) needs ten runs: the sequence's date lines, then task 1 alone in fresh worlds.
+    if (tasks.some((t) => t.n === "1")) {
+      for (let r = 1; r <= options.repeats; r += 1) {
+        await close(trial, await inWorld(trial, agent, `${agent}-a${String(r)}`, repeat));
       }
     }
   }

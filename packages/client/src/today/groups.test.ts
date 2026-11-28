@@ -3,10 +3,12 @@ import {
   archivedGroup,
   groupTasks,
   liveGroups,
-  projectGroups,
-  sidebarAreas,
+  sidebarTree,
   slotOf,
+  subtreeGroups,
+  type TreeEntry,
 } from "./groups.ts";
+import { groupCounts } from "./views.ts";
 import type { NodeRow, TaskRow } from "../store/rows.ts";
 import { areaNode, projectNode, TEST_SPACE, treeOf } from "../../test/nodes.ts";
 
@@ -101,55 +103,37 @@ describe("[A5.archived.web.groups] an archived area or project leaves the areas 
   const projects = [portal, shelvedSync, boxes];
   const nodes = treeOf(...areas, ...projects);
 
-  test("the sidebar: live areas with their live projects; Archived in the same order, an archived area with all its projects and an archived project of a live area on its own", () => {
-    const { live, archived } = sidebarAreas(nodes);
-    expect(live.map((a) => [a.area.title, a.projects.map((p) => p.title)])).toEqual([
-      ["Home", []],
-      ["Lumen", ["Lumen portal"]],
-      ["Empty", []],
-    ]);
-    expect(
-      archived.map((g) =>
-        g.kind === "area"
-          ? [g.area.title, g.projects.map((p) => p.title)]
-          : [g.area.title, g.project.title],
-      ),
-    ).toEqual([
-      ["Attic", ["Boxes"]],
-      ["Lumen", "Clinic sync"],
+  const listed = (entries: readonly TreeEntry[]): unknown[] =>
+    entries.map((e) => [e.node.title, ...listed(e.children)]);
+
+  test("the side menu: live projects with their live projects; Archived in the same order, an archived one with all it holds, named by the projects above it", () => {
+    const { live, archived } = sidebarTree(nodes);
+    expect(listed(live)).toEqual([["Home"], ["Lumen", ["Lumen portal"]], ["Empty"]]);
+    expect(archived.map((e) => [e.above.map((n) => n.title), ...listed([e])])).toEqual([
+      [[], ["Attic", ["Boxes"]]],
+      [["Lumen"], ["Clinic sync"]],
     ]);
   });
 
-  test("a project without an area is a project at the top, listed as an area after the areas, an archived one under Archived after the areas' groups", () => {
+  test("a project without an area is a project at the top, after the areas, an archived one under Archived after the others", () => {
     const shed = areaNode({ id: "p_shed", title: "Shed", position: "~d0" });
     const kiln = areaNode({ id: "p_kiln", title: "Kiln", position: "~d1", state: "archived" });
-    const { live, archived } = sidebarAreas(treeOf(...areas, ...projects, kiln, shed));
-    expect(live.map((a) => a.area.title)).toEqual(["Home", "Lumen", "Empty", "Shed"]);
-    expect(archived.map((g) => (g.kind === "area" ? g.area.title : g.project.title))).toEqual([
-      "Attic",
-      "Clinic sync",
-      "Kiln",
-    ]);
+    const { live, archived } = sidebarTree(treeOf(...areas, ...projects, kiln, shed));
+    expect(live.map((e) => e.node.title)).toEqual(["Home", "Lumen", "Empty", "Shed"]);
+    expect(archived.map((e) => e.node.title)).toEqual(["Attic", "Clinic sync", "Kiln"]);
   });
 
-  test("a project's view: its tasks in one list, open first, with or without an area", () => {
-    const kiln = areaNode({ id: "p_kiln", title: "Kiln", position: "~d1" });
-    const rows = [
-      task({ title: "Later", parent: "p_kiln", status: "backlog" }),
-      task({ title: "Fire it", parent: "p_kiln" }),
-    ];
-    expect(titles(projectGroups(rows, treeOf(...areas, kiln)))).toEqual([
-      ["flat", undefined, [[undefined, ["Fire it", "Later"]]]],
-    ]);
-  });
-
-  test("archiving an area recolours no other: each keeps its place among all areas", () => {
-    const before = sidebarAreas(
+  test("archiving a project recolours no other: each keeps its place among all of them", () => {
+    const before = sidebarTree(
       treeOf(...areas.map((a) => ({ ...a, state: "active" })), ...projects),
     );
-    const after = sidebarAreas(nodes);
-    const slots = (listed: ReturnType<typeof sidebarAreas>) =>
-      Object.fromEntries([...listed.live, ...listed.archived].map((g) => [g.area.title, g.slot]));
+    const after = sidebarTree(nodes);
+    const slots = (tree: ReturnType<typeof sidebarTree>) =>
+      Object.fromEntries(
+        [...tree.live, ...tree.archived]
+          .filter((e) => e.depth === 1)
+          .map((e) => [e.node.title, e.slot]),
+      );
     expect(slots(after)).toEqual(slots(before));
   });
 
@@ -159,12 +143,103 @@ describe("[A5.archived.web.groups] an archived area or project leaves the areas 
     expect(openProjects.map((p) => p.title)).toEqual(["Lumen portal"]);
   });
 
-  test("a page is archived by its project, else by its area; a live one is not", () => {
+  test("a task is archived by its project, else by its area; a live one is not", () => {
     expect(archivedGroup(lumen, portal)).toBeUndefined();
     expect(archivedGroup(lumen)).toBeUndefined();
     expect(archivedGroup(lumen, shelvedSync)).toEqual({ kind: "project", row: shelvedSync });
     expect(archivedGroup(attic, boxes)).toEqual({ kind: "area", row: attic });
     expect(archivedGroup(attic)).toEqual({ kind: "area", row: attic });
     expect(archivedGroup(undefined)).toBeUndefined();
+  });
+});
+
+describe("[S2.nav.tree] the side menu's tree and a project's groups, at any depth", () => {
+  // Four levels: Client work › Lumen › Portal › Login, with an archived Reports under Lumen.
+  const work = areaNode({ id: "a_work", title: "Client work", position: "a0" });
+  const internal = areaNode({ id: "a_internal", title: "Internal", position: "a1" });
+  const lumenHealth = projectNode("a_work", { id: "n_lumen", title: "Lumen", position: "b0" });
+  const portalApp = projectNode("n_lumen", { id: "n_portal", title: "Portal", position: "c0" });
+  const login = projectNode("n_portal", { id: "n_login", title: "Login", position: "d0" });
+  const reports = projectNode("n_lumen", {
+    id: "n_reports",
+    title: "Reports",
+    position: "c1",
+    state: "archived",
+  });
+  const monthly = projectNode("n_reports", { id: "n_monthly", title: "Monthly", position: "d0" });
+  const nodes = treeOf(work, internal, lumenHealth, portalApp, login, reports, monthly);
+
+  const shape = (entries: readonly TreeEntry[]): unknown[] =>
+    entries.map((e) => [e.node.title, e.depth, e.slot, ...shape(e.children)]);
+
+  test("every live level nests in its order with its top's colour; an archived one leaves for Archived with its trail and all it holds", () => {
+    const { live, archived } = sidebarTree(nodes);
+    expect(shape(live)).toEqual([
+      ["Client work", 1, 1, ["Lumen", 2, 1, ["Portal", 3, 1, ["Login", 4, 1]]]],
+      ["Internal", 1, 2],
+    ]);
+    expect(archived.map((e) => [e.above.map((n) => n.title), ...shape([e])])).toEqual([
+      [
+        ["Client work", "Lumen"],
+        ["Reports", 3, 1, ["Monthly", 4, 1]],
+      ],
+    ]);
+  });
+
+  test("a level counts the open tasks of everything under it", () => {
+    const tasks = [
+      task({ title: "Deep", parent: "n_login" }),
+      task({ title: "Portal's", parent: "n_portal" }),
+      task({ title: "Lumen's", parent: "n_lumen" }),
+      task({ title: "In the archive", parent: "n_monthly" }),
+    ];
+    const counts = groupCounts(tasks, nodes);
+    expect(
+      ["a_work", "n_lumen", "n_portal", "n_login", "n_reports", "a_internal"].map((id) =>
+        counts.get(id),
+      ),
+    ).toEqual([4, 4, 2, 1, 1, undefined]);
+  });
+
+  test("a project's own tasks first under no heading, then each project below it as a group of all it holds", () => {
+    const tasks = [
+      task({ title: "Store the zone", parent: "n_lumen", status: "waiting" }),
+      task({ title: "Fix time zones", parent: "n_lumen" }),
+      task({ title: "Login copy", parent: "n_login" }),
+      task({ title: "Portal plan", parent: "n_portal" }),
+      task({ title: "Monthly report", parent: "n_monthly" }),
+    ];
+    expect(titles(subtreeGroups("n_lumen")(tasks, nodes))).toEqual([
+      ["flat", undefined, [[undefined, ["Fix time zones", "Store the zone"]]]],
+      [
+        "project",
+        "Portal",
+        [
+          [undefined, ["Portal plan"]],
+          ["Login", ["Login copy"]],
+        ],
+      ],
+      ["project", "Reports", [["Monthly", ["Monthly report"]]]],
+    ]);
+    expect(subtreeGroups("n_lumen")(tasks, nodes).map((g) => g.node)).toEqual([
+      undefined,
+      "n_portal",
+      "n_reports",
+    ]);
+    // A task the list keeps though it sits elsewhere now stays with the project's own tasks.
+    const moved = task({ title: "Moved away", parent: "a_internal" });
+    expect(titles(subtreeGroups("n_portal")([moved, ...tasks.slice(3, 4)], nodes))).toEqual([
+      ["flat", undefined, [[undefined, ["Portal plan", "Moved away"]]]],
+      ["project", "Login", []],
+    ]);
+    expect(titles(subtreeGroups("a_work")(tasks.slice(0, 2), nodes))).toEqual([
+      ["project", "Lumen", [[undefined, ["Fix time zones", "Store the zone"]]]],
+    ]);
+    // A live project below with nothing open is a heading still; an archived one is not.
+    expect(titles(subtreeGroups("n_lumen")(tasks.slice(0, 2), nodes))).toEqual([
+      ["flat", undefined, [[undefined, ["Fix time zones", "Store the zone"]]]],
+      ["project", "Portal", []],
+    ]);
+    expect(titles(subtreeGroups("n_portal")([], nodes))).toEqual([["project", "Login", []]]);
   });
 });

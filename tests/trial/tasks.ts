@@ -3,20 +3,17 @@
 // of what the agent left in the space, and the calls the stand-in agent makes for it. Task 15 is two
 // runs at once, editing different passages of one page. Fixture text only.
 import type { ToolCall } from "../../packages/runs/test/codex-server.ts";
-import { livePages, pageOf, projectBrief, rid, taskText, type World } from "./world.ts";
+import {
+  livePages,
+  pageOf,
+  projectBrief,
+  rid,
+  taskText,
+  type CallLine,
+  type World,
+} from "./world.ts";
 
 export type Count = "a" | "b" | "c" | "d" | "e" | "f";
-
-/** One call an agent made in a run, as the trial's call log keeps it: names and references only. */
-export interface CallLine {
-  readonly at: number;
-  readonly instance: string | null;
-  readonly tool: string;
-  readonly target?: string;
-  readonly task?: string;
-  readonly action?: string;
-  readonly scope?: string;
-}
 
 export interface Facts {
   readonly world: World;

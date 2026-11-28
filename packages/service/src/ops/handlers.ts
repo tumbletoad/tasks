@@ -216,7 +216,6 @@ import { readActivity } from "./activity.ts";
 import { digestFolderOf } from "./digest-folder.ts";
 import { checkOnTree, checkPlan, isTree } from "./tree.ts";
 import { readTreeTask, treeTrail } from "./tree-read.ts";
-import { trailOff } from "../trial.ts";
 import {
   holderName,
   nodeView,
@@ -3254,7 +3253,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // What is known above the task, and its own pages: with the digest and with every sections
     // read, since many agents read only sections.
     const trail = isTree(call.space) ? treeTrail : trailOf;
-    const library = trailOff() ? undefined : await trail(reader, read.space, read.row);
+    const library = await trail(reader, read.space, read.row);
     if (sections.length === 0) {
       const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
       const more = digest["more"] as Record<string, unknown>;

@@ -63,6 +63,8 @@ export interface CheckedTreeRequest extends Envelope {
   entry?: string;
   /** A plan's: the caller's intent, whose fingerprint its receipt keeps. */
   intent?: Intent;
+  /** Today's request (plan.ts): answered, and kept in its receipt, as today's writer answers. */
+  plan?: true;
   input: Record<string, unknown>;
 }
 
@@ -71,7 +73,8 @@ export interface CheckedTreeRequest extends Envelope {
  * value now, its version, and who changed it and when. A receipt keeps all but the value.
  */
 export interface TreeConflict {
-  entity: Entity;
+  /** The row's table; a plan's names a node's as today's row (plan.ts). */
+  entity: Entity | "areas" | "projects" | "node_texts";
   id: string;
   task?: string;
   ref?: string;
@@ -93,6 +96,8 @@ interface Written {
   start: RowState | undefined;
   fields: Set<string>;
   order: number;
+  /** The operation that first wrote each field, and the row's create under `""`. */
+  ops: Map<string, number | null>;
 }
 
 export interface SpaceState {
@@ -116,6 +121,8 @@ export class Tx {
   /** The request's base, none, or `history`: an Undo or Redo, guarded by newer work instead. */
   readonly #base: number | "history" | undefined;
   readonly #rows = new Map<string, Written>();
+  /** The operation of today's request that writes now (plan.ts), or none. */
+  op: number | null = null;
   /** Each write in order, a row's creation with no field: what one of today's operations did. */
   readonly #log: { key: string; field: string | null }[] = [];
   readonly conflicts: TreeConflict[] = [];
@@ -195,6 +202,7 @@ export class Tx {
       start: undefined,
       fields: new Set(),
       order: this.#rows.size,
+      ops: new Map([["", this.op]]),
     });
   }
 
@@ -213,6 +221,7 @@ export class Tx {
         start: rowState(entity, raw, FIELDS[entity]),
         fields: new Set(),
         order: this.#rows.size,
+        ops: new Map(),
       };
       this.#rows.set(key, row);
     }
@@ -294,6 +303,8 @@ export class Tx {
     based = true,
   ): void {
     const row = this.#touch(entity, id, node);
+    // The base first, as today's writer checks it before it applies anything.
+    if (based && this.#newer(row, Object.keys(fields)).length > 0) return;
     // A request marked active changes active tasks only, decided as it finds them.
     if (row.start !== undefined && isId(row.node, "t")) {
       const life = this.conn.prepare(SQL.lifecycle).get({ id: row.node })?.["lifecycle"];
@@ -301,7 +312,6 @@ export class Tx {
       if (refusal !== undefined)
         throw new TreeProblem(refusal.code, refusal.message, refusal.field);
     }
-    if (based && this.#newer(row, Object.keys(fields)).length > 0) return;
     const assign: string[] = [];
     const params: Record<string, SqlValue> = { id };
     for (const [field, given] of Object.entries<unknown>(fields)) {
@@ -316,12 +326,20 @@ export class Tx {
         params[column] = value[column] ?? null;
       }
       row.fields.add(field);
+      if (!row.ops.has(field)) row.ops.set(field, this.op);
       this.#log.push({ key: `${entity}|${id}`, field });
     }
     if (assign.length > 0) {
       const where = `WHERE ${keyOf(entity)} = $id`;
       this.conn.prepare(`UPDATE ${entity} SET ${assign.join(", ")} ${where}`).run(params);
     }
+  }
+
+  /** Names operation `op` as the one that wrote row `id` of `entity`, made inside another's command. */
+  retag(entity: Entity, id: string, op: number): void {
+    const row = this.#rows.get(`${entity}|${id}`);
+    if (row === undefined) return;
+    for (const key of [...row.ops.keys(), ...(row.created ? [""] : [])]) row.ops.set(key, op);
   }
 
   /** Where the request's writes stand now: what follows is the next operation's. */
@@ -370,6 +388,7 @@ export class Tx {
           after: fieldJson(after),
           beforeVer: null,
           beforeProv: null,
+          op: row.ops.get("") ?? null,
         });
       } else {
         const start = row.start;
@@ -390,6 +409,7 @@ export class Tx {
             after,
             beforeVer: versionOf(start, field),
             beforeProv: provenanceOf(start, field),
+            op: row.ops.get(field) ?? null,
           });
           fv[field] = this.seq;
           fp[field] = this.seq;
@@ -423,6 +443,8 @@ export interface ChangeRow {
   after: string;
   beforeVer: number | null;
   beforeProv: number | null;
+  /** The operation of today's request that wrote it first, for a plan's commit. */
+  op: number | null;
 }
 
 const head = (row: Written) => ({ entity: row.entity, entityId: row.id, node: row.node });

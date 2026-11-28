@@ -25,6 +25,7 @@ import {
   RequestProblem,
   type CheckedRequest,
   type FieldConflict,
+  type NewerWork,
   type Operation,
   type OpResult,
   type WriteProblem,
@@ -35,7 +36,7 @@ import { checkHistory } from "./commands.ts";
 import { COMMANDS } from "./registry.ts";
 import { TreeProblem } from "./fields.ts";
 import { DERIVED } from "./schema.ts";
-import { planHistory, STEP_SQL } from "./steps.ts";
+import { planHistory, STEP_SQL, stepFacts } from "./steps.ts";
 import { indexTreeChanges } from "./search.ts";
 import {
   Tx,
@@ -63,8 +64,8 @@ const SQL = {
     "$undo_of, $redo_of)",
   insertChange:
     "INSERT INTO changes (seq, n, entity, entity_id, node_id, action, field, before, after, " +
-    "before_ver, before_prov, after_prov) VALUES ($seq, $n, $entity, $entity_id, $node, $action, " +
-    "$field, $before, $after, $before_ver, $before_prov, $seq)",
+    "before_ver, before_prov, after_prov, op) VALUES ($seq, $n, $entity, $entity_id, $node, " +
+    "$action, $field, $before, $after, $before_ver, $before_prov, $seq, $op)",
   lastSeq: "UPDATE space SET last_seq = $seq WHERE one = 1",
   markStep: `UPDATE commits SET undo_status = 'done' WHERE seq = $seq AND ${STEP_SQL("$seq")}`,
   deadUndone:
@@ -109,6 +110,8 @@ const TODAY_FIELD: Readonly<Record<string, string>> = {
  */
 function written(result: TreeResult, space: SpaceState): WriteResult {
   const error = result.error;
+  // An Undo's or a Redo's facts (steps.ts stepFacts), and whose work kept it.
+  const history = isHistory(result.result) ? result.result : undefined;
   return {
     status: result.status,
     as_of: result.as_of,
@@ -116,7 +119,30 @@ function written(result: TreeResult, space: SpaceState): WriteResult {
     incarnation: space.incarnation,
     seq: result.seq,
     ...(result.commit === undefined ? {} : { commit: result.commit }),
-    results: Array.isArray(result.result) ? (result.result as OpResult[]) : [],
+    results: Array.isArray(result.result)
+      ? (result.result as OpResult[])
+      : history === undefined
+        ? []
+        : [
+            {
+              i: 0,
+              status: result.status === "applied" ? "updated" : "unchanged",
+              id: history.commit,
+              tasks: history.tasks,
+              task_count: history.task_count,
+              ...(history.lifecycles === undefined ? {} : { lifecycles: history.lifecycles }),
+              version: result.seq,
+            },
+          ],
+    ...(history?.kept === undefined
+      ? {}
+      : {
+          kept: true,
+          ...(history.kept.reason === undefined ? {} : { why: history.kept.reason }),
+          ...(history.kept.work.length === 0
+            ? {}
+            : { newer: { work: history.kept.work as NewerWork["work"] } }),
+        }),
     conflicts: (result.conflicts ?? []).map(
       ({ task, ...c }) =>
         ({
@@ -145,6 +171,17 @@ function written(result: TreeResult, space: SpaceState): WriteResult {
     ...(result.replayed === true ? { replayed: true } : {}),
   };
 }
+
+interface HistoryFacts {
+  commit: Id<"op">;
+  tasks: string[];
+  task_count: number;
+  lifecycles?: string[];
+  kept?: { work: unknown[]; reason?: string };
+}
+
+const isHistory = (said: unknown): said is HistoryFacts =>
+  typeof said === "object" && said !== null && !Array.isArray(said) && "commit" in said;
 
 /** What a preview throws to roll its transaction back. */
 const PREVIEW = new Error("A preview rolls its transaction back");
@@ -352,6 +389,7 @@ export class TreeWriter {
         after: JSON.stringify(after),
         before_ver: null,
         before_prov: null,
+        op: null,
       });
     });
     this.#conn.prepare(SQL.lastSeq).run({ seq });
@@ -410,19 +448,29 @@ export class TreeWriter {
       );
     }
     const { ops, intent, ...envelope } = checked;
+    // An Undo or a Redo is a request of its own (request.ts): the tree's, guarded by newer work.
+    const [first] = ops;
+    const history = first?.kind === "undo" || first?.kind === "redo" ? first : undefined;
     const request: CheckedTreeRequest = {
       ...envelope,
-      command: PLAN,
-      input: { ops },
+      command: history?.kind ?? PLAN,
+      input:
+        history === undefined
+          ? { ops }
+          : history.commit === undefined
+            ? {}
+            : { commit: history.commit },
+      plan: true,
       ...(intent === undefined ? {} : { entry: intent.entry, intent }),
     };
     const result = this.#submitted(request);
-    return result.replayed === true && "results" in result
-      ? (result as unknown as WriteResult)
-      : written(
-          result,
-          this.#conn.transaction("deferred", () => this.#space()),
-        );
+    if (result.replayed === true && "results" in result) return result as unknown as WriteResult;
+    // An Undo's or a Redo's refusal is of its one operation, as today's writer says it.
+    if (history !== undefined && result.error !== undefined) result.error.op ??= 0;
+    return written(
+      result,
+      this.#conn.transaction("deferred", () => this.#space()),
+    );
   }
 
   #asOf(space: SpaceState): { as_of: string; seq: number } {
@@ -568,7 +616,7 @@ export class TreeWriter {
         epoch: space.epoch,
         incarnation: space.incarnation,
         result: JSON.stringify(
-          request.command === PLAN ? written(storedResult(result), space) : storedResult(result),
+          request.plan === true ? written(storedResult(result), space) : storedResult(result),
         ),
         at: this.#instant(),
       });
@@ -622,8 +670,10 @@ export class TreeWriter {
         plan = planHistory(tx, request.command as "undo" | "redo", request.input);
       }
       this.#insertCommit(tx, commit, plan);
-      if (plan !== undefined) for (const call of plan.calls) tx.call(call.command, call.input);
-      else said = run?.run(tx, request.input);
+      if (plan !== undefined) {
+        for (const call of plan.calls) tx.call(call.command, call.input);
+        said = stepFacts(this.#conn, plan.target, space.refPrefix);
+      } else said = run?.run(tx, request.input);
       if (tx.conflicts.length > 0) {
         const message = "A field changed after the base: read again";
         throw new TreeProblem("VERSION_CONFLICT", message, undefined, tx.conflicts);
@@ -654,6 +704,7 @@ export class TreeWriter {
           after: c.after,
           before_ver: c.beforeVer,
           before_prov: c.beforeProv,
+          op: c.op,
         });
       });
       indexTreeChanges(this.#conn, seq, changes);
@@ -701,7 +752,9 @@ export class TreeWriter {
             : { target: plan.target, work: [], reason: error.message };
       if (kept !== undefined) {
         this.#conn.prepare(SQL.markDead).run({ target: kept.target });
-        return now("unchanged", { result: { kept } });
+        return now("unchanged", {
+          result: { kept, ...stepFacts(this.#conn, kept.target, space.refPrefix) },
+        });
       }
       return now("rejected", {
         error: {
@@ -761,8 +814,13 @@ export class TreeWriter {
       run: actor.run_id ?? null,
       origin: actor.origin,
       request: tx.request.request_id,
-      kind: plan?.kind ?? "command",
-      ops: JSON.stringify([{ v: 1, command: tx.request.command, input: tx.request.input }]),
+      // Today's request keeps today's record: each operation by its kind, as a change names it.
+      kind: plan?.kind ?? (tx.request.command === PLAN ? "ops" : "command"),
+      ops: JSON.stringify(
+        tx.request.command === PLAN
+          ? (tx.request.input["ops"] as Operation[]).map((op) => ({ v: 1, op: op.kind, input: op }))
+          : [{ v: 1, command: tx.request.command, input: tx.request.input }],
+      ),
       reason: tx.request.reason ?? null,
       undo_of: plan?.kind === "undo" ? plan.target : null,
       redo_of: plan?.kind === "redo" ? plan.target : null,

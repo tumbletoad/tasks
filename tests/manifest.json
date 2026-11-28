@@ -2334,6 +2334,48 @@
       "profiles": ["v1"]
     },
     {
+      "id": "S2.replay.notes",
+      "title": "Today's service requests through both backends: a note for agents, log entries with links, the refused forms, an edit and the same edit again, a removal, again and its put back, the space's text for agents twice; several tasks to the Trash in one call, again, its Undo, one the space lacks and one already there; Undo, a lost reply to it, Redo, a step kept by an agent's work since, a finish undone and redone, and nothing left to redo",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.projects",
+      "title": "Today's service requests through both backends: an area and a project named in drafts, the names a draft that finds its task gives make nothing, new names make their groups once in the drafts' own commit with the warning that says so, slugs resolve, a typo is refused with its suggestion; an update files a task under an area and a project, again, under new ones, and Undo of that filing; a project without an area differs by design, the tree's being a top-level project",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.pages",
+      "title": "Today's service requests through both backends: an agent's page without a brief refused, a page made on its task's project, read by heading and as a node with what is above it, an edit whose words are gone and one that applies, an append, a person's set, its history, a finish's library refused for a page the space lacks and taken for one it shows, the page moved to the space, the Trash, read refused there, the Trash listed, restored, a project's description set and its history, and the space read as a node",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.dates",
+      "title": "Today's service requests through both backends: a due date, a due phrase and one that is not a date; a star and a wait in a draft; an update of the due date, a finished status refused as the wrong tool, the star taken away, a due date and a wait cleared and cleared again, a wait set by an agent",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.reviewed",
+      "title": "Today's service requests through both backends, what review found in the four families: a person's filing, a script's rename and the person's guarded Undo refused; a removed note's edit refused and its words put back; an area's trail followed to its page; a stale filing's conflict by today's names; several tasks to the Trash in the order a person selected them and its Undo; a node's history after its text for agents, marked",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.replay.generated",
+      "title": "Random ordinary sequences of the tree's families through a new space of each backend, compared by the strict replay: writes sent twice under one request ID and from a stale base, Undo and Redo with and without the script check, notes and log entries edited while removed and put back, groups made by filing, tasks trashed and restored in any order, dates, the star and a wait, pages, a node's text, a task read by its sections; every task named and every node handed out read after each step; a failure prints its seed",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S2.tree.crash",
       "title": "The tree writer killed for real in a child process before a COMMIT, after one and by a timer, each followed by a resend of the lost request: every acknowledged result stays, a decision killed before its COMMIT leaves no receipt, no request is applied twice, and every row is its history played back with each commit's receipt",
       "owner": "M3",
@@ -5189,7 +5231,7 @@
     },
     {
       "id": "A5.3.3.web.folds",
-      "title": "The sidebar's folded areas are kept per space for the browser and come back after a reload, removed once none is folded; anything else stored there folds nothing",
+      "title": "The side menu's folds are kept per space for the browser and come back after a reload, removed once none is turned; the first two levels start open and deeper ones folded; anything else stored there folds nothing",
       "source": "A5 3.3",
       "owner": "M5",
       "kind": "ci",
@@ -5760,7 +5802,7 @@
     },
     {
       "id": "A5.3.3.web.task-host",
-      "title": "A task link's host view for every row of A5 3.3's table: Inbox, the area view, the status view (Open for another status), Completed for completed and archived tasks, Trash for a restorable deleted task, and the landing view for an unknown one",
+      "title": "A task link's host view for every row of A5 3.3's table: Inbox, the screen of the project it sits in, the status view (Open for another status), Completed for completed and archived tasks, Trash for a restorable deleted task, and the landing view for an unknown one",
       "source": "A5 3.3, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",
@@ -6784,7 +6826,7 @@
     },
     {
       "id": "A5.archived.e2e.address",
-      "title": "In Chromium and Firefox against the real service: a project without an area, moved into an area while its page is open, and an old link to its former address, each show the project's open task, take the project's present address without a step for Back, and the top field says where a plain capture goes (the Inbox without an area, the area and project with one) and files it there",
+      "title": "In Chromium and Firefox against the real service: a project without an area, moved into an area while its screen is open, keeps its one address and its open task without a step for Back, its crumbs follow it, also after a reload, and the top field says where a plain capture goes (the project at the top, then the area and project) and files it there",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -7251,6 +7293,34 @@
       "id": "S5.phones.e2e",
       "title": "Against the real service in Chromium and Firefox: Settings > Phones shows a pairing code as a QR code with its warning, a phone pairs with that code and the dialog says so, the list shows it with its space, Run is switched on and stays after a reload, a Run off the service reports as not saved is shown and saved again, and Remove asks first; screenshots of the list, the unsaved Run off, the dialog and the confirmation at 1,440 and 390 px in Sumi and Washi, axe clean, no sideways scroll",
       "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.status.line",
+      "title": "A project's status line from its open tasks: the open, the waiting, about how long the sized ones take by the space's effort levels (a day is a working day), the unsized ones and the earliest due day, late when it is past, also across a year's end and on the viewer's calendar; a part that is zero is left out",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.nav.tree",
+      "title": "The side menu's tree in the store: the live projects at every depth in their order with their colour, each archived project once under Archived with its trail and everything below it, and the open tasks counted through the whole subtree",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.nav.screen",
+      "title": "On a made-up tree four levels deep: the side menu nests and counts every level, folds at every level, starts the fourth level folded and keeps the person's folds; the project screen shows its breadcrumbs, each crumb to its project, its status line, its tabs and its tasks, then each subproject as a headed group with its own status line, foldable",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S2.nav.e2e",
+      "title": "Against the real service at 1,440 and 390 px: a project's one address with its Tasks and Library tabs, its breadcrumbs and status line, a crumb opening the project above; the narrow breadcrumbs keep the last two levels",
+      "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     }

@@ -8,8 +8,8 @@ import { test } from "./fixture.ts";
 import { axeFound, picture, pictures, showsSpace, signIn, themes } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
-const sidebar = (page: Page) => page.getByRole("navigation", { name: "Views and areas" });
-const areasList = (page: Page) => sidebar(page).locator('[data-group="areas"]');
+const sidebar = (page: Page) => page.getByRole("navigation", { name: "Views and projects" });
+const areasList = (page: Page) => sidebar(page).locator('[data-group="projects"]');
 const shelf = (scope: Page | Locator) => scope.getByRole("button", { name: "Archived" });
 const linkTo = (scope: Locator, name: string) =>
   scope.getByRole("link", { name: new RegExp(`^${name}, `) });
@@ -59,7 +59,7 @@ async function shots(
       continue;
     }
     await page.getByRole("button", { name: "Menu" }).click();
-    const drawer = page.getByRole("dialog", { name: "Views and areas" });
+    const drawer = page.getByRole("dialog", { name: "Views and projects" });
     // Archived is the page's: opened in the side menu, it is open in the drawer, every time.
     if (menu === "shelf") await expect(shelf(drawer)).toHaveAttribute("aria-expanded", "true");
     await settled(page);
@@ -173,8 +173,8 @@ test.describe("[A5.archived.e2e.sidebar] an archived area or project is out of t
 
     // An old link to the archived project's page shows it, archived, and Archived folded shows the
     // way to it.
-    const bikes = `${await areaIdOf(world, garage)}/project/${await projectIdOf(world, garage, "Bikes")}`;
-    await signIn(page, world, `/s/${world.mira.id}/area/${bikes}`);
+    const bikes = await projectIdOf(world, garage, "Bikes");
+    await signIn(page, world, `/s/${world.mira.id}/project/${bikes}`);
     await showsSpace(page, world.mira.name);
     await expect(line).toContainText("Archived.");
     await expect(shelf(sidebar(page))).toHaveAttribute("data-within", "true");
@@ -242,7 +242,7 @@ test.describe("[A5.archived.e2e.sidebar] an archived area or project is out of t
     await archive(world, kilnId);
     await page.setViewportSize({ width: 390, height: 900 });
     const menu = page.getByRole("button", { name: "Menu" });
-    const drawer = page.getByRole("dialog", { name: "Views and areas" });
+    const drawer = page.getByRole("dialog", { name: "Views and projects" });
     for (const open of ["false", "true"]) {
       await menu.click();
       await shelf(drawer).click();
@@ -266,7 +266,7 @@ test.describe("[A5.archived.e2e.new-work] new work never lands in an archived gr
     await world.op(world.mira.id, "group.manage", { action: "create", path: loft });
     await world.op(world.mira.id, "group.manage", { action: "create", path: `Workshop ${tag}` });
     const loftId = await areaIdOf(world, loft);
-    await signIn(page, world, `/s/${world.mira.id}/area/${loftId}`);
+    await signIn(page, world, `/s/${world.mira.id}/project/${loftId}`);
     await showsSpace(page, world.mira.name);
 
     // Archived while the dialog is open: the list moves on, and the project goes where it shows.
@@ -357,7 +357,7 @@ test.describe("[A5.archived.e2e.added-where] New project says where the project 
     await world.op(world.mira.id, "group.manage", { action: "create", path: bay });
     await archive(world, amber);
     const bayId = await areaIdOf(world, bay);
-    await signIn(page, world, `/s/${world.mira.id}/area/${bayId}`);
+    await signIn(page, world, `/s/${world.mira.id}/project/${bayId}`);
     await showsSpace(page, world.mira.name);
     const areas = areasList(page);
     const newProject = sidebar(page).getByRole("button", { name: "New project", exact: true });
@@ -405,8 +405,8 @@ test.describe("[A5.archived.e2e.added-where] New project says where the project 
   });
 });
 
-test.describe("[A5.archived.e2e.address] a project's page is the project's, whatever its address says", () => {
-  test("a project moved into an area: its page on either address lists its open task, takes the present address without a step for Back, and the top field files where the project is now", async ({
+test.describe("[A5.archived.e2e.address] a project's screen keeps its one address wherever the project moves", () => {
+  test("a project moved into an area: its screen keeps its address and its open task without a step for Back, its crumbs follow it, and the top field files where the project is now", async ({
     page,
     world,
   }) => {
@@ -418,9 +418,7 @@ test.describe("[A5.archived.e2e.address] a project's page is the project's, what
     await world.op(world.mira.id, "group.manage", { action: "create", path: yard });
     const hutId = (await listed(world)).projects.find((p) => p.name === hut)?.id ?? "";
     expect(hutId).not.toBe("");
-    const yardId = await areaIdOf(world, yard);
-    const loose = `/s/${world.mira.id}/project/${hutId}`;
-    const nested = `/s/${world.mira.id}/area/${yardId}/project/${hutId}`;
+    const address = `/s/${world.mira.id}/project/${hutId}`;
     const listedTask = page.locator("main li[data-task]").filter({ hasText: paint });
     const chips = capture(page).getByRole("listitem");
     const steps = () => page.evaluate(() => history.length);
@@ -437,31 +435,27 @@ test.describe("[A5.archived.e2e.address] a project's page is the project's, what
       });
     };
 
-    // Made without an area, it is an area of its own: its old address opens it as one, and a
-    // capture goes to it.
-    await signIn(page, world, loose);
+    // Made without an area, it is a project at the top, and a capture goes to it.
+    await signIn(page, world, address);
     await showsSpace(page, world.mira.name);
-    await at(`/s/${world.mira.id}/area/${hutId}`);
+    await at(address);
     await expect(listedTask).toBeVisible({ timeout: SLOW_MS });
     await adding(page).fill(`Sweep the hut (${tag})`);
     await expect(chips).toHaveText([hut]);
     await shots(page, world, "loose-capture", "page");
     await adding(page).fill("");
 
-    // Moved into an area while the page is open: the page follows it to its present address.
+    // Moved into an area while the screen is open: the address stays, the crumbs follow it.
     const before = await steps();
     await move();
-    await at(nested);
+    await expect(page.locator('[data-part="crumbs"]')).toHaveText(new RegExp(`${yard}.*${hut}`));
+    await at(address);
     expect(await steps()).toBe(before);
     await expect(listedTask).toBeVisible();
-    await adding(page).fill(`Fix the door (${tag})`);
-    await expect(chips).toHaveText([`${yard} › ${hut}`]);
-    await adding(page).fill("");
 
-    // An old link without the area: its page under the area, and a capture in it.
-    await page.goto(new URL(loose, page.url()).href);
+    // After a reload too, and a capture goes into it where it is now.
+    await page.reload();
     await showsSpace(page, world.mira.name);
-    await at(nested);
     await expect(listedTask).toBeVisible({ timeout: SLOW_MS });
     const door = `Fix the door (${tag})`;
     await adding(page).fill(door);

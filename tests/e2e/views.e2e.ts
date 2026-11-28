@@ -49,7 +49,7 @@ async function add(world: World, drafts: readonly Record<string, unknown>[]): Pr
 }
 
 const row = (page: Page, ref: string) => page.locator(`main li[data-task="${ref}"]`);
-const sidebar = (page: Page) => page.getByRole("navigation", { name: "Views and areas" });
+const sidebar = (page: Page) => page.getByRole("navigation", { name: "Views and projects" });
 
 async function open(page: Page, world: World, path: string, space = world.mira): Promise<void> {
   await signIn(page, world, `/s/${space.id}/${path}`);
@@ -369,7 +369,7 @@ test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and
         for (const [name, path, ref] of [
           ["waiting", "waiting", waiting],
           ["completed", "completed", done],
-          ["area", `area/${areaId}`, undefined],
+          ["area", `project/${areaId}`, undefined],
         ] as const) {
           await page.setViewportSize({ width: 1440, height: 1000 });
           await open(page, world, path);
@@ -408,7 +408,7 @@ test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and
           expect(await axeFound(page, ["body"]), `axe on the empty views in ${theme}`).toEqual([]);
         await page.setViewportSize({ width: 390, height: 900 });
         await page.getByRole("button", { name: "Menu" }).click();
-        const drawer = page.getByRole("dialog", { name: "Views and areas" });
+        const drawer = page.getByRole("dialog", { name: "Views and projects" });
         const entries = drawer.locator("a[data-view]");
         await expect(entries).toHaveCount(VIEWS.length);
         expect(
