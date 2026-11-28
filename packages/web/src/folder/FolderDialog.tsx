@@ -6,7 +6,7 @@ import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-compone
 import { classes } from "../app/css.ts";
 import setup from "../app/Setup.module.css";
 import { Session } from "../context.ts";
-import { useList, useT } from "../i18n/intl.tsx";
+import { CATALOGUE, useList, useT } from "../i18n/intl.tsx";
 import { chosenFolder } from "./chooser.ts";
 import { FolderField, type FolderLook } from "./FolderField.tsx";
 
@@ -24,9 +24,13 @@ const sheet = classes(setup, [
   "title",
 ]);
 
-/** The service's sentence for a refusal (an error with its code), or the page's own words. */
+/**
+ * The service's sentence for a refusal (an error with its code), or the page's own words. A call
+ * the service does not do for this space yet has the page's own plain words.
+ */
 export function refusalText(error: unknown, fallback: string): string {
   if (error instanceof Error && typeof (error as { code?: unknown }).code === "string") {
+    if ((error as { code?: unknown }).code === "op_unknown") return CATALOGUE["space.notYet"];
     const said = error.message;
     if (said !== "" && said.length <= 300) return said;
   }

@@ -20,7 +20,7 @@ import {
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { Api } from "../api.ts";
+import { Unserved, type Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
@@ -139,6 +139,7 @@ beforeEach(() => {
     busy: () => Promise.resolve({ busy: [], last: {} }),
     receipts: () => Promise.resolve([]),
     runs: () => Promise.resolve([]),
+    unserved: new Unserved(),
   } as unknown as Api;
   live = new Live({
     api,
@@ -243,7 +244,8 @@ const press = (target: Element | null, key: string, init: KeyboardEventInit = {}
 describe("[A5.pages.web.library] a project's Library against the contract's examples", () => {
   test("its texts, its pages and its tasks' pages, each row to its page; a page an agent moves to the Trash leaves, and a change to the texts reads them again", async () => {
     await mount(<NodeLibrary node={{ kind: "project", id: PROJECT }} />);
-    expect(part("node-brief")?.textContent).toContain(String(nodeExample["brief"]));
+    // A project's brief stands in its screen's head, above the tabs: its Library does not repeat it.
+    expect(part("node-brief")).toBeNull();
     expect(part("for-agents")?.textContent).toContain(nodeExample.for_agents.text);
     expect(part("description")?.textContent).toContain("weekly report");
     const rows = parts("page-row");

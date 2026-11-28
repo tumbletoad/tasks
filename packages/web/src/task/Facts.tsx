@@ -29,7 +29,7 @@ import { EFFORT_NAME_MAX } from "@ttasks/contracts/preferences";
 import { contextFor, effortLevelOf, levelMsg, renderRow } from "../row/model.ts";
 import { sayMsg } from "../row/say.ts";
 import { useLive } from "../store/hooks.ts";
-import { effortOptions, trail, type TaskRow } from "@ttasks/client/store";
+import { effortOptions, placeOf, type TaskRow } from "@ttasks/client/store";
 import { AreaPicker } from "./AreaPicker.tsx";
 import { DuePicker } from "./DuePicker.tsx";
 import css from "./Expanded.module.css";
@@ -415,7 +415,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
     readTextDraft(live.spaceId ?? "", task.id, "waiting_on") !== undefined;
   // Who it waits on stays shown while the person is in it, even when the status moves on.
   const [waitingOpen, setWaitingOpen] = useState(false);
-  const [area, project] = trail(state.nodes, task.parent);
+  const [area, project] = placeOf(state.nodes, task.parent);
   const slot = area === undefined ? undefined : areaSlots(state.nodes).get(area.id);
   const due = dueOf(task, clock, t);
   const level = task.priority;

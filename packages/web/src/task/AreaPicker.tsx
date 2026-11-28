@@ -30,7 +30,7 @@ import { refusalText } from "../folder/FolderDialog.tsx";
 import { archivedGroup, areaSlots } from "@ttasks/client/today";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
-import { childrenOf, topLevel, trail, type TaskRow } from "@ttasks/client/store";
+import { childrenOf, placeOf, topLevel, type NodeRow, type TaskRow } from "@ttasks/client/store";
 import { closeName, sameName } from "./areaNames.ts";
 import css from "./Picker.module.css";
 
@@ -68,6 +68,7 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
   const { api } = useContext(Session);
   const edits = useEdits();
   const state = useLive();
+  const tree = state.space?.tree === true;
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const { contains } = useFilter({ sensitivity: "base" });
@@ -80,16 +81,23 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
       const a = { id: area.id, title: area.title };
       const shelved = area.state === "archived";
       out.push({ id: area.id, text: area.title, area: a, slot, archived: shelved });
-      for (const project of childrenOf(state.nodes, area.id)) {
-        out.push({
-          id: project.id,
-          text: t("fact.areaProject", { area: area.title, project: project.title }),
-          area: a,
-          project: { id: project.id, title: project.title },
-          slot,
-          archived: shelved || project.state === "archived",
-        });
-      }
+      // Every project below it, at any depth, named with the projects above it.
+      const below = (parent: NodeRow, above: string, off: boolean): void => {
+        for (const project of childrenOf(state.nodes, parent.id)) {
+          const text = t("fact.areaProject", { area: above, project: project.title });
+          const archived = off || project.state === "archived";
+          out.push({
+            id: project.id,
+            text,
+            area: a,
+            project: { id: project.id, title: project.title },
+            slot,
+            archived,
+          });
+          below(project, text, archived);
+        }
+      };
+      below(area, area.title, shelved);
     }
     return out;
   }, [state.nodes, areas, slots, t]);
@@ -155,7 +163,7 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
           const name = made.name ?? title;
           // The new area is a step of its own, which the move must not end: Undo takes back the
           // move, and then the area.
-          edits.edit(task, groupingChange({ id: made.id, title: name }, undefined), {
+          edits.edit(task, groupingChange({ id: made.id, title: name }, undefined, tree), {
             base: seen,
             undo: true,
             refused: (why) => ({ id: "area.addedNotMoved", values: { name, why } }),
@@ -167,7 +175,7 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
       );
   };
 
-  const [area, project] = trail(state.nodes, task.parent);
+  const [area, project] = placeOf(state.nodes, task.parent);
   const slot = area === undefined ? undefined : slots.get(area.id);
   const shown =
     area === undefined
@@ -185,7 +193,7 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
     setTyped("");
     if (choice === undefined || choice.id === current) return;
     if (choice.id === NEW_AREA) addArea(choice.area.title, seen);
-    else edits.edit(task, groupingChange(choice.area, choice.project));
+    else edits.edit(task, groupingChange(choice.area, choice.project, tree));
   };
   // Enter takes the option drawn as highlighted. React Aria forwards it to an option it tracks
   // apart from the highlight, which a quick Down after typing leaves behind.

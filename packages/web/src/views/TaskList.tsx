@@ -54,7 +54,7 @@ import { sayMsg } from "../row/say.ts";
 import type { OpenWith, RowActions } from "../row/actions.ts";
 import { Row } from "../row/Row.tsx";
 import { useClock } from "../row/useClock.ts";
-import { useLive } from "../store/hooks.ts";
+import { useLive, useServes } from "../store/hooks.ts";
 import type { TaskRow } from "@ttasks/client/store";
 import { rowOfFacts } from "../task/detail.ts";
 import { mergeRuns, runRefusal, withStops } from "../task/runs.ts";
@@ -65,6 +65,7 @@ const styles = classes(css, ["line", "announce"]);
 
 const NO_RECEIPTS: readonly Receipt[] = [];
 const NO_RUNS: readonly Run[] = [];
+const NO_INSTANCES: readonly Instance[] = [];
 /** What the page says of an Open its instance cannot do here (instanceRefusal). */
 const REFUSED_WORDS = {
   not_for_space: "row.openNotForSpace",
@@ -193,6 +194,9 @@ export function TaskList({
   const say = useToast();
   const { api, live } = useContext(Session);
   const state = useLive();
+  // A space that cannot open or run tasks yet says so for its first read of what is busy: then its
+  // rows and cards offer no agent, and nothing of Open and Run is read again.
+  const launches = useServes("launch/busy");
   const edits = useEdits();
   // Rows checked off, or completed by others, stay where they are for the hold.
   const { leaving: holding, finishing } = useEditState();
@@ -405,7 +409,7 @@ export function TaskList({
           used(reply.last);
         })
         .catch((error: unknown) => {
-          if (live.failed(error) || !newest()) return;
+          if (live.failed(error) || !newest() || api.unserved.has("launch/busy")) return;
           const wait = BUSY_RETRY_MS[Math.min(retry.failed, BUSY_RETRY_MS.length - 1)];
           retry.failed += 1;
           retry.timer = setTimeout(() => {
@@ -456,8 +460,10 @@ export function TaskList({
         .catch((error: unknown) => {
           live.failed(error);
           if (!newest()) return;
-          // The thread draws all the same, and says what it shows of the runs may be old.
+          // The thread draws all the same, and says what it shows of the runs may be old: of a
+          // space that has no runs yet, it shows nothing of them.
           setRuns((known) => (known.has(task) ? known : new Map(known).set(task, [])));
+          if (api.unserved.has("launch/runs")) return;
           setRunsFailed((known) => (known.has(task) ? known : new Set(known).add(task)));
         });
     },
@@ -1289,7 +1295,7 @@ export function TaskList({
       area={item.area}
       slot={item.slot}
       project={item.project}
-      instances={state.instances}
+      instances={launches ? state.instances : NO_INSTANCES}
       last={last}
       cannot={cannot}
       receipts={receipts.get(item.key) ?? NO_RECEIPTS}

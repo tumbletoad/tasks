@@ -103,3 +103,32 @@ describe("[A5.3.15.web.gone-sends-nothing] a tab that says nothing more is saved
     expect([...READ_ENTRIES].sort()).toEqual(reads.sort());
   });
 });
+
+describe("[S2.tree.web.unserved] a call the service does not do for the space yet", () => {
+  test("is remembered by its entry or route once the service says so, and only then", async () => {
+    const answers = [
+      { status: 404, body: '{"error":{"code":"op_unknown","message":"Not on a tree yet."}}' },
+      { status: 404, body: '{"error":{"code":"op_unknown","message":"Not on a tree yet."}}' },
+      { status: 404, body: '{"error":{"code":"not_found","message":"No such task."}}' },
+      { status: 200, body: '{"result":{}}' },
+    ];
+    vi.stubGlobal("fetch", () => {
+      const next = answers.shift() ?? { status: 200, body: "{}" };
+      return Promise.resolve(new Response(next.body, { status: next.status }));
+    });
+    const api = new Api("t", "", () => "sp_x");
+    let heard = 0;
+    api.unserved.subscribe(() => {
+      heard += 1;
+    });
+    await api.post("/api/v1/op/activity.list", "{}");
+    await api.post("/api/v1/launch/busy", "{}");
+    await api.post("/api/v1/op/task.get", "{}");
+    await api.post("/api/v1/op/task.trash", "{}");
+    expect(api.unserved.has("activity.list")).toBe(true);
+    expect(api.unserved.has("launch/busy")).toBe(true);
+    expect(api.unserved.has("task.get")).toBe(false);
+    expect(api.unserved.has("task.trash")).toBe(false);
+    expect(heard).toBe(2);
+  });
+});

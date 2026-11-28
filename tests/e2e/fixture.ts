@@ -97,6 +97,7 @@ export const test = base.extend<
     large: World;
     monitored: World;
     t3: T3World;
+    tree: World;
   },
   { worlds: FileWorlds }
 >({
@@ -142,6 +143,8 @@ export const test = base.extend<
   // The fake `ttam` as the Agent Monitor, and the fake Codex, so a task can have a background run
   // beside an agent in a terminal.
   monitored: fileWorld("monitored", { monitor: true, runs: true }),
+  // Mira's world with a space on the new storage, four levels of projects deep (tree.ts).
+  tree: fileWorld("tree", { tree: true }),
   // A T3 Code instance whose T3 is a fake server in this worker. Its T3 runs and is not paired.
   t3: [
     async ({ ofFile }, use) => {

@@ -1,6 +1,6 @@
 // A Library: what is known on the space, an area or a project, for the person to read and for
-// every agent working below it. Its own brief, the person's text for agents and its description
-// first, each with its pen; then its pages by title, the pages of its tasks, and, folded, what
+// every agent working below it. Its own brief (a project's stands in its screen's head), the
+// person's text for agents and its description first, each with its pen; then its pages by title, the pages of its tasks, and, folded, what
 // comes from the levels above. The lists are the live store's, so an agent's page arrives without
 // a reload and one moved to the Trash leaves; the texts are read from the service, and read again
 // when the feed says they changed. A project's Library is a tab beside its tasks, the space's an
@@ -57,7 +57,7 @@ const styles = classes(css, [
 
 /** The description shows this many lines until the person asks for all of it. */
 const DESCRIPTION_LINES = 12;
-const BRIEF_MAX = 400;
+export const BRIEF_MAX = 400;
 
 /** A link is current only on its own address: the Tasks tab is not current under `/library`. */
 const EXACT = { exact: true, includeSearch: false } as const;
@@ -131,27 +131,29 @@ function Texts({
   }, [read.description, all]);
   return (
     <>
-      <Penned
-        owner={key}
-        part="brief"
-        label={t("library.brief")}
-        pen={t("library.briefEdit")}
-        text={read.brief}
-        base={base}
-        max={BRIEF_MAX}
-        line
-        clears
-        save={editable ? (words, from) => writes.node(target, { brief: words }, from) : undefined}
-        onDone={onDone}
-        view={(text, pen) => (
-          <p className={styles.brief} data-part="node-brief">
-            <span className={text === "" ? styles.quiet : undefined} dir="auto">
-              {text === "" ? t("library.briefNone") : text}
-            </span>
-            {pen}
-          </p>
-        )}
-      />
+      {node.kind === "project" ? null : (
+        <Penned
+          owner={key}
+          part="brief"
+          label={t("library.brief")}
+          pen={t("library.briefEdit")}
+          text={read.brief}
+          base={base}
+          max={BRIEF_MAX}
+          line
+          clears
+          save={editable ? (words, from) => writes.node(target, { brief: words }, from) : undefined}
+          onDone={onDone}
+          view={(text, pen) => (
+            <p className={styles.brief} data-part="node-brief">
+              <span className={text === "" ? styles.quiet : undefined} dir="auto">
+                {text === "" ? t("library.briefNone") : text}
+              </span>
+              {pen}
+            </p>
+          )}
+        />
+      )}
       <dl className={styles.texts}>
         <dt className={styles.label}>{t("library.forAgents")}</dt>
         <dd className={styles.value} data-part="for-agents">

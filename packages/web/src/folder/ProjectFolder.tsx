@@ -10,7 +10,7 @@ import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
 import { FolderElsewhereIcon, FolderIcon } from "../row/icons.tsx";
-import { useLive } from "../store/hooks.ts";
+import { useLive, useServes } from "../store/hooks.ts";
 import { FolderDialog, refusalText } from "./FolderDialog.tsx";
 import css from "./Folder.module.css";
 import { useFolderWrites } from "./writes.ts";
@@ -23,6 +23,7 @@ export function ProjectFolder({ project }: { readonly project: string }) {
   const { api, live } = useContext(Session);
   const writes = useFolderWrites();
   const name = useLive().nodes.get(project)?.title ?? "";
+  const served = useServes("machine/project_folder");
   const [view, setView] = useState<ProjectFolderView | "failed">();
   const [choosing, setChoosing] = useState(false);
   // Where the feed was when the folder shown was read: its Change and Clear go with this base, so
@@ -67,6 +68,8 @@ export function ProjectFolder({ project }: { readonly project: string }) {
     });
   };
 
+  // A space that keeps no project folders yet shows no line for one.
+  if (!served) return null;
   return (
     <div
       className={styles.line}

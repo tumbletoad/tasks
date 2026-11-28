@@ -17,6 +17,7 @@ import {
   type ListFs,
 } from "../ops/listing.ts";
 import { readProjectFolderAll, readProjectFolders } from "../ops/read.ts";
+import { isTree, notOnTreeYet } from "../ops/tree.ts";
 
 export interface PageFoldersHost {
   readonly ops: Pick<OpsHost, "machine" | "spaces" | "platform" | "home">;
@@ -126,7 +127,10 @@ export function pageFolderVerbs(host: PageFoldersHost): {
       if (typeof project !== "string" || !/^p_[0-9a-z]{26}$/u.test(project)) {
         throw invalid("project", "Expected a project ID");
       }
-      const reader = served(space)?.reader;
+      const here = served(space);
+      // A project's folder comes to a tree space with its family: until then the page leaves it out.
+      if (here !== undefined && isTree(here)) throw notOnTreeYet("folder.manage");
+      const reader = here?.reader;
       if (reader === undefined) {
         throw new AppError({
           code: "space_unavailable",

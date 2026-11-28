@@ -8,7 +8,7 @@ import { act, type ReactNode } from "react";
 import { areaNode, nodesOf } from "@ttasks/client/test/nodes";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { Refused, type Api, type Busy, type Receipt } from "../api.ts";
+import { Unserved, Refused, type Api, type Busy, type Receipt } from "../api.ts";
 import type { Instance, LastUsed } from "@ttasks/contracts/runs";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
@@ -156,6 +156,7 @@ beforeEach(() => {
       opened.push({ id, another: options.another === true });
       return openAnswer(opened.length);
     },
+    unserved: new Unserved(),
   } as unknown as Api;
   live = new Live({
     api,
