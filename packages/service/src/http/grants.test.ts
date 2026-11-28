@@ -145,6 +145,29 @@ describe("[A2.3.8.http.tokens] UI tokens and the grants table in service.sqlite"
     },
   );
 
+  test("a flush after a failed write writes the row again by itself, so a removal can be saved by trying again", async () => {
+    let fail = true;
+    const writes: Grant[][] = [];
+    const fake = {
+      grants: () => Promise.resolve([]),
+      dropGrants: () => Promise.resolve(),
+      putGrants: (rows: readonly Grant[]) => {
+        if (fail) return Promise.reject(new Error("disk"));
+        writes.push([...rows]);
+        return Promise.resolve();
+      },
+    } as unknown as ServiceDb;
+    const grants = await DurableGrants.open(fake, { now: T0 });
+    const { grant } = grants.create({ kind: "device", principal: "user", spaces: ["sp_a"] }, T0);
+    grants.revoke(grant.grant_id, at(1000));
+    await expect(grants.flush()).rejects.toThrow();
+    // The revocation holds in memory while it is not on disk.
+    expect(grants.get(grant.grant_id)?.revoked_at).toBe(at(1000).toISOString());
+    fail = false;
+    await grants.flush();
+    expect(writes.at(-1)?.[0]?.revoked_at).toBe(at(1000).toISOString());
+  });
+
   test("a row's use is exact in memory and written at most once a minute; a failed write is reported, and refuses only until a later write carries it", async () => {
     const writes: Grant[][] = [];
     let fail = false;
