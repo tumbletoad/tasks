@@ -2206,6 +2206,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "S2.tree.space",
+      "title": "A tree space in a folder, opened as every space is: made with its manifest and the tree's step, recognised on open, its writer in the storage worker taking the tree's named commands and replaying a resend from its receipt, its reader reading what they wrote, and what only today's writer does refused on it",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "S2.tree.crash",
       "title": "The tree writer killed for real in a child process before a COMMIT, after one and by a timer, each followed by a resend of the lost request: every acknowledged result stays, a decision killed before its COMMIT leaves no receipt, no request is applied twice, and every row is its history played back with each commit's receipt",
       "owner": "M3",

@@ -57,6 +57,7 @@ import type { DriverReport } from "../startup-check.ts";
 import type { LaunchRecord } from "../write/launches.ts";
 import type { ProjectedBatch } from "../write/outbox.ts";
 import type { RunRow } from "../write/runs.ts";
+import type { TreeResult } from "../tree/core.ts";
 import type { Receipt, ReceiptLookup } from "../write/receipts.ts";
 import type { WriteResult } from "../write/request.ts";
 import type { MachineInfo } from "../write/writer.ts";
@@ -821,6 +822,8 @@ export class SpaceWriterHandle {
   readonly handle: number;
   readonly spaceId: Id<"sp">;
   readonly revision: Revision;
+  /** Which writer the space has: today's, or a tree's that takes named commands (`submitTree`). */
+  readonly backend: "today" | "tree";
   readonly manifestRebuilt: boolean;
   readonly readOnlyReasons: readonly ReadOnlyReason[];
   /** Whether this open wrote the machine's record. */
@@ -851,6 +854,7 @@ export class SpaceWriterHandle {
     this.handle = info.handle;
     this.spaceId = info.spaceId;
     this.revision = info.revision;
+    this.backend = info.backend ?? "today";
     this.manifestRebuilt = info.manifestRebuilt;
     this.readOnlyReasons = info.readOnlyReasons;
     this.machineRegistered = machineRegistered;
@@ -878,6 +882,22 @@ export class SpaceWriterHandle {
       () => this.#worker.call("submit", { handle: this.handle, request }),
       options.timeoutMs,
     );
+  }
+
+  /** One named command of a tree space, in the writer's queue (tree/core.ts `submit`). */
+  submitTree(request: unknown, options: { timeoutMs?: number } = {}): Promise<TreeResult> {
+    return this.#queued(
+      () => this.#worker.call("submitTree", { handle: this.handle, request }),
+      options.timeoutMs,
+    );
+  }
+
+  /** The answer a tree space's request decided, as its receipt keeps it, or undefined. */
+  async treeReceipt(lookup: ReceiptLookup): Promise<TreeResult | undefined> {
+    const found = await this.#queued(() =>
+      this.#worker.call("treeReceipt", { handle: this.handle, lookup }),
+    );
+    return found ?? undefined;
   }
 
   /**
