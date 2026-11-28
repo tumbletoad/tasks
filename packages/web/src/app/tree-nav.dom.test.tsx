@@ -32,19 +32,24 @@ vi.mock("./SpaceSwitcher.tsx", () => ({ SpaceSwitcher: () => null }));
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
 const CURSOR = { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 };
 
-// Client work › Lumen Health › Portal › Login page, and Internal beside Client work.
+// Client work › Lumen Health › Portal › Login page, and Internal beside Client work. Billing
+// under Lumen Health and Ideas with its Garden plan hold nothing open.
 const WORK = "a_work";
 const LUMEN = "n_lumen";
 const PORTAL = "n_portal";
 const LOGIN = "n_login";
 const INTERNAL = "a_internal";
+const IDEAS = "a_ideas";
 const nodes = nodesOf(
   SPACE.id,
   areaNode({ id: WORK, title: "Client work", position: "a" }, SPACE.id),
   areaNode({ id: INTERNAL, title: "Internal", position: "b" }, SPACE.id),
+  areaNode({ id: IDEAS, title: "Ideas", position: "c" }, SPACE.id),
   projectNode(WORK, { id: LUMEN, title: "Lumen Health", position: "a" }),
   projectNode(LUMEN, { id: PORTAL, title: "Portal", position: "a" }),
+  projectNode(LUMEN, { id: "n_billing", title: "Billing", position: "b" }),
   projectNode(PORTAL, { id: LOGIN, title: "Login page", position: "a" }),
+  projectNode(IDEAS, { id: "n_garden", title: "Garden plan", position: "a" }),
 );
 
 let n = 0;
@@ -139,14 +144,14 @@ async function mount(at: string) {
     ),
   });
   const screen = (tab: "tasks" | "library") =>
-    function Screen({ project }: { readonly project: string }) {
+    function Screen({ project, task }: { readonly project: string; readonly task?: string }) {
       return (
         <>
           <nav aria-label="menu">
             <Sidebar space={SPACE.id} shelfOpen={false} onShelf={() => undefined} />
           </nav>
           <main>
-            <ProjectScreen key={project} project={project} tab={tab} />
+            <ProjectScreen key={project} project={project} task={task} tab={tab} />
           </main>
         </>
       );
@@ -156,8 +161,16 @@ async function mount(at: string) {
   const projectRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/s/$space/project/$project",
+    validateSearch: (search: Record<string, unknown>): { task?: string } =>
+      typeof search["task"] === "string" ? { task: search["task"] } : {},
     component: function Route() {
-      return <Tasks project={projectRoute.useParams().project} />;
+      const { task } = projectRoute.useSearch();
+      return (
+        <Tasks
+          project={projectRoute.useParams().project}
+          {...(task === undefined ? {} : { task })}
+        />
+      );
     },
   });
   const libraryRoute = createRoute({
@@ -208,7 +221,10 @@ describe("[S2.nav.screen] the side menu and a project's screen, four levels deep
       ["Client work, 5 tasks", 1],
       ["Lumen Health, 5 tasks", 2],
       ["Portal, 2 tasks", 3],
+      ["Billing, no tasks", 3],
       ["Internal, 1 task", 1],
+      ["Ideas, no tasks", 1],
+      ["Garden plan, no tasks", 2],
     ]);
     expect(foldOf("Portal")?.getAttribute("aria-expanded")).toBe("false");
 
@@ -220,6 +236,8 @@ describe("[S2.nav.screen] the side menu and a project's screen, four levels deep
     expect(lines()).toEqual([
       ["Client work, 5 tasks", 1],
       ["Internal, 1 task", 1],
+      ["Ideas, no tasks", 1],
+      ["Garden plan, no tasks", 2],
     ]);
 
     // Back after a reload as the person left them.
@@ -228,7 +246,7 @@ describe("[S2.nav.screen] the side menu and a project's screen, four levels deep
     });
     root = createRoot(container);
     await mount(at(INTERNAL));
-    expect(lines()).toHaveLength(2);
+    expect(lines()).toHaveLength(4);
     await click(foldOf("Client work"));
     expect(lines()).toContainEqual(["Login page, 1 task", 4]);
   });
@@ -309,5 +327,69 @@ describe("[S2.nav.screen] the side menu and a project's screen, four levels deep
     // A crumb opens the project above on the same tab.
     await click(part("crumbs")?.querySelectorAll("a")[1]);
     expect(router.state.location.pathname).toBe(at(LUMEN, "/library"));
+  });
+
+  test("every live project below is a heading that opens it, also one with nothing open, and also when the project above holds nothing", async () => {
+    await mount(at(LUMEN));
+    const headings = () => [
+      ...(main()?.querySelectorAll<HTMLElement>('h2[data-kind="project"]') ?? []),
+    ];
+    expect(headings().map((h) => h.querySelector("a")?.textContent)).toEqual(["Portal", "Billing"]);
+    const billing = headings()[1];
+    expect(billing?.querySelector('[data-part="group-status"]')).toBeNull();
+    expect(billing?.querySelector('[data-part="group-fold"]')).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    root = createRoot(container);
+    await mount(at(IDEAS));
+    expect(headings().map((h) => h.querySelector("a")?.textContent)).toEqual(["Garden plan"]);
+    expect(main()?.textContent).not.toContain("Nothing here.");
+  });
+
+  test("a heading counts the live open tasks: a task finished while its card is open leaves the count, and the card stays", async () => {
+    const login = tasks[4];
+    expect(login?.title).toBe("Login page copy");
+    await mount(`${at(LUMEN)}?task=${login?.ref ?? ""}`);
+    const portal = () => main()?.querySelector<HTMLElement>('h2[data-kind="project"]');
+    const row = () => main()?.querySelector<HTMLElement>(`li[data-task="${login?.ref ?? ""}"]`);
+    expect(row()?.dataset["expanded"]).toBe("true");
+    expect(portal()?.querySelector('[data-part="group-status"]')?.textContent).toBe(
+      "2 open · next due Wed 9 Dec 2099",
+    );
+
+    // An agent finishes it.
+    act(() => {
+      live.store.push({
+        type: "batch",
+        space_id: SPACE.id,
+        epoch: CURSOR.epoch,
+        incarnation: CURSOR.incarnation,
+        from: CURSOR.seq,
+        through: CURSOR.seq + 1,
+        events: [
+          {
+            seq: CURSOR.seq + 1,
+            request_id: "r-finish",
+            actor: { kind: "agent", label: "Codex" },
+            kind: "task.finish",
+            entities: [
+              {
+                type: "task",
+                id: login?.id ?? "",
+                row: { ...login, lifecycle: "completed", version: 2 },
+                changed: ["lifecycle"],
+                created: false,
+              },
+            ],
+          },
+        ],
+      } as unknown as SnapshotMessage);
+      live.store.flush();
+    });
+    expect(part("project-status")?.textContent).toContain("4 open");
+    expect(portal()?.querySelector('[data-part="group-status"]')?.textContent).toBe("1 open");
+    expect(row()?.dataset["expanded"]).toBe("true");
   });
 });

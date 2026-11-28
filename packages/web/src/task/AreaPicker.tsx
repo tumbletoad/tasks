@@ -27,7 +27,7 @@ import { Session } from "../context.ts";
 import { groupingChange } from "../edit/change.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
-import { areaSlots } from "@ttasks/client/today";
+import { archivedGroup, areaSlots } from "@ttasks/client/today";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
 import { childrenOf, topLevel, trail, type TaskRow } from "@ttasks/client/store";
@@ -176,7 +176,7 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
         ? area.title
         : t("fact.areaProject", { area: area.title, project: project.title });
   // A task stays in its area or project when that is archived: the pill says so.
-  const shelved = [area, project].some((node) => node?.state === "archived");
+  const shelved = archivedGroup(area, project) !== undefined;
   const current = task.parent;
   const take = (key: unknown) => {
     const choice = items.find((c) => c.id === key);

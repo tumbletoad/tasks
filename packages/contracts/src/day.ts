@@ -110,7 +110,7 @@ export const isStarred = (task: Pick<DayTask, "focus_on">, today: string): boole
   typeof task.focus_on === "string" && task.focus_on <= today;
 
 /** Late: its due time has passed, or its due date is before today. */
-export function isLate(task: DayTask, clock: DayClock): boolean {
+export function isLate(task: DueTask, clock: DayClock): boolean {
   if (typeof task.due_at === "number") return task.due_at < clock.now;
   const due = dueDayOf(task, clock);
   return due !== undefined && due < clock.today;

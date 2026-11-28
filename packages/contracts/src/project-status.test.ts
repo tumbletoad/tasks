@@ -65,6 +65,22 @@ describe("[S2.status.line] a project's status line from its open tasks", () => {
     });
   });
 
+  test("a due time already past today is late, as its row says, and one still to come is not", () => {
+    const noon = clock("2026-11-28");
+    const morning = [task({ due_at: Date.parse("2026-11-28T10:00:00Z") })];
+    expect(projectStatus(morning, EFFORT_LEVELS, noon).at(-1)).toEqual({
+      kind: "due",
+      date: "2026-11-28",
+      late: true,
+    });
+    const evening = [task({ due_at: Date.parse("2026-11-28T18:00:00Z") })];
+    expect(projectStatus(evening, EFFORT_LEVELS, noon).at(-1)).toEqual({
+      kind: "due",
+      date: "2026-11-28",
+      late: false,
+    });
+  });
+
   test("a due time counts on the viewer's calendar", () => {
     // 23:30 on 31 December in UTC is already 1 January in Amsterdam.
     const timed = [task({ due_at: Date.parse("2026-12-31T23:30:00Z") })];

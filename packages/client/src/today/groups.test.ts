@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  archivedGroup,
   groupTasks,
   liveGroups,
   sidebarTree,
@@ -141,6 +142,15 @@ describe("[A5.archived.web.groups] an archived area or project leaves the areas 
     expect(open.map((a) => a.title)).toEqual(["Home", "Lumen", "Empty"]);
     expect(openProjects.map((p) => p.title)).toEqual(["Lumen portal"]);
   });
+
+  test("a task is archived by its project, else by its area; a live one is not", () => {
+    expect(archivedGroup(lumen, portal)).toBeUndefined();
+    expect(archivedGroup(lumen)).toBeUndefined();
+    expect(archivedGroup(lumen, shelvedSync)).toEqual({ kind: "project", row: shelvedSync });
+    expect(archivedGroup(attic, boxes)).toEqual({ kind: "area", row: attic });
+    expect(archivedGroup(attic)).toEqual({ kind: "area", row: attic });
+    expect(archivedGroup(undefined)).toBeUndefined();
+  });
 });
 
 describe("[S2.nav.tree] the side menu's tree and a project's groups, at any depth", () => {
@@ -220,10 +230,16 @@ describe("[S2.nav.tree] the side menu's tree and a project's groups, at any dept
     const moved = task({ title: "Moved away", parent: "a_internal" });
     expect(titles(subtreeGroups("n_portal")([moved, ...tasks.slice(3, 4)], nodes))).toEqual([
       ["flat", undefined, [[undefined, ["Portal plan", "Moved away"]]]],
+      ["project", "Login", []],
     ]);
-    // A project below with nothing open has no group.
     expect(titles(subtreeGroups("a_work")(tasks.slice(0, 2), nodes))).toEqual([
       ["project", "Lumen", [[undefined, ["Fix time zones", "Store the zone"]]]],
     ]);
+    // A live project below with nothing open is a heading still; an archived one is not.
+    expect(titles(subtreeGroups("n_lumen")(tasks.slice(0, 2), nodes))).toEqual([
+      ["flat", undefined, [[undefined, ["Fix time zones", "Store the zone"]]]],
+      ["project", "Portal", []],
+    ]);
+    expect(titles(subtreeGroups("n_portal")([], nodes))).toEqual([["project", "Login", []]]);
   });
 });

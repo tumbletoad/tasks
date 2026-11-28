@@ -6,7 +6,14 @@
 import { Link } from "@tanstack/react-router";
 import { Fragment, useCallback, useMemo, useState } from "react";
 import { useIntl } from "react-intl";
-import { projectWithoutArea, trail, type NodeRow, type TaskRow } from "@ttasks/client/store";
+import {
+  childrenOf,
+  isUnder,
+  projectWithoutArea,
+  trail,
+  type NodeRow,
+  type TaskRow,
+} from "@ttasks/client/store";
 import { subtreeGroups, underFilter, type Clock, type GroupTasks } from "@ttasks/client/today";
 import type { EffortLevel } from "@ttasks/contracts/preferences";
 import { projectStatus, type StatusPart } from "@ttasks/contracts/project-status";
@@ -146,9 +153,16 @@ function Tabs({
 
 /**
  * The project's groups with each subproject's heading as the screen shows it: its short status
- * line, and its tasks out of sight while the person has it folded.
+ * line, from the same live open tasks the screen's own line counts (a row kept on screen for
+ * reading, such as a finished task's open card, counts for nothing), and its tasks out of sight
+ * while the person has it folded. A heading with nothing beneath it has neither.
  */
-function useGroups(project: string, efforts: readonly EffortLevel[], clock: Clock): GroupTasks {
+function useGroups(
+  project: string,
+  open: readonly TaskRow[],
+  efforts: readonly EffortLevel[],
+  clock: Clock,
+): GroupTasks {
   const t = useT();
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const toggle = useCallback((key: string) => {
@@ -162,26 +176,29 @@ function useGroups(project: string, efforts: readonly EffortLevel[], clock: Cloc
     const grouped = subtreeGroups(project);
     return (tasks, nodes) =>
       grouped(tasks, nodes).map((group) => {
-        if (group.kind !== "project") return group;
-        const open = !folded.has(group.key);
+        const node = group.node;
+        if (node === undefined) return group;
         const parts = projectStatus(
-          group.sections.flatMap((section) => section.tasks),
+          open.filter((task) => isUnder(nodes, task.parent, node)),
           efforts,
           clock,
         ).filter((part) => part.kind === "open" || part.kind === "due");
+        const line = statusWords(parts, clock, t).join(t("project.status.between"));
+        if (group.sections.length === 0) return { ...group, line };
+        const shown = !folded.has(group.key);
         return {
           ...group,
-          line: statusWords(parts, clock, t).join(t("project.status.between")),
+          line,
           fold: {
-            open,
+            open: shown,
             toggle: () => {
               toggle(group.key);
             },
           },
-          sections: open ? group.sections : [],
+          sections: shown ? group.sections : [],
         };
       });
-  }, [project, folded, toggle, efforts, clock, t]);
+  }, [project, open, folded, toggle, efforts, clock, t]);
 }
 
 export function ProjectScreen({
@@ -196,7 +213,6 @@ export function ProjectScreen({
   const t = useT();
   const state = useLive();
   const onExpand = useExpandInUrl();
-  const clock = useClock(false);
   const path = useMemo(() => trail(state.nodes, project), [state.nodes, project]);
   const row = path.at(-1);
   useTitle(row?.title ?? "");
@@ -206,14 +222,17 @@ export function ProjectScreen({
     (): TaskRow[] => [...state.tasks.values()].filter(filter),
     [state.tasks, filter],
   );
+  // A due time turns late at its minute, as its row does: then the line reads the minute's clock.
+  const clock = useClock(open.some((task) => task.due_at !== undefined));
   const status = useMemo(
     () => statusWords(projectStatus(open, efforts, clock), clock, t),
     [open, efforts, clock, t],
   );
-  const group = useGroups(project, efforts, clock);
+  const group = useGroups(project, open, efforts, clock);
   // The rows are known from the first snapshot on (an offline tab keeps them).
   const count = state.space === undefined ? undefined : open.length;
   if (row === undefined) return <p className={styles.line}>{t("view.noProject")}</p>;
+  const below = childrenOf(state.nodes, project).some((node) => node.state !== "archived");
   // What today's operations take as a project keeps its folder on this machine.
   const folder = path.length > 1 || projectWithoutArea(project);
   return (
@@ -243,9 +262,9 @@ export function ProjectScreen({
             grouping="project"
             group={group}
             filter={filter}
-            // A folded group hides its rows, not the project's tasks: the line says only when
-            // there are none.
-            empty={count === 0 ? t("view.empty") : undefined}
+            // A folded group hides its rows, not the project's tasks, and a project below is a
+            // heading with nothing open too: the line says only when there is neither.
+            empty={count === 0 && !below ? t("view.empty") : undefined}
             expand={task}
             onExpand={onExpand}
           />

@@ -86,6 +86,22 @@ export function areaSlots(nodes: Nodes): ReadonlyMap<string, number> {
 /** An archived area or project: kept, with its tasks, but out of the places work is filed into. */
 const archived = (node: NodeRow): boolean => node.state === "archived";
 
+/**
+ * The group that keeps an area's or project's page archived: the project itself, else its area.
+ * None while both are live.
+ */
+export function archivedGroup(
+  area: NodeRow | undefined,
+  project?: NodeRow,
+):
+  | { readonly kind: "area"; readonly row: NodeRow }
+  | { readonly kind: "project"; readonly row: NodeRow }
+  | undefined {
+  if (project !== undefined && archived(project)) return { kind: "project", row: project };
+  if (area !== undefined && archived(area)) return { kind: "area", row: area };
+  return undefined;
+}
+
 /** The areas and projects new work can be filed into: live ones, and no project of an archived area. */
 export function liveGroups(nodes: Nodes): {
   readonly areas: NodeRow[];
@@ -266,8 +282,9 @@ export const personGroups: GroupTasks = (tasks) => {
 
 /**
  * A project's screen, for a project at any depth: its own tasks under no heading, then each
- * project directly under it that holds open tasks, as a headed group of everything beneath it:
- * that project's own tasks, then each deeper project's under its trail from there.
+ * project directly under it as a headed group of everything beneath it: that project's own tasks,
+ * then each deeper project's under its trail from there. A live project below is there with
+ * nothing open too, so the screen always leads to it; an archived one only while it holds tasks.
  */
 export function subtreeGroups(project: string): GroupTasks {
   return (tasks, nodes) => {
@@ -298,7 +315,7 @@ export function subtreeGroups(project: string): GroupTasks {
         }
       };
       add(child, undefined);
-      if (sections.length === 0) continue;
+      if (sections.length === 0 && archived(child)) continue;
       groups.push({ key: child.id, kind: "project", title: child.title, node: child.id, sections });
     }
     return groups;
