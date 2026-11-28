@@ -4,12 +4,14 @@
 // is reached. The common click from the start: T3 not running offers Start, not paired offers Pair
 // (approved on the fake's page), a read-only pairing fails the launch at once with Pair again,
 // then Open makes one thread with the brief in its composer, at a project root and in a folder
-// inside it, and the thread's entry brings it up again. Fixture data.
+// inside it, and the thread's entry brings it up again. That thread is the task's: Open again
+// brings it forward, its entry and the Agents page say what its agent does as T3 tells, and a
+// thread deleted in T3 is made again at the next Open, its entry ended. Fixture data.
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { openTask, picture } from "./page.ts";
+import { openTask, picture, signIn } from "./page.ts";
 import { SLOW_MS, T3_INSTANCE, type World } from "./world.ts";
 
 /** A folder as the space stores it, as a path here: `~` is this account's home. */
@@ -41,7 +43,7 @@ function parts(page: Page, ref: string) {
         .getByRole("menuitemradio", { name: `Open in ${T3_INSTANCE.label}` })
         .click();
     },
-    opened: row.locator('[data-entry="session"][data-state="opened"]'),
+    opened: row.locator('[data-entry="session"]:not([data-state="failed"])'),
     button: row.locator('[data-part="strip"] [data-part="open"]'),
     menu: async () => {
       await row
@@ -155,6 +157,45 @@ test.describe("[A4.3.4.1.t3.e2e] Open in T3 Code from the page", () => {
     await p.opened.getByRole("button", { name: "Open in T3" }).click();
     await expect.poll(() => lastLink(world).search, { timeout: SLOW_MS }).toBe("");
     expect(fake.threads.size).toBe(1);
+
+    // Open again: the task's thread comes forward, and no second one is made.
+    const links = world.links().length;
+    await p.open();
+    await expect.poll(() => world.links().length, { timeout: SLOW_MS }).toBe(links + 1);
+    expect(decodeURIComponent(lastLink(world).pathname)).toContain(thread?.id ?? "");
+    expect(lastLink(world).search).toBe("");
+    expect(fake.threads.size).toBe(1);
+    await expect(p.opened).toHaveCount(1);
+    await expect(p.opened).toContainText("· idle");
+
+    // Its agent asks the person in T3: the entry and the Agents page say so.
+    const made = fake.threads.get(thread?.id ?? "");
+    if (made === undefined) throw new Error("no thread");
+    made.status = "running";
+    made.pendingRequestCount = 1;
+    await openTask(page, world, ref);
+    await expect(p.opened).toContainText("· needs you", { timeout: SLOW_MS });
+    await pictures(page, "t3-thread-needs-you", p.opened);
+    await signIn(page, world, `/s/${world.mira.id}/agents`);
+    const agent = page
+      .locator(`main li[data-task="${ref}"]`)
+      .locator('[data-part="agent"]', { hasText: "T3 Code thread" });
+    await expect(agent).toContainText("Needs you", { timeout: SLOW_MS });
+    await pictures(page, "t3-thread-agents", agent);
+
+    // The person deleted the thread in T3: the next Open notices and makes a new one.
+    fake.threads.delete(made.id);
+    await openTask(page, world, ref);
+    await p.open();
+    await expect(p.opened).toHaveCount(2, { timeout: SLOW_MS });
+    const remade = [...fake.threads.values()].filter((t) => t.title.startsWith(`${ref} `));
+    expect(remade.map((t) => t.id)).not.toContain(made.id);
+    expect(remade).toHaveLength(1);
+    // The deleted thread's entry says it ended and offers no way back to it.
+    const ended = p.opened.and(page.locator('[data-state="ended"]'));
+    await expect(ended).toHaveCount(1, { timeout: SLOW_MS });
+    await expect(ended).toContainText("· ended");
+    await expect(ended.getByRole("button", { name: "Open in T3" })).toHaveCount(0);
 
     // A folder inside the project becomes a project of its own: the thread runs exactly there.
     const inside = await newTask(
