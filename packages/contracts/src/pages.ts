@@ -121,14 +121,6 @@ export const CompactPage = z.strictObject({
     .optional(),
 });
 
-/** A page an agent or a routine changed, for Today's Changes beside the tasks. */
-export const PageAgentChange = z.strictObject({
-  page: PageId,
-  actor: z.string().describe("The actor's label"),
-  at: z.int().min(0).max(Number.MAX_SAFE_INTEGER).describe("When, in milliseconds since 1970"),
-  why: z.string().describe("Its one line").optional(),
-});
-
 /** What `complete_task` takes in place of learnings: the pages updated, or that there were none. */
 export const NOTHING_REUSABLE = "nothing reusable";
 export const FinishLibrary = z
