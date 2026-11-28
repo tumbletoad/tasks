@@ -10,10 +10,9 @@ If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checko
   it. Only the owner changes it.
 - The code and its tests. They are the source of truth for how things work.
 - `docs/promises-and-limits.md`: what a person can count on, and where the protection stops.
-- `planning/STATUS.md`: what is built and what is left.
-- `planning/PLAN.md` and `planning/appendix/` were written before the code. For a part that is not
-  built yet they are background. They are never a reason to build or keep something you would not
-  defend.
+- `planning/PLAN.md`: what the product becomes and the steps there. `planning/STATUS.md`: the
+  state of each step. The plan is a direction, never a reason to build or keep something you
+  would not defend.
 
 ## How we work
 - Build the best solution you can defend. When a plan, a rule, a comment, a test or existing code
