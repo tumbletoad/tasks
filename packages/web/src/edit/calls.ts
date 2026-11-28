@@ -11,7 +11,8 @@
 //   sends the request again with the same ID and input, which applies it at most once (the
 //   writer replays a decided request, and one that races its first call). The first decision of
 //   any of them is the outcome.
-// - No decision within `ASK_MS` more (the service is down, or hangs): the outcome is unknown. The
+// - No decision within `ASK_MS` more, asked again every `AGAIN_MS` while the calls fail on the way
+//   (the service is down, restarting or hangs, or the tab was stalled): the outcome is unknown. The
 //   request keeps its place: whatever waits behind it is not sent (`NotSent`), and the caller keeps
 //   the person's value as not saved. The next wait on it asks again, so Try again goes out once
 //   the outcome is known, never before it.
@@ -29,6 +30,8 @@ import type { Client } from "@ttasks/contracts/generated/client.ts";
  */
 export const ASK_MS = 5_000;
 const STALL_MARGIN_MS = 1_000;
+/** The pause before a send and a read that both failed on the way are tried again. */
+export const AGAIN_MS = 500;
 
 /** The request got no decision the page could learn: it may still apply later. */
 export class Unanswered extends Error {
@@ -181,18 +184,27 @@ export class Call<T> implements Turn {
     return known;
   }
 
-  /** Asks for the outcome and sends the request again with its ID, for `ASK_MS` at most. */
+  /**
+   * Asks for the outcome and sends the request again with its ID, until it is decided or `ASK_MS`
+   * has passed. A send and a read that both fail on the way (a tab back from a stall, a service
+   * restarting) are tried again after `AGAIN_MS`, so "unknown" means no answer for `ASK_MS`.
+   */
   #learn(): Promise<boolean> {
     if (!this.#deps.alive()) return Promise.resolve(false);
     this.#learning ??= (async () => {
       const deadline = after(this.#deps.timers, ASK_MS);
+      let over = false;
+      const asking = async () => {
+        while (!over && this.#decision === undefined && this.#deps.alive()) {
+          await Promise.all([this.#attempt(), this.#ask()]);
+          if (over || this.#decision !== undefined) return;
+          await new Promise((resolve) => this.#deps.timers.set(resolve, AGAIN_MS));
+        }
+      };
       try {
-        await Promise.race([
-          this.decided,
-          Promise.all([this.#attempt(), this.#ask()]),
-          deadline.done,
-        ]);
+        await Promise.race([this.decided, asking(), deadline.done]);
       } finally {
+        over = true;
         deadline.stop();
         this.#learning = undefined;
       }
