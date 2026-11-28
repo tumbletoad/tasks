@@ -143,6 +143,19 @@ describe("[A1.5.history.undo-redo] undo and redo of the steps a person takes bac
     expect(row("tasks", loose)).toMatchObject({ area_id: null, project_id: null });
     const area = newId("a");
     send([{ kind: "area.create", id: area, title: "Garden" }]);
+    // Filed into the area the person's change right before made: the move is a step too.
+    const filed = task({ area: fx.areas.home });
+    send([{ kind: "area.create", id: newId("a"), title: "Shed" }]);
+    const moved = send([{ kind: "task.move", task: filed, area: fx.areas.lumen }]);
+    expect(status(moved.seq)).toBeNull();
+    const shed = newId("a");
+    send([{ kind: "area.create", id: shed, title: "Shed two" }]);
+    send([{ kind: "task.move", task: filed, area: shed }]);
+    applied(undo());
+    expect(row("tasks", filed)["area_id"]).toBe(fx.areas.lumen);
+    applied(undo());
+    expect(row("areas", shed)["lifecycle"]).toBe("archived");
+    applied(undo());
     applied(undo());
     expect(row("areas", area)["lifecycle"]).toBe("archived");
     applied(redo());

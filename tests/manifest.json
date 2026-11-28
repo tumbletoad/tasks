@@ -2082,7 +2082,7 @@
     },
     {
       "id": "A1.5.history.undo-redo",
-      "title": "Undo and redo through the write path: a check-off and a reopen (its undo keeps the completion time and the outcome), the Trash and a restore of a whole change (its undo trashes only what it restored), a removed note, a title, a note's and a log entry's words, out of the Inbox with its status, a first filing, a new area and an unarchive are each undone and redone by the ordinary operation that writes back what the commit changed; a priority, an ordinary move, a wrap-up of a finished task, a mixed request and an agent's change are no step, and a step an earlier version stored of such a kind is passed over; someone else's newer work keeps the step, takes it off the stack, names who and replays on a resend; a check-off is not redone over an agent's log entry, nor a note's removal over words edited since; a named commit that is not the newest leaves the stack alone",
+      "title": "Undo and redo through the write path: a check-off and a reopen (its undo keeps the completion time and the outcome), the Trash and a restore of a whole change (its undo trashes only what it restored), a removed note, a title, a note's and a log entry's words, out of the Inbox with its status, a first filing, a filing into an area the person's change right before made, a new area and an unarchive are each undone and redone by the ordinary operation that writes back what the commit changed; a priority, an ordinary move, a wrap-up of a finished task, a mixed request and an agent's change are no step, and a step an earlier version stored of such a kind is passed over; someone else's newer work keeps the step, takes it off the stack, names who and replays on a resend; a check-off is not redone over an agent's log entry, nor a note's removal over words edited since; a named commit that is not the newest leaves the stack alone",
       "source": "A1 3.5, A1 3.10, A1 3.10.1, A1 3.10.4, A1 5, A7 3.10 M3.02",
       "owner": "M3",
       "kind": "ci",
@@ -5712,7 +5712,7 @@
     },
     {
       "id": "A7.3.12.m5-08.e2e.conflict",
-      "title": "In Chromium and Firefox against the real service: an undo of a title an agent changed since is refused, says who changed the task, offers no action and leaves the agent's title; an agent's change while the date popover is open shows there, and the person's pick then keeps their value under the field until Apply mine saves it",
+      "title": "In Chromium and Firefox against the real service: an undo of a title an agent changed since is kept, says who changed the task, offers no action and leaves the agent's title; an agent's change while the date popover is open shows there, and the person's pick then keeps their value under the field until Apply mine saves it",
       "source": "A5 3.11, A5 3.12, A5 3.15, A7 3.12 M5.08",
       "owner": "M5",
       "kind": "ci",
@@ -6336,7 +6336,7 @@
     },
     {
       "id": "A7.3.12.e2e.folder-shared",
-      "title": "In Chromium: New project on a folder another project has says \"Also the folder of\" that project, adds the new project on the same folder, and its own folder dialog names the other project and not itself; added before the chooser could look, the toast says whose folder it also is; at 1,440 and 390 px with no sideways scroll, axe clean, saved for review; Ctrl+Z takes the new project back and the other keeps its folder",
+      "title": "In Chromium: New project on a folder another project has says \"Also the folder of\" that project, adds the new project on the same folder, and its own folder dialog names the other project and not itself; added before the chooser could look, the toast says whose folder it also is; at 1,440 and 390 px with no sideways scroll, axe clean, saved for review; Ctrl+Z takes the new project back to Archived, where it keeps its folder, and the other keeps its folder",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

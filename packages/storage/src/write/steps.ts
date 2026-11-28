@@ -1,6 +1,7 @@
 // Undo and redo (A1 3.10.1). A person's commit is a step on their undo stack when every row it
 // changed is of the few kinds Undo is for: a check-off or a reopen, the Trash and out of it, a
-// removed note, words, out of the Inbox, a first filing, a new group or an unarchive (STEP_SQL).
+// removed note, words, out of the Inbox, a first filing or one into a group just made, a new group
+// or an unarchive (stepSql).
 // Undo takes a step back with the ordinary operations that write what its change rows held
 // before (oppositeOf), and Redo does the same to the undo's own commit, so both change only what
 // the commit they answer changed. Neither writes over someone else's newer work (newerOn).
@@ -17,6 +18,16 @@ const sameTask = (field: string): string =>
   "EXISTS (SELECT 1 FROM changes d WHERE d.seq = c.seq AND d.entity = 'tasks' " +
   `AND d.entity_id = c.task_id AND d.field = '${field}')`;
 
+/**
+ * A move of task row `c` into an area or project that the same person's commit right before made:
+ * the page's new area or project, made and then filed into.
+ */
+const INTO_NEW_GROUP =
+  "EXISTS (SELECT 1 FROM changes g WHERE g.action = 'create' AND g.entity IN ('areas', 'projects') " +
+  "AND g.entity_id IN (json_extract(c.after, '$.area_id'), json_extract(c.after, '$.project_id')) " +
+  "AND g.seq = (SELECT max(p.seq) FROM commits p JOIN commits me ON me.seq = c.seq " +
+  "WHERE p.principal_id = me.principal_id AND p.seq < c.seq))";
+
 /** A change row `c` of a kind Undo is for, or one that comes with such a row in its commit. */
 const KEPT_ROW =
   "(c.entity = 'tasks' AND c.field IN ('lifecycle', 'deleted', 'title', 'summary', 'context')) " +
@@ -25,6 +36,7 @@ const KEPT_ROW =
   `OR (c.entity = 'tasks' AND c.field = 'status' AND ${sameTask("inbox")}) ` +
   "OR (c.entity = 'tasks' AND c.field = 'grouping' " +
   "AND json_extract(c.before, '$.area_id') IS NULL AND json_extract(c.before, '$.project_id') IS NULL) " +
+  `OR (c.entity = 'tasks' AND c.field = 'grouping' AND ${INTO_NEW_GROUP}) ` +
   "OR (c.entity IN ('tasks', 'task_sources') AND c.field IN ('grouping', 'inbox', 'removed') " +
   `AND ${sameTask("deleted")}) ` +
   "OR (c.entity = 'notes' AND c.field IN ('deleted', 'body')) " +
