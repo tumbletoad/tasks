@@ -140,9 +140,11 @@ describe("[S2.tree.crash] the tree writer survives a kill at each write point an
         }
         previous = at?.t === "at" ? at : undefined;
         if (arm !== null) expect(at).toMatchObject({ point: arm.point, status: "applied" });
+        let committed = 0;
         for (const m of end.messages) {
           if (m.t === "ack" && m.status === "applied" && m.commit !== undefined) {
             acked.set(m.request_id, { seq: m.seq, commit: m.commit });
+            committed += 1;
           }
         }
         const sent = end.messages
@@ -154,6 +156,12 @@ describe("[S2.tree.crash] the tree writer survives a kill at each write point an
             .map((m) => (m as { request_id: string }).request_id),
         );
         const lost = sent.find((r) => !answered.has(r));
+        // Where a round stops is fixed unless a timer kills it: then it stops at the armed request,
+        // or runs to its end, with commits the walk compares below. A timer round may stop anywhere.
+        if (typeof kill !== "number") {
+          expect(committed).toBeGreaterThan(0);
+          expect(lost).toBe(at?.t === "at" ? at.request_id : undefined);
+        }
         const first = planned.find((p) => p.request_id === lost);
         const based = end.messages.find((m) => m.t === "send" && m.request_id === lost);
         const as_of = based?.t === "send" ? based.base : undefined;
@@ -193,7 +201,7 @@ describe("[S2.tree.crash] the tree writer survives a kill at each write point an
         expect(afterCommit).toBe(1);
         if (kill !== null) expect(end.killed).toBe(true);
       }
-      expect(acked.size).toBeGreaterThan(10);
+      // The two rounds after a kill at a named point each began with the request it left unanswered.
       expect(resent).toBeGreaterThanOrEqual(2);
       expect(replays).toEqual({ fresh: 1, stored: 1 });
     },
