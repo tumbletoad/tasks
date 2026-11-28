@@ -26,11 +26,13 @@ const PHONE = {
   paired_at: "2026-11-01T10:00:00.000Z",
   last_used_at: null,
   run: false,
-  removing: false,
+  unsaved: null,
 };
 
 /** The next answer to these actions fails as a save that did not reach the disk. */
 const failNext = new Set<string>();
+/** The next request for these actions never reaches the service. */
+const lostNext = new Set<string>();
 /** The next answer to Run waits for this. */
 let holdRun: Promise<void> | undefined;
 
@@ -46,12 +48,15 @@ function answer(action: string, body: Record<string, unknown>, failed = false): 
       : { ended: true };
   }
   if (action === "phone_rights") {
-    // As the service: Run on counts only once saved; Run off holds at once.
+    // As the service: Run on counts only once saved; Run off holds at once, and one that was not
+    // saved is reported until a later save carries it.
     const on = body["run"] === true;
-    if (!failed || !on) phones = phones.map((p) => ({ ...p, run: on }));
+    if (failed) {
+      phones = phones.map((p) => (on ? p : { ...p, run: false, unsaved: "run_off" }));
+    } else phones = phones.map((p) => ({ ...p, run: on, unsaved: null }));
     return { run: body["run"] };
   }
-  phones = failed ? phones.map((p) => ({ ...p, removing: true })) : [];
+  phones = failed ? phones.map((p) => ({ ...p, unsaved: "remove" })) : [];
   return { removed: true };
 }
 
@@ -59,6 +64,7 @@ beforeEach(() => {
   posted.length = 0;
   phones = [PHONE];
   failNext.clear();
+  lostNext.clear();
   holdRun = undefined;
   vi.stubGlobal(
     "fetch",
@@ -66,6 +72,7 @@ beforeEach(() => {
       const action = url.split("/").pop() ?? "";
       const body = JSON.parse(init.body) as Record<string, unknown>;
       posted.push({ action, body });
+      if (lostNext.delete(action)) throw new TypeError("Failed to fetch");
       if (action === "phone_rights") await holdRun;
       const failed = failNext.delete(action);
       const result = answer(action, body, failed);
@@ -176,29 +183,53 @@ describe("[S5.phones.web] Settings > Phones", () => {
     expect(run()?.checked).toBe(true);
   });
 
-  test("a Run switch or a Remove that was not saved shows as it is, with the way to save it again", async () => {
+  test("a Remove that never reached the service changes nothing on screen, and Remove is there again", async () => {
     await render();
-    failNext.add("phone_rights");
+    lostNext.add("phone_remove");
+    await press(button("Remove Fixture phone"));
+    const dialog = document.querySelector('[role="alertdialog"]');
+    if (dialog === null) throw new Error("no confirmation");
+    await press(button("Remove", dialog));
+    expect(posted.filter((p) => p.action === "phone_remove")).toHaveLength(1);
+    expect(container.textContent).toContain("Fixture phone");
+    expect(container.textContent).not.toContain("Removed");
+    expect(button("Remove Fixture phone")).toBeDefined();
+  });
+
+  test("a Remove or a Run off the service holds but did not save shows after a reload, and saving it again clears it", async () => {
+    phones = [{ ...PHONE, run: true }];
+    await render();
     const run = () =>
       container.querySelector<HTMLInputElement>('input[aria-label="Run from Fixture phone"]');
+    failNext.add("phone_rights");
     await press(run() as unknown as HTMLElement);
     expect(run()?.checked).toBe(false);
-    expect(container.textContent).toContain(
-      "Run on was not saved, so Run stays off for this phone.",
-    );
-    await press(button("Switch Run on again"));
-    expect(run()?.checked).toBe(true);
+    // A reload: the screen is built again from the service's answer alone.
+    act(() => {
+      root.unmount();
+    });
+    root = createRoot(container);
+    await render();
+    expect(container.textContent).toContain("Run is off for this phone now. This was not saved");
+    await press(button("Switch Run off again"));
+    expect(
+      posted.filter((p) => p.action === "phone_rights" && p.body["run"] === false),
+    ).toHaveLength(2);
     expect(container.textContent).not.toContain("was not saved");
     failNext.add("phone_remove");
     await press(button("Remove Fixture phone"));
     const dialog = document.querySelector('[role="alertdialog"]');
     if (dialog === null) throw new Error("no confirmation");
     await press(button("Remove", dialog));
+    act(() => {
+      root.unmount();
+    });
+    root = createRoot(container);
+    await render();
     expect(container.textContent).toContain("Removed: it has no access now. This was not saved");
     expect(run()).toBeNull();
     await press(button("Remove again"));
     expect(container.textContent).not.toContain("Fixture phone");
-    expect(posted.filter((p) => p.action === "phone_remove")).toHaveLength(2);
   });
 
   test("the pairing dialog shows the code with its warning, and ends it when it closes", async () => {

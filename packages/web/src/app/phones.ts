@@ -14,8 +14,8 @@ export interface Phone {
   readonly pairedAt: string;
   readonly lastUsedAt: string | null;
   readonly run: boolean;
-  /** Removed, but the removal was not saved: Remove again saves it. */
-  readonly removing: boolean;
+  /** A change the computer holds but did not save: a removal, or Run switched off. */
+  readonly unsaved: "remove" | "run_off" | null;
 }
 
 /** What became of the code a dialog shows. */
@@ -55,7 +55,7 @@ export function readPhones(value: unknown): PhonesView {
       pairedAt: text(p["paired_at"]),
       lastUsedAt: typeof p["last_used_at"] === "string" ? p["last_used_at"] : null,
       run: p["run"] === true,
-      removing: p["removing"] === true,
+      unsaved: p["unsaved"] === "remove" || p["unsaved"] === "run_off" ? p["unsaved"] : null,
     }))
     .filter((p) => p.id !== "");
   const pairing = record["pairing"];

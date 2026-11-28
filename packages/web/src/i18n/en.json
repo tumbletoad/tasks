@@ -550,7 +550,7 @@
   "phones.removeUnsaved": "Removed: it has no access now. This was not saved, so it could come back after {product} restarts.",
   "phones.removeAgain": "Remove again",
   "phones.runOnUnsaved": "Run on was not saved, so Run stays off for this phone.",
-  "phones.runOnAgain": "Switch Run on again",
+  "phones.notReached": "That did not reach the computer, so nothing changed. The list shows what it holds.",
   "phones.runOffUnsaved": "Run is off for this phone now. This was not saved, so it could come back after {product} restarts.",
   "phones.runOffAgain": "Switch Run off again",
   "phones.pairTitle": "Pair a phone",

@@ -12,10 +12,12 @@ import {
   SwitchButton,
   SwitchField,
 } from "react-aria-components";
+import { Refused } from "../api.ts";
 import { useT } from "../i18n/intl.tsx";
 import { formatWhen } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
 import { classes } from "./css.ts";
+import { useToast } from "./frame.ts";
 import { phoneCalls, qrPath, type Phone, type PhoneCode } from "./phones.ts";
 import { useMachineApi } from "./session.tsx";
 import css from "./Phones.module.css";
@@ -60,18 +62,22 @@ const sheet = classes(setupCss, [
 /** How often an open dialog asks whether its code was used. */
 const FOLLOW_MS = 2000;
 
-/** A change of a phone the service holds now but could not save: offered again. */
-type Unsaved = { readonly kind: "run"; readonly run: boolean } | { readonly kind: "remove" };
+/** A change of one phone that Settings asks the service for. */
+type Change = { readonly kind: "run"; readonly run: boolean } | { readonly kind: "remove" };
+
+/** Whether the service took the change in memory and only its save failed. */
+const heldNotSaved = (error: unknown): boolean =>
+  error instanceof Refused && error.data["reason"] === "not_saved";
 
 export function Phones({ space }: { readonly space: string }) {
   const t = useT();
+  const say = useToast();
   const api = useMachineApi();
   const calls = useMemo(() => phoneCalls(api), [api]);
   const [phones, setPhones] = useState<readonly Phone[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [pairing, setPairing] = useState(false);
   const [removing, setRemoving] = useState<Phone | undefined>(undefined);
-  const [unsaved, setUnsaved] = useState<ReadonlyMap<string, Unsaved>>(new Map());
   const [saving, setSaving] = useState<ReadonlySet<string>>(new Set());
 
   const load = useCallback(() => {
@@ -87,24 +93,21 @@ export function Phones({ space }: { readonly space: string }) {
   }, [calls]);
   useEffect(load, [load]);
 
-  /** Runs a change and shows what the service holds after it: saved, or offered again. */
+  /**
+   * Asks for a change, then shows what the service holds: the list is read again whatever the
+   * answer, so the screen never says more than the computer holds, and a reload shows the same.
+   */
   const change = useCallback(
-    (id: string, what: Unsaved) => {
+    (id: string, what: Change) => {
       setSaving((s) => new Set(s).add(id));
       const done = what.kind === "run" ? calls.run(id, what.run) : calls.remove(id);
       done
-        .then(
-          () => {
-            setUnsaved((u) => {
-              const next = new Map(u);
-              next.delete(id);
-              return next;
-            });
-          },
-          () => {
-            setUnsaved((u) => new Map(u).set(id, what));
-          },
-        )
+        .catch((error: unknown) => {
+          // Run on that was not saved stays off: said once. A removal or a Run off the service
+          // holds but could not save shows on its row. Anything else did not reach the computer.
+          if (what.kind === "run" && what.run) say(t("phones.runOnUnsaved"));
+          else if (!heldNotSaved(error)) say(t("phones.notReached"));
+        })
         .finally(() => {
           setSaving((s) => {
             const next = new Set(s);
@@ -114,7 +117,7 @@ export function Phones({ space }: { readonly space: string }) {
           load();
         });
     },
-    [calls, load],
+    [calls, load, say, t],
   );
 
   return (
@@ -131,15 +134,11 @@ export function Phones({ space }: { readonly space: string }) {
               key={phone.id}
               phone={phone}
               saving={saving.has(phone.id)}
-              unsaved={phone.removing ? { kind: "remove" } : unsaved.get(phone.id)}
-              onRun={(run) => {
-                change(phone.id, { kind: "run", run });
+              onChange={(what) => {
+                change(phone.id, what);
               }}
               onRemove={() => {
                 setRemoving(phone);
-              }}
-              onAgain={(what) => {
-                change(phone.id, what);
               }}
             />
           ))}
@@ -178,30 +177,33 @@ export function Phones({ space }: { readonly space: string }) {
 function PhoneRow({
   phone,
   saving,
-  unsaved,
-  onRun,
+  onChange,
   onRemove,
-  onAgain,
 }: {
   readonly phone: Phone;
   readonly saving: boolean;
-  readonly unsaved: Unsaved | undefined;
-  readonly onRun: (run: boolean) => void;
+  readonly onChange: (what: Change) => void;
   readonly onRemove: () => void;
-  readonly onAgain: (what: Unsaved) => void;
 }) {
   const t = useT();
   const clock = useClock(true);
   const used = phone.lastUsedAt === null ? undefined : Date.parse(phone.lastUsedAt);
   const name = phone.name === "" ? t("phones.unnamed") : phone.name;
+  // What the service holds but could not save, from its own answer: the same after a reload.
   const again =
-    unsaved === undefined
-      ? undefined
-      : unsaved.kind === "remove"
-        ? { said: t("phones.removeUnsaved"), button: t("phones.removeAgain") }
-        : unsaved.run
-          ? { said: t("phones.runOnUnsaved"), button: t("phones.runOnAgain") }
-          : { said: t("phones.runOffUnsaved"), button: t("phones.runOffAgain") };
+    phone.unsaved === "remove"
+      ? {
+          said: t("phones.removeUnsaved"),
+          button: t("phones.removeAgain"),
+          what: { kind: "remove" } as const,
+        }
+      : phone.unsaved === "run_off"
+        ? {
+            said: t("phones.runOffUnsaved"),
+            button: t("phones.runOffAgain"),
+            what: { kind: "run", run: false } as const,
+          }
+        : undefined;
   return (
     <li className={styles.phone}>
       <span className={styles.who}>{name}</span>
@@ -211,13 +213,15 @@ function PhoneRow({
           time: used === undefined ? t("phones.neverUsed") : formatWhen(used, clock),
         })}
       </span>
-      {phone.removing ? null : (
+      {phone.unsaved === "remove" ? null : (
         <>
           {/* The switch shows what the service saved: Run on shows once its save answered. */}
           <SwitchField
             isSelected={phone.run}
             isDisabled={saving}
-            onChange={onRun}
+            onChange={(run) => {
+              onChange({ kind: "run", run });
+            }}
             aria-label={t("phones.runFor", { name })}
           >
             <SwitchButton className={settings.switch}>
@@ -237,14 +241,14 @@ function PhoneRow({
           </Button>
         </>
       )}
-      {again === undefined || unsaved === undefined ? null : (
+      {again === undefined ? null : (
         <span className={styles.unsaved} role="status">
           <span>{again.said}</span>
           <Button
             className={settings.button}
             isDisabled={saving}
             onPress={() => {
-              onAgain(unsaved);
+              onChange(again.what);
             }}
           >
             {again.button}

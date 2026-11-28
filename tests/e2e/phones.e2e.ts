@@ -95,7 +95,13 @@ test.describe("[S5.phones.e2e] Settings > Phones pairs a phone with its QR code,
             expect(scroll, `sideways scroll at ${String(width)} px`).toBe(0);
             await phones(page).scrollIntoViewIfNeeded();
             await picture(phones(page), `phones-${name}-${String(width)}.png`);
-            // A Run switch the computer could not save: answered as the service answers it.
+            // A Run off the computer holds but could not save, as the service reports it: the
+            // switch's save is refused, and the list says what the service holds.
+            const run = phones(page).getByRole("switch", {
+              name: `Run from Screens phone ${name}`,
+            });
+            await run.click({ force: true });
+            await expect(run).toBeChecked();
             await page.route("**/api/v1/machine/phone_rights", (route) =>
               route.fulfill({
                 status: 503,
@@ -103,23 +109,29 @@ test.describe("[S5.phones.e2e] Settings > Phones pairs a phone with its QR code,
                 body: JSON.stringify({
                   error: {
                     code: "service_unavailable",
-                    message: "Run stays off for this phone. It was not saved.",
+                    message: "Run is off for this phone now. It was not saved.",
                     data: { reason: "not_saved", retryable: true },
                   },
                 }),
               }),
             );
-            const run = phones(page).getByRole("switch", {
-              name: `Run from Screens phone ${name}`,
+            await page.route("**/api/v1/machine/phones", async (route) => {
+              const real = await route.fetch();
+              const body = (await real.json()) as { result: { phones: Record<string, unknown>[] } };
+              for (const phone of body.result.phones)
+                Object.assign(phone, { run: false, unsaved: "run_off" });
+              await route.fulfill({ response: real, json: body });
             });
             await run.click({ force: true });
-            await expect(phones(page)).toContainText("Run on was not saved");
+            await expect(phones(page)).toContainText(
+              "Run is off for this phone now. This was not saved",
+            );
             await expect(run).not.toBeChecked();
             await picture(phones(page), `phones-unsaved-${name}-${String(width)}.png`);
             await page.unroute("**/api/v1/machine/phone_rights");
-            await phones(page).getByRole("button", { name: "Switch Run on again" }).click();
-            await expect(run).toBeChecked();
-            await run.click({ force: true });
+            await page.unroute("**/api/v1/machine/phones");
+            await phones(page).getByRole("button", { name: "Switch Run off again" }).click();
+            await expect(phones(page)).not.toContainText("was not saved");
             await expect(run).not.toBeChecked();
             if (pictures()) expect(await axeFound(page, ["main"]), "axe on Settings").toEqual([]);
             const made = page.waitForResponse((r) =>

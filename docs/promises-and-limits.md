@@ -469,8 +469,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 ## Your phone
 
 - A phone reaches this computer only after you paired it with a code from Settings > Phones. The
-  code works once, until its dialog closes or for five minutes. Anyone who sees the code and is on
-  your network can use it first, which is why the dialog says so.
+  code works once and is good for five minutes unless you cancel it by closing its dialog: a
+  dialog left by a reload or a closed tab keeps its code good until the five minutes end.
+  Anyone who sees the code and is on your network can use it first, which is why the dialog
+  says so.
 - Before it sends anything, the phone checks that it reached the computer whose key the code
   carried. A device on your network that is not paired sees that a port is open and this
   computer's certificate, and is told nothing of a space.
