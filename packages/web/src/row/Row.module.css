@@ -344,11 +344,6 @@
   overflow-wrap: anywhere;
 }
 
-/* Where the card's description puts its Add when the task has none. */
-.adds:empty {
-  display: none;
-}
-
 .row[data-expanded="true"] .summary {
   margin-top: 2px;
   font-size: 0.875rem;

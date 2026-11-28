@@ -75,7 +75,6 @@ const styles = classes(css, [
   "title",
   "chip",
   "summary",
-  "adds",
   "prefix",
   "dot",
   "text",
@@ -614,7 +613,7 @@ function RowView({
   // In the Trash the title is read, never edited: a kept one waits there with Copy and Discard.
   const editable = active && !still;
   // The brief is written and corrected in place behind its pen, as the description is, once the
-  // card is open. Its line holds the way to add either text when the task has none.
+  // card is open; a task without one has its Add where it would stand.
   const summary = task.summary ?? "";
   const [summing, setSumming] = useEditing(
     live.spaceId ?? "",
@@ -626,7 +625,6 @@ function RowView({
   const [summed, setSummed] = useSaved(summary);
   const text = model.ending !== undefined ? line : summed === "" ? undefined : summed;
   const texts = expanded && editable && model.ending === undefined;
-  const [adds, setAdds] = useState<HTMLElement | null>(null);
   const writes = useTextWrites();
   // The row the person moved out of the view: while focus holds it there with the data it
   // had, its move is done, so the button goes. Newer data (an undo) brings it back.
@@ -856,7 +854,6 @@ function RowView({
                   }}
                 />
               )}
-              {texts ? <span ref={setAdds} className={styles.adds} /> : null}
             </div>
           )}
           {expanded && editable ? <NotSaved space={space} owner={task.id} part="summary" /> : null}
@@ -914,7 +911,6 @@ function RowView({
             cannot={cannot}
             actions={actions}
             refused={refused}
-            adds={adds}
           />
         </div>
       ) : null}

@@ -236,13 +236,12 @@ async function card(given: Texts): Promise<void> {
   await settle();
 }
 
-const $ = <E extends Element = HTMLElement>(selector: string) =>
-  container.querySelector<E & HTMLElement>(selector);
+const $ = (selector: string) => container.querySelector<HTMLElement>(selector);
 const button = (name: string) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (b) => (b.getAttribute("aria-label") ?? b.textContent) === name,
   );
-const box = () => $<HTMLTextAreaElement>('[data-part="text-edit"]');
+const box = () => container.querySelector<HTMLTextAreaElement>('[data-part="text-edit"]');
 
 const press = (target: Element | null | undefined, key: string, mods: KeyboardEventInit = {}) => {
   act(() => {
@@ -285,11 +284,13 @@ describe("[A5.text.add.web.card] a task's brief and description in its card", ()
     expect(updates).toEqual([]);
   });
 
-  test("a task with neither text has Add a brief and Add a description on the brief's line; each opens an empty box and saves what is typed", async () => {
+  test("a task with neither text has Add a brief and Add a description where each would stand; each opens an empty box and saves what is typed", async () => {
     await card({});
     const line = $('[data-part="summary"]');
     expect(line?.querySelector('[data-part="add-summary"]')?.textContent).toBe("Add a brief");
-    expect(line?.querySelector('[data-part="add-context"]')?.textContent).toBe("Add a description");
+    expect($('[data-part="expanded"] [data-part="add-context"]')?.textContent).toBe(
+      "Add a description",
+    );
 
     click(button("Add a brief"));
     expect(document.activeElement).toBe(box());
@@ -327,8 +328,8 @@ describe("[A5.text.add.web.card] a task's brief and description in its card", ()
     expect(updates[0]).toMatchObject({ task: "M-1", clear: ["summary"] });
     expect(updates[0]).not.toHaveProperty("set");
     expect(button("Add a brief")).toBeDefined();
-    const { summary: _, ...emptied } = row();
-    feed(updates[0]?.["request_id"], { ...emptied, version: 2 }, ["summary"]);
+    texts = { context: "At the branch." };
+    feed(updates[0]?.["request_id"], { ...row(), version: 2 }, ["summary"]);
     expect(button("Add a brief")).toBeDefined();
     const toast = toasts.at(-1);
     expect(toastText(toast)).toEqual({ id: "toast.summary", values: { ref: "M-1" } });

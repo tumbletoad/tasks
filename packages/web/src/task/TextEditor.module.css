@@ -30,7 +30,7 @@
   height: 16px;
 }
 
-/* The way to a text the task has none of: as quiet as the line it stands on, no taller. */
+/* The way to a text the task has none of, where it would stand: quiet, no taller than a line. */
 .add {
   display: inline-flex;
   align-items: center;

@@ -76,7 +76,7 @@ export function Pen({
   );
 }
 
-/** The pen with its words, quiet on the card's brief line, for a text the task has none of. */
+/** The pen with its words, quiet where the text would stand, for a text the task has none of. */
 export function Add({
   label,
   part,

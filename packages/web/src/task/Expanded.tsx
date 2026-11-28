@@ -24,7 +24,6 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 import { Link } from "@tanstack/react-router";
 import type { Instance, LastUsed } from "@ttasks/contracts/runs";
 import type { Receipt, Run } from "../api.ts";
@@ -110,8 +109,6 @@ export interface ExpandedProps {
   readonly actions: RowActions;
   /** The last Open of this task, refused on its folder; none once an Open went through. */
   readonly refused?: FolderRefusal | undefined;
-  /** Where on the brief's line the description's Add stands, while the task has none. */
-  readonly adds?: HTMLElement | null;
 }
 
 /** Two texts a person reads as the same: case, spacing and a closing full stop aside. */
@@ -669,8 +666,8 @@ function asks(
 
 /**
  * The description, clamped at ten lines with More when it is longer, with its pen at its end: the
- * person corrects it in place, whoever wrote it. A task without one has its Add on the brief's
- * line.
+ * person corrects it in place, whoever wrote it. A task without one has its Add where it would
+ * stand.
  */
 function Context({
   task,
@@ -679,7 +676,6 @@ function Context({
   onAsk,
   write,
   partial,
-  adds,
 }: {
   readonly task: TaskRow;
   readonly text: string;
@@ -690,7 +686,6 @@ function Context({
   readonly write: TextWrites["context"] | undefined;
   /** The card holds only part of the context: it is not corrected from here. */
   readonly partial: boolean;
-  readonly adds: HTMLElement | null | undefined;
 }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
@@ -742,18 +737,17 @@ function Context({
   if (text.trim() === "") {
     return (
       <>
-        {write === undefined || adds === null || adds === undefined
-          ? null
-          : createPortal(
-              <Add
-                label={t("text.addContext")}
-                part="add-context"
-                onPress={() => {
-                  setEditing(true);
-                }}
-              />,
-              adds,
-            )}
+        {write === undefined ? null : (
+          <div className={styles.context}>
+            <Add
+              label={t("text.addContext")}
+              part="add-context"
+              onPress={() => {
+                setEditing(true);
+              }}
+            />
+          </div>
+        )}
         {notSaved}
       </>
     );
@@ -806,7 +800,6 @@ export function Expanded({
   cannot,
   actions,
   refused,
-  adds,
 }: ExpandedProps) {
   const t = useT();
   const clock = useClock(false);
@@ -913,7 +906,6 @@ export function Expanded({
             // refuses a finished one's.
             write={task.lifecycle === "active" ? writes?.text.context : undefined}
             partial={detail.contextPartial === true}
-            adds={adds}
           />
         )}
         <ul className={styles.links}>

@@ -2469,7 +2469,7 @@
     },
     {
       "id": "A5.text.add.web.card",
-      "title": "In the card, the brief and the description are named so; a task without one has an Add on the brief's line that opens an empty box and saves what is typed; emptying either takes it away with Undo; Preview shows the typed Markdown and Ctrl+Enter or Escape hold there; a refused save keeps the words as not saved; a finished task's card offers no pen and no Add, as the service refuses its change",
+      "title": "In the card, the brief and the description are named so; a task without one has an Add where it would stand that opens an empty box and saves what is typed; emptying either takes it away with Undo; Preview shows the typed Markdown and Ctrl+Enter or Escape hold there; a refused save keeps the words as not saved; a finished task's card offers no pen and no Add, as the service refuses its change",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
