@@ -9,6 +9,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -131,5 +132,19 @@ describe("[S3.files.service] the service keeps a tree space's readable files, in
     const rescued = join(folder, "rescued");
     const [box] = readdirSync(rescued);
     expect(readFileSync(join(rescued, box ?? "", file), "utf8")).toBe("A person's edit.\n");
+
+    // A file where the files' folder goes: the rebuild cannot run, and answers as a failure.
+    renameSync(view, join(folder, "view-moved-aside"));
+    writeFileSync(view, "not a folder");
+    const again = await classSession(home, service.endpoint.path, "cli-interactive");
+    try {
+      const error = await again
+        .call("view/rebuild", { space: folder }, { timeoutMs: 30_000 })
+        .catch((e: unknown) => e);
+      expect(errorOf(error)).toMatchObject({ code: "internal" });
+      expect(errorOf(error).message).toContain("could not be checked");
+    } finally {
+      again.close();
+    }
   }, 120_000);
 });
