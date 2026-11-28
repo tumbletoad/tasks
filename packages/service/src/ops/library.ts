@@ -739,10 +739,10 @@ export async function searchLibrary(
   const without = negativeMatch(input.query);
   if (match !== null) params["match"] = match;
   if (every !== null && every !== match) params["every"] = every;
-  const everyFirst =
+  const holdsEvery =
     params["every"] === undefined
-      ? ""
-      : "search_fts.rowid IN (SELECT rowid FROM search_fts WHERE search_fts MATCH $every) DESC, ";
+      ? "1"
+      : "search_fts.rowid IN (SELECT rowid FROM search_fts WHERE search_fts MATCH $every)";
   if (without !== null) params["without"] = without;
   const where = [
     "($agent = 0 OR lib.audience = 'all')",
@@ -757,12 +757,13 @@ export async function searchLibrary(
   ].join(" AND ");
   const sql =
     match === null
-      ? `SELECT lib.kind, lib.entity_id, NULL AS snippet FROM (${LIBRARY_ROWS}) lib ` +
+      ? `SELECT lib.kind, lib.entity_id, NULL AS snippet, 1 AS every FROM (${LIBRARY_ROWS}) lib ` +
         `WHERE ${where} ORDER BY ${ON_TRAIL} DESC, lib.seq DESC LIMIT $limit`
-      : "SELECT lib.kind, lib.entity_id, snippet(search_fts, 1, '', '', '...', 12) AS snippet " +
-        `FROM (${LIBRARY_ROWS}) lib JOIN search_docs d ON d.entity_id = lib.entity_id ` +
+      : "SELECT lib.kind, lib.entity_id, snippet(search_fts, 1, '', '', '...', 12) AS snippet, " +
+        `${holdsEvery} AS every FROM (${LIBRARY_ROWS}) lib ` +
+        "JOIN search_docs d ON d.entity_id = lib.entity_id " +
         `JOIN search_fts ON search_fts.rowid = d.doc WHERE ${where} ` +
-        `ORDER BY ${everyFirst}${ON_TRAIL} DESC, bm25(search_fts, 10.0, 3.0, 2.0) LIMIT $limit`;
+        `ORDER BY every DESC, ${ON_TRAIL} DESC, bm25(search_fts, 10.0, 3.0, 2.0) LIMIT $limit`;
   const [found] = await reader.transaction("deferred", [{ sql, mode: "all", params }]);
   const hits = found as Row[];
   const reads = await reader.transaction(
@@ -806,6 +807,8 @@ export async function searchLibrary(
     total: rows.length,
     first: rows.length === 0 ? 0 : 1,
     rows,
+    // A decision may stand only in a finished task's log or outcome, which scope all searches.
+    ...(hits.some((hit) => hit["every"] === 1) ? {} : { try_scope: "all" }),
   };
 }
 

@@ -36,6 +36,7 @@ import {
   laterIn,
   AUTONOMY_IN_FORCE,
   LATER_SETS,
+  LIBRARY_BUDGET,
   mayWrite,
   newerWorkJson,
   NOTHING_REUSABLE,
@@ -2790,6 +2791,28 @@ const PAGE_DONE: Readonly<Record<string, string>> = {
   restore: "restored",
 };
 
+/** What a page and its holder now hold beyond the library's budget: none for a node's texts. */
+async function overBudget(reader: WorkerConnection, page: string): Promise<("page" | "holder")[]> {
+  const [row] = await reader.transaction("deferred", [
+    {
+      sql:
+        "SELECT length(CAST(p.body AS BLOB)) AS bytes, p.deleted_at IS NULL AS live, " +
+        "(SELECT count(*) FROM pages o WHERE o.owner_id = p.owner_id AND o.deleted_at IS NULL) " +
+        "AS pages FROM pages p WHERE p.id = $id",
+      mode: "get",
+      params: { id: page },
+    },
+  ]);
+  const held = row as Row | null;
+  if (held === null) return [];
+  return [
+    ...(held["live"] === 1 && Number(held["bytes"]) > LIBRARY_BUDGET.pageBytes
+      ? (["page"] as const)
+      : []),
+    ...(Number(held["pages"]) > LIBRARY_BUDGET.nodePages ? (["holder"] as const) : []),
+  ];
+}
+
 /**
  * write_page's answer: what the write did, the page's reference or the node's ID, and where the
  * page is now by name. An edit that wrote nothing says how often its old words stand, with the
@@ -2812,12 +2835,17 @@ const pageAnswer: Answer = async (view, stored) => {
       ? undefined
       : await now(view, (reader) => holderName(reader, done.owner as { kind: string; id: string }));
   const excerpt = done.excerpt ?? "";
+  const over =
+    unapplied || view.principal.audience !== "agent"
+      ? undefined
+      : await now(view, (reader) => overBudget(reader, done.id));
   return {
     result,
     target: done.ref ?? done.id,
     ...(on === undefined ? {} : { on }),
     ...(unapplied ? { found: done.found, excerpt } : {}),
     ...(unapplied && excerpt.endsWith(" chars)") ? { cursor: "b0" } : {}),
+    ...(over === undefined || over.length === 0 ? {} : { over }),
     as_of: stored.as_of,
     ...replayed(stored),
   };
