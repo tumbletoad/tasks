@@ -113,6 +113,8 @@ export interface HttpOptions extends HttpStart {
   readonly monitor?: AppOptions["monitor"];
   /** The agent sessions TTasks holds, for the monitor's links to tasks. Default: none. */
   readonly held?: AppOptions["held"];
+  /** The tasks' T3 Code threads, for the Agents page. Default: none. */
+  readonly threads?: AppOptions["threads"];
   /** How long a running agent must be missed before it is not seen. Default: UNSEEN_MS. */
   readonly unseenMs?: number;
 }
@@ -187,6 +189,7 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
     ...(options.folders === undefined ? {} : { folders: options.folders }),
     ...(options.monitor === undefined ? {} : { monitor: options.monitor }),
     ...(options.held === undefined ? {} : { held: options.held }),
+    ...(options.threads === undefined ? {} : { threads: options.threads }),
     ...(options.unseenMs === undefined ? {} : { unseenMs: options.unseenMs }),
     ...(options.steady === undefined ? {} : { steady: options.steady }),
   });

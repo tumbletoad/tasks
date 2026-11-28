@@ -73,6 +73,7 @@ import { UiLaunches, type UiLaunchPort, type UiRunPort } from "./launches.ts";
 import type { HttpLimits } from "./limits.ts";
 import { shellFor, type UiBundle } from "./page.ts";
 import type { StartHttpTimer } from "./timers.ts";
+import type { AgentsThread } from "@ttasks/contracts/monitor";
 import { MonitorPace, type HeldSession, type Monitor } from "../monitor/index.ts";
 import { FeedHub, WS_CLOSE } from "./ws.ts";
 
@@ -128,6 +129,8 @@ export interface AppOptions {
   readonly monitor?: Pick<Monitor, "ask" | "recheck" | "status">;
   /** The agent sessions TTasks holds, which link the monitor's agents to tasks. Default: none. */
   readonly held?: () => Promise<readonly HeldSession[]>;
+  /** The tasks' T3 Code threads, which the Agents page shows with their tasks. Default: none. */
+  readonly threads?: () => Promise<readonly AgentsThread[]>;
   /** How long a running agent must be missed before it is not seen. Default: UNSEEN_MS. */
   readonly unseenMs?: number;
   /** A steady clock in ms, for the monitor's pace and ages. Default: performance.now(). */
@@ -308,6 +311,7 @@ export class HttpApp {
             now: options.steady ?? (() => performance.now()),
             platform: options.ops.platform ?? process.platform,
             ...(options.held === undefined ? {} : { held: options.held }),
+            ...(options.threads === undefined ? {} : { threads: options.threads }),
             ...(options.unseenMs === undefined ? {} : { unseenMs: options.unseenMs }),
           });
     this.feed = new FeedHub({
