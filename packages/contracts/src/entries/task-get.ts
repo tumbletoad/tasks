@@ -334,6 +334,9 @@ export const TaskGetResult = z.union([
       .array(RoutineEntry)
       .max(ROUTINE_ENTRIES)
       .describe("Its newest entries, newest first"),
+    sections: TaskSections.describe(
+      "The sections asked for that a routine has: its notes, log and description",
+    ).optional(),
   }),
 ]);
 

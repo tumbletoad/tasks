@@ -29,6 +29,11 @@ const SQL = {
   byId: `SELECT ${COLUMNS} ${FROM} AND n.id = $id`,
   byRef: `SELECT ${COLUMNS} ${FROM} AND t.ref = $ref`,
   prefix: "SELECT ref_prefix FROM space WHERE one = 1",
+  /** A routine's thread, newest first: its notes and its log, as a task's. */
+  thread:
+    "SELECT e.ordinal, e.kind, e.for_agents, e.body, e.created_at, a.kind AS by_kind, " +
+    "a.label AS by_label FROM main.notes e JOIN actors a ON a.id = e.author_id " +
+    "WHERE e.owner_id = $id AND e.deleted_at IS NULL ORDER BY e.ordinal DESC",
   entries:
     "SELECT o.due_date, o.due_at, o.state, o.at, o.why, o.note, a.kind AS by_kind, " +
     "a.label AS by_label FROM occurrences o JOIN actors a ON a.id = o.actor_id " +
@@ -130,6 +135,7 @@ export async function routineGet(
   row: Row,
   prefix: string,
   asOf: string,
+  sections: readonly string[] = [],
 ): Promise<Record<string, unknown>> {
   const routine = await routineView(reader, row, prefix);
   const next = routine["next"] as { date: string; at?: string };
@@ -155,7 +161,53 @@ export async function routineGet(
       ...(description === "" ? {} : { context: description }),
     },
     history: await entriesOf(reader, String(row["id"])),
+    ...(sections.length === 0
+      ? {}
+      : { sections: await sectionsOf(reader, String(row["id"]), description, sections) }),
   };
+}
+
+/** The kinds of a thread's entries that are no log entry. */
+const NOTE_KINDS = new Set(["note", "learning"]);
+
+/**
+ * The sections of a task that a routine has: the person's notes to agents, the other notes, the
+ * log and the description, so what was written on a task before it became a routine is read on it.
+ */
+async function sectionsOf(
+  reader: WorkerConnection,
+  id: string,
+  description: string,
+  asked: readonly string[],
+): Promise<Record<string, unknown>> {
+  const rows = await reader.all(SQL.thread, { id });
+  const by = (e: Row) => (e["by_kind"] === "human" ? "user" : `agent:${String(e["by_label"])}`);
+  const note = (e: Row) => ({
+    ref: `n${String(e["ordinal"])}`,
+    author: by(e),
+    for_agents: e["for_agents"] === 1,
+    at: iso(Number(e["created_at"])),
+    text: String(e["body"]),
+  });
+  const notes = rows.filter((e) => e["kind"] === "note");
+  const out: Record<string, unknown> = {};
+  if (asked.includes("instructions")) {
+    out["instructions"] = notes.filter((e) => e["for_agents"] === 1).map(note);
+  }
+  if (asked.includes("notes")) out["notes"] = notes.filter((e) => e["for_agents"] !== 1).map(note);
+  if (asked.includes("log")) {
+    out["log"] = rows
+      .filter((e) => !NOTE_KINDS.has(String(e["kind"])))
+      .map((e) => ({
+        ref: `l${String(e["ordinal"])}`,
+        kind: String(e["kind"]),
+        author: by(e),
+        at: iso(Number(e["created_at"])),
+        text: String(e["body"]),
+      }));
+  }
+  if (asked.includes("context") && description !== "") out["context"] = description;
+  return out;
 }
 
 /** A routine as the feed sends it: the page's row of it, with its newest entry. */

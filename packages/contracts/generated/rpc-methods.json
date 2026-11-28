@@ -9554,6 +9554,570 @@
                 "description": "What it is, and what you may do with it",
                 "type": "string"
               },
+              "sections": {
+                "additionalProperties": false,
+                "description": "The sections asked for that a routine has: its notes, log and description",
+                "properties": {
+                  "context": {
+                    "description": "Markdown context",
+                    "type": "string"
+                  },
+                  "context_slice": {
+                    "additionalProperties": false,
+                    "description": "Only this part of the text is on this page",
+                    "properties": {
+                      "from": {
+                        "description": "First character here, counted from 0",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "of": {
+                        "description": "Characters in all",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "to": {
+                        "description": "The character after the last one here",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "from",
+                      "to",
+                      "of"
+                    ],
+                    "type": "object"
+                  },
+                  "history": {
+                    "description": "The task's own changes, newest first: before reads the older ones",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "actor": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "seq": {
+                          "description": "Commit sequence number",
+                          "maximum": 9007199254740991,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "what": {
+                          "description": "Operation kind and the fields it changed",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "actor",
+                        "what"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
+                  },
+                  "instructions": {
+                    "description": "Notes from the user to agents, newest first, each whole",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "author": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "edited": {
+                          "additionalProperties": false,
+                          "description": "Its words were corrected since it was written",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Who corrected it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
+                        "for_agents": {
+                          "description": "A note from the user addressed to agents",
+                          "type": "boolean"
+                        },
+                        "ref": {
+                          "description": "Note ordinal, such as n2",
+                          "pattern": "^[nl][1-9][0-9]{0,5}$",
+                          "type": "string"
+                        },
+                        "request_for": {
+                          "description": "The user's request for these launches, oldest first: history, not yours to do",
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "instance": {
+                                "description": "The agent instance it opened",
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "launch": {
+                                "description": "The launch reference",
+                                "pattern": "^L[0-9A-HJKMNP-TV-Z]{5}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "launch",
+                              "instance"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "slice": {
+                          "additionalProperties": false,
+                          "description": "Only this part of the text is on this page",
+                          "properties": {
+                            "from": {
+                              "description": "First character here, counted from 0",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "of": {
+                              "description": "Characters in all",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "to": {
+                              "description": "The character after the last one here",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "of"
+                          ],
+                          "type": "object"
+                        },
+                        "text": {
+                          "description": "Note text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "author",
+                        "for_agents",
+                        "at",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "log": {
+                    "description": "Log entries, newest first, up to log_limit",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "author": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "edited": {
+                          "additionalProperties": false,
+                          "description": "Its words were corrected since it was written",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Who corrected it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
+                        "kind": {
+                          "description": "Entry kind",
+                          "enum": [
+                            "progress",
+                            "evidence",
+                            "blocker",
+                            "decision",
+                            "question",
+                            "handoff"
+                          ],
+                          "type": "string"
+                        },
+                        "ref": {
+                          "description": "Log ordinal, such as l3",
+                          "pattern": "^[nl][1-9][0-9]{0,5}$",
+                          "type": "string"
+                        },
+                        "slice": {
+                          "additionalProperties": false,
+                          "description": "Only this part of the text is on this page",
+                          "properties": {
+                            "from": {
+                              "description": "First character here, counted from 0",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "of": {
+                              "description": "Characters in all",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "to": {
+                              "description": "The character after the last one here",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "of"
+                          ],
+                          "type": "object"
+                        },
+                        "text": {
+                          "description": "Entry text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "kind",
+                        "author",
+                        "at",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "notes": {
+                    "description": "Other notes, newest first",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "author": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "edited": {
+                          "additionalProperties": false,
+                          "description": "Its words were corrected since it was written",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Who corrected it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
+                        "for_agents": {
+                          "description": "A note from the user addressed to agents",
+                          "type": "boolean"
+                        },
+                        "ref": {
+                          "description": "Note ordinal, such as n2",
+                          "pattern": "^[nl][1-9][0-9]{0,5}$",
+                          "type": "string"
+                        },
+                        "request_for": {
+                          "description": "The user's request for these launches, oldest first: history, not yours to do",
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "instance": {
+                                "description": "The agent instance it opened",
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "launch": {
+                                "description": "The launch reference",
+                                "pattern": "^L[0-9A-HJKMNP-TV-Z]{5}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "launch",
+                              "instance"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "slice": {
+                          "additionalProperties": false,
+                          "description": "Only this part of the text is on this page",
+                          "properties": {
+                            "from": {
+                              "description": "First character here, counted from 0",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "of": {
+                              "description": "Characters in all",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "to": {
+                              "description": "The character after the last one here",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "of"
+                          ],
+                          "type": "object"
+                        },
+                        "text": {
+                          "description": "Note text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "author",
+                        "for_agents",
+                        "at",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "outcome": {
+                    "additionalProperties": false,
+                    "description": "Outcome and learnings",
+                    "properties": {
+                      "learnings": {
+                        "description": "Learnings",
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "outcome": {
+                        "description": "Outcome of the last completion",
+                        "type": "string"
+                      },
+                      "slice": {
+                        "additionalProperties": false,
+                        "description": "Only this part of the text is on this page",
+                        "properties": {
+                          "from": {
+                            "description": "First character here, counted from 0",
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "of": {
+                            "description": "Characters in all",
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "to": {
+                            "description": "The character after the last one here",
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "from",
+                          "to",
+                          "of"
+                        ],
+                        "type": "object"
+                      },
+                      "wrap_state": {
+                        "description": "Wrap-up state",
+                        "enum": [
+                          "pending",
+                          "wrapped"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "learnings"
+                    ],
+                    "type": "object"
+                  },
+                  "sources": {
+                    "description": "Linked sources",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When it was sent",
+                          "type": "string"
+                        },
+                        "captures_more": {
+                          "description": "How many more tasks have its key",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "captures_to": {
+                          "description": "Active tasks with its key: captures go there",
+                          "items": {
+                            "description": "Task reference",
+                            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                            "type": "string"
+                          },
+                          "maxItems": 5,
+                          "type": "array"
+                        },
+                        "id": {
+                          "description": "Source ID: detach or put back by it",
+                          "pattern": "^s_[0-9a-hjkmnp-tv-z]{26}$",
+                          "type": "string"
+                        },
+                        "key": {
+                          "description": "Source key",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "description": "Source kind",
+                          "enum": [
+                            "email",
+                            "chat",
+                            "ticket",
+                            "pr",
+                            "issue",
+                            "doc",
+                            "calendar",
+                            "crash",
+                            "session",
+                            "book",
+                            "web",
+                            "other"
+                          ],
+                          "type": "string"
+                        },
+                        "ref": {
+                          "description": "Its key, held by another task",
+                          "type": "string"
+                        },
+                        "removed": {
+                          "additionalProperties": false,
+                          "description": "Detached from the task; put_back_sources brings it back",
+                          "properties": {
+                            "at": {
+                              "description": "When, ISO date and time",
+                              "type": "string"
+                            },
+                            "by": {
+                              "description": "Actor that detached it",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "by"
+                          ],
+                          "type": "object"
+                        },
+                        "title": {
+                          "description": "Title",
+                          "type": "string"
+                        },
+                        "url": {
+                          "description": "Link",
+                          "type": "string"
+                        },
+                        "who": {
+                          "description": "Sender or counterpart",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "title"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
               "view": {
                 "const": "routine",
                 "description": "A routine: one task that comes back on a schedule",

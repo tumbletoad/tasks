@@ -2287,9 +2287,13 @@ function ruleOf(text: unknown, field: string): string {
   return text;
 }
 
-/** The rule `repeat`'s words say, refused by name when they say none. */
-function repeatRule(call: Call, words: unknown, field: string): string {
-  const rule = typeof words === "string" ? parseRepeat(words, call.today) : undefined;
+/**
+ * The rule `repeat`'s words say, read on the calendar of the routine's own zone, so "every week"
+ * is its today's weekday there; refused by name when they say none.
+ */
+function repeatRule(call: Call, words: unknown, field: string, zone: string): string {
+  const today = localDate((call.host.now ?? Date.now)(), zone);
+  const rule = typeof words === "string" ? parseRepeat(words, today) : undefined;
   if (rule === undefined) {
     throw invalid(
       field,
@@ -2377,7 +2381,8 @@ async function addRoutine(call: Call): Promise<Record<string, unknown>> {
   if (other !== undefined) {
     throw invalid(`tasks.0.${other}`, `A routine takes no ${other}`, "Leave it out.");
   }
-  const rule = repeatRule(call, draft["repeat"], "tasks.0.repeat");
+  const zone = zoneOf(call);
+  const rule = repeatRule(call, draft["repeat"], "tasks.0.repeat", zone);
   const { area, project } = draft;
   const under =
     typeof project === "string"
@@ -2396,7 +2401,7 @@ async function addRoutine(call: Call): Promise<Record<string, unknown>> {
       ...(draft["priority"] === undefined ? {} : { priority: draft["priority"] }),
       ...(typeof under === "string" ? { under } : {}),
       rule,
-      tz: zoneOf(call),
+      tz: zone,
     },
   };
   let result: WriteResult;
@@ -2434,7 +2439,10 @@ async function updateRepeat(call: Call): Promise<Record<string, unknown>> {
         ? { command: "routine.pause", input: { routine: id } }
         : {
             command: "routine.set",
-            input: { routine: id, rule: repeatRule(call, words, "repeat") },
+            input: {
+              routine: id,
+              rule: repeatRule(call, words, "repeat", String(routine.row["tz"])),
+            },
           };
     return answerOf(call, await submit(call, sent, { answer: { routine: id } }));
   }
@@ -2445,7 +2453,7 @@ async function updateRepeat(call: Call): Promise<Record<string, unknown>> {
   if (id === undefined) throw noRoutine(key);
   const sent = {
     command: "routine.set",
-    input: { task: id, rule: repeatRule(call, words, "repeat"), tz: zoneOf(call) },
+    input: { task: id, rule: repeatRule(call, words, "repeat", zoneOf(call)), tz: zoneOf(call) },
   };
   return answerOf(call, await submit(call, sent, { answer: { routine: id } }));
 }
@@ -3496,7 +3504,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       const routine = await readRoutine(reader, task);
       if (routine !== undefined) {
         const { asOf } = await readSpace(reader);
-        return routineGet(reader, routine.row, routine.prefix, asOf);
+        return routineGet(reader, routine.row, routine.prefix, asOf, sections);
       }
     }
     const machine = call.host.machine.id;

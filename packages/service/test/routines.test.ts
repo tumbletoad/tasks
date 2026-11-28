@@ -15,7 +15,7 @@ import {
 } from "@ttasks/storage";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { readBatch, readSnapshot } from "../src/http/feed.ts";
-import type { CompactRow } from "../src/ops/task-rows.ts";
+import { LiveCore, messageOf, type RoutineRow } from "@ttasks/client/store";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { classSession } from "./ops-helpers.ts";
 import { removeRuntimeDir, serviceEnv, tempRoot } from "./harness.ts";
@@ -106,7 +106,9 @@ let seen: string | undefined;
 const call = async (op: string, input: Json, who = USER, space = tree): Promise<Json> => {
   const entry = findEntry(op);
   const writes = entry?.kind === "write";
-  const answer = (await opCall(service.ops, who, {
+  // The service reads the day by the same clock as the writer, in a zone of its own.
+  const host = { ...service.ops, now: () => now[0] ?? 0, timeZone: () => ZONE };
+  const answer = (await opCall(host, who, {
     op,
     space,
     input: {
@@ -147,37 +149,54 @@ const said = async (action: string, input: Json = {}): Promise<Said["routine"]> 
   return (answer as unknown as Said).routine;
 };
 
-/** The feed, followed from a snapshot by its batches, against a fresh snapshot after each change. */
+/** A message of the feed as the page reads it: its JSON, read by the page's own parser. */
+const asRead = (message: unknown) => {
+  const read = messageOf(JSON.parse(JSON.stringify(message)) as unknown);
+  if (read?.type !== "snapshot" && read?.type !== "batch") throw new Error("unread message");
+  return read;
+};
+
+/** What a page's live store holds of the space: its tasks, routines and nodes, by ID. */
+const heldOf = (core: LiveCore) => {
+  const held = core.publish();
+  if (held === undefined) throw new Error("the store holds nothing");
+  const sorted = <R extends { id: string }>(rows: ReadonlyMap<string, R>) =>
+    [...rows.values()].sort((a, b) => a.id.localeCompare(b.id));
+  return {
+    tasks: sorted(held.tasks),
+    routines: sorted(held.routines),
+    nodes: sorted(held.nodes),
+  };
+};
+
+/**
+ * The page's live store (`LiveCore`), loaded from a snapshot and moved on by the feed's batches:
+ * after each step it holds what a store loaded from a fresh snapshot holds.
+ */
 const feed = {
+  core: new LiveCore(),
   cursor: 0,
-  built: new Map<string, CompactRow>(),
   async start() {
     const snapshot = await readSnapshot(reader);
+    this.core = new LiveCore();
+    this.core.receive(asRead(snapshot));
     this.cursor = snapshot.cursor.seq;
-    this.built = new Map((snapshot.routines ?? []).map((r) => [r["id"] as string, r]));
   },
-  /** The routines' rows as the batches built them: those a fresh snapshot sends. */
-  async caughtUp(): Promise<CompactRow[]> {
+  /** The routines the live store holds once caught up: those a fresh snapshot's store holds. */
+  async caughtUp(): Promise<RoutineRow[]> {
     for (;;) {
       const { head, batch } = await readBatch(reader, this.cursor);
-      for (const event of batch.events) {
-        for (const entity of event.entities) {
-          if (entity.type !== "routine") continue;
-          const row = entity.row;
-          if (row === null) throw new Error("a routine's row was withheld in a quiet space");
-          if (row["deleted_at"] !== undefined || row["lifecycle"] !== "active") {
-            this.built.delete(entity.id);
-          } else this.built.set(entity.id, row);
-        }
-      }
+      const outcome = this.core.receive(asRead(batch));
+      if (outcome.kind === "resnapshot")
+        throw new Error(`the store asked again: ${outcome.reason}`);
       this.cursor = batch.through;
       if (this.cursor >= head.cursor.seq) break;
     }
-    const byId = (rows: Iterable<CompactRow>) =>
-      [...rows].sort((a, b) => (a["id"] as string).localeCompare(b["id"] as string));
-    const fresh = byId((await readSnapshot(reader)).routines ?? []);
-    expect(byId(this.built.values())).toEqual(fresh);
-    return fresh;
+    const fresh = new LiveCore();
+    fresh.receive(asRead(await readSnapshot(reader)));
+    const now = heldOf(fresh);
+    expect(heldOf(this.core)).toEqual(now);
+    return now.routines;
   },
 };
 
@@ -296,7 +315,7 @@ describe("[S2.tree.routines.service] a routine a person does, through the reques
       under: home,
     });
     const rows = await feed.caughtUp();
-    expect(rows.find((r) => r["ref"] === made.ref)).toMatchObject({ parent: home });
+    expect(rows.find((r) => r.ref === made.ref)).toMatchObject({ parent: home });
   });
 
   test("an agent makes a routine you do with repeat, turns a task into one, changes and pauses it", async () => {
@@ -326,6 +345,16 @@ describe("[S2.tree.routines.service] a routine a person does, through the reques
         AGENT,
       ),
     ).toMatchObject({ result: "updated", task: photos, fields: ["repeat"] });
+    // The page's store drops the task and holds the routine, as a fresh one does.
+    const held = await feed.caughtUp();
+    expect(held.find((r) => r.ref === photos)).toMatchObject({ kind: "routine" });
+    // What was written on the task before is read on the routine.
+    expect(
+      await call("task.get", { task: photos, sections: ["notes", "log"] }, AGENT),
+    ).toMatchObject({
+      view: "routine",
+      sections: { notes: [{ ref: "n1", author: "user", text: "Fixture: the blue drive." }] },
+    });
     expect(await call("task.get", { task: photos }, AGENT)).toMatchObject({
       view: "routine",
       routine: {
@@ -368,6 +397,23 @@ describe("[S2.tree.routines.service] a routine a person does, through the reques
     expect(
       await refused("routine.manage", { action: "done", routine: report }, AGENT),
     ).toMatchObject({ code: "forbidden" });
+  });
+
+  test("repeat reads its words on the routine's own calendar, also when the service's day is the next", async () => {
+    // Sunday 17 January 2027 at 23:30 in Los Angeles: already Monday in Amsterdam, the service's zone.
+    now[0] = Date.parse("2027-01-17T23:30:00-08:00");
+    const made = await said("make", {
+      title: "Fixture call home",
+      rule: "FREQ=WEEKLY;BYDAY=SA",
+      tz: "America/Los_Angeles",
+    });
+    const repeat = async (words: string) => {
+      await call("task.update", { task: made.ref, repeat: words, base: seen }, AGENT);
+      const read = await call("task.get", { task: made.ref }, AGENT);
+      return (read["routine"] as Json)["repeat"];
+    };
+    expect(await repeat("every week")).toBe("Every Sunday");
+    expect(await repeat("every 2 weeks")).toBe("Every 2 weeks on Sunday");
   });
 
   test("a space on today's storage refuses a routine's calls in one plain sentence", async () => {

@@ -283,9 +283,9 @@ export interface Cursor {
 }
 
 /** The kinds of row the open working set holds. */
-export type RowType = "task" | "node" | "page";
+export type RowType = "task" | "node" | "page" | "routine";
 
-export type AnyRow = TaskRow | NodeRow | PageRow;
+export type AnyRow = TaskRow | NodeRow | PageRow | RoutineRow;
 
 export interface FeedEntity {
   readonly type: string;
@@ -340,6 +340,8 @@ export interface SnapshotMessage {
   readonly nodes: readonly NodeRow[];
   /** Every page of the space that is shown; none from a service before pages. */
   readonly pages?: readonly PageRow[];
+  /** A tree space's routines that are not finished; none on today's storage. */
+  readonly routines?: readonly RoutineRow[];
   readonly instances: readonly Instance[];
   /** The space's statuses and effort scale; the defaults when the snapshot carries none. */
   readonly scales?: Scales;
@@ -631,18 +633,21 @@ export const ROW_OF: Readonly<Record<RowType, (value: unknown) => AnyRow | undef
   task: taskRow,
   node: nodeRow,
   page: pageRow,
+  routine: routineRow,
 };
 
 export const isRowType = (type: string): type is RowType =>
-  type === "task" || type === "node" || type === "page";
+  type === "task" || type === "node" || type === "page" || type === "routine";
 
 /**
  * Whether a row belongs to the open working set, exactly as the service's snapshot chooses it:
- * active tasks that are not deleted, and live nodes and pages.
+ * active tasks and routines that are not deleted, and live nodes and pages.
  */
 export function inWorkingSet(type: RowType, row: AnyRow): boolean {
   if (row.deleted_at !== undefined) return false;
-  return type !== "task" || (row as TaskRow).lifecycle === "active";
+  return (
+    (type !== "task" && type !== "routine") || (row as TaskRow | RoutineRow).lifecycle === "active"
+  );
 }
 
 export function cursorOf(value: unknown): Cursor | undefined {
@@ -788,6 +793,7 @@ export function messageOf(value: unknown): FeedMessage | { type: "unreadable" } 
         asking: rowsOf(value["asking"], taskRow),
         nodes: rowsOf(value["nodes"], nodeRow),
         pages: rowsOf(value["pages"], pageRow),
+        routines: rowsOf(value["routines"], routineRow),
         instances: instancesOf(value["instances"]),
         scales: scalesOf(value["preferences"]),
       };
