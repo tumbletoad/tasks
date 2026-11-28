@@ -63,6 +63,8 @@ export const A1_ERRORS = {
   HAS_ACTIVE_TASKS: { code: "conflict" },
   /** A preference whose declaration does not list the actor: policy is the user's (A1 3.16). */
   PREFERENCE_FORBIDDEN: { code: "forbidden", rule: "policy" },
+  /** The text for agents on a node: only a person writes a standing instruction. */
+  USER_ONLY: { code: "forbidden" },
   /** An absolute path under no root of this machine (A1 3.15, M2.07). */
   PLACE_OUTSIDE_ROOTS: { code: "invalid_input" },
   /** Undecided: the writer passes A1's reason on (transfer_pending, held, not the authority). */
