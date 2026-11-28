@@ -1,10 +1,10 @@
 // A project's screen, for a project at any depth: where it sits (its breadcrumbs, each crumb to that
-// project), how it stands (its status line, from its open tasks and everything below it), and its
-// tabs, Tasks and Library. Under Tasks its own tasks come first, then each project below it as a
+// project), what it is (its brief, with the pen), how it stands (its status line, from its open
+// tasks and everything below it), and its tabs, Tasks and Library. Under Tasks its own tasks come first, then each project below it as a
 // headed group with its own short status line, which folds. An archived project's screen begins
 // with the way back. At a narrow width the breadcrumbs keep the last two levels.
 import { Link } from "@tanstack/react-router";
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useContext, useMemo, useState } from "react";
 import { useIntl } from "react-intl";
 import {
   childrenOf,
@@ -17,12 +17,16 @@ import {
 import { subtreeGroups, underFilter, type Clock, type GroupTasks } from "@ttasks/client/today";
 import type { EffortLevel } from "@ttasks/contracts/preferences";
 import { projectStatus, type StatusPart } from "@ttasks/contracts/project-status";
+import { Session } from "../context.ts";
 import { ProjectFolder } from "../folder/ProjectFolder.tsx";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { LibraryLink, NodeLibrary } from "../library/Library.tsx";
+import { BRIEF_MAX } from "../library/Library.tsx";
 import { listsOf } from "../library/lists.ts";
+import { Penned } from "../library/parts.tsx";
+import { useLibraryWrites } from "../library/writes.ts";
 import { useClock } from "../row/useClock.ts";
-import { useLive } from "../store/hooks.ts";
+import { useLive, useServes } from "../store/hooks.ts";
 import { shortDate } from "../task/Facts.tsx";
 import { TaskList } from "../views/TaskList.tsx";
 import { ArchivedLine } from "./Archived.tsx";
@@ -33,6 +37,8 @@ import css from "./ProjectScreen.module.css";
 
 const styles = classes(css, [
   "head",
+  "brief",
+  "quiet",
   "crumbs",
   "far",
   "gap",
@@ -105,6 +111,57 @@ function Crumbs({ path, tab }: { readonly path: readonly NodeRow[]; readonly tab
         ))}
       </ol>
     </nav>
+  );
+}
+
+/** What the page remembers once the service said it does not set a project's brief here. */
+const BRIEF_WRITE = "page.write:brief";
+
+/**
+ * The project's one line, under its crumbs, with the pen: as the feed carries it, so a change made
+ * anywhere shows here at once. A change is based on the feed's state the line shows. A space whose
+ * service does not set it yet keeps the pen from its first refusal on.
+ */
+function Brief({ node }: { readonly node: NodeRow }) {
+  const t = useT();
+  const { api, live } = useContext(Session);
+  const { space } = useLive();
+  const writes = useLibraryWrites();
+  const served = useServes(BRIEF_WRITE);
+  const editable = space?.read_only === undefined && served;
+  return (
+    <Penned
+      owner={node.id}
+      part="brief"
+      label={t("library.brief")}
+      pen={t("library.briefEdit")}
+      text={node.brief ?? ""}
+      base={live.store.asOf}
+      max={BRIEF_MAX}
+      line
+      clears
+      save={
+        editable
+          ? (words, from) =>
+              writes.node(node.id, { brief: words }, from).catch((error: unknown) => {
+                if ((error as { code?: unknown }).code === "op_unknown") {
+                  api.unserved.add(BRIEF_WRITE);
+                }
+                throw error;
+              })
+          : undefined
+      }
+      view={(text, pen) =>
+        text === "" && pen === null ? null : (
+          <p className={styles.brief} data-part="project-brief">
+            <span className={text === "" ? styles.quiet : undefined} dir="auto">
+              {text === "" ? t("text.addSummary") : text}
+            </span>
+            {pen}
+          </p>
+        )
+      }
+    />
   );
 }
 
@@ -240,6 +297,7 @@ export function ProjectScreen({
       <ArchivedLine project={project} />
       <div className={styles.head}>
         <Crumbs path={path} tab={tab} />
+        <Brief node={row} />
         {status.length === 0 ? null : (
           <p className={styles.status} data-part="project-status">
             {status.map((words, i) => (

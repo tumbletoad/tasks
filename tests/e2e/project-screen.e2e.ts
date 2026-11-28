@@ -76,6 +76,32 @@ test.describe("[S2.nav.e2e] a project's one screen at any depth", () => {
     await expect(page).toHaveURL((url) => url.pathname === at(project.id));
   });
 
+  test("a project's brief stands under its crumbs; changed with its pen, it reaches another tab on the screen at once", async ({
+    page,
+    context,
+    world,
+  }) => {
+    const { project } = await lumen(world);
+    const to = `/s/${world.mira.id}/project/${project.id}`;
+    const brief = (on: Page) => on.locator('[data-part="project-brief"]');
+    const other = await context.newPage();
+    try {
+      await signIn(other, world, to);
+      await expect(crumbs(other)).toContainText(project.name, { timeout: SLOW_MS });
+      await signIn(page, world, to);
+      await showsSpace(page, world.mira.name);
+      await brief(page).getByRole("button", { name: "Edit the brief" }).click();
+      const box = page.getByRole("textbox", { name: "Brief" });
+      await box.fill("The patients' portal, booking first");
+      await box.press("Enter");
+      await expect(page.locator('[data-part="toast-text"]')).toHaveText("Brief changed");
+      await expect(brief(page)).toHaveText("The patients' portal, booking first");
+      await expect(brief(other)).toHaveText("The patients' portal, booking first");
+    } finally {
+      await other.close();
+    }
+  });
+
   test("the side menu and a project's screen at 1,440 and 390 px in both themes: no violation, nothing sideways", async ({
     browser,
     world,

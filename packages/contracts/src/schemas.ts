@@ -526,6 +526,7 @@ export const CompactNode = z.strictObject({
   kind: z.enum(["space", "project"]).describe("What it is"),
   parent: z.string().max(40).describe("The node it sits under; none for the space").optional(),
   title: z.string().describe("Its name"),
+  brief: z.string().describe("A project's one line: what it is; none: not given").optional(),
   position: z.string().describe("Order key among its siblings; none for the space").optional(),
   color: z.string().describe("Its colour").optional(),
   state: z.enum(["active", "archived"]).describe("Archived: kept, out of the places work is filed"),
