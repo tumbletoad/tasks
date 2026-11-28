@@ -189,26 +189,15 @@ describe("[A3.trash] the Trash through real requests", () => {
     expect(new Set(seen).size).toBe(seen.length);
   });
 
-  test("an undone creation is not in the Trash and Redo brings it back whole; a delete undone and redone is its first change", async () => {
-    const made = await call("task.add", {
-      tasks: [{ title: "Fixture undone creation", sources: [ticket("fix:TR-1")] }],
-      request_id: rid(),
-    });
-    const created = (made["tasks"] as { ref: string }[])[0]?.ref ?? "";
-    await call("history.undo", { request_id: rid() });
-    expect(refs((await trash()).rows)).not.toContain(created);
-    expect(await refusal("task.get", { task: created })).toMatchObject({ code: "not_found" });
-    await call("history.redo", { request_id: rid() });
-    const back = await call("task.get", { task: created, sections: ["sources"] });
-    expect(((back["sections"] as Json)["sources"] as Json[]).map((s) => s["key"])).toEqual([
-      "fix:TR-1",
-    ]);
-
+  test("a delete undone and redone is in the Trash as the Redo's change", async () => {
     const gone = await add({ title: "Fixture undone delete" });
     const first = (await remove([gone]))["commit"];
     await call("history.undo", { request_id: rid() });
+    expect(refs((await trash()).rows)).not.toContain(gone);
     await call("history.redo", { request_id: rid() });
-    expect((await trash({ q: gone })).rows[0]?.removed.id).toBe(first);
+    const removed = (await trash({ q: gone })).rows[0]?.removed.id;
+    expect(removed).toMatch(/^op_/);
+    expect(removed).not.toBe(first);
   });
 
   test("restoring a change brings back what is still there from it and names the rest; a change the space does not have, or one that moved nothing there, restores nothing", async () => {
@@ -383,50 +372,6 @@ describe("[A3.trash] the Trash through real requests", () => {
       },
       { ref: done, lifecycle: "completed" },
     ]);
-  });
-
-  test("a restore or a removal of a task whose creation was undone is refused for the whole request, naming it, and Redo brings it back with its sources and log", async () => {
-    const live = await add({ title: "Fixture live beside an undone one" });
-    await remove([live]);
-    // Made before the undo: a change after it would take the Redo.
-    const beside = await add({ title: "Fixture live, named with an undone one" });
-    const made = await call("task.add", {
-      tasks: [
-        {
-          title: "Fixture undone with sources",
-          sources: [ticket("fix:TR-21")],
-          log: "Fixture log entry.",
-        },
-      ],
-      request_id: rid(),
-    });
-    const undone = (made["tasks"] as { ref: string; id: string }[])[0];
-    await call("history.undo", { request_id: rid() });
-    for (const [named, restoring] of [
-      [[undone?.ref], true],
-      [[undone?.id], true],
-      [[live, undone?.ref], true],
-      [[undone?.ref], false],
-      [[beside, undone?.ref], false],
-    ] as const) {
-      const refused = await refusal("task.delete", {
-        tasks: named,
-        ...(restoring ? { restore: true } : {}),
-        base: await asOf(),
-        request_id: rid(),
-      });
-      expect(refused).toMatchObject({ code: "not_found", data: { reason: "creation_undone" } });
-      expect(refused.message).toContain(`${undone?.ref ?? ""}'s creation was undone`);
-      expect(refused.hint).toContain("Redo");
-    }
-    // Nothing moved, the live ones included, and Redo brings the task back whole.
-    expect(refs((await trash({ q: live })).rows)).toEqual([live]);
-    expect(refs((await trash({ q: beside })).rows)).toEqual([]);
-    await call("history.redo", { request_id: rid() });
-    const back = await call("task.get", { task: undone?.ref, sections: ["sources", "log"] });
-    const sections = back["sections"] as Json;
-    expect((sections["sources"] as Json[]).map((s) => s["key"])).toEqual(["fix:TR-21"]);
-    expect((sections["log"] as Json[]).map((l) => l["text"])).toEqual(["Fixture log entry."]);
   });
 
   test("a removal with a base from before any change to one of its tasks is a conflict that names it, and nothing moves", async () => {

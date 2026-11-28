@@ -2,10 +2,12 @@
 // are no change, a restore of one change brings back only the tasks still there from it, a key
 // another active task took meanwhile stays with it, and a task whose project or area is gone comes
 // back in the area or the Inbox. Fixture text only.
+import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
 import type { Operation, SourceFields, WriteRequest, WriteResult } from "../src/write/request.ts";
-import { tempFolders } from "./space-helpers.ts";
+import { openWriter } from "../src/open.ts";
+import { checkedDriver, tempFolders } from "./space-helpers.ts";
 import { checkHistory, expectStatus, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("trash");
@@ -29,13 +31,11 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     fx.writer.submit(
       fx.request(fx[who], ops, {
         base: fx.base(),
-        ...(who === "human" ? { undoable: true } : {}),
         ...extra,
       }),
     );
   /** A request without a base, as a restore of one change is sent. */
-  const unbased = (ops: Operation[]): WriteResult =>
-    fx.writer.submit(fx.request(fx.human, ops, { undoable: true }));
+  const unbased = (ops: Operation[]): WriteResult => fx.writer.submit(fx.request(fx.human, ops));
   const applied = (result: WriteResult): WriteResult => {
     expectStatus(result, "applied");
     return result;
@@ -146,57 +146,47 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     expect(deleted(b)).toBe(true);
   });
 
-  test("a delete undone and redone is still its first change: the change's restore finds it", () => {
+  test("a delete undone and redone is in the Trash as the Redo's change, which its restore finds", () => {
     const a = task("Renew the passport");
-    const change = remove(a).commit as Id<"op">;
+    remove(a);
     applied(fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }])));
     expect(deleted(a)).toBe(false);
-    applied(fx.writer.submit(fx.request(fx.human, [{ kind: "redo" }])));
+    const change = applied(fx.writer.submit(fx.request(fx.human, [{ kind: "redo" }]))).commit;
     expect(deleted(a)).toBe(true);
-    const back = applied(unbased([{ kind: "task.restore", task: a, change }]));
+    const back = applied(unbased([{ kind: "task.restore", task: a, change: change as Id<"op"> }]));
     expect(back.results[0]?.status).toBe("updated");
   });
 
   const history = (kind: "undo" | "redo"): WriteResult =>
     fx.writer.submit(fx.request(fx.human, [{ kind }]));
 
-  test("Redo of a removal after someone worked on the task is a conflict naming that work; the task stays, and removing it again is one request", () => {
+  test("Redo of a removal after someone worked on the task keeps it, naming who; removing it again is one request", () => {
     const a = task("Renew the passport");
     const sourced = task("Answer the clinic");
-    // What was done, the task it was done to, and the row and field the conflict names.
-    const work: [string, Id<"t">, Operation, string, string][] = [
-      ["a note", a, { kind: "note.add", task: a, body: "Booked for Tuesday" }, "notes", "deleted"],
-      ["a log entry", a, { kind: "log.add", task: a, body: "Form sent" }, "log_entries", "deleted"],
+    // What was done, and the task it was done to.
+    const work: [string, Id<"t">, Operation][] = [
+      ["a note", a, { kind: "note.add", task: a, body: "Booked for Tuesday" }],
+      ["a log entry", a, { kind: "log.add", task: a, body: "Form sent" }],
       [
         "a source link",
         sourced,
         { kind: "source.add", task: sourced, source: ticket("jira:FIX-3") },
-        "task_sources",
-        "removed",
       ],
-      [
-        "a field",
-        a,
-        { kind: "task.patch", task: a, set: { summary: "Repurposed" } },
-        "tasks",
-        "summary",
-      ],
+      ["a field", a, { kind: "task.patch", task: a, set: { summary: "Repurposed" } }],
     ];
-    for (const [what, target, op, entity, field] of work) {
+    for (const [what, target, op] of work) {
       remove(target);
       applied(history("undo"));
       applied(send("codex", [op]));
       const late = history("redo");
-      expectStatus(late, "conflict");
-      expect(late.error?.code, what).toBe("UNDO_CONFLICT");
-      expect(late.conflicts, what).toContainEqual(
+      expectStatus(late, "unchanged");
+      expect(late.kept, what).toBe(true);
+      expect(late.newer?.work, what).toEqual([
         expect.objectContaining({
-          entity,
           task: target,
-          field,
           by: expect.objectContaining({ kind: "agent" }) as unknown,
         }),
-      );
+      ]);
       expect(deleted(target), what).toBe(false);
       // The person still wants it gone: one removal, from what they see now.
       remove(target);
@@ -205,27 +195,14 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     }
   });
 
-  test("Undo of a restore after someone added to the task is a conflict naming it, and the task stays", () => {
+  test("Undo of a restore after someone added to the task keeps it, naming who", () => {
     const a = task("Renew the passport");
     remove(a);
     applied(restore(a));
     applied(send("codex", [{ kind: "note.add", task: a, body: "Booked for Tuesday" }]));
     const late = history("undo");
-    expectStatus(late, "conflict");
-    expect(late.conflicts).toEqual([expect.objectContaining({ entity: "notes", task: a })]);
-    expect(deleted(a)).toBe(false);
-  });
-
-  test("Undo of a restore after someone added to the task stays a conflict after a partial Undo and its Redo, which brought nothing back", () => {
-    const a = task("Renew the passport");
-    remove(a);
-    applied(restore(a));
-    applied(send("codex", [{ kind: "note.add", task: a, body: "Booked for Tuesday" }]));
-    applied(fx.writer.submit(fx.request(fx.human, [{ kind: "undo", partial: true }])));
-    applied(history("redo"));
-    const late = history("undo");
-    expectStatus(late, "conflict");
-    expect(late.conflicts).toEqual([expect.objectContaining({ entity: "notes", task: a })]);
+    expectStatus(late, "unchanged");
+    expect(late.newer?.work).toEqual([expect.objectContaining({ task: a })]);
     expect(deleted(a)).toBe(false);
   });
 
@@ -276,41 +253,6 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     expect([deleted(a), deleted(b)]).toEqual([false, false]);
   });
 
-  test("a task whose creation was undone is neither restored nor removed, alone, by its undo's change or beside another: the request is refused whole and Redo brings it back with its links", () => {
-    const live = task("Renew the passport");
-    remove(live);
-    const other = task("Book the dentist");
-    const a = task("Answer the clinic", [ticket("jira:FIX-7")]);
-    const undo = applied(fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }])));
-    expect(deleted(a)).toBe(true);
-    for (const ops of [
-      [{ kind: "task.restore", task: a }],
-      [{ kind: "task.restore", task: a, change: undo.commit as Id<"op"> }],
-      [
-        { kind: "task.restore", task: live },
-        { kind: "task.restore", task: a },
-      ],
-      // Removed with a live task: never "in the Trash already", and the live task stays.
-      [{ kind: "task.delete", task: a }],
-      [
-        { kind: "task.delete", task: other },
-        { kind: "task.delete", task: a },
-      ],
-    ] as Operation[][]) {
-      const refused = send("human", ops);
-      expectStatus(refused, "rejected");
-      expect(refused.error).toMatchObject({
-        code: "NOT_FOUND",
-        field: "task",
-        reason: "creation_undone",
-      });
-    }
-    expect([deleted(live), deleted(other), deleted(a)]).toEqual([true, false, true]);
-    applied(fx.writer.submit(fx.request(fx.human, [{ kind: "redo" }])));
-    expect(deleted(a)).toBe(false);
-    expect(holders("jira:FIX-7")).toEqual([a]);
-  });
-
   test("a key another active task took meanwhile stays with it: the restored task's link stays removed, and its other links come back", () => {
     const a = task("Answer the clinic", [ticket("jira:FIX-1"), ticket("jira:FIX-2")]);
     remove(a);
@@ -325,10 +267,10 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     expect(holders("jira:FIX-2")).toEqual([a]);
     // The next capture goes on to the holder, not to the restored task.
     expect(capture("jira:FIX-1")).toBe(b);
-    // Undo takes the restore back whole: deleted again, the link as it was.
+    // Undo moves it back to the Trash; the link it gave up stays with the holder.
     applied(fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }])));
     expect(deleted(a)).toBe(true);
-    expect(holders("jira:FIX-1")).toEqual([a, b].sort());
+    expect(holders("jira:FIX-1")).toEqual([b]);
   });
 
   test("a finished task restored beside an active holder keeps its link", () => {
@@ -377,22 +319,79 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     });
   });
 
-  test("a task whose area is gone comes back in the Inbox", () => {
-    // The area's creation is undone after an agent's task in it was moved to the Trash: the
-    // area goes, as nothing live is in it.
-    const area = newId("a");
-    applied(send("human", [{ kind: "area.create", id: area, title: "Garden" }]));
+  test("a task whose project is gone comes back in the project's area", () => {
+    const project = newId("p");
+    applied(
+      send("human", [{ kind: "project.create", id: project, title: "Garden", area: "home" }]),
+    );
     const id = newId("t");
-    applied(send("codex", [{ kind: "task.create", id, title: "Prune the roses", area }]));
+    applied(send("codex", [{ kind: "task.create", id, title: "Prune the roses", project }]));
     applied(send("codex", [{ kind: "task.delete", task: id }]));
-    applied(fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }])));
-    expect(
-      fx.reader.prepare("SELECT deleted_at FROM areas WHERE id = $area").get({ area })?.[
-        "deleted_at"
-      ],
-    ).not.toBeNull();
+    applied(send("human", [{ kind: "project.delete", project }]));
     const back = applied(restore(id));
-    expect(back.results[0]).toMatchObject({ regrouped: "inbox" });
-    expect(row(id)).toMatchObject({ area_id: null, project_id: null, inbox: 1, deleted_at: null });
+    expect(back.results[0]).toMatchObject({ regrouped: "area" });
+    expect(row(id)).toMatchObject({ area_id: fx.areas.home, project_id: null, deleted_at: null });
+  });
+});
+
+// A tombstone an earlier version wrote, made by hand: the history checks do not hold for it.
+describe("[A1.trash.write] a creation an earlier version undid", () => {
+  test("a task whose creation an earlier version undid is neither restored nor removed, alone or beside another: the request is refused whole", async () => {
+    const fx = await fixture();
+    const send = (ops: Operation[]): WriteResult =>
+      fx.writer.submit(fx.request(fx.human, ops, { base: fx.base() }));
+    const task = (title: string): Id<"t"> => {
+      const id = newId("t");
+      expectStatus(send([{ kind: "task.create", id, title }]), "applied");
+      return id;
+    };
+    const deleted = (id: string): boolean =>
+      fx.reader.prepare("SELECT deleted_at FROM tasks WHERE id = $id").get({ id })?.[
+        "deleted_at"
+      ] !== null;
+    const live = task("Renew the passport");
+    expectStatus(send([{ kind: "task.delete", task: live }]), "applied");
+    const other = task("Book the dentist");
+    const a = task("Answer the clinic");
+    // An earlier version undid a creation with a tombstone written by the undo of the commit that
+    // created the task: made here from an undo of a title, pointed at the creation.
+    expectStatus(send([{ kind: "task.patch", task: other, set: { title: "Book it" } }]), "applied");
+    const undo = fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }]));
+    const raw = openWriter(await checkedDriver(), join(fx.folder, "space.db"));
+    raw
+      .prepare(
+        "UPDATE commits SET undo_of = (SELECT created_seq FROM tasks WHERE id = $a) WHERE seq = $u",
+      )
+      .run({ a, u: undo.seq });
+    raw
+      .prepare(
+        "UPDATE tasks SET deleted_at = 1, deleted_by = created_by, " +
+          "fp = json_set(fp, '$.deleted', $u) WHERE id = $a",
+      )
+      .run({ a, u: undo.seq });
+    raw.close();
+    for (const ops of [
+      [{ kind: "task.restore", task: a }],
+      [
+        { kind: "task.restore", task: live },
+        { kind: "task.restore", task: a },
+      ],
+      // Removed with a live task: never "in the Trash already", and the live task stays.
+      [{ kind: "task.delete", task: a }],
+      [
+        { kind: "task.delete", task: other },
+        { kind: "task.delete", task: a },
+      ],
+    ] as Operation[][]) {
+      const refused = send(ops);
+      expectStatus(refused, "rejected");
+      expect(refused.error).toMatchObject({
+        code: "NOT_FOUND",
+        field: "task",
+        reason: "creation_undone",
+      });
+    }
+    expect([deleted(live), deleted(other), deleted(a)]).toEqual([true, false, true]);
+    fx.close();
   });
 });

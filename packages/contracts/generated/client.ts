@@ -28,9 +28,9 @@ export function createClient(transport: ClientTransport) {
       manage: (input: InputOf<"group.manage">): Promise<OutputOf<"group.manage">> => call("group.manage", input),
     },
     history: {
-      /** Redo the change you undid last, as long as nobody changed its fields since. */
+      /** Redo the change you undid last, unless someone changed it since. */
       redo: (input: InputOf<"history.redo">): Promise<OutputOf<"history.redo">> => call("history.redo", input),
-      /** Undo your newest change in the space, field by field as long as nobody changed it. */
+      /** Undo your newest check-off, Trash, removed note, text edit or filing, unless someone changed it since. */
       undo: (input: InputOf<"history.undo">): Promise<OutputOf<"history.undo">> => call("history.undo", input),
     },
     launch: {

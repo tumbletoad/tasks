@@ -165,7 +165,7 @@ describe("[A3.3.4.finish.lifecycle] complete_task: done, dropped, learnings and 
   );
 
   test(
-    "only complete_task's held wrap-up is called wrapped up already: a stale base or an undo that meets a change to wrap alone keeps its own message",
+    "only complete_task's held wrap-up is called wrapped up already: a stale base that meets a change to wrap alone keeps its own message",
     async () => {
       const ALREADY = "already_wrapped";
       // complete_task: another outcome, or the same one with a new learning, is held whatever the
@@ -231,22 +231,6 @@ describe("[A3.3.4.finish.lifecycle] complete_task: done, dropped, learnings and 
       expect(reopen.data?.["reason"]).toBeUndefined();
       expect(reopen.message).not.toContain("already wrapped up");
       expect(reopen.hint).not.toContain("reopen_task");
-
-      // The person's undo of a wrap-up that a script reopened since: the undo's own conflict.
-      const undone = await add("Fixture task whose wrap-up is undone");
-      await finish({ task: undone }, USER);
-      await finish({ task: undone, outcome: "Fixture wrap-up to undo." }, USER);
-      await call("task.reopen", {
-        task: undone,
-        reason: "Fixture script reopens it.",
-        base: await asOf(),
-        request_id: rid(),
-      });
-      const undo = await refusal("history.undo", { request_id: rid() }, USER);
-      expect(undo).toMatchObject({ code: "conflict", data: { conflicts: [{ field: "wrap" }] } });
-      expect(undo.data?.["reason"]).toBeUndefined();
-      expect(undo.message).not.toContain("already wrapped up");
-      expect(undo.hint).not.toContain("reopen_task");
     },
     LONG,
   );

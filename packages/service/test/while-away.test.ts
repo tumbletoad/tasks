@@ -70,12 +70,11 @@ const rid = () => `fixture-away-${String((n += 1)).padStart(6, "0")}`;
 const call = (op: string, input: Record<string, unknown>) =>
   opCall(host(), PERSON, { op, input }) as Promise<Record<string, unknown>>;
 
-/** `ops` as `actor` at `at`; the person's change goes on their undo stack, and an undo has no base. */
+/** `ops` as `actor` at `at`; an undo has no base. */
 function submit(actor: Credential, ops: Operation[], at: number): void {
   clock = at;
   const undo = ops.some((op) => op.kind === "undo");
-  const own = actor === fx.human && !undo ? { undoable: true } : {};
-  const result = fx.writer.submit(fx.request(actor, ops, undo ? {} : { base: fx.base(), ...own }));
+  const result = fx.writer.submit(fx.request(actor, ops, undo ? {} : { base: fx.base() }));
   if (result.status !== "applied") throw new Error(JSON.stringify(result.error));
 }
 

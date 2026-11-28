@@ -173,7 +173,17 @@ describe("[A1.3.16.prefs.effort-stored] a space holds its levels, so every build
   test("a space without levels stores the five as its own act, once; Undo leaves them; a reset stores them again", async () => {
     const w = await spaces.next();
     // The person's own change, then the space opens and stores its levels.
-    await w.call("task.add", { tasks: [{ title: "Fixture undone task" }], request_id: w.rid() });
+    const added = await w.call("task.add", {
+      tasks: [{ title: "Fixture task" }],
+      request_id: w.rid(),
+    });
+    const task = String((added["tasks"] as Json[])[0]?.["ref"]);
+    await w.call("task.update", {
+      task,
+      set: { title: "Fixture undone title" },
+      base: await w.base(),
+      request_id: w.rid(),
+    });
     expect(w.fx.writer.storeDefaults()).toBe(true);
     expect(w.fx.writer.storeDefaults()).toBe(false);
     const row = stored(w);
@@ -184,8 +194,8 @@ describe("[A1.3.16.prefs.effort-stored] a space holds its levels, so every build
     await w.call("history.undo", { request_id: w.rid() });
     expect(
       w.fx.reader
-        .prepare("SELECT count(*) AS n FROM tasks WHERE deleted_at IS NULL AND title = $t")
-        .get({ t: "Fixture undone task" })?.["n"],
+        .prepare("SELECT count(*) AS n FROM tasks WHERE title = $t")
+        .get({ t: "Fixture undone title" })?.["n"],
     ).toBe(0);
     expect(JSON.parse(String(stored(w)?.["value"]))).toEqual(EFFORT_LEVELS);
     // A reset stores the five, by the person.
@@ -370,44 +380,5 @@ describe("[A1.3.16.prefs.effort-off-list] a size the list lacks stays readable e
     expect(await w.refusal("task.search", { q: "effort:Nowhere" })).toMatchObject({
       code: "invalid_input",
     });
-  });
-});
-
-describe("[A1.3.10.history.effort-stored-rows] a change of levels over a row an earlier build stored, undone, leaves that row as it was", () => {
-  test.each([
-    ["a list of names", JSON.stringify([{ key: "S" }, { key: "M" }, { key: "Q" }])],
-    ["a reset", "null"],
-  ])("%s", async (_, stored) => {
-    const w = await spaces.next();
-    await w.store(stored, 1);
-    const levels = async () =>
-      (
-        (await w.call("prefs.manage", { action: "get", keys: ["tasks.effort_scale"] }))[
-          "prefs"
-        ] as Json[]
-      )[0]?.["value"] as { key: string }[];
-    const before = await levels();
-    await w.tool("add_tasks", {
-      tasks: [{ title: "Fixture medium", effort: "M" }],
-      request_id: w.rid(),
-    });
-    const renamed = before.map((l) => (l.key === "M" ? "Medium" : l.key)).join(",");
-    await w.call("prefs.manage", {
-      action: "set",
-      set: [{ key: "tasks.effort_scale", value: renamed, moves: [{ from: "M", to: "Medium" }] }],
-      base: await w.base(),
-      request_id: w.rid(),
-    });
-    expect((await levels()).map((l) => l.key)).toContain("Medium");
-    expect(await w.call("history.undo", { request_id: w.rid() })).toMatchObject({
-      levels: { list: true, tasks: 1 },
-    });
-    expect(await levels()).toEqual(before);
-    const raw = w.fx.reader
-      .prepare("SELECT value, schema_ver FROM preferences WHERE key = 'tasks.effort_scale'")
-      .get();
-    expect(raw).toEqual({ value: stored, schema_ver: 1 });
-    const rows = (await w.call("task.search", { q: "effort:M" }))["rows"] as Json[];
-    expect(rows.map((r) => r["title"])).toEqual(["Fixture medium"]);
   });
 });

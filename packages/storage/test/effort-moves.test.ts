@@ -25,8 +25,8 @@ afterEach(() => {
 const SCALE = "tasks.effort_scale";
 const levels = (keys: readonly string[]) => keys.map((key) => ({ key }));
 
-function write(actor: Credential, ops: Operation[], extra: { undoable?: true } = {}): WriteResult {
-  return fx.writer.submit(fx.request(actor, ops, { base: fx.base(), ...extra }));
+function write(actor: Credential, ops: Operation[]): WriteResult {
+  return fx.writer.submit(fx.request(actor, ops, { base: fx.base() }));
 }
 
 const setLevels = (keys: readonly string[], moves?: EffortMove[]): Operation => ({
@@ -38,7 +38,7 @@ const setLevels = (keys: readonly string[], moves?: EffortMove[]): Operation => 
 
 /** The person's change of levels, a step on their undo stack. */
 const change = (keys: readonly string[], moves?: EffortMove[]): WriteResult =>
-  write(fx.human, [setLevels(keys, moves)], { undoable: true });
+  write(fx.human, [setLevels(keys, moves)]);
 
 /** New tasks of an agent's, one per size (null: none). */
 function tasks(...efforts: (string | null)[]): Id<"t">[] {
@@ -60,7 +60,7 @@ const names = (): string[] =>
 const commits = (): unknown => fx.reader.prepare("SELECT count(*) AS n FROM commits").get()?.["n"];
 
 describe("[A1.3.16.prefs.effort-moves] a change of levels moves the tasks on a size in the same commit", () => {
-  test("every task on M, finished and in the Trash too, moves with its rename; an undone creation holds nothing", () => {
+  test("every task on M, finished and in the Trash too, moves with its rename", () => {
     const [active, done, archived, trashed, large, none] = tasks("M", "M", "M", "M", "L", null);
     for (const [kind, task] of [
       ["task.complete", done],
@@ -69,12 +69,6 @@ describe("[A1.3.16.prefs.effort-moves] a change of levels moves the tasks on a s
     ] as const) {
       expectStatus(write(fx.codex, [{ kind, task: task ?? "" }]), "applied");
     }
-    // The person's own task on M, whose creation they undid.
-    const undone = newId("t");
-    const made = { kind: "task.create", id: undone, title: "Fixture undone", effort: "M" } as const;
-    expectStatus(write(fx.human, [made], { undoable: true }), "applied");
-    expectStatus(fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }])), "applied");
-
     const before = commits();
     const result = change(["S", "Medium", "L"], [{ from: "M", to: "Medium" }]);
     expectStatus(result, "applied");
@@ -84,11 +78,7 @@ describe("[A1.3.16.prefs.effort-moves] a change of levels moves the tasks on a s
     ]);
     expect(names()).toEqual(["S", "Medium", "L"]);
     for (const id of [active, done, archived, trashed]) expect(effortOf(id ?? "")).toBe("Medium");
-    expect([effortOf(large ?? ""), effortOf(none ?? ""), effortOf(undone)]).toEqual([
-      "L",
-      null,
-      "M",
-    ]);
+    expect([effortOf(large ?? ""), effortOf(none ?? "")]).toEqual(["L", null]);
     // One change row for the list, and one for each moved task's effort, each a new version.
     const rows = fx.reader
       .prepare("SELECT entity, field FROM changes WHERE seq = $seq ORDER BY n")
@@ -166,7 +156,7 @@ describe("[A1.3.16.prefs.effort-moves-refused] a change of levels that would str
     expect(names()).toEqual(["S", "M", "L"]);
   });
 
-  test("moves on another preference, or the levels with another preference on the stack, are refused", () => {
+  test("moves on another preference are refused, and the levels go with another preference", () => {
     const statuses: Operation = {
       kind: "pref.set",
       key: "tasks.statuses",
@@ -178,14 +168,8 @@ describe("[A1.3.16.prefs.effort-moves-refused] a change of levels that would str
       setLevels(["S", "M", "L", "XL"]),
       { kind: "pref.set", key: "tasks.statuses", value: ["open", "waiting"] },
     ];
-    expect(write(fx.human, both, { undoable: true }).error).toMatchObject({
-      code: "VALIDATION_FAILED",
-      message: "Set the effort levels in a request of their own: only they join the undo stack",
-    });
-    // Off the stack, as a script or a test helper sends it, the two go in one request.
+    // The levels and another preference go in one request.
     expectStatus(write(fx.human, both), "applied");
-    const alone: Operation = { kind: "pref.set", key: "tasks.statuses", value: ["open"] };
-    expect(write(fx.human, [alone], { undoable: true }).error?.code).toBe("VALIDATION_FAILED");
   });
 
   test.each([
@@ -205,7 +189,7 @@ describe("[A1.3.16.prefs.effort-moves-refused] a change of levels that would str
       const stale = fx.base();
       expectStatus(change(["S", "M", "L", "XL"]), "applied");
       const result = fx.writer.submit(
-        fx.request(fx.human, [setLevels(["S", "L"], moves)], { base: stale, undoable: true }),
+        fx.request(fx.human, [setLevels(["S", "L"], moves)], { base: stale }),
       );
       expect([result.status, result.error?.code]).toEqual(["conflict", "VERSION_CONFLICT"]);
     },
@@ -232,7 +216,7 @@ describe("[A1.3.16.prefs.effort-dry-run] a dry run of a change of levels is the 
     const request = fx.request(
       fx.human,
       [setLevels(["S", "Medium", "L"], [{ from: "M", to: "Medium" }])],
-      { base: fx.base(), undoable: true, dry_run: true },
+      { base: fx.base(), dry_run: true },
     );
     const before = commits();
     const dry = fx.writer.submit(request);

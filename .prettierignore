@@ -1,6 +1,5 @@
 # Markdown is not formatted: the plan, the agent instructions, README and docs keep the plan's
 # compact table style, which Prettier would pad on every edit.
-planning/
 .claude/
 *.md
 

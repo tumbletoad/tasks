@@ -281,7 +281,6 @@ describe("[A1.5.write.runs] run records through the write path", () => {
       return result.error?.field;
     };
     expect(refused([createOp({ task: taskId })], {}, fx.codex)).toBe("actor.actor_kind");
-    expect(refused([createOp({ task: taskId })], { undoable: true })).toBe("undoable");
     expect(refused([createOp({ task: taskId })], { reason: "Because" })).toBe("reason");
     expect(
       refused([createOp({ task: taskId }), { kind: "note.add", task: taskId, body: "x" }]),

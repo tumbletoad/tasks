@@ -254,7 +254,7 @@ async function bothWidths(page: Page, name: string): Promise<void> {
 }
 
 test.describe("[A7.3.12.m5-08.e2e.conflict] Undo and Apply mine: an agent changed the same field", () => {
-  test("undo after an agent's change is refused, says who changed the task and leaves the agent's value; an edit over a change made while the popover was open offers Apply mine", async ({
+  test("undo after an agent's change is kept, says who changed the task and leaves the agent's value; an edit over a change made while the popover was open offers Apply mine", async ({
     page,
     world,
   }) => {
@@ -292,7 +292,9 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Undo and Apply mine: an agent change
     await page.locator("main").focus();
     await page.keyboard.press("Control+z");
     await expect(toast(page)).toContainText("Not undone: ");
-    await expect(toast(page)).toHaveText(new RegExp(`.+ changed ${ref} since$`, "u"));
+    await expect(toast(page)).toHaveText(
+      new RegExp(`.+ changed ${ref} since, so it stays as it is$`, "u"),
+    );
     await expect(toastAction(page)).toHaveCount(0);
     await bothWidths(page, "undo-refused");
     expect(await titleOf()).toBe(agents);
@@ -358,9 +360,9 @@ test.describe("[A5.3.12.e2e.redo-passed-over] Redo of a step an agent added to s
       "agent",
     );
 
-    // Redo would move the task, note and all, to the Trash: refused, naming who changed which
-    // task, with nothing to choose.
-    const changed = new RegExp(`.+ changed ${removed} since$`, "u");
+    // Redo would move the task, note and all, to the Trash: kept, naming who changed which task,
+    // with nothing to choose.
+    const changed = new RegExp(`.+ changed ${removed} since, so it stays as it is$`, "u");
     await page.keyboard.press("Control+Shift+z");
     await expect(toast(page)).toContainText("Not redone: ");
     await expect(toast(page)).toHaveText(changed);

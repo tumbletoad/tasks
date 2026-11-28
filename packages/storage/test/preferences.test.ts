@@ -187,24 +187,22 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
   });
 
   test("a preference change never joins the undo stack, so it never blocks the person's undo", () => {
-    const refused = fx.writer.submit(
-      fx.request(fx.human, [set("autonomy.level", "full")], { base: fx.base(), undoable: true }),
-    );
-    expectStatus(refused, "rejected");
-    expect(refused.error).toMatchObject({ code: "VALIDATION_FAILED", field: "undoable" });
-    expect(receipts("rejected")).toBe(0);
-    // The person's own task change stays the newest on the stack, behind a preference change.
     const created = fx.writer.submit(
-      fx.request(fx.human, [{ kind: "task.create", title: "Plan the week" }], {
-        base: fx.base(),
-        undoable: true,
-      }),
+      fx.request(fx.human, [{ kind: "task.create", title: "Plan the week" }], { base: fx.base() }),
     );
     expectStatus(created, "applied");
+    const id = created.results[0]?.id ?? "";
+    // The person's own title stays the newest step, behind a preference change.
+    const renamed = fx.writer.submit(
+      fx.request(fx.human, [{ kind: "task.patch", task: id, set: { title: "Plan the month" } }], {
+        base: fx.base(),
+      }),
+    );
+    expectStatus(renamed, "applied");
     expectStatus(submit([set("autonomy.level", "full")]), "applied");
     const undone = fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }]));
     expectStatus(undone, "applied");
-    expect(one("SELECT count(*) FROM tasks WHERE deleted_at IS NULL")).toBe(0);
+    expect(one("SELECT title FROM tasks")).toBe("Plan the week");
     expect(read("autonomy.level").value).toBe("full");
   });
 

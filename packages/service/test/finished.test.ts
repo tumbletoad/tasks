@@ -58,13 +58,11 @@ async function all(input: Record<string, unknown>): Promise<Result["rows"]> {
   return rows;
 }
 
-/** `undoable`: the person's own change, on their undo stack. An undo itself carries no base. */
-function submit(ops: Operation[], at: number, undoable = false): WriteResult {
+/** The person's own change. An undo carries no base. */
+function submit(ops: Operation[], at: number): WriteResult {
   clock = at;
   const undo = ops.some((op) => op.kind === "undo");
-  const result = fx.writer.submit(
-    fx.request(fx.human, ops, undo ? {} : { base: fx.base(), ...(undoable ? { undoable } : {}) }),
-  );
+  const result = fx.writer.submit(fx.request(fx.human, ops, undo ? {} : { base: fx.base() }));
   if (result.status !== "applied") throw new Error(JSON.stringify(result.error));
   return result;
 }
@@ -186,14 +184,14 @@ describe("[A5.3.5.service.finished] the read of finished tasks behind Completed"
     expect((await finished({ checked_off: false, limit: 1 })).rows[0]?.id).not.toBe(kept);
   });
 
-  test("an undone reopen puts a dropped task back at the time it was dropped, not the undo's", async () => {
-    const [task] = finish(1, Date.UTC(2026, 10, 26, 13), "dropped", "Fixture dropped, reopened");
+  test("an undone reopen puts a finished task back at the time it was finished, not the undo's", async () => {
+    const [task] = finish(1, Date.UTC(2026, 10, 26, 13), "wrapped", "Fixture done, reopened");
     if (task === undefined) throw new Error("no task");
-    submit([{ kind: "task.reopen", task }], Date.UTC(2026, 10, 26, 15), true);
+    submit([{ kind: "task.reopen", task }], Date.UTC(2026, 10, 26, 15));
     submit([{ kind: "undo" }], Date.UTC(2026, 10, 26, 16));
     const rows = await all({ checked_off: false, limit: 200 });
     expect(rows.find((r) => r.id === task)).toMatchObject({
-      lifecycle: "archived",
+      lifecycle: "completed",
       finished_at: Date.UTC(2026, 10, 26, 13),
     });
     expect(ordered(rows)).toBe(true);
