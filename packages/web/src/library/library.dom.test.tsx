@@ -71,11 +71,14 @@ let live: Live;
 let api: Api;
 /** Every library call, by name, with its input. */
 let calls: [string, Record<string, unknown>][];
+/** Answers page.read of a node. */
+let nodeRead: (input: Record<string, unknown>) => unknown;
 /** Answers page.write: the next write's answer, or its refusal. */
 let written: () => Promise<unknown>;
 
 beforeEach(() => {
   calls = [];
+  nodeRead = () => nodeExample;
   localStorage.clear();
   written = () => Promise.resolve({ result: "set", target: PAGE.ref, as_of: "1.1047.5n0w8k3q" });
   const record =
@@ -89,7 +92,7 @@ beforeEach(() => {
     library: {
       page: {
         read: record("page.read", (input) =>
-          Promise.resolve(input["target"] === PAGE.ref ? PAGE : nodeExample),
+          Promise.resolve(input["target"] === PAGE.ref ? PAGE : nodeRead(input)),
         ),
         history: record("page.history", (input) =>
           Promise.resolve(input["seq"] === undefined ? versionsExample : versionExample),
@@ -234,6 +237,42 @@ describe("[A5.pages.web.library] a project's Library against the contract's exam
     expect(reads(PROJECT)).toBe(before + 1);
   });
 
+  test("a change to the texts while the person reads them is offered, not put in their place; a long description is read whole", async () => {
+    const [first, rest] = [
+      "The portal of the clinic group: ",
+      "booking, reminders and the weekly report.",
+    ];
+    nodeRead = (input) =>
+      input["cursor"] === undefined
+        ? {
+            ...nodeExample,
+            description: first,
+            slice: { from: 0, to: first.length, of: first.length + rest.length },
+            cursor: "c1",
+          }
+        : {
+            ...nodeExample,
+            description: rest,
+            slice: {
+              from: first.length,
+              to: first.length + rest.length,
+              of: first.length + rest.length,
+            },
+          };
+    await mount(<NodeLibrary node={{ kind: "project", id: PROJECT }} />);
+    expect(part("description")?.textContent).toContain(first + rest);
+    // The whole description is read: its pen opens.
+    expect(named("Edit the description")?.getAttribute("aria-disabled")).toBeNull();
+
+    nodeRead = () => ({ ...nodeExample, description: "Rewritten by an agent." });
+    feed(batchOf(CURSOR.seq, [{ ...PAGE_FEED_EXAMPLES.textChanged, seq: CURSOR.seq + 1 }]));
+    await settle();
+    expect(part("description")?.textContent).toContain(first + rest);
+    await click(part("texts-newer")?.querySelector("button"));
+    expect(part("description")?.textContent).toContain("Rewritten by an agent.");
+    expect(part("texts-newer")).toBeNull();
+  });
+
   test("the person writes the text for agents with the pen, from the base the Library read", async () => {
     await mount(<NodeLibrary node={{ kind: "project", id: PROJECT }} />);
     await click(named("Edit the text for agents"));
@@ -347,12 +386,13 @@ describe("[A5.pages.web.page] a page's screen against the contract's examples", 
       from_seq: versionsExample.versions[1]?.seq,
       base: AS_OF,
     });
-    // Written back: the current words again, read anew.
+    // Written back: the current words again, read anew, with the focus on them.
     expect(part("page-version")).toBeNull();
     expect(reads(PAGE.ref)).toBe(2);
+    expect(document.activeElement).toBe(part("page-words"));
   });
 
-  test("a Restore that meets a newer body writes nothing, reads the page again and offers Restore on the newest words", async () => {
+  test("a Restore that meets a newer body writes nothing and goes back to the current words, read anew, before Restore can be pressed again", async () => {
     written = () =>
       Promise.reject(
         Object.assign(new Error(PAGE_CONFLICT_EXAMPLE.message), PAGE_CONFLICT_EXAMPLE),
@@ -362,7 +402,11 @@ describe("[A5.pages.web.page] a page's screen against the contract's examples", 
     await click(parts("version-show")[0]);
     await click(part("restore-shown"));
     expect(reads(PAGE.ref)).toBe(2);
-    expect(part("restore-shown")).not.toBeNull();
+    // The old version is no longer on screen: its Restore is not there to press over unseen words.
+    expect(part("page-version")).toBeNull();
+    expect(part("restore-shown")).toBeNull();
+    expect(part("page-body")).not.toBeNull();
+    expect(calls.filter(([name]) => name === "page.write")).toHaveLength(1);
   });
 
   test("the feed never moves the reader's words: a newer change shows a line, and an open pen keeps what was typed", async () => {

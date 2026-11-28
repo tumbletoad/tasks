@@ -304,7 +304,9 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
   const [history, setHistory] = useState(0);
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState<{ readonly version: Version; readonly text: string }>();
-  const [trashed, setTrashed] = useState(false);
+  // In the Trash: the page itself (its Restore brings it back), or what holds it (a task in the
+  // Trash hides its pages without writing them, and only that task's Restore brings them back).
+  const [trashed, setTrashed] = useState<"page" | "owner" | undefined>(undefined);
   const banner = useRef<HTMLParagraphElement>(null);
   // A page the person just made opens with its body's pen, once.
   const fresh = useRouterState({ select: (s) => s.location.state.pen === "body" });
@@ -336,7 +338,15 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
       live.onChanges(({ changes }) => {
         for (const change of changes) {
           if (change.type !== "page" || change.id !== id || change.after === undefined) continue;
-          setTrashed((change.after as PageRow).deleted_at !== undefined);
+          const after = change.after as PageRow;
+          const before = change.before as PageRow | undefined;
+          setTrashed(
+            after.deleted_at === undefined
+              ? undefined
+              : before === undefined || after.version !== before.version
+                ? "page"
+                : "owner",
+          );
         }
       }),
     [live, id],
@@ -349,6 +359,8 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
   const words = useRef<HTMLDivElement>(null);
   const row = id === undefined ? undefined : state.pages.get(id);
   const notices = `${String(row !== undefined && page !== undefined && row.version > page.version)}|${String(trashed)}`;
+  // After a Restore, the words it brought back have the focus.
+  const focusWords = useRef(false);
   const shownNotices = useRef(notices);
   const place = useRef<number | undefined>(undefined);
   if (notices !== shownNotices.current) {
@@ -364,6 +376,11 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
     const moved = words.current.getBoundingClientRect().top - kept;
     if (Math.abs(moved) > 0.5) window.scrollBy(0, moved);
   });
+  useEffect(() => {
+    if (!focusWords.current || typeof read !== "object") return;
+    focusWords.current = false;
+    words.current?.focus({ preventScroll: true });
+  }, [read]);
   useTitle(page?.title ?? ref);
   if (read === undefined) return null;
   if (read === "gone" || read === "failed") {
@@ -380,7 +397,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
   }
   const { page: view, body, whole } = read;
   const newer = row !== undefined && row.version > view.version ? row : undefined;
-  const editable = state.space?.read_only === undefined && !trashed;
+  const editable = state.space?.read_only === undefined && trashed === undefined;
   const base = view.as_of;
   const whenOf = (version: Version) => formatWhen(Date.parse(version.at), clock);
   const show = (version: Version) => {
@@ -397,16 +414,20 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
     writes.restore(view.ref, version.seq, whenOf(version), base).then(
       () => {
         setShown(undefined);
+        focusWords.current = true;
         again();
       },
       (error: unknown) => {
         if (live.failed(error)) return;
-        // Someone changed the body since: the newest words come, and Restore is there on them.
+        // Someone changed the body since: back to the current words, read anew, so the person sees
+        // them before a Restore over them can be pressed again.
+        const conflict = codeOf(error) === "conflict";
         say(
-          codeOf(error) === "conflict"
+          conflict
             ? t("page.conflict", { ref: view.ref })
             : refusalText(error, t("page.restoreFailed")),
         );
+        if (conflict) setShown(undefined);
         again();
       },
     );
@@ -452,6 +473,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
           base={base}
           max={BRIEF_MAX}
           line
+          clears
           save={
             editable ? (words, from) => writes.page(view.ref, { brief: words }, from) : undefined
           }
@@ -493,7 +515,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
               onClick={() => {
                 writes.trash(view.ref).then(
                   () => {
-                    setTrashed(true);
+                    setTrashed("page");
                   },
                   (error: unknown) => {
                     if (!live.failed(error)) say(refusalText(error, t("page.trashFailed")));
@@ -515,7 +537,11 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
           onRestore={restore}
         />
       ) : null}
-      {trashed ? (
+      {trashed === "owner" ? (
+        <p className={styles.notice} role="status" data-part="page-trashed">
+          {t("page.ownerInTrash")}
+        </p>
+      ) : trashed === "page" ? (
         <p className={styles.notice} role="status" data-part="page-trashed">
           {t("page.inTrash")}
           <button
@@ -524,7 +550,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
             onClick={() => {
               writes.untrash(view.ref).then(
                 () => {
-                  setTrashed(false);
+                  setTrashed(undefined);
                 },
                 (error: unknown) => {
                   if (!live.failed(error)) say(refusalText(error, t("page.trashFailed")));
@@ -536,7 +562,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
           </button>
         </p>
       ) : null}
-      {newer === undefined || trashed ? null : (
+      {newer === undefined || trashed !== undefined ? null : (
         <p className={styles.notice} role="status" data-part="page-newer">
           {t("page.newer", { changed: changed(newer.by, newer.at) })}
           <button type="button" className={styles.act} onClick={again}>
@@ -544,7 +570,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
           </button>
         </p>
       )}
-      <div ref={words} className={styles.words}>
+      <div ref={words} className={styles.words} tabIndex={-1} data-part="page-words">
         {shown === undefined ? (
           <Penned
             owner={view.id}
@@ -555,6 +581,7 @@ export function PageScreen({ page: ref }: { readonly page: string }) {
             base={base}
             max={TEXT_MAX}
             paragraphs
+            clears
             partial={whole ? undefined : t("text.partial")}
             save={
               editable ? (words, from) => writes.page(view.ref, { body: words }, from) : undefined

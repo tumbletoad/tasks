@@ -75,6 +75,7 @@
 
 /* A Library. */
 .library {
+  overflow-wrap: anywhere;
   display: flex;
   flex-direction: column;
   gap: 28px;
@@ -358,6 +359,7 @@
 
 /* A page's own screen. */
 .screen {
+  overflow-wrap: anywhere;
   max-width: 760px;
   padding: 12px 24px 64px 40px;
 }
@@ -561,6 +563,10 @@
 }
 
 /* A page the person just made opens with its pen: room to write in. */
+.words:focus {
+  outline: none;
+}
+
 .words > [data-part="text-editor"] {
   margin-top: 20px;
 }
@@ -603,6 +609,7 @@
 .md {
   flex: 1 1 auto;
   min-width: 0;
+  overflow-wrap: anywhere;
   max-width: 68ch;
   font-size: 0.9375rem;
   line-height: 1.625rem;
