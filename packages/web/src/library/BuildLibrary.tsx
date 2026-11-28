@@ -1,6 +1,7 @@
-// "Build this project's library", on a project's or an area's Library that has no pages: an
-// ordinary task there, with the person's note for agents that says what to build, opened in the
-// list so the person can hand it to an agent like any task. The note is the person's, written on
+// "Build this project's library", on a project's or an area's Library that has no pages, and "Tidy
+// this project's library" on one that has: an ordinary task there, with the person's note for
+// agents that says what to build or how to tidy, opened in the list so the person can hand it to an
+// agent like any task. The note is the person's, written on
 // their click: a task's context is data an agent would not follow. A task's add takes no note for
 // agents, so the two go one after the other: once the task is made its reference is kept, and a
 // note that failed is tried again on that task, never with a second one.
@@ -19,7 +20,13 @@ import type { LibraryNode } from "./lists.ts";
 
 const styles = classes(css, ["build"]);
 
-export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { kind: "space" }> }) {
+export function BuildLibrary({
+  node,
+  job,
+}: {
+  readonly node: Exclude<LibraryNode, { kind: "space" }>;
+  readonly job: "build" | "tidy";
+}) {
   const t = useT();
   const say = useToast();
   const router = useRouter({ warn: false }) as ReturnType<typeof useRouter> | null;
@@ -33,7 +40,7 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
   const filed = area === undefined ? {} : filedAs(area, project);
   const kind = filed.area !== undefined && filed.project === undefined ? "area" : "project";
   const add = async (): Promise<string | undefined> => {
-    const title = t("library.buildTitle", { kind });
+    const title = t(`library.${job}Title`, { kind });
     const added = await edits.write(
       (request_id) =>
         api.client.task.add({
@@ -46,7 +53,7 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
           ],
           request_id,
         }),
-      () => ({ id: "toast.buildAdded" }),
+      () => ({ id: `toast.${job}Added` }),
     );
     return "tasks" in added ? added.tasks[0]?.ref : undefined;
   };
@@ -61,7 +68,7 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
             task: ref,
             kind: "note",
             for_agents: true,
-            text: t("library.buildBrief", { kind }),
+            text: t(`library.${job}Brief`, { kind }),
             request_id,
           }),
         () => undefined,
@@ -83,7 +90,7 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
     <button
       type="button"
       className={styles.build}
-      data-part="build-library"
+      data-part={`${job}-library`}
       aria-disabled={sending || undefined}
       onClick={() => {
         if (sending) return;
@@ -100,7 +107,7 @@ export function BuildLibrary({ node }: { readonly node: Exclude<LibraryNode, { k
       }}
     >
       {made === undefined
-        ? t("library.buildTitle", { kind })
+        ? t(`library.${job}Title`, { kind })
         : t("library.buildNote", { ref: made })}
     </button>
   );

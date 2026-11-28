@@ -587,3 +587,28 @@ describe("[A5.pages.web.build] Build this project's library", () => {
     expect(part("build-library")).toBeNull();
   });
 });
+
+describe("[A5.pages.web.tidy] Tidy this project's library", () => {
+  test("on a project with pages: one task there whose note for agents says what tidying is, then the task expanded in the project's list", async () => {
+    const router = await mount(<NodeLibrary node={{ kind: "project", id: PROJECT }} />);
+    await click(part("tidy-library"));
+    const added = calls.filter(([name]) => name === "task.add");
+    expect(added).toHaveLength(1);
+    expect(added[0]?.[1]).toMatchObject({
+      tasks: [
+        { title: "Tidy this project's library", area: "Client work", project: "Lumen Health" },
+      ],
+    });
+    const note = calls.find(([name]) => name === "entry.add")?.[1];
+    expect(note).toMatchObject({ task: "M-231", kind: "note", for_agents: true });
+    expect(String(note?.["text"])).toMatch(/Merge pages that cover one subject/u);
+    expect(router.state.location.pathname).toBe(`/s/${SPACE_ID}/project/${PROJECT}`);
+    expect(router.state.location.search).toEqual({ task: "M-231" });
+  });
+
+  test("a project without pages offers Build, not Tidy", async () => {
+    await mount(<NodeLibrary node={{ kind: "project", id: BILLING }} />);
+    expect(part("tidy-library")).toBeNull();
+    expect(part("build-library")).not.toBeNull();
+  });
+});
