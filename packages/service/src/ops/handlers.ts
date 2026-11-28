@@ -39,6 +39,7 @@ import {
   LATER_SETS,
   mayWrite,
   newerWorkJson,
+  NOTHING_REUSABLE,
   opSpec,
   parseInput,
   PREFERENCES,
@@ -65,6 +66,7 @@ import {
   type EffortMove,
   type Operation,
   type OpResult,
+  type PageOwner,
   type SourceFields,
   type PatchableField,
   type Receipt,
@@ -152,8 +154,10 @@ import type { FolderMarkers } from "./marker.ts";
 import { repoName } from "./repo.ts";
 import { SearchCursors } from "../search/cursors.ts";
 import { runSearch, type SearchInput } from "../search/search.ts";
+import { parseQuery, printQuery } from "../search/query.ts";
 import { editDistance, fold, resolveGroup } from "./groups.ts";
 import {
+  hasPageTable,
   readBind,
   readGroupNames,
   readGroups,
@@ -196,6 +200,7 @@ import {
   type GroupName,
   type GroupNames,
   type ProjectFolderRow,
+  type SpaceFacts,
 } from "./read.ts";
 import { duplicateWarning } from "./similar.ts";
 import {
@@ -210,6 +215,23 @@ import {
 import { readFinished } from "./task-rows.ts";
 import { readChangeTasks, readTrash } from "./trash.ts";
 import { readActivity } from "./activity.ts";
+import {
+  holderName,
+  nodeView,
+  noLibrary,
+  noPage,
+  ownerOf,
+  pageView,
+  readHistory,
+  readPageRow,
+  readPageTrash,
+  searchLibrary,
+  targetOf,
+  taskGroups,
+  textNode,
+  trailOf,
+  type Target,
+} from "./library.ts";
 import { listSkills, readSkills, servedText, type Catalog, type Skill } from "../skills/index.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
@@ -965,6 +987,8 @@ async function submit(
     readonly base?: string;
     readonly warnings?: readonly string[];
     readonly answer?: Readonly<Record<string, unknown>>;
+    /** The one line of what changed and why, when the entry names it otherwise than `reason`. */
+    readonly reason?: string;
     /** Decided as it would be written, then rolled back: a preview (WriteRequest.dry_run). */
     readonly dryRun?: true;
     /** Hints of the refusals whose remedy differs for this entry (resultFailure). */
@@ -1016,7 +1040,11 @@ async function submit(
         : options.base === undefined
           ? {}
           : { base: options.base }),
-      ...(typeof input["reason"] === "string" ? { reason: input["reason"] } : {}),
+      ...(typeof input["reason"] === "string"
+        ? { reason: input["reason"] }
+        : options.reason === undefined
+          ? {}
+          : { reason: options.reason }),
       ...(options.active === true ? { active: true } : {}),
       ...(options.dryRun === true ? { dry_run: true } : {}),
       ...(options.warnings === undefined || options.warnings.length === 0
@@ -1394,6 +1422,33 @@ async function taskOf(call: Call): Promise<string> {
     hint: "Pass task, such as M-14. status with your cwd lists the tasks for your folder.",
     ...(candidates.length === 0 ? {} : { data: { candidates } }),
   });
+}
+
+/**
+ * Where write_page puts a page: what `given` names, a task by its reference, `"task"` for the
+ * session's task, or by default the session task's project, else its area, else the task itself.
+ * The space is never the default: it is in every trail.
+ */
+async function holderFor(
+  call: Call,
+  reader: WorkerConnection,
+  space: SpaceFacts,
+  given: string | undefined,
+  field: string,
+): Promise<PageOwner> {
+  if (given === undefined || given === "task") {
+    const task = await taskOf(call);
+    if (given === "task") return { kind: "task", task };
+    const groups = await taskGroups(reader, task);
+    if (groups?.project != null) return { kind: "project", project: groups.project };
+    if (groups?.area != null) return { kind: "area", area: groups.area };
+    return { kind: "task", task };
+  }
+  if ((await taskGroups(reader, given)) !== undefined) return { kind: "task", task: given };
+  const target = targetOf(given, await readGroupNames(reader), space.refPrefix, field);
+  if ("page" in target)
+    throw invalid(field, "A page holds no page: name a task, a project, an area or the space.");
+  return textNode(target.node);
 }
 
 /** A launch as its reference finds it in the call's space. */
@@ -2454,6 +2509,7 @@ const finishAnswer: Answer = async (view, stored) => {
     lifecycle: done.lifecycle,
     ...(done.wrap_state === undefined ? {} : { wrap_state: done.wrap_state }),
     learnings: result.status === "applied" ? (wrap?.learnings ?? 0) : 0,
+    ...(stored.answer?.["library"] === undefined ? {} : { library: stored.answer["library"] }),
     // A follow-up upserts by its source keys as task.add's drafts do (A3 3.4.5, 3.4.8).
     follow_ups: rows.map((row) => ({
       result: row["result"],
@@ -2740,7 +2796,63 @@ const levelsOf = (done: OpResult | undefined) => ({
   ...(done?.off_list === undefined ? {} : { off_list: done.off_list }),
 });
 
+/** What each write_page action did, as its answer says it. */
+const PAGE_DONE: Readonly<Record<string, string>> = {
+  create: "created",
+  edit: "edited",
+  append: "appended",
+  set: "set",
+  move: "moved",
+  trash: "trashed",
+  restore: "restored",
+};
+
+/**
+ * write_page's answer: what the write did, the page's reference or the node's ID, and where the
+ * page is now by name. An edit that wrote nothing says how often its old words stand, with the
+ * page's start and, when the page is longer, the cursor to read the rest.
+ */
+const pageAnswer: Answer = async (view, stored) => {
+  const done = opAt(stored, 0);
+  const named = stored.answer?.["action"];
+  const action = typeof named === "string" ? named : "";
+  const unapplied = done.found !== undefined;
+  const result = unapplied
+    ? done.found === 0
+      ? "stale"
+      : "ambiguous"
+    : done.status === "unchanged"
+      ? "no_change"
+      : (PAGE_DONE[action] ?? "set");
+  const on =
+    done.owner === undefined
+      ? undefined
+      : await now(view, (reader) => holderName(reader, done.owner as { kind: string; id: string }));
+  const excerpt = done.excerpt ?? "";
+  return {
+    result,
+    target: done.ref ?? done.id,
+    ...(on === undefined ? {} : { on }),
+    ...(unapplied ? { found: done.found, excerpt } : {}),
+    ...(unapplied && excerpt.endsWith(" chars)") ? { cursor: "b0" } : {}),
+    as_of: stored.as_of,
+    ...replayed(stored),
+  };
+};
+
+const instructAnswer: Answer = (_view, stored) => {
+  const done = opAt(stored, 0);
+  return Promise.resolve({
+    result: done.status === "unchanged" ? "no_change" : "set",
+    target: done.id,
+    as_of: stored.as_of,
+    ...replayed(stored),
+  });
+};
+
 const ANSWERS: Readonly<Record<string, Answer>> = {
+  "page.write": pageAnswer,
+  "node.instruct": instructAnswer,
   "task.add": addAnswer,
   "task.update": updateAnswer,
   "entry.add": entryAnswer,
@@ -2793,6 +2905,185 @@ function answerOf(view: View, stored: WriteResult): Promise<Record<string, unkno
 }
 
 const HANDLERS: Readonly<Record<string, Handler>> = {
+  "page.read": async (call) => {
+    const { input } = call;
+    const reader = readerOf(call.space);
+    if (!(await hasPageTable(reader))) throw noLibrary();
+    const space = await readSpace(reader);
+    const target = targetOf(
+      String(input["target"]),
+      await readGroupNames(reader),
+      space.refPrefix,
+      "target",
+    );
+    const cursor = typeof input["cursor"] === "string" ? input["cursor"] : undefined;
+    if ("node" in target) return nodeView(reader, target.node, cursor);
+    const { space: read, row } = await readPageRow(reader, target.page);
+    // A page in the Trash is read only by its history and Restore.
+    if (row?.["shown"] !== 1 || row["deleted_at"] !== null) throw noPage("target");
+    const section = typeof input["section"] === "string" ? input["section"] : undefined;
+    return pageView(read, row, await ownerOf(reader, read, row), section, cursor);
+  },
+
+  "page.write": async (call) => {
+    const { input } = call;
+    const action = String(input["action"]);
+    const reader = readerOf(call.space);
+    if (!(await hasPageTable(reader))) throw noLibrary();
+    const space = await readSpace(reader);
+    const text = (key: string): string | undefined =>
+      typeof input[key] === "string" ? input[key] : undefined;
+    const needs = (key: string): string => {
+      const value = text(key);
+      if (value === undefined) throw invalid(key, `${action} takes ${key}.`);
+      return value;
+    };
+    const target = async (): Promise<Target> =>
+      targetOf(needs("target"), await readGroupNames(reader), space.refPrefix, "target");
+    const page = async (): Promise<string> => {
+      const found = await target();
+      if (!("page" in found)) throw invalid("target", `${action} takes a page, such as M-180.`);
+      return found.page;
+    };
+    let op: Operation;
+    switch (action) {
+      case "create": {
+        const brief = text("brief") ?? "";
+        if (call.principal.audience === "agent" && brief.trim() === "") {
+          throw invalid(
+            "brief",
+            "A page an agent makes has a brief.",
+            "One line: what a reader finds in it.",
+          );
+        }
+        const owner = await holderFor(call, reader, space, text("on"), "on");
+        op = { kind: "page.create", owner, title: needs("title"), brief, body: text("body") ?? "" };
+        break;
+      }
+      case "edit":
+        op = { kind: "page.edit", page: await page(), old: needs("old"), new: needs("new") };
+        break;
+      case "append":
+        op = { kind: "page.append", page: await page(), text: needs("text") };
+        break;
+      case "set": {
+        const found = await target();
+        const from = input["from_seq"];
+        if ("page" in found) {
+          op = {
+            kind: "page.set",
+            page: found.page,
+            ...(text("title") === undefined ? {} : { title: needs("title") }),
+            ...(text("brief") === undefined ? {} : { brief: needs("brief") }),
+            ...(text("body") === undefined ? {} : { body: needs("body") }),
+            ...(typeof from === "number" ? { from_seq: from } : {}),
+          };
+          break;
+        }
+        const { node } = found;
+        const brief = text("brief");
+        const description = text("description");
+        if (brief !== undefined && description !== undefined && node.kind !== "space") {
+          throw invalid(
+            "brief",
+            "A project's or an area's brief is a call of its own.",
+            "Set the brief, then the description.",
+          );
+        }
+        if (brief !== undefined && node.kind === "project") {
+          op = { kind: "project.patch", project: node.id, set: { brief } };
+        } else if (brief !== undefined && node.kind === "area") {
+          op = { kind: "area.patch", area: node.id, set: { brief } };
+        } else {
+          op = {
+            kind: "node.set",
+            node: textNode(node),
+            ...(brief === undefined ? {} : { brief }),
+            ...(description === undefined ? {} : { description }),
+          };
+        }
+        break;
+      }
+      case "move":
+        op = {
+          kind: "page.move",
+          page: await page(),
+          owner: await holderFor(call, reader, space, needs("to"), "to"),
+        };
+        break;
+      case "trash":
+      case "restore":
+        op = { kind: action === "trash" ? "page.trash" : "page.restore", page: await page() };
+        break;
+      default:
+        throw invalid("action", "Not an action of write_page.");
+    }
+    const why = text("why");
+    return answerOf(
+      call,
+      await submit(call, [op], {
+        answer: { action },
+        ...(why === undefined ? {} : { reason: why }),
+      }),
+    );
+  },
+
+  "page.history": async (call) => {
+    const { input } = call;
+    const reader = readerOf(call.space);
+    if (!(await hasPageTable(reader))) throw noLibrary();
+    const space = await readSpace(reader);
+    const target = targetOf(
+      String(input["target"]),
+      await readGroupNames(reader),
+      space.refPrefix,
+      "target",
+    );
+    let of: { entity: "pages" | "node_texts"; id: string };
+    if ("page" in target) {
+      const { row } = await readPageRow(reader, target.page);
+      if (row?.["shown"] !== 1) throw noPage("target");
+      of = { entity: "pages", id: String(row["id"]) };
+    } else
+      of = { entity: "node_texts", id: target.node.kind === "space" ? space.id : target.node.id };
+    return readHistory(reader, of, {
+      seq: typeof input["seq"] === "number" ? input["seq"] : undefined,
+      cursor: typeof input["cursor"] === "string" ? input["cursor"] : undefined,
+      limit: Number(input["limit"]),
+    });
+  },
+
+  "page.trashed": async (call) => {
+    const { input } = call;
+    const reader = readerOf(call.space);
+    if (!(await hasPageTable(reader))) return { rows: [] };
+    return readPageTrash(reader, {
+      q: typeof input["q"] === "string" ? input["q"] : undefined,
+      limit: Number(input["limit"]),
+      cursor: typeof input["cursor"] === "string" ? input["cursor"] : undefined,
+    });
+  },
+
+  "node.instruct": async (call) => {
+    const { input } = call;
+    const reader = readerOf(call.space);
+    if (!(await hasPageTable(reader))) throw noLibrary();
+    const space = await readSpace(reader);
+    const target = targetOf(
+      String(input["target"]),
+      await readGroupNames(reader),
+      space.refPrefix,
+      "target",
+    );
+    if (!("node" in target))
+      throw invalid("target", "A text for agents is on the space, an area or a project.");
+    const op: Operation = {
+      kind: "node.instruct",
+      node: textNode(target.node),
+      text: String(input["text"]),
+    };
+    return answerOf(call, await submit(call, [op]));
+  },
   "activity.list": async (call) => {
     const { input } = call;
     const seq = (key: string) => (typeof input[key] === "number" ? input[key] : undefined);
@@ -2978,12 +3269,23 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     let answer: Record<string, unknown>;
     if (sections.length === 0) {
       const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
+      // What is known above the task, and its own pages, in the digest's one budget.
+      const library = await trailOf(reader, read.space, read.row);
+      const more = digest["more"] as Record<string, unknown>;
       answer = {
         view: "digest",
         as_of: read.space.asOf,
         bound,
         ...(request === undefined ? {} : { request }),
-        task: digest,
+        task:
+          library === undefined
+            ? digest
+            : {
+                ...digest,
+                pages: library.pages,
+                more: { ...more, pages: library.count - library.pages.length },
+              },
+        ...(library === undefined ? {} : { trail: library.trail }),
         ...notes,
         ...(removed.length === 0 ? {} : { removed_notes: removed }),
       };
@@ -3280,9 +3582,14 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   "task.finish": async (call) => {
     const { input } = call;
     const task = await taskOf(call);
-    const outcome = typeof input["outcome"] === "string" ? input["outcome"] : undefined;
     const learnings = Array.isArray(input["learnings"]) ? (input["learnings"] as string[]) : [];
     const dropped = input["status"] === "dropped";
+    const unnamed = await checkLibrary(call, learnings);
+    const library = libraryOf(input["library"]);
+    const outcome = withLibrary(
+      typeof input["outcome"] === "string" ? input["outcome"] : undefined,
+      library,
+    );
     if (dropped && input["finished"] !== undefined) {
       throw invalid("finished", "A dropped task keeps no time it was done", "Leave out finished.");
     }
@@ -3331,8 +3638,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const submitted = await submit(call, sent, {
       ...(own > 1 ? { wrapUp: 1 } : {}),
       inserted: { at: own, count: groups.length },
-      warnings: folders.warnings,
-      answer: { made: named.made, paths: pathsOf(ops, pathOf), shared: folders.shared },
+      warnings: [...folders.warnings, ...unnamed],
+      answer: {
+        made: named.made,
+        paths: pathsOf(ops, pathOf),
+        shared: folders.shared,
+        ...(library === undefined ? {} : { library }),
+      },
       pathOf,
     });
     await markersAfter(call, ops, ownResults(submitted));
@@ -3602,6 +3914,17 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   "task.search": async (call) => {
     // A read through the reader (A3 3.9): a read-only space answers too.
     const reader = readerOf(call.space);
+    if (call.input["scope"] === "library") {
+      if (!(await hasPageTable(reader))) throw noLibrary();
+      const query = parseQuery(typeof call.input["q"] === "string" ? call.input["q"] : "");
+      return searchLibrary(reader, {
+        query,
+        limit: typeof call.input["limit"] === "number" ? call.input["limit"] : 15,
+        agent: call.principal.audience === "agent",
+        parsed: printQuery(query),
+        task: sessionIn(call)?.task,
+      });
+    }
     const { host } = call;
     const space = call.space.id ?? "";
     const boundTask = sessionIn(call)?.task;
@@ -5081,4 +5404,50 @@ export async function spaceNameOf(
   if (space.reader === undefined) return undefined;
   const facts = await readSpace(space.reader);
   return { name: facts.name, refPrefix: facts.refPrefix };
+}
+
+/**
+ * complete_task's library: an agent names the pages its work updated, or "nothing reusable", so it
+ * weighs what a later task should know before it leaves. One that names neither, nor gives the
+ * lessons of a session that began before the library, still finishes, and is told so: a finish is
+ * never lost at the end of the work. Every page it names is one the space shows. Returns the
+ * warning for a finish that named nothing.
+ */
+/** The pages a finish says it updated, as given: references, or "nothing reusable". */
+function libraryOf(given: unknown): readonly string[] | typeof NOTHING_REUSABLE | undefined {
+  if (given === NOTHING_REUSABLE) return NOTHING_REUSABLE;
+  return Array.isArray(given) ? [...new Set(given as string[])] : undefined;
+}
+
+/**
+ * The outcome with the finish's pages below it, so whoever reads the outcome reads which pages the
+ * agent says it updated. It is the outcome's own text: the person may edit it as the rest.
+ */
+function withLibrary(
+  outcome: string | undefined,
+  library: readonly string[] | typeof NOTHING_REUSABLE | undefined,
+): string | undefined {
+  if (library === undefined) return outcome;
+  const line = `Library: ${library === NOTHING_REUSABLE ? NOTHING_REUSABLE : library.join(", ")}`;
+  return outcome === undefined || outcome.trim() === ""
+    ? line
+    : `${outcome.trimEnd()}
+
+${line}`;
+}
+
+async function checkLibrary(call: Call, learnings: readonly string[]): Promise<string[]> {
+  const library = call.input["library"];
+  if (library === undefined) {
+    return call.principal.audience === "agent" && learnings.length === 0
+      ? ['Next time give library: the pages you updated, or "nothing reusable".']
+      : [];
+  }
+  if (!Array.isArray(library)) return [];
+  const reader = readerOf(call.space);
+  for (const [i, ref] of (library as string[]).entries()) {
+    const { row } = await readPageRow(reader, ref);
+    if (row?.["shown"] !== 1 || row["deleted_at"] !== null) throw noPage(`library.${String(i)}`);
+  }
+  return [];
 }
