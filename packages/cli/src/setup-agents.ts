@@ -69,6 +69,7 @@ import {
   HOSTS,
   homeAnswer,
   homeGroups,
+  homesReadiness,
   isPrintApp,
   LockBusy,
   toolsOf,
@@ -104,6 +105,7 @@ import {
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import { personAtTerminal, type Io } from "./io.ts";
+import { readinessText } from "./readiness.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
 import { asAppError } from "./verbs.ts";
 
@@ -868,11 +870,17 @@ async function status(
   const answers = homes.map((views) =>
     views.map((view) => ({ view, answer: toolsOf(input, view, "", refusal(view)) })),
   );
+  // What each home's app reported: installed, its version and its login, by the home's first file.
+  const ready = await homesReadiness(
+    input,
+    answers.map((files) => files[0]?.view.home),
+  );
   if (globals.json) {
     io.stdout(
       `${JSON.stringify({
-        homes: answers.map((files) => {
+        homes: answers.map((files, i) => {
           const [first] = files;
+          const said = ready[i];
           const home = homeAnswer(
             files.map(({ view, answer }) => ({ file: view.home.file, answer })),
           );
@@ -886,6 +894,7 @@ async function status(
                   files: files.map(({ view, answer }) => ({ ...viewJson(view), tools: answer })),
                 }),
             row: first === undefined ? null : (rowOf(first.view)?.grant ?? null),
+            ...(said === undefined ? {} : { ready: said }),
           };
         }),
         service: rows !== undefined,
@@ -894,7 +903,7 @@ async function status(
     return 0;
   }
   if (answers.length === 0) io.stdout("No agent home was found.\n");
-  for (const files of answers) {
+  for (const [i, files] of answers.entries()) {
     const [first] = files;
     if (first === undefined) continue;
     const row = rowOf(first.view);
@@ -908,6 +917,8 @@ async function status(
           : `, grant row ${row.grant ?? "(no ID)"}`;
     const live = rows === undefined ? undefined : row !== undefined;
     io.stdout(`${title(first.view)}\n`);
+    const said = ready[i];
+    if (said !== undefined) io.stdout(`  ${readinessText(said)}\n`);
     if (files.length === 1) {
       io.stdout(`  ${toolsLine(first.view, first.answer, live)}${space}${grant}\n`);
       continue;
@@ -1024,6 +1035,14 @@ async function preview(
     return 0;
   }
   if (parsed.parts.includes("mcp") && items.length === 0) io.stdout("No agent home was found.\n");
+  const firsts = homeGroups(input.platform, items, (item) => item.view.home).map(
+    (files) => files[0]?.view,
+  );
+  const readiness = await homesReadiness(
+    input,
+    firsts.map((view) => view?.home),
+  );
+  const ready = new Map(firsts.map((view, i) => [view, readiness[i]]));
   let n = 0;
   let changes = 0;
   let shown: HomeView["home"] | undefined;
@@ -1036,6 +1055,8 @@ async function preview(
     if (!again) {
       n += 1;
       io.stdout(`${String(n)}. ${title(view)}\n`);
+      const said = ready.get(view);
+      if (said !== undefined) io.stdout(`   ${readinessText(said)}\n`);
     }
     const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
     io.stdout(`   ${view.home.file} (${hash})\n`);
