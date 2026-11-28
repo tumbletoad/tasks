@@ -21,7 +21,7 @@ import {
 } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
-/** The sidebar's views in their fixed order: the Trash is last, after Agents. */
+/** The sidebar's views in their fixed order: Activity after Agents, and the Trash last. */
 const VIEWS = [
   "Today",
   "Inbox",
@@ -31,6 +31,7 @@ const VIEWS = [
   "Backlog",
   "Completed",
   "Agents",
+  "Activity",
   "Trash",
 ];
 
@@ -292,13 +293,13 @@ test.describe("[A7.3.12.e2e.sidebar-fixed] every entry of the side menu keeps it
       await expect(link).toHaveAttribute("aria-label", /, no tasks$/);
     }
     await expect(sidebar(page).getByRole("link", { name: "Settings" })).toBeVisible();
-    // The Trash, last after Agents: no count and never quieter, since the live rows do not hold
-    // what is in it, and the keyboard reaches it right after Agents.
+    // The Trash, last after Activity: no count and never quieter, since the live rows do not hold
+    // what is in it, and the keyboard reaches it right after Activity.
     const trash = sidebar(page).locator('a[data-view="trash"]');
     await expect(links.last()).toHaveAttribute("data-view", "trash");
     await expect(trash).toHaveText("Trash");
     await expect(trash).not.toHaveAttribute("data-empty", /.*/u);
-    await sidebar(page).locator('a[data-view="agents"]').focus();
+    await sidebar(page).locator('a[data-view="activity"]').focus();
     await page.keyboard.press("Tab");
     await expect(trash).toBeFocused();
     await picture(page, "sidebar-empty-space.png");

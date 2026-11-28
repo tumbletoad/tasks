@@ -40,7 +40,7 @@ No run in lab run N ended inside a line: both CLIs wrote whole lines, also when 
 
 ## How the sanitiser made them
 
-`spikes/m0/runs/sanitise.ts` (lab code with tests) writes every value by the fixture schema `tests/stream-schema.ts`, which survives M0 with the content check. The schema is an explicit allow-list of fields per CLI and event type, and each allowed field has exactly one treatment with a fixed output: a known field never lets an observed value through.
+The lab's sanitiser wrote every value by the fixture schema `tests/stream-schema.ts`, which stays with the content check. The schema is an explicit allow-list of fields per CLI and event type, and each allowed field has exactly one treatment with a fixed output: a known field never lets an observed value through.
 
 | Treatment | Fields (examples) | Input it takes | Output |
 |---|---|---|---|
@@ -75,8 +75,8 @@ On 2026-11-12 the committed fixtures were run through this sanitiser again (`lab
 
 The scan cannot recognise an arbitrary private name (a person, a customer, a project) in a field whose values the structure does not constrain: it knows shapes and this machine's names only. The structural assertions are the guarantee: in the stream fixtures no string field is free. The index's `case` and `note` texts are written by the lab's own code.
 
-The lab runs both layers before it publishes anything: every output is built and checked in the run's scratch folder, and only when all pass are they copied here (`spikes/m0/runs/publish.ts`). Raw streams never left their scratch folder, and the Linux recordings were sanitised on the machine that made them.
+The lab ran both layers before it published anything: every output was built and checked in the run's scratch folder, and only when all passed were they copied here. Raw streams never left their scratch folder, and the Linux recordings were sanitised on the machine that made them.
 
 ## Regenerating
 
-Only through the lab (`spikes/m0/runs/README.md`): record with `lab.ts n01`, `n02`, `n03`, `repeats` (Windows) or `n02-linux`, then `lab.ts n05 --fixtures fixtures/streams`, then `pnpm exec prettier --write "fixtures/streams/*.json"`. After a change to the schema, `lab.ts resanitise --fixtures fixtures/streams` runs the committed fixtures through it again. Never edit a fixture by hand to add content.
+The lab that recorded and sanitised these streams is removed. A new recording needs a sanitiser that writes every value by `tests/stream-schema.ts` and passes the content check before anything is copied here. Never edit a fixture by hand to add content.
