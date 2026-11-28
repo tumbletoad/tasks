@@ -1112,5 +1112,18 @@
   "schedule.yearLast": "{interval, plural, one {Every year} other {Every # years}} on the last day of {month}",
   "schedule.yearWeekday": "The {ordinal, select, first {first} second {second} third {third} fourth {fourth} other {last}} {weekday} of {month}, {interval, plural, one {every year} other {every # years}}",
   "schedule.yearWorking": "The {position, select, first {first} other {last}} working day of {month}, {interval, plural, one {every year} other {every # years}}",
-  "schedule.at": "{schedule} at {time}"
+  "schedule.at": "{schedule} at {time}",
+  "routine.line": "{schedule} · {by}",
+  "routine.byYou": "you",
+  "routine.late": "late since {date}",
+  "routine.today": "today",
+  "routine.next": "next {date}",
+  "routine.lastDone": "last done {date}",
+  "routine.lastSkipped": "last skipped {date}",
+  "routine.done": "Done for this time: {title}",
+  "routine.skip": "Skip",
+  "routine.skipThis": "Skip this time: {title}",
+  "routines.due": "Due",
+  "routines.coming": "Coming",
+  "routines.paused": "Paused ({count})"
 }

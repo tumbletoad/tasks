@@ -1,0 +1,81 @@
+/* A routine's row: the round box with its loop, the title, and one quiet line of its schedule, who
+   does it and when. A task's box has no loop, so the two are told apart at a glance. */
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 1.25px solid var(--k-control);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--k-muted);
+  cursor: pointer;
+}
+
+.box:hover {
+  border-color: var(--k-accent);
+  color: var(--k-accent);
+}
+
+.box:focus-visible {
+  outline: 2px solid var(--k-ring);
+  outline-offset: 2px;
+}
+
+.box svg {
+  width: 14px;
+  height: 14px;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  overflow-wrap: anywhere;
+}
+
+.line {
+  color: var(--k-muted);
+  font-size: 0.875em;
+}
+
+.late {
+  color: var(--k-late);
+}
+
+.skip {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--k-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.skip:hover {
+  color: var(--k-text);
+}
+
+.group {
+  margin: 16px 0 4px;
+  color: var(--k-muted);
+  font-size: 0.875em;
+  font-weight: 600;
+}
+
+/* The parts of a routine's line, one quiet dot between each. */
+.part + .part::before {
+  content: " · ";
+}
