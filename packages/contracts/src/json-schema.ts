@@ -1,5 +1,5 @@
 // JSON Schema draft 2020-12 from the Zod schemas (A3 decision 2: `z.toJSONSchema`), the MCP tool
-// definition and the token estimator (A3 3.2.5).
+// definition and the token estimator.
 import { z } from "zod";
 import {
   inputSchemaFor,
@@ -55,8 +55,8 @@ export interface McpAnnotations {
 }
 
 /**
- * Set explicitly on every tool, because the 2026-07-28 defaults are destructive and open-world
- * (A3 3.3). Writes are idempotent per request_id, and nothing is deleted: everything has history.
+ * Set explicitly on every tool, because the 2026-07-28 defaults are destructive and open-world.
+ * Writes are idempotent per request_id, and nothing is deleted: everything has history.
  */
 export function annotationsFor(kind: EntryKind): McpAnnotations {
   return {
@@ -69,11 +69,11 @@ export function annotationsFor(kind: EntryKind): McpAnnotations {
 
 /**
  * The `_meta` key that makes Claude Code load a tool's definition at start instead of on demand
- * (M0 row A09, A3 5). Only the tools a session needs first carry it.
+ * Only the tools a session needs first carry it.
  */
 export const ALWAYS_LOAD_META = "anthropic/alwaysLoad";
 
-/** One tool of `mcp-tools.json` (A3 3.2.2). */
+/** One tool of `mcp-tools.json`. */
 export interface McpTool {
   readonly name: string;
   readonly title: string;
@@ -100,9 +100,9 @@ export function mcpTool(entry: AnyEntry): McpTool | undefined {
 const utf8 = new TextEncoder();
 
 /**
- * A3 3.2.5's estimator, `ceil(utf8 bytes / bytes per token)`, with M0's divisors (row A08):
+ * The estimator, `ceil(utf8 bytes / bytes per token)`, with measured divisors:
  * divisor 3 undercounts for Claude, so tool definitions take 2.0 bytes per token
- * and tool results 1.5. They are estimates until Claude's own counts confirm them (M2.15).
+ * and tool results 1.5. They are estimates until Claude's own counts confirm them.
  */
 export const BYTES_PER_TOKEN = { definition: 2, result: 1.5 } as const;
 

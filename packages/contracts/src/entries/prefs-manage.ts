@@ -1,4 +1,4 @@
-// prefs.manage: read and change the space's non-policy preferences (A3 3.4.11). `describe` and
+// prefs.manage: read and change the space's non-policy preferences. `describe` and
 // `get` read; `set` writes through A1's `pref.set`, for the user only until agents get it
 // (later.ts). The keys and their value schemas are contracts' declarations (preferences.ts).
 import { z } from "zod";

@@ -1,4 +1,4 @@
-// The registry: every entry, and the types the faces derive from it (A3 3.2).
+// The registry: every entry, and the types the faces derive from it.
 import type { z } from "zod";
 import type { AnyEntry, Filled } from "./define.ts";
 import { activityList } from "./entries/activity-list.ts";

@@ -1,4 +1,4 @@
-// The files in packages/contracts/generated/ (A3 3.2.2). Each is a pure function of the registry:
+// The files in packages/contracts/generated/. Each is a pure function of the registry:
 // no clock, no paths, no environment, so the output is the same on every machine.
 import { AUTO_FIELDS, faceFields, kebab, keyValueFields, type FieldInfo } from "../cli.ts";
 import { ACTOR_KINDS_BY_CLASS, cliFaces, type AnyEntry, type CliFace } from "../define.ts";
@@ -276,7 +276,7 @@ function leafOf(entry: AnyEntry): string {
   return parts[parts.length - 1] ?? entry.name;
 }
 
-/** `client.ts`: the typed client of the browser UI (A5), one method per entry with a UI face. */
+/** `client.ts`: the typed client of the browser UI, one method per entry with a UI face. */
 export function clientTs(entries: readonly AnyEntry[]): string {
   const root: ClientNode = { methods: [], children: new Map() };
   for (const entry of entries.filter((e) => e.faces.ui === true)) {

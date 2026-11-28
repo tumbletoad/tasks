@@ -14,7 +14,7 @@ import { idPattern, patterns, TaskRef } from "./schemas.ts";
 export const PAGE_OWNER_KINDS = ["space", "area", "project", "task"] as const;
 export const NODE_KINDS = ["space", "area", "project"] as const;
 
-/** What a person may store, and what an agent may send in one call (A3 3.1's two audiences). */
+/** What a person may store, and what an agent may send in one call: the two audiences. */
 export const PAGE_LIMITS = {
   user: { title: 300, brief: 400, body: 65_536, why: 1_000 },
   agent: { title: 200, brief: 160, body: 8_000, words: 4_000, why: 200 },

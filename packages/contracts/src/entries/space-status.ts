@@ -1,4 +1,4 @@
-// space.status: orientation and session status (A3 3.4.2).
+// space.status: orientation and session status.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import {

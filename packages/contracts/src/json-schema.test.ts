@@ -1,4 +1,4 @@
-// Every generated JSON Schema is valid draft 2020-12 (A3 5), and the RPC methods carry A6 3.3's
+// Every generated JSON Schema is valid draft 2020-12, and the RPC methods carry their entries'
 // metadata.
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, test } from "vitest";
@@ -40,7 +40,7 @@ describe("[A3.5.registry.json-schema] generated JSON Schema and registry metadat
       properties: { sections: { items: { enum: string[] } } };
     };
     const offered = input.properties.sections.items.enum;
-    // sessions and proposals wait for M4.06 and M4.02, which define their records.
+    // sessions and proposals wait for the steps that define their records.
     expect(offered).toEqual([
       "instructions",
       "context",
@@ -70,7 +70,7 @@ describe("[A3.5.registry.json-schema] generated JSON Schema and registry metadat
   });
 
   test("a result accepts every value A1 can store, not only what an agent may write", () => {
-    // A1 3.4: log_entries.kind and sources.kind.
+    // log_entries.kind and sources.kind.
     const storedLogKinds = ["progress", "evidence", "blocker", "decision", "question", "handoff"];
     const storedSourceKinds = [
       "email",
@@ -120,7 +120,7 @@ describe("[A3.5.registry.json-schema] generated JSON Schema and registry metadat
   });
 
   test("a task's due is A1's date-only or timed commitment, never a bare offset time", () => {
-    // A1 3.4: due_date, never shifted to UTC, or due_at with its IANA zone due_tz.
+    // due_date, never shifted to UTC, or due_at with its IANA zone due_tz.
     const [digest] = taskGet.examples;
     if (digest?.output.view !== "digest") throw new Error("the first example is a digest");
     const { output } = digest;

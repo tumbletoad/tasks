@@ -1,4 +1,4 @@
-// The generated docs in docs/agents/ (A3 3.2.2, A7 3.2): one section per entry with its examples,
+// The generated docs in docs/agents/: one section per entry with its examples,
 // and one per CLI verb. Pure functions of the registry and the product names.
 import type { z } from "zod";
 import {
@@ -108,7 +108,7 @@ function rows(schema: z.ZodType, prefix: string, io: "input" | "output", agent?:
       if (agent?.rules.required?.includes(path) === true) required = "agents only";
       let type = typeText(json);
       if (agentField !== undefined) {
-        // An agent limit (A3 3.4) is tighter than the user's (A1 3.7).
+        // An agent limit is tighter than the user's.
         const limited = typeText(toJsonSchema(agentField, io));
         if (limited !== type) type = `${type}; agents: ${limited}`;
       }

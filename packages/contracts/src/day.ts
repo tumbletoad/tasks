@@ -46,7 +46,7 @@ export function dateOf(day: number): string {
   return new Date(day * DAY_MS).toISOString().slice(0, 10);
 }
 
-/** The form of an IANA time zone name: a bare offset is none (A1 3.4). */
+/** The form of an IANA time zone name: a bare offset is none. */
 export const TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/u;
 
 /** Whether `name` is an IANA time zone this runtime knows. */

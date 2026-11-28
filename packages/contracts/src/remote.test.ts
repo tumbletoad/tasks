@@ -1,4 +1,4 @@
-// The remote command envelope (A6 3.3 "Remote envelope types", 3.8.1): types in the registry's type
+// The remote command envelope: types in the registry's type
 // package, exposed by no transport until linked machines arrive (L1).
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, expectTypeOf, test } from "vitest";

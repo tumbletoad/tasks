@@ -1,5 +1,4 @@
-// The registry check (A3 3.2.1 schema rules, 3.2.3 exposure, 3.2.4 naming, 3.2.5 budgets, A6 3.3
-// metadata). Each rule is proven on a fixture entry that breaks only that rule.
+// The registry check (schema rules, exposure, naming, budgets and metadata). Each rule is proven on a fixture entry that breaks only that rule.
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
@@ -459,7 +458,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           "input.probe",
           "are not optional",
         ],
-        // Every .default() is refused: a default is entry data (A3 3.2.1).
+        // Every .default() is refused: a default is entry data.
         [
           "default inside optional",
           withInput(z.string().max(3).default("a").describe("P").optional()),
@@ -1769,7 +1768,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           'fixture.note: operation kind "run.create" needs scope "launch:run", not "admin"',
         ]);
         // Policy keys travel in pref.set, so an entry for them may need admin. The handler
-        // refuses a policy key without it (A1 3.16, A6 3.6.3).
+        // refuses a policy key without it.
         expect(check(userEntry(["pref.set"], "admin"))).toEqual([]);
         expect(check(userEntry(["pref.set"], "space:write"))).toEqual([]);
       });
@@ -1845,7 +1844,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
       rejects(withTool("tasks"), /no tool is called "tasks"/);
       rejects(withTool("acme"), /a tool name does not start with the MCP server key \("acme"\)/);
       rejects(withTool("acme_note"), /a tool name does not start with the MCP server key/);
-      // A later word may be the key's own word (A3 3.2.4): add_tasks under the key tasks.
+      // A later word may be the key's own word: add_tasks under the key tasks.
       expect(check(withTool("add_acme"))).toEqual([]);
       expect(check(withTool("acmenote"))).toEqual([]);
     });
@@ -1876,7 +1875,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
     });
 
     test("a tool definition's size is reported, never refused (A3 3.2.5)", () => {
-      // 80 tools with long descriptions: far over A3 3.2.5's old caps, and still no problem.
+      // 80 tools with long descriptions: far over any cap, and still no problem.
       const many = Array.from({ length: 80 }, (_, i) =>
         defineEntry({
           ...base,

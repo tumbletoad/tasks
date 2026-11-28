@@ -1,5 +1,5 @@
 // JSON that is byte-identical on every OS: keys sorted by code unit, two-space indent, LF, one
-// trailing newline (A7 3.8 M1.01).
+// trailing newline.
 
 export function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeys);

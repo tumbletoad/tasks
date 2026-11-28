@@ -1,4 +1,4 @@
-// task.update: change an active task's fields, summary, context, group and sources (A3 3.4.6).
+// task.update: change an active task's fields, summary, context, group and sources.
 import { z } from "zod";
 import { defineEntry, under } from "../define.ts";
 import { EFFORT_KEY_MAX } from "../preferences.ts";
