@@ -1,4 +1,4 @@
-// Open in T3 Code from the page (A4 3.4.1, A7 M2.10t), in Chromium and Firefox against the real
+// Open in T3 Code from the page, in Chromium and Firefox against the real
 // service process: a T3 Code instance whose T3 is testkit's fake server in this worker, and an app
 // link opener that records each link instead of opening it (world.ts `links`), so no real T3 Code
 // is reached. The common click from the start: T3 not running offers Start, not paired offers Pair

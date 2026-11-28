@@ -769,7 +769,7 @@ describe("[A4.5.shim.environment] the agent's environment", () => {
     },
   );
 
-  test("the wire's after_exit modes are A4 3.6.1's", () => {
+  test("the wire's after_exit modes are the launcher's", () => {
     expect([...AFTER_EXIT_MODES]).toEqual([...AFTER_EXIT]);
     expect(REFUSED).toBe("launch_refused");
   });

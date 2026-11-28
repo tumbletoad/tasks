@@ -1,4 +1,4 @@
-// React on top of the live store (A5 3.24: `useSyncExternalStore`). The store itself has no React.
+// React on top of the live store, through `useSyncExternalStore`. The store itself has no React.
 import { useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { Session } from "../context.ts";
 import {

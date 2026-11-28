@@ -11,7 +11,7 @@ import type { TaskRow } from "@ttasks/client/store";
 import type { Changes } from "../store/store.ts";
 import { CHANGES_DAYS, type TaskChange } from "@ttasks/client/today";
 
-/** The actors whose changes Changes lists (A1 `actors.kind`): not the person, the system or an import. */
+/** The actors whose changes Changes lists: not the person, the system or an import. */
 export const AGENT_KINDS: ReadonlySet<string> = new Set(["agent", "routine"]);
 /** The tasks the log remembers, newest first, as many as a snapshot brings: far more than Changes shows. */
 const KEPT = 100;

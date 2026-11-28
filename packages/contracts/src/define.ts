@@ -1,5 +1,5 @@
-// The registry entry (A3 3.2.1) and its metadata (A6 3.3). One `defineEntry()` per operation or
-// query. Everything the faces need is generated from it (A3 3.2.2): the MCP tool, the RPC method,
+// The registry entry and its metadata. One `defineEntry()` per operation or
+// query. Everything the faces need is generated from it: the MCP tool, the RPC method,
 // the CLI verb, the HTTP route, the typed client and the docs.
 import { z } from "zod";
 import type { ErrorCode } from "./errors.ts";
@@ -10,7 +10,7 @@ export const ENTRY_KINDS = ["read", "write"] as const;
 export type EntryKind = (typeof ENTRY_KINDS)[number];
 
 /**
- * Who may call an entry: the exposure classes of A3 3.2.3.
+ * Who may call an entry: its exposure class.
  * - `agent`: agents and the user. Listed as an MCP tool when the entry has an MCP face.
  * - `user`: the user only, through the `ui` and `cli-interactive` connection classes.
  * - `ui`: the browser UI only.
@@ -18,7 +18,7 @@ export type EntryKind = (typeof ENTRY_KINDS)[number];
 export const ACTOR_CLASSES = ["agent", "user", "ui"] as const;
 export type ActorClass = (typeof ACTOR_CLASSES)[number];
 
-/** A1's actor kinds, recorded on every operation and taken from the credential (A6 3.3). */
+/** A1's actor kinds, recorded on every operation and taken from the credential. */
 export const ACTOR_KINDS = ["human", "agent", "routine", "system", "import"] as const;
 export type ActorKind = (typeof ACTOR_KINDS)[number];
 
@@ -32,7 +32,7 @@ export const ACTOR_KINDS_BY_CLASS = {
   ui: ["human"],
 } as const satisfies Record<ActorClass, readonly ActorKind[]>;
 
-/** The grant scope an entry requires (A6 3.6.3). */
+/** The grant scope an entry requires. */
 export const SCOPES = [
   "space:read",
   "space:write",
@@ -43,12 +43,12 @@ export const SCOPES = [
 ] as const;
 export type Scope = (typeof SCOPES)[number];
 
-/** Whether a linked device may call the entry, and how (A6 3.3). Unused until L1. */
+/** Whether a linked device may call the entry, and how. Unused until L1. */
 export const REMOTE_CLASSES = ["never", "read", "write", "execute"] as const;
 export type RemoteClass = (typeof REMOTE_CLASSES)[number];
 
 /**
- * The audience filter (A6 3.3, A1 D14).
+ * The audience filter (A1 D14).
  * - `caller`: the result carries stored records, filtered to what the caller's audience may read.
  *   In v1 every note has audience `all`, so the filter passes everything.
  * - `none`: the result carries no stored record content, so there is nothing to filter.
@@ -56,21 +56,21 @@ export type RemoteClass = (typeof REMOTE_CLASSES)[number];
 export const AUDIENCE_FILTERS = ["caller", "none"] as const;
 export type AudienceFilter = (typeof AUDIENCE_FILTERS)[number];
 
-/** The MCP tool (A3 3.4). Its input schema is the agent projection of the entry's input. */
+/** The MCP tool. Its input schema is the agent projection of the entry's input. */
 export interface McpFace {
-  /** snake_case, at most 24 characters, permanent (A3 3.2.4). */
+  /** snake_case, at most 24 characters, permanent. */
   readonly tool: string;
   readonly title: string;
-  /** At most 280 characters. The first sentence says when to use the tool (A3 3.2.5). */
+  /** At most 280 characters. The first sentence says when to use the tool. */
   readonly description: string;
   /**
    * Claude Code loads this tool's definition at start, not on demand (`_meta["anthropic/
-   * alwaysLoad"]`, M0 row A09). For the tools a session calls first: `status` and `get_task`.
+   * alwaysLoad"]`). For the tools a session calls first: `status` and `get_task`.
    */
   readonly alwaysLoad?: boolean;
 }
 
-/** One CLI verb (A2 3.10, A3 3.4.13). Field names refer to top-level input fields or `item` fields. */
+/** One CLI verb. Field names refer to top-level input fields or `item` fields. */
 export interface CliFace {
   /** The verb: `ttasks <verb>`. Lower case, unique unless `when` is given. */
   readonly verb: string;
@@ -111,8 +111,8 @@ export interface Faces {
 }
 
 /**
- * A result's size in estimated tokens, `ceil(utf8 bytes / 1.5)` (A3 3.2.5, M0 row A08). A tool
- * definition has no budget: its size is reported in `mcp-definitions.json` (A3 3.2.5).
+ * A result's size in estimated tokens, `ceil(utf8 bytes / 1.5)`. A tool
+ * definition has no budget: its size is reported in `mcp-definitions.json`.
  */
 export interface Budget {
   /** A typical result. */
@@ -154,7 +154,7 @@ export type Limit = Pair<number>;
 export type Default = Pair<Scalar>;
 
 /**
- * What the agent input changes, by path (A3 3.2.1, 3.2.3, 3.4). A path names a node of the input:
+ * What the agent input changes, by path. A path names a node of the input:
  * field names joined by dots, and `[]` for an array's element, such as `outcome`, `learnings[]`
  * or `tasks[].sources[].title`. It passes through a field's `.optional()` and never enters a
  * union. The registry check refuses a path that names no node, a node its rule does not fit, and
@@ -166,7 +166,7 @@ export interface AgentRules {
   /** Optional fields agents must give, such as `outcome` on `task.finish`. */
   readonly required?: readonly string[];
   /**
-   * Tighter agent limits (A3 3.1): the maximum length of a string or SafeText, or the item count
+   * Tighter agent limits: the maximum length of a string or SafeText, or the item count
    * of an array, below the user's maximum, which the input keeps. `[path, limit]` pairs.
    */
   readonly max?: Pairs<number>;
@@ -179,7 +179,7 @@ export interface AgentRules {
 export type Defaults = Pairs<Scalar>;
 
 /**
- * A write entry that also answers reads (A3 3.2.3 "Mixed actions"), such as `organize` and
+ * A write entry that also answers reads, such as `organize` and
  * `preferences`: `field` names the required enum of the input that picks the action, and `reads`
  * lists its values that only read. A read action takes no request ID and writes nothing. A write
  * action needs `request_id`, and `base` when every operation the entry may emit needs one. The
@@ -208,7 +208,7 @@ export interface Entry<
   readonly audience: AudienceFilter;
   /** The A1 operation kinds a write may emit. Empty for reads. */
   readonly ops: readonly string[];
-  /** A write entry whose action field also picks read actions (A3 3.2.3). */
+  /** A write entry whose action field also picks read actions. */
   readonly actions?: Actions;
   /** The full input, including user-only fields. Plain Zod: rules and defaults are data below. */
   readonly input: I;
@@ -246,8 +246,8 @@ export function isAgentAllowed(entry: Pick<AnyEntry, "actors">): boolean {
 }
 
 /**
- * Whether a call of `entry` with `input` only reads: a read entry, or a mixed entry's read action
- * (A3 3.2.3). Such a call takes no request ID and writes nothing.
+ * Whether a call of `entry` with `input` only reads: a read entry, or a mixed entry's read action.
+ * Such a call takes no request ID and writes nothing.
  */
 export function readsOnly(entry: Pick<AnyEntry, "kind" | "actions">, input: unknown): boolean {
   if (entry.kind === "read") return true;
@@ -284,7 +284,7 @@ const normalisers = new WeakSet<object>();
 
 /**
  * Registers a normalising function, the only kind of `.transform` a schema may use. It must never
- * reject input (A3 3.2.1). SafeText is the one in use (safe-text.ts).
+ * reject input. SafeText is the one in use (safe-text.ts).
  */
 export function normaliser<F extends (value: string) => string>(fn: F): F {
   normalisers.add(fn);
@@ -338,13 +338,13 @@ export function descriptionOf(schema: z.ZodType): string | undefined {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The audience inputs (A3 3.2.1). Each is the entry's input with its rules applied by path: for
+// The audience inputs. Each is the entry's input with its rules applied by path: for
 // the user the defaults, for agents the defaults and the agent rules. They are built here, never
-// written by hand, so a schema carries no policy that composition could lose (A3 3.2.1). A
+// written by hand, so a schema carries no policy that composition could lose. A
 // rule that does not fit its node changes nothing here, and the registry check reports it. A path
 // listed twice in one list throws here, and the check reports it first.
 
-/** Who an input is parsed for: agent and routine actors get the agent input (A3 3.2.1). */
+/** Who an input is parsed for: agent and routine actors get the agent input. */
 export type Audience = "agent" | "user";
 
 /** What an audience input is built from. */
@@ -580,7 +580,7 @@ function rebuild(schema: z.ZodType, changes: Record<string, unknown>): z.ZodType
 }
 
 /**
- * Parses an entry's input at the registry boundary. Every face parses with it (A3 3.10 item 4).
+ * Parses an entry's input at the registry boundary. Every face parses with it.
  * SafeText can lengthen text (NFC turns U+0958 into two code points), and A1 stores the
  * normalised text, so the limits must hold on the normalised value. The JSON Schema can state them
  * only on the text as sent, so this parses twice: once to normalise and fill defaults, then again

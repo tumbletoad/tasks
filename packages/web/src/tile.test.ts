@@ -45,7 +45,7 @@ describe("[A5.3.6.web.tile] the launch tile's states and clicks", () => {
     expect(tileClick("ready")).toBe("open");
     expect(tileClick("opening")).toBe("none");
     expect(tileClick("running")).toBe("expand");
-    // The states the place and the area decide (A5 3.6's table).
+    // The states the place and the area decide.
     expect(tileClick("unavailable")).toBe("expand");
     expect(tileClick("copy_only")).toBe("copy");
     expect(tileClick("elsewhere")).toBe("none");

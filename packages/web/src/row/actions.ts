@@ -5,7 +5,7 @@ import type { Receipt, Run } from "../api.ts";
 import type { TaskRow } from "@ttasks/client/store";
 import type { RowMove } from "./model.ts";
 
-/** The agent-only fields a click asks an agent to change (A5 3.11, U11). */
+/** The agent-only fields a click asks an agent to change. */
 export type AskField = "summary" | "context" | "sources" | "outcome" | "learnings";
 
 /** What an Open carries besides its task and instance. */
@@ -41,7 +41,7 @@ export interface RowActions {
     carried?: OpenWith,
   ) => Promise<Receipt | undefined>;
   /**
-   * Copy the pointer brief, or with `pack` (Shift+Copy) the context pack (A4 3.15.5), with the
+   * Copy the pointer brief, or with `pack` (Shift+Copy) the context pack, with the
    * composer's `text`. True once it is on the clipboard.
    */
   readonly copy: (task: TaskRow, pack?: boolean, text?: string) => Promise<boolean>;
@@ -59,11 +59,11 @@ export interface RowActions {
   /** Stop a run of the task: it answers at once, and the thread follows the run's record. */
   readonly stop: (task: TaskRow, run: Run) => void;
   readonly star: (task: TaskRow, on: boolean) => void;
-  /** The view's visible move out of it (A5 3.5): "Move to Open" or "Back to open". */
+  /** The view's visible move out of it: "Move to Open" or "Back to open". */
   readonly move: (task: TaskRow, kind: RowMove) => void;
-  /** The checkbox (A5 3.12): check-off, or, during its hold, its undo. */
+  /** The checkbox: check-off, or, during its hold, its undo. */
   readonly check: (task: TaskRow) => void;
-  /** An agent-only field was clicked (A5 3.11): a request for an agent starts in the composer. */
+  /** An agent-only field was clicked: a request for an agent starts in the composer. */
   readonly ask: (task: TaskRow, field: AskField) => void;
   /** Focus moved into the row: it becomes the list's current row. */
   readonly current: (task: TaskRow) => void;

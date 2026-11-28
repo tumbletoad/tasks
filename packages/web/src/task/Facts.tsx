@@ -1,4 +1,4 @@
-// The expanded task's facts (A5 3.7, 3.11): short muted labels and their controls. An open task's
+// The expanded task's facts: short muted labels and their controls. An open task's
 // facts are edited in place, and every one goes through the one path for a person's edit
 // (edit/edits.ts): it shows at once, carries a base, and on a refusal keeps the person's value
 // under the control (edit/Unsaved.tsx). A fact without a value is an empty control a person can
@@ -162,7 +162,7 @@ function UnsavedFact({
 }
 
 /**
- * A segmented control (A5 3.7): one tab stop, the arrows move along it, Space or a click chooses.
+ * A segmented control: one tab stop, the arrows move along it, Space or a click chooses.
  * A clearable one clears when its chosen option is chosen again.
  */
 function Segmented({
@@ -302,7 +302,7 @@ function WaitingOn({
     [],
   );
   const list = `waiting-people-${task.id}`;
-  // Someone else changed it while the person edits: the typed text stays (A5 3.15 item 9).
+  // Someone else changed it while the person edits: the typed text stays.
   const changed =
     opened.current !== undefined && saved !== opened.current.value
       ? (edits.changedSince(task.id, "waiting_on", opened.current.mark)?.by ?? "")
@@ -414,7 +414,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
         </span>
       </Fact>
     );
-  // A finished task's facts are read-only (A5 3.5 "Expanded completed task"), and so are those of
+  // A finished task's facts are read-only, and so are those of
   // one in the Trash, whose way back is Restore.
   if (task.lifecycle !== "active" || trashed) {
     return (
@@ -555,7 +555,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
           value={priority}
           clearable
           onChange={(next) => {
-            // Choosing the chosen one again sets P4: no priority (A5 3.7).
+            // Choosing the chosen one again sets P4: no priority.
             edits.edit(task, priorityChange(next === undefined ? 4 : Number(next)));
           }}
         />

@@ -256,7 +256,7 @@ describe("[A4.5.launch.machine] the launch state machine's rules", () => {
     expect(calls.dispatch).toEqual([]);
   });
 
-  test("restart recovery makes an accepted T3 CLI launch Unknown, as A4 3.9.3's table says", async () => {
+  test("restart recovery makes an accepted T3 CLI launch Unknown", async () => {
     const m = machine();
     const cli = await open(m, "t3-cli", "t3-cli-accepted");
     await m.dispatch(cli.id);

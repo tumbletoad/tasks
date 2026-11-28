@@ -1,4 +1,4 @@
-// A wrong source removed from a task in the page, and put back (A5 3.7), against the real service
+// A wrong source removed from a task in the page, and put back, against the real service
 // process with fixture data: Remove on the source's line, with no Undo, the Removed line after a
 // reload, Put back refused while another task holds the key, naming it, and Put back once that
 // task lets the key go; with more holders than it names, how many more. Screenshots at 1,440 and

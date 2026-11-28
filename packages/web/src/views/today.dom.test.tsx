@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// Today in a DOM (A5 3.4, 3.15), with the real live store, rendered by React into happy-dom: the
+// Today in a DOM, with the real live store, rendered by React into happy-dom: the
 // date shows once with the day's numbers, each a link to what it counts, the sections are `section`
 // elements under small headings, an agent's update leaves the expanded task at its place in its
 // section until it is collapsed, and Changes lists what an agent changed off Today. Fixture data

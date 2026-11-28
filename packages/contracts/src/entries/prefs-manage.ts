@@ -1,4 +1,4 @@
-// prefs.manage: read and change the space's non-policy preferences (A3 3.4.11). `describe` and
+// prefs.manage: read and change the space's non-policy preferences. `describe` and
 // `get` read; `set` writes through A1's `pref.set`, for the user only until agents get it
 // (later.ts). The keys and their value schemas are contracts' declarations (preferences.ts).
 import { z } from "zod";
@@ -149,7 +149,7 @@ const PrefRow = z.strictObject({
   default: PrefValueOutput.describe("Its default"),
   is_default: z.boolean().describe("The value is the default (get)").optional(),
   writable: z.boolean().describe("Whether this caller may change it"),
-  policy: z.literal(true).describe("Policy: the user's own (A3 3.8)").optional(),
+  policy: z.literal(true).describe("Policy: the user's own").optional(),
   fixed: z.literal(true).describe("Fixed in this build: nobody changes it").optional(),
   held: z
     .array(z.strictObject({ effort: Size.describe("The size"), ...Counts }))

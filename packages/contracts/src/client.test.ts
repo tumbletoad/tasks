@@ -1,4 +1,4 @@
-// The generated client and routes (A3 3.2.2): every UI entry is POST /api/v1/op/<name>, and every
+// The generated client and routes: every UI entry is POST /api/v1/op/<name>, and every
 // error envelope becomes a AppError.
 import { describe, expect, test } from "vitest";
 import { createClient, type ClientTransport } from "../generated/client.ts";

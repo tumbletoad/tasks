@@ -1,5 +1,5 @@
-// history.undo: undo the user's newest step in the space (A1 3.10.1, A5 3.12). The user's only
-// (A3 3.2.3): one undo stack per human, shared by every tab and the user's CLI. A step is what Undo
+// history.undo: undo the user's newest step in the space. The user's only:
+// one undo stack per human, shared by every tab and the user's CLI. A step is what Undo
 // is for: a check-off or a reopen, the Trash and out of it, a removed note, words, out of the
 // Inbox, a first filing, questions set aside, a new area or project, an unarchive. A change since to
 // what it wrote, or another actor's work on what it would take out of sight, keeps the step as it
@@ -15,7 +15,7 @@ export const CommitId = z.string().regex(idPattern("op")).describe("A change's c
 /** A commit the caller names: its format is the writer's to check. */
 export const CommitInput = z.string().max(40);
 
-/** One author who changed one task since the change (A1 3.10.1): who, and when last. */
+/** One author who changed one task since the change: who, and when last. */
 export const NewerWork = z.strictObject({
   task: TaskRef.describe("The task; absent for an area, a project or a source").optional(),
   by: z.string().describe("Who: user, import, run (a run's own progress) or the actor's label"),
@@ -63,8 +63,8 @@ export const HistoryUndoInput = z.strictObject({
 });
 
 /**
- * The newest change a script of the same person made in the space after the change undone
- * (A3 3.7.4): it is not on the undo stack, so the person learns that this undo did not reach it.
+ * The newest change a script of the same person made in the space after the change undone:
+ * it is not on the undo stack, so the person learns that this undo did not reach it.
  */
 export const ScriptChange = z.strictObject({
   task: TaskRef,

@@ -1,8 +1,7 @@
 // A1's upper-case error codes, and the storage codes that can reach a caller, mapped onto the
-// registry's error codes (A3 3.5: "A1's upper-case operation errors map onto these codes in the
-// registry, with A1's code kept in data.cause"; A7 3.8 M1.05). The write path's codes (A1 3.6 to
-// 3.9) come first, then the storage worker's (A1 3.9, 3.19), with the reason and the
-// retry rule of A3 3.5's transport table where a caller needs them. This module has no
+// registry's error codes, with the upper-case code kept in data.cause. The write path's codes
+// come first, then the storage worker's, with the reason and the
+// retry rule of the transport where a caller needs them. This module has no
 // dependencies: storage checks from its own tests that every code it can raise is here.
 //
 // An error never carries task text (AGENTS.md): A1's problems name an operation's index and an
@@ -12,11 +11,11 @@ import type { ErrorBody, ErrorCode } from "./errors.ts";
 export interface A1ErrorMapping {
   /** The registry's code. */
   readonly code: ErrorCode;
-  /** `data.reason`, for `space_unavailable` and `read_only` (A3 3.5). */
+  /** `data.reason`, for `space_unavailable` and `read_only`. */
   readonly reason?: string;
   /** `data.retryable`: retry the same call with the same request_id after a short wait. */
   readonly retryable?: boolean;
-  /** `data.rule`, for `forbidden`: which rule refused the call (A3 3.5). */
+  /** `data.rule`, for `forbidden`: which rule refused the call. */
   readonly rule?: string;
 }
 
@@ -33,52 +32,52 @@ const readOnly = (reason?: string): A1ErrorMapping => ({
 
 /** Every code, by A1's or storage's name. */
 export const A1_ERRORS = {
-  // The write path (A1 3.6, 3.7, 3.8). Decided outcomes: each is in a receipt.
+  // The write path. Decided outcomes: each is in a receipt.
   VALIDATION_FAILED: { code: "invalid_input" },
   TOO_LARGE: { code: "too_large" },
   NOT_FOUND: { code: "not_found" },
-  /** A deleted task, area or project takes no change (A1 3.5). */
+  /** A deleted task, area or project takes no change. */
   DELETED: { code: "not_found" },
-  /** A reference with another space's prefix is not_found, never a task elsewhere (A3 3.4.1). */
+  /** A reference with another space's prefix is not_found, never a task elsewhere. */
   SPACE_MISMATCH: { code: "not_found" },
   AMBIGUOUS_REFERENCE: { code: "ambiguous" },
   VERSION_CONFLICT: { code: "conflict" },
-  /** A3 3.5: a missing base where one is required is a conflict. */
+  /** A missing base where one is required is a conflict. */
   BASE_REQUIRED: { code: "conflict" },
   /** No read returned that as_of: copy it verbatim. */
   BASE_FROM_FUTURE: { code: "invalid_input" },
-  /** The space has a new authority since the read: read again (A1 3.5). */
+  /** The space has a new authority since the read: read again. */
   EPOCH_CHANGED: { code: "conflict" },
   /** The task's lifecycle changed since the caller looked: read again. */
   INVALID_TRANSITION: { code: "conflict" },
-  /** A request for an active task found it completed or archived: reopen it first (A3 3.4.6). */
+  /** A request for an active task found it completed or archived: reopen it first. */
   TASK_NOT_ACTIVE: { code: "wrong_tool" },
   REQUEST_ID_REUSED: { code: "request_id_conflict" },
   REQUEST_ID_INVALID: { code: "invalid_input" },
-  // Undo, redo and revert (A1 3.10, M3).
+  // Undo, redo and revert.
   UNDO_CONFLICT: { code: "conflict" },
   NOTHING_TO_UNDO: { code: "not_found" },
   NOTHING_TO_REDO: { code: "not_found" },
   UNDO_BEFORE_FLOOR: { code: "conflict" },
   HAS_ACTIVE_TASKS: { code: "conflict" },
-  /** A preference whose declaration does not list the actor: policy is the user's (A1 3.16). */
+  /** A preference whose declaration does not list the actor: policy is the user's. */
   PREFERENCE_FORBIDDEN: { code: "forbidden", rule: "policy" },
   /** The text for agents on a node: only a person writes a standing instruction. */
   USER_ONLY: { code: "forbidden" },
-  /** An absolute path under no root of this machine (A1 3.15, M2.07). */
+  /** An absolute path under no root of this machine. */
   PLACE_OUTSIDE_ROOTS: { code: "invalid_input" },
   /** Undecided: the writer passes A1's reason on (transfer_pending, held, not the authority). */
   SPACE_READ_ONLY: readOnly(),
-  // Undecided outcomes (A1 3.8): no receipt, and a retry with the same ID runs the request.
-  /** A barrier backup failed, so the change it guards did not start (A1 3.7, 3.18). */
+  // Undecided outcomes: no receipt, and a retry with the same ID runs the request.
+  /** A barrier backup failed, so the change it guards did not start. */
   BACKUP_FAILED: unavailable("backup_failed", true),
-  /** Another program holds the database (A1 3.9). */
+  /** Another program holds the database. */
   STORAGE_BUSY: unavailable("busy", true),
-  /** The writer's queue is full (A1 3.9). M1.08 adds retry_after_ms. */
+  /** The writer's queue is full. */
   STORAGE_OVERLOADED: unavailable("overloaded", true),
-  /** The space turns read-only until there is room again (A1 3.7). */
+  /** The space turns read-only until there is room again. */
   DURABILITY_FAILED: readOnly("durability_failed"),
-  // The storage worker (A1 3.9).
+  // The storage worker.
   /** No answer within 10 s: the writer may still decide it, so retry with the same ID. */
   STORAGE_TIMEOUT: unavailable("timeout", true),
   /** SQLite recovers the space's WAL after a crash. */
@@ -92,7 +91,7 @@ export const A1_ERRORS = {
   STORAGE_MISUSE: { code: "internal" },
   STORAGE_SQL: { code: "internal" },
   STORAGE_UNSUPPORTED: { code: "internal" },
-  // The space folder (A1 3.1) and one writer per space (A1 3.9).
+  // The space folder and one writer per space.
   SPACE_PATH_INVALID: { code: "invalid_input" },
   SPACE_EXISTS: { code: "invalid_input" },
   SPACE_NOT_FOUND: unavailable("not_served", false),
@@ -102,27 +101,27 @@ export const A1_ERRORS = {
   SPACE_ID_MISMATCH: readOnly("space_id_mismatch"),
   SPACE_MANIFEST_DAMAGED: readOnly("manifest_damaged"),
   SPACE_CHANGED: unavailable("opening", true),
-  /** A rollback journal beside the database: M1.06's recovery restores the space. */
+  /** A rollback journal beside the database: recovery restores the space. */
   SPACE_NEEDS_RECOVERY: unavailable("needs_recovery", false),
   /** Another writer in this process holds the space, mostly its last open or close: it ends. */
   SPACE_WRITER_TAKEN: unavailable("not_served", true),
-  /** Another process holds the space's writer.lock (A2 3.4: unavailable(locked_elsewhere)). */
+  /** Another process holds the space's writer.lock. */
   SPACE_LOCKED_ELSEWHERE: unavailable("not_served", false),
   /** The database file has a second name (a hard or symbolic link): never opened for writing. */
   SPACE_DATABASE_LINKED: unavailable("not_served", false),
-  // Migrations, backups and restore (M1.06).
+  // Migrations, backups and restore.
   SPACE_NEEDS_MIGRATION: unavailable("opening", true),
-  /** A restored backup that is not claimed yet: readers only (A1 3.18, A6 3.5). */
+  /** A restored backup that is not claimed yet: readers only. */
   SPACE_READ_ONLY_COPY: readOnly("read_only_copy"),
   MIGRATION_FAILED: readOnly("migration_failed"),
   BACKUP_INVALID: { code: "invalid_input" },
   BUNDLE_LIMIT_EXCEEDED: { code: "too_large" },
-  // Export bundles (M3.07).
-  /** A bundle that breaks the archive or layout rules, or does not verify (A1 3.18). */
+  // Export bundles.
+  /** A bundle that breaks the archive or layout rules, or does not verify. */
   BUNDLE_INVALID: { code: "invalid_input" },
-  /** An export that would carry a secret-shaped string; nothing was written (A6 3.16.4). */
+  /** An export that would carry a secret-shaped string; nothing was written. */
   EXPORT_SECRET_FOUND: { code: "invalid_input" },
-  /** A database with objects its revision does not create: an export of it is refused (A1 3.18). */
+  /** A database with objects its revision does not create: an export of it is refused. */
   SPACE_SCHEMA_FOREIGN: { code: "invalid_input" },
 } as const satisfies Record<string, A1ErrorMapping>;
 
@@ -137,12 +136,12 @@ export function a1Mapping(cause: string): A1ErrorMapping {
 export interface A1ErrorPlace {
   op?: number;
   field?: string;
-  /** REQUEST_ID_REUSED: when the original was decided, in milliseconds (A3 3.5). */
+  /** REQUEST_ID_REUSED: when the original was decided, in milliseconds. */
   at?: number;
   /**
    * The problem's own reason, such as SPACE_READ_ONLY's `not_authority`, `held` or
-   * `transfer_pending` (A1 3.6, 3.18; A2 3.1). It replaces the mapping's reason for a code that
-   * carries one (A3 3.5) and is dropped for any other code, or when it is not a reason word.
+   * `transfer_pending`. It replaces the mapping's reason for a code that
+   * carries one and is dropped for any other code, or when it is not a reason word.
    */
   reason?: string;
 }
@@ -151,7 +150,7 @@ export interface A1ErrorPlace {
 const REASON = /^[a-z][a-z_]{0,39}$/;
 
 /**
- * The registry's error body for an A1 or storage code (A3 3.5): the mapped code, the problem's
+ * The registry's error body for an A1 or storage code: the mapped code, the problem's
  * own fixed sentence, and `data` with A1's code as `cause`, the reason and retry rule, and where
  * in the request the problem lies. Nothing else reaches it, so no value does.
  */

@@ -1,4 +1,4 @@
-/* The frame (A5 3.3): the sidebar (260 px), and the view at most 1,160 px wide, left-aligned after
+/* The frame: the sidebar (260 px), and the view at most 1,160 px wide, left-aligned after
    the gutter (48 px, 32 px below 1,360 px). No border between the sidebar and the view. */
 
 .frame {
@@ -88,7 +88,7 @@
   transform: none;
 }
 
-/* The status bar: only for service problems and an update (A5 3.3, 3.16). */
+/* The status bar: only for service problems and an update. */
 .bar {
   display: flex;
   align-items: center;
@@ -113,7 +113,7 @@
   cursor: pointer;
 }
 
-/* Narrow (600 to 1,023 px, and below): the sidebar is a drawer (A5 3.3 "Widths"). */
+/* Narrow (600 to 1,023 px, and below): the sidebar is a drawer. */
 .overlay {
   position: fixed;
   inset: 0;

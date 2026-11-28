@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 //
 // The list with the real live store, rendered by React into a DOM (happy-dom), without a browser:
-// how often each row renders when the store changes (A5 3.25 "An event re-renders only the rows it
-// changed"), and the list's keyboard and focus (A5 3.22). The row function is wrapped to count its
+// how often each row renders when the store changes (an event re-renders only the rows it
+// changed), and the list's keyboard and focus. The row function is wrapped to count its
 // calls per task: a row's component calls it exactly once per render, so the count is the row's
 // render count. Layout is stubbed (happy-dom lays nothing out): every item is 52 px high and the
 // window 800 px, which is what the virtualiser reads.

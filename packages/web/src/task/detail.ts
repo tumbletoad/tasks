@@ -1,8 +1,8 @@
-// The expanded task's detail (A5 3.7, 3.15 item 8): what the live row does not hold, read with
+// The expanded task's detail: what the live row does not hold, read with
 // `task.get` in parts that start together. The digest gives the task's own facts in any
 // lifecycle (its place on this machine, when it was created). The sections give the long text in
 // full: the context, every note (those to agents too), the log, the sources, the outcome and
-// learnings. A sections read comes in pages sized for an agent's budget (A3 3.4.4), so this reads
+// learnings. A sections read comes in pages sized for an agent's budget, so this reads
 // page after page, `PAGES` at first, and joins a text a page boundary split; "Older entries" reads
 // `PAGES` more from where the last read ended (`readOlder`). The notes the thread's sessions name
 // as their requests come whole with the digest, by reference, whatever their age or length. Plain
@@ -199,13 +199,13 @@ export function mergePages(
 }
 
 /**
- * A row for a task the live store does not hold (a completed or archived one, A5 3.3's injected
- * row), from its digest. Its area and project are found by their names among the live ones.
+ * A row for a task the live store does not hold (a completed or archived one, injected
+ * into the view), from its digest. Its area and project are found by their names among the live ones.
  */
 export function rowOfFacts(facts: TaskFacts, nodes: Nodes, today: string): TaskRow {
   const created = facts.created === undefined ? Number.NaN : Date.parse(facts.created);
   const due = facts.due;
-  // The digest bounds the title (A3 3.9.6): a title it cut ends in an ellipsis, so the row never
+  // The digest bounds the title: a title it cut ends in an ellipsis, so the row never
   // passes a shortened text off as the whole.
   const title = facts.cut?.title === undefined ? facts.title : `${facts.title}…`;
   return {
@@ -223,7 +223,7 @@ export function rowOfFacts(facts: TaskFacts, nodes: Nodes, today: string): TaskR
     ...(facts.focus ? { focus_on: today } : {}),
     ...(facts.waiting_on === undefined ? {} : { waiting_on: facts.waiting_on }),
     parent: nodeNamed(nodes, facts.area, facts.project),
-    // First in its group: the injected row sits at the top of it (A5 3.3).
+    // First in its group: the injected row sits at the top of it.
     position: "",
     ...(facts.wrap_state === undefined ? {} : { wrap_state: facts.wrap_state }),
     created_at: Number.isFinite(created) ? created : 0,

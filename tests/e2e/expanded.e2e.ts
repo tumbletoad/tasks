@@ -1,4 +1,4 @@
-// The expanded task end to end (A7 3.12 M5.06; A5 3.3, 3.7, 3.22, 3.26), in Chromium and Firefox
+// The expanded task end to end, in Chromium and Firefox
 // against the real service process with fixture data.
 //
 // Verify line: no fact string twice in one expanded task; a link to a task in each lifecycle
@@ -189,7 +189,7 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
     await expect(body.locator('[data-entry="note"]')).toContainText("to agents");
     await expect(body.locator('[data-entry="log"]').first()).toContainText("evidence");
 
-    // The facts, with short labels, each in its control (M5.08 edits them).
+    // The facts, with short labels, each in its control.
     const facts = body.getByRole("definition");
     const fact = (label: string) =>
       body
@@ -320,7 +320,7 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     await addTask(world, { title: `Return the van keys (${tag})`, area: "home" });
     await signIn(page, world, `/s/${space}/today`);
     await showsSpace(page, world.mira.name);
-    // The Home area lists the task (Today lists only what it selects, A5 3.4).
+    // The Home area lists the task (Today lists only what it selects).
     await page
       .getByRole("navigation")
       .getByRole("link", { name: /^Home, / })

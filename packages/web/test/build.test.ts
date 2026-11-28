@@ -1,4 +1,4 @@
-// The page as built and served (A7 3.9 M2.13; A2 3.8.3; A5 3.25, 3.26): proven on the built files
+// The page as built and served: proven on the built files
 // and through the service that serves them, never against a dev server. Every script and
 // stylesheet carries the integrity hash of its bytes, nothing is inline, no service worker exists,
 // and the service serves the folder with the strict CSP, a fresh nonce and its own build.

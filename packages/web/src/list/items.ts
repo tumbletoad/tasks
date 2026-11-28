@@ -1,4 +1,4 @@
-// A grouped list as one sequence of items (A5 3.25: "Group headings are virtual items too"): each
+// A grouped list as one sequence of items, so group headings are virtual items too: each
 // group's heading, each project's label, then its rows, in order. Pure, so the order, the set sizes
 // and the positions are unit tests, and the list (List.tsx) only lays out what this gives it.
 import { trail, type Nodes, type NodeRow, type TaskRow } from "@ttasks/client/store";
@@ -63,7 +63,7 @@ export function itemsOf(
   const items: Item[] = [];
   let rows = 0;
   groups.forEach((group, g) => {
-    // A flat group has no heading: its rows stand on their own (A5 3.5).
+    // A flat group has no heading: its rows stand on their own.
     if (group.kind !== "flat") {
       items.push({ kind: "group", key: `g:${group.key}`, group, first: g === 0 });
     }

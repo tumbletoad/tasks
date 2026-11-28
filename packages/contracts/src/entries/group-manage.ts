@@ -1,7 +1,7 @@
-// group.manage: list and shape the space's areas and projects, so agents can sort the user's work
-// (A3 3.4.10). `list` reads; `create`, `rename`, `move`, `archive`, `unarchive`, `set_folder` and
+// group.manage: list and shape the space's areas and projects, so agents can sort the user's work.
+// `list` reads; `create`, `rename`, `move`, `archive`, `unarchive`, `set_folder` and
 // `clear_folder` write through A1's `area.*` and `project.*` operations. Names are text a person or
-// an agent wrote, so every face frames them as data (A3 3.10).
+// an agent wrote, so every face frames them as data.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeLine } from "../safe-text.ts";
@@ -107,7 +107,7 @@ const AreaRow = z.strictObject({
 /** The list a call reads; a write lists the groups as they are when its answer is made. */
 const GroupList = {
   areas: z.array(AreaRow).describe("Areas in the space's order, each with its projects"),
-  /** Projects without an area (A1 3.4: a project's area is optional). */
+  /** Projects without an area: a project's area is optional. */
   projects: z.array(ProjectRow).describe("Projects without an area, after every area"),
   total_areas: Count.describe("Areas the whole list holds"),
   total_projects: Count.describe("Projects the whole list holds"),

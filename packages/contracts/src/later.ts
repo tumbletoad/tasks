@@ -4,7 +4,7 @@
 // it. A row for agents only is built for the person already: the command line offers it, and
 // agents, and the scripts and agent shells that call as agents, are refused it.
 
-/** Who a call is for, as the request path sets it (A3 3.2.1). */
+/** Who a call is for, as the request path sets it. */
 export type LaterAudience = "user" | "agent";
 
 /** A whole entry, a top-level input field, or one value of an enum field, and the step that brings it. */

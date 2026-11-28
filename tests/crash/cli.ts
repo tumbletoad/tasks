@@ -1,11 +1,11 @@
 // pnpm crash: runs the crash harness (harness.ts) and prints its summary.
 //
-//   pnpm crash --minutes N [--seed HEX]   run rounds for N minutes (A7 3.18: 5 per PR, 30 nightly)
+//   pnpm crash --minutes N [--seed HEX]   run rounds for N minutes (5 per PR, 30 nightly)
 //   pnpm crash --rounds N --seed HEX      replay the first N rounds of a seed
 //
 // It exits with 0 when every round was clean, 1 on a violation (with the seed, the round, the kill
 // and the invariant, and the command that replays it), and 2 when it could not run.
-// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+// First, as in the product's entries: this script ends through process.exit.
 import "../../packages/bridge/src/safe-exit.ts";
 import { randomBytes } from "node:crypto";
 import { parseArgs } from "node:util";

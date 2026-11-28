@@ -1,5 +1,4 @@
-// Query-level invalidation (A5 3.13, 3.15 "Paged queries"; the second sentence of M5.02's Verify
-// line): a task that starts to match an open Completed view appears in it, and one that starts to
+// Query-level invalidation: a task that starts to match an open Completed view appears in it, and one that starts to
 // match an open search offers "Results changed · Refresh", which then shows it. The paged reads are
 // fakes over the feed model (@ttasks/client/test/feed-model); the changes come through the real
 // store.
@@ -222,7 +221,7 @@ describe("[A5.3.15.web.store.queries] query-level invalidation", () => {
       request_id: "",
       ...patch,
     });
-    // The feed names a task's logical fields (A1 3.4; storage's TASK_FIELDS), not its columns.
+    // The feed names a task's logical fields (storage's TASK_FIELDS), not its columns.
     expect(affects({ kind: "trash" }, change({ changed: ["deleted"] }))).toBe(true);
     expect(affects({ kind: "completed" }, change({ changed: ["deleted"] }))).toBe(true);
     expect(affects({ kind: "completed" }, change({ changed: ["wrap"] }))).toBe(true);

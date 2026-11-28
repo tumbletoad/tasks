@@ -1,4 +1,4 @@
-// The stable launchers' staging and swap (A2 3.12.6 steps 8, 10 and 14; A7 3.13 M6.13) in-process:
+// The stable launchers' staging and swap in-process:
 // the swap primitive on fixture files on every system, a running program's refusals on Windows,
 // and the update's staging and the repair's use of staged copies on fixture installs. The real
 // builds, kills and starts are in installed*.test.ts and launchers-*.test.ts.

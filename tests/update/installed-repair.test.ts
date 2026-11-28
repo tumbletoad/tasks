@@ -1,5 +1,5 @@
 // A repair of an update cut off after its switch, with real builds, a real install and real
-// processes (A7 3.13 M6.12's Verify line, installed.ts): a repair killed at each of its own steps
+// processes (installed.ts): a repair killed at each of its own steps
 // is finished by the next start, and a running service finishes an update whose updater died
 // within its 10 s check.
 //

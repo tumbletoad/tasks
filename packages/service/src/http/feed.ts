@@ -105,8 +105,9 @@ export interface SnapshotMessage {
   /**
    * Every page the space shows, without its body (contracts' CompactPage). A batch carries a
    * page's row as an entity of type `page`; one whose row has `deleted_at` leaves the lists, also
-   * when its task or project went to the Trash. A change to a node's texts is an entity of type
-   * `node_text` without a row. Absent on a space before pages.
+   * when its task or project went to the Trash, and its `under` follows a task filed elsewhere. A
+   * change to a node's texts is an entity of type `node_text` without a row. Absent on a space
+   * before pages.
    */
   readonly pages?: readonly Record<string, unknown>[];
   /**
@@ -249,12 +250,12 @@ const AREA_ROWS = `SELECT ${AREA_COLUMNS} FROM areas a WHERE a.id IN (${touched(
 const PROJECT_ROWS = `SELECT ${PROJECT_COLUMNS} FROM projects p WHERE p.id IN (${touched("projects")})`;
 /**
  * The pages a batch's commits changed, and those whose task, project or area they moved to the
- * Trash or brought back: their rows say whether they are shown.
+ * Trash, brought back or filed elsewhere: their rows say whether they are shown, and where.
  */
 const PAGE_ROWS =
   `${COMPACT_PAGE} WHERE p.id IN (SELECT entity_id FROM changes WHERE seq > $after AND seq <= $upto ` +
   "AND entity = 'pages') OR p.owner_id IN (SELECT entity_id FROM changes WHERE seq > $after " +
-  "AND seq <= $upto AND entity IN ('tasks', 'projects', 'areas') AND field = 'deleted')";
+  "AND seq <= $upto AND entity IN ('tasks', 'projects', 'areas') AND field IN ('deleted', 'grouping'))";
 
 /**
  * The feed's adapter from today's areas and projects to the tree, which lives until the tree is
@@ -459,7 +460,7 @@ export async function readBatch(
       rows.set(`${table}:${String(row["id"])}`, nodeOf(table, row, head.id));
     }
   }
-  /** The pages of each task, project or area a batch moved to the Trash or back. */
+  /** The pages of each task, project or area a batch moved to the Trash, back or elsewhere. */
   const pagesOn = new Map<string, string[]>();
   for (const row of (pageRows ?? []) as Row[]) {
     const key = `pages:${String(row["id"])}`;
@@ -586,8 +587,12 @@ export async function readBatch(
         },
       });
     }
-    // A task, project or area moved to the Trash or back takes its pages with it: their rows say so.
-    if (field === "deleted" && (table === "tasks" || table === "projects" || table === "areas")) {
+    // A task, project or area moved to the Trash, back or elsewhere takes its pages with it: their
+    // rows say whether they are shown and what they lie under.
+    if (
+      (given === "deleted" || given === "grouping") &&
+      (table === "tasks" || table === "projects" || table === "areas")
+    ) {
       for (const key of pagesOn.get(id) ?? []) {
         if (entities.has(key)) continue;
         entities.set(key, {

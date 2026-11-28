@@ -1,6 +1,6 @@
 // The library in the page, against the real service: a project's Library and its pages, a page
 // read, corrected with the pen, its versions shown and restored, a Restore that meets an agent's
-// newer words, a page made from a title alone, the Trash and back, the space's Library with the
+// newer words, a task's page that leaves with its task, a page made from a title alone, the Trash and back, the space's Library with the
 // person's text for agents, and the screens at 1,440 and 390 px in both themes. Agents write
 // through their own requests outside the page. Fixture text only.
 import { expect, type Page } from "@playwright/test";
@@ -190,6 +190,36 @@ test.describe("[A5.pages.e2e.library] the library in the page", () => {
     const fresh = page.locator('[data-part="page-row"]', { hasText: "Fixture visit notes" });
     await expect(fresh).toBeVisible();
     await expect(fresh.locator('[class*="brief"]')).toHaveCount(0);
+  });
+
+  test("a task's page leaves the project's Library as the task is filed into another project", async ({
+    page,
+    library: world,
+  }) => {
+    const { area, project } = await place(world);
+    const { areas } = (await world.op(world.mira.id, "group.manage", { action: "list" })) as Groups;
+    const elsewhere = areas
+      .flatMap((a) => a.projects.map((p) => ({ area: a.name, project: p.name, id: p.id })))
+      .find((p) => p.id !== project.id);
+    if (elsewhere === undefined) throw new Error("the fixture has one project");
+    const added = (await world.op(
+      world.mira.id,
+      "task.add",
+      { tasks: [{ title: "Fixture task with notes", area: area.name, project: project.name }] },
+      "agent",
+    )) as { tasks: { ref: string }[] };
+    const task = added.tasks[0]?.ref ?? "";
+    const ref = await makePage(world, task, "Fixture task notes", "Fixture words.");
+    await open(page, world, libraryOf(world, area.id, project.id));
+    await expect(row(page, ref)).toBeVisible({ timeout: SLOW_MS });
+    const { as_of } = (await world.op(world.mira.id, "task.get", { task })) as { as_of: string };
+    await world.op(
+      world.mira.id,
+      "task.update",
+      { task, set: { area: elsewhere.area, project: elsewhere.project }, base: as_of },
+      "agent",
+    );
+    await expect(row(page, ref)).toHaveCount(0, { timeout: SLOW_MS });
   });
 
   test("Move to Trash, the page's address says it is in the Trash with Restore, the Trash lists it with where it was, and Restore brings it back to its Library", async ({

@@ -1,4 +1,4 @@
-// What a person's edit of one field is (A5 3.11): the `task.update` input that makes it, the
+// What a person's edit of one field is: the `task.update` input that makes it, the
 // overlay that shows it at once, and the words the toast says. Every hand edit is one of these, so
 // the star, the title and the facts all take one path (edits.ts).
 //
@@ -13,7 +13,7 @@ type UpdateInput = Parameters<Client["task"]["update"]>[0];
 export type UpdateSet = NonNullable<UpdateInput["set"]>;
 export type Clearable = NonNullable<UpdateInput["clear"]>[number];
 
-/** The logical fields a person edits by hand (A5 3.11, U10). */
+/** The logical fields a person edits by hand. */
 export type Field =
   | "title"
   | "summary"
@@ -42,7 +42,7 @@ export interface Change {
   readonly shown: Words;
   /**
    * A change of several fields, as its one-field changes: a refusal keeps each, and a newer edit
-   * of one field replaces only that one (A5 3.11).
+   * of one field replaces only that one.
    */
   readonly parts?: readonly Change[];
   /** What made a one-field change: `changeOf` makes it again, after a reload. */
@@ -103,7 +103,7 @@ export function starChange(on: boolean, today: string): Change {
       };
 }
 
-/** P1 to P3, or 4: no priority (A1: 4 is the default and means none). */
+/** P1 to P3, or 4: no priority (4 is the default and means none). */
 export function priorityChange(level: number): Change {
   const shown: Words = level >= 1 && level <= 3 ? { id: "row.priority", values: { level } } : none;
   return {
@@ -190,7 +190,7 @@ export function statusChange(status: string): Change {
   };
 }
 
-/** Out of the Inbox, into Open (A5 3.7 "Move to Open"). */
+/** Out of the Inbox, into Open. */
 export function triageChange(): Change {
   const out: Change = {
     fields: ["inbox"],

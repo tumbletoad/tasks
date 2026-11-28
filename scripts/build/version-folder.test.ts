@@ -40,7 +40,7 @@ afterAll(() => {
 const host = hostPlatform();
 
 describe("[A2.3.12.2.build.version-folder] the version folder, its checks and its gate", () => {
-  test("each platform's folder follows A2 3.12.2", () => {
+  test("each platform's folder has its layout", () => {
     const common = [
       "LICENSE",
       "NOTICE",

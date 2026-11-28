@@ -40,7 +40,7 @@ describe("[A2.3.6.local.proofs] proofs", () => {
     vi.mocked(timingSafeEqual).mockClear();
   });
 
-  test("the proofs, session key and bind proofs follow A2 3.6.3's formulas", () => {
+  test("the proofs, session key and bind proofs follow the protocol's formulas", () => {
     const h = ids();
     const { instance: i, serverNonce: ns, clientNonce: nc } = h;
     expect(clientProof(key, h)).toEqual(

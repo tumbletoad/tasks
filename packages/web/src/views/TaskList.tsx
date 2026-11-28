@@ -1,11 +1,11 @@
-// A view's task list (A5 3.5, 3.6, 3.15): the view's tasks, grouped as the view groups them (by
+// A view's task list: the view's tasks, grouped as the view groups them (by
 // area and project unless it says otherwise, Today's sections, Completed's months), drawn by the one list
 // (list/List.tsx) and the one row (row/Row.tsx). The rows are read from the store's state and never
 // copied: the list derives its items from the published rows and keeps no rows of its own.
 //
 // What it holds itself: which task is expanded (one at a time) and which row is current, the launch
 // receipts of the tasks this tab follows, the rows an agent has just added (they fade in), and the
-// screen reader's summary of agents' changes in the view (A5 3.15 items 7 and 10).
+// screen reader's summary of agents' changes in the view.
 import {
   useCallback,
   useContext,
@@ -71,9 +71,9 @@ const REFUSED_WORDS = {
   no_terminal: "row.openNoTerminal",
   own_home: "row.openOwnHome",
 } as const;
-/** How long a row an agent added keeps its accent (A5 3.20: 1.2 s). */
+/** How long a row an agent added keeps its accent. */
 const FRESH_MS = 1_200;
-/** Agents' changes are announced once the burst has been quiet this long (A5 3.15 item 10). */
+/** Agents' changes are announced once the burst has been quiet this long. */
 const QUIET_MS = 2_000;
 /**
  * What a working run says changes nothing in its record, so the runs of a task with one are read
@@ -120,8 +120,8 @@ export interface HeldRow {
 }
 
 /**
- * A view's groups from the live rows (A7 3.12: a view hands its rows to the list). `held` is the
- * expanded task, which stays where it is until it is collapsed (A5 3.15), whatever an update did.
+ * A view's groups from the live rows: a view hands its rows to the list. `held` is the
+ * expanded task, which stays where it is until it is collapsed, whatever an update did.
  */
 export type GroupsOf = (
   tasks: ReadonlyMap<string, TaskRow>,
@@ -129,16 +129,16 @@ export type GroupsOf = (
 ) => readonly Group[];
 
 export interface TaskListProps {
-  /** The view the list is shown in: what its rows leave out (A5 3.6 `ctx`). */
+  /** The view the list is shown in: what its rows leave out. */
   readonly view: RowView;
-  /** What the view's grouping states, so its rows leave it out (A5 3.6). Default: by area. */
+  /** What the view's grouping states, so its rows leave it out. Default: by area. */
   readonly grouping?: Grouping;
   /**
    * Which open tasks the view may hold: the rows an agent adds there fade in, and its changes are
    * announced. Without `groups`, also what the list shows, grouped by area and project.
    */
   readonly filter: (task: TaskRow) => boolean;
-  /** How the view groups the tasks `filter` gives it (A5 3.5). Default: by area and project. */
+  /** How the view groups the tasks `filter` gives it. Default: by area and project. */
   readonly group?: GroupTasks;
   /** The view's own groups, from every row (Today's sections, Completed's months). */
   readonly groups?: GroupsOf;
@@ -153,7 +153,7 @@ export interface TaskListProps {
   readonly keepsFinished?: boolean;
   /**
    * The task the URL names (a reference or an ID): expanded once it is found. In the live rows,
-   * or else read with `task.get` and injected (A5 3.3): a task of another lifecycle, or one the
+   * or else read with `task.get` and injected: a task of another lifecycle, or one the
    * view's filter leaves out. Undefined: none is expanded.
    */
   readonly expand?: string | undefined;
@@ -194,7 +194,7 @@ export function TaskList({
   const { api, live } = useContext(Session);
   const state = useLive();
   const edits = useEdits();
-  // Rows checked off, or completed by others, stay where they are for the hold (A5 3.12).
+  // Rows checked off, or completed by others, stay where they are for the hold.
   const { leaving: holding, finishing } = useEditState();
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
   const [current, setCurrent] = useState<string | undefined>(undefined);
@@ -309,7 +309,7 @@ export function TaskList({
 
   // The view's rows, grouped, as one sequence of items. Recomputed when the published rows change.
   // An expanded task stays where it is until it is collapsed, even when an update takes it out
-  // of the view (A5 3.1 item 7), and the URL's task joins its group when the view leaves it out.
+  // of the view, and the URL's task joins its group when the view leaves it out.
   // Only the expanded task joins: the injected row is that task's row while it is expanded, and
   // the live row wins over it as soon as the store holds the task.
   const items = useMemo(() => {
@@ -573,7 +573,7 @@ export function TaskList({
   }, [again, loadRuns, readAgain, loadReceipts]);
 
   // An update that takes the expanded task out of the live rows (completed, archived) carries its
-  // newest row: the card shows it until it is collapsed, as an injected row (A5 3.4, 3.15). A fresh
+  // newest row: the card shows it until it is collapsed, as an injected row. A fresh
   // snapshot that leaves it out carries none: it is read again. Whatever the feed says of the task
   // is newer than a read on its way.
   useEffect(
@@ -611,7 +611,7 @@ export function TaskList({
   inView.current = filter;
 
   // A task someone else completes while the view shows it strikes through, says who, and leaves
-  // after the hold (A5 3.12). This tab's own check-off holds already.
+  // after the hold. This tab's own check-off holds already.
   useEffect(
     () =>
       live.onChanges(({ changes }) => {
@@ -686,7 +686,7 @@ export function TaskList({
       setCurrent(task.id);
       // An injected row belongs to its expansion: another task's expansion ends it. A row the live
       // store does not hold (a finished task in Completed) is kept as the expanded one's, so it
-      // stays where it is if the view's next read leaves it out (A5 3.3).
+      // stays where it is if the view's next read leaves it out.
       const inStore = live.getState().tasks.has(task.id);
       setInjected((known) => (known?.id === task.id ? known : inStore ? undefined : task));
       setUnresolved((known) => (known?.id === task.id ? known : undefined));
@@ -821,7 +821,7 @@ export function TaskList({
   }, []);
 
   /**
-   * Puts a brief on the clipboard, in the person's click (A4 3.4.6). True once it is there. `then`
+   * Puts a brief on the clipboard, in the person's click. True once it is there. `then`
    * is said after the copy's outcome, in the same toast when the copy failed, so neither hides it.
    */
   const toClipboard = useCallback(
@@ -1101,8 +1101,8 @@ export function TaskList({
         clicks.current.set(key, first);
         return first;
       },
-      // Copy (A4 3.4.6): the pointer brief, as a launch of its own whose reference an agent redeems.
-      // Shift+Copy: the context pack, for an app without the tools (A4 3.15.5).
+      // Copy: the pointer brief, as a launch of its own whose reference an agent redeems.
+      // Shift+Copy: the context pack, for an app without the tools.
       copy: (task, pack = false, text) => {
         watched.current.add(task.id);
         return api
@@ -1229,15 +1229,15 @@ export function TaskList({
             loadRuns(task.id);
           });
       },
-      // The star is a person's edit like any other (A5 3.11): shown at once, with a base, undoable.
+      // The star is a person's edit like any other: shown at once, with a base, undoable.
       star: (task, on) => {
         edits.edit(task, starChange(on, latest.current.today));
       },
-      // The view's move out of it (A5 3.5): through the one edit path, with its toast and undo.
+      // The view's move out of it: through the one edit path, with its toast and undo.
       move: (task, kind) => {
         edits.edit(task, kind === "triage" ? triageChange() : statusChange("open"));
       },
-      // Check-off, or during this tab's own hold, its undo (A5 3.12).
+      // Check-off, or during this tab's own hold, its undo.
       check: (task) => {
         const entry = edits.getState().leaving.get(task.id);
         if (entry?.done === true) edits.uncheck(task.id);

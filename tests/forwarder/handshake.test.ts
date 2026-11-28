@@ -1,7 +1,7 @@
-// Forwarder conformance (A2 3.7.6, X2): what the forwarder sends before the service has proved
+// Forwarder conformance (X2): what the forwarder sends before the service has proved
 // itself, and what it does with an endpoint that fails the handshake. The bytes before server
 // authentication are one hello line with only protocol, mode, nonce and proof: no context,
-// ticket, cwd, environment, client details or mcp_init (A7 M2.01's Verify line).
+// ticket, cwd, environment, client details or mcp_init.
 import { mkdirSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";

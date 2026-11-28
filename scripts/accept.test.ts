@@ -88,7 +88,7 @@ describe("[A7.3.18.6.accept.parts] pnpm accept m<N> [--part <name>]", () => {
     }
   });
 
-  test("--installed names an install root by the version folder its current names (M1.14)", () => {
+  test("--installed names an install root by the version folder its current names", () => {
     const dir = mkdtempSync(join(tmpdir(), "ttasks-accept-root-"));
     try {
       const root = join(dir, "home");
