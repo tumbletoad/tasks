@@ -181,4 +181,21 @@ describe("[A3.pages.render] read sizes its answer before its cursor; write_page 
     expect(found("all")).toMatch(/scope "all" also searches finished tasks' logs and outcomes\.$/u);
     expect(found()).not.toMatch(/scope "all"/u);
   });
+
+  test("a search whose rows hold some of the words says so, once, before the hint about scope all", () => {
+    const lines = renderResult("task.search", {
+      as_of: "2026-11-28T10:00:00.000Z#1",
+      scope: "library",
+      parsed: "invoice rounding",
+      total: 0,
+      first: 0,
+      rows: [],
+      some_words: true,
+      try_scope: "all",
+    }).split("\n");
+    expect(lines.slice(-2)).toEqual([
+      "Nothing holds every word; these hold some of them.",
+      `Scope "all" also searches finished tasks' logs and outcomes.`,
+    ]);
+  });
 });

@@ -790,11 +790,14 @@ function searchRendered(result: Search, search: string): Rendered {
       ...(result.cursor === undefined
         ? []
         : [fixed(`Next page: ${search} with cursor "${result.cursor}" and nothing else.`)]),
+      ...(result.some_words === true
+        ? [fixed("Nothing holds every word; these hold some of them.")]
+        : []),
       ...(result.try_scope === undefined
         ? []
         : [
             fixed(
-              `No page or lesson holds every word: scope "${result.try_scope}" also searches finished tasks' logs and outcomes.`,
+              `${result.some_words === true ? "Scope" : "No page or lesson holds every word: scope"} "${result.try_scope}" also searches finished tasks' logs and outcomes.`,
             ),
           ]),
     ],
