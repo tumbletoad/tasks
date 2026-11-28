@@ -238,9 +238,7 @@ function checkOps(entry: AnyEntry, say: Say): void {
       const scopes = spec.scopes.map((s) => `"${s}"`).join(" or ");
       say(`operation kind "${op}" needs scope ${scopes}, not "${entry.scope}"`);
     }
-    if (spec.class === "run") {
-      if (entry.actors !== "run") say(`only a run-only entry emits "${op}" (A3 3.4.12)`);
-    } else if (isAgentAllowed(entry) && spec.r7 === true) {
+    if (isAgentAllowed(entry) && spec.r7 === true) {
       say(
         `an agent-allowed entry cannot emit "${op}" (R7: launches, runs and routines are the user's)`,
       );
@@ -907,7 +905,6 @@ function checkFaces(
     say("only agent-allowed entries have an MCP face (A3 3.2.3)");
   }
   if (entry.actors === "ui" && clis.length > 0) say("a UI-only entry has no CLI face");
-  if (entry.actors === "run" && faces.ui === true) say("a run-only entry has no UI face");
 
   const mcp = faces.mcp;
   if (mcp !== undefined) {
