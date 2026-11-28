@@ -1,11 +1,11 @@
 // activity.list: what agents and routines did in the space, one line per change they made, newest
-// first, for the page's Activity screen. A line is a commit: who, when, the tasks it touched and
-// what it did to them, as the operations and the fields they set. The page words each line; a field
-// of text says that it changed, never what it says now. Read by commit number, a page at a time:
-// `before` reads further back, `after` the lines that came since.
+// first, for the page's Activity screen. A line is a commit: who, when, and each thing it touched
+// (a task, a project or an area) with what it did to that thing, as the operations and the fields
+// they set. The page words each line; a field of free text says that it changed, never what it
+// says. Read by commit number, a page at a time: `before` reads further back, `after` the lines
+// that came since.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { TaskId } from "../schemas.ts";
 import { M14 } from "./fixture.ts";
 
 const Seq = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
@@ -16,7 +16,7 @@ export const ActivityListInput = z.strictObject({
   limit: z.int().min(1).max(200).describe("Lines per page; default 50").optional(),
 });
 
-/** A value a line shows: a field's value that is no text, or the name of an area or project. */
+/** A value a line shows: a field's value that is no free text, or the name of an area or project. */
 export const ActivityValue = z.union([
   z.string().max(300),
   z.number().min(-8_640_000_000_000_000).max(8_640_000_000_000_000),
@@ -24,22 +24,25 @@ export const ActivityValue = z.union([
   z.null(),
 ]);
 
-/** One thing a change did: an operation, and for a task's field the value before and after. */
+/** One thing a change did to its target: an operation, and for a field the value before and after. */
 export const ActivityAct = z.strictObject({
   op: z.string().max(60).describe("The operation, such as task.patch or note.add"),
-  field: z.string().max(60).describe("The task's field it set").optional(),
-  from: ActivityValue.describe("The value before, when it is no text").optional(),
+  field: z.string().max(60).describe("The field of the target it set").optional(),
+  from: ActivityValue.describe("The value before, when it is no free text").optional(),
   to: ActivityValue.describe(
-    "The value after, when it is no text; for a move or a create, its project or area",
+    "The value after, when it is no free text; for a create, where it was made",
   ).optional(),
 });
 
-/** A task a line touched, as it is now. */
-export const ActivityTask = z.strictObject({
-  id: TaskId,
-  ref: z.string().max(20).describe("Its reference, such as M-14"),
-  title: z.string().max(1000).describe("Its title now"),
+/** A thing a change touched, as it is now, with what the change did to it. */
+export const ActivityTarget = z.strictObject({
+  kind: z.enum(["task", "project", "area"]).describe("What it is"),
+  id: z.string().max(40).describe("Its ID"),
+  name: z.string().max(1000).describe("Its title or name now"),
+  ref: z.string().max(20).describe("A task's reference, such as M-14").optional(),
   trash: z.literal(true).describe("It is in the Trash now").optional(),
+  created: z.literal(true).describe("The change made it").optional(),
+  acts: z.array(ActivityAct).max(40).describe("What the change did to it, in order"),
 });
 
 export const ActivityLine = z.strictObject({
@@ -52,9 +55,12 @@ export const ActivityLine = z.strictObject({
     .max(40)
     .describe("The change's kind when it is no plain change: undo, redo")
     .optional(),
-  tasks: z.array(ActivityTask).max(3).describe("The first tasks it touched"),
-  count: z.int().min(0).max(1_000_000).describe("How many tasks it touched"),
-  acts: z.array(ActivityAct).max(40).describe("What it did, in order"),
+  targets: z.array(ActivityTarget).max(50).describe("What it touched, in order"),
+  count: z.int().min(0).max(1_000_000).describe("How many things it touched"),
+  acts: z
+    .array(ActivityAct)
+    .max(40)
+    .describe("What it did that touched no task, project or area, such as a setting"),
 });
 
 export const ActivityListResult = z.strictObject({
@@ -90,12 +96,20 @@ export const activityList = defineEntry({
             at: 1_778_580_000_000,
             actor: "agent",
             by: "agent:codex",
-            tasks: [{ ...M14, title: "Fix appointment time zones" }],
-            count: 1,
-            acts: [
-              { op: "task.patch", field: "priority", from: 2, to: 1 },
-              { op: "task.patch", field: "due", from: null, to: "2026-12-03" },
+            targets: [
+              {
+                kind: "task",
+                id: M14.id,
+                ref: M14.ref,
+                name: "Fix appointment time zones",
+                acts: [
+                  { op: "task.patch", field: "priority", from: 2, to: 1 },
+                  { op: "task.patch", field: "due", from: null, to: "2026-12-03" },
+                ],
+              },
             ],
+            count: 1,
+            acts: [],
           },
         ],
         more: true,

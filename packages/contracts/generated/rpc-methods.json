@@ -57,12 +57,12 @@
                   "type": "string"
                 },
                 "acts": {
-                  "description": "What it did, in order",
+                  "description": "What it did that touched no task, project or area, such as a setting",
                   "items": {
                     "additionalProperties": false,
                     "properties": {
                       "field": {
-                        "description": "The task's field it set",
+                        "description": "The field of the target it set",
                         "maxLength": 60,
                         "type": "string"
                       },
@@ -84,7 +84,7 @@
                             "type": "null"
                           }
                         ],
-                        "description": "The value before, when it is no text"
+                        "description": "The value before, when it is no free text"
                       },
                       "op": {
                         "description": "The operation, such as task.patch or note.add",
@@ -109,7 +109,7 @@
                             "type": "null"
                           }
                         ],
-                        "description": "The value after, when it is no text; for a move or a create, its project or area"
+                        "description": "The value after, when it is no free text; for a create, where it was made"
                       }
                     },
                     "required": [
@@ -132,7 +132,7 @@
                   "type": "string"
                 },
                 "count": {
-                  "description": "How many tasks it touched",
+                  "description": "How many things it touched",
                   "maximum": 1000000,
                   "minimum": 0,
                   "type": "integer"
@@ -148,24 +148,102 @@
                   "minimum": 0,
                   "type": "integer"
                 },
-                "tasks": {
-                  "description": "The first tasks it touched",
+                "targets": {
+                  "description": "What it touched, in order",
                   "items": {
                     "additionalProperties": false,
                     "properties": {
+                      "acts": {
+                        "description": "What the change did to it, in order",
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "field": {
+                              "description": "The field of the target it set",
+                              "maxLength": 60,
+                              "type": "string"
+                            },
+                            "from": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 300,
+                                  "type": "string"
+                                },
+                                {
+                                  "maximum": 8640000000000000,
+                                  "minimum": -8640000000000000,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The value before, when it is no free text"
+                            },
+                            "op": {
+                              "description": "The operation, such as task.patch or note.add",
+                              "maxLength": 60,
+                              "type": "string"
+                            },
+                            "to": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 300,
+                                  "type": "string"
+                                },
+                                {
+                                  "maximum": 8640000000000000,
+                                  "minimum": -8640000000000000,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The value after, when it is no free text; for a create, where it was made"
+                            }
+                          },
+                          "required": [
+                            "op"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 40,
+                        "type": "array"
+                      },
+                      "created": {
+                        "const": true,
+                        "description": "The change made it",
+                        "type": "boolean"
+                      },
                       "id": {
-                        "description": "Task ID",
-                        "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                        "description": "Its ID",
+                        "maxLength": 40,
+                        "type": "string"
+                      },
+                      "kind": {
+                        "description": "What it is",
+                        "enum": [
+                          "task",
+                          "project",
+                          "area"
+                        ],
+                        "type": "string"
+                      },
+                      "name": {
+                        "description": "Its title or name now",
+                        "maxLength": 1000,
                         "type": "string"
                       },
                       "ref": {
-                        "description": "Its reference, such as M-14",
+                        "description": "A task's reference, such as M-14",
                         "maxLength": 20,
-                        "type": "string"
-                      },
-                      "title": {
-                        "description": "Its title now",
-                        "maxLength": 1000,
                         "type": "string"
                       },
                       "trash": {
@@ -175,13 +253,14 @@
                       }
                     },
                     "required": [
+                      "kind",
                       "id",
-                      "ref",
-                      "title"
+                      "name",
+                      "acts"
                     ],
                     "type": "object"
                   },
-                  "maxItems": 3,
+                  "maxItems": 50,
                   "type": "array"
                 }
               },
@@ -190,7 +269,7 @@
                 "at",
                 "actor",
                 "by",
-                "tasks",
+                "targets",
                 "count",
                 "acts"
               ],

@@ -90,7 +90,7 @@ export {
   activityList,
   ActivityListInput,
   ActivityListResult,
-  ActivityTask,
+  ActivityTarget,
   ActivityValue,
 } from "./entries/activity-list.ts";
 export {

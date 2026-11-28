@@ -1,17 +1,21 @@
 // The Activity screen's lines: the commits of agents and routines, a page at a time by commit
-// number, each with the tasks it touched and what it did. Commits only grow at the end and a commit
-// never changes, so a page is the commits before or after a number, read by their key: a space with
-// a long history costs no more than a short one. Values travel only for fields that hold no text,
-// and a move's or a create's place by its name.
+// number. A line holds each thing its commit touched (a task, a project or an area) with what the
+// commit did to that thing, so no thing borrows another's words. A note, a source, a log entry, a
+// task's folder or run belongs to its task, a project's folder to its project. Commits only grow
+// at the end and a commit never changes, so a page is the commits before or after a number, read
+// by their key. Values travel only for fields that hold no free text, and a place by its name.
 import type { Row, WorkerConnection } from "@ttasks/storage";
+import { hasFolderTable } from "./read.ts";
 
 /** The actors whose changes the Activity screen lists: not the person, the system or an import. */
 const ACTORS = "c.actor_kind IN ('agent', 'routine')";
-/** A task's fields of text: a line says that they changed, not what they say. */
-const TEXT_FIELDS = "('title', 'summary', 'context', 'wrap')";
-/** The tasks a line names; the rest it counts. */
-const NAMED = 3;
-/** The acts a line holds at most. */
+/** A task's fields of free text: a line says that they changed, not what they say. */
+const TASK_TEXT = "('title', 'summary', 'context', 'wrap', 'owner', 'waiting_on')";
+/** Stored as 0 or 1, read as a flag. */
+const FLAGS: ReadonlySet<string> = new Set(["inbox"]);
+/** The targets a line holds at most; `count` says how many there were. */
+const TARGETS = 50;
+/** The acts a target holds at most. */
 const ACTS = 40;
 
 const page = (order: "before" | "after") =>
@@ -23,21 +27,44 @@ const SEQS = "SELECT value FROM json_each($seqs)";
 const OPS =
   "SELECT c.seq, j.key AS i, json_extract(j.value, '$.op') AS op FROM commits c, " +
   `json_each(c.ops) j WHERE c.seq IN (${SEQS})`;
-/** A task's field set by a change, when it holds no text. */
-const VALUED = `entity = 'tasks' AND action = 'set' AND field NOT IN ${TEXT_FIELDS}`;
+/** A field set by a change whose value a line may show. */
+const VALUED =
+  `action = 'set' AND ((entity = 'tasks' AND field NOT IN ${TASK_TEXT}) OR ` +
+  "(entity = 'projects' AND field = 'grouping'))";
+/** The thing a change belongs to: its kind and ID. */
+const subject = (folders: boolean) =>
+  "CASE WHEN task_id IS NOT NULL THEN 'task' WHEN entity = 'areas' THEN 'area' " +
+  "WHEN entity = 'projects' THEN 'project' " +
+  (folders
+    ? "WHEN entity = 'folders' THEN (SELECT owner_kind FROM folders f WHERE f.id = entity_id) " +
+      "WHEN entity = 'runs' AND (SELECT task_id FROM runs r WHERE r.id = entity_id) IS NOT NULL " +
+      "THEN 'task' "
+    : "") +
+  "END AS subject, CASE WHEN task_id IS NOT NULL THEN task_id " +
+  "WHEN entity IN ('areas', 'projects') THEN entity_id " +
+  (folders
+    ? "WHEN entity = 'folders' THEN (SELECT owner_id FROM folders f WHERE f.id = entity_id) " +
+      "WHEN entity = 'runs' THEN (SELECT task_id FROM runs r WHERE r.id = entity_id) "
+    : "") +
+  "END AS subject_id";
 /**
- * The changes of the page's commits, without their values of text: of a task's field that holds
- * no text its value, of a created task its place, of a created area or project its name.
+ * The changes of the page's commits, without their values of free text: of a field that holds
+ * none its value, of a created task or project its place.
  */
-const CHANGES =
-  "SELECT seq, op, entity, task_id, action, field, " +
+const changes = (folders: boolean) =>
+  `SELECT seq, op, entity, entity_id, action, field, ${subject(folders)}, ` +
   `CASE WHEN ${VALUED} THEN before END AS before, ` +
   `CASE WHEN ${VALUED} THEN after ` +
-  "WHEN entity = 'tasks' AND action = 'create' THEN json_object('project_id', " +
+  "WHEN action = 'create' AND entity IN ('tasks', 'projects') THEN json_object('project_id', " +
   "json_extract(after, '$.project_id'), 'area_id', json_extract(after, '$.area_id')) " +
-  "WHEN entity IN ('areas', 'projects') AND action = 'create' THEN json_object('title', " +
-  "json_extract(after, '$.title')) END AS after " +
-  `FROM changes WHERE seq IN (${SEQS}) ORDER BY seq, n`;
+  `END AS after FROM changes WHERE seq IN (${SEQS}) ORDER BY seq, n`;
+
+const NAMES =
+  "SELECT 'task' AS kind, id, title AS name, ref, deleted_at FROM tasks WHERE id IN " +
+  "(SELECT value FROM json_each($tasks)) UNION ALL SELECT 'project', id, title, NULL, " +
+  "deleted_at FROM projects WHERE id IN (SELECT value FROM json_each($groups)) UNION ALL " +
+  "SELECT 'area', id, title, NULL, deleted_at FROM areas WHERE id IN " +
+  "(SELECT value FROM json_each($groups))";
 
 /** A value a line shows. */
 export type ActivityValue = string | number | boolean | null;
@@ -49,13 +76,23 @@ export interface ActivityAct {
   readonly to?: ActivityValue;
 }
 
+export interface ActivityTarget {
+  readonly kind: "task" | "project" | "area";
+  readonly id: string;
+  readonly name: string;
+  readonly ref?: string;
+  readonly trash?: true;
+  readonly created?: true;
+  readonly acts: ActivityAct[];
+}
+
 export interface ActivityLine {
   readonly seq: number;
   readonly at: number;
   readonly actor: "agent" | "routine";
   readonly by: string;
   readonly kind?: string;
-  readonly tasks: { id: string; ref: string; title: string; trash?: true }[];
+  readonly targets: ActivityTarget[];
   readonly count: number;
   readonly acts: ActivityAct[];
 }
@@ -79,6 +116,25 @@ const parse = (text: unknown): unknown => {
 
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+
+type Kind = ActivityTarget["kind"];
+const isKind = (value: unknown): value is Kind =>
+  value === "task" || value === "project" || value === "area";
+
+interface RawAct {
+  readonly op: string;
+  readonly field?: string;
+  readonly from?: unknown;
+  readonly to?: unknown;
+}
+
+interface Draft {
+  readonly kind: Kind;
+  readonly id: string;
+  created: boolean;
+  readonly acts: RawAct[];
+  readonly seen: Set<string>;
+}
 
 /**
  * A page of lines, newest first: up to `limit`, and whether more lie past it (older ones, or with
@@ -105,9 +161,10 @@ export async function readActivity(
   const prefixValue = (prefixRow as Row | null)?.["ref_prefix"];
   const prefix = typeof prefixValue === "string" ? prefixValue : "";
   const seqs = JSON.stringify(found.map((c) => Number(c["seq"])));
+  const folders = await hasFolderTable(reader);
   const [opRows, changeRows] = await reader.transaction("deferred", [
     { sql: OPS, mode: "all", params: { seqs } },
-    { sql: CHANGES, mode: "all", params: { seqs } },
+    { sql: changes(folders), mode: "all", params: { seqs } },
   ]);
 
   const opOf = new Map<string, string>();
@@ -123,92 +180,111 @@ export async function readActivity(
     bySeq.set(seq, list);
   }
 
-  // Names of the areas and projects the values point at, and the tasks the lines name.
-  const groups = new Set<string>();
-  const named = new Set<string>();
+  // Each commit's targets in the order it touched them, and the acts that touched none.
+  const taskIds = new Set<string>();
+  const groupIds = new Set<string>();
   const drafts = found.map((commit) => {
     const seq = Number(commit["seq"]);
-    const tasks: string[] = [];
-    const acts: { op: string; field?: string; from?: unknown; to?: unknown }[] = [];
-    const seen = new Set<string>();
+    const targets = new Map<string, Draft>();
+    const loose: RawAct[] = [];
+    const looseSeen = new Set<string>();
     for (const change of bySeq.get(seq) ?? []) {
-      const task = change["task_id"];
-      if (typeof task === "string" && !tasks.includes(task)) tasks.push(task);
       const op = opOf.get(`${String(seq)}:${String(change["op"])}`) || "change";
-      const entity = String(change["entity"]);
-      const set = change["action"] === "set" && entity === "tasks";
-      const field = set && typeof change["field"] === "string" ? change["field"] : undefined;
-      const key = `${op}:${field ?? ""}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const kind = change["subject"];
+      const id = change["subject_id"];
+      const own = isKind(kind) && typeof id === "string";
+      const field =
+        change["action"] === "set" && typeof change["field"] === "string"
+          ? change["field"]
+          : undefined;
       const before = parse(change["before"]);
       const after = parse(change["after"]);
-      if (field === "grouping" || (entity === "tasks" && change["action"] === "create")) {
-        for (const value of [before, after]) {
-          for (const id of [record(value)["project_id"], record(value)["area_id"]]) {
-            if (typeof id === "string") groups.add(id);
-          }
+      for (const value of [before, after]) {
+        for (const group of [record(value)["project_id"], record(value)["area_id"]]) {
+          if (typeof group === "string") groupIds.add(group);
         }
       }
-      acts.push({
+      const act: RawAct = {
         op,
         ...(field === undefined ? {} : { field }),
         ...(before === undefined ? {} : { from: before }),
         ...(after === undefined ? {} : { to: after }),
-      });
+      };
+      if (!own) {
+        if (!looseSeen.has(op)) loose.push({ op });
+        looseSeen.add(op);
+        continue;
+      }
+      (kind === "task" ? taskIds : groupIds).add(id);
+      const key = `${kind}:${id}`;
+      let target = targets.get(key);
+      if (target === undefined) {
+        target = { kind, id, created: false, acts: [], seen: new Set() };
+        targets.set(key, target);
+      }
+      const table = { task: "tasks", project: "projects", area: "areas" }[kind];
+      // A field of a child (a note's body) is no field of its target: the operation says it.
+      const ownField = change["entity"] === table ? field : undefined;
+      if (change["entity"] === table && change["action"] === "create") target.created = true;
+      const seen = `${op}:${ownField ?? ""}`;
+      if (target.seen.has(seen)) continue;
+      target.seen.add(seen);
+      target.acts.push(ownField === undefined ? { op, ...placeOf(act) } : act);
     }
-    for (const task of tasks.slice(0, NAMED)) named.add(task);
-    return { commit, tasks, acts };
+    return { commit, targets: [...targets.values()], loose };
   });
 
-  const ids = (set: Set<string>) => JSON.stringify([...set]);
-  const [taskRows, groupRows] = await reader.transaction("deferred", [
+  const [nameRows] = await reader.transaction("deferred", [
     {
-      sql: "SELECT id, ref, title, deleted_at FROM tasks WHERE id IN (SELECT value FROM json_each($ids))",
+      sql: NAMES,
       mode: "all",
-      params: { ids: ids(named) },
-    },
-    {
-      sql:
-        "SELECT id, title FROM projects WHERE id IN (SELECT value FROM json_each($ids)) " +
-        "UNION ALL SELECT id, title FROM areas WHERE id IN (SELECT value FROM json_each($ids))",
-      mode: "all",
-      params: { ids: ids(groups) },
+      params: { tasks: JSON.stringify([...taskIds]), groups: JSON.stringify([...groupIds]) },
     },
   ]);
-  const taskOf = new Map((taskRows as Row[]).map((t) => [String(t["id"]), t]));
-  const groupName = new Map((groupRows as Row[]).map((g) => [String(g["id"]), String(g["title"])]));
-  /** A task's place by its name: its project's, else its area's; null for neither. */
+  const named = new Map(
+    (nameRows as Row[]).map((r) => [`${String(r["kind"])}:${String(r["id"])}`, r]),
+  );
+  const groupName = (id: unknown): string | undefined => {
+    if (typeof id !== "string") return undefined;
+    const row = named.get(`project:${id}`) ?? named.get(`area:${id}`);
+    return row === undefined ? undefined : String(row["name"]);
+  };
+  /** A place by its name: its project's, else its area's; null for neither. */
   const place = (value: unknown): ActivityValue => {
     const { project_id: project, area_id: area } = record(value);
-    if (typeof project === "string") return groupName.get(project) ?? null;
-    if (typeof area === "string") return groupName.get(area) ?? null;
-    return null;
+    return groupName(project) ?? groupName(area) ?? null;
   };
   /** A field's value as a line shows it: a scalar, or none for a value of several parts. */
   const shown = (field: string | undefined, value: unknown): ActivityValue | undefined => {
-    if (field === "grouping") return place(value);
+    if (value === undefined) return undefined;
+    if (field === undefined || field === "grouping") return place(value);
+    if (FLAGS.has(field)) return value === null ? null : value === 1 || value === true;
     if (field === "due") {
-      const due = record(value);
       if (value === null) return null;
+      const due = record(value);
       return typeof due["due_date"] === "string"
         ? due["due_date"]
         : typeof due["due_at"] === "number"
           ? due["due_at"]
           : null;
     }
-    if (field === undefined) {
-      const title = record(value)["title"];
-      if (typeof title === "string") return title;
-      return "project_id" in record(value) ? place(value) : undefined;
-    }
     if (typeof value === "string") return value.length <= 300 ? value : undefined;
     return value === null || typeof value === "number" || typeof value === "boolean"
       ? value
       : undefined;
   };
+  const actOf = (act: RawAct): ActivityAct => {
+    const from = act.field === undefined ? undefined : shown(act.field, act.from);
+    const to = shown(act.field, act.to);
+    return {
+      op: act.op,
+      ...(act.field === undefined ? {} : { field: act.field }),
+      ...(from === undefined ? {} : { from }),
+      ...(to === undefined ? {} : { to }),
+    };
+  };
 
-  const lines = drafts.map(({ commit, tasks, acts }): ActivityLine => {
+  const lines = drafts.map(({ commit, targets, loose }): ActivityLine => {
     const kind = String(commit["kind"]);
     return {
       seq: Number(commit["seq"]),
@@ -216,32 +292,29 @@ export async function readActivity(
       actor: commit["actor_kind"] === "routine" ? "routine" : "agent",
       by: String(commit["label"]),
       ...(kind === "ops" ? {} : { kind }),
-      tasks: tasks.slice(0, NAMED).flatMap((id) => {
-        const row = taskOf.get(id);
-        if (row === undefined) return [];
-        return [
-          {
-            id,
-            ref: `${prefix}-${String(row["ref"])}`,
-            title: String(row["title"]),
-            ...(row["deleted_at"] === null || row["deleted_at"] === undefined
-              ? {}
-              : { trash: true as const }),
-          },
-        ];
-      }),
-      count: tasks.length,
-      acts: acts.slice(0, ACTS).map((act) => {
-        const from = shown(act.field, act.from);
-        const to = shown(act.field, act.to);
+      targets: targets.slice(0, TARGETS).map((target): ActivityTarget => {
+        const row = named.get(`${target.kind}:${target.id}`);
+        const deleted = row?.["deleted_at"];
         return {
-          op: act.op,
-          ...(act.field === undefined ? {} : { field: act.field }),
-          ...(from === undefined || act.field === undefined ? {} : { from }),
-          ...(to === undefined ? {} : { to }),
+          kind: target.kind,
+          id: target.id,
+          name: row === undefined ? "" : String(row["name"]),
+          ...(target.kind === "task" && row !== undefined
+            ? { ref: `${prefix}-${String(row["ref"])}` }
+            : {}),
+          ...(deleted === null || deleted === undefined ? {} : { trash: true as const }),
+          ...(target.created ? { created: true as const } : {}),
+          acts: target.acts.slice(0, ACTS).map(actOf),
         };
       }),
+      count: targets.length,
+      acts: loose.slice(0, ACTS).map(actOf),
     };
   });
   return { lines, more };
+}
+
+/** An act without a field of its target: only the place a create gave, if any. */
+function placeOf(act: RawAct): Pick<RawAct, "to"> {
+  return act.field === undefined && act.to !== undefined ? { to: act.to } : {};
 }

@@ -86,17 +86,24 @@ What agents and routines did in the space, one line per change, newest first.
 | `lines[].actor` | "agent" \| "routine" | yes | Who made it: an agent or a routine |
 | `lines[].by` | string, max 200 | yes | The actor's label, such as agent:codex |
 | `lines[].kind` | string, max 40 | no | The change's kind when it is no plain change: undo, redo |
-| `lines[].tasks` | object[], max 3 items | yes | The first tasks it touched |
-| `lines[].tasks[].id` | string | yes | Task ID |
-| `lines[].tasks[].ref` | string, max 20 | yes | Its reference, such as M-14 |
-| `lines[].tasks[].title` | string, max 1000 | yes | Its title now |
-| `lines[].tasks[].trash` | true | no | It is in the Trash now |
-| `lines[].count` | integer, 0 to 1000000 | yes | How many tasks it touched |
-| `lines[].acts` | object[], max 40 items | yes | What it did, in order |
+| `lines[].targets` | object[], max 50 items | yes | What it touched, in order |
+| `lines[].targets[].kind` | "task" \| "project" \| "area" | yes | What it is |
+| `lines[].targets[].id` | string, max 40 | yes | Its ID |
+| `lines[].targets[].name` | string, max 1000 | yes | Its title or name now |
+| `lines[].targets[].ref` | string, max 20 | no | A task's reference, such as M-14 |
+| `lines[].targets[].trash` | true | no | It is in the Trash now |
+| `lines[].targets[].created` | true | no | The change made it |
+| `lines[].targets[].acts` | object[], max 40 items | yes | What the change did to it, in order |
+| `lines[].targets[].acts[].op` | string, max 60 | yes | The operation, such as task.patch or note.add |
+| `lines[].targets[].acts[].field` | string, max 60 | no | The field of the target it set |
+| `lines[].targets[].acts[].from` | string, max 300 \| number, -8640000000000000 to 8640000000000000 \| boolean \| null | no | The value before, when it is no free text |
+| `lines[].targets[].acts[].to` | string, max 300 \| number, -8640000000000000 to 8640000000000000 \| boolean \| null | no | The value after, when it is no free text; for a create, where it was made |
+| `lines[].count` | integer, 0 to 1000000 | yes | How many things it touched |
+| `lines[].acts` | object[], max 40 items | yes | What it did that touched no task, project or area, such as a setting |
 | `lines[].acts[].op` | string, max 60 | yes | The operation, such as task.patch or note.add |
-| `lines[].acts[].field` | string, max 60 | no | The task's field it set |
-| `lines[].acts[].from` | string, max 300 \| number, -8640000000000000 to 8640000000000000 \| boolean \| null | no | The value before, when it is no text |
-| `lines[].acts[].to` | string, max 300 \| number, -8640000000000000 to 8640000000000000 \| boolean \| null | no | The value after, when it is no text; for a move or a create, its project or area |
+| `lines[].acts[].field` | string, max 60 | no | The field of the target it set |
+| `lines[].acts[].from` | string, max 300 \| number, -8640000000000000 to 8640000000000000 \| boolean \| null | no | The value before, when it is no free text |
+| `lines[].acts[].to` | string, max 300 \| number, -8640000000000000 to 8640000000000000 \| boolean \| null | no | The value after, when it is no free text; for a create, where it was made |
 | `more` | boolean | yes | More lines lie past this page: older ones, or with `after`, newer ones |
 
 ### Examples
@@ -121,28 +128,30 @@ Result:
       "at": 1778580000000,
       "actor": "agent",
       "by": "agent:codex",
-      "tasks": [
+      "targets": [
         {
+          "kind": "task",
           "id": "t_5m2k8q0w3z7r1c9d4f6h8j0n2p",
           "ref": "M-14",
-          "title": "Fix appointment time zones"
+          "name": "Fix appointment time zones",
+          "acts": [
+            {
+              "op": "task.patch",
+              "field": "priority",
+              "from": 2,
+              "to": 1
+            },
+            {
+              "op": "task.patch",
+              "field": "due",
+              "from": null,
+              "to": "2026-12-03"
+            }
+          ]
         }
       ],
       "count": 1,
-      "acts": [
-        {
-          "op": "task.patch",
-          "field": "priority",
-          "from": 2,
-          "to": 1
-        },
-        {
-          "op": "task.patch",
-          "field": "due",
-          "from": null,
-          "to": "2026-12-03"
-        }
-      ]
+      "acts": []
     }
   ],
   "more": true

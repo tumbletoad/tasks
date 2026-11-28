@@ -484,8 +484,10 @@ function meaning(entry: string, value: Value): unknown {
           l["actor"],
           typeof l["by"],
           l["count"],
-          (l["tasks"] as unknown[]).length,
-          [...new Set((l["acts"] as Value[]).map((a) => a["op"]))],
+          (l["targets"] as Value[]).map((target) => [
+            target["kind"],
+            [...new Set((target["acts"] as Value[]).map((a) => a["op"]))],
+          ]),
         ]),
         more: value["more"],
       };
