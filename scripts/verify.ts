@@ -4,11 +4,7 @@
 // The static checks each use one core, so they run side by side, and each prints its output when it
 // ends. The tests run after them, so a typing or lint error is reported in about a minute.
 //
-// The product tests always run. The M0 lab self-tests (spikes/) run serially, and only when lab
-// code or a file they depend on changed, or when asked: pnpm verify --lab, or TTASKS_VERIFY_LAB=1.
-// The rule is in lab-tests.ts.
-//
-// `--part checks|product|lab` runs one slice and `--shard i/n` one Vitest shard of a test part,
+// `--part checks|product` runs one slice and `--shard i/n` one Vitest shard of the product part,
 // so CI can spread verify over several machines. With no part it runs every step.
 //
 // safe-exit comes first: this script loads the product's generators and ends through
@@ -16,15 +12,13 @@
 import "../packages/bridge/src/safe-exit.ts";
 import { join } from "node:path";
 import {
-  decideLab,
   findBase,
   isProjectionPath,
   projectionFolders,
   parseVerifyArgs,
-  type LabDecision,
   type VerifyOptions,
   type VerifyPart,
-} from "./lab-tests.ts";
+} from "./verify-base.ts";
 import { binPath, repoRoot, runNode, runNodeCaptured, type Captured } from "./run.ts";
 import { CRUISE_ROOTS, generated, runtime, typecheck } from "./steps.ts";
 
@@ -86,19 +80,12 @@ const allStages: Named[][] = [
       tool("vitest", "vitest", ["run", "--project", "product", ...shard]),
     ],
   ],
-  [["lab tests", "lab", labTests]],
 ];
 const stages = allStages
   .map((stage) =>
     stage.filter(([, part]) => options.part === null || part === "all" || part === options.part),
   )
   .filter((stage) => stage.length > 0);
-
-// Decided before any step runs, so the rule that applied is the first thing the output says.
-const lab: LabDecision | null = stages.flat().some(([, part]) => part === "lab")
-  ? decideLab(options, process.env, () => findBase(process.env))
-  : null;
-if (lab !== null) console.log(lab.reason);
 
 // A change to the projection meets the model's random runs before it merges: they once found a
 // defect that the fixed seeds never reach (packages/projection/test/model-replay.test.ts).
@@ -115,14 +102,6 @@ if (
       `projection model: 50 random runs, ${base.found ? `the projection or a package it uses changed since ${base.label}` : `the base could not be determined (${base.why})`}`,
     );
   }
-}
-
-function labTests(): boolean {
-  if (lab === null || !lab.run) {
-    if (lab !== null) console.log(lab.reason);
-    return true;
-  }
-  return runNode(binPath("vitest", "vitest"), ["run", "--project", "lab", ...shard]).status === 0;
 }
 
 const count = String(stages.flat().length);
@@ -164,10 +143,9 @@ for (const stage of stages) {
   }
 }
 const total = `${((performance.now() - started) / 1000).toFixed(1)} s`;
-// A pass of one part, or without the lab tests, must not read as a pass of everything.
+// A pass of one part must not read as a pass of everything.
 const slice =
   options.part === null
     ? ""
     : ` of part ${options.part}${options.shard === null ? "" : `, shard ${options.shard}`}`;
-const skipped = lab === null || lab.run ? "" : `. ${lab.reason}`;
-console.log(`\nverify passed${slice} (${total})${skipped}`);
+console.log(`\nverify passed${slice} (${total})`);

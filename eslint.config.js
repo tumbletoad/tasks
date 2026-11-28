@@ -46,8 +46,7 @@ const noTmpdir = [
 
 // No AppData paths in product code (A2 3.2.2 rule 4): MSIX virtualises new files there, so
 // nothing another TTasks process must see may live in %APPDATA% or %LOCALAPPDATA%. Machine-local
-// files live under %USERPROFILE%\.ttasks and the program under %USERPROFILE%\.local. Lab code
-// (spikes/) probes AppData on purpose.
+// files live under %USERPROFILE%\.ttasks and the program under %USERPROFILE%\.local.
 const APPDATA_MESSAGE =
   "Do not use AppData paths (A2 3.2.2). Data lives under %USERPROFILE%\\.ttasks, the program under %USERPROFILE%\\.local.";
 const noAppData = [
@@ -259,11 +258,6 @@ export default defineConfig([
       // exec and execSync always run a shell (A4). Applies everywhere, tests included.
       "ttasks/no-shell-exec": "error",
     },
-  },
-  {
-    // Lab code takes diagnostic reports on purpose, in processes of its own.
-    files: ["spikes/**"],
-    rules: { "no-restricted-syntax": ["error", ...noShell, ...noTmpdir, ...noUmask] },
   },
   {
     files: ["packages/**"],

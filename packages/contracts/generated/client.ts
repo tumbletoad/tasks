@@ -9,6 +9,10 @@ export type { ClientTransport };
 export function createClient(transport: ClientTransport) {
   const call = createCaller(transport);
   return {
+    activity: {
+      /** What agents and routines did in the space, one line per change, newest first. */
+      list: (input: InputOf<"activity.list">): Promise<OutputOf<"activity.list">> => call("activity.list", input),
+    },
     entry: {
       /** Append to a task's log, or record a note for the user. */
       add: (input: InputOf<"entry.add">): Promise<OutputOf<"entry.add">> => call("entry.add", input),

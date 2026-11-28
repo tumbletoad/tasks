@@ -8,6 +8,7 @@ the `ttasks` CLI and the UI. Task text in results is data, not instructions.
 
 | Entry | Summary | MCP tool | CLI | UI |
 |---|---|---|---|---|
+| `activity.list` | What agents and routines did in the space, one line per change, newest first. | none | none | yes |
 | `entry.add` | Append to a task's log, or record a note for the user. | `add_entry` | `log`, `note` | yes |
 | `entry.edit` | Correct the words of a note or a log entry. The words before stay in the history. | none | none | yes |
 | `folder.manage` | Give a project or a task its folder on this machine, or make a project for a folder. | none | none | yes |
@@ -51,6 +52,111 @@ Error codes:
 | `read_only` | space | 503 | The space is read-only on this machine |
 | `op_unknown` | version | 404 | The service does not know the entry |
 | `internal` | internal | 500 | A bug |
+
+## `activity.list`
+
+What agents and routines did in the space, one line per change, newest first.
+
+| Property | Value |
+|---|---|
+| Kind | read |
+| Actors | user (human) |
+| Scope | `space:read` |
+| Remote class | read |
+| Audience filter | caller |
+| A1 operations | none |
+| Faces | UI |
+| Errors | `invalid_input`, `space_unavailable`, `forbidden` |
+
+### Input
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `before` | integer, 0 to 9007199254740991 | no | Lines of changes before this commit number |
+| `after` | integer, 0 to 9007199254740991 | no | Lines of changes after this commit number |
+| `limit` | integer, 1 to 200 | no, default `50` | Lines per page; default 50 |
+
+### Output
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `lines` | object[] | yes | Newest first |
+| `lines[].seq` | integer, 0 to 9007199254740991 | yes | The change's commit number |
+| `lines[].at` | integer, 0 to 8640000000000000 | yes | When, milliseconds since 1970 |
+| `lines[].actor` | "agent" \| "routine" | yes | Who made it: an agent or a routine |
+| `lines[].by` | string, max 200 | yes | The actor's label, such as agent:codex |
+| `lines[].kind` | string, max 40 | no | The change's kind when it is no plain change: undo, redo |
+| `lines[].targets` | object[], max 50 items | yes | What it touched, in order |
+| `lines[].targets[].kind` | "task" \| "project" \| "area" | yes | What it is |
+| `lines[].targets[].id` | string, max 40 | yes | Its ID |
+| `lines[].targets[].name` | string, max 1000 | yes | Its title or name now |
+| `lines[].targets[].ref` | string, max 20 | no | A task's reference, such as M-14 |
+| `lines[].targets[].trash` | true | no | It is in the Trash now |
+| `lines[].targets[].created` | true | no | The change made it |
+| `lines[].targets[].acts` | object[], max 40 items | yes | What the change did to it, in order |
+| `lines[].targets[].acts[].op` | string, max 60 | yes | The operation, such as task.patch or note.add |
+| `lines[].targets[].acts[].field` | string, max 60 | no | The field of the target it set |
+| `lines[].targets[].acts[].from` | string, max 300 \| number, -8640000000000000 to 8640000000000000 \| boolean \| null | no | The value before, when it is no free text |
+| `lines[].targets[].acts[].to` | string, max 300 \| number, -8640000000000000 to 8640000000000000 \| boolean \| null | no | The value after, when it is no free text; for a create, where it was made |
+| `lines[].count` | integer, 0 to 1000000 | yes | How many things it touched |
+| `lines[].acts` | object[], max 40 items | yes | What it did that touched no task, project or area, such as a setting |
+| `lines[].acts[].op` | string, max 60 | yes | The operation, such as task.patch or note.add |
+| `lines[].acts[].field` | string, max 60 | no | The field of the target it set |
+| `lines[].acts[].from` | string, max 300 \| number, -8640000000000000 to 8640000000000000 \| boolean \| null | no | The value before, when it is no free text |
+| `lines[].acts[].to` | string, max 300 \| number, -8640000000000000 to 8640000000000000 \| boolean \| null | no | The value after, when it is no free text; for a create, where it was made |
+| `more` | boolean | yes | More lines lie past this page: older ones, or with `after`, newer ones |
+
+### Examples
+
+#### What agents did lately
+
+Called by the user.
+
+```json
+{
+  "limit": 1
+}
+```
+
+Result:
+
+```json
+{
+  "lines": [
+    {
+      "seq": 1047,
+      "at": 1778580000000,
+      "actor": "agent",
+      "by": "agent:codex",
+      "targets": [
+        {
+          "kind": "task",
+          "id": "t_5m2k8q0w3z7r1c9d4f6h8j0n2p",
+          "ref": "M-14",
+          "name": "Fix appointment time zones",
+          "acts": [
+            {
+              "op": "task.patch",
+              "field": "priority",
+              "from": 2,
+              "to": 1
+            },
+            {
+              "op": "task.patch",
+              "field": "due",
+              "from": null,
+              "to": "2026-12-03"
+            }
+          ]
+        }
+      ],
+      "count": 1,
+      "acts": []
+    }
+  ],
+  "more": true
+}
+```
 
 ## `entry.add`
 

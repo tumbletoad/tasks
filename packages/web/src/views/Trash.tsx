@@ -6,7 +6,6 @@
 // words of tasks in the Trash or that this space does not have now, with Copy and Discard, and
 // what the Trash promises.
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { localDate } from "@ttasks/contracts/day";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { Instance } from "../api.ts";
 import { classes } from "../app/css.ts";
@@ -15,7 +14,7 @@ import { Session } from "../context.ts";
 import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
-import { formatInstant, type Clock } from "../row/dates.ts";
+import { formatWhen, type Clock } from "../row/dates.ts";
 import { sayMsg } from "../row/say.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive, usePagedQuery } from "../store/hooks.ts";
@@ -99,14 +98,6 @@ export function TrashPage({ task, onExpand }: TrashProps) {
   );
 }
 
-/** "14:02" today, "23 Nov, 14:02" another day: when a change moved its tasks. */
-function whenOf(at: string, clock: Clock): string {
-  const ms = Date.parse(at);
-  const time = formatInstant(ms, clock, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  if (localDate(ms, clock.timeZone) === clock.today) return time;
-  return `${formatInstant(ms, clock, { day: "numeric", month: "short" })}, ${time}`;
-}
-
 /** A change's heading: who moved how many tasks there, when, and why when it was given. */
 function changeTitle(
   removal: Removal,
@@ -121,7 +112,7 @@ function changeTitle(
         ? removal.by
         : (agentName(removal.by, instances) ?? t("thread.agent")),
     count: removal.count,
-    when: whenOf(removal.at, clock),
+    when: formatWhen(Date.parse(removal.at), clock),
   };
   return removal.reason === undefined
     ? t("trash.change", values)

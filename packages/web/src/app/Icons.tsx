@@ -80,6 +80,8 @@ const VIEW_SHAPES: Readonly<Record<View, ReactNode>> = {
       <path d="m7 10 3 2.5L7 15M12.5 15H17" />
     </>
   ),
+  // A pulse: what happened, as it happened.
+  activity: <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />,
   // Bin: a lid with its handle and a tapered can.
   trash: (
     <>
