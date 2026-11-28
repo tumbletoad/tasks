@@ -284,7 +284,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
 
     // A task finished while the list is open joins its month at the top, saying how it ended, and
     // the list read again holds every row it showed. Its month is the sample's, or one begun since
-    // the worker made the sample: the service says which.
+    // the file's world made the sample: the service says which.
     const focused = page.locator("main li[data-task]:focus-within");
     await onOneDay(async (_today, attempt) => {
       const added = (await finished.op(finished.mira.id, "task.add", {
@@ -355,7 +355,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
         }
       }
     }
-    // The tests of a worker share its service: the theme goes back to its default.
+    // The tests of a file share its service: the theme goes back to its default.
     await finished.machine("ui.theme", null);
   });
 });

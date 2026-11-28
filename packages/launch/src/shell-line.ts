@@ -54,7 +54,7 @@ const refused = (platform: NodeJS.Platform, word: string): boolean =>
     : POSIX_CONTROL.test(word);
 
 /** One word quoted for the shell, always. */
-function quotedWord(platform: NodeJS.Platform, word: string): string | undefined {
+export function quotedWord(platform: NodeJS.Platform, word: string): string | undefined {
   if (refused(platform, word)) return undefined;
   return platform === "win32"
     ? `'${word.replace(POWERSHELL_QUOTES, (q) => q + q)}'`
