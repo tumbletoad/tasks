@@ -6683,6 +6683,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.pages.e2e.library",
+      "title": "Against the real service in Chromium and Firefox: a project's Library lists an agent's page as it comes and Back returns focus to its row; an agent's edit while the page is read is offered, never put in place; the pen corrects the body across a reload, a version is shown and restored with an Undo and focus on the words; a Restore that meets newer words writes nothing and shows them; New page opens with its pen and its row has no brief line; Move to Trash, the page in the Trash and Restore; the space's text for agents keeps across a reload; screenshots at 1,440 and 390 px in Sumi and Washi, axe finds nothing and nothing scrolls sideways",
+      "source": "Step 1 design, pull request 228",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.pages.web.trash",
       "title": "The pages in the Trash list where each was, who moved it there and why, and restore with their own Restore",
       "source": "Step 1 design, pull request 228",
