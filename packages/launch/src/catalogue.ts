@@ -119,6 +119,11 @@ export interface TargetDef {
     Record<Permission, { readonly open: readonly string[]; readonly run: readonly string[] | null }>
   >;
   readonly run?: "claude-print" | "codex";
+  /**
+   * The terminal command line that opens one of the app's own conversations again by its ID
+   * (`{resume}`): how Continue goes on with a background run's conversation.
+   */
+  readonly resume?: readonly Template[];
 }
 
 /** No flags for any mode: targets whose permission TTasks cannot set. */
@@ -270,6 +275,7 @@ export const CATALOGUE: readonly TargetDef[] = [
       },
     },
     run: "claude-print",
+    resume: ["{exec}", "--resume", "{resume}", "{permission}", "{extra_args}"],
   },
   {
     id: "codex-cli",
@@ -321,6 +327,17 @@ export const CATALOGUE: readonly TargetDef[] = [
       "read-only": { open: ["-s", "read-only", "-a", "on-request"], run: null },
     },
     run: "codex",
+    resume: [
+      "{exec}",
+      "resume",
+      "{resume}",
+      "-C",
+      "{cwd}",
+      "--no-daemon",
+      "{tool_env}",
+      "{permission}",
+      "{extra_args}",
+    ],
   },
   {
     id: "claude-desktop",
@@ -455,6 +472,7 @@ export const PLACEHOLDERS: Readonly<Record<string, { argv: boolean; url: boolean
   cwd: { argv: true, url: true },
   brief: { argv: true, url: true },
   session: { argv: true, url: true },
+  resume: { argv: true, url: false },
   "task.id": { argv: true, url: true },
   "task.title": { argv: true, url: false },
   "launch.ref": { argv: true, url: true },
