@@ -1,9 +1,5 @@
 packages:
   - packages/*
-  # M0 lab only: the spike page of lab run U (A7 3.7, M0.08). Never shipped, never imported.
-  - spikes/m0/ui
-  # Lab-only dependencies of M0.09 (official MCP SDKs, a tokenizer). Never shipped.
-  - spikes/m0/agents
 
 # Supply chain (A6 L6, A7 3.3). pnpm 12 reads these settings only from this file, not from .npmrc.
 # Dependency install scripts never run unless a package is listed here with `true`.

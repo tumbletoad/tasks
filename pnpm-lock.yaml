@@ -517,62 +517,6 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@types/node@26.6.6)(happy-dom@21.0.4)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2))
 
-  spikes/m0/agents:
-    dependencies:
-      '@modelcontextprotocol/client':
-        specifier: 2.4.0
-        version: 2.4.0
-      '@modelcontextprotocol/sdk':
-        specifier: 1.32.2
-        version: 1.32.2(supports-color@7.2.0)(zod@4.6.7)
-      '@modelcontextprotocol/server':
-        specifier: 2.4.0
-        version: 2.4.0
-      gpt-tokenizer:
-        specifier: 4.1.2
-        version: 4.1.2
-    devDependencies:
-      vitest:
-        specifier: 5.1.0
-        version: 5.1.0(@types/node@26.6.6)(happy-dom@21.0.4)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2))
-
-  spikes/m0/ui:
-    dependencies:
-      '@fontsource-variable/fira-code':
-        specifier: 5.3.0
-        version: 5.3.0
-      '@fontsource-variable/inter':
-        specifier: 5.3.0
-        version: 5.3.0
-      '@tanstack/react-virtual':
-        specifier: 3.14.26
-        version: 3.14.26(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      react:
-        specifier: 19.3.1
-        version: 19.3.1
-      react-aria-components:
-        specifier: 1.22.1
-        version: 1.22.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      react-dom:
-        specifier: 19.3.1
-        version: 19.3.1(react@19.3.1)
-    devDependencies:
-      '@types/react':
-        specifier: 19.3.0
-        version: 19.3.0
-      '@types/react-dom':
-        specifier: 19.3.0
-        version: 19.3.0(@types/react@19.3.0)
-      typescript:
-        specifier: 6.0.3
-        version: 6.0.3
-      vite:
-        specifier: 8.3.7
-        version: 8.3.7(@types/node@26.6.6)(esbuild@0.28.2)
-      vitest:
-        specifier: 5.1.0
-        version: 5.1.0(@types/node@26.6.6)(happy-dom@21.0.4)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2))
-
 packages:
 
   '@babel/helper-string-parser@7.29.14':
@@ -1549,9 +1493,6 @@ packages:
   gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
-
-  gpt-tokenizer@4.1.2:
-    resolution: {integrity: sha512-5GwcLcZd6IqCdrGTTPcoKqbJk8cCWHHsoTHR/uQGZKT29CFcnJEg69qisGbKesQpzxRq9yQO4lBgsaZ8SawcGQ==}
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
@@ -3404,8 +3345,6 @@ snapshots:
       ini: 4.1.1
 
   gopd@1.2.0: {}
-
-  gpt-tokenizer@4.1.2: {}
 
   graceful-fs@4.2.11: {}
 
