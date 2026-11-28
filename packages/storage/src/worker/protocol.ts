@@ -73,6 +73,8 @@ export interface OpenedSpaceInfo {
   searchIndex?: "remade" | "damaged";
   /** A claim's result. The worker closed the connection after the claim. */
   claim?: Claim;
+  /** A tree space, opened to read or to write: its reads name the tree's tables. */
+  backend?: "tree";
   /** The space's authority (A1 3.1, A6 3.5): only this machine's writer writes. */
   authority: { machineId: Id<"m">; epoch: number; incarnation: Id<"ai"> };
   /**

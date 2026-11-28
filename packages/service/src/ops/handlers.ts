@@ -123,7 +123,6 @@ import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
 import {
   checkFolder,
   deepestProject,
-  folderState,
   expanded,
   folderName,
   folderRefused,
@@ -215,6 +214,9 @@ import {
 import { readFinished } from "./task-rows.ts";
 import { readChangeTasks, readTrash } from "./trash.ts";
 import { readActivity } from "./activity.ts";
+import { digestFolderOf } from "./digest-folder.ts";
+import { checkOnTree, checkPlan, isTree } from "./tree.ts";
+import { readTreeTask, treeTrail } from "./tree-read.ts";
 import { trailOff } from "../trial.ts";
 import {
   holderName,
@@ -490,6 +492,7 @@ async function callWith(
     if (space === undefined) throw unpicked;
     return space;
   };
+  if (space !== undefined && isTree(space)) checkOnTree(entry, input);
   const requestId = input["request_id"];
   // A launch is the user's record of its own, which answers a repeated click itself.
   if (
@@ -1017,6 +1020,7 @@ async function submit(
       message: "The service built an operation its entry does not declare.",
     });
   }
+  if (isTree(call.space)) checkPlan(call.entry, ops);
   let result: WriteResult;
   try {
     // The grant again before anything reaches the space (A3 3.7.8): a row revoked while this call
@@ -1537,28 +1541,8 @@ async function hereFor(
  * Where a task opens on this machine, for the digest: its folder, whether it is there now and the
  * repository it holds.
  */
-async function digestFolder(call: Call, folder: TaskFolder): Promise<DigestFolder | undefined> {
-  switch (folder.kind) {
-    case "task":
-    case "project": {
-      const platform = call.host.platform ?? process.platform;
-      const state = await folderState(folder.path, call.host.home, platform);
-      const open = openPath(folder.path, call.host.home, platform);
-      const repo =
-        state === "missing" || open === undefined ? undefined : await repoName(open, platform);
-      return {
-        path: folder.path,
-        of: folder.kind,
-        ...(state === "missing" ? { missing: true } : {}),
-        ...(repo === undefined ? {} : { repo }),
-      };
-    }
-    case "other_machine":
-      return { machine: folder.machine };
-    case "none":
-      return undefined;
-  }
-}
+const digestFolder = (call: Call, folder: TaskFolder): Promise<DigestFolder | undefined> =>
+  digestFolderOf(call.host, folder);
 
 function due(value: unknown, today: string, path: string): { date: string } | undefined {
   if (typeof value !== "string") return undefined;
@@ -3241,7 +3225,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ? (input["notes"] as string[]).map((ref) => Number(ref.slice(1)))
       : undefined;
     // A task in the Trash reads as it is, marked so: an agent that gets not_found would add it again.
-    const read = await readTask(reader, task, {
+    const read = await (isTree(call.space) ? readTreeTask : readTask)(reader, task, {
       machine,
       ...ranges,
       ...(named === undefined ? {} : { named }),
@@ -3270,7 +3254,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     let answer: Record<string, unknown>;
     // What is known above the task, and its own pages: with the digest and with every sections
     // read, since many agents read only sections.
-    const library = trailOff() ? undefined : await trailOf(reader, read.space, read.row);
+    const trail = isTree(call.space) ? treeTrail : trailOf;
+    const library = trailOff() ? undefined : await trail(reader, read.space, read.row);
     if (sections.length === 0) {
       const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
       const more = digest["more"] as Record<string, unknown>;
