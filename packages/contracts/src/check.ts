@@ -555,9 +555,7 @@ function node(schema: z.ZodType, at: At): void {
     return;
   }
   if (name === "null" && at.option !== true) {
-    at.say(
-      `${at.path}: null stands only as a union option, such as a preference value`,
-    );
+    at.say(`${at.path}: null stands only as a union option, such as a preference value`);
     return;
   }
   // Every own key, symbols too.
