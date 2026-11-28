@@ -44,6 +44,7 @@ const files: Record<string, string> = {
   "packages/bridge/package.json": pkg("@fx/bridge", { "tiny-pkg": "1.0.0" }),
   "packages/web/src/index.ts": imports(CONTRACTS, "../../client/src/index.ts"),
   "packages/client/src/index.ts": imports(CONTRACTS, "../../brand/src/index.ts"),
+  "apps/phone/src/index.ts": imports("../../../packages/client/src/index.ts"),
   "packages/service/package.json": pkg("@fx/service", {
     "better-sqlite3": "1.0.0",
     "tiny-pkg": "1.0.0",
@@ -82,6 +83,8 @@ const files: Record<string, string> = {
   "packages/web/src/index-core.ts": imports(CORE),
   "packages/client/src/uses-web.ts": imports("../../web/src/index.ts"),
   "packages/client/src/io.ts": imports("node:fs"),
+  "apps/phone/src/uses-web.ts": imports("../../../packages/web/src/index.ts"),
+  "packages/service/test/uses-phone.test.ts": imports("../../../apps/phone/src/index.ts"),
   "packages/service/src/kit.ts": imports(TESTKIT),
   "packages/service/src/db.ts": imports("node:sqlite"),
   "packages/service/src/sqlite3.ts": imports("better-sqlite3"),
@@ -126,6 +129,8 @@ const expected = [
   `only-storage-better-sqlite3: packages/service/src/sqlite3.ts -> ${SQLITE3}`,
   "only-storage-node-sqlite: packages/service/src/db.ts -> node:sqlite",
   "only-storage-node-sqlite: packages/service/src/sqlite.test.ts -> node:sqlite",
+  "phone-only-contracts: apps/phone/src/uses-web.ts -> packages/web/src/index.ts",
+  "phone-stays-in-the-app: packages/service/test/uses-phone.test.ts -> apps/phone/src/index.ts",
   "testkit-only-from-tests: packages/service/src/kit.ts -> packages/testkit/src/index.ts",
   "web-only-contracts: packages/web/src/index-core.ts -> packages/core/src/index.ts",
 ];
@@ -142,7 +147,7 @@ describe("[A7.3.2.dependency-rules] the dependency rules fire on violations", ()
       await writeFile(join(root, path), content);
     }
     options = await extractDepcruiseOptions(join(repoRoot, ".dependency-cruiser.cjs"));
-    const output = await cruise(["packages", "tests"], { ...options, baseDir: root });
+    const output = await cruise(["apps", "packages", "tests"], { ...options, baseDir: root });
     result = output.output as ICruiseResult;
   });
 

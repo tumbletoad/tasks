@@ -121,6 +121,13 @@ describe("[A3.pages.service] the library through the request path", () => {
     expect(read.trail?.[0]?.pages.map((p) => p.ref)).toEqual([page]);
   });
 
+  test("get_task with sections lists the pages above the task too", async () => {
+    const read = TaskGetResult.parse(await call("task.get", { task, sections: ["notes"] }));
+    if (read.view !== "sections") throw new Error("not sections");
+    expect(read.trail?.map((level) => level.kind)).toEqual(["project", "area", "space"]);
+    expect(read.trail?.[0]?.pages.map((p) => p.ref)).toEqual([page]);
+  });
+
   test("search in scope library finds the page by its words", async () => {
     const found = await call("task.search", { q: "photos", scope: "library" });
     expect((found["rows"] as Json[]).map((r) => [r["kind"], r["ref"]])).toEqual([["page", page]]);
@@ -179,6 +186,13 @@ describe("[A3.pages.service] the library through the request path", () => {
     const papers = TaskGetResult.parse(await call("task.get", { task })).task.id;
     expect(await first(visaTask)).toBe(visa);
     expect(await first(papers)).toBe(page);
+  });
+
+  test("search in scope library finds a page by any of its words, the pages with every word first", async () => {
+    const refs = async (q: string) =>
+      ((await call("task.search", { q, scope: "library" }))["rows"] as Json[]).map((r) => r["ref"]);
+    expect(await refs("consulate deadline")).toEqual([visa]);
+    expect(await refs("photos consulate")).toEqual([visa, page]);
   });
 
   test("complete_task takes the pages updated, refuses one the space does not show, and tells an agent that named none", async () => {

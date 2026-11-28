@@ -47,7 +47,7 @@ export const TaskGetInput = z.strictObject({
   sections: z
     .array(z.enum(SECTIONS))
     .max(SECTIONS.length)
-    .describe("Return these in full instead of the digest")
+    .describe("Return these in full instead of the digest; the pages known above come with both")
     .optional(),
   log_limit: z.int().min(1).max(50).describe("Log entries per page; default 20").optional(),
   before: z
@@ -310,6 +310,13 @@ export const TaskGetResult = z.union([
     task: TaskRow.describe("The task"),
     sections: TaskSections.describe("The sections asked for"),
     before: z.string().describe("Paging token for the rest").optional(),
+    pages: z.array(PageRow).max(PAGE_LIST).describe("Pages on this task, by title").optional(),
+    pages_more: Count.describe("Pages on this task not here").optional(),
+    trail: z
+      .array(TrailLevel)
+      .max(3)
+      .describe("The levels above the task, nearest first: their pages")
+      .optional(),
     notes: NamedNotes,
     skills: Skills,
     skills_unread: SkillsUnread,

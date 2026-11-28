@@ -299,6 +299,14 @@ export function fitsWhole(rendered: Rendered, maxTokens: number): boolean {
   return sizeOf(compose(rendered, marker, units, units.length)) <= budget;
 }
 
+/** Estimated tokens of all of `rendered`, nothing cut. */
+export function wholeTokens(rendered: Rendered): number {
+  const marker = "Z".repeat(LONG_MARKER_LENGTH);
+  const units = cuttable(rendered.parts);
+  const composed = compose(rendered, marker, units, units.length);
+  return Math.ceil(sizeOf(composed) / BYTES_PER_TOKEN.result);
+}
+
 /** Estimated tokens of what `fit` never cuts in `rendered`: its fixed parts, with every unit out. */
 export function floorTokens(rendered: Rendered): number {
   const marker = "Z".repeat(LONG_MARKER_LENGTH);

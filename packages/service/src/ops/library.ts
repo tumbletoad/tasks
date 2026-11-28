@@ -8,7 +8,7 @@ import { byOf } from "./errors.ts";
 import { PARENT_OF_TASK } from "./task-rows.ts";
 import { resolveGroup } from "./groups.ts";
 import { hasPageTable, spaceFacts, type GroupNames, type SpaceFacts } from "./read.ts";
-import { negativeMatch, wordsMatch } from "../search/plan.ts";
+import { anyWordsMatch, negativeMatch, wordsMatch } from "../search/plan.ts";
 import { queryProblem, type FilterTerm, type Query } from "../search/query.ts";
 
 /** The rows of one list in one answer; a longer one goes on with the cursor. */
@@ -732,9 +732,17 @@ export async function searchLibrary(
     projects: projects as unknown as GroupRow[],
   };
   const filters = libraryFilters(input.query, space.refPrefix, groups, params);
-  const match = wordsMatch(input.query);
+  // An agent names what it looks for in many words, some of them new: any word finds a page, and
+  // pages that hold every word come first.
+  const match = anyWordsMatch(input.query);
+  const every = wordsMatch(input.query);
   const without = negativeMatch(input.query);
   if (match !== null) params["match"] = match;
+  if (every !== null && every !== match) params["every"] = every;
+  const everyFirst =
+    params["every"] === undefined
+      ? ""
+      : "search_fts.rowid IN (SELECT rowid FROM search_fts WHERE search_fts MATCH $every) DESC, ";
   if (without !== null) params["without"] = without;
   const where = [
     "($agent = 0 OR lib.audience = 'all')",
@@ -754,7 +762,7 @@ export async function searchLibrary(
       : "SELECT lib.kind, lib.entity_id, snippet(search_fts, 1, '', '', '...', 12) AS snippet " +
         `FROM (${LIBRARY_ROWS}) lib JOIN search_docs d ON d.entity_id = lib.entity_id ` +
         `JOIN search_fts ON search_fts.rowid = d.doc WHERE ${where} ` +
-        `ORDER BY ${ON_TRAIL} DESC, bm25(search_fts, 10.0, 3.0, 2.0) LIMIT $limit`;
+        `ORDER BY ${everyFirst}${ON_TRAIL} DESC, bm25(search_fts, 10.0, 3.0, 2.0) LIMIT $limit`;
   const [found] = await reader.transaction("deferred", [{ sql, mode: "all", params }]);
   const hits = found as Row[];
   const reads = await reader.transaction(

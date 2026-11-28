@@ -142,12 +142,7 @@ export class MachineSettings {
   setPreference(key: unknown, value: unknown): Promise<PreferenceRead> {
     if (!isPageKey(key)) return Promise.reject(notASetting());
     return this.#run(() => {
-      const edited = setMachinePreference(
-        this.#o.configDir,
-        key,
-        value as PrefValue | null,
-        this.#o.platform,
-      );
+      const edited = setMachinePreference(this.#o.configDir, key, value as PrefValue | null);
       if (!edited.ok) throw refused(edited.reason);
       if (value === null) this.#values.delete(key);
       else this.#values.set(key, value as PrefValue);

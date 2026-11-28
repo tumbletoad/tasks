@@ -3,11 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "What the page and the phone app share: Today and the status views, the capture parser, and the live feed's store core. Pure TypeScript, no React and no DOM.",
+  "description": "What the page and the phone app share: Today and the status views, the capture parser, the live feed's store core, and the phone's link over a socket it is handed. Pure TypeScript, no React and no DOM.",
   "exports": {
     "./today": "./src/today/index.ts",
     "./capture": "./src/capture/index.ts",
     "./store": "./src/store/index.ts",
+    "./link": "./src/link/index.ts",
     "./test/feed-model": "./test/feed-model.ts",
     "./test/nodes": "./test/nodes.ts"
   },

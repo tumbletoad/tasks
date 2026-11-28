@@ -230,9 +230,12 @@ function bindBody(options: ConnectOptions, protocol: number): BindBody {
  * Connects and completes the handshake. Until the service's proof verifies, the only bytes sent
  * are the hello line: protocol, mode, nonce and proof. Rejects with LocalError:
  * - `not_running` or `unreachable` when the connection fails,
- * - `untrusted_endpoint` when the peer's challenge or proof is wrong or missing, or the bind
- *   result's proof is wrong,
- * - `connection_lost` when the connection ends or stalls after the service's proof verified,
+ * - `untrusted_endpoint` when an answer came and is wrong: a challenge, proof or bind result that
+ *   does not verify, or bytes that are not the protocol,
+ * - `connection_lost` when the connection ends or stalls, before an answer or after one: on a busy
+ *   machine a service can take longer than the deadline. Before the proof only the hello was sent,
+ *   so another try is safe either way. Limit: something else listening there that never answers
+ *   reads as this, and is tried again rather than named,
  * - `restart_session` or `service_too_old` when the service refuses the protocol or mode.
  */
 export async function connect(options: ConnectOptions): Promise<Connected> {
@@ -270,15 +273,9 @@ export async function connect(options: ConnectOptions): Promise<Connected> {
   const nextLine = async (): Promise<string> => {
     const frame = await lines.next();
     if (signal?.aborted === true) throw abortReason(signal);
-    const before = stage !== "bound";
-    if (frame === null) {
-      return fail(
-        before ? "untrusted_endpoint" : "connection_lost",
-        timedOut ? "timeout" : "closed",
-      );
-    }
+    if (frame === null) return fail("connection_lost", timedOut ? "timeout" : "closed");
     if ("error" in frame)
-      return fail(before ? "untrusted_endpoint" : "connection_lost", frame.error);
+      return fail(stage !== "bound" ? "untrusted_endpoint" : "connection_lost", frame.error);
     return frame.line;
   };
 

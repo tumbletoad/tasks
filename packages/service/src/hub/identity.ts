@@ -8,7 +8,9 @@
 // - Root: UID or effective UID 0 on Linux and macOS.
 // - Elevated: Windows has no Node API for the token, so the service reads its own token's
 //   mandatory label with System32's whoami.exe, by SID, which no locale changes. High (12288) and
-//   above is elevated. A check that cannot run refuses too: the refusal is the safe side.
+//   above is elevated. Only that answer refuses: a check with no answer (it could not run, or a busy
+//   machine kept it past its 10 s) starts the service and is logged. Limit: an elevated token on
+//   a machine too slow to say so runs elevated.
 //   System32 is found through the kernel's \SystemRoot link, never SystemRoot or windir: a parent
 //   sets those, and could point them at a whoami that answers "medium".
 import { spawnSync } from "node:child_process";
@@ -21,7 +23,7 @@ export const TTASKS_PACKAGE = envVar("PACKAGE");
 export interface Identity {
   /** UID or effective UID 0 (Linux, macOS). */
   readonly root: boolean;
-  /** Windows: elevated (true), not elevated (false), or the check could not run (undefined). */
+  /** Windows: elevated (true), not elevated (false), or the check gave no answer (undefined). */
   readonly elevated: boolean | undefined;
   /** The package's full name when the process has package identity, else null. */
   readonly package: string | null;

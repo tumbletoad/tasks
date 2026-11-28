@@ -43,7 +43,12 @@ export async function generated(): Promise<boolean> {
  * The TypeScript projects: Node code, the browser page (DOM, JSX) and the end-to-end tests (Node,
  * with the DOM for code that runs in the page).
  */
-const TS_PROJECTS = ["tsconfig.json", "packages/web/tsconfig.json", "tests/e2e/tsconfig.json"];
+const TS_PROJECTS = [
+  "tsconfig.json",
+  "packages/web/tsconfig.json",
+  "tests/e2e/tsconfig.json",
+  "apps/phone/tsconfig.json",
+];
 
 /** Type-checks every project, each in its own process at the same time. `args` adds to its call. */
 export async function typecheck(
@@ -61,6 +66,6 @@ export async function typecheck(
 }
 
 /** The folders dependency-cruiser checks. */
-export const CRUISE_ROOTS = ["packages", "scripts", "tests"].filter((d) =>
+export const CRUISE_ROOTS = ["apps", "packages", "scripts", "tests"].filter((d) =>
   existsSync(join(repoRoot, d)),
 );
