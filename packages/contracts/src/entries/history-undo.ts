@@ -1,9 +1,9 @@
 // history.undo: undo the user's newest step in the space (A1 3.10.1, A5 3.12). The user's only
 // (A3 3.2.3): one undo stack per human, shared by every tab and the user's CLI. A step is what Undo
 // is for: a check-off or a reopen, the Trash and out of it, a removed note, words, out of the
-// Inbox, a first filing, a new area or project, an unarchive. Another actor's newer work on what
-// it would change keeps the step as they left it: `kept`, and the next undo reaches the step
-// before it.
+// Inbox, a first filing, questions set aside, a new area or project, an unarchive. A change since to
+// what it wrote, or another actor's work on what it would take out of sight, keeps the step as it
+// is: `kept`, and the next undo reaches the step before it.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { WriteAsOf, idPattern, patterns, Replayed, RequestId, TaskRef } from "../schemas.ts";
@@ -40,6 +40,11 @@ export const HistoryResultFields = {
     .array(TaskRef)
     .max(50)
     .describe("The tasks it checked off or reopened, the first 50")
+    .optional(),
+  why: z
+    .string()
+    .max(200)
+    .describe("kept: why it cannot be applied now, such as a task in the Trash")
     .optional(),
   as_of: WriteAsOf,
   replayed: Replayed.optional(),

@@ -157,6 +157,11 @@ export const ReceiptGetResult = z.union([
       .literal(true)
       .describe("An undo or redo that newer work kept: nothing changed, and it left the stack")
       .optional(),
+    why: z
+      .string()
+      .max(200)
+      .describe("A kept undo or redo: why it cannot be applied now")
+      .optional(),
     ...NewerWorkFields,
     results: z
       .array(ReceiptOpResult)
@@ -195,6 +200,7 @@ export interface StoredReceiptLike {
     as_of: string;
     commit?: string;
     kept?: true;
+    why?: string;
     newer?: {
       readonly work: readonly {
         readonly ref?: string;
@@ -290,6 +296,7 @@ export function receiptResult(
     incarnation: stored.incarnation,
     ...(result.commit === undefined ? {} : { commit: result.commit }),
     ...(result.kept === undefined ? {} : { kept: true }),
+    ...(result.why === undefined ? {} : { why: result.why }),
     ...(result.newer === undefined ? {} : newerWorkJson(result.newer)),
     // A request or an import holds more operations than a reply shows: the first 50.
     results: result.results.slice(0, 50).map(receiptOp),

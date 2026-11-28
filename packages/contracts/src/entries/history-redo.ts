@@ -1,5 +1,5 @@
 // history.redo: redo the step the user undid last (A1 3.10.1, A5 3.12). The user's only (A3
-// 3.2.3). Another actor's newer work on what it would change keeps it as they left it: `kept`, and
+// 3.2.3). A change since to what it would change keeps it as it is: `kept`, and
 // the next redo reaches the step undone before it. A new step of the user's ends what can be redone.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";

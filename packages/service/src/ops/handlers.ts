@@ -2554,6 +2554,7 @@ const historyAnswer: Answer = async (view, stored) => {
     tasks: done.tasks,
     task_count: done.task_count,
     ...(done.lifecycles === undefined ? {} : { lifecycles: done.lifecycles }),
+    ...(stored.why === undefined ? {} : { why: stored.why }),
     ...(stored.newer === undefined ? {} : newerWorkJson(stored.newer)),
     as_of: stored.as_of,
     ...replayed(stored),

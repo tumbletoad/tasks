@@ -40,7 +40,7 @@ describe("[A3.3.2.3.history] ttasks undo and ttasks redo", () => {
       const kept = await tasks(["undo", "--yes"]);
       expect(kept.code).toBe(0);
       expect(kept.stdout).toMatch(
-        /^Not undone to M-1: .*script.*, so it stays as they left it\. Run the command again for your change before it\n$/,
+        /^Not undone to M-1: .*script.*, so it stays as it is\. Run the command again for your change before it\n$/,
       );
       // The next undo reaches the change before it.
       expect((await tasks(["undo", "--yes"])).stdout).toMatch(

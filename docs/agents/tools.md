@@ -655,6 +655,7 @@ Redo the change you undid last, unless someone changed it since.
 | `tasks` | string[], max 50 items | yes | The tasks it changed, the first 50 |
 | `task_count` | integer, 0 to 9999999999 | yes | How many tasks it changed |
 | `lifecycles` | string[], max 50 items | no | The tasks it checked off or reopened, the first 50 |
+| `why` | string, max 200 | no | kept: why it cannot be applied now, such as a task in the Trash |
 | `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `newer_work` | object[] | no | Who changed which task since, one entry per task and author |
@@ -720,6 +721,7 @@ Undo your newest check-off, Trash, removed note, text edit or filing, unless som
 | `tasks` | string[], max 50 items | yes | The tasks it changed, the first 50 |
 | `task_count` | integer, 0 to 9999999999 | yes | How many tasks it changed |
 | `lifecycles` | string[], max 50 items | no | The tasks it checked off or reopened, the first 50 |
+| `why` | string, max 200 | no | kept: why it cannot be applied now, such as a task in the Trash |
 | `as_of` | string | yes | This write's position: your next base. Names and lists here may be newer |
 | `replayed` | boolean | no | True on a retry: what the write did, with names and lists as of now |
 | `newer_work` | object[] | no | Who changed which task since, one entry per task and author |
@@ -1301,6 +1303,7 @@ When `found` is `true`:
 | `incarnation` | string | yes | The authority incarnation it was decided under |
 | `commit` | string | no | The commit it wrote |
 | `kept` | true | no | An undo or redo that newer work kept: nothing changed, and it left the stack |
+| `why` | string, max 200 | no | A kept undo or redo: why it cannot be applied now |
 | `newer_work` | object[] | no | Who changed which task since, one entry per task and author |
 | `newer_work[].task` | string | no | The task; absent for an area, a project or a source |
 | `newer_work[].by` | string | yes | Who: user, import, run (a run's own progress) or the actor's label |

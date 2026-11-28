@@ -600,9 +600,15 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       const which = tasks.length === 0 ? "" : ` to ${tasks.join(", ")}${more}`;
       const redo = entry === "history.redo";
       if (result["result"] === "kept") {
-        // Someone's newer work kept it: nothing changed, and the next one reaches the change before.
+        // A change since kept it, or it cannot be applied now: nothing changed, and the next one
+        // reaches the change before.
+        const why = typeof result["why"] === "string" ? result["why"] : undefined;
+        const reason =
+          why === undefined
+            ? (newerOf(result) ?? "it is as it was already")
+            : why.charAt(0).toLowerCase() + why.slice(1);
         lines.push(
-          `Not ${redo ? "redone" : "undone"}${which}: ${newerOf(result) ?? "it changed since"}, so it stays as they left it. Run the command again for your change before it${replay(result)}`,
+          `Not ${redo ? "redone" : "undone"}${which}: ${reason}, so it stays as it is. Run the command again for your change before it${replay(result)}`,
         );
         break;
       }

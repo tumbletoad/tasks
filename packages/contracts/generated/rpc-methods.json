@@ -1484,6 +1484,11 @@
             },
             "maxItems": 50,
             "type": "array"
+          },
+          "why": {
+            "description": "kept: why it cannot be applied now, such as a task in the Trash",
+            "maxLength": 200,
+            "type": "string"
           }
         },
         "required": [
@@ -1647,6 +1652,11 @@
             },
             "maxItems": 50,
             "type": "array"
+          },
+          "why": {
+            "description": "kept: why it cannot be applied now, such as a task in the Trash",
+            "maxLength": 200,
+            "type": "string"
           }
         },
         "required": [
@@ -3300,6 +3310,11 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "why": {
+                "description": "A kept undo or redo: why it cannot be applied now",
+                "maxLength": 200,
+                "type": "string"
               }
             },
             "required": [
