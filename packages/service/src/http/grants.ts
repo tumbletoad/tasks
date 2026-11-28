@@ -194,6 +194,16 @@ export class DurableGrants implements GrantStore {
     return updated;
   }
 
+  /** Sets a row's scopes (a phone's Run switch). False when the row is unknown or revoked. */
+  setScopes(grantId: string, scopes: readonly string[]): boolean {
+    const row = this.#rows.get(grantId);
+    if (row === undefined || row.revoked_at !== null) return false;
+    const changed: Grant = { ...row, scopes: [...scopes] };
+    this.#rows.set(grantId, changed);
+    this.#write(changed);
+    return true;
+  }
+
   revoke(grantId: string, now: Date = new Date()): boolean {
     const row = this.#rows.get(grantId);
     if (row === undefined || row.revoked_at !== null) return false;

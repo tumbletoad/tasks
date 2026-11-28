@@ -6677,6 +6677,76 @@
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.cert",
+      "title": "The link's own certificate reads in Node, verifies with its key, names only `link`, uses P-256 and serves TLS 1.3; the computer's key file is made once, private, and made again when it does not read",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.rows",
+      "title": "A phone's task row keeps the task's own fields and loses where it opens on this machine, the agents it was last opened in and the run's instance; a batch's rows the same; private, link-local and loopback peers are let in and public ones are not",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.pairing",
+      "title": "Against the real service: a code from Settings > Phones pairs one phone once and Settings lists it with Run off; the code spent, ended by its dialog or older than five minutes pairs nothing; the paired phone comes back without a code",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.pin",
+      "title": "A phone that holds the scanned pin connects; one that finds another key at the address closes before it writes a byte, so the code it carries still pairs the right phone",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.unpaired",
+      "title": "A peer without a client certificate, a request on another path, plain HTTP, and a phone with a certificate but no grant or code each get no byte of answer and are closed",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.rights",
+      "title": "A paired phone calls every registry entry a linked device may call and none of the others, watches a task's runs, gets Run and Stop only once switched on for it, reaches no machine, space or sign-in route, and can neither open nor subscribe to another space",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.snapshot",
+      "title": "A phone's snapshot and batches carry the space's tasks, areas, projects and preferences, and no folder, restore record, agent apps, place or last-used agent",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.capture-once",
+      "title": "A capture whose answer was lost, sent again after the app restarted and after the phone was removed and paired again, makes one task and replays its first result",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.link.remove",
+      "title": "Remove closes the phone's open connection at once, Settings no longer lists it, and the phone is told it was removed when it comes back",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "S5.phones.web",
+      "title": "Settings > Phones: the list with each phone's space and last use, the Run switch, Remove after a confirmation, and the pairing dialog with its code, its warning, its end on close and the phone it paired",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }

@@ -124,6 +124,8 @@ export interface AppOptions {
   readonly apps?: UiApps;
   /** The folder chooser (hub/page-folders.ts). None: the page types folders only. */
   readonly folders?: UiFolders;
+  /** The paired phones (link/service.ts), for Settings > Phones. None: no phone pairs. */
+  readonly phones?: () => UiPhones | undefined;
   /** The Agent Monitor, asked at the pace of the tabs that show an Agents page. None: no part. */
   readonly monitor?: Pick<Monitor, "ask" | "recheck" | "status">;
   /** The agent sessions TTasks holds, which link the monitor's agents to tasks. Default: none. */
@@ -139,6 +141,14 @@ export interface UiFolders {
   readonly list: (input: Record<string, unknown>, space?: string) => Promise<unknown>;
   readonly make: (input: Record<string, unknown>) => Promise<unknown>;
   readonly project: (input: Record<string, unknown>, space?: string) => Promise<unknown>;
+}
+
+/** Settings > Phones: the paired phones, a pairing code, the Run switch, Remove. */
+export interface UiPhones {
+  view(input: Record<string, unknown>): unknown;
+  pair(input: Record<string, unknown>): Promise<unknown>;
+  rights(input: Record<string, unknown>): unknown;
+  remove(input: Record<string, unknown>): Promise<unknown>;
 }
 
 /** A page's call into one of the hub's verbs: the UI's sign-in is the person. */
@@ -317,7 +327,13 @@ export class HttpApp {
       log: options.log,
       build: options.build,
       now: options.now,
-      live: (grant) => this.#live(options.grants.get(grant)) !== undefined,
+      // A page's feed lives with its sign-in, a phone's (link/) with its pairing.
+      live: (grant) => {
+        const row = options.grants.get(grant);
+        return row?.kind === "device"
+          ? isLive(row, this.#date())
+          : this.#live(row) !== undefined;
+      },
       instances: (space) => this.launches.instances(space),
       ...(options.machine === undefined
         ? {}
@@ -979,6 +995,26 @@ export class HttpApp {
           });
         }
         const result = action === "apps" ? await apps.view(input) : await apps.apply(input);
+        this.#json(res, port, 200, { result });
+        return;
+      }
+      if (action.startsWith("phone")) {
+        const phones = this.options.phones?.();
+        if (phones === undefined) {
+          throw new AppError({
+            code: "service_unavailable",
+            message: "This service pairs no phone.",
+            data: { reason: "ui_unavailable", retryable: false },
+          });
+        }
+        const result =
+          action === "phones"
+            ? phones.view(input)
+            : action === "phone_pair"
+              ? await phones.pair(input)
+              : action === "phone_rights"
+                ? phones.rights(input)
+                : await phones.remove(input);
         this.#json(res, port, 200, { result });
         return;
       }

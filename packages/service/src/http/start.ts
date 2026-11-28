@@ -7,6 +7,7 @@ import { PRODUCT_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
 import { editMachineToml } from "../config/edit.ts";
 import type { OpsHost } from "../ops/index.ts";
+import { LinkService, type LinkOptions } from "../link/service.ts";
 import {
   HttpApp,
   type AppOptions,
@@ -76,6 +77,8 @@ export interface HttpStart {
   readonly visible?: Visibility;
   /** The installed version when it is not the one this service runs, for the page. Default: none. */
   readonly installed?: () => string | undefined;
+  /** Where the phone's link listens and whom it lets in (link/service.ts). Tests pass loopback. */
+  readonly link?: Pick<LinkOptions, "host" | "ports" | "addresses" | "peerAllowed" | "refuseMs">;
 }
 
 export interface HttpOptions extends HttpStart {
@@ -119,6 +122,8 @@ export interface HttpOptions extends HttpStart {
 
 export interface RunningHttp {
   readonly app: HttpApp;
+  /** The phone's link: its listener runs while a phone is paired or a code waits. */
+  readonly link: LinkService;
   status(): HttpStatus;
   /** `ui/mint_code`: a code and the port to use it on, or the reason there is none. */
   mintCode(): { code: string; port: number; persisted: number | null; moved: boolean };
@@ -189,6 +194,21 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
     ...(options.held === undefined ? {} : { held: options.held }),
     ...(options.unseenMs === undefined ? {} : { unseenMs: options.unseenMs }),
     ...(options.steady === undefined ? {} : { steady: options.steady }),
+    phones: () => link,
+  });
+  // The phone's link shares the page's grants, operations, feed and runs: one process.
+  const link: LinkService = new LinkService({
+    ...options.link,
+    stateDir: options.stateDir,
+    grants: options.grants,
+    ops: options.ops,
+    feed: app.feed,
+    launches: app.launches,
+    log: options.log,
+    now,
+  });
+  await link.start().catch(() => {
+    options.log({ ev: "http.link_listen", outcome: "failed" });
   });
   const os = OS_WORD[process.platform] ?? "linux";
   const facts: PortFacts = {
@@ -310,6 +330,7 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
 
   return {
     app,
+    link,
     status,
     mintCode: () => {
       if (blocked) {
@@ -363,6 +384,7 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
     close: async () => {
       closed = true;
       retry?.clear();
+      await link.close();
       app.closeAll();
       await listener?.close();
       listener = undefined;
