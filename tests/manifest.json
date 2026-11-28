@@ -6740,7 +6740,7 @@
     },
     {
       "id": "A5.pages.web.library",
-      "title": "A project's Library against the contract's examples: its brief, its text for agents and its description, its pages and its tasks' pages by title with who changed each, each row to its page, what comes from above folded; a page an agent moves to the Trash leaves at once, a change to the texts reads them again, and the person's pen writes the text for agents from the base the Library read",
+      "title": "A project's Library against the contract's examples: its brief, its text for agents and its description, its pages and its tasks' pages by title with who changed each, each row to its page, what comes from above folded; a page an agent moves to the Trash leaves at once, a change to the texts while the person reads them is offered and never put in their place, a long description is read whole so its pen opens, and the person's pen writes the text for agents from the base the Library read",
       "source": "Step 1 design, pull request 228",
       "owner": "M5",
       "kind": "ci",
@@ -6748,7 +6748,7 @@
     },
     {
       "id": "A5.pages.web.page",
-      "title": "A page's screen against the contract's examples: who changed it and why, the way back named for where the person came from, the versions newest first with Show and Restore, Restore written as a set from the version's change over the body on screen, a Restore that meets a newer body reads the page again and offers Restore on it, and the feed never replaces the words on screen or in an open pen",
+      "title": "A page's screen against the contract's examples: who changed it and why, the way back named for where the person came from, the versions newest first with Show and Restore, Restore written as a set from the version's change over the body on screen, a Restore that meets a newer body goes back to the current words, read anew, before Restore can be pressed again, a Restore that worked puts the focus on the words, and the feed never replaces the words on screen or in an open pen",
       "source": "Step 1 design, pull request 228",
       "owner": "M5",
       "kind": "ci",

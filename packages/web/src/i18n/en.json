@@ -981,6 +981,7 @@
   "library.aboveCount": "From above ({count})",
   "library.task": "{ref} {title}",
   "library.newTitle": "Title of the new page",
+  "library.textsChanged": "These texts changed.",
   "library.readFailed": "This library's texts could not be read.",
   "library.when": "{who} · {when}",
   "library.onTask": "{task} · {changed}",
@@ -1020,6 +1021,7 @@
   "page.trash": "Move to Trash",
   "page.trashFailed": "The page was not moved.",
   "page.inTrash": "This page is in the Trash.",
+  "page.ownerInTrash": "What holds this page is in the Trash: restoring it brings the page back.",
   "page.gone": "There is no page {ref}.",
   "page.failed": "The page could not be read.",
 

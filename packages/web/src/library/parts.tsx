@@ -1,7 +1,7 @@
 // The pieces the Library and a page's screen share: who changed something and how long ago, a text
 // the person corrects with the pen, and a list of pages to open.
 import { Link } from "@tanstack/react-router";
-import { useContext, useEffect, type ReactNode } from "react";
+import { useContext, useEffect, type ReactNode, type RefObject } from "react";
 import { useIntl, type IntlShape } from "react-intl";
 import type { Instance } from "../api.ts";
 import { classes } from "../app/css.ts";
@@ -162,6 +162,35 @@ export function fromHere(label: string): { readonly path: string; readonly label
   return { path: `${location.pathname}${location.search}`, label };
 }
 
+/** The page link the person followed last, and the address it was on: Back focuses it again. */
+let followed: { readonly path: string; readonly ref: string } | undefined;
+
+/** Notes the page link the person follows, for the way back. */
+export function noteFollowed(ref: string): void {
+  followed = { path: `${location.pathname}${location.search}`, ref };
+}
+
+/**
+ * Back on the address a page was opened from: focus goes to the link the person followed, or to
+ * the fold that holds it when that is closed (`data-holds`), within `root`.
+ */
+export function useFocusReturn(root: RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    const last = followed;
+    if (last === undefined || last.path !== `${location.pathname}${location.search}`) return;
+    const within = root.current;
+    const target =
+      within?.querySelector<HTMLElement>(`[data-ref="${last.ref}"]`) ??
+      [...(within?.querySelectorAll<HTMLElement>("[data-holds]") ?? [])].find((fold) =>
+        (fold.dataset["holds"] ?? "").split(" ").includes(last.ref),
+      );
+    // Another part of the screen may hold the link (Today has the card and its own list).
+    if (target === undefined) return;
+    followed = undefined;
+    target.focus();
+  }, [root]);
+}
+
 /**
  * Pages to open, each one line wide (two at a narrow width): its reference, title and brief, and
  * who changed it last and when; a task's page names its task first.
@@ -191,6 +220,10 @@ export function PageList({
             state={() => ({ from: fromHere(from) })}
             className={styles.row}
             data-part="page-row"
+            data-ref={page.ref}
+            onClick={() => {
+              noteFollowed(page.ref);
+            }}
           >
             <span className={styles.ref}>{page.ref}</span>
             <span className={styles.title} dir="auto">

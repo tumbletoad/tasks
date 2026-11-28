@@ -23,12 +23,12 @@ import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
 import { Markdown } from "../task/markdown.tsx";
 import { TEXT_MAX } from "../unsent.ts";
-import type { NodeView } from "./calls.ts";
+import type { LibraryCalls, NodeView } from "./calls.ts";
 import css from "./Library.module.css";
 import { listsOf, type Level, type LibraryNode } from "./lists.ts";
 import { BuildLibrary } from "./BuildLibrary.tsx";
 import { NewPage } from "./NewPage.tsx";
-import { PageList, Penned, useChanged } from "./parts.tsx";
+import { PageList, Penned, useChanged, useFocusReturn } from "./parts.tsx";
 import { useLibraryWrites } from "./writes.ts";
 
 const styles = classes(css, [
@@ -51,6 +51,8 @@ const styles = classes(css, [
   "tab",
   "headed",
   "empty",
+  "notice",
+  "act",
   "place",
   "path",
   "count",
@@ -246,6 +248,7 @@ function Texts({
         base={base}
         max={BRIEF_MAX}
         line
+        clears
         save={editable ? (words, from) => writes.node(target, { brief: words }, from) : undefined}
         onDone={onDone}
         view={(text, pen) => (
@@ -364,6 +367,7 @@ function Above({ levels, from }: { readonly levels: readonly Level[]; readonly f
         <button
           type="button"
           className={styles.fold}
+          data-holds={levels.flatMap((level) => level.pages.map((page) => page.ref)).join(" ")}
           aria-expanded={open}
           onClick={() => {
             setOpen(!open);
@@ -394,6 +398,32 @@ function Above({ levels, from }: { readonly levels: readonly Level[]; readonly f
   );
 }
 
+/** Parts of a long description read on with its cursor before the rest is left for another time. */
+const MAX_PARTS = 20;
+
+/** A node's texts, its description whole: a long one is read on with the answer's cursor. */
+async function readNode(calls: LibraryCalls, target: string): Promise<NodeView | undefined> {
+  const first = await calls.page.read({ target });
+  if (first.view !== "node") return undefined;
+  let { description, slice, cursor } = first;
+  const short = () => slice !== undefined && slice.to < slice.of && cursor !== undefined;
+  for (let part = 0; short() && part < MAX_PARTS; part += 1) {
+    const next = await calls.page.read({ target, ...(cursor === undefined ? {} : { cursor }) });
+    if (next.view !== "node") break;
+    description += next.description;
+    ({ slice, cursor } = next);
+  }
+  const rest = { ...first, description };
+  delete rest.slice;
+  return slice !== undefined && slice.to < slice.of ? { ...rest, slice } : rest;
+}
+
+/** The texts a person reads in a Library: the same, or not. */
+const sameTexts = (a: NodeView, b: NodeView): boolean =>
+  a.brief === b.brief &&
+  a.description === b.description &&
+  a.for_agents?.text === b.for_agents?.text;
+
 /** A Library: the node's texts, its pages, its tasks' pages, and what comes from above. */
 export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
   const t = useT();
@@ -407,7 +437,16 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
       : ((node.kind === "area" ? state.areas.get(node.id) : state.projects.get(node.id))?.title ??
         "");
   const from = t("library.of", { name: title });
+  const changed = useChanged();
+  const root = useRef<HTMLDivElement>(null);
+  useFocusReturn(root);
   const [read, setRead] = useState<NodeView | "failed" | undefined>(undefined);
+  // Newer texts the feed brought while the person reads these: offered, never put in their place.
+  const [newer, setNewer] = useState<NodeView | undefined>(undefined);
+  const shown = useRef(read);
+  shown.current = read;
+  /** The next read follows the person's own pen: it takes the texts' place. */
+  const own = useRef(false);
   const [round, setRound] = useState(0);
   // The texts change with no row in the feed: a change to them, or to the area's or project's own
   // row (its brief), reads them again.
@@ -422,9 +461,15 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
   );
   useEffect(() => {
     let current = true;
-    api.library.page.read({ target }).then(
+    readNode(api.library, target).then(
       (answer) => {
-        if (current && answer.view === "node") setRead(answer);
+        if (!current || answer === undefined) return;
+        const now = shown.current;
+        if (typeof now !== "object" || own.current || sameTexts(now, answer)) {
+          setRead(answer);
+          setNewer(undefined);
+        } else setNewer(answer);
+        own.current = false;
       },
       (error: unknown) => {
         if (current && !live.failed(error)) setRead("failed");
@@ -439,7 +484,7 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
     [node, state.pages, state.space?.name, state.areas, state.projects],
   );
   return (
-    <div className={styles.library} data-part="library">
+    <div ref={root} className={styles.library} data-part="library">
       {read === "failed" ? (
         <p className={styles.quiet} role="status">
           {t("library.readFailed")}
@@ -458,9 +503,28 @@ export function NodeLibrary({ node }: { readonly node: LibraryNode }) {
           node={node}
           read={read}
           onDone={() => {
+            own.current = true;
             setRound((n) => n + 1);
           }}
         />
+      )}
+      {newer === undefined ? null : (
+        // Under the texts, not above them: the words being read stay where they are.
+        <p className={styles.notice} role="status" data-part="texts-newer">
+          {newer.last === undefined
+            ? t("library.textsChanged")
+            : t("page.newer", { changed: changed(newer.last.by, Date.parse(newer.last.at)) })}
+          <button
+            type="button"
+            className={styles.act}
+            onClick={() => {
+              setRead(newer);
+              setNewer(undefined);
+            }}
+          >
+            {t("page.showNewest")}
+          </button>
+        </p>
       )}
       <section className={styles.section} data-part="own-pages">
         <div className={styles.headed}>
