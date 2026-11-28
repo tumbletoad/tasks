@@ -35,7 +35,7 @@ import {
   type FrozenSearch,
   type SearchCursors,
 } from "./cursors.ts";
-import { planSearch, type HereSets, type Scope, type SearchPlan, type Vocabulary } from "./plan.ts";
+import { planSearch, type HereSets, type Scope, type Vocabulary } from "./plan.ts";
 import { namesLifecycle, parseQuery, printQuery, termsOf, type Query } from "./query.ts";
 
 /** What a search reads through: a space's reader connection (`WorkerConnection`). */
@@ -94,6 +94,7 @@ export interface SearchResult {
   first: number;
   rows: Record<string, unknown>[];
   cursor?: string;
+  some_words?: true;
 }
 
 const SPACE: SqlQuery = { sql: "SELECT * FROM space WHERE one = 1", mode: "get" };
@@ -264,47 +265,55 @@ export async function runSearch(
   );
   let known = vocabularyOf(await reader.transaction("deferred", [...VOCABULARY]));
   let here = cwd === undefined ? undefined : await env.here(cwd);
-  let settled: { space: SpaceRow; plan: SearchPlan; ranked: unknown } | undefined;
-  for (let round = 0; round < PLAN_ROUNDS && settled === undefined; round += 1) {
-    const plan = planSearch(query, {
-      vocabulary: known.vocabulary,
-      indexed: known.indexed,
-      unindexed: {
-        revision: formatRevision(known.space.format),
-        updateFailed: env.updateFailed === true,
-      },
-      scope,
-      audience: env.audience,
-      today: env.today,
-      now: env.now,
-      timeZone: env.timeZone,
-      machine: env.machine,
-      folders,
-      keep,
-      ...(env.boundTask === undefined ? {} : { boundTask: env.boundTask }),
-      ...(here === undefined ? {} : { here }),
-      live,
-      folderOf: (value) => {
-        const given = value.toLowerCase() === "cwd" ? input.cwd : value;
-        if (given === undefined) return "no_cwd";
-        return env.folderOf?.(given) ?? "not_a_folder";
-      },
-    });
-    const results = await reader.transaction("deferred", [
-      ...VOCABULARY,
-      { sql: plan.sql, params: plan.params, mode: "all" },
-    ]);
-    const atS = vocabularyOf(results);
-    if (samePlan(atS, known, cwd !== undefined)) {
-      settled = { space: atS.space, plan, ranked: results.at(-1) };
-    } else {
+  const settle = async (some: boolean) => {
+    for (let round = 0; round < PLAN_ROUNDS; round += 1) {
+      const plan = planSearch(query, {
+        vocabulary: known.vocabulary,
+        indexed: known.indexed,
+        unindexed: {
+          revision: formatRevision(known.space.format),
+          updateFailed: env.updateFailed === true,
+        },
+        scope,
+        audience: env.audience,
+        today: env.today,
+        now: env.now,
+        timeZone: env.timeZone,
+        machine: env.machine,
+        folders,
+        keep,
+        ...(env.boundTask === undefined ? {} : { boundTask: env.boundTask }),
+        ...(here === undefined ? {} : { here }),
+        live,
+        some,
+        folderOf: (value) => {
+          const given = value.toLowerCase() === "cwd" ? input.cwd : value;
+          if (given === undefined) return "no_cwd";
+          return env.folderOf?.(given) ?? "not_a_folder";
+        },
+      });
+      const results = await reader.transaction("deferred", [
+        ...VOCABULARY,
+        { sql: plan.sql, params: plan.params, mode: "all" },
+      ]);
+      const atS = vocabularyOf(results);
+      if (samePlan(atS, known, cwd !== undefined)) {
+        return { space: atS.space, plan, found: rows(results.at(-1)) };
+      }
       known = atS;
       if (cwd !== undefined) here = await env.here(cwd);
     }
-  }
-  if (settled === undefined) throw vocabularyChanging();
-  const { space, plan } = settled;
-  const found = rows(settled.ranked);
+    throw vocabularyChanging();
+  };
+  let settled = await settle(false);
+  // An agent names what it looks for in many words, some of them not in the space: when nothing
+  // holds every word, what holds some of them answers better than nothing. A person's words narrow.
+  const some =
+    env.audience === "agent" &&
+    settled.found.length === 0 &&
+    termsOf(query).filter((t) => t.type === "text" && !t.negated).length > 1;
+  if (some) settled = await settle(true);
+  const { space, plan, found } = settled;
   const items: FrozenItem[] = found.slice(0, keep).map((row) => ({
     id: str(row["id"]),
     ref: formatTaskRef(space.refPrefix, Number(row["ref"])),
@@ -323,6 +332,7 @@ export async function runSearch(
     audience: env.audience,
     timeZone: env.timeZone,
     match: plan.match,
+    some: some && found.length > 0,
     limit: input.limit ?? DEFAULT_LIMIT,
     items,
     total: found.length > keep ? (`${String(keep)}+` as `${number}+`) : found.length,
@@ -383,6 +393,7 @@ async function page(
     scope: search.scope,
     parsed: search.parsed,
     total: search.total,
+    ...(search.some ? { some_words: true as const } : {}),
   };
   const pageOf = (count: number, cursor: string | undefined): SearchResult => ({
     ...head,

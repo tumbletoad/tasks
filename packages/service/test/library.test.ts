@@ -340,7 +340,10 @@ describe("[A3.pages.budget] an agent's write and search say how to keep the libr
     const some = await search("receipts zeppelin");
     expect((some["rows"] as Json[]).length).toBeGreaterThan(0);
     expect(some["try_scope"]).toBe("all");
+    expect(some["some_words"]).toBe(true);
+    expect(await search("zeppelin")).not.toHaveProperty("some_words");
     expect((await search("receipts"))["try_scope"]).toBeUndefined();
+    expect(await search("shop receipts")).not.toHaveProperty("some_words");
     expect((await search("shop receipts"))["try_scope"]).toBeUndefined();
   });
 });

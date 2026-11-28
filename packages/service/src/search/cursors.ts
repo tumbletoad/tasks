@@ -53,6 +53,8 @@ export interface FrozenSearch {
   /** The zone the search counted its days in: its pages show dates in it too. */
   readonly timeZone: string;
   readonly match: string | null;
+  /** The rows hold some of the words, none of them all. */
+  readonly some: boolean;
   readonly limit: number;
   readonly items: readonly FrozenItem[];
   readonly total: number | `${number}+`;

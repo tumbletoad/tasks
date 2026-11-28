@@ -1,6 +1,7 @@
 // Search against a real space (A3 3.9; A7 3.10 M3.05 Verify): random query strings never raise an
 // SQLite error, the ranking and filters of A3 3.9.2–3.9.4, and cursor pages under random writes,
-// deletions and redactions with no gaps or duplicates and no old text. The fixture space is created
+// deletions and redactions with no gaps or duplicates and no old text. An agent's search that
+// nothing holds whole answers with what holds some of its words. The fixture space is created
 // with schema 0.4, which holds the index, and a 0.3 space stands for one without it; tombstones,
 // redaction and authority changes are played directly on the database (storage's
 // search-helpers.ts), since their operations arrive in later steps. In-thread, through a reader
@@ -607,7 +608,11 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(ids(await search({ q: "privateword" }, { audience: "agent" }))).toEqual([]);
     // Nor through another document of the task that holds the other word.
     expect(ids(await search({ q: "audience privateword" }))).toEqual([hidden]);
-    expect(ids(await search({ q: "audience privateword" }, { audience: "agent" }))).toEqual([]);
+    // An agent finds the task by its title's word alone: the note's word is no match of it.
+    const some = await search({ q: "audience privateword" }, { audience: "agent" });
+    expect(ids(some)).toEqual([hidden]);
+    expect(some.some_words).toBe(true);
+    expect(JSON.stringify(some.rows)).not.toContain("privateword");
     expect(ids(await search({ q: "audience -privateword" }, { audience: "agent" }))).toEqual([
       hidden,
     ]);
@@ -1114,5 +1119,59 @@ describe("[A3.5.search.cursors] cursor pages under random writes, deletions and 
       // Gone for good, never rows from another history.
       expect((await refusal(search({ cursor }))).data).toEqual({ reason: what });
     }
+  });
+});
+
+describe("[A3.5.search.some-words] an agent's search that finds nothing with every word", () => {
+  const agent = { audience: "agent" as const, owner: "agent:test" };
+  let three = "";
+  let one = "";
+  let starred = "";
+
+  test("answers with the tasks that hold some of the words, more of them first, and says so", async () => {
+    [three = "", one = "", starred = ""] = created(
+      submit(fx, [
+        { kind: "task.create", title: "Zorbic quandle plimsy" },
+        { kind: "task.create", title: "Travex notes", priority: 4 },
+        { kind: "task.create", title: "Quandle travex", priority: 1 },
+      ]),
+    );
+    const found = await search({ q: "zorbic quandle plimsy morvat" }, agent);
+    expect(TaskSearchResult.parse(found).some_words).toBe(true);
+    expect(ids(found)[0]).toBe(three);
+    expect(ids(found)).toContain(starred);
+    // A person's words narrow, as before.
+    const person = await search({ q: "zorbic quandle plimsy morvat" });
+    expect(person.rows).toEqual([]);
+    expect(person).not.toHaveProperty("some_words");
+  });
+
+  test("changes nothing when a row holds every word", async () => {
+    const found = await search({ q: "zorbic quandle" }, agent);
+    expect(ids(found)).toEqual([three]);
+    expect(found).not.toHaveProperty("some_words");
+  });
+
+  test("keeps its negations and filters: only the words loosen", async () => {
+    expect(ids(await search({ q: "quandle travex morvat -zorbic" }, agent))).toEqual([
+      starred,
+      one,
+    ]);
+    const filtered = await search({ q: "travex zorbic morvat p<=1" }, agent);
+    expect(ids(filtered)).toEqual([starred]);
+    expect(filtered.some_words).toBe(true);
+  });
+
+  test("says so on every page of the answer, and in scope learnings too", async () => {
+    const first = await search({ q: "travex quandle morvat -zorbic", limit: 1 }, agent);
+    expect(first.some_words).toBe(true);
+    const next = await search({ q: "", cursor: first.cursor ?? "" }, agent);
+    expect(ids(next)).toHaveLength(1);
+    expect(next.some_words).toBe(true);
+    const human = fx.human.principal_id;
+    await directly(fx, (conn) => addLearning(conn, one, "Travex goes by the cold road.", human));
+    const lessons = await search({ q: "travex morvat", scope: "learnings" }, agent);
+    expect(lessons.rows).toHaveLength(1);
+    expect(lessons.some_words).toBe(true);
   });
 });

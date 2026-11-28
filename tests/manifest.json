@@ -200,7 +200,7 @@
     },
     {
       "id": "A3.pages.render",
-      "title": "read is sized before its cursor, so following the cursor gives a whole body in any script and every row of a node once, in order; a section read on names no stored heading; write_page's acknowledgement names the page by its reference only, also where it says the library is over its budget; a library search that no row answers whole points to scope all",
+      "title": "read is sized before its cursor, so following the cursor gives a whole body in any script and every row of a node once, in order; a section read on names no stored heading; write_page's acknowledgement names the page by its reference only, also where it says the library is over its budget; a library search that no row answers whole points to scope all, after saying its rows hold some of the words",
       "source": "Step 1 design, pull request 228; review of pull request 251",
       "owner": "M4",
       "kind": "ci",
@@ -3247,6 +3247,14 @@
       "id": "A3.5.search.ranking",
       "title": "Ranking and rows: a task appears once, ranked by its best document with A3 3.9.3's boosts and a snippet from that document; words found in different texts of one task find it together, a phrase only within one text; a source's key and its link's host and path find its task; scopes, the learnings scope and the default scope; the last word as a prefix of two characters or more; negated words; filters by area with its projects, priority, focus, id and has:; the order without text; sort:effort and sort:-effort by the space's scale with unsized tasks last, a sort never negated, in an OR or twice; an agent never matches or sees an only-me note; titles and snippets cut at 90 and 100 characters",
       "source": "A3 3.9.1, A3 3.9.2, A3 3.9.3, A3 3.9.4, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.search.some-words",
+      "title": "An agent's search of two words or more that nothing holds whole answers with the rows holding some of them, more of them first, and says so on every page, in scope learnings too; a person's search narrows as before, a row holding every word changes nothing, and negations and filters keep their meaning",
+      "source": "Step 1's trial",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
