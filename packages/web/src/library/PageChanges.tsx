@@ -4,13 +4,12 @@
 // and a page in the Trash leaves.
 import { useMemo, useRef } from "react";
 import { classes } from "../app/css.ts";
-import { CHANGES_DAYS, CHANGES_LIMIT } from "@ttasks/client/today";
+import { agentPages, CHANGES_DAYS, CHANGES_LIMIT } from "@ttasks/client/today";
 import { useT } from "../i18n/intl.tsx";
 import listCss from "../list/List.module.css";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import css from "./Library.module.css";
-import { agentPages } from "./lists.ts";
 import { PageList, useFocusReturn } from "./parts.tsx";
 
 const list = classes(listCss, ["label", "name"]);

@@ -17,7 +17,7 @@ import { type Group, itemsOf } from "../list/items.ts";
 import type { Change, TaskRow } from "@ttasks/client/store";
 import { areaNode, projectNode, TEST_SPACE, treeOf } from "@ttasks/client/test/nodes";
 import type { Changes } from "../store/store.ts";
-import { ChangeLog } from "./changes.ts";
+import { ChangeLog } from "@ttasks/client/today";
 
 let n = 0;
 const task = (patch: Partial<TaskRow> & { title: string }): TaskRow => {
