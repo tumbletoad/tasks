@@ -683,7 +683,7 @@ const awayNow = (id: Id<"sp">) => ({
 
 describe("[A1.5.backup.folder-away] an upgrade whose backups folder set for the space is not there", () => {
   test(
-    "leaves the space read-only at its revision with no backup anywhere, and migrates at the next start once the folder is back",
+    "leaves the space read-only at its revision with no backup anywhere, and a plain open migrates it once the folder is back",
     async () => {
       const { home, spaces } = setUp("away-upgrade");
       const space = await spaceAt01(join(spaces, "work"));
@@ -697,17 +697,17 @@ describe("[A1.5.backup.folder-away] an upgrade whose backups folder set for the 
         JSON.stringify({ format: 1, backup: { dir: join(drive, "backups") } }),
         { mode: 0o600 },
       );
-      let service = await start(home, space.folder);
+      const service = await start(home, space.folder);
       expect(service.spaces()).toEqual([awayNow(id)]);
       expect(readSpaceSettings(stateOf(home), id).failedMigrations).toBeUndefined();
       expect(existsSync(drive)).toBe(false);
       expect(existsSync(join(space.folder, "backups"))).toBe(false);
-      await stop(service);
       expect(digestSpace(await checkedDriver(), space.folder)).toBe(fixture);
 
-      // Connected again: the next start migrates, behind a backup in that folder.
+      // Connected again: a plain open migrates, behind a backup in that folder.
       mkdirSync(join(drive, "backups"), { recursive: true });
-      service = await start(home, space.folder);
+      const user = await session(home, service, "cli-interactive");
+      await call(user, "space/open", { path: space.folder });
       expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
       const barriers = listBackups(join(drive, "backups")).backups.filter(
         (b) => b.state === "ok" && b.sidecar?.kind === "pre-migrate",

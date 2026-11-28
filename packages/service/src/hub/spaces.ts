@@ -502,6 +502,11 @@ class Hosted {
   message: string | undefined;
   /** The barrier backup of the failed migration that left it read-only, which `message` names. */
   migrationBackup: string | undefined;
+  /**
+   * A failed migration that left no record (a timeout, a backups folder away): a plain open tries
+   * it again.
+   */
+  retryOnOpen = false;
   readonly index: number;
   readonly folder: string;
   /**
@@ -557,6 +562,7 @@ class Hosted {
     this.check = undefined;
     this.message = undefined;
     this.migrationBackup = undefined;
+    this.retryOnOpen = false;
     this.restored = undefined;
     this.copy = undefined;
     this.incarnation = undefined;
@@ -840,7 +846,11 @@ export class SpaceManager {
         throw new StorageError("SPACE_WRITER_TAKEN", "The space's last worker has not closed");
       }
       if (known.busy !== undefined) await known.busy;
-      if (retry && known.state === "read_only" && known.reason === "migration_failed") {
+      if (
+        (retry || known.retryOnOpen) &&
+        known.state === "read_only" &&
+        known.reason === "migration_failed"
+      ) {
         await this.#retryMigration(known);
       }
       // `space open` of the copy that writes: its record as the writer, which its open may not
@@ -1743,6 +1753,7 @@ export class SpaceManager {
         if (readOnly === "migration_failed" && error instanceof StorageError) {
           space.message = recorded ? failedMessage(error.message) : error.message;
           space.migrationBackup = error.attempt?.backup;
+          space.retryOnOpen = !recorded;
         }
         this.#readOnly(
           space,
@@ -1798,6 +1809,7 @@ export class SpaceManager {
       if (await this.#stopped(space)) return "served";
       await this.#learnSpace(space);
       space.message = timedOutMessage(info.revision);
+      space.retryOnOpen = true;
       this.#readOnly(space, "migration_failed", OPEN_TIMED_OUT);
       return "served";
     } catch (readerError) {
